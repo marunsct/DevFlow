@@ -1,0 +1,25 @@
+[project]
+name = "product-development-workflow"
+version = "0.1.0"
+description = "A guided LangChain and Deep Agents workflow for product development"
+requires-python = ">=3.12"
+dependencies = [
+    "deepagents>=0.7.13",
+    "langchain-core>=1.0.0",
+    "langchain-openai>=1.0.0",
+    "langgraph>=1.0.0",
+    "python-docx>=1.1.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

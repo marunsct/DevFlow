@@ -30,9 +30,11 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
+from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
 from app.agents.principal_architect import ArchitectureDecisionRecord, TechnicalSpecificationOutput
 from app.agents.product_manager import ProductManagerOutput
 from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+from app.agents.security_reviewer import SecurityFinding, SecurityReviewOutput
 from app.agents.specialists import ReportedDefect, SpecialistOutput
 from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.agents.tools_models import TechnologyChoice, ToolsAndModelsOutput
@@ -57,8 +59,12 @@ CHECKPOINTED_TYPES = (
     TechnologyChoice,
     TechnicalSpecificationOutput,
     ArchitectureDecisionRecord,
+    SecurityReviewOutput,
+    SecurityFinding,
     ArchitectureReviewOutput,
     ArchitectureReviewFinding,
+    MilestoneReviewOutput,
+    MilestoneReviewFinding,
     SprintPlanOutput,
     SprintDefinition,
     MilestonePlanOutput,

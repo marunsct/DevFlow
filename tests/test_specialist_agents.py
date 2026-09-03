@@ -27,7 +27,8 @@ def test_every_specialist_role_builds_a_graph() -> None:
 def test_validation_tool_runs_an_allowlisted_command(tmp_path: Path) -> None:
     run_validation = build_validation_tool(str(tmp_path))
 
-    result = run_validation.invoke({"command": ["python", "--version"]})
+    import sys
+    result = run_validation.invoke({"command": [sys.executable, "--version"]})
 
     assert result["returncode"] == 0
 

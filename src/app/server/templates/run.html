@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run_id[:16] }} — Workflow{% endblock %}
+{% block content %}
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h2>Run: {{ run_id[:20] }}…</h2>
+        <div>
+            <span class="status-badge status-{{ record.status }}" id="run-status">{{ record.status }}</span>
+            <button class="btn-danger" id="cancel-btn" style="margin-left: 0.5rem;" onclick="cancelRun()">Cancel</button>
+        </div>
+    </div>
+    <p style="color: var(--muted); margin-top: 0.5rem;">
+        Document: {{ record.document_name }} &bull;
+        Thread: {{ record.thread_id[:16] }}… &bull;
+        <span id="stage-meaning">{{ record.stage_meaning }}</span>
+    </p>
+</div>
+
+<!-- Decision panel: shown when waiting for approval or review -->
+<div id="approval-panel" class="decision-panel hidden">
+    <h3>⚠️ Approval Required</h3>
+    <div id="approval-details"></div>
+    <div class="decision-actions">
+        <button class="btn-success" onclick="submitApproval('approve')">Approve</button>
+        <button class="btn-danger" onclick="submitApproval('reject')">Reject</button>
+    </div>
+</div>
+
+<div id="review-panel" class="decision-panel hidden">
+    <h3>📝 Review Session</h3>
+    <div id="review-details"></div>
+    <label for="review-comment" style="margin-top: 0.5rem;">Comment (required for changes):</label>
+    <textarea id="review-comment" placeholder="What must change?"></textarea>
+    <div class="decision-actions">
+        <button class="btn-success" onclick="submitReview('approve')">Approve</button>
+        <button class="btn-warning" onclick="submitReview('changes')">Request Changes</button>
+        <button class="btn-secondary" onclick="submitReview('skip')">Skip Review</button>
+    </div>
+</div>
+
+<!-- Progress stages -->
+<div class="card">
+    <h2>Progress</h2>
+    <div id="stages-list" style="margin-top: 0.5rem;">
+        <p style="color: var(--muted)">Connecting to event stream…</p>
+    </div>
+</div>
+
+<!-- Event log -->
+<div class="card">
+    <h2>Event Log</h2>
+    <div id="event-log">
+        <p style="color: var(--muted)">Waiting for events…</p>
+    </div>
+</div>
+
+<script>
+    const RUN_ID = '{{ run_id }}';
+    let eventSource = null;
+    let lastEventId = 0;
+    let events = [];
+
+    // ---- SSE connection with reconnect ----
+    function connectSSE() {
+        const url = `/api/runs/${RUN_ID}/events/stream`;
+        eventSource = new EventSource(url);
+
+        eventSource.onopen = () => {
+            console.log('SSE connected');
+        };
+
+        // Listen to all event types.
+        for (const type of ['stage_change', 'log', 'artifact', 'review_request', 'approval_request', 'error', 'complete']) {
+            eventSource.addEventListener(type, (e) => {
+                const data = JSON.parse(e.data);
+                lastEventId = parseInt(e.lastEventId || data.sequence);
+                handleEvent(data);
+            });
+        }
+
+        eventSource.onerror = (e) => {
+            console.warn('SSE error, will reconnect...', e);
+            eventSource.close();
+            // Fall back to polling briefly, then retry SSE.
+            setTimeout(() => pollOnce().then(connectSSE), 3000);
+        };
+    }
+
+    // ---- Polling fallback ----
+    async function pollOnce() {
+        try {
+            const resp = await fetch(`/api/runs/${RUN_ID}/events?since=${lastEventId}`);
+            const data = await resp.json();
+            if (data.events) {
+                for (const event of data.events) {
+                    handleEvent(event);
+                }
+                if (data.cursor > lastEventId) lastEventId = data.cursor;
+            }
+        } catch (err) {
+            console.warn('Poll failed:', err);
+        }
+    }
+
+    // ---- Event handling ----
+    function handleEvent(event) {
+        events.push(event);
+        updateLog(event);
+        updateStages(event);
+        updateStatus(event);
+
+        if (event.event_type === 'approval_request') {
+            showApprovalPanel(event);
+        } else if (event.event_type === 'review_request') {
+            showReviewPanel(event);
+        } else {
+            hideDecisionPanels();
+        }
+
+        if (event.event_type === 'complete' || event.event_type === 'error') {
+            if (eventSource) eventSource.close();
+            document.getElementById('cancel-btn').style.display = 'none';
+        }
+    }
+
+    function updateLog(event) {
+        const log = document.getElementById('event-log');
+        if (events.length === 1) log.innerHTML = '';
+        const time = new Date(event.timestamp).toLocaleTimeString();
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        entry.innerHTML = `<span class="log-time">${time}</span><span class="log-stage">[${event.stage}]</span> ${event.message}`;
+        log.appendChild(entry);
+        log.scrollTop = log.scrollHeight;
+    }
+
+    function updateStages(event) {
+        if (event.event_type !== 'stage_change') return;
+        const list = document.getElementById('stages-list');
+        if (events.filter(e => e.event_type === 'stage_change').length === 1) list.innerHTML = '';
+        const div = document.createElement('div');
+        div.style.cssText = 'padding: 0.3rem 0; font-size: 0.9rem;';
+        div.textContent = `✓ ${event.stage}: ${event.message}`;
+        list.appendChild(div);
+    }
+
+    function updateStatus(event) {
+        const badge = document.getElementById('run-status');
+        const meaning = document.getElementById('stage-meaning');
+        const status = event.metadata?.status || (event.event_type === 'complete' ? 'completed' : event.event_type === 'error' ? 'failed' : 'running');
+        badge.textContent = status;
+        badge.className = `status-badge status-${status}`;
+        meaning.textContent = event.message;
+    }
+
+    // ---- Decision panels ----
+    function showApprovalPanel(event) {
+        const panel = document.getElementById('approval-panel');
+        const details = document.getElementById('approval-details');
+        const meta = event.metadata || {};
+        details.innerHTML = `
+            <p><strong>File:</strong> ${meta.artifact_path || 'unknown'}</p>
+            <p><strong>Risk:</strong> ${meta.risk_level || 'unknown'}</p>
+            <p><strong>Requested by:</strong> ${meta.requested_by || 'unknown'}</p>
+        `;
+        panel.classList.remove('hidden');
+        document.getElementById('review-panel').classList.add('hidden');
+    }
+
+    function showReviewPanel(event) {
+        const panel = document.getElementById('review-panel');
+        const details = document.getElementById('review-details');
+        const meta = event.metadata || {};
+        details.innerHTML = `
+            <p><strong>Review point:</strong> ${meta.review_point || 'unknown'}</p>
+            <p><strong>Artifact:</strong> ${meta.artifact_id || 'unknown'} (revision ${meta.revision || '?'})</p>
+        `;
+        panel.classList.remove('hidden');
+        document.getElementById('approval-panel').classList.add('hidden');
+    }
+
+    function hideDecisionPanels() {
+        document.getElementById('approval-panel').classList.add('hidden');
+        document.getElementById('review-panel').classList.add('hidden');
+    }
+
+    // ---- Decision submission ----
+    async function submitApproval(action) {
+        try {
+            const resp = await fetch(`/api/runs/${RUN_ID}/approval`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action }),
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                alert(err.detail || 'Failed to submit decision');
+                return;
+            }
+            hideDecisionPanels();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    async function submitReview(action) {
+        const comment = document.getElementById('review-comment').value.trim();
+        if (action === 'changes' && !comment) {
+            alert('Please enter a comment explaining what must change.');
+            return;
+        }
+        try {
+            const resp = await fetch(`/api/runs/${RUN_ID}/review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, comment: comment || null }),
+            });
+            if (!resp.ok) {
+                const err = await resp.json();
+                alert(err.detail || 'Failed to submit decision');
+                return;
+            }
+            hideDecisionPanels();
+            document.getElementById('review-comment').value = '';
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    async function cancelRun() {
+        if (!confirm('Cancel this run?')) return;
+        try {
+            await fetch(`/api/runs/${RUN_ID}/cancel`, { method: 'POST' });
+            location.reload();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    // ---- Initialize ----
+    connectSSE();
+</script>
+{% endblock %}

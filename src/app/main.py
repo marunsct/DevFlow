@@ -241,6 +241,9 @@ def main(argv: list[str] | None = None) -> int:
 
     repo_root = args.repo_root or str(Path(__file__).resolve().parents[2])
 
+    from app.tracing import configure_tracing
+    configure_tracing(args)
+
     try:
         document = read_document(args.document)
     except (FileNotFoundError, DocumentReadError) as exc:

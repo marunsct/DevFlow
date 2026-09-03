@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Upload — Product Development Workflow{% endblock %}
+{% block content %}
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+    <h2>Start a New Run</h2>
+    <p style="color: var(--muted); margin-bottom: 1rem;">
+        Upload a product document (.md, .txt, or .docx) to begin.
+        The workflow will analyze it, plan architecture, and implement sprints.
+    </p>
+    <form id="upload-form">
+        <label for="document">Product Document</label>
+        <input type="file" id="document" name="file" accept=".md,.txt,.docx" required>
+
+        <div class="checkbox-group">
+            <label>
+                <input type="checkbox" id="review-spec" name="review_spec">
+                Review technical specification
+            </label>
+            <label>
+                <input type="checkbox" id="review-sprint" name="review_sprint">
+                Review each sprint
+            </label>
+        </div>
+
+        <button type="submit" class="btn-primary" id="submit-btn">Upload &amp; Create Run</button>
+    </form>
+    <div id="upload-result" class="hidden" style="margin-top: 1rem;"></div>
+</div>
+
+<div class="card">
+    <h2>Existing Runs</h2>
+    <table id="runs-table">
+        <thead>
+            <tr>
+                <th>Run ID</th>
+                <th>Document</th>
+                <th>Status</th>
+                <th>Stage</th>
+                <th>Created</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody id="runs-body">
+            <tr><td colspan="6" style="color: var(--muted)">Loading...</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    // Upload form handler.
+    document.getElementById('upload-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = document.getElementById('submit-btn');
+        const result = document.getElementById('upload-result');
+        btn.disabled = true;
+        btn.textContent = 'Uploading...';
+
+        const formData = new FormData();
+        formData.append('file', document.getElementById('document').files[0]);
+
+        try {
+            // Step 1: Upload and create the run.
+            const createResp = await fetch('/api/runs', { method: 'POST', body: formData });
+            if (!createResp.ok) {
+                const err = await createResp.json();
+                throw new Error(err.detail || 'Upload failed');
+            }
+            const run = await createResp.json();
+
+            // Step 2: Start the run with the selected review policy.
+            const reviewPolicy = {};
+            if (document.getElementById('review-spec').checked) reviewPolicy['technical_specification'] = true;
+            if (document.getElementById('review-sprint').checked) reviewPolicy['sprint'] = true;
+
+            const startResp = await fetch(`/api/runs/${run.run_id}/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ review_policy: reviewPolicy }),
+            });
+            if (!startResp.ok) {
+                const err = await startResp.json();
+                throw new Error(err.detail || 'Failed to start run');
+            }
+
+            // Redirect to the run view.
+            window.location.href = `/runs/${run.run_id}`;
+        } catch (err) {
+            result.className = 'error';
+            result.textContent = err.message;
+            btn.disabled = false;
+            btn.textContent = 'Upload & Create Run';
+        }
+    });
+
+    // Load existing runs on page load.
+    async function loadRuns() {
+        try {
+            const resp = await fetch('/api/runs');
+            const data = await resp.json();
+            const tbody = document.getElementById('runs-body');
+            if (!data.runs || data.runs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="color: var(--muted)">No runs yet. Upload a document to start.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.runs.map(r => `
+                <tr>
+                    <td><a href="/runs/${r.run_id}">${r.run_id.substring(0, 16)}…</a></td>
+                    <td>${r.document_name || '—'}</td>
+                    <td><span class="status-badge status-${r.status}">${r.status}</span></td>
+                    <td>${r.current_stage || '—'}</td>
+                    <td>${new Date(r.created_at).toLocaleString()}</td>
+                    <td><a href="/runs/${r.run_id}">View →</a></td>
+                </tr>
+            `).join('');
+        } catch (err) {
+            document.getElementById('runs-body').innerHTML =
+                `<tr><td colspan="6" class="error">${err.message}</td></tr>`;
+        }
+    }
+    loadRuns();
+</script>
+{% endblock %}

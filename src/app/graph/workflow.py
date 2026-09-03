@@ -54,13 +54,25 @@ from app.agents.architecture_reviewer import (
     build_architecture_review_request,
     create_architecture_reviewer_agent,
 )
+from app.agents.milestone_reviewer import (
+    MilestoneReviewOutput,
+    build_milestone_review_request,
+    create_milestone_reviewer_agent,
+)
+from app.agents.security_reviewer import (
+    SecurityReviewOutput,
+    build_security_review_request,
+    create_security_reviewer_agent,
+)
 from app.agents.principal_architect import (
+    ArchitectureDecisionRecord,
     TechnicalSpecificationOutput,
     build_architecture_request,
     build_architecture_revision_request,
     create_principal_architect_agent,
 )
 from app.agents.product_manager import ProductManagerOutput, build_intake_request, create_product_manager_agent
+from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import SprintPlanOutput, build_sprint_planning_request, create_scrum_master_agent
 from app.agents.specialists import (
     ReportedDefect,
@@ -97,13 +109,14 @@ from app.sprint import (
     start_remediation,
 )
 from app.state import HumanApprovalRequest, RepositoryContext, ReviewStatus, WorkflowStage
+from app.tracing import trace_metadata
 
 MAX_ARCHITECTURE_REVISIONS = 3
 """Bound how many times architecture review can send work back to the Principal
 Architect before the run is marked failed instead of looping forever."""
 
 MAX_REMEDIATION_ATTEMPTS = 3
-"""Bound how many test-fix-retest passes one milestone gets; see `app.sprint`."""
+"""Bound one test-fix-retest passes one milestone gets; see `app.sprint`."""
 
 DEFAULT_RECURSION_LIMIT = 100
 """Raise LangGraph's superstep ceiling above its default of 25.
@@ -156,6 +169,8 @@ _NODE_NAMES = frozenset(
         "specialist_dispatch",
         "test_and_triage",
         "defect_remediation",
+        "security_review",
+        "milestone_review",
         "user_review_sprint",
         "complete",
         "failed",
@@ -202,6 +217,8 @@ class WorkflowGraphState(TypedDict, total=False):
     remediation: RemediationCycle
     defect_cursor: int
     test_round: int
+    milestone_review: MilestoneReviewOutput
+    security_review: SecurityReviewOutput
 
     # Optional user review sessions (Step 3.3). `review_policy` is opt-in per
     # review point, so a run with no policy behaves exactly as it did before
@@ -786,8 +803,7 @@ def build_workflow_graph(
                 ),
             }
 
-        next_stage = "user_review_sprint" if _review_enabled(state, SPRINT_REVIEW) else "complete"
-        return {**base_update, "stage": next_stage}
+        return {**base_update, "stage": "security_review"}
 
     def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Route one open defect to the specialist who owns it, then re-test.
@@ -863,6 +879,88 @@ def build_workflow_graph(
         update["defect_cursor"] = defect_index + 1
         return update
 
+    def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        outputs = state.get("specialist_outputs", {})
+        changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
+        agent = create_security_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        request = build_security_review_request(
+            changed_files,
+            "Permissions: All tools have read/write access to the repository scope. Validation tools are restricted to a safe list of commands.",
+            state["repository"].root_path,
+        )
+        update = _run_gated_agent(
+            state,
+            config,
+            stage_name="security_review",
+            agent=agent,
+            initial_request=request,
+            output_key="__security_review__",
+            next_stage="security_review", # We re-enter to process the output
+        )
+        if "__security_review__" not in update:
+            return update
+            
+        review: SecurityReviewOutput = update.pop("__security_review__")
+        # Record it and move to milestone_review
+        return {"stage": "milestone_review", "security_review": review}
+
+    def milestone_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        milestone = state["milestone_plan"]
+        outputs = state.get("specialist_outputs", {})
+        changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
+        test_evidence = "\\n".join(test for output in outputs.values() for test in output.tests) or "(none recorded)"
+        cycle = state.get("remediation")
+        defect_report = build_defect_report(cycle) if cycle else "No remediation cycle data."
+        
+        # Include security findings in the defect report if any exist
+        sec_review = state.get("security_review")
+        if sec_review and sec_review.status == "findings":
+            defect_report += "\\n\\n--- Security Findings ---\\n"
+            for f in sec_review.findings:
+                defect_report += f"[{f.severity}] {f.category}: {f.description}\\nRemediation: {f.remediation}\\n\\n"
+        
+        agent = create_milestone_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        request = build_milestone_review_request(
+            milestone.selected_sprint_goal,
+            changed_files,
+            test_evidence,
+            defect_report,
+            state["repository"].root_path,
+        )
+        update = _run_gated_agent(
+            state,
+            config,
+            stage_name="milestone_review",
+            agent=agent,
+            initial_request=request,
+            output_key="__milestone_review__",
+            next_stage="milestone_review", # We re-enter to process the output
+        )
+        if "__milestone_review__" not in update:
+            return update
+            
+        review: MilestoneReviewOutput = update.pop("__milestone_review__")
+        
+        if review.status == "blocked":
+            return {
+                "stage": "failed",
+                "error": "Milestone review blocked the sprint from continuing. See findings.",
+                "milestone_review": review,
+            }
+        elif review.status == "changes_required":
+            findings_text = "\\n".join(
+                f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}" 
+                for f in review.findings
+            )
+            return {
+                "stage": "technical_lead",
+                "revision_comments": state.get("revision_comments", []) + [findings_text],
+                "milestone_review": review,
+            }
+        
+        next_stage = "user_review_sprint" if _review_enabled(state, SPRINT_REVIEW) else "complete"
+        return {"stage": next_stage, "milestone_review": review}
+
     def user_review_sprint_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         return _run_review_gate(
             state,
@@ -890,6 +988,8 @@ def build_workflow_graph(
     graph.add_node("specialist_dispatch", specialist_dispatch_node)
     graph.add_node("test_and_triage", test_and_triage_node)
     graph.add_node("defect_remediation", defect_remediation_node)
+    graph.add_node("security_review", security_review_node)
+    graph.add_node("milestone_review", milestone_review_node)
     graph.add_node("user_review_sprint", user_review_sprint_node)
     graph.add_node("complete", complete_node)
     graph.add_node("failed", failed_node)
@@ -909,6 +1009,8 @@ def build_workflow_graph(
         "specialist_dispatch",
         "test_and_triage",
         "defect_remediation",
+        "security_review",
+        "milestone_review",
         "user_review_sprint",
     ):
         graph.add_conditional_edges(node_name, _route_from_stage, routable_targets)

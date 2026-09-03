@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Product Development Workflow{% endblock %}</title>
+    <style>
+        :root {
+            --bg: #f8f9fa;
+            --card: #ffffff;
+            --border: #dee2e6;
+            --primary: #0d6efd;
+            --success: #198754;
+            --warning: #ffc107;
+            --danger: #dc3545;
+            --text: #212529;
+            --muted: #6c757d;
+            --radius: 8px;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+        .container { max-width: 960px; margin: 0 auto; padding: 1rem; }
+        header { background: var(--card); border-bottom: 1px solid var(--border); padding: 0.75rem 0; margin-bottom: 1.5rem; }
+        header .container { display: flex; align-items: center; gap: 1rem; }
+        header h1 { font-size: 1.25rem; font-weight: 600; }
+        header nav a { color: var(--primary); text-decoration: none; font-size: 0.9rem; }
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.5rem; margin-bottom: 1rem; }
+        .card h2 { font-size: 1.1rem; margin-bottom: 1rem; }
+        label { display: block; font-weight: 500; margin-bottom: 0.25rem; font-size: 0.9rem; }
+        input[type="file"], select { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.9rem; margin-bottom: 1rem; }
+        .checkbox-group { display: flex; gap: 1.5rem; margin-bottom: 1rem; }
+        .checkbox-group label { display: flex; align-items: center; gap: 0.5rem; font-weight: 400; }
+        button { padding: 0.5rem 1.5rem; border: none; border-radius: var(--radius); cursor: pointer; font-size: 0.9rem; font-weight: 500; }
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { opacity: 0.9; }
+        .btn-success { background: var(--success); color: white; }
+        .btn-warning { background: var(--warning); color: var(--text); }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-secondary { background: var(--muted); color: white; }
+        .status-badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 1rem; font-size: 0.8rem; font-weight: 500; }
+        .status-created { background: #e2e3e5; }
+        .status-running { background: #cfe2ff; color: #084298; }
+        .status-completed { background: #d1e7dd; color: #0f5132; }
+        .status-failed { background: #f8d7da; color: #842029; }
+        .status-waiting_for_approval, .status-waiting_for_review { background: #fff3cd; color: #664d03; }
+        .status-cancelled { background: #e2e3e5; color: #41464b; }
+        .error { color: var(--danger); padding: 0.5rem; background: #f8d7da; border-radius: var(--radius); margin-bottom: 1rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+        th { font-weight: 600; color: var(--muted); }
+        .log-entry { padding: 0.4rem 0; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; font-family: monospace; }
+        .log-time { color: var(--muted); margin-right: 0.5rem; }
+        .log-stage { color: var(--primary); margin-right: 0.5rem; }
+        #event-log { max-height: 400px; overflow-y: auto; }
+        .decision-panel { background: #fff3cd; border: 1px solid #ffc107; border-radius: var(--radius); padding: 1rem; margin-bottom: 1rem; }
+        .decision-panel h3 { margin-bottom: 0.5rem; }
+        .decision-actions { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+        textarea { width: 100%; padding: 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.9rem; min-height: 60px; margin-top: 0.25rem; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>🏗️ Product Development Workflow</h1>
+            <nav><a href="/">Home</a></nav>
+        </div>
+    </header>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+</body>
+</html>

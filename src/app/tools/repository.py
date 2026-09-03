@@ -293,7 +293,7 @@ def run_approved_validation(repo_root: str | Path, command: list[str]) -> dict[s
         raise RepositoryToolError("Validation command cannot be empty.")
 
     executable = command[0]
-    if executable not in _ALLOWED_VALIDATION_COMMANDS:
+    if Path(executable).name not in _ALLOWED_VALIDATION_COMMANDS:
         raise RepositoryToolError(
             f"Command is not approved for the workflow: {executable}. Allowed: {sorted(_ALLOWED_VALIDATION_COMMANDS)}"
         )

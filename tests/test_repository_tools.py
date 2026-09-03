@@ -86,7 +86,8 @@ def test_write_approved_artifact_only_allows_in_artifact_directory(repo_root: Pa
 
 
 def test_run_approved_validation_accepts_whitelisted_commands(repo_root: Path) -> None:
-    result = run_approved_validation(repo_root, ["python", "-m", "compileall", "-q", "src"])
+    import sys
+    result = run_approved_validation(repo_root, [sys.executable, "-m", "compileall", "-q", "src"])
 
     assert result["returncode"] == 0
 

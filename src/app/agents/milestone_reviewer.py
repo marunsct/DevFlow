@@ -1,0 +1,141 @@
+"""Milestone Reviewer Deep Agent (Step 6.2).
+
+This role worker independently reviews a completed milestone against acceptance
+criteria. Its output is a structured decision so the LangGraph controller can
+route rejected work back to the Technical Lead and approved work forward to
+the next milestone without having to parse prose.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Literal
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.agents.role_agent import create_role_agent
+
+_STAGE = "milestone_review"
+_NAME = "milestone_reviewer"
+
+
+class MilestoneReviewFinding(BaseModel):
+    """One specific issue found while reviewing the milestone."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    severity: Literal["blocking", "major", "minor", "suggestion"] = Field(
+        ..., description="How serious this finding is."
+    )
+    category: Literal[
+        "correctness",
+        "contracts",
+        "migrations",
+        "authorization",
+        "accessibility",
+        "testing",
+        "documentation",
+        "security",
+        "regression",
+    ] = Field(..., description="The type of issue found.")
+    description: str = Field(..., description="What is wrong or missing.")
+    affected_files: list[str] = Field(
+        default_factory=list, description="Files implicated in this finding."
+    )
+    required_remediation: str = Field(
+        ..., description="What the Technical Lead must change to resolve this finding."
+    )
+
+
+class MilestoneReviewOutput(BaseModel):
+    """Structured review decision produced by the Milestone Reviewer."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["accepted", "changes_required", "blocked"] = Field(
+        ..., description="Routing decision: accepted, changes required, or blocked."
+    )
+    findings: list[MilestoneReviewFinding] = Field(default_factory=list)
+    acceptance_evidence: str = Field(
+        ..., description="What was checked and passed to justify this review decision."
+    )
+    documentation_reviewed: bool = Field(
+        ..., description="Whether documentation was reviewed."
+    )
+    tests_reviewed: bool = Field(..., description="Whether tests were reviewed.")
+
+
+def build_milestone_review_request(
+    milestone_goal: str,
+    changed_files: list[str],
+    test_evidence: str,
+    defect_report: str,
+    repository_root: str,
+) -> dict[str, list[dict[str, str]]]:
+    """Build the Deep Agent input from the milestone artifacts awaiting review."""
+    files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
+    brief = (
+        f"Repository root: {repository_root}\n\n"
+        f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
+        f"--- Changed files ---\n{files_text}\n\n"
+        f"--- Test evidence ---\n{test_evidence}\n\n"
+        f"--- Defect report ---\n{defect_report}\n"
+    )
+    return {"messages": [{"role": "user", "content": brief}]}
+
+
+_SYSTEM_PROMPT = """You are the Milestone Reviewer for this workflow.
+
+Your role is to independently review a completed milestone against acceptance
+criteria, focusing on correctness, contracts, migrations, authorization,
+accessibility, testing, documentation, security, and regression risk.
+
+Responsibilities:
+- Identify findings with a severity of blocking, major, minor, or suggestion.
+- Categorize each finding properly (e.g. testing, security, documentation).
+- State the required remediation for every finding.
+- Set status to "changes_required" if any finding is blocking or major. Only
+  use "accepted" when no blocking or major finding remains.
+- Ensure you document what was checked and passed in `acceptance_evidence`.
+- Confirm whether you reviewed documentation and tests.
+
+Constraints:
+- Do not modify application source code or the milestone artifacts themselves; you only
+  review them and record findings.
+- Do not change repo files except through the approved artifact tool.
+- Never approve based only on confidence statements; approval must be grounded
+  in what you actually verified.
+- Every write_artifact call pauses for a human decision before anything is
+  saved; never claim the artifact is saved until a tool result confirms it.
+- Keep the output structured and concise.
+
+Return the response in the required output schema only.
+"""
+
+
+def create_milestone_reviewer_agent(
+    model: str | BaseChatModel | None = None,
+    *,
+    checkpointer: BaseCheckpointSaver | None = None,
+    repo_root: str | Path | None = None,
+) -> Any:
+    """Create the Milestone Reviewer role worker."""
+    return create_role_agent(
+        name=_NAME,
+        stage=_STAGE,
+        system_prompt=_SYSTEM_PROMPT,
+        response_format=MilestoneReviewOutput,
+        model=model,
+        checkpointer=checkpointer,
+        repo_root=repo_root,
+    )
+
+
+__all__ = [
+    "MilestoneReviewFinding",
+    "MilestoneReviewOutput",
+    "build_milestone_review_request",
+    "create_milestone_reviewer_agent",
+]

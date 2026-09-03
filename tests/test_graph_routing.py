@@ -128,6 +128,8 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         "create_architecture_reviewer_agent": "architecture_review",
         "create_scrum_master_agent": "scrum_master",
         "create_technical_lead_agent": "technical_lead",
+        "create_milestone_reviewer_agent": "milestone_reviewer",
+        "create_security_reviewer_agent": "security_reviewer",
     }
     for factory_name, role in simple_roles.items():
         monkeypatch.setattr(
@@ -176,6 +178,26 @@ def _rejected_review(description: str = "No authentication described") -> Archit
                 required_remediation="Describe the authentication and session model.",
             )
         ],
+    )
+
+
+from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
+from app.agents.security_reviewer import SecurityFinding, SecurityReviewOutput
+
+def _milestone_review() -> MilestoneReviewOutput:
+    return MilestoneReviewOutput(
+        status="accepted",
+        findings=[],
+        acceptance_evidence="All good",
+        documentation_reviewed=True,
+        tests_reviewed=True,
+    )
+
+def _security_review() -> SecurityReviewOutput:
+    return SecurityReviewOutput(
+        status="passed",
+        findings=[],
+        local_only_exceptions=[]
     )
 
 
@@ -256,6 +278,8 @@ def _script_through_sprint(agents: ScriptedAgents) -> None:
     agents.script("scrum_master", [responds_with(_sprint_plan())])
     agents.script("technical_lead", [responds_with(_milestone("testing"))])
     agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist())])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
 
 # --------------------------------------------------------------------------
@@ -365,6 +389,8 @@ def test_specialist_dispatch_runs_every_delegated_task(agents: ScriptedAgents, t
     agents.script("specialist_backend", [responds_with(_specialist())])
     agents.script("specialist_ui_ux", [responds_with(_specialist())])
     agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist())])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-dispatch")
 
@@ -459,6 +485,8 @@ def test_a_specialist_can_pause_for_approval_and_resume_on_the_right_task(
     agents.script("technical_lead", [responds_with(_milestone("backend", "testing"))])
     agents.script("specialist_backend", [pause_for_approval("api.md", "API draft"), responds_with(_specialist())])
     agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist())])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(graph, _document(), _repository(tmp_path), "run-specialist-pause")
     assert state["stage"] == "awaiting_approval:specialist_backend_0"
@@ -679,6 +707,8 @@ def test_sprint_review_changes_replan_the_milestone_with_the_comment(
     agents.script("scrum_master", [responds_with(_sprint_plan())])
     agents.script("technical_lead", [responds_with(_milestone("testing"))] * 2)
     agents.script("specialist_testing", [responds_with(_specialist())] * 4)
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())] * 2)
+    agents.script("security_reviewer", [responds_with(_security_review())] * 2)
 
     start_workflow(
         graph,
@@ -753,6 +783,8 @@ def test_a_reported_failure_becomes_a_tracked_defect_routed_to_its_owner(
             responds_with(_specialist()),
         ],
     )
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-defect-loop")
 
@@ -789,6 +821,8 @@ def test_a_defect_is_routed_to_its_owner_not_to_the_reporter(agents: ScriptedAge
             responds_with(_specialist()),
         ],
     )
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-defect-owner")
 
@@ -839,6 +873,8 @@ def test_multiple_defects_are_each_routed_to_their_own_owner(agents: ScriptedAge
             responds_with(_specialist()),
         ],
     )
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-multi-defect")
 
@@ -869,6 +905,8 @@ def test_a_defect_fix_can_pause_for_approval_and_resume_on_the_same_defect(
         "specialist_testing",
         [responds_with(_specialist(defects=[_defect()])), responds_with(_specialist())],
     )
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(graph, _document(), _repository(tmp_path), "run-fix-pause")
     assert state["stage"] == "awaiting_approval:defect_fix_1_0"
@@ -891,6 +929,8 @@ def test_a_verification_round_can_pause_for_approval_and_resume(
         "specialist_testing",
         [responds_with(_specialist()), pause_for_approval("results.md", "Test results"), responds_with(_specialist())],
     )
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
 
     state = start_workflow(graph, _document(), _repository(tmp_path), "run-test-pause")
     assert state["stage"] == "awaiting_approval:test_round_0"

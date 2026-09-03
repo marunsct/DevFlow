@@ -19,7 +19,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -118,20 +118,22 @@ def create_app(
             templates = Jinja2Templates(directory=str(templates_dir))
 
             @application.get("/", tags=["ui"])
-            async def index(request: Any) -> Any:
-                return templates.TemplateResponse("index.html", {"request": request})
+            async def index(request: Request) -> Any:
+                return templates.TemplateResponse(request, "index.html")
 
             @application.get("/runs/{run_id}", tags=["ui"])
-            async def run_view(request: Any, run_id: str) -> Any:
+            async def run_view(request: Request, run_id: str) -> Any:
                 record = runner.runs.get(run_id)
                 if record is None:
                     return templates.TemplateResponse(
+                        request,
                         "index.html",
-                        {"request": request, "error": f"Run {run_id} not found."},
+                        {"error": f"Run {run_id} not found."},
                     )
                 return templates.TemplateResponse(
+                    request,
                     "run.html",
-                    {"request": request, "run_id": run_id, "record": record},
+                    {"run_id": run_id, "record": record},
                 )
         except ImportError:
             pass  # Jinja2 not installed, skip template routes.

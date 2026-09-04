@@ -86,13 +86,13 @@ def extract_pending_approval(
     content = args.get("content", "")
     summary = content[:80] + ("..." if len(content) > 80 else "")
 
-    target = (Path(repo_root) / "docs" / "generated" / relative_path).resolve()
+    target = (Path(repo_root) / relative_path).resolve()
     risk_level = "medium" if target.exists() else "low"
 
     return HumanApprovalRequest(
         request_id=pending.id,
         stage=stage,
-        artifact_path=f"docs/generated/{relative_path}",
+        artifact_path=f"{relative_path}",
         risk_level=risk_level,
         requested_by=requested_by,
         decision=ApprovalDecision.PENDING,

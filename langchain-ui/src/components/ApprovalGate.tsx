@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import type { ApprovalPayload } from '../types';
-import { ShieldAlert, CheckCircle, XCircle, Download } from 'lucide-react';
+import { ShieldAlert, CheckCircle, XCircle, Download, FileWarning } from 'lucide-react';
 
 interface ApprovalGateProps {
   runId: string;
@@ -12,68 +12,94 @@ interface ApprovalGateProps {
 export const ApprovalGate: React.FC<ApprovalGateProps> = ({ runId, approval, onSubmit, isLoading }) => {
   const [reason, setReason] = useState('');
 
+  const riskColors: Record<string, string> = {
+    low: 'text-success bg-success/10 border-success/30',
+    medium: 'text-warning bg-warning/10 border-warning/30',
+    high: 'text-danger bg-danger/10 border-danger/30',
+  };
+
   return (
-    <div className="bg-danger/10 rounded-lg shadow-sm border border-danger/50 overflow-hidden mt-6">
-      <div className="px-4 py-3 bg-danger/20 border-b border-danger/30 flex items-center gap-2">
-        <ShieldAlert className="h-5 w-5 text-danger" />
-        <h3 className="font-semibold text-danger-900">Write Approval Required</h3>
+    <div className="rounded-2xl overflow-hidden border border-warning/40 bg-warning/5 backdrop-blur-sm">
+      <div className="px-5 py-3.5 bg-warning/10 border-b border-warning/30 flex items-center gap-2.5">
+        <ShieldAlert className="h-5 w-5 text-warning" />
+        <h3 className="font-semibold text-warning text-sm">Write Approval Required</h3>
       </div>
-      <div className="p-4">
-        <div className="mb-4 text-sm text-slate-700 bg-white/50 p-3 rounded border border-danger/20 flex justify-between items-start">
-          <div>
-            <p><strong>Artifact:</strong> <span className="font-mono">{approval.artifact_path}</span></p>
-            <p><strong>Stage:</strong> {approval.stage}</p>
-            <p><strong>Risk Level:</strong> <span className="uppercase font-semibold text-danger">{approval.risk_level}</span></p>
-            <p><strong>Requested By:</strong> {approval.requested_by}</p>
+      <div className="p-5">
+        {/* Artifact Info */}
+        <div className="mb-4 p-4 rounded-xl bg-surface/50 border border-border/30 space-y-2">
+          <div className="flex justify-between items-start">
+            <div className="space-y-1.5 text-sm">
+              <p className="text-text-secondary">
+                <span className="text-text-muted">Artifact:</span>{' '}
+                <span className="font-mono text-white">{approval.artifact_path}</span>
+              </p>
+              <p className="text-text-secondary">
+                <span className="text-text-muted">Stage:</span>{' '}
+                <span className="text-white">{approval.stage}</span>
+              </p>
+              <p className="text-text-secondary">
+                <span className="text-text-muted">Requested by:</span>{' '}
+                <span className="text-white">{approval.requested_by}</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-text-muted text-sm">Risk:</span>
+                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${riskColors[approval.risk_level] || riskColors.medium}`}>
+                  <FileWarning className="h-3 w-3" />
+                  {approval.risk_level.toUpperCase()}
+                </span>
+              </div>
+            </div>
+            {approval.artifact_path && (
+              <a
+                href={`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(approval.artifact_path)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-lg text-text-secondary text-xs font-medium hover:text-white hover:border-primary/50 transition-all shrink-0"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </a>
+            )}
           </div>
-          {approval.artifact_path && (
-            <a 
-              href={`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(approval.artifact_path)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-danger/30 rounded text-danger hover:bg-danger/5 transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              Download Artifact
-            </a>
-          )}
         </div>
 
-        <div className="mb-4 text-sm">
-          <p className="font-medium text-slate-800 mb-1">Content Summary:</p>
-          <p className="whitespace-pre-wrap text-slate-600 bg-slate-50 p-3 rounded border border-slate-200">
-            {approval.content_summary}
-          </p>
-        </div>
-
+        {/* Content Summary */}
         <div className="mb-4">
-          <label htmlFor="approval-reason" className="block text-sm font-medium text-slate-700 mb-1">
-            Reason / Comments (optional for approval, required for rejection)
+          <p className="text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">Content Preview</p>
+          <pre className="whitespace-pre-wrap text-xs text-text-secondary bg-[#0a0f1a] p-3 rounded-xl border border-border/30 max-h-32 overflow-y-auto font-mono">
+            {approval.content_summary}
+          </pre>
+        </div>
+
+        {/* Reason */}
+        <div className="mb-5">
+          <label className="block text-xs font-medium text-text-muted mb-2 uppercase tracking-wider">
+            Comments (optional for approve, required for reject)
           </label>
           <textarea
-            id="approval-reason"
-            className="w-full rounded-md border border-slate-300 p-2 text-sm focus:border-danger focus:ring-danger"
+            className="w-full rounded-xl border border-border bg-surface p-3 text-sm text-white placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-warning/30 focus:border-warning/50 transition-all resize-none"
             rows={3}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={isLoading}
+            placeholder="Enter your comments..."
           />
         </div>
 
-        <div className="flex flex-wrap gap-3">
+        {/* Actions */}
+        <div className="flex gap-3">
           <button
             onClick={() => onSubmit('approve', reason)}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-4 py-2 bg-success text-white rounded font-medium hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-success/90 hover:bg-success text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50 shadow-lg shadow-success/20"
           >
             <CheckCircle className="h-4 w-4" />
-            Approve Write
+            Approve
           </button>
-          
           <button
             onClick={() => onSubmit('reject', reason)}
             disabled={isLoading || !reason.trim()}
-            className="flex items-center gap-1.5 px-4 py-2 bg-danger text-white rounded font-medium hover:opacity-90 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-danger/90 hover:bg-danger text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50 shadow-lg shadow-danger/20"
             title={!reason.trim() ? "A reason is required to reject" : ""}
           >
             <XCircle className="h-4 w-4" />

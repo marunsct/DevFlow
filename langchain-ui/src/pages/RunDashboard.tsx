@@ -1,27 +1,27 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams } from 'react-router-dom';
-import type { 
-  RunStatusResponse, 
-  LogEntry, 
-  ReviewPayload, 
-  ApprovalPayload 
+import { useParams, Link } from 'react-router-dom';
+import type {
+  RunStatusResponse,
+  LogEntry,
+  ReviewPayload,
+  ApprovalPayload
 } from '../types';
-import { 
-  getRun, 
-  getLogs, 
-  getPendingReview, 
+import {
+  getRun,
+  getLogs,
+  getPendingReview,
   getPendingApproval,
   submitReview,
-  submitApproval
+  submitApproval,
+  cancelRun
 } from '../api';
 import { ProgressBar } from '../components/ProgressBar';
 import { LogViewer } from '../components/LogViewer';
 import { ArtifactList } from '../components/ArtifactList';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { ApprovalGate } from '../components/ApprovalGate';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle } from 'lucide-react';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban } from 'lucide-react';
 
-// Stages in order to calculate progress
 const WORKFLOW_STAGES = [
   'initialize',
   'read_product_intake',
@@ -37,7 +37,7 @@ const WORKFLOW_STAGES = [
 
 export const RunDashboard: React.FC = () => {
   const { runId } = useParams<{ runId: string }>();
-  
+
   const [run, setRun] = useState<RunStatusResponse | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [review, setReview] = useState<ReviewPayload | null>(null);
@@ -45,45 +45,37 @@ export const RunDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  
-  // Use a ref to store the latest logs to avoid dependency cycles in interval
+
   const logsRef = useRef<LogEntry[]>([]);
-  
+
   const fetchState = async () => {
     if (!runId) return;
     try {
       const runData = await getRun(runId);
       setRun(runData);
-      
-      // If waiting for something, fetch it
+
       if (runData.status === 'waiting_for_review') {
         const reviewData = await getPendingReview(runId);
-        if (reviewData.pending) {
-          setReview(reviewData.review);
-        }
+        if (reviewData.pending) setReview(reviewData.review);
       } else {
         setReview(null);
       }
-      
+
       if (runData.status === 'waiting_for_approval') {
         const approvalData = await getPendingApproval(runId);
-        if (approvalData.pending) {
-          setApproval(approvalData.approval);
-        }
+        if (approvalData.pending) setApproval(approvalData.approval);
       } else {
         setApproval(null);
       }
-      
-      // Fetch new logs
+
       const currentLogsLength = logsRef.current.length;
       const logsData = await getLogs(runId, 100, currentLogsLength);
-      
       if (logsData.logs && logsData.logs.length > 0) {
         const newLogs = [...logsRef.current, ...logsData.logs];
         logsRef.current = newLogs;
         setLogs(newLogs);
       }
-      
+
       setLoading(false);
     } catch (err: any) {
       console.error(err);
@@ -94,10 +86,7 @@ export const RunDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchState();
-    
-    // Poll every 2 seconds for updates
     const interval = setInterval(fetchState, 2000);
-    
     return () => clearInterval(interval);
   }, [runId]);
 
@@ -129,12 +118,22 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  const handleCancel = async () => {
+    if (!runId || !confirm('Are you sure you want to cancel this run?')) return;
+    try {
+      await cancelRun(runId);
+      await fetchState();
+    } catch (err: any) {
+      alert("Failed to cancel: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   if (loading && !run) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="flex flex-col items-center gap-4">
-          <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-slate-500 font-medium">Loading Workflow State...</p>
+          <div className="h-10 w-10 border-3 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-text-secondary font-medium">Loading workflow state...</p>
         </div>
       </div>
     );
@@ -142,15 +141,17 @@ export const RunDashboard: React.FC = () => {
 
   if (error || !run) {
     return (
-      <div className="p-8 bg-danger/10 border border-danger/30 rounded-lg text-danger text-center">
-        <AlertCircle className="h-10 w-10 mx-auto mb-4" />
-        <h2 className="text-lg font-bold mb-2">Error Loading Run</h2>
-        <p>{error || "Run not found"}</p>
+      <div className="max-w-lg mx-auto mt-20 p-8 glass-card rounded-2xl text-center">
+        <AlertCircle className="h-12 w-12 text-danger mx-auto mb-4" />
+        <h2 className="text-lg font-bold text-white mb-2">Error Loading Run</h2>
+        <p className="text-text-secondary">{error || "Run not found"}</p>
+        <Link to="/runs" className="inline-block mt-6 text-primary hover:text-primary-hover text-sm font-medium">
+          &larr; Back to Runs
+        </Link>
       </div>
     );
   }
 
-  // Calculate progress
   let progress = 0;
   if (run.status === 'completed') {
     progress = 100;
@@ -159,72 +160,95 @@ export const RunDashboard: React.FC = () => {
     if (stageIndex >= 0) {
       progress = Math.round((stageIndex / (WORKFLOW_STAGES.length - 1)) * 100);
     } else {
-      progress = 50; // Fallback
+      progress = 50;
     }
   }
 
-  // Status badge config
-  const statusConfig = {
-    created: { color: 'bg-slate-200 text-slate-700', icon: Clock },
-    running: { color: 'bg-blue-100 text-blue-700', icon: Activity },
-    waiting_for_review: { color: 'bg-warning/20 text-warning-800', icon: AlertCircle },
-    waiting_for_approval: { color: 'bg-danger/20 text-danger-800', icon: AlertCircle },
-    completed: { color: 'bg-success/20 text-success-800', icon: CheckCircle2 },
-    failed: { color: 'bg-danger/20 text-danger-800', icon: XCircle },
-    cancelled: { color: 'bg-slate-200 text-slate-700', icon: XCircle },
-    paused: { color: 'bg-warning/20 text-warning-800', icon: Clock }
+  const statusConfig: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
+    created: { bg: 'bg-slate-500/20', text: 'text-slate-300', glow: '', icon: Clock },
+    running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
+    waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+    waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+    completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
+    failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
+    cancelled: { bg: 'bg-slate-500/20', text: 'text-slate-400', glow: '', icon: XCircle },
+    paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
   };
 
-  const config = statusConfig[run.status as keyof typeof statusConfig] || statusConfig.created;
+  const config = statusConfig[run.status] || statusConfig.created;
   const StatusIcon = config.icon;
+  const isTerminal = ['completed', 'failed', 'cancelled'].includes(run.status);
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
+      {/* Top Bar */}
+      <div className="flex items-center justify-between">
+        <Link to="/runs" className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-white transition-colors">
+          <ArrowLeft className="h-4 w-4" />
+          All Runs
+        </Link>
+        {!isTerminal && (
+          <button
+            onClick={handleCancel}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-danger/80 hover:text-danger border border-danger/30 hover:border-danger/60 rounded-lg transition-all hover:bg-danger/5"
+          >
+            <Ban className="h-3.5 w-3.5" />
+            Cancel Run
+          </button>
+        )}
+      </div>
+
       {/* Header Card */}
-      <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-6">
+      <div className="glass-card-strong rounded-2xl p-6">
         <div className="flex justify-between items-start mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-slate-800 mb-2">Workflow Run</h1>
-            <p className="text-sm text-slate-500 font-mono">{run.run_id}</p>
+            <h1 className="text-xl font-bold text-white mb-1">Workflow Run</h1>
+            <p className="text-xs text-text-muted font-mono">{run.run_id}</p>
           </div>
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium ${config.color}`}>
-            <StatusIcon className="h-4 w-4" />
-            <span className="uppercase tracking-wider text-xs">{run.status.replace(/_/g, ' ')}</span>
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${config.bg} ${config.text} ${config.glow}`}>
+            <StatusIcon className="h-3.5 w-3.5" />
+            <span className="uppercase tracking-wider">{run.status.replace(/_/g, ' ')}</span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div>
-            <p className="text-sm font-medium text-slate-500 mb-1">Current Stage</p>
-            <p className="font-semibold text-slate-800">{run.current_stage || 'Not started'}</p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <div className="p-3 rounded-xl bg-surface/50 border border-border/30">
+            <p className="text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">Current Stage</p>
+            <p className="font-semibold text-white text-sm">{run.current_stage || 'Not started'}</p>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-500 mb-1">Activity</p>
-            <p className="font-medium text-slate-700">{run.stage_meaning || 'Waiting...'}</p>
+          <div className="p-3 rounded-xl bg-surface/50 border border-border/30">
+            <p className="text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">Activity</p>
+            <p className="font-medium text-text-primary text-sm">{run.stage_meaning || 'Waiting...'}</p>
           </div>
-          <div>
-            <p className="text-sm font-medium text-slate-500 mb-1">Created At</p>
-            <p className="font-medium text-slate-700">{new Date(run.created_at).toLocaleString()}</p>
+          <div className="p-3 rounded-xl bg-surface/50 border border-border/30">
+            <p className="text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">Created</p>
+            <p className="font-medium text-text-primary text-sm">{new Date(run.created_at).toLocaleString()}</p>
           </div>
         </div>
 
         <ProgressBar progress={progress} label="Workflow Progress" />
+
+        {run.error && (
+          <div className="mt-4 p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm">
+            <strong>Error:</strong> {run.error.slice(0, 300)}
+          </div>
+        )}
       </div>
 
       {/* Action Gates */}
       {review && (
-        <ReviewPanel 
+        <ReviewPanel
           runId={runId!}
-          review={review} 
+          review={review}
           onSubmit={handleReviewSubmit}
           isLoading={actionLoading}
         />
       )}
 
       {approval && (
-        <ApprovalGate 
+        <ApprovalGate
           runId={runId!}
-          approval={approval} 
+          approval={approval}
           onSubmit={handleApprovalSubmit}
           isLoading={actionLoading}
         />

@@ -40,7 +40,8 @@ def run_e2e_test():
     start_payload = {
         "review_policy": {},
         "artifact_directory": "/home/arun/Desktop/langchain",
-        "allow_subdirectories": True
+        "allow_subdirectories": True,
+        "auto_approve": True
     }
     response = requests.post(f"{BASE_URL}/runs/{run_id}/start", json=start_payload, headers=headers)
     if response.status_code != 202:

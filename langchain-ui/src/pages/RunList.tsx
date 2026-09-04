@@ -1,144 +1,149 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { listRuns } from '../api';
+import { listRuns, deleteRun } from '../api';
 import type { RunSummary } from '../types';
-import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, ListFilter } from 'lucide-react';
+import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight } from 'lucide-react';
 
 export const RunList: React.FC = () => {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchRuns = async () => {
+    try {
+      const response = await listRuns();
+      const sortedRuns = response.runs.sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setRuns(sortedRuns);
+    } catch (err: any) {
+      console.error(err);
+      setError("Failed to load past runs.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchRuns = async () => {
-      try {
-        const response = await listRuns();
-        // Sort runs by created_at descending (newest first)
-        const sortedRuns = response.runs.sort(
-          (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-        setRuns(sortedRuns);
-      } catch (err: any) {
-        console.error(err);
-        setError("Failed to load past runs.");
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchRuns();
+    const interval = setInterval(fetchRuns, 5000);
+    return () => clearInterval(interval);
   }, []);
 
+  const handleDelete = async (runId: string) => {
+    if (!confirm('Delete this run?')) return;
+    try {
+      await deleteRun(runId);
+      await fetchRuns();
+    } catch (err: any) {
+      alert('Failed to delete: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const getStatusConfig = (status: string) => {
-    const config = {
-      created: { color: 'bg-slate-100 text-slate-700', icon: Clock },
-      running: { color: 'bg-blue-100 text-blue-700', icon: Activity },
-      waiting_for_review: { color: 'bg-warning/20 text-warning-800', icon: AlertCircle },
-      waiting_for_approval: { color: 'bg-danger/20 text-danger-800', icon: AlertCircle },
-      completed: { color: 'bg-success/20 text-success-800', icon: CheckCircle2 },
-      failed: { color: 'bg-danger/20 text-danger-800', icon: XCircle },
-      cancelled: { color: 'bg-slate-100 text-slate-700', icon: XCircle },
-      paused: { color: 'bg-warning/20 text-warning-800', icon: Clock }
+    const configs: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
+      created: { bg: 'bg-slate-500/20', text: 'text-slate-300', glow: '', icon: Clock },
+      running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
+      waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+      waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+      completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
+      failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
+      cancelled: { bg: 'bg-slate-500/20', text: 'text-slate-400', glow: '', icon: XCircle },
+      paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
     };
-    return config[status as keyof typeof config] || config.created;
+    return configs[status] || configs.created;
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
+      <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Past Runs</h1>
-          <p className="text-sm text-slate-500">View and manage all your workflow runs</p>
+          <h1 className="text-2xl font-bold text-white">Workflow Runs</h1>
+          <p className="text-sm text-text-secondary mt-1">View and manage all your workflow runs</p>
         </div>
-        <Link 
+        <Link
           to="/"
-          className="bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg px-4 py-2 transition-colors"
+          className="gradient-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-white text-sm"
         >
+          <Plus className="h-4 w-4" />
           New Run
         </Link>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center min-h-[40vh]">
-          <div className="h-10 w-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+          <div className="h-10 w-10 border-3 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : error ? (
-        <div className="p-8 bg-danger/10 border border-danger/30 rounded-lg text-danger text-center">
-          <AlertCircle className="h-10 w-10 mx-auto mb-4" />
-          <p>{error}</p>
+        <div className="p-8 glass-card rounded-2xl text-center">
+          <AlertCircle className="h-10 w-10 text-danger mx-auto mb-4" />
+          <p className="text-danger">{error}</p>
         </div>
       ) : runs.length === 0 ? (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-12 text-center">
-          <ListFilter className="h-12 w-12 text-slate-300 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-slate-800 mb-1">No runs found</h3>
-          <p className="text-slate-500 mb-6">You haven't started any workflow runs yet.</p>
-          <Link 
+        <div className="glass-card rounded-2xl p-16 text-center">
+          <Inbox className="h-14 w-14 text-text-muted mx-auto mb-4 opacity-50" />
+          <h3 className="text-lg font-semibold text-white mb-2">No runs yet</h3>
+          <p className="text-text-secondary mb-6 text-sm">Start your first workflow to see it here.</p>
+          <Link
             to="/"
-            className="inline-flex items-center justify-center bg-primary hover:bg-primary/90 text-primary-foreground font-medium rounded-lg px-6 py-2 transition-colors"
+            className="gradient-btn inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-white text-sm"
           >
+            <Plus className="h-4 w-4" />
             Start Your First Run
           </Link>
         </div>
       ) : (
-        <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-          <table className="min-w-full divide-y divide-slate-200">
-            <thead className="bg-slate-50">
-              <tr>
-                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Run ID
-                </th>
-                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Status
-                </th>
-                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Current Stage
-                </th>
-                <th scope="col" className="px-6 py-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Started
-                </th>
-                <th scope="col" className="px-6 py-4 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                  Action
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-slate-200">
-              {runs.map((run) => {
-                const config = getStatusConfig(run.status);
-                const StatusIcon = config.icon;
-                return (
-                  <tr key={run.run_id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-mono text-slate-900">{run.run_id}</div>
-                      {run.document_name && (
-                        <div className="text-xs text-slate-500 truncate max-w-[200px]" title={run.document_name}>
-                          {run.document_name}
-                        </div>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${config.color}`}>
-                        <StatusIcon className="h-3.5 w-3.5" />
-                        <span className="uppercase tracking-wider">{run.status.replace(/_/g, ' ')}</span>
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
-                      {run.current_stage || 'Not started'}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                      {new Date(run.created_at).toLocaleString()}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                      <Link 
-                        to={`/runs/${run.run_id}`}
-                        className="text-primary hover:text-primary/80"
+        <div className="space-y-3">
+          {runs.map((run) => {
+            const config = getStatusConfig(run.status);
+            const StatusIcon = config.icon;
+            const isTerminal = ['completed', 'failed', 'cancelled'].includes(run.status);
+            return (
+              <div
+                key={run.run_id}
+                className="glass-card rounded-xl p-4 hover:bg-white/[0.03] transition-all duration-200 group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border shrink-0 ${config.bg} ${config.text} ${config.glow}`}>
+                      <StatusIcon className="h-3 w-3" />
+                      <span className="uppercase tracking-wider">{run.status.replace(/_/g, ' ')}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-mono text-text-primary truncate">{run.run_id}</p>
+                      <div className="flex items-center gap-3 mt-0.5 text-xs text-text-muted">
+                        <span>{new Date(run.created_at).toLocaleString()}</span>
+                        {run.current_stage && (
+                          <>
+                            <span>•</span>
+                            <span className="text-text-secondary">{run.current_stage}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {isTerminal && (
+                      <button
+                        onClick={() => handleDelete(run.run_id)}
+                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        title="Delete run"
                       >
-                        View Dashboard &rarr;
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                    <Link
+                      to={`/runs/${run.run_id}`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary hover:text-primary-hover rounded-lg hover:bg-primary/10 transition-all"
+                    >
+                      Dashboard
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

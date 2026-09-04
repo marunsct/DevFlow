@@ -22,7 +22,7 @@ RUN pip install uv
 COPY pyproject.toml ./
 COPY src/ ./src/
 RUN uv pip install --system .
-RUN uv pip install --system langgraph-checkpoint-sqlite aiosqlite PyJWT bcrypt uvicorn python-multipart
+RUN uv pip install --system langgraph-checkpoint-sqlite aiosqlite PyJWT bcrypt uvicorn python-multipart pytest
 
 # Copy Built Frontend
 COPY --from=frontend-builder /app/langchain-ui/dist /app/langchain-ui/dist

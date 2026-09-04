@@ -118,6 +118,7 @@ export interface StartRunRequest {
   model_override?: string;
   artifact_directory?: string;
   allow_subdirectories?: boolean;
+  auto_approve?: boolean;
 }
 
 export interface CreateRunResponse {

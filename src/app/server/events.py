@@ -31,6 +31,7 @@ class RunEvent(BaseModel):
         "artifact",
         "review_request",
         "approval_request",
+        "approval_auto",
         "error",
         "complete",
     ] = Field(description="Type of the event.")

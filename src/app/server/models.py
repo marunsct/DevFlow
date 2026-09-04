@@ -40,6 +40,10 @@ class StartRunRequest(BaseModel):
         default=True,
         description="Whether the workflow should create subdirectories in the artifact directory.",
     )
+    auto_approve: bool = Field(
+        default=False,
+        description="If true, automatically approve all file write requests without pausing for user input.",
+    )
 
 
 class RunStage(BaseModel):

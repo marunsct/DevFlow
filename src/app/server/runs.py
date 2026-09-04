@@ -167,6 +167,7 @@ def create_runs_router(
             repository,
             review_policy=review_policy,
             reviewer=body.reviewer,
+            auto_approve=body.auto_approve,
         )
 
         return {"message": f"Run {run_id} started.", "status": "running"}

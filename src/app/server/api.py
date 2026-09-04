@@ -126,8 +126,16 @@ def create_app(
         async def serve_run():
             return FileResponse(frontend_dist / "index.html")
             
+        @application.get("/runs", tags=["ui"])
+        async def serve_runs():
+            return FileResponse(frontend_dist / "index.html")
+            
         @application.get("/login", tags=["ui"])
         async def serve_login():
+            return FileResponse(frontend_dist / "index.html")
+
+        @application.get("/settings", tags=["ui"])
+        async def serve_settings():
             return FileResponse(frontend_dist / "index.html")
 
         # Mount static assets

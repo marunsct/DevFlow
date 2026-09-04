@@ -9,6 +9,7 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./uploads:/app/uploads
+      - ./src:/app/src
       # Mount the user's home directory so artifact_directory paths work seamlessly
       - /home/arun:/home/arun
     environment:

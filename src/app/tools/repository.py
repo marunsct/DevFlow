@@ -238,28 +238,17 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
         RepositoryToolError if the target escapes the approved directory or the repo.
 
     Safety model:
-        The output directory is fixed to "docs/generated". Any path outside it is
+        The output directory is fixed to the repo root. Any path outside it is
         rejected. This ensures the workflow can produce artifacts without exposure to
         unrelated files.
     """
     root = _normalize_repo_root(repo_root)
-    artifact_root = (root / "docs" / "generated").resolve()
+    artifact_root = root.resolve()
 
-    # The approved output directory is already "docs/generated". We accept either
-    # a direct file name such as "new-note.md" or a path beginning with the
-    # generated folder, and normalize both to the same safe target.
     cleaned_path = Path(relative_path)
-    if cleaned_path.parts and cleaned_path.parts[0] == "generated":
-        cleaned_path = Path(*cleaned_path.parts[1:])
-
     target = (artifact_root / cleaned_path).resolve()
 
     if artifact_root not in target.parents and target != artifact_root:
-        raise RepositoryToolError(
-            f"Artifact path is outside the approved output directory: {relative_path}"
-        )
-
-    if not str(target).startswith(str(artifact_root)):
         raise RepositoryToolError(
             f"Artifact path is outside the approved output directory: {relative_path}"
         )

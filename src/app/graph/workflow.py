@@ -115,6 +115,10 @@ MAX_ARCHITECTURE_REVISIONS = 3
 """Bound how many times architecture review can send work back to the Principal
 Architect before the run is marked failed instead of looping forever."""
 
+MAX_MILESTONE_REVISIONS = 3
+"""Bound how many times milestone review can send work back to the Technical
+Lead before the run falls back to a human review instead of looping forever."""
+
 MAX_REMEDIATION_ATTEMPTS = 3
 """Bound one test-fix-retest passes one milestone gets; see `app.sprint`."""
 
@@ -216,6 +220,7 @@ class WorkflowGraphState(TypedDict, total=False):
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
+    milestone_revision_count: int
     sprint_plan: SprintPlanOutput
     milestone_plan: MilestonePlanOutput
     specialist_task_index: int
@@ -611,12 +616,7 @@ def build_workflow_graph(
             revision_count = state.get("architecture_revision_count", 0) + 1
             update["architecture_revision_count"] = revision_count
             if revision_count >= MAX_ARCHITECTURE_REVISIONS:
-                update["stage"] = "failed"
-                update["error"] = (
-                    f"Architecture review requested changes {revision_count} time(s), reaching the limit "
-                    f"of {MAX_ARCHITECTURE_REVISIONS} revisions. Escalating instead of looping; a human "
-                    "must intervene."
-                )
+                update["stage"] = "user_review_specification"
             else:
                 update["stage"] = "principal_architect"
         return update
@@ -792,10 +792,9 @@ def build_workflow_graph(
             )
         except RemediationLimitExceeded as exc:
             return {
-                "stage": "failed",
+                "stage": "user_review_sprint",
                 "remediation": cycle,
                 "test_round": test_round + 1,
-                "error": f"{exc}\n\n{build_defect_report(cycle)}",
             }
 
         base_update: dict[str, Any] = {
@@ -981,9 +980,17 @@ def build_workflow_graph(
                 f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}" 
                 for f in review.findings
             )
+            revision_count = state.get("milestone_revision_count", 0) + 1
+            if revision_count >= MAX_MILESTONE_REVISIONS:
+                return {
+                    "stage": "user_review_sprint",
+                    "milestone_revision_count": revision_count,
+                    "milestone_review": review,
+                }
             return {
                 "stage": "technical_lead",
                 "revision_comments": state.get("revision_comments", []) + [findings_text],
+                "milestone_revision_count": revision_count,
                 "milestone_review": review,
             }
         
@@ -1159,6 +1166,7 @@ __all__ = [
     "APPROVAL_PAUSE_PREFIX",
     "DEFAULT_RECURSION_LIMIT",
     "MAX_ARCHITECTURE_REVISIONS",
+    "MAX_MILESTONE_REVISIONS",
     "MAX_REMEDIATION_ATTEMPTS",
     "REVIEW_PAUSE_PREFIX",
     "SPECIFICATION_REVIEW",

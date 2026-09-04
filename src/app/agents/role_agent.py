@@ -58,11 +58,11 @@ def describe_artifact_write(repo_root: str, agent_name: str, stage: str):
         relative_path = args.get("relative_path", "<unknown path>")
         content = args.get("content", "")
         summary = content[:200] + ("..." if len(content) > 200 else "")
-        target = (Path(repo_root) / "docs" / "generated" / relative_path).resolve()
+        target = (Path(repo_root) / relative_path).resolve()
         risk_level = "medium (overwrites an existing file)" if target.exists() else "low (new file)"
         return (
             f"Agent: {agent_name} (stage: {stage})\n"
-            f"Proposed file path: docs/generated/{relative_path}\n"
+            f"Proposed file path: {relative_path}\n"
             f"Proposed content summary: {summary}\n"
             f"Risk level: {risk_level}\n"
             "Allowed decisions: approve, edit, reject"
@@ -124,10 +124,18 @@ def create_role_agent(
         *(extra_tools or []),
     ]
 
+    # Inject directory instructions dynamically so every agent knows the artifact layout rules.
+    full_system_prompt = (
+        f"{system_prompt}\n\n"
+        "CRITICAL DIRECTORY RULES:\n"
+        "- Write all document artifacts (intakes, specs, plans, reports) inside the `docs/` folder (e.g., `docs/spec.md`).\n"
+        "- Write all code artifacts inside the `<product_name>/` folder (based on the determined product name).\n"
+    )
+
     return create_deep_agent(
         model=selected_model,
         tools=tools,
-        system_prompt=system_prompt,
+        system_prompt=full_system_prompt,
         response_format=response_format,
         # See `app.agents.product_manager` for why this denies the built-in
         # filesystem tools rather than trying to "allow" real repo paths: the

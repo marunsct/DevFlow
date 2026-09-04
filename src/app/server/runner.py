@@ -111,6 +111,7 @@ class RunRecord:
     # Settings captured at start time.
     review_policy: dict[str, bool] = field(default_factory=dict)
     reviewer: str = "unassigned"
+    auto_approve: bool = False
 
     # Decision handoff: the runner waits on this event, and the API sets it
     # after populating `pending_decision_payload`.
@@ -172,6 +173,7 @@ class WorkflowRunner:
         *,
         review_policy: dict[str, bool] | None = None,
         reviewer: str = "unassigned",
+        auto_approve: bool = False,
     ) -> None:
         """Launch the workflow in a background task."""
         record = self.runs.get(run_id)
@@ -182,6 +184,7 @@ class WorkflowRunner:
 
         record.review_policy = review_policy or {}
         record.reviewer = reviewer
+        record.auto_approve = auto_approve
         record.status = "running"
         record.updated_at = datetime.now(timezone.utc).isoformat()
 
@@ -235,7 +238,7 @@ class WorkflowRunner:
                 message="Run was cancelled by user.",
             ),
         )
-        self.event_bus.close(run_id)
+        await self.event_bus.close(run_id)
 
     async def _run_loop(
         self,
@@ -300,41 +303,63 @@ class WorkflowRunner:
                             message=record.error or "Run completed successfully.",
                         ),
                     )
-                    self.event_bus.close(run_id)
+                    await self.event_bus.close(run_id)
                     return
 
                 if stage.startswith(APPROVAL_PAUSE_PREFIX):
-                    record.status = "waiting_for_approval"
-                    record.updated_at = datetime.now(timezone.utc).isoformat()
-
-                    # Publish approval request event.
                     approval = state.get("pending_approval")
-                    await self.event_bus.publish(
-                        run_id,
-                        RunEvent(
-                            run_id=run_id,
-                            sequence=self.event_bus.next_sequence(run_id),
-                            stage=stage,
-                            event_type="approval_request",
-                            message=f"Approval required: {approval.notes if approval else 'artifact write'}",
-                            metadata=redact_metadata({
-                                "artifact_path": approval.artifact_path if approval else "",
-                                "risk_level": approval.risk_level if approval else "unknown",
-                                "requested_by": approval.requested_by if approval else "",
-                            }),
-                        ),
-                    )
 
-                    # Wait for the decision.
-                    decision = await self._wait_for_decision(record)
-                    if decision is None:
-                        return  # cancelled
+                    if record.auto_approve:
+                        # Auto-approve: skip human interaction, approve immediately.
+                        await self.event_bus.publish(
+                            run_id,
+                            RunEvent(
+                                run_id=run_id,
+                                sequence=self.event_bus.next_sequence(run_id),
+                                stage=stage,
+                                event_type="approval_auto",
+                                message=f"Auto-approved: {approval.notes if approval else 'artifact write'}",
+                                metadata=redact_metadata({
+                                    "artifact_path": approval.artifact_path if approval else "",
+                                    "risk_level": approval.risk_level if approval else "unknown",
+                                    "requested_by": approval.requested_by if approval else "",
+                                }),
+                            ),
+                        )
+                        record.status = "running"
+                        record.updated_at = datetime.now(timezone.utc).isoformat()
+                        decision_payload = {"type": "approval", "decision": approve_write_decision()}
+                    else:
+                        record.status = "waiting_for_approval"
+                        record.updated_at = datetime.now(timezone.utc).isoformat()
+
+                        # Publish approval request event.
+                        await self.event_bus.publish(
+                            run_id,
+                            RunEvent(
+                                run_id=run_id,
+                                sequence=self.event_bus.next_sequence(run_id),
+                                stage=stage,
+                                event_type="approval_request",
+                                message=f"Approval required: {approval.notes if approval else 'artifact write'}",
+                                metadata=redact_metadata({
+                                    "artifact_path": approval.artifact_path if approval else "",
+                                    "risk_level": approval.risk_level if approval else "unknown",
+                                    "requested_by": approval.requested_by if approval else "",
+                                }),
+                            ),
+                        )
+
+                        # Wait for the decision.
+                        decision_payload = await self._wait_for_decision(record)
+                        if decision_payload is None:
+                            return  # cancelled
 
                     state = await asyncio.to_thread(
                         resume_pending_approval,
                         graph,
                         record.thread_id,
-                        decision["decision"],
+                        decision_payload["decision"],
                     )
                     record.state = state
                     self._update_record(record, state)
@@ -406,7 +431,7 @@ class WorkflowRunner:
                     message=f"Run failed: {record.error}",
                 ),
             )
-            self.event_bus.close(run_id)
+            await self.event_bus.close(run_id)
 
     async def _wait_for_decision(self, record: RunRecord) -> dict[str, Any] | None:
         """Block until the API submits a decision or the run is cancelled.

@@ -231,6 +231,7 @@ def create_specialist_agent(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
 ) -> Any:
     """Create one specialist role worker.
 
@@ -249,7 +250,7 @@ def create_specialist_agent(
         response_format=SpecialistOutput,
         model=model,
         checkpointer=checkpointer,
-        repo_root=repo_root,
+        repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         extra_tools=extra_tools,
     )
 

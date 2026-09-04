@@ -160,6 +160,7 @@ def create_principal_architect_agent(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
 ) -> Any:
     """Create the Principal Architect role worker."""
     return create_role_agent(
@@ -169,7 +170,7 @@ def create_principal_architect_agent(
         response_format=TechnicalSpecificationOutput,
         model=model,
         checkpointer=checkpointer,
-        repo_root=repo_root,
+        repo_root=repo_root, allow_subdirectories=allow_subdirectories,
     )
 
 

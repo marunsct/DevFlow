@@ -126,6 +126,7 @@ def create_tools_models_agent(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
 ) -> Any:
     """Create the Tools and Models Architect role worker.
 
@@ -139,7 +140,7 @@ def create_tools_models_agent(
         response_format=ToolsAndModelsOutput,
         model=model,
         checkpointer=checkpointer,
-        repo_root=repo_root,
+        repo_root=repo_root, allow_subdirectories=allow_subdirectories,
     )
 
 

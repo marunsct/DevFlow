@@ -26,7 +26,8 @@ If you add a new Pydantic model to `WorkflowGraphState`, add it to
 
 from __future__ import annotations
 
-from langgraph.checkpoint.memory import InMemorySaver
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
@@ -90,14 +91,25 @@ def build_serializer() -> JsonPlusSerializer:
     return JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINTED_TYPES))
 
 
-def build_checkpointer() -> InMemorySaver:
-    """Build the default in-memory checkpointer with the allowlist applied.
+# Create a global connection for the app lifecycle
+_DB_PATH = "checkpoints.sqlite"
+_conn = None
 
-    In-memory means a run survives only as long as the process. Step 8.1 of the
-    workflow plan replaces this with a durable checkpointer; the allowlist built
-    here is what that swap will reuse, which is why it lives in its own function.
+def get_connection() -> sqlite3.Connection:
+    global _conn
+    if _conn is None:
+        _conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+    return _conn
+
+
+def build_checkpointer() -> SqliteSaver:
+    """Build the durable SQLite checkpointer with the allowlist applied.
+
+    The state is saved to `checkpoints.sqlite` so workflow runs survive server restarts.
     """
-    return InMemorySaver(serde=build_serializer())
+    saver = SqliteSaver(get_connection(), serde=build_serializer())
+    saver.setup()
+    return saver
 
 
 __all__ = ["CHECKPOINTED_TYPES", "build_checkpointer", "build_serializer"]

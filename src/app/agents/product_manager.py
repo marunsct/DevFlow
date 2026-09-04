@@ -132,6 +132,7 @@ def create_product_manager_agent(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
 ) -> Any:
     """Create the Product Manager role worker using the Deep Agents runtime.
 
@@ -146,7 +147,7 @@ def create_product_manager_agent(
         response_format=ProductManagerOutput,
         model=model,
         checkpointer=checkpointer,
-        repo_root=repo_root,
+        repo_root=repo_root, allow_subdirectories=allow_subdirectories,
     )
 
 

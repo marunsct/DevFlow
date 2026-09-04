@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite import SqliteSaver
 from pydantic import BaseModel
 
 from app.models import build_default_chat_model
@@ -80,6 +80,7 @@ def create_role_agent(
     model: str | BaseChatModel | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
     extra_tools: list[BaseTool] | None = None,
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
@@ -101,6 +102,7 @@ def create_role_agent(
             paused run be resumed by a different agent object later.
         repo_root: optional repository root override, mainly for tests so they
             do not write into the real project's `docs/generated` directory.
+        allow_subdirectories: whether the agent can read files from subdirectories.
         extra_tools: additional read-only or narrow tools specific to this
             role (e.g. a validation-runner tool for the testing specialist).
 
@@ -117,7 +119,7 @@ def create_role_agent(
     selected_model = model if model is not None else build_default_chat_model()
 
     tools = [
-        *build_repository_read_tools(resolved_repo_root),
+        *build_repository_read_tools(resolved_repo_root, allow_subdirectories=allow_subdirectories),
         build_artifact_write_tool(resolved_repo_root),
         *(extra_tools or []),
     ]
@@ -142,7 +144,7 @@ def create_role_agent(
                 "description": describe_artifact_write(resolved_repo_root, name, stage),
             },
         },
-        checkpointer=checkpointer or InMemorySaver(),
+        checkpointer=checkpointer,
         name=name,
     )
 

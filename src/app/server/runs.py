@@ -14,7 +14,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, UploadFile
+from fastapi import APIRouter, HTTPException, UploadFile, Form
+from fastapi.responses import FileResponse
 
 from app.agents.approval import approve_write_decision, reject_write_decision
 from app.documents import DocumentReadError, read_document
@@ -68,28 +69,37 @@ def create_runs_router(
     # ------------------------------------------------------------------
 
     @runs.post("", response_model=CreateRunResponse, status_code=201)
-    async def create_run(file: UploadFile) -> CreateRunResponse:
-        """Upload a product document and create a new workflow run.
+    async def create_run(files: list[UploadFile]) -> CreateRunResponse:
+        """Upload product documents and create a new workflow run.
 
-        The server validates file type and size.  The document is stored
-        outside executable paths.  Returns a run ID and thread ID for
+        The server validates file type and size. The documents are stored
+        outside executable paths. Returns a run ID and thread ID for
         subsequent operations.
         """
-        if file.filename is None:
-            raise HTTPException(status_code=400, detail="No filename provided.")
+        if not files:
+            raise HTTPException(status_code=400, detail="No files provided.")
 
-        try:
-            result = validate_and_store(
-                file.file,
-                file.filename,
-                upload_dir,
-            )
-        except UnsupportedFileType as exc:
-            raise HTTPException(status_code=415, detail=str(exc))
-        except FileTooLarge as exc:
-            raise HTTPException(status_code=413, detail=str(exc))
-        except UploadError as exc:
-            raise HTTPException(status_code=400, detail=str(exc))
+        stored_paths = []
+        original_names = []
+
+        for file in files:
+            if file.filename is None:
+                raise HTTPException(status_code=400, detail="No filename provided.")
+
+            try:
+                result = validate_and_store(
+                    file.file,
+                    file.filename,
+                    upload_dir,
+                )
+                stored_paths.append(result.stored_path)
+                original_names.append(result.original_name)
+            except UnsupportedFileType as exc:
+                raise HTTPException(status_code=415, detail=str(exc))
+            except FileTooLarge as exc:
+                raise HTTPException(status_code=413, detail=str(exc))
+            except UploadError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
 
         run_id = f"run-{uuid.uuid4()}"
         thread_id = f"thread-{uuid.uuid4()}"
@@ -97,8 +107,8 @@ def create_runs_router(
         runner.register_run(
             run_id=run_id,
             thread_id=thread_id,
-            document_name=result.original_name,
-            document_path=result.stored_path,
+            document_names=original_names,
+            document_paths=stored_paths,
         )
 
         return CreateRunResponse(
@@ -128,9 +138,9 @@ def create_runs_router(
         body = body or StartRunRequest()
         review_policy = body.review_policy or {}
 
-        # Read the stored document.
+        # Read the stored documents.
         try:
-            document = read_document(record.document_path)
+            document = read_document(record.document_paths)
         except (FileNotFoundError, DocumentReadError) as exc:
             raise HTTPException(
                 status_code=500,
@@ -139,7 +149,12 @@ def create_runs_router(
 
         # Build repository context.
         try:
-            repository = build_repository_context(repo_root)
+            # Override repo_root if artifact_directory is provided.
+            target_repo_root = body.artifact_directory if body.artifact_directory else repo_root
+            repository = build_repository_context(
+                target_repo_root, 
+                allow_subdirectories=body.allow_subdirectories
+            )
         except RepositoryToolError as exc:
             raise HTTPException(
                 status_code=500,
@@ -169,7 +184,7 @@ def create_runs_router(
                 status=r.status,
                 current_stage=r.current_stage,
                 created_at=r.created_at,
-                document_name=r.document_name,
+                document_names=r.document_names,
             )
             for r in runner.runs.values()
         ]
@@ -231,6 +246,32 @@ def create_runs_router(
             artifacts.append({"key": name, "label": f"Specialist: {name}", "present": True})
 
         return {"run_id": run_id, "artifacts": artifacts}
+
+    @runs.get("/{run_id}/artifacts/download")
+    async def download_artifact(run_id: str, path: str) -> Any:
+        """Download a generated artifact by path."""
+        record = runner.runs.get(run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+
+        # Ensure path is absolute or resolve it against repo_root
+        import os
+        
+        # This is a bit tricky: the artifact_path in approval is usually absolute if we use temp dirs, 
+        # but if we used repo_root, it might be relative or absolute.
+        # It's safest to check if it exists directly first.
+        full_path = path
+        if not os.path.isabs(path) and runner.repo_root:
+            full_path = os.path.join(runner.repo_root, path)
+
+        if not os.path.exists(full_path):
+            raise HTTPException(status_code=404, detail=f"Artifact not found at {full_path}")
+
+        return FileResponse(
+            full_path, 
+            filename=os.path.basename(full_path),
+            media_type="application/octet-stream"
+        )
 
     @runs.get("/{run_id}/logs")
     async def get_logs(
@@ -352,13 +393,18 @@ def create_runs_router(
             point=review_point,
             artifact_id=review.artifact_id if review else "",
             revision=review.revision if review else 0,
-            comments=list(review.comments) if review and review.comments else [],
+            comments="\n".join(review.comments) if review and review.comments else None,
             available_actions=["approve", "changes", "skip"],
         )
         return {"pending": True, "run_id": run_id, "review": payload.model_dump()}
 
     @runs.post("/{run_id}/review")
-    async def submit_review(run_id: str, body: ReviewDecisionRequest) -> dict[str, str]:
+    async def submit_review(
+        run_id: str, 
+        action: str = Form(...),
+        comment: str = Form(None),
+        file: UploadFile = None,
+    ) -> dict[str, str]:
         """Submit a review decision."""
         record = runner.runs.get(run_id)
         if record is None:
@@ -369,22 +415,27 @@ def create_runs_router(
                 detail=f"Run {run_id} is not waiting for review (status: {record.status}).",
             )
 
-        if body.action == "approve":
-            decision = approve_decision(comment=body.comment)
-        elif body.action == "skip":
+        edited_content = None
+        if file:
+            content = await file.read()
+            edited_content = content.decode("utf-8")
+
+        if action == "approve":
+            decision = approve_decision(comment=comment, edited_content=edited_content)
+        elif action == "skip":
             decision = skip_decision()
-        elif body.action == "changes":
-            if not body.comment:
+        elif action == "changes":
+            if not comment and not edited_content:
                 raise HTTPException(
                     status_code=400,
-                    detail="A 'changes' decision requires a comment explaining what must change.",
+                    detail="A 'changes' decision requires a comment explaining what must change or an uploaded edited file.",
                 )
-            decision = request_changes_decision(body.comment)
+            decision = request_changes_decision(comment or "Changes requested via file upload.", edited_content=edited_content)
         else:
-            raise HTTPException(status_code=400, detail=f"Unknown action: {body.action}")
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
         await runner.submit_review(run_id, decision)
-        return {"message": f"Review decision '{body.action}' submitted for run {run_id}."}
+        return {"message": f"Review decision '{action}' submitted for run {run_id}."}
 
     return runs
 
@@ -399,6 +450,8 @@ def _build_status_response(record: RunRecord) -> RunStatusResponse:
             "status": review.status.value if hasattr(review.status, "value") else str(review.status),
             "reviewer": getattr(review, "reviewer", "unassigned"),
             "revision": getattr(review, "revision", 1),
+            "comments": "\n".join(getattr(review, "comments", [])) if getattr(review, "comments", None) else None,
+            "updated_at": getattr(review, "updated_at", record.updated_at),
         })
 
     remediation = None

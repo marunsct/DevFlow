@@ -143,9 +143,13 @@ SPECIFICATION_REVIEW = "technical_specification"
 SPRINT_REVIEW = "sprint"
 """Review point: a completed sprint/milestone (Step 3.3)."""
 
+PRODUCT_INTAKE_REVIEW = "product_intake"
+"""Review point: the refined product intake document."""
+
 _REVIEW_NODES = {
     SPECIFICATION_REVIEW: "user_review_specification",
     SPRINT_REVIEW: "user_review_sprint",
+    PRODUCT_INTAKE_REVIEW: "user_review_product_intake",
 }
 """Maps a review point to the node that owns its gate, so the entry router can
 re-enter the right node when a paused review is resumed."""
@@ -153,6 +157,7 @@ re-enter the right node when a paused review is resumed."""
 _REVIEW_STAGES = {
     SPECIFICATION_REVIEW: WorkflowStage.ARCHITECTURE,
     SPRINT_REVIEW: WorkflowStage.IMPLEMENTATION,
+    PRODUCT_INTAKE_REVIEW: WorkflowStage.INTAKE,
 }
 """Maps a review point to the `WorkflowStage` recorded on its `ReviewStatus`,
 so an auditor can tell which lifecycle stage a review decision belongs to."""
@@ -160,6 +165,7 @@ so an auditor can tell which lifecycle stage a review decision belongs to."""
 _NODE_NAMES = frozenset(
     {
         "product_manager",
+        "user_review_product_intake",
         "tools_models",
         "principal_architect",
         "architecture_review",
@@ -475,7 +481,12 @@ def _run_review_gate(
     if decision_type == "request_changes":
         # Carry the comment forward so the role agent revising the artifact
         # sees exactly what the human asked for.
-        update["revision_comments"] = [comment]
+        revision_comments = [comment]
+        if edited_content := decision.get("edited_content"):
+            revision_comments.append(
+                f"The user has uploaded a modified version of the artifact. Please update your structured output to perfectly reflect this modified version:\n\n<MODIFIED_ARTIFACT>\n{edited_content}\n</MODIFIED_ARTIFACT>"
+            )
+        update["revision_comments"] = revision_comments
     return update
 
 
@@ -484,6 +495,7 @@ def build_workflow_graph(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | None = None,
+    allow_subdirectories: bool = True,
 ):
     """Compile the top-level workflow graph wiring every role agent together.
 
@@ -496,9 +508,9 @@ def build_workflow_graph(
     shared_checkpointer = checkpointer or build_checkpointer()
 
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_intake_request(state["document"], state["repository"])
-        return _run_gated_agent(
+        update = _run_gated_agent(
             state,
             config,
             stage_name="product_manager",
@@ -507,9 +519,26 @@ def build_workflow_graph(
             output_key="product_intake",
             next_stage="tools_models",
         )
+        if _is_paused(update["stage"]):
+            return update
+        
+        # After product manager finishes, optionally route to review
+        next_stage = "user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) else "tools_models"
+        update["stage"] = next_stage
+        return update
+
+    def user_review_product_intake_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return _run_review_gate(
+            state,
+            config,
+            review_point=PRODUCT_INTAKE_REVIEW,
+            artifact_id="product-intake",
+            approved_next="tools_models",
+            changes_next="product_manager",
+        )
 
     def tools_models_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_tools_models_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_tools_models_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         intake_text = state["product_intake"].model_dump_json(indent=2)
         request = build_tools_models_request(intake_text, state["repository"])
         return _run_gated_agent(
@@ -523,7 +552,7 @@ def build_workflow_graph(
         )
 
     def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_principal_architect_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_principal_architect_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
 
         # A rejected specification must come back with the reasons attached,
         # otherwise the architect reproduces the version that was rejected.
@@ -556,7 +585,7 @@ def build_workflow_graph(
         return update
 
     def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_architecture_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_architecture_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = state["technical_specification"].model_dump_json(indent=2)
         request = build_architecture_review_request(spec_text, state["repository"].root_path)
         update = _run_gated_agent(
@@ -603,7 +632,7 @@ def build_workflow_graph(
         )
 
     def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = state["technical_specification"].model_dump_json(indent=2)
         request = build_sprint_planning_request(spec_text, state["repository"].root_path)
         return _run_gated_agent(
@@ -617,7 +646,7 @@ def build_workflow_graph(
         )
 
     def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_technical_lead_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_technical_lead_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         plan_text = state["sprint_plan"].model_dump_json(indent=2)
         first_goal = state["sprint_plan"].sprints[0].goal if state["sprint_plan"].sprints else ""
 
@@ -666,7 +695,7 @@ def build_workflow_graph(
             task = tasks[index]
             stage_name = f"specialist_{task.specialist_role}_{index}"
             agent = create_specialist_agent(
-                task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root
+                task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
             )
             request = build_specialist_task_request(
                 task.task_description, task.acceptance_criteria, state["repository"].root_path
@@ -714,7 +743,7 @@ def build_workflow_graph(
         changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
 
         agent = create_specialist_agent(
-            "testing", model=model, checkpointer=shared_checkpointer, repo_root=repo_root
+            "testing", model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         request = build_test_run_request(
             milestone.selected_sprint_goal, changed_files, state["repository"].root_path
@@ -835,7 +864,7 @@ def build_workflow_graph(
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
 
         agent = create_specialist_agent(
-            defect.owner, model=model, checkpointer=shared_checkpointer, repo_root=repo_root
+            defect.owner, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         request = build_defect_fix_request(
             defect.description,
@@ -882,7 +911,7 @@ def build_workflow_graph(
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
         changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
-        agent = create_security_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_security_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_security_review_request(
             changed_files,
             "Permissions: All tools have read/write access to the repository scope. Validation tools are restricted to a safe list of commands.",
@@ -919,7 +948,7 @@ def build_workflow_graph(
             for f in sec_review.findings:
                 defect_report += f"[{f.severity}] {f.category}: {f.description}\\nRemediation: {f.remediation}\\n\\n"
         
-        agent = create_milestone_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root)
+        agent = create_milestone_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_milestone_review_request(
             milestone.selected_sprint_goal,
             changed_files,
@@ -979,6 +1008,7 @@ def build_workflow_graph(
 
     graph = StateGraph(WorkflowGraphState)
     graph.add_node("product_manager", product_manager_node)
+    graph.add_node("user_review_product_intake", user_review_product_intake_node)
     graph.add_node("tools_models", tools_models_node)
     graph.add_node("principal_architect", principal_architect_node)
     graph.add_node("architecture_review", architecture_review_node)
@@ -1000,6 +1030,7 @@ def build_workflow_graph(
     routable_targets[END] = END
     for node_name in (
         "product_manager",
+        "user_review_product_intake",
         "tools_models",
         "principal_architect",
         "architecture_review",
@@ -1100,9 +1131,9 @@ def resume_pending_review(
     return graph.invoke({"pending_review_decision": decision}, config=_run_config(thread_id, recursion_limit))
 
 
-def approve_decision(comment: str | None = None) -> dict[str, Any]:
+def approve_decision(comment: str | None = None, edited_content: str | None = None) -> dict[str, Any]:
     """Build a review decision that accepts the current artifact revision."""
-    return {"type": "approve", "comment": comment}
+    return {"type": "approve", "comment": comment, "edited_content": edited_content}
 
 
 def skip_decision() -> dict[str, Any]:
@@ -1114,14 +1145,14 @@ def skip_decision() -> dict[str, Any]:
     return {"type": "skip"}
 
 
-def request_changes_decision(comment: str) -> dict[str, Any]:
+def request_changes_decision(comment: str, edited_content: str | None = None) -> dict[str, Any]:
     """Build a review decision that sends the artifact back for a new revision.
 
     `comment` is required and is handed to the role agent verbatim; a change
     request with no stated change would give the agent nothing to act on, so
     the gate rejects it rather than looping.
     """
-    return {"type": "request_changes", "comment": comment}
+    return {"type": "request_changes", "comment": comment, "edited_content": edited_content}
 
 
 __all__ = [

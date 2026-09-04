@@ -92,6 +92,7 @@ def create_scrum_master_agent(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
 ) -> Any:
     """Create the Scrum Master role worker."""
     return create_role_agent(
@@ -101,7 +102,7 @@ def create_scrum_master_agent(
         response_format=SprintPlanOutput,
         model=model,
         checkpointer=checkpointer,
-        repo_root=repo_root,
+        repo_root=repo_root, allow_subdirectories=allow_subdirectories,
     )
 
 

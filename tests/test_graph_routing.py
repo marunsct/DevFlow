@@ -109,6 +109,7 @@ class _FakeAgent:
         self.registry = registry
 
     def invoke(self, payload: Any, config: Any = None) -> dict[str, Any]:  # noqa: ARG002
+        print(f"INVOKING {self.role}")
         self.registry.requests[self.role].append(payload)
         script = self.registry.scripts.get(self.role)
         if not script:
@@ -257,7 +258,9 @@ def _repository(tmp_path: Any) -> RepositoryContext:
 
 def _graph() -> Any:
     """Compile the controller with a shared in-memory checkpointer."""
-    return build_workflow_graph(model="fake-model", checkpointer=build_checkpointer())
+    from langgraph.checkpoint.memory import MemorySaver
+    from app.graph.checkpointing import build_serializer
+    return build_workflow_graph(model="fake-model", checkpointer=MemorySaver(serde=build_serializer()))
 
 
 def _script_through_architecture(agents: ScriptedAgents, review: ArchitectureReviewOutput) -> None:
@@ -330,6 +333,8 @@ def test_happy_path_runs_every_stage_in_order_and_completes(agents: ScriptedAgen
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-happy")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["product_intake"].product_name == "Acme Scheduling"
     assert state["architecture_review"].status == "approved"
@@ -360,6 +365,8 @@ def test_rejected_architecture_returns_to_the_architect_with_the_findings(
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-reject")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["architecture_revision_count"] == 1
 
@@ -394,6 +401,8 @@ def test_specialist_dispatch_runs_every_delegated_task(agents: ScriptedAgents, t
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-dispatch")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert set(state["specialist_outputs"]) == {
         "specialist_backend_0",
@@ -453,6 +462,8 @@ def test_approving_a_write_resumes_the_run_to_completion(agents: ScriptedAgents,
 
     state = resume_pending_approval(graph, "run-approve", approve_write_decision())
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["pending_approval"] is None
     assert state["product_intake"].product_name == "Acme Scheduling"
@@ -472,6 +483,8 @@ def test_rejecting_a_write_still_lets_the_agent_finish_without_the_artifact(
     start_workflow(graph, _document(), _repository(tmp_path), "run-reject-write")
     state = resume_pending_approval(graph, "run-reject-write", reject_write_decision("Not accurate yet"))
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
 
 
@@ -494,6 +507,8 @@ def test_a_specialist_can_pause_for_approval_and_resume_on_the_right_task(
 
     state = resume_pending_approval(graph, "run-specialist-pause", approve_write_decision())
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert set(state["specialist_outputs"]) == {"specialist_backend_0", "specialist_testing_1"}
 
@@ -510,6 +525,8 @@ def test_no_review_policy_means_no_review_pause(agents: ScriptedAgents, tmp_path
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-no-review")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert not state.get("reviews")
 
@@ -553,6 +570,8 @@ def test_approving_the_specification_review_continues_to_sprint_planning(
     )
     state = resume_pending_review(graph, "run-spec-approve", approve_decision("Looks good"))
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["reviews"][SPECIFICATION_REVIEW].status is ReviewRequestStatus.APPROVED
     assert "Looks good" in state["reviews"][SPECIFICATION_REVIEW].comments
@@ -573,6 +592,8 @@ def test_skipping_a_review_is_recorded_as_skipped_not_approved(agents: ScriptedA
     )
     state = resume_pending_review(graph, "run-spec-skip", skip_decision())
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["reviews"][SPECIFICATION_REVIEW].status is ReviewRequestStatus.SKIPPED
 
@@ -695,6 +716,8 @@ def test_sprint_review_pauses_after_tests_pass_and_can_be_approved(
 
     state = resume_pending_review(graph, "run-sprint-review", approve_decision())
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["reviews"][SPRINT_REVIEW].status is ReviewRequestStatus.APPROVED
 
@@ -756,6 +779,8 @@ def test_a_clean_verification_round_records_passing_evidence(agents: ScriptedAge
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-clean-tests")
 
     cycle = state["remediation"]
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert cycle.attempt == 0
     assert [run.passed for run in cycle.test_runs] == [True]
@@ -788,6 +813,8 @@ def test_a_reported_failure_becomes_a_tracked_defect_routed_to_its_owner(
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-defect-loop")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
 
     cycle = state["remediation"]
@@ -826,6 +853,8 @@ def test_a_defect_is_routed_to_its_owner_not_to_the_reporter(agents: ScriptedAge
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-defect-owner")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["remediation"].defects[0].owner == "ui_ux"
     assert "Login button is unreachable" in agents.last_request_text("specialist_ui_ux")
@@ -878,6 +907,8 @@ def test_multiple_defects_are_each_routed_to_their_own_owner(agents: ScriptedAge
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-multi-defect")
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     cycle = state["remediation"]
     assert len(cycle.defects) == 3
@@ -913,6 +944,8 @@ def test_a_defect_fix_can_pause_for_approval_and_resume_on_the_same_defect(
 
     state = resume_pending_approval(graph, "run-fix-pause", approve_write_decision())
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
     assert state["remediation"].defects[0].status == "fixed"
 
@@ -937,6 +970,8 @@ def test_a_verification_round_can_pause_for_approval_and_resume(
 
     state = resume_pending_approval(graph, "run-test-pause", approve_write_decision())
 
+    if state["stage"] == "failed":
+        print("ERROR:", state.get("error", "Unknown error"))
     assert state["stage"] == "complete"
 
 

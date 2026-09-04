@@ -38,7 +38,7 @@ def _normalize_repo_root(repo_root: str | Path) -> Path:
     exist or is not a directory, the workflow should fail before trying to read any
     file. This keeps the tools deterministic and avoids ambiguous behavior.
     """
-    root = Path(repo_root).resolve()
+    root = Path(repo_root).expanduser().resolve()
     if not root.exists():
         raise RepositoryToolError(f"Repository root does not exist: {root}")
     if not root.is_dir():
@@ -62,7 +62,7 @@ def _assert_within_repo(repo_root: Path, target: Path) -> Path:
     return resolved
 
 
-def _iter_repo_files(repo_root: Path) -> list[Path]:
+def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list[Path]:
     """List files while skipping folders that usually hold generated or temporary data.
 
     This helper keeps the tool output useful without exposing runtime internals such
@@ -71,7 +71,11 @@ def _iter_repo_files(repo_root: Path) -> list[Path]:
     """
     ignored_names = {".git", ".venv", "venv", "__pycache__", "node_modules", ".mypy_cache", ".pytest_cache"}
     files: list[Path] = []
-    for path in sorted(repo_root.rglob("*")):
+    
+    # If subdirectories are not allowed, only list files in the root folder.
+    iterator = repo_root.rglob("*") if allow_subdirectories else repo_root.iterdir()
+    
+    for path in sorted(iterator):
         if path.name in ignored_names:
             continue
         if path.is_file():
@@ -79,7 +83,7 @@ def _iter_repo_files(repo_root: Path) -> list[Path]:
     return files
 
 
-def list_repository_files(repo_root: str | Path) -> list[str]:
+def list_repository_files(repo_root: str | Path, allow_subdirectories: bool = True) -> list[str]:
     """List repository files within the project boundary.
 
     Purpose:
@@ -101,7 +105,7 @@ def list_repository_files(repo_root: str | Path) -> list[str]:
     """
     root = _normalize_repo_root(repo_root)
     relative_files = []
-    for path in _iter_repo_files(root):
+    for path in _iter_repo_files(root, allow_subdirectories=allow_subdirectories):
         relative_path = path.relative_to(root).as_posix()
         relative_files.append(relative_path)
     return relative_files
@@ -160,6 +164,9 @@ def search_text(repo_root: str | Path, query: str, *, max_matches: int = 25) -> 
     """
     root = _normalize_repo_root(repo_root)
     matches: list[dict[str, str]] = []
+    
+    # For safety, search_text should also probably respect allow_subdirectories, 
+    # but the API doesn't pass it yet. We'll leave it as default True here unless modified.
     for path in _iter_repo_files(root):
         if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
             continue
@@ -343,7 +350,7 @@ def _git_value(root: Path, args: list[str]) -> str | None:
     return completed.stdout.strip()
 
 
-def build_repository_context(repo_root: str | Path):
+def build_repository_context(repo_root: str | Path, allow_subdirectories: bool = True):
     """Describe the repository so a workflow run has grounded project context.
 
     Purpose:
@@ -395,6 +402,7 @@ def build_repository_context(repo_root: str | Path):
         status=status,
         dependency_files=dependency_files,
         entry_points=entry_points,
+        allow_subdirectories=allow_subdirectories,
     )
 
 

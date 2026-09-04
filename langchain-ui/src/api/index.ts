@@ -3,7 +3,6 @@ import type {
   ApprovalDecisionRequest,
   CreateRunResponse,
   EventResponse,
-  ReviewDecisionRequest,
   RunListResponse,
   RunStatusResponse,
   StartRunRequest,
@@ -13,10 +12,33 @@ export const api = axios.create({
   baseURL: '/api',
 });
 
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      localStorage.removeItem('token');
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Run API
-export const createRun = async (file: File): Promise<CreateRunResponse> => {
+export const createRun = async (files: File[]): Promise<CreateRunResponse> => {
   const formData = new FormData();
-  formData.append('file', file);
+  files.forEach(file => {
+    formData.append('files', file);
+  });
   const response = await api.post<CreateRunResponse>('/runs', formData, {
     headers: {
       'Content-Type': 'multipart/form-data',
@@ -65,11 +87,24 @@ export const getPendingReview = async (runId: string) => {
 
 export const submitReview = async (
   runId: string,
-  payload: ReviewDecisionRequest
+  payload: { action: 'approve' | 'changes' | 'skip'; comment: string | null; file?: File }
 ): Promise<{ message: string }> => {
+  const formData = new FormData();
+  formData.append('action', payload.action);
+  if (payload.comment) {
+    formData.append('comment', payload.comment);
+  }
+  if (payload.file) {
+    formData.append('file', payload.file);
+  }
   const response = await api.post<{ message: string }>(
     `/runs/${runId}/review`,
-    payload
+    formData,
+    {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    }
   );
   return response.data;
 };

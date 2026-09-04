@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import type { ApprovalPayload } from '../types';
-import { ShieldAlert, CheckCircle, XCircle } from 'lucide-react';
+import { ShieldAlert, CheckCircle, XCircle, Download } from 'lucide-react';
 
 interface ApprovalGateProps {
+  runId: string;
   approval: ApprovalPayload;
   onSubmit: (action: 'approve' | 'reject', reason: string) => void;
   isLoading?: boolean;
 }
 
-export const ApprovalGate: React.FC<ApprovalGateProps> = ({ approval, onSubmit, isLoading }) => {
+export const ApprovalGate: React.FC<ApprovalGateProps> = ({ runId, approval, onSubmit, isLoading }) => {
   const [reason, setReason] = useState('');
 
   return (
@@ -18,11 +19,24 @@ export const ApprovalGate: React.FC<ApprovalGateProps> = ({ approval, onSubmit, 
         <h3 className="font-semibold text-danger-900">Write Approval Required</h3>
       </div>
       <div className="p-4">
-        <div className="mb-4 text-sm text-slate-700 bg-white/50 p-3 rounded border border-danger/20">
-          <p><strong>Artifact:</strong> <span className="font-mono">{approval.artifact_path}</span></p>
-          <p><strong>Stage:</strong> {approval.stage}</p>
-          <p><strong>Risk Level:</strong> <span className="uppercase font-semibold text-danger">{approval.risk_level}</span></p>
-          <p><strong>Requested By:</strong> {approval.requested_by}</p>
+        <div className="mb-4 text-sm text-slate-700 bg-white/50 p-3 rounded border border-danger/20 flex justify-between items-start">
+          <div>
+            <p><strong>Artifact:</strong> <span className="font-mono">{approval.artifact_path}</span></p>
+            <p><strong>Stage:</strong> {approval.stage}</p>
+            <p><strong>Risk Level:</strong> <span className="uppercase font-semibold text-danger">{approval.risk_level}</span></p>
+            <p><strong>Requested By:</strong> {approval.requested_by}</p>
+          </div>
+          {approval.artifact_path && (
+            <a 
+              href={`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(approval.artifact_path)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-danger/30 rounded text-danger hover:bg-danger/5 transition-colors"
+            >
+              <Download className="h-4 w-4" />
+              Download Artifact
+            </a>
+          )}
         </div>
 
         <div className="mb-4 text-sm">

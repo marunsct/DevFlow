@@ -1,6 +1,6 @@
 import React from 'react';
 import type { ArtifactInfo } from '../types';
-import { FileText, Download, Eye } from 'lucide-react';
+import { FileText, Eye } from 'lucide-react';
 
 interface ArtifactListProps {
   artifacts: ArtifactInfo[];

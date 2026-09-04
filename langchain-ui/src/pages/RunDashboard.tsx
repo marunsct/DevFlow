@@ -78,8 +78,8 @@ export const RunDashboard: React.FC = () => {
       const currentLogsLength = logsRef.current.length;
       const logsData = await getLogs(runId, 100, currentLogsLength);
       
-      if (logsData.events && logsData.events.length > 0) {
-        const newLogs = [...logsRef.current, ...logsData.events];
+      if (logsData.logs && logsData.logs.length > 0) {
+        const newLogs = [...logsRef.current, ...logsData.logs];
         logsRef.current = newLogs;
         setLogs(newLogs);
       }
@@ -101,11 +101,11 @@ export const RunDashboard: React.FC = () => {
     return () => clearInterval(interval);
   }, [runId]);
 
-  const handleReviewSubmit = async (action: 'approve' | 'changes' | 'skip', comment: string) => {
+  const handleReviewSubmit = async (action: 'approve' | 'changes' | 'skip', comment: string, file?: File) => {
     if (!runId) return;
     setActionLoading(true);
     try {
-      await submitReview(runId, { action, comment });
+      await submitReview(runId, { action, comment, file });
       setReview(null);
       await fetchState();
     } catch (err: any) {
@@ -214,6 +214,7 @@ export const RunDashboard: React.FC = () => {
       {/* Action Gates */}
       {review && (
         <ReviewPanel 
+          runId={runId!}
           review={review} 
           onSubmit={handleReviewSubmit}
           isLoading={actionLoading}
@@ -222,6 +223,7 @@ export const RunDashboard: React.FC = () => {
 
       {approval && (
         <ApprovalGate 
+          runId={runId!}
           approval={approval} 
           onSubmit={handleApprovalSubmit}
           isLoading={actionLoading}

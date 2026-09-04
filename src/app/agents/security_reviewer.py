@@ -103,6 +103,7 @@ def create_security_reviewer_agent(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
+        allow_subdirectories: bool = True,
 ) -> Any:
     """Create the Security Reviewer role worker."""
     return create_role_agent(
@@ -112,7 +113,7 @@ def create_security_reviewer_agent(
         response_format=SecurityReviewOutput,
         model=model,
         checkpointer=checkpointer,
-        repo_root=repo_root,
+        repo_root=repo_root, allow_subdirectories=allow_subdirectories,
     )
 
 

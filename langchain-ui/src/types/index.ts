@@ -105,14 +105,19 @@ export interface LogEntry {
 }
 
 export interface EventResponse {
-  events: LogEntry[];
-  cursor: number;
+  run_id: string;
+  total: number;
+  offset: number;
+  limit: number;
+  logs: LogEntry[];
 }
 
 export interface StartRunRequest {
   review_policy?: Record<string, boolean>;
   reviewer?: string;
   model_override?: string;
+  artifact_directory?: string;
+  allow_subdirectories?: boolean;
 }
 
 export interface CreateRunResponse {

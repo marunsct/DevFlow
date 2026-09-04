@@ -1,6 +1,6 @@
 import React from 'react';
 import { Outlet, Link } from 'react-router-dom';
-import { Home, Layers, Settings } from 'lucide-react';
+import { Home, Layers, List } from 'lucide-react';
 
 export const Header: React.FC = () => {
   return (
@@ -17,8 +17,8 @@ export const Header: React.FC = () => {
               Home
             </Link>
             <Link to="/runs" className="flex items-center gap-1.5 text-sm font-medium hover:text-success transition-colors">
-              <Settings className="h-4 w-4" />
-              Settings
+              <List className="h-4 w-4" />
+              Past Runs
             </Link>
           </nav>
         </div>

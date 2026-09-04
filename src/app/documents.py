@@ -97,47 +97,48 @@ def _ensure_supported_type(path: Path) -> Literal["markdown", "text", "docx"]:
 
 
 def read_document(
-    path: str | Path,
+    paths: str | Path | list[str | Path],
     *,
     max_file_size_bytes: int = 5 * 1024 * 1024,
     max_text_chars: int = 250_000,
 ) -> DocumentContent:
-    """Safely read a product document and return normalized text with metadata.
-
-    A beginner-friendly explanation: this function acts like a gatekeeper. It does
-    not allow arbitrary file reads or guesswork. Instead, it checks the document
-    type, confirms the file is a supported format, enforces a safe size limit, and
-    converts the content into normalized text. This keeps the workflow predictable
-    and prevents oversized or malformed inputs from reaching the model.
-
-    This entry point is intentionally deterministic: it validates the path, checks
-    the file size, selects the correct parser for the extension, and then applies
-    the content-length cap. If a document exceeds the configured limits, the
-    function raises an explicit exception instead of returning unbounded text to an
-    agent. This keeps the runtime predictable and testable.
-    """
-    file_path = Path(path)
-    if not file_path.exists():
-        raise FileNotFoundError(f"Document not found: {file_path}")
-    if not file_path.is_file():
-        raise DocumentReadError(f"Path is not a regular file: {file_path}")
-
-    source_type = _ensure_supported_type(file_path)
-    file_size_bytes = file_path.stat().st_size
-    if file_size_bytes > max_file_size_bytes:
-        raise DocumentSizeExceeded(
-            f"Document '{file_path.name}' is {file_size_bytes} bytes; the limit is {max_file_size_bytes} bytes."
-        )
-
-    if source_type == "markdown":
-        raw_text = _read_markdown(file_path)
-    elif source_type == "text":
-        raw_text = _read_text_file(file_path)
-    else:
-        raw_text = _read_docx_file(file_path)
-
-    normalized_text = _normalize_text(raw_text)
+    """Safely read product document(s) and return normalized text with metadata."""
+    if not isinstance(paths, list):
+        paths = [paths]
+        
+    combined_text = []
+    total_size = 0
+    source_types = set()
     truncated = False
+    
+    for path in paths:
+        file_path = Path(path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"Document not found: {file_path}")
+        if not file_path.is_file():
+            raise DocumentReadError(f"Path is not a regular file: {file_path}")
+
+        source_type = _ensure_supported_type(file_path)
+        source_types.add(source_type)
+        
+        file_size_bytes = file_path.stat().st_size
+        total_size += file_size_bytes
+        
+        if file_size_bytes > max_file_size_bytes:
+            raise DocumentSizeExceeded(
+                f"Document '{file_path.name}' is {file_size_bytes} bytes; the limit is {max_file_size_bytes} bytes."
+            )
+
+        if source_type == "markdown":
+            raw_text = _read_markdown(file_path)
+        elif source_type == "text":
+            raw_text = _read_text_file(file_path)
+        else:
+            raw_text = _read_docx_file(file_path)
+            
+        combined_text.append(f"--- Document: {file_path.name} ---\n{_normalize_text(raw_text)}")
+
+    normalized_text = "\n\n".join(combined_text)
     truncation_note = None
 
     if len(normalized_text) > max_text_chars:
@@ -147,13 +148,17 @@ def read_document(
         )
         normalized_text = normalized_text[:max_text_chars]
 
+    # Use the first source path for metadata representation or a comma-separated list
+    primary_source_path = str(paths[0]) if len(paths) == 1 else ", ".join([Path(p).name for p in paths])
+    primary_source_type = list(source_types)[0] if len(source_types) == 1 else "markdown"
+
     return DocumentContent(
-        source_path=str(file_path),
-        source_type=source_type,
+        source_path=primary_source_path,
+        source_type=primary_source_type, # type: ignore
         text=normalized_text,
         truncated=truncated,
         truncation_note=truncation_note,
-        file_size_bytes=file_size_bytes,
+        file_size_bytes=total_size,
     )
 
 

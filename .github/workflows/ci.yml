@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 20
+
+    - name: Build Frontend
+      working-directory: ./langchain-ui
+      run: |
+        npm ci
+        npm run build
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.12"
+
+    - name: Install uv and backend dependencies
+      run: |
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        $HOME/.cargo/bin/uv pip install --system -e .
+        $HOME/.cargo/bin/uv pip install --system pytest langgraph-checkpoint-sqlite aiosqlite PyJWT bcrypt uvicorn python-multipart
+
+    - name: Run Backend Tests
+      run: |
+        pytest

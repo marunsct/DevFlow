@@ -32,6 +32,14 @@ class StartRunRequest(BaseModel):
         default=None,
         description="Optional model override for the LLM to use.",
     )
+    artifact_directory: str | None = Field(
+        default=None,
+        description="Optional directory path on the server where artifacts should be written.",
+    )
+    allow_subdirectories: bool = Field(
+        default=True,
+        description="Whether the workflow should create subdirectories in the artifact directory.",
+    )
 
 
 class RunStage(BaseModel):
@@ -116,7 +124,7 @@ class RunSummary(BaseModel):
     status: str = Field(description="Current overarching status of the run.")
     current_stage: str | None = Field(default=None, description="The currently active stage.")
     created_at: datetime = Field(description="Timestamp when the run was created.")
-    document_name: str | None = Field(default=None, description="Name of the document associated with the run.")
+    document_names: list[str] = Field(default_factory=list, description="Names of the documents associated with the run.")
 
 
 class RunListResponse(BaseModel):

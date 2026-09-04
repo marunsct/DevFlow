@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./uploads:/app/uploads
+      # Mount the user's home directory so artifact_directory paths work seamlessly
+      - /home/arun:/home/arun
+    environment:
+      # Use the host's LM Studio server instead of container's localhost
+      - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+      - OPENAI_API_KEY=lm-studio
+      - OPENAI_MODEL=openai/gpt-oss-20b
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WORKFLOW_UPLOAD_DIR=/app/uploads
+      - PYTHONPATH=/app/src

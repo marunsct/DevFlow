@@ -143,6 +143,14 @@ class RepositoryContext(BaseModel):
             "as stable."
         ),
     )
+    allow_subdirectories: bool = Field(
+        default=True,
+        description=(
+            "Purpose: whether agents are allowed to inspect and modify subdirectories of the repository. "
+            "Producer: UI toggle. Consumer: repository tools. Failure meaning: agents may operate "
+            "outside the intended scope."
+        ),
+    )
     dependency_files: list[str] = Field(
         default_factory=list,
         description=(

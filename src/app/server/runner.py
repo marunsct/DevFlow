@@ -98,8 +98,8 @@ class RunRecord:
 
     run_id: str
     thread_id: str
-    document_name: str
-    document_path: str
+    document_names: list[str]
+    document_paths: list[str]
     status: str = "created"
     current_stage: str = ""
     stage_meaning: str = ""
@@ -144,27 +144,22 @@ class WorkflowRunner:
         self.model = model
         self.repo_root = repo_root
         self.runs: dict[str, RunRecord] = {}
-        self._graph: Any = None
 
-    def _get_graph(self) -> Any:
-        """Lazily compile the workflow graph once per runner lifetime."""
-        if self._graph is None:
-            self._graph = build_workflow_graph(model=self.model, repo_root=self.repo_root)
-        return self._graph
+
 
     def register_run(
         self,
         run_id: str,
         thread_id: str,
-        document_name: str,
-        document_path: str,
+        document_names: list[str],
+        document_paths: list[str],
     ) -> RunRecord:
         """Register a new run without starting it."""
         record = RunRecord(
             run_id=run_id,
             thread_id=thread_id,
-            document_name=document_name,
-            document_path=document_path,
+            document_names=document_names,
+            document_paths=document_paths,
         )
         self.runs[run_id] = record
         return record
@@ -253,7 +248,11 @@ class WorkflowRunner:
         This mirrors the loop in ``main.py`` but runs asynchronously and
         hands off decisions via ``asyncio.Event`` instead of stdin prompts.
         """
-        graph = self._get_graph()
+        graph = build_workflow_graph(
+            model=self.model,
+            repo_root=repository.root_path,
+            allow_subdirectories=repository.allow_subdirectories
+        )
         run_id = record.run_id
 
         try:

@@ -25,7 +25,7 @@ from app.tools.repository import (
 )
 
 
-def build_repository_read_tools(repo_root: str) -> list[BaseTool]:
+def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = True) -> list[BaseTool]:
     """Return read-only repository tools bound to a fixed repository root.
 
     Binding `repo_root` in a closure (instead of accepting it as a tool
@@ -41,7 +41,7 @@ def build_repository_read_tools(repo_root: str) -> list[BaseTool]:
         drafting product or architecture conclusions.
         """
         return {
-            "files": list_repository_files(repo_root),
+            "files": list_repository_files(repo_root, allow_subdirectories=allow_subdirectories),
             "dependency_metadata": read_dependency_metadata(repo_root),
             "relevant_matches": search_text(
                 repo_root,

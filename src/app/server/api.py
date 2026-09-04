@@ -101,42 +101,37 @@ def create_app(
     runs_router = create_runs_router(runner, event_bus, effective_upload_dir, effective_repo_root)
     progress_router = create_progress_router(runner, event_bus)
 
-    application.include_router(runs_router)
-    application.include_router(progress_router, prefix="/api/runs", tags=["progress"])
+    from fastapi import Depends
+    from app.server.auth import auth_router, get_current_active_user
+
+    application.include_router(auth_router)
+    application.include_router(runs_router, dependencies=[Depends(get_current_active_user)])
+    application.include_router(progress_router, prefix="/api/runs", tags=["progress"], dependencies=[Depends(get_current_active_user)])
 
     # Health check.
     @application.get("/api/health", tags=["health"])
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
-    # Try to mount templates if jinja2 is available and the templates dir exists.
-    templates_dir = Path(__file__).parent / "templates"
-    if templates_dir.is_dir():
-        try:
-            from fastapi.templating import Jinja2Templates
+    # Serve React Frontend if it exists
+    frontend_dist = Path(__file__).resolve().parents[3] / "langchain-ui" / "dist"
+    if frontend_dist.is_dir():
+        from fastapi.responses import FileResponse
+        
+        @application.get("/", tags=["ui"])
+        async def serve_index():
+            return FileResponse(frontend_dist / "index.html")
+            
+        @application.get("/runs/{run_id}", tags=["ui"])
+        async def serve_run():
+            return FileResponse(frontend_dist / "index.html")
+            
+        @application.get("/login", tags=["ui"])
+        async def serve_login():
+            return FileResponse(frontend_dist / "index.html")
 
-            templates = Jinja2Templates(directory=str(templates_dir))
-
-            @application.get("/", tags=["ui"])
-            async def index(request: Request) -> Any:
-                return templates.TemplateResponse(request, "index.html")
-
-            @application.get("/runs/{run_id}", tags=["ui"])
-            async def run_view(request: Request, run_id: str) -> Any:
-                record = runner.runs.get(run_id)
-                if record is None:
-                    return templates.TemplateResponse(
-                        request,
-                        "index.html",
-                        {"error": f"Run {run_id} not found."},
-                    )
-                return templates.TemplateResponse(
-                    request,
-                    "run.html",
-                    {"run_id": run_id, "record": record},
-                )
-        except ImportError:
-            pass  # Jinja2 not installed, skip template routes.
+        # Mount static assets
+        application.mount("/", StaticFiles(directory=str(frontend_dist)), name="static")
 
     return application
 

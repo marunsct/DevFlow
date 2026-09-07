@@ -36,6 +36,7 @@ from app.graph.workflow import (
 )
 from app.server.events import EventBus, RunEvent, redact_metadata
 from app.state import RepositoryContext
+from app.tracing import is_tracing_enabled, trace_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -140,11 +141,18 @@ class WorkflowRunner:
         *,
         model: str | None = None,
         repo_root: str | None = None,
+        run_store: Any | None = None,
     ) -> None:
         self.event_bus = event_bus
         self.model = model
         self.repo_root = repo_root
+        self.run_store = run_store
         self.runs: dict[str, RunRecord] = {}
+
+        # Restore persisted run records on startup.
+        if self.run_store is not None:
+            for record in self.run_store.list_all():
+                self.runs[record.run_id] = record
 
 
 
@@ -163,6 +171,7 @@ class WorkflowRunner:
             document_paths=document_paths,
         )
         self.runs[run_id] = record
+        self._persist(record)
         return record
 
     async def start_run(
@@ -187,6 +196,7 @@ class WorkflowRunner:
         record.auto_approve = auto_approve
         record.status = "running"
         record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
 
         record._task = asyncio.create_task(
             self._run_loop(record, document, repository),
@@ -228,6 +238,7 @@ class WorkflowRunner:
 
         record.status = "cancelled"
         record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
         await self.event_bus.publish(
             run_id,
             RunEvent(
@@ -257,6 +268,14 @@ class WorkflowRunner:
             allow_subdirectories=repository.allow_subdirectories
         )
         run_id = record.run_id
+
+        # Build tracing metadata if LangSmith is enabled.
+        trace_meta = trace_metadata(
+            run_id=run_id,
+            stage="start",
+            role="controller",
+            thread_id=record.thread_id,
+        ) if is_tracing_enabled() else {}
 
         try:
             # First invoke.
@@ -292,6 +311,7 @@ class WorkflowRunner:
                     record.status = "completed" if stage == "complete" else "failed"
                     record.error = state.get("error")
                     record.updated_at = datetime.now(timezone.utc).isoformat()
+                    self._persist(record)
                     event_type = "complete" if stage == "complete" else "error"
                     await self.event_bus.publish(
                         run_id,
@@ -411,15 +431,18 @@ class WorkflowRunner:
                 record.status = "failed"
                 record.error = f"Stopped after {MAX_GATES} gates without reaching a terminal stage."
                 record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
 
         except asyncio.CancelledError:
             record.status = "cancelled"
             record.updated_at = datetime.now(timezone.utc).isoformat()
+            self._persist(record)
             logger.info("Run %s was cancelled", run_id)
         except Exception:
             record.status = "failed"
             record.error = traceback.format_exc()
             record.updated_at = datetime.now(timezone.utc).isoformat()
+            self._persist(record)
             logger.exception("Run %s failed with an unhandled exception", run_id)
             await self.event_bus.publish(
                 run_id,
@@ -459,6 +482,12 @@ class WorkflowRunner:
         record.status = _api_status(stage)
         record.error = state.get("error")
         record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+
+    def _persist(self, record: RunRecord) -> None:
+        """Persist a run record to the store, if one is configured."""
+        if self.run_store is not None:
+            self.run_store.save(record)
 
 
 __all__ = [

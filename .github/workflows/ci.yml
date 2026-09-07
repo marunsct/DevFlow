@@ -2,39 +2,75 @@ name: CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
   pull_request:
-    branches: [ "main" ]
+    branches: [main]
 
 jobs:
-  build-and-test:
+  backend:
+    name: Python Backend
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Set up Node.js
-      uses: actions/setup-node@v3
-      with:
-        node-version: 20
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-    - name: Build Frontend
-      working-directory: ./langchain-ui
-      run: |
-        npm ci
-        npm run build
+      - name: Install uv
+        run: pip install uv
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          uv pip install --system ".[test]"
+          uv pip install --system langgraph-checkpoint-sqlite aiosqlite PyJWT bcrypt uvicorn python-multipart sse-starlette
 
-    - name: Install uv and backend dependencies
-      run: |
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        $HOME/.cargo/bin/uv pip install --system -e .
-        $HOME/.cargo/bin/uv pip install --system pytest langgraph-checkpoint-sqlite aiosqlite PyJWT bcrypt uvicorn python-multipart
+      - name: Compile check (new files)
+        run: |
+          python -m py_compile src/app/server/run_store.py
+          python -m py_compile src/app/server/runner.py
+          python -m py_compile src/app/server/api.py
+          python -m py_compile src/app/evaluation/evaluators.py
 
-    - name: Run Backend Tests
-      run: |
-        pytest
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+        env:
+          PYTHONPATH: src
+          OPENAI_API_KEY: "test-key"
+          OPENAI_BASE_URL: "http://localhost:1234/v1"
+
+  frontend:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: langchain-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: langchain-ui/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx tsc -b
+
+      - name: Build
+        run: npm run build
+
+  docker:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t langchain-app:ci .

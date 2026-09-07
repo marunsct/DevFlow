@@ -63,8 +63,10 @@ def create_app(
     configure_tracing(DummySettings())
 
     # Shared state.
+    from app.server.run_store import RunStore
+    run_store = RunStore()
     event_bus = EventBus()
-    runner = WorkflowRunner(event_bus, model=model, repo_root=effective_repo_root)
+    runner = WorkflowRunner(event_bus, model=model, repo_root=effective_repo_root, run_store=run_store)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

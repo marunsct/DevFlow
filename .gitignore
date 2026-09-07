@@ -4,4 +4,6 @@
 !.env.example
 __pycache__/
 *.egg-info/
+*.sqlite
 .agents/
+uploads/

@@ -324,6 +324,8 @@ def create_runs_router(
             )
 
         del runner.runs[run_id]
+        if runner.run_store is not None:
+            runner.run_store.delete(run_id)
         return {"message": f"Run {run_id} deleted."}
 
     # ------------------------------------------------------------------

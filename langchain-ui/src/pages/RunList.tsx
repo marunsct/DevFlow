@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { listRuns, deleteRun } from '../api';
+import { Link, useNavigate } from 'react-router-dom';
+import { listRuns, deleteRun, cloneRun, resumeRun } from '../api';
 import type { RunSummary } from '../types';
-import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight } from 'lucide-react';
+import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy } from 'lucide-react';
 
 export const RunList: React.FC = () => {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const fetchRuns = async () => {
     try {
@@ -37,6 +38,24 @@ export const RunList: React.FC = () => {
       await fetchRuns();
     } catch (err: any) {
       alert('Failed to delete: ' + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleClone = async (runId: string) => {
+    try {
+      const clonedRun = await cloneRun(runId);
+      navigate(`/runs/${clonedRun.run_id}`);
+    } catch (err: any) {
+      alert("Failed to clone: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleResume = async (runId: string) => {
+    try {
+      await resumeRun(runId);
+      await fetchRuns();
+    } catch (err: any) {
+      alert("Failed to resume: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -132,6 +151,22 @@ export const RunList: React.FC = () => {
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
+                    {run.status === 'failed' && (
+                      <button
+                        onClick={() => handleResume(run.run_id)}
+                        className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        title="Resume run"
+                      >
+                        <Activity className="h-4 w-4" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleClone(run.run_id)}
+                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      title="Clone run"
+                    >
+                      <Copy className="h-4 w-4" />
+                    </button>
                     <Link
                       to={`/runs/${run.run_id}`}
                       className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary hover:text-primary-hover rounded-lg hover:bg-primary/10 transition-all"

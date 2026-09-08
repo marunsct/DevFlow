@@ -76,10 +76,10 @@ def test_read_dependency_metadata_reads_project_file(repo_root: Path) -> None:
 
 
 def test_write_approved_artifact_only_allows_in_artifact_directory(repo_root: Path) -> None:
-    result = write_approved_artifact(repo_root, "generated/new-note.md", "hello from artifact\n")
+    result = write_approved_artifact(repo_root, "new-note.md", "hello from artifact\n")
 
-    assert result["path"].endswith("generated/new-note.md")
-    assert (repo_root / "docs/generated/new-note.md").read_text(encoding="utf-8") == "hello from artifact\n"
+    assert result["path"].endswith("new-note.md")
+    assert (repo_root / "new-note.md").read_text(encoding="utf-8") == "hello from artifact\n"
 
     with pytest.raises(RepositoryToolError):
         write_approved_artifact(repo_root, "../not-allowed.txt", "bad")

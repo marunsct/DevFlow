@@ -41,6 +41,7 @@ agent (via `resume_with_decision`) instead of restarting it.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, TypedDict
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -222,6 +223,7 @@ class WorkflowGraphState(TypedDict, total=False):
     architecture_revision_count: int
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
+    current_sprint_index: int
     milestone_plan: MilestonePlanOutput
     specialist_task_index: int
     specialist_outputs: dict[str, SpecialistOutput]
@@ -314,12 +316,17 @@ def _run_gated_agent(
     instance as the outer graph.
     """
     outer_thread_id = config["configurable"]["thread_id"]
-    inner_thread_id = f"{outer_thread_id}:{stage_name}"
 
     pending_decision = state.get("pending_decision")
     if pending_decision is not None:
+        inner_thread_id = state.get("pending_inner_thread_id")
+        if not inner_thread_id:
+            inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         result = resume_with_decision(agent, inner_thread_id, pending_decision)
     else:
+        # Append a UUID to force a fresh context window for new attempts.
+        # This prevents the LLM from drowning in the message history of previous failed attempts.
+        inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         result = agent.invoke(initial_request, config={"configurable": {"thread_id": inner_thread_id}})
 
     if result.get("__interrupt__"):
@@ -333,8 +340,15 @@ def _run_gated_agent(
             "pending_decision": None,
         }
 
+    structured_response = result.get("structured_response")
+    if structured_response is None:
+        raise ValueError(
+            f"Agent '{stage_name}' failed to produce a structured response. "
+            "This often happens if the context limit or max token limit was reached."
+        )
+
     return {
-        output_key: result["structured_response"],
+        output_key: structured_response,
         "stage": next_stage,
         "pending_approval": None,
         "pending_inner_thread_id": None,
@@ -501,6 +515,7 @@ def build_workflow_graph(
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | None = None,
     allow_subdirectories: bool = True,
+    model_overrides: dict[str, str | None] | None = None,
 ):
     """Compile the top-level workflow graph wiring every role agent together.
 
@@ -511,6 +526,27 @@ def build_workflow_graph(
     one in-memory store.
     """
     shared_checkpointer = checkpointer or build_checkpointer()
+    
+    if model_overrides:
+        import os
+        from app.config import load_settings
+        from app.models import build_default_chat_model
+        
+        base_env = dict(os.environ)
+        mapping = {
+            "llm_provider": "LLM_PROVIDER",
+            "openai_base_url": "OPENAI_BASE_URL",
+            "openai_api_key": "OPENAI_API_KEY",
+            "anthropic_api_key": "ANTHROPIC_API_KEY",
+            "google_api_key": "GOOGLE_API_KEY",
+            "model_name": "OPENAI_MODEL",
+        }
+        for k, v in model_overrides.items():
+            if v:
+                base_env[mapping[k]] = v
+                
+        settings = load_settings(base_env)
+        model = build_default_chat_model(settings)
 
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
@@ -565,13 +601,19 @@ def build_workflow_graph(
         previous_specification = state.get("technical_specification")
         if required_changes and previous_specification is not None:
             request = build_architecture_revision_request(
-                previous_specification.model_dump_json(indent=2), required_changes
+                previous_specification_text=previous_specification.model_dump_json(indent=2),
+                required_changes=required_changes,
+                product_intake_text=state["product_intake"].model_dump_json(indent=2),
+                tools_and_models_text=state["tools_and_models"].model_dump_json(indent=2),
+                repository=state["repository"],
+                document=state["document"],
             )
         else:
             request = build_architecture_request(
                 state["product_intake"].model_dump_json(indent=2),
                 state["tools_and_models"].model_dump_json(indent=2),
                 state["repository"],
+                state["document"],
             )
 
         update = _run_gated_agent(
@@ -616,7 +658,8 @@ def build_workflow_graph(
             revision_count = state.get("architecture_revision_count", 0) + 1
             update["architecture_revision_count"] = revision_count
             if revision_count >= MAX_ARCHITECTURE_REVISIONS:
-                update["stage"] = "user_review_specification"
+                update["stage"] = "failed"
+                update["error"] = f"Architecture review rejected after reaching the limit of {MAX_ARCHITECTURE_REVISIONS} revisions."
             else:
                 update["stage"] = "principal_architect"
         return update
@@ -635,7 +678,7 @@ def build_workflow_graph(
         agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = state["technical_specification"].model_dump_json(indent=2)
         request = build_sprint_planning_request(spec_text, state["repository"].root_path)
-        return _run_gated_agent(
+        update = _run_gated_agent(
             state,
             config,
             stage_name="scrum_master",
@@ -644,11 +687,16 @@ def build_workflow_graph(
             output_key="sprint_plan",
             next_stage="technical_lead",
         )
+        if not _is_paused(update["stage"]):
+            update["current_sprint_index"] = 0
+        return update
 
     def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_technical_lead_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         plan_text = state["sprint_plan"].model_dump_json(indent=2)
-        first_goal = state["sprint_plan"].sprints[0].goal if state["sprint_plan"].sprints else ""
+        sprint_index = state.get("current_sprint_index", 0)
+        sprints = state["sprint_plan"].sprints
+        current_goal = sprints[sprint_index].goal if sprints and sprint_index < len(sprints) else ""
 
         # A sprint review that requested changes re-enters here. Reuse the
         # shared revision prompt so the lead sees its previous milestone plan
@@ -667,7 +715,7 @@ def build_workflow_graph(
                 ]
             }
         else:
-            request = build_milestone_planning_request(plan_text, first_goal, state["repository"].root_path)
+            request = build_milestone_planning_request(plan_text, current_goal, state["repository"].root_path)
         update = _run_gated_agent(
             state,
             config,
@@ -994,18 +1042,46 @@ def build_workflow_graph(
                 "milestone_review": review,
             }
         
-        next_stage = "user_review_sprint" if _review_enabled(state, SPRINT_REVIEW) else "complete"
+        sprint_index = state.get("current_sprint_index", 0)
+        sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
+        has_more_sprints = sprint_index < len(sprints) - 1
+
+        if _review_enabled(state, SPRINT_REVIEW):
+            next_stage = "user_review_sprint"
+        elif has_more_sprints:
+            next_stage = "sprint_advance"
+        else:
+            next_stage = "complete"
+
         return {"stage": next_stage, "milestone_review": review}
 
     def user_review_sprint_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        sprint_index = state.get("current_sprint_index", 0)
+        sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
+        has_more_sprints = sprint_index < len(sprints) - 1
+        
         return _run_review_gate(
             state,
             config,
             review_point=SPRINT_REVIEW,
             artifact_id="sprint-milestone",
-            approved_next="complete",
+            approved_next="sprint_advance" if has_more_sprints else "complete",
             changes_next="technical_lead",
         )
+
+    def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return {
+            "stage": "technical_lead",
+            "current_sprint_index": state.get("current_sprint_index", 0) + 1,
+            # clear previous sprint's milestone state so it doesn't pollute the next sprint
+            "milestone_plan": None,
+            "specialist_outputs": {},
+            "remediation": None,
+            "defect_cursor": 0,
+            "test_round": 0,
+            "revision_comments": [],
+            "milestone_revision_count": 0,
+        }
 
     def complete_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
         return {"stage": "complete"}
@@ -1014,20 +1090,30 @@ def build_workflow_graph(
         return {"stage": "failed"}
 
     graph = StateGraph(WorkflowGraphState)
-    graph.add_node("product_manager", product_manager_node)
+    from langgraph.pregel import RetryPolicy
+    
+    agent_retry_policy = RetryPolicy(
+        initial_interval=2.0,
+        backoff_factor=2.0,
+        max_interval=30.0,
+        max_attempts=3,
+    )
+
+    graph.add_node("product_manager", product_manager_node, retry=agent_retry_policy)
     graph.add_node("user_review_product_intake", user_review_product_intake_node)
-    graph.add_node("tools_models", tools_models_node)
-    graph.add_node("principal_architect", principal_architect_node)
-    graph.add_node("architecture_review", architecture_review_node)
+    graph.add_node("tools_models", tools_models_node, retry=agent_retry_policy)
+    graph.add_node("principal_architect", principal_architect_node, retry=agent_retry_policy)
+    graph.add_node("architecture_review", architecture_review_node, retry=agent_retry_policy)
     graph.add_node("user_review_specification", user_review_specification_node)
-    graph.add_node("scrum_master", scrum_master_node)
-    graph.add_node("technical_lead", technical_lead_node)
-    graph.add_node("specialist_dispatch", specialist_dispatch_node)
-    graph.add_node("test_and_triage", test_and_triage_node)
-    graph.add_node("defect_remediation", defect_remediation_node)
-    graph.add_node("security_review", security_review_node)
-    graph.add_node("milestone_review", milestone_review_node)
+    graph.add_node("scrum_master", scrum_master_node, retry=agent_retry_policy)
+    graph.add_node("technical_lead", technical_lead_node, retry=agent_retry_policy)
+    graph.add_node("specialist_dispatch", specialist_dispatch_node, retry=agent_retry_policy)
+    graph.add_node("test_and_triage", test_and_triage_node, retry=agent_retry_policy)
+    graph.add_node("defect_remediation", defect_remediation_node, retry=agent_retry_policy)
+    graph.add_node("security_review", security_review_node, retry=agent_retry_policy)
+    graph.add_node("milestone_review", milestone_review_node, retry=agent_retry_policy)
     graph.add_node("user_review_sprint", user_review_sprint_node)
+    graph.add_node("sprint_advance", sprint_advance_node)
     graph.add_node("complete", complete_node)
     graph.add_node("failed", failed_node)
 
@@ -1050,6 +1136,7 @@ def build_workflow_graph(
         "security_review",
         "milestone_review",
         "user_review_sprint",
+        "sprint_advance",
     ):
         graph.add_conditional_edges(node_name, _route_from_stage, routable_targets)
 
@@ -1099,6 +1186,60 @@ def start_workflow(
         },
         config=_run_config(thread_id, recursion_limit),
     )
+
+
+def resume_failed_run(
+    graph: Any,
+    thread_id: str,
+    *,
+    recursion_limit: int = DEFAULT_RECURSION_LIMIT,
+) -> dict[str, Any]:
+    """Resume a failed run from its last checkpoint.
+    
+    If the run explicitly entered a terminal 'failed' state due to business logic
+    (e.g., reaching max revisions), this rewinds the state to act as a retry.
+    """
+    config = _run_config(thread_id, recursion_limit)
+    state_snapshot = graph.get_state(config)
+    
+    if state_snapshot and state_snapshot.values.get("stage") == "failed":
+        history = list(graph.get_state_history(config))
+        
+        failed_node = None
+        prev_state = None
+        
+        # Scan backward (history is most-recent-first) to find the state that
+        # caused the transition to the 'failed' node.
+        for i in range(len(history) - 1):
+            if history[i].next == ('failed',):
+                prev_state = history[i+1]
+                failed_node = prev_state.next[0] if prev_state.next else None
+                break
+                
+        if failed_node:
+            rewind_values = {
+                "stage": "product_manager", # fallback
+                "error": None,
+            }
+            if failed_node == "architecture_review":
+                rewind_values["architecture_revision_count"] = 0
+                rewind_values["stage"] = "principal_architect"
+            elif failed_node in ("test_and_triage", "sprint_advance"):
+                rewind_values["stage"] = "technical_lead"
+            elif failed_node == "milestone_review":
+                rewind_values["milestone_revision_count"] = 0
+                rewind_values["stage"] = "scrum_master"
+            elif "review" in failed_node:
+                rewind_values["stage"] = failed_node
+                
+            # Overwrite the state on the node that originally failed so the router will route to our target
+            graph.update_state(config, rewind_values, as_node=failed_node)
+
+    # Self-healing: if we are resuming a corrupted run from before the token limit fix
+    if state_snapshot and state_snapshot.values.get("stage") == "architecture_review" and state_snapshot.values.get("technical_specification") is None:
+        graph.update_state(config, {"stage": "principal_architect"}, as_node="product_manager")
+
+    return graph.invoke(None, config=config)
 
 
 def resume_pending_approval(
@@ -1175,6 +1316,7 @@ __all__ = [
     "approve_decision",
     "build_workflow_graph",
     "request_changes_decision",
+    "resume_failed_run",
     "resume_pending_approval",
     "resume_pending_review",
     "skip_decision",

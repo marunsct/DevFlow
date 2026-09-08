@@ -1,18 +1,37 @@
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=langchain_auth
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
   app:
     build: .
     ports:
       - "8000:8000"
+    depends_on:
+      - db
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
       - ./uploads:/app/uploads
       - ./src:/app/src
+      - ./data:/app/data
+      - ./tests:/app/tests
       # Mount the user's home directory so artifact_directory paths work seamlessly
       - /home/arun:/home/arun
     environment:
+      - DATA_DIR=/app/data
+      - AUTH_DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
+      - DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
+      - REDIS_URL=redis://redis:6379/0
       # Use the host's LM Studio server instead of container's localhost
       - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
       - OPENAI_API_KEY=lm-studio
@@ -20,3 +39,41 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - WORKFLOW_UPLOAD_DIR=/app/uploads
       - PYTHONPATH=/app/src
+    command: python -m uvicorn app.server.api:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
+  worker:
+    build: .
+    depends_on:
+      - db
+      - redis
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./src:/app/src
+      - ./data:/app/data
+      - ./tests:/app/tests
+      - /home/arun:/home/arun
+    environment:
+      - DATA_DIR=/app/data
+      - AUTH_DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
+      - DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
+      - REDIS_URL=redis://redis:6379/0
+      - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
+      - OPENAI_API_KEY=lm-studio
+      - OPENAI_MODEL=openai/gpt-oss-20b
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - WORKFLOW_UPLOAD_DIR=/app/uploads
+      - PYTHONPATH=/app/src
+    command: celery -A app.server.tasks worker --loglevel=info
+
+volumes:
+  pgdata:
+  redisdata:

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { createRun, startRun } from '../api';
+import { createRun, startRun, api } from '../api';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -14,7 +14,12 @@ export const Home: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [aiSettings, setAiSettings] = useState<any>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    api.get('/settings').then(res => setAiSettings(res.data)).catch(() => {});
+  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -57,7 +62,8 @@ export const Home: React.FC = () => {
 
     try {
       const runData = await createRun(files);
-      await startRun(runData.run_id, {
+      
+      const payload: any = {
         reviewer: "Product Manager",
         artifact_directory: artifactDirectory || undefined,
         allow_subdirectories: allowSubdirectories,
@@ -67,7 +73,18 @@ export const Home: React.FC = () => {
           technical_specification: reviewTechSpec,
           sprint: reviewSprint
         }
-      });
+      };
+      
+      if (aiSettings) {
+        payload.llm_provider = aiSettings.llm_provider;
+        payload.openai_base_url = aiSettings.openai_base_url;
+        payload.openai_api_key = aiSettings.openai_api_key;
+        payload.anthropic_api_key = aiSettings.anthropic_api_key;
+        payload.google_api_key = aiSettings.google_api_key;
+        payload.model_name = aiSettings.model_name;
+      }
+      
+      await startRun(runData.run_id, payload);
       navigate(`/runs/${runData.run_id}`);
     } catch (err: any) {
       console.error(err);

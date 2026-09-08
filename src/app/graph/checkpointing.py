@@ -26,9 +26,11 @@ If you add a new Pydantic model to `WorkflowGraphState`, add it to
 
 from __future__ import annotations
 
-import sqlite3
-from langgraph.checkpoint.sqlite import SqliteSaver
+import os
+from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+import psycopg
+from psycopg_pool import ConnectionPool
 
 from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
 from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
@@ -91,23 +93,22 @@ def build_serializer() -> JsonPlusSerializer:
     return JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINTED_TYPES))
 
 
-# Create a global connection for the app lifecycle
-_DB_PATH = "checkpoints.sqlite"
-_conn = None
+# Create a global connection pool for the app lifecycle
+_pool = None
 
-def get_connection() -> sqlite3.Connection:
-    global _conn
-    if _conn is None:
-        _conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
-    return _conn
+def get_connection_pool() -> ConnectionPool:
+    global _pool
+    if _pool is None:
+        db_url = os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
+        _pool = ConnectionPool(conninfo=db_url, max_size=20)
+    return _pool
 
+def build_checkpointer() -> PostgresSaver:
+    """Build the durable Postgres checkpointer with the allowlist applied.
 
-def build_checkpointer() -> SqliteSaver:
-    """Build the durable SQLite checkpointer with the allowlist applied.
-
-    The state is saved to `checkpoints.sqlite` so workflow runs survive server restarts.
+    The state is saved to Postgres so workflow runs survive server restarts.
     """
-    saver = SqliteSaver(get_connection(), serde=build_serializer())
+    saver = PostgresSaver(get_connection_pool(), serde=build_serializer())
     saver.setup()
     return saver
 

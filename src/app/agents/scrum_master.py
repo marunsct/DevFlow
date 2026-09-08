@@ -55,7 +55,8 @@ def build_sprint_planning_request(
     """Build the Deep Agent input from the approved technical specification."""
     brief = (
         f"Repository root: {repository_root}\n\n"
-        f"--- Approved technical specification ---\n{technical_specification_text}\n"
+        f"--- Approved technical specification ---\n{technical_specification_text}\n\n"
+        f"**CRITICAL INSTRUCTION**: Ensure all tasks and specialists are aware that projects must be scaffolded strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub') and not in generic directories like 'nest-app' or directly in the repository root. All documentation must be created in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

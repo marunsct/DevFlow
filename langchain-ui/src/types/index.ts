@@ -115,10 +115,15 @@ export interface EventResponse {
 export interface StartRunRequest {
   review_policy?: Record<string, boolean>;
   reviewer?: string;
-  model_override?: string;
   artifact_directory?: string;
   allow_subdirectories?: boolean;
   auto_approve?: boolean;
+  llm_provider?: string;
+  openai_base_url?: string;
+  openai_api_key?: string;
+  anthropic_api_key?: string;
+  google_api_key?: string;
+  model_name?: string;
 }
 
 export interface CreateRunResponse {

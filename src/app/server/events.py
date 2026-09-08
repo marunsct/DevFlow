@@ -72,103 +72,68 @@ def redact_metadata(meta: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
+import redis.asyncio as redis
+import os
+
 class EventBus:
-    """In-memory pub/sub bus for run events."""
+    """Redis pub/sub bus for distributed run events."""
 
     def __init__(self) -> None:
         """Initialize the event bus."""
-        self._lock = asyncio.Lock()
-        # dict mapping run_id to a list of events
-        self._history: dict[str, list[RunEvent]] = {}
-        # dict mapping run_id to a list of queues for subscribers
-        self._queues: dict[str, list[asyncio.Queue[RunEvent | None]]] = {}
-
-    def _next_sequence(self, run_id: str) -> int:
-        """Get the next sequence number for a run (must be called with lock held)."""
-        if run_id not in self._history:
-            return 1
-        return len(self._history[run_id]) + 1
+        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+        self._redis = redis.from_url(redis_url, decode_responses=True)
 
     def next_sequence(self, run_id: str) -> int:
-        """Get the next sequence number for a run (thread-safe, non-async).
-
-        This is a synchronous convenience for callers that construct a
-        ``RunEvent`` before passing it to ``publish()``.  It reads the
-        history length without the lock, which is safe because Python's
-        GIL protects dict reads and list length checks, and the only
-        writer is the single event-loop thread.
-        """
-        events = self._history.get(run_id)
-        return 1 if events is None else len(events) + 1
+        """Get the next sequence number for a run using a Redis counter."""
+        # Using a blocking call isn't ideal but next_sequence needs to be sync right now for RunEvent creation
+        # Wait, if it's sync, how can we use redis.asyncio? 
+        # Actually, let's just generate a timestamp or UUID for sequence, or since we only care about relative ordering,
+        # we can fetch it via asyncio, but next_sequence is called synchronously in runner.py.
+        # Let's change next_sequence to just return 0, and we'll handle real sequence assigning on the publish side.
+        return 0
 
     async def publish(self, run_id: str, event: RunEvent) -> None:
         """Publish an event for a specific run."""
-        async with self._lock:
-            # Add to history
-            if run_id not in self._history:
-                self._history[run_id] = []
-            self._history[run_id].append(event)
-            
-            # Put on all subscriber queues
-            if run_id in self._queues:
-                for q in self._queues[run_id]:
-                    # We can use put_nowait as these are unbounded queues
-                    q.put_nowait(event)
+        # Assign a real sequence number
+        seq = await self._redis.incr(f"run:{run_id}:seq")
+        event.sequence = seq
+        
+        # Save to history
+        await self._redis.rpush(f"run:{run_id}:history", event.model_dump_json())
+        
+        # Publish to subscribers
+        await self._redis.publish(f"run:{run_id}:events", event.model_dump_json())
 
     @asynccontextmanager
     async def subscribe(self, run_id: str) -> AsyncIterator[AsyncIterator[RunEvent]]:
-        """Subscribe to live events for a run.
+        """Subscribe to live events for a run."""
+        pubsub = self._redis.pubsub()
+        await pubsub.subscribe(f"run:{run_id}:events")
         
-        Yields an AsyncIterator that produces RunEvent objects.
-        The iterator terminates when the stream is closed (indicated by a None sentinel).
-        """
-        queue: asyncio.Queue[RunEvent | None] = asyncio.Queue()
-        
-        async with self._lock:
-            if run_id not in self._queues:
-                self._queues[run_id] = []
-            self._queues[run_id].append(queue)
-            
         async def event_generator() -> AsyncIterator[RunEvent]:
-            while True:
-                item = await queue.get()
-                if item is None:
-                    break
-                yield item
+            try:
+                async for message in pubsub.listen():
+                    if message["type"] == "message":
+                        if message["data"] == "CLOSE":
+                            break
+                        yield RunEvent.model_validate_json(message["data"])
+            finally:
+                await pubsub.unsubscribe(f"run:{run_id}:events")
+                await pubsub.close()
 
         try:
             yield event_generator()
         finally:
-            async with self._lock:
-                if run_id in self._queues:
-                    try:
-                        self._queues[run_id].remove(queue)
-                    except ValueError:
-                        pass
-                    if not self._queues[run_id]:
-                        del self._queues[run_id]
+            pass
 
-    async def history(self, run_id: str, since_sequence: int = 0) -> list[RunEvent]:
-        """Get past events for a run."""
-        async with self._lock:
-            if run_id not in self._history:
-                return []
-            events = self._history[run_id]
-            
-            if since_sequence <= 0:
-                return list(events)
-                
-            # Events are ordered by sequence, and sequence is 1-indexed
-            # So since_sequence=1 means return events from sequence 2 onwards
-            # events[i] has sequence i+1
-            return [e for e in events if e.sequence > since_sequence]
+    async def get_history(self, run_id: str) -> list[RunEvent]:
+        """Get all historical events for a run."""
+        raw_events = await self._redis.lrange(f"run:{run_id}:history", 0, -1)
+        return [RunEvent.model_validate_json(raw) for raw in raw_events]
 
     async def close(self, run_id: str) -> None:
-        """Send a sentinel (None) to all subscriber queues to signal end-of-stream."""
-        async with self._lock:
-            if run_id in self._queues:
-                for q in self._queues[run_id]:
-                    q.put_nowait(None)
+        """Signal subscribers that the run is complete."""
+        await self._redis.publish(f"run:{run_id}:events", "CLOSE")
 
 
 async def publish_stage_event(

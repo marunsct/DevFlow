@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, UploadFile, Form
@@ -56,13 +57,10 @@ def create_runs_router(
     event_bus: EventBus,
     upload_dir: str,
     repo_root: str,
-) -> APIRouter:
-    """Build the runs router with shared state.
-
-    This is a factory because the router needs access to the runner,
-    event bus, and configuration, which are created at app startup.
-    """
+) -> tuple[APIRouter, APIRouter]:
+    """Build the API router for workflow control and observation."""
     runs = APIRouter(prefix="/api/runs", tags=["runs"])
+    public_runs = APIRouter(prefix="/api/runs", tags=["runs"])
 
     # ------------------------------------------------------------------
     # Step 6.1: Create and start runs
@@ -166,11 +164,61 @@ def create_runs_router(
             document,
             repository,
             review_policy=review_policy,
-            reviewer=body.reviewer,
+            reviewer=body.reviewer or "unassigned",
             auto_approve=body.auto_approve,
+            model_overrides={
+                "llm_provider": body.llm_provider,
+                "openai_base_url": body.openai_base_url,
+                "openai_api_key": body.openai_api_key,
+                "anthropic_api_key": body.anthropic_api_key,
+                "google_api_key": body.google_api_key,
+                "model_name": body.model_name,
+            }
         )
 
-        return {"message": f"Run {run_id} started.", "status": "running"}
+        return {"message": f"Run {run_id} started."}
+
+    @runs.post("/{run_id}/resume", status_code=202)
+    async def resume_run(run_id: str) -> dict[str, str]:
+        """Resume a failed run."""
+        record = runner.runs.get(run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+        if record.status != "failed":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Run {run_id} is {record.status}; can only resume failed runs.",
+            )
+
+        await runner.resume_run(run_id)
+        return {"message": f"Run {run_id} resumed."}
+
+    @runs.post("/{run_id}/clone", status_code=201, response_model=CreateRunResponse)
+    async def clone_run(run_id: str) -> CreateRunResponse:
+        """Clone a run into a new one using the same documents."""
+        record = runner.runs.get(run_id)
+        if record is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+
+        new_run_id = f"run-{uuid.uuid4()}"
+        new_thread_id = f"thread-{uuid.uuid4()}"
+
+        # Register a new run with the same uploaded documents
+        runner.register_run(
+            run_id=new_run_id,
+            thread_id=new_thread_id,
+            document_names=record.document_names,
+            document_paths=record.document_paths,
+        )
+
+        return CreateRunResponse(
+            run_id=new_run_id,
+            thread_id=new_thread_id,
+            status="created",
+            created_at=datetime.now(timezone.utc).isoformat(),
+        )
+
+
 
     # ------------------------------------------------------------------
     # Step 6.2: Run status, logs, and artifacts
@@ -207,7 +255,7 @@ def create_runs_router(
         if record is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
 
-        events = await event_bus.history(run_id)
+        events = await event_bus.get_history(run_id)
         stage_events = [e for e in events if e.event_type == "stage_change"]
         return {
             "run_id": run_id,
@@ -248,12 +296,39 @@ def create_runs_router(
 
         return {"run_id": run_id, "artifacts": artifacts}
 
-    @runs.get("/{run_id}/artifacts/download")
+    @public_runs.get("/{run_id}/artifacts/download")
     async def download_artifact(run_id: str, path: str) -> Any:
         """Download a generated artifact by path."""
         record = runner.runs.get(run_id)
         if record is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+
+        # Check if the requested path is a logical artifact ID in the state
+        logical_mapping = {
+            "product-intake": "product_intake",
+            "tools-and-models": "tools_and_models",
+            "technical-specification": "technical_specification",
+            "architecture-review": "architecture_review",
+            "sprint-milestone": "milestone_plan",
+            "milestone-review": "milestone_review",
+        }
+        
+        logical_key = logical_mapping.get(path) or path.replace("-", "_")
+        if logical_key in record.state and record.state[logical_key] is not None:
+            val = record.state[logical_key]
+            if hasattr(val, "model_dump_json"):
+                content = val.model_dump_json(indent=2)
+            elif isinstance(val, dict):
+                import json
+                content = json.dumps(val, indent=2)
+            else:
+                import json
+                content = json.dumps(str(val), indent=2)
+            from fastapi.responses import Response
+            return Response(content=content, media_type="application/json")
+        elif logical_key in logical_mapping.values():
+            # If the path explicitly matched a logical key but it's not in the state, return 404 cleanly.
+            raise HTTPException(status_code=404, detail=f"Logical artifact {path} not generated yet.")
 
         # Ensure path is absolute or resolve it against repo_root
         import os
@@ -262,8 +337,11 @@ def create_runs_router(
         # but if we used repo_root, it might be relative or absolute.
         # It's safest to check if it exists directly first.
         full_path = path
-        if not os.path.isabs(path) and runner.repo_root:
-            full_path = os.path.join(runner.repo_root, path)
+        if not os.path.isabs(path):
+            if record.repo_root and record.repo_root != "/app":
+                full_path = os.path.join(record.repo_root, path)
+            else:
+                raise HTTPException(status_code=404, detail=f"Artifact {path} requested but repo_root is not set or invalid.")
 
         if not os.path.exists(full_path):
             raise HTTPException(status_code=404, detail=f"Artifact not found at {full_path}")
@@ -285,7 +363,7 @@ def create_runs_router(
         if record is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
 
-        all_events = await event_bus.history(run_id)
+        all_events = await event_bus.get_history(run_id)
         page = all_events[offset : offset + limit]
         return {
             "run_id": run_id,
@@ -440,7 +518,7 @@ def create_runs_router(
         await runner.submit_review(run_id, decision)
         return {"message": f"Review decision '{action}' submitted for run {run_id}."}
 
-    return runs
+    return runs, public_runs
 
 
 def _build_status_response(record: RunRecord) -> RunStatusResponse:
@@ -468,6 +546,27 @@ def _build_status_response(record: RunRecord) -> RunStatusResponse:
             "test_runs": len(cycle.test_runs),
         }
 
+    artifacts = []
+    if record.repo_root:
+        repo_path = Path(record.repo_root)
+        if repo_path.exists():
+            # Scan for markdown files to treat as artifacts
+            for md_file in repo_path.rglob("*.md"):
+                # Skip any node_modules, .git, etc
+                if ".git" in md_file.parts or "node_modules" in md_file.parts:
+                    continue
+                try:
+                    rel_path = md_file.relative_to(repo_path)
+                    artifacts.append({
+                        "path": str(rel_path),
+                        "kind": "document",
+                        "revision": 1,
+                        "created_by": "workflow",
+                        "stage": record.run_id
+                    })
+                except ValueError:
+                    pass
+
     return RunStatusResponse(
         run_id=record.run_id,
         thread_id=record.thread_id,
@@ -476,6 +575,8 @@ def _build_status_response(record: RunRecord) -> RunStatusResponse:
         stage_meaning=record.stage_meaning or _stage_meaning(record.current_stage),
         created_at=record.created_at,
         updated_at=record.updated_at,
+        stages=record.state.get("stages", []),
+        artifacts=artifacts,
         reviews=reviews,
         remediation=remediation,
         error=record.error,

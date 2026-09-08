@@ -32,6 +32,12 @@ class StartRunRequest(BaseModel):
         default=None,
         description="Optional model override for the LLM to use.",
     )
+    llm_provider: str | None = Field(default=None)
+    openai_base_url: str | None = Field(default=None)
+    openai_api_key: str | None = Field(default=None)
+    anthropic_api_key: str | None = Field(default=None)
+    google_api_key: str | None = Field(default=None)
+    model_name: str | None = Field(default=None)
     artifact_directory: str | None = Field(
         default=None,
         description="Optional directory path on the server where artifacts should be written.",

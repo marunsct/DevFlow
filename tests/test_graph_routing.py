@@ -443,7 +443,7 @@ def test_workflow_pauses_with_a_typed_approval_request(agents: ScriptedAgents, t
 
     assert state["stage"] == "awaiting_approval:product_manager"
     approval = state["pending_approval"]
-    assert approval.artifact_path == "docs/generated/intake.md"
+    assert approval.artifact_path == "intake.md"
     assert approval.requested_by == "product_manager"
     assert approval.risk_level == "low"
     assert state["pending_inner_thread_id"] == "run-approval:product_manager"

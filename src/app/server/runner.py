@@ -110,17 +110,13 @@ class RunRecord:
     error: str | None = None
 
     # Settings captured at start time.
+    repo_root: str | None = None
     review_policy: dict[str, bool] = field(default_factory=dict)
     reviewer: str = "unassigned"
     auto_approve: bool = False
 
-    # Decision handoff: the runner waits on this event, and the API sets it
-    # after populating `pending_decision_payload`.
-    _decision_ready: asyncio.Event = field(default_factory=asyncio.Event, repr=False)
+    # Decision handoff: the API sets this when enqueuing a resume task
     pending_decision_payload: dict[str, Any] | None = field(default=None, repr=False)
-
-    # Background task handle.
-    _task: asyncio.Task | None = field(default=None, repr=False)
 
 
 class WorkflowRunner:
@@ -183,6 +179,7 @@ class WorkflowRunner:
         review_policy: dict[str, bool] | None = None,
         reviewer: str = "unassigned",
         auto_approve: bool = False,
+        model_overrides: dict[str, str | None] | None = None,
     ) -> None:
         """Launch the workflow in a background task."""
         record = self.runs.get(run_id)
@@ -191,6 +188,7 @@ class WorkflowRunner:
         if record.status != "created":
             raise ValueError(f"Run {run_id} is already {record.status}")
 
+        record.repo_root = str(repository.root_path)
         record.review_policy = review_policy or {}
         record.reviewer = reviewer
         record.auto_approve = auto_approve
@@ -198,10 +196,25 @@ class WorkflowRunner:
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
 
-        record._task = asyncio.create_task(
-            self._run_loop(record, document, repository),
-            name=f"workflow-{run_id}",
-        )
+        from app.server.tasks import execute_workflow_run
+        execute_workflow_run.delay(run_id=run_id, resume=False, decision_payload=None)
+
+    async def resume_run(self, run_id: str) -> None:
+        """Resume a failed workflow in a background task."""
+        record = self.runs.get(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} is not registered")
+        if record.status != "failed":
+            raise ValueError(f"Run {run_id} is {record.status}, cannot resume")
+
+        record.status = "running"
+        record.error = None
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+
+        from app.server.tasks import execute_workflow_run
+        execute_workflow_run.delay(run_id=run_id, resume=True, decision_payload=None)
+
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
         """Submit an approval decision for a paused run."""
@@ -211,8 +224,13 @@ class WorkflowRunner:
         if record.status != "waiting_for_approval":
             raise ValueError(f"Run {run_id} is not waiting for approval (status: {record.status})")
 
-        record.pending_decision_payload = {"type": "approval", "decision": decision}
-        record._decision_ready.set()
+        payload = {"type": "approval", "decision": decision}
+        record.status = "running"
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+        
+        from app.server.tasks import execute_workflow_run
+        execute_workflow_run.delay(run_id=run_id, resume=True, decision_payload=payload)
 
     async def submit_review(self, run_id: str, decision: dict[str, Any]) -> None:
         """Submit a review decision for a paused run."""
@@ -222,8 +240,13 @@ class WorkflowRunner:
         if record.status != "waiting_for_review":
             raise ValueError(f"Run {run_id} is not waiting for review (status: {record.status})")
 
-        record.pending_decision_payload = {"type": "review", "decision": decision}
-        record._decision_ready.set()
+        payload = {"type": "review", "decision": decision}
+        record.status = "running"
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+        
+        from app.server.tasks import execute_workflow_run
+        execute_workflow_run.delay(run_id=run_id, resume=True, decision_payload=payload)
 
     async def cancel_run(self, run_id: str) -> None:
         """Cancel a running or paused workflow."""
@@ -232,9 +255,6 @@ class WorkflowRunner:
             raise ValueError(f"Run {run_id} not found")
         if record.status in ("completed", "failed", "cancelled"):
             return  # already terminal
-
-        if record._task is not None and not record._task.done():
-            record._task.cancel()
 
         record.status = "cancelled"
         record.updated_at = datetime.now(timezone.utc).isoformat()
@@ -254,18 +274,27 @@ class WorkflowRunner:
     async def _run_loop(
         self,
         record: RunRecord,
-        document: DocumentContent,
-        repository: RepositoryContext,
+        document: DocumentContent | None,
+        repository: RepositoryContext | None,
+        resume: bool = False,
+        model_overrides: dict[str, str | None] | None = None,
     ) -> None:
         """Drive the graph invoke-loop, publishing events at every step.
 
         This mirrors the loop in ``main.py`` but runs asynchronously and
         hands off decisions via ``asyncio.Event`` instead of stdin prompts.
         """
+        # We might not have a full repository context when resuming.
+        # But we still need repo_root and allow_subdirectories for build_workflow_graph.
+        # We can extract it from record.repo_root if repository is None.
+        repo_root = repository.root_path if repository else record.repo_root
+        allow_subs = repository.allow_subdirectories if repository else True
+        
         graph = build_workflow_graph(
             model=self.model,
-            repo_root=repository.root_path,
-            allow_subdirectories=repository.allow_subdirectories
+            repo_root=repo_root,
+            allow_subdirectories=allow_subs,
+            model_overrides=model_overrides
         )
         run_id = record.run_id
 
@@ -278,16 +307,23 @@ class WorkflowRunner:
         ) if is_tracing_enabled() else {}
 
         try:
-            # First invoke.
-            state = await asyncio.to_thread(
-                start_workflow,
-                graph,
-                document,
-                repository,
-                record.thread_id,
-                review_policy=record.review_policy,
-                reviewer=record.reviewer,
-            )
+            if resume:
+                from app.graph.workflow import resume_failed_run
+                state = await asyncio.to_thread(
+                    resume_failed_run,
+                    graph,
+                    record.thread_id,
+                )
+            else:
+                state = await asyncio.to_thread(
+                    start_workflow,
+                    graph,
+                    document,
+                    repository,
+                    record.thread_id,
+                    review_policy=record.review_policy,
+                    reviewer=record.reviewer,
+                )
             record.state = state
             self._update_record(record, state)
 
@@ -352,6 +388,7 @@ class WorkflowRunner:
                     else:
                         record.status = "waiting_for_approval"
                         record.updated_at = datetime.now(timezone.utc).isoformat()
+                        self._persist(record)
 
                         # Publish approval request event.
                         await self.event_bus.publish(
@@ -369,25 +406,12 @@ class WorkflowRunner:
                                 }),
                             ),
                         )
+                        return # Exit the celery task; will be resumed via submit_approval
 
-                        # Wait for the decision.
-                        decision_payload = await self._wait_for_decision(record)
-                        if decision_payload is None:
-                            return  # cancelled
-
-                    state = await asyncio.to_thread(
-                        resume_pending_approval,
-                        graph,
-                        record.thread_id,
-                        decision_payload["decision"],
-                    )
-                    record.state = state
-                    self._update_record(record, state)
-                    continue
-
-                if stage.startswith(REVIEW_PAUSE_PREFIX):
+                elif stage.startswith(REVIEW_PAUSE_PREFIX):
                     record.status = "waiting_for_review"
                     record.updated_at = datetime.now(timezone.utc).isoformat()
+                    self._persist(record)
 
                     review_point = stage.removeprefix(REVIEW_PAUSE_PREFIX)
                     review = state.get("pending_review")
@@ -406,26 +430,13 @@ class WorkflowRunner:
                             }),
                         ),
                     )
-
-                    decision = await self._wait_for_decision(record)
-                    if decision is None:
-                        return  # cancelled
-
-                    state = await asyncio.to_thread(
-                        resume_pending_review,
-                        graph,
-                        record.thread_id,
-                        decision["decision"],
-                    )
-                    record.state = state
-                    self._update_record(record, state)
-                    continue
+                    return # Exit the celery task; will be resumed via submit_review
 
                 # Stage is running (not paused, not terminal).  This should
                 # only happen on the initial invoke or when a resume pushes
                 # through multiple stages at once.  We loop back and the next
                 # invoke is implicit (the graph ran to its next pause/terminal).
-                break
+                continue
 
             else:
                 record.status = "failed"
@@ -456,23 +467,7 @@ class WorkflowRunner:
             )
             await self.event_bus.close(run_id)
 
-    async def _wait_for_decision(self, record: RunRecord) -> dict[str, Any] | None:
-        """Block until the API submits a decision or the run is cancelled.
 
-        Returns None if the run was cancelled while waiting.
-        """
-        record._decision_ready.clear()
-        try:
-            await record._decision_ready.wait()
-        except asyncio.CancelledError:
-            return None
-
-        payload = record.pending_decision_payload
-        record.pending_decision_payload = None
-        record._decision_ready.clear()
-        record.status = "running"
-        record.updated_at = datetime.now(timezone.utc).isoformat()
-        return payload
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:
         """Sync the run record with the latest graph state."""

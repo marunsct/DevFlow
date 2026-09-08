@@ -73,7 +73,9 @@ def build_milestone_planning_request(
     brief = (
         f"Repository root: {repository_root}\n\n"
         f"--- Approved sprint plan ---\n{sprint_plan_text}\n\n"
-        f"--- Sprint selected for this milestone ---\n{selected_sprint_goal}\n"
+        f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
+        "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
+        f"**CRITICAL INSTRUCTION**: Ensure all tasks strictly instruct specialists to write application code inside a directory named after the app (e.g. `thehub/` for 'The Hub') and not in generic directories like 'nest-app' or directly in the repository root. All documentation must be placed in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -89,8 +91,9 @@ Responsibilities:
   sprints in the same milestone.
 - Delegate tasks only to the specialist roles that sprint requires: ui_ux,
   database, backend, testing, documentation, security_reliability.
-- Give each delegated task a scoped description and explicit acceptance
-  criteria a Milestone Reviewer can check.
+- Give each delegated task a highly granular, scoped description and explicit acceptance
+  criteria a Milestone Reviewer can check. You MUST instruct specialists to write complete,
+  executable code and explicitly mandate that they compile/verify their code using terminal commands.
 - Record blockers explicitly instead of silently assuming they are resolved.
 
 Constraints:

@@ -70,13 +70,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        """Startup: ensure upload directory exists.  Shutdown: cancel running tasks."""
+        """Startup: ensure upload directory exists."""
         ensure_upload_dir(effective_upload_dir)
         yield
-        # Shutdown: cancel any running workflow tasks.
-        for record in runner.runs.values():
-            if record._task is not None and not record._task.done():
-                record._task.cancel()
 
     application = FastAPI(
         title="Product Development Workflow",
@@ -89,6 +85,39 @@ def create_app(
         lifespan=lifespan,
     )
 
+    # Rate Limiting Middleware
+    from fastapi.responses import JSONResponse
+    import time
+    
+    # In-memory rate limiting dictionary: {ip: [timestamps]}
+    rate_limit_records = {}
+    RATE_LIMIT_MAX_REQUESTS = 100
+    RATE_LIMIT_WINDOW_SECONDS = 60
+    
+    @application.middleware("http")
+    async def rate_limit_middleware(request: Request, call_next):
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        
+        # Clean up old records for this IP
+        if client_ip in rate_limit_records:
+            rate_limit_records[client_ip] = [
+                ts for ts in rate_limit_records[client_ip] 
+                if now - ts < RATE_LIMIT_WINDOW_SECONDS
+            ]
+        else:
+            rate_limit_records[client_ip] = []
+            
+        if len(rate_limit_records[client_ip]) >= RATE_LIMIT_MAX_REQUESTS:
+            return JSONResponse(
+                status_code=429, 
+                content={"detail": "Too Many Requests"}
+            )
+            
+        rate_limit_records[client_ip].append(now)
+        response = await call_next(request)
+        return response
+
     # CORS: allow all origins in development.  A production deployment
     # should restrict this to the actual frontend origin.
     application.add_middleware(
@@ -100,15 +129,22 @@ def create_app(
     )
 
     # Mount routers.
-    runs_router = create_runs_router(runner, event_bus, effective_upload_dir, effective_repo_root)
+    runs_router, public_runs_router = create_runs_router(runner, event_bus, effective_upload_dir, effective_repo_root)
     progress_router = create_progress_router(runner, event_bus)
+    
+    from app.server.settings import settings_router
 
     from fastapi import Depends
     from app.server.auth import auth_router, get_current_active_user
+    from prometheus_fastapi_instrumentator import Instrumentator
 
     application.include_router(auth_router)
+    application.include_router(public_runs_router)
     application.include_router(runs_router, dependencies=[Depends(get_current_active_user)])
     application.include_router(progress_router, prefix="/api/runs", tags=["progress"], dependencies=[Depends(get_current_active_user)])
+    application.include_router(settings_router, dependencies=[Depends(get_current_active_user)])
+
+    Instrumentator().instrument(application).expose(application)
 
     # Health check.
     @application.get("/api/health", tags=["health"])

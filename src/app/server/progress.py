@@ -17,8 +17,7 @@ import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, Query, Request
-from sse_starlette.sse import EventSourceResponse
+from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
 
 from app.server.events import EventBus, RunEvent
 from app.server.runner import RunRecord, WorkflowRunner, _stage_meaning
@@ -77,36 +76,46 @@ def create_progress_router(runner: WorkflowRunner, event_bus: EventBus) -> APIRo
     """
     progress = APIRouter()
 
-    @progress.get("/{run_id}/events/stream")
+    @progress.websocket("/{run_id}/events/stream")
     async def stream_events(
-        request: Request,
+        websocket: WebSocket,
         run_id: str,
-    ) -> EventSourceResponse:
-        """Server-Sent Events endpoint for live run progress.
+    ) -> None:
+        """WebSocket endpoint for live run progress.
 
-        Supports ``Last-Event-ID`` header for automatic reconnect: the
-        client will receive all events it missed since disconnecting,
-        then resume the live stream.
+        Replaces the old Server-Sent Events endpoint to provide full-duplex,
+        real-time streaming of agent status and logs via WebSockets.
         """
+        await websocket.accept()
         record = runner.runs.get(run_id)
         if record is None:
-            # Return a 404 as a stream that immediately closes with an error event.
-            async def error_gen() -> Any:
-                yield {"event": "error", "data": json.dumps({"error": f"Run {run_id} not found"})}
+            await websocket.send_text(json.dumps({"event": "error", "data": json.dumps({"error": f"Run {run_id} not found"})}))
+            await websocket.close()
+            return
 
-            return EventSourceResponse(error_gen(), status_code=404)
-
-        # Parse Last-Event-ID for reconnect support.
-        last_event_id_header = request.headers.get("Last-Event-ID", "0")
+        # Parse Last-Event-ID if sent as a query param (optional for reconnect).
+        last_event_id_param = websocket.query_params.get("last_event_id", "0")
         try:
-            last_event_id = int(last_event_id_header)
+            last_event_id = int(last_event_id_param)
         except ValueError:
             last_event_id = 0
 
-        return EventSourceResponse(
-            _sse_generator(request, event_bus, run_id, last_event_id),
-            ping=KEEPALIVE_INTERVAL_SECONDS,
-        )
+        # Replay missed events on reconnect.
+        if last_event_id > 0:
+            missed = await event_bus.get_history(run_id) # since_sequence logic can be filtered
+            for event in missed:
+                if event.sequence > last_event_id:
+                    await websocket.send_text(json.dumps(_event_to_sse_data(event)))
+
+        # Stream live events.
+        try:
+            async with event_bus.subscribe(run_id) as stream:
+                async for event in stream:
+                    await websocket.send_text(json.dumps(_event_to_sse_data(event)))
+        except WebSocketDisconnect:
+            pass
+        except asyncio.CancelledError:
+            pass
 
     @progress.get("/{run_id}/events")
     async def poll_events(
@@ -122,7 +131,8 @@ def create_progress_router(runner: WorkflowRunner, event_bus: EventBus) -> APIRo
         if record is None:
             return {"error": f"Run {run_id} not found", "events": [], "cursor": 0}
 
-        events = await event_bus.history(run_id, since_sequence=since)
+        events = await event_bus.get_history(run_id)
+        events = [e for e in events if e.sequence > since]
         cursor = events[-1].sequence if events else since
         return {
             "events": [event.model_dump() for event in events],

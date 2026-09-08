@@ -21,28 +21,34 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.technical_lead import SpecialistRole
-from app.tools.agent_toolkit import build_validation_tool
+from app.tools.agent_toolkit import build_validation_tool, build_terminal_command_tool
 
 _STAGE = "implementation"
 
 _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "ui_ux": (
-        "You are the UI and UX specialist. You design and describe user-facing "
-        "workflows, accessibility, and responsive states for the delegated task."
+        "You are the UI and UX specialist. You MUST write complete, production-ready frontend code. "
+        "Do NOT just 'design' or output snippets. You MUST use `run_terminal_command` to install NPM dependencies, "
+        "compile the code (e.g., `npm run build` or `tsc`), and resolve any compilation or linter errors iteratively "
+        "before returning your final output."
     ),
     "database": (
-        "You are the Database specialist. You design schemas, migrations, "
-        "indexes, and ownership/tenant isolation for the delegated task."
+        "You are the Database specialist. You MUST write complete, executable schema files and migrations. "
+        "You MUST use `run_terminal_command` to install required database drivers (e.g., Prisma, TypeORM), "
+        "generate the client code, run migrations against a local development DB if applicable, and verify "
+        "there are no syntax or type errors before returning."
     ),
     "backend": (
-        "You are the Backend specialist. You design services, APIs, "
-        "authorization, and domain state transitions for the delegated task."
+        "You are the Backend specialist. You MUST write fully functional server code, APIs, and domain logic. "
+        "Do NOT just output 'designs' or scaffolds. You MUST use `run_terminal_command` to install missing packages, "
+        "compile the code, start the development server, and verify that it starts without crashing. "
+        "Iteratively fix any errors before submitting your final output."
     ),
     "testing": (
         "You are the Testing and Quality Engineering specialist. You define and "
         "run unit, integration, contract, end-to-end, accessibility, and "
-        "security regression tests for the delegated task. Use the validation "
-        "tool to actually run tests rather than only describing them. Report "
+        "security regression tests for the delegated task. Use `run_terminal_command` to install testing frameworks "
+        "(e.g., Jest, PyTest) and the validation tool to actually run tests rather than only describing them. Report "
         "every failure as a structured defect in the `defects` field, naming "
         "the specialist role that must fix it, so the workflow can track and "
         "route it."
@@ -50,12 +56,12 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "documentation": (
         "You are the Documentation specialist. You write beginner-readable "
         "explanations, ADR usage docs, and operational runbooks for the "
-        "delegated task."
+        "delegated task. Use `run_terminal_command` to verify markdown formatting or generate site documentation if applicable."
     ),
     "security_reliability": (
-        "You are the Security and Reliability specialist. You review "
+        "You are the Security and Reliability specialist. You review and implement "
         "authorization, data isolation, secrets handling, retries, and "
-        "observability for the delegated task."
+        "observability for the delegated task. Use `run_terminal_command` to run static analysis tools or security linters."
     ),
 }
 
@@ -125,7 +131,8 @@ def build_specialist_task_request(
     brief = (
         f"Repository root: {repository_root}\n\n"
         f"--- Delegated task ---\n{task_description}\n\n"
-        f"--- Acceptance criteria ---\n{criteria_text}\n"
+        f"--- Acceptance criteria ---\n{criteria_text}\n\n"
+        f"**CRITICAL INSTRUCTION**: When writing application code or scaffolding projects, ensure you place it strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub'). Do NOT use generic names like 'nest-app' and do NOT scaffold directly in the repository root without a named folder. Place all documentation in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -216,7 +223,7 @@ Beginner documentation requirement:
   your `documentation` field or inline comments you propose.
 
 Constraints:
-- Do not change repo files except through the approved artifact tool.
+- You may use the `run_terminal_command` tool to execute shell commands, build code, install dependencies, and perform end-to-end development.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.
@@ -241,7 +248,15 @@ def create_specialist_agent(
     read/write tools as any other role agent.
     """
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
-    extra_tools = [build_validation_tool(resolved_repo_root)] if role == "testing" else None
+    
+    from app.tools.execution import get_execution_tools
+    extra_tools = [
+        build_terminal_command_tool(resolved_repo_root),
+        *get_execution_tools(resolved_repo_root)
+    ]
+    
+    if role == "testing":
+        extra_tools.append(build_validation_tool(resolved_repo_root))
 
     return create_role_agent(
         name=f"specialist_{role}",

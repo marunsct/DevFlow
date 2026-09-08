@@ -1,12 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { ArtifactInfo } from '../types';
-import { FileText, Download, Package } from 'lucide-react';
+import { FileText, Download, Package, Eye } from 'lucide-react';
+import { ArtifactViewer } from './ArtifactViewer';
 
 interface ArtifactListProps {
   artifacts: ArtifactInfo[];
+  runId: string;
 }
 
-export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts }) => {
+export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) => {
+  const [viewingArtifact, setViewingArtifact] = useState<ArtifactInfo | null>(null);
+
   if (!artifacts || artifacts.length === 0) {
     return (
       <div className="glass-card rounded-2xl p-8 text-center">
@@ -42,17 +46,34 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts }) => {
                   {artifact.path}
                 </p>
               </div>
-              <button
-                className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all shrink-0"
-                title="Download artifact"
-                onClick={() => window.open(`/api/runs/${artifact.stage}/artifacts/download?path=${encodeURIComponent(artifact.path)}`, '_blank')}
-              >
-                <Download className="h-4 w-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all"
+                  title="View artifact"
+                  onClick={() => setViewingArtifact(artifact)}
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <button
+                  className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all"
+                  title="Download artifact"
+                  onClick={() => window.open(`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(artifact.path)}`, '_blank')}
+                >
+                  <Download className="h-4 w-4" />
+                </button>
+              </div>
             </div>
           </div>
         ))}
       </div>
+      
+      {viewingArtifact && (
+        <ArtifactViewer
+          runId={runId}
+          path={viewingArtifact.path}
+          onClose={() => setViewingArtifact(null)}
+        />
+      )}
     </div>
   );
 };

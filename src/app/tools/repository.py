@@ -26,6 +26,7 @@ class RepositoryToolError(ValueError):
 
 _ALLOWED_VALIDATION_COMMANDS = {
     "python",
+    "python3",
     "pytest",
     "compileall",
 }
@@ -221,14 +222,14 @@ def read_dependency_metadata(repo_root: str | Path) -> dict[str, object]:
 
 
 def write_approved_artifact(repo_root: str | Path, relative_path: str, content: str) -> dict[str, str]:
-    """Write a generated artifact only inside the approved output directory.
+    """Write a generated artifact only inside the repository root or its subfolders.
 
     Purpose:
         Save a reviewable artifact from an agent without allowing arbitrary writes.
 
     Inputs:
         repo_root: repository root.
-        relative_path: target path under the approved artifact area.
+        relative_path: target path under the repository root.
         content: text content to save.
 
     Returns:
@@ -243,18 +244,28 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
         unrelated files.
     """
     root = _normalize_repo_root(repo_root)
-    artifact_root = root.resolve()
-
-    cleaned_path = Path(relative_path)
+    artifact_root = Path(root).resolve()
+    cleaned_path = Path(relative_path).expanduser()
+    if cleaned_path.is_absolute():
+        cleaned_path = cleaned_path.relative_to(cleaned_path.anchor)
     target = (artifact_root / cleaned_path).resolve()
-
     if artifact_root not in target.parents and target != artifact_root:
         raise RepositoryToolError(
-            f"Artifact path is outside the approved output directory: {relative_path}"
+            f"Artifact path is outside the repository root: {relative_path}"
         )
 
+    print(f"DIAGNOSTIC: target={target}", flush=True)
+    print(f"DIAGNOSTIC: target.parent={target.parent}", flush=True)
+    print(f"DIAGNOSTIC: target.parent.exists() before mkdir={target.parent.exists()}", flush=True)
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    print(f"DIAGNOSTIC: target.parent.exists() after mkdir={target.parent.exists()}", flush=True)
+    try:
+        target.write_text(content, encoding="utf-8")
+    except Exception as e:
+        print(f"DIAGNOSTIC: Exception during write_text: {repr(e)}", flush=True)
+        import os
+        print(f"DIAGNOSTIC: os.path.exists(target.parent)={os.path.exists(target.parent)}", flush=True)
+        raise
     return {
         "path": str(target.relative_to(root)),
         "summary": content[:80] + ("..." if len(content) > 80 else ""),

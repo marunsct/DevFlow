@@ -20,8 +20,11 @@ class ConfigurationError(ValueError):
 class Settings:
     """Store validated settings so later workflow code does not parse strings repeatedly."""
 
+    llm_provider: str  # The provider to use: 'local', 'openai', 'anthropic', 'gemini'
     openai_base_url: str  # URL where the model provider accepts OpenAI-compatible requests.
     openai_api_key: str  # Credential or local placeholder used by the model client.
+    anthropic_api_key: str | None  # Credential for Anthropic API.
+    google_api_key: str | None  # Credential for Google Gemini API.
     model_name: str  # Exact model identifier accepted by the configured provider.
     langsmith_tracing: bool  # Whether LangChain/LangGraph calls should be traced.
     langsmith_endpoint: str  # LangSmith server URL receiving traces.
@@ -62,21 +65,24 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         # Loading the local file here lets the command-line app use the same
         # configuration developers see in `.env`, while keeping secrets out of
         # source code and preserving injectable settings for tests.
-        load_dotenv()
+        load_dotenv(override=True)
         values = os.environ
     else:
         values = environment
-    # The model name is required because the provider cannot know which model to load for us.
+    # The model name defaults to a placeholder if not set, to allow the UI settings page to load.
     model_name = values.get("OPENAI_MODEL", "").strip()
     if not model_name or model_name.startswith("replace-with-"):
-        raise ConfigurationError(
-            "OPENAI_MODEL is required and must identify a loaded local or hosted model."
-        )
+        model_name = "default-model"
+
+    llm_provider = values.get("LLM_PROVIDER", "local").strip().lower()
 
     # Construct Settings only after validation, so callers receive a trusted configuration object.
     return Settings(
+        llm_provider=llm_provider,
         openai_base_url=values.get("OPENAI_BASE_URL", "http://localhost:1234/v1").strip(),
         openai_api_key=values.get("OPENAI_API_KEY", "lm-studio"),
+        anthropic_api_key=values.get("ANTHROPIC_API_KEY") or None,
+        google_api_key=values.get("GOOGLE_API_KEY") or None,
         model_name=model_name,
         langsmith_tracing=_read_bool(values, "LANGSMITH_TRACING", False),
         langsmith_endpoint=values.get(

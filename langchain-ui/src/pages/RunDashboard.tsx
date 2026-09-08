@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import type {
   RunStatusResponse,
   LogEntry,
@@ -13,30 +13,22 @@ import {
   getPendingApproval,
   submitReview,
   submitApproval,
-  cancelRun
+  cancelRun,
+  resumeRun,
+  cloneRun
 } from '../api';
-import { ProgressBar } from '../components/ProgressBar';
+import { DynamicWorkflowUI } from '../components/DynamicWorkflowUI';
 import { LogViewer } from '../components/LogViewer';
 import { ArtifactList } from '../components/ArtifactList';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { ApprovalGate } from '../components/ApprovalGate';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban } from 'lucide-react';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy } from 'lucide-react';
 
-const WORKFLOW_STAGES = [
-  'initialize',
-  'read_product_intake',
-  'select_tools_and_models',
-  'draft_technical_specification',
-  'review_technical_specification',
-  'draft_architecture',
-  'review_architecture',
-  'draft_sprint_plan',
-  'review_sprint_plan',
-  'finalize_plan'
-];
+
 
 export const RunDashboard: React.FC = () => {
   const { runId } = useParams<{ runId: string }>();
+  const navigate = useNavigate();
 
   const [run, setRun] = useState<RunStatusResponse | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -128,6 +120,26 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  const handleResume = async () => {
+    if (!runId) return;
+    try {
+      await resumeRun(runId);
+      await fetchState();
+    } catch (err: any) {
+      alert("Failed to resume: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleClone = async () => {
+    if (!runId) return;
+    try {
+      const clonedRun = await cloneRun(runId);
+      navigate(`/runs/${clonedRun.run_id}`);
+    } catch (err: any) {
+      alert("Failed to clone: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   if (loading && !run) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -152,17 +164,6 @@ export const RunDashboard: React.FC = () => {
     );
   }
 
-  let progress = 0;
-  if (run.status === 'completed') {
-    progress = 100;
-  } else if (run.current_stage) {
-    const stageIndex = WORKFLOW_STAGES.indexOf(run.current_stage);
-    if (stageIndex >= 0) {
-      progress = Math.round((stageIndex / (WORKFLOW_STAGES.length - 1)) * 100);
-    } else {
-      progress = 50;
-    }
-  }
 
   const statusConfig: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
     created: { bg: 'bg-slate-500/20', text: 'text-slate-300', glow: '', icon: Clock },
@@ -187,15 +188,33 @@ export const RunDashboard: React.FC = () => {
           <ArrowLeft className="h-4 w-4" />
           All Runs
         </Link>
-        {!isTerminal && (
+        <div className="flex gap-2">
+          {run.status === 'failed' && (
+            <button
+              onClick={handleResume}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-primary/80 hover:text-primary border border-primary/30 hover:border-primary/60 rounded-lg transition-all hover:bg-primary/5"
+            >
+              <Play className="h-3.5 w-3.5" />
+              Resume Run
+            </button>
+          )}
           <button
-            onClick={handleCancel}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-danger/80 hover:text-danger border border-danger/30 hover:border-danger/60 rounded-lg transition-all hover:bg-danger/5"
+            onClick={handleClone}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/80 hover:text-white border border-white/30 hover:border-white/60 rounded-lg transition-all hover:bg-white/5"
           >
-            <Ban className="h-3.5 w-3.5" />
-            Cancel Run
+            <Copy className="h-3.5 w-3.5" />
+            Clone Run
           </button>
-        )}
+          {!isTerminal && (
+            <button
+              onClick={handleCancel}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-danger/80 hover:text-danger border border-danger/30 hover:border-danger/60 rounded-lg transition-all hover:bg-danger/5"
+            >
+              <Ban className="h-3.5 w-3.5" />
+              Cancel Run
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Header Card */}
@@ -226,7 +245,7 @@ export const RunDashboard: React.FC = () => {
           </div>
         </div>
 
-        <ProgressBar progress={progress} label="Workflow Progress" />
+        <DynamicWorkflowUI run={run} />
 
         {run.error && (
           <div className="mt-4 p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm">
@@ -259,7 +278,7 @@ export const RunDashboard: React.FC = () => {
           <LogViewer logs={logs} />
         </div>
         <div>
-          <ArtifactList artifacts={run.artifacts} />
+          <ArtifactList artifacts={run.artifacts} runId={runId!} />
         </div>
       </div>
     </div>

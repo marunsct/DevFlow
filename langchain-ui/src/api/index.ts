@@ -58,6 +58,21 @@ export const startRun = async (
   return response.data;
 };
 
+export const resumeRun = async (
+  runId: string
+): Promise<{ message: string }> => {
+  const response = await api.post<{ message: string }>(`/runs/${runId}/resume`);
+  return response.data;
+};
+
+export const cloneRun = async (
+  runId: string
+): Promise<CreateRunResponse> => {
+  const response = await api.post<CreateRunResponse>(`/runs/${runId}/clone`);
+  return response.data;
+};
+
+
 export const listRuns = async (): Promise<RunListResponse> => {
   const response = await api.get<RunListResponse>('/runs');
   return response.data;
@@ -134,3 +149,4 @@ export const deleteRun = async (runId: string) => {
   const response = await api.delete(`/runs/${runId}`);
   return response.data;
 };
+

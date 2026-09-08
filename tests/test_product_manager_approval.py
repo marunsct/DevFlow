@@ -83,8 +83,8 @@ def _build_write_agent(
     )
 
 
-def _artifact(tmp_path: Path, relative_path: str) -> Path:
-    return tmp_path / "docs" / "generated" / relative_path
+def _artifact(base: Path, filename: str) -> Path:
+    return base / filename
 
 
 def test_approve_decision_writes_the_artifact(tmp_path: Path) -> None:
@@ -165,7 +165,7 @@ def test_extract_pending_approval_describes_the_paused_write(tmp_path: Path) -> 
     approval = extract_pending_approval(paused, tmp_path)
 
     assert approval is not None
-    assert approval.artifact_path == "docs/generated/brief.md"
+    assert approval.artifact_path == "brief.md"
     assert approval.risk_level == "low"
     assert approval.decision == ApprovalDecision.PENDING
     assert approval.notes == "hello world"

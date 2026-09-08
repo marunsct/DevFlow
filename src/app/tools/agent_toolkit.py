@@ -70,16 +70,16 @@ def build_artifact_write_tool(repo_root: str) -> BaseTool:
     """Return the single controlled artifact-write tool bound to a repository root.
 
     This is the only mutation path role agents get: writes are restricted to
-    the approved `docs/generated` directory by `write_approved_artifact`
+    the repository root and its subfolders by `write_approved_artifact`
     itself, regardless of what path the model requests.
     """
 
     @tool
     def write_artifact(relative_path: str, content: str) -> dict[str, str]:
-        """Write a generated artifact inside the approved docs/generated directory.
+        """Write a generated artifact inside the repository root or its subfolders.
 
         Returns `{"error": "..."}` instead of raising when the target path
-        escapes that approved directory, so the model can retry with a valid
+        escapes the repository root, so the model can retry with a valid
         path instead of crashing the whole agent run.
         """
         try:
@@ -114,4 +114,61 @@ def build_validation_tool(repo_root: str) -> BaseTool:
     return run_validation
 
 
-__all__ = ["build_artifact_write_tool", "build_repository_read_tools", "build_validation_tool"]
+def build_terminal_command_tool(repo_root: str) -> BaseTool:
+    """Return a tool that runs arbitrary shell commands in the repository root.
+    
+    This is necessary for agents to scaffold projects, install dependencies,
+    and perform other project-level initialization tasks.
+    """
+
+    @tool
+    def run_terminal_command(command: str) -> dict[str, str]:
+        """Execute a shell command in the repository root directory.
+        
+        Use this tool to initialize projects (e.g. npx create-react-app, npx @nestjs/cli new),
+        install dependencies, or run build scripts.
+        """
+        import subprocess
+        import re
+
+        # Strict allowlist for terminal commands
+        allowed_patterns = [
+            r"^npx\s+.*",
+            r"^npm\s+(install|run|test|init).*",
+            r"^yarn\s+(add|install|run|test|init|create).*",
+            r"^pnpm\s+(add|install|run|test|init|create).*",
+            r"^python3?\s+-m\s+(venv|pip|pytest).*",
+            r"^pip\s+install.*",
+            r"^pytest\s+.*",
+            r"^django-admin\s+startproject.*",
+            r"^git\s+(init|add|commit|status).*",
+            r"^ls\s+.*",
+            r"^echo\s+.*",
+        ]
+
+        is_allowed = any(re.match(pattern, command.strip()) for pattern in allowed_patterns)
+        
+        if not is_allowed:
+            return {"error": f"Command '{command}' is not allowed for security reasons. Allowed commands must match specific patterns (e.g., npm/npx, python -m, pytest)."}
+
+        try:
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=repo_root,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            return {
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+                "returncode": str(result.returncode)
+            }
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    return run_terminal_command
+
+
+__all__ = ["build_artifact_write_tool", "build_repository_read_tools", "build_validation_tool", "build_terminal_command_tool"]

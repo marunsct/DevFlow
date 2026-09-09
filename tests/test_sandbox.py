@@ -124,13 +124,21 @@ def test_execute_reports_a_rejected_command_without_running_anything():
 def test_execute_fails_closed_without_a_container_runtime(monkeypatch):
     """No runtime means no execution - never a fall back to the host."""
     monkeypatch.setattr("shutil.which", lambda _name: None)
-    with mock.patch.dict(os.environ, {"ALLOW_COMMAND_EXECUTION": "true"}):
+    with mock.patch.dict(
+        os.environ,
+        {"ALLOW_COMMAND_EXECUTION": "true", "SANDBOX_EXECUTION_MODE": "container"},
+    ):
         result = SandboxExecutor.execute(["ls"], repo_root=".", role_name="general")
         assert "container runtime" in result["error"]
 
 
 def test_container_invocation_is_hardened(monkeypatch):
-    """Every isolation flag must be present on the actual docker invocation."""
+    """Every isolation flag must be present on the actual docker invocation.
+
+    The mode is pinned rather than inherited: a developer whose `.env` selects
+    in-container execution would otherwise have this pass without ever building
+    a docker command line.
+    """
     captured = {}
 
     class _Result:
@@ -143,7 +151,10 @@ def test_container_invocation_is_hardened(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker" if name == "docker" else None)
     monkeypatch.setattr("subprocess.run", _fake_run)
 
-    with mock.patch.dict(os.environ, {"ALLOW_COMMAND_EXECUTION": "true"}):
+    with mock.patch.dict(
+        os.environ,
+        {"ALLOW_COMMAND_EXECUTION": "true", "SANDBOX_EXECUTION_MODE": "container"},
+    ):
         SandboxExecutor.execute(["ls"], repo_root=".", role_name="general")
 
     cmd = captured["cmd"]
@@ -163,10 +174,16 @@ def test_install_category_is_the_only_one_with_network(monkeypatch):
     monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/docker" if name == "docker" else None)
     monkeypatch.setattr("subprocess.run", lambda cmd, **_k: (captured.update(cmd=cmd), _Result())[1])
 
-    with mock.patch.dict(os.environ, {"ALLOW_COMMAND_EXECUTION": "true"}):
+    with mock.patch.dict(
+        os.environ,
+        {"ALLOW_COMMAND_EXECUTION": "true", "SANDBOX_EXECUTION_MODE": "container"},
+    ):
         SandboxExecutor.execute(["npm", "install"], repo_root=".", role_name="ui_specialist", category="install")
     assert captured["cmd"][captured["cmd"].index("--network") + 1] == "bridge"
 
-    with mock.patch.dict(os.environ, {"ALLOW_COMMAND_EXECUTION": "true"}):
+    with mock.patch.dict(
+        os.environ,
+        {"ALLOW_COMMAND_EXECUTION": "true", "SANDBOX_EXECUTION_MODE": "container"},
+    ):
         SandboxExecutor.execute(["npm", "test"], repo_root=".", role_name="ui_specialist", category="test")
     assert captured["cmd"][captured["cmd"].index("--network") + 1] == "none"

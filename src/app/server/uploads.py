@@ -13,6 +13,7 @@ client-side check is cosmetic.
 
 from __future__ import annotations
 
+import os
 import shutil
 import uuid
 from dataclasses import dataclass
@@ -33,6 +34,19 @@ guess about what might work — it's the exact set ``app.documents`` supports.
 
 DEFAULT_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024  # 5 MB
 """Maximum upload size.  Matches ``app.documents.read_document``'s default."""
+
+ARCHIVE_EXTENSIONS = frozenset({".zip", ".tar", ".tar.gz", ".tgz", ".tar.bz2", ".tbz2", ".tar.xz"})
+"""Archive formats accepted when seeding a workspace from an existing codebase.
+
+Kept apart from ``ALLOWED_EXTENSIONS`` on purpose: a product document and a
+codebase are different inputs with different readers, different size limits and
+different risks. An archive is expanded onto a filesystem the agents execute in,
+so it is unpacked by ``app.server.seeding`` under its own containment checks.
+"""
+
+DEFAULT_MAX_ARCHIVE_BYTES = int(os.environ.get("MAX_CODEBASE_ARCHIVE_BYTES", str(200 * 1024 * 1024)))
+"""Maximum codebase archive size. Far larger than a document, because it is one:
+a modest repository with its assets clears 5 MB easily."""
 
 
 class UploadError(ValueError):
@@ -87,12 +101,25 @@ def _content_type_for(extension: str) -> str:
     }.get(extension, "application/octet-stream")
 
 
+def extension_of(original_filename: str, permitted: frozenset[str]) -> str | None:
+    """Return the permitted extension this filename ends with, or None.
+
+    Longest match wins, so ``code.tar.gz`` is recognised as ``.tar.gz`` rather
+    than as ``.gz``. ``Path.suffix`` returns only the final component and would
+    have made every compound archive suffix unreachable.
+    """
+    name = Path(original_filename).name.lower()
+    matches = [ext for ext in permitted if name.endswith(ext)]
+    return max(matches, key=len) if matches else None
+
+
 def validate_and_store(
     file_obj: BinaryIO,
     original_filename: str,
     upload_dir: str | Path,
     *,
     max_size_bytes: int = DEFAULT_MAX_FILE_SIZE_BYTES,
+    allowed_extensions: frozenset[str] | None = None,
 ) -> UploadResult:
     """Validate an uploaded file and store it safely.
 
@@ -115,11 +142,12 @@ def validate_and_store(
     if not upload_path.is_dir():
         raise UploadError(f"Upload directory does not exist: {upload_dir}")
 
-    extension = Path(original_filename).suffix.lower()
-    if extension not in ALLOWED_EXTENSIONS:
+    permitted = allowed_extensions if allowed_extensions is not None else ALLOWED_EXTENSIONS
+    extension = extension_of(original_filename, permitted)
+    if extension is None:
         raise UnsupportedFileType(
-            f"File type '{extension}' is not supported. "
-            f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
+            f"'{Path(original_filename).name}' is not a supported file type. "
+            f"Allowed: {', '.join(sorted(permitted))}"
         )
 
     # Stream to disk in chunks, stopping the moment the running total exceeds
@@ -172,11 +200,14 @@ def ensure_upload_dir(base_dir: str | Path) -> Path:
 
 __all__ = [
     "ALLOWED_EXTENSIONS",
+    "ARCHIVE_EXTENSIONS",
+    "DEFAULT_MAX_ARCHIVE_BYTES",
     "DEFAULT_MAX_FILE_SIZE_BYTES",
     "FileTooLarge",
     "UploadError",
     "UploadResult",
     "UnsupportedFileType",
     "ensure_upload_dir",
+    "extension_of",
     "validate_and_store",
 ]

@@ -114,6 +114,119 @@ def set_disabled(username: str, disabled: bool) -> int:
     return 0
 
 
+def reconcile_runs(dry_run: bool = False) -> int:
+    """Resync run rows whose recorded status disagrees with their graph state.
+
+    The checkpointer is the authority on where a run actually is; the `runs`
+    row is a cache of that, kept so the API can answer without reading a
+    checkpoint on every request. A node that raised was never checkpointed, and
+    the failure path used to record a flat "failed" without touching
+    `current_stage` - leaving rows that said `failed` while the graph was still
+    parked on an approval gate.
+
+    Such a row is unreachable: the UI offers Resume because the status is
+    failed, Resume cannot clear an approval gate, and /approve refuses anything
+    whose status is not `waiting_for_approval`. The write path no longer creates
+    these, but rows written before that fix still exist.
+    """
+    from app.graph.workflow import APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX
+    from app.server.run_store import RunStore
+    from app.server.runner import _api_status, _stage_meaning
+
+    store = RunStore.shared()
+
+    # `list_all` caps its page at 500, so walk pages rather than asking for a
+    # number the store will quietly shrink.
+    records: list = []
+    offset = 0
+    while True:
+        page = store.list_all(limit=500, offset=offset)
+        records.extend(page)
+        if len(page) < 500:
+            break
+        offset += 500
+
+    repaired = 0
+    for record in records:
+        stage = record.current_stage or ""
+        # Only a *pause* can be inferred safely from a stale row. Every other
+        # stage maps to "running", and a row is not evidence that a worker is
+        # still alive - a genuinely failed run whose last stage was an ordinary
+        # node must stay failed, not be resurrected as running.
+        if not stage.startswith((APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX)):
+            continue
+        expected = _api_status(stage)
+        if record.status == expected or record.status in ("cancelled", "completed"):
+            continue
+
+        print(f"{record.run_id}: {record.status} -> {expected}  (stage: {stage})")
+        repaired += 1
+        if dry_run:
+            continue
+        record.status = expected
+        record.stage_meaning = _stage_meaning(stage)
+        store.save(record)
+
+    if not repaired:
+        print("All runs agree with their graph state.")
+    elif dry_run:
+        print(f"\n{repaired} run(s) would be repaired. Re-run without --dry-run to apply.")
+    else:
+        print(f"\nRepaired {repaired} run(s).")
+    return 0
+
+
+def clear_run_overrides(run_id: str | None = None, dry_run: bool = False) -> int:
+    """Drop per-run provider pins so runs inherit the current settings again.
+
+    The UI used to copy the settings page's provider, model and base URL into
+    every run it started, as "overrides". They were never a choice - that form
+    has no control for picking a different model - so each run snapshotted
+    whatever global config said at the moment it started, and the snapshot then
+    outranked Settings forever. Changing the model or the endpoint afterwards
+    could not reach a run that already existed.
+
+    The UI no longer sends them. This clears the ones already written, which is
+    safe precisely because every one of them is a copy rather than a decision.
+    """
+    from app.server.run_store import RunStore
+
+    store = RunStore.shared()
+    if run_id:
+        record = store.load(run_id)
+        if record is None:
+            print(f"No run named '{run_id}'.", file=sys.stderr)
+            return 1
+        records = [record]
+    else:
+        records, offset = [], 0
+        while True:
+            page = store.list_all(limit=500, offset=offset)
+            records.extend(page)
+            if len(page) < 500:
+                break
+            offset += 500
+
+    cleared = 0
+    for record in records:
+        if not record.model_overrides:
+            continue
+        print(f"{record.run_id}: clearing {record.model_overrides}")
+        cleared += 1
+        if dry_run:
+            continue
+        record.model_overrides = {}
+        store.save(record)
+
+    if not cleared:
+        print("No run carries a provider pin.")
+    elif dry_run:
+        print(f"\n{cleared} run(s) would be cleared. Re-run without --dry-run to apply.")
+    else:
+        print(f"\nCleared {cleared} run(s); they now use the current settings.")
+    return 0
+
+
 def list_users() -> int:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -149,6 +262,18 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("list-users", help="List all accounts")
 
+    reconcile = sub.add_parser(
+        "reconcile-runs", help="Resync run rows that disagree with their graph state"
+    )
+    reconcile.add_argument("--dry-run", action="store_true", help="Report without changing anything")
+
+    pins = sub.add_parser(
+        "clear-run-overrides",
+        help="Drop per-run provider pins so runs use the current settings",
+    )
+    pins.add_argument("run_id", nargs="?", help="One run; omit for every run")
+    pins.add_argument("--dry-run", action="store_true", help="Report without changing anything")
+
     disable = sub.add_parser("disable-user", help="Disable an account")
     disable.add_argument("username")
 
@@ -166,6 +291,10 @@ def main(argv: list[str] | None = None) -> int:
         return set_role(args.username, args.role)
     if args.command == "list-users":
         return list_users()
+    if args.command == "reconcile-runs":
+        return reconcile_runs(args.dry_run)
+    if args.command == "clear-run-overrides":
+        return clear_run_overrides(args.run_id, args.dry_run)
     if args.command == "disable-user":
         return set_disabled(args.username, True)
     if args.command == "enable-user":

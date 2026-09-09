@@ -150,3 +150,54 @@ def test_no_escaped_newlines_in_prompt_assembly():
         if r'"\\n"' in line or r"'\\n'" in line
     ]
     assert not offenders, f"Escaped newlines reach the model as literals: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint serialization allowlist
+# ---------------------------------------------------------------------------
+#
+# `StackSelectorOutput` was reachable in graph state but absent from
+# CHECKPOINTED_TYPES, so every read of a resumed run silently degraded it to a
+# plain dict. Nothing failed: the node that consumed it had a
+# `hasattr(x, "model_dump_json")` fallback, so the degradation was invisible
+# right up until something needed a real attribute. The allowlist is derived by
+# hand, so assert mechanically that it covers what the state can actually hold.
+
+
+def _models_reachable_from(annotation, seen: set) -> set:
+    """Every pydantic model reachable from a type annotation, transitively."""
+    import typing
+
+    from pydantic import BaseModel
+
+    found: set = set()
+    if annotation in seen:
+        return found
+    seen.add(annotation)
+
+    for arg in typing.get_args(annotation):
+        found |= _models_reachable_from(arg, seen)
+
+    if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+        found.add(annotation)
+        for field in annotation.model_fields.values():
+            found |= _models_reachable_from(field.annotation, seen)
+    return found
+
+
+def test_every_model_the_graph_state_can_hold_is_allowlisted():
+    import typing
+
+    from app.graph.checkpointing import CHECKPOINTED_TYPES
+    from app.graph.workflow import WorkflowGraphState
+
+    reachable: set = set()
+    seen: set = set()
+    for annotation in typing.get_type_hints(WorkflowGraphState).values():
+        reachable |= _models_reachable_from(annotation, seen)
+
+    missing = sorted(m.__name__ for m in reachable - set(CHECKPOINTED_TYPES))
+    assert not missing, (
+        "These models can be stored in graph state but are not in "
+        f"CHECKPOINTED_TYPES, so they deserialize as bare dicts: {missing}"
+    )

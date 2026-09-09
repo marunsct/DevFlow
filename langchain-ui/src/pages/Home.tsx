@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { createRun, startRun, api } from '../api';
+import { createRun, startRun } from '../api';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
   const [workspaceLabel, setWorkspaceLabel] = useState<string>('');
   const [allowSubdirectories, setAllowSubdirectories] = useState<boolean>(true);
+  // Unattended is the whole point of the choice: nothing pauses for a human,
+  // so the run only comes back when it finishes or fails. Supervised keeps the
+  // individual gates, which are then worth showing separately.
+  const [unattended, setUnattended] = useState<boolean>(false);
   const [autoApprove, setAutoApprove] = useState<boolean>(false);
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
@@ -14,12 +18,7 @@ export const Home: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [aiSettings, setAiSettings] = useState<any>(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    api.get('/settings').then(res => setAiSettings(res.data)).catch(() => {});
-  }, []);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -67,22 +66,29 @@ export const Home: React.FC = () => {
         reviewer: "Product Manager",
         workspace_label: workspaceLabel || undefined,
         allow_subdirectories: allowSubdirectories,
-        auto_approve: autoApprove,
-        review_policy: {
-          product_intake: reviewIntake,
-          technical_specification: reviewTechSpec,
-          sprint: reviewSprint
-        }
+        auto_approve: unattended || autoApprove,
+        review_policy: unattended
+          ? { product_intake: false, technical_specification: false, sprint: false }
+          : {
+              product_intake: reviewIntake,
+              technical_specification: reviewTechSpec,
+              sprint: reviewSprint
+            }
       };
       
-      // Only non-secret overrides are sent. API keys used to be read from the
-      // settings endpoint and posted here, which put them in request logs.
-      if (aiSettings) {
-        payload.llm_provider = aiSettings.llm_provider;
-        payload.openai_base_url = aiSettings.openai_base_url;
-        payload.model_name = aiSettings.model_name;
-      }
-      
+      // Provider, model and base URL are deliberately NOT sent.
+      //
+      // They used to be copied here from the settings endpoint and posted as
+      // per-run "overrides". They were never a choice - this page has no
+      // control for picking a different model - so each run silently snapshotted
+      // whatever global config happened to say at the moment it started, and
+      // that snapshot then outranked the Settings page forever. Changing the
+      // model or the endpoint afterwards could not reach a run that already
+      // existed. A run now inherits current settings on every attempt.
+      //
+      // Per-run overrides still exist for API callers who genuinely want one;
+      // this form just isn't one of them.
+
       await startRun(runData.run_id, payload);
       navigate(`/runs/${runData.run_id}`);
     } catch (err: any) {
@@ -209,7 +215,7 @@ export const Home: React.FC = () => {
               <div>
                 <label htmlFor="workspace-label" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
                   <FolderOpen className="h-4 w-4 text-primary" />
-                  Workspace name
+                  Workspace name <span className="font-normal text-text-muted">(optional)</span>
                 </label>
                 <input
                   id="workspace-label"
@@ -221,57 +227,78 @@ export const Home: React.FC = () => {
                   className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-white placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
                 />
                 <p className="text-xs text-text-muted mt-1.5">
-                  Names this run's isolated workspace. Documents go to <code className="text-primary/80">docs/</code> and code to <code className="text-primary/80">{'<product-name>'}/</code> inside it.
+                  Just a label, not a path. Every run gets its own isolated workspace on the
+                  server either way &mdash; this only makes it recognisable on disk. Documents go
+                  to <code className="text-primary/80">docs/</code> and code
+                  to <code className="text-primary/80">{'<product-name>'}/</code> inside it.
                 </p>
               </div>
 
-              {/* Permission Toggles */}
+              {/* How much the run should stop for you */}
               <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
                 <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-primary" />
-                  Permissions & Automation
+                  Supervision
                 </h3>
+                <Checkbox
+                  id="unattended"
+                  checked={unattended}
+                  onChange={setUnattended}
+                  label="Run unattended"
+                  description="Nothing pauses for you. Every file write and tool call is approved automatically and all review gates are skipped, so the run comes back only when the product is complete or something fails."
+                />
                 <Checkbox
                   id="allowSubdirectories"
                   checked={allowSubdirectories}
                   onChange={setAllowSubdirectories}
-                  label="Grant directory & subdirectory access"
-                  description="Allow the workflow to read and write within the output directory tree."
-                />
-                <Checkbox
-                  id="autoApprove"
-                  checked={autoApprove}
-                  onChange={setAutoApprove}
-                  label="Auto-approve all file writes"
-                  description="Skip manual approval for each generated file. Reviews still require your input."
+                  label="Grant subdirectory access"
+                  description="Let agents work in subdirectories of this run's workspace, not just its root."
                 />
               </div>
 
-              {/* Review Gates */}
-              <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
-                  <CheckSquare className="h-4 w-4 text-primary" />
-                  Review Gates
-                </h3>
-                <Checkbox
-                  id="reviewIntake"
-                  checked={reviewIntake}
-                  onChange={setReviewIntake}
-                  label="Product Intake Review"
-                />
-                <Checkbox
-                  id="reviewTechSpec"
-                  checked={reviewTechSpec}
-                  onChange={setReviewTechSpec}
-                  label="Technical Specification Review"
-                />
-                <Checkbox
-                  id="reviewSprint"
-                  checked={reviewSprint}
-                  onChange={setReviewSprint}
-                  label="End of Sprint Review"
-                />
-              </div>
+              {/* Only meaningful when the run is supervised */}
+              {!unattended && (
+                <>
+                  <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
+                    <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                      <ShieldCheck className="h-4 w-4 text-primary" />
+                      Approvals
+                    </h3>
+                    <Checkbox
+                      id="autoApprove"
+                      checked={autoApprove}
+                      onChange={setAutoApprove}
+                      label="Auto-approve file writes and tool calls"
+                      description="Skip the per-action prompt. Review gates below still stop the run."
+                    />
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
+                    <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                      <CheckSquare className="h-4 w-4 text-primary" />
+                      Review Gates
+                    </h3>
+                    <Checkbox
+                      id="reviewIntake"
+                      checked={reviewIntake}
+                      onChange={setReviewIntake}
+                      label="Product Intake Review"
+                    />
+                    <Checkbox
+                      id="reviewTechSpec"
+                      checked={reviewTechSpec}
+                      onChange={setReviewTechSpec}
+                      label="Technical Specification Review"
+                    />
+                    <Checkbox
+                      id="reviewSprint"
+                      checked={reviewSprint}
+                      onChange={setReviewSprint}
+                      label="End of Sprint Review"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Error */}

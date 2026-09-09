@@ -40,6 +40,31 @@ def isolated_runtime_dirs(tmp_path_factory):
     yield base
 
 
+@pytest.fixture(autouse=True)
+def object_store_isolation(tmp_path_factory):
+    """Keep each test's object storage local, empty, and its own.
+
+    `get_object_store` caches the store for the process, so without this a test
+    that configures S3 leaves that store cached for every test after it.
+    """
+    from app.server.object_store import reset_object_store
+
+    previous = os.environ.get("OBJECT_STORE_BUCKET")
+    previous_path = os.environ.get("OBJECT_STORE_PATH")
+    os.environ.pop("OBJECT_STORE_BUCKET", None)
+    os.environ["OBJECT_STORE_PATH"] = str(tmp_path_factory.mktemp("objects"))
+    reset_object_store()
+    try:
+        yield
+    finally:
+        reset_object_store()
+        os.environ.pop("OBJECT_STORE_PATH", None)
+        if previous is not None:
+            os.environ["OBJECT_STORE_BUCKET"] = previous
+        if previous_path is not None:
+            os.environ["OBJECT_STORE_PATH"] = previous_path
+
+
 @pytest.fixture(scope="session", autouse=True)
 def redis_container():
     with RedisContainer("redis:7-alpine") as redis_container:

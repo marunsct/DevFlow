@@ -19,6 +19,35 @@ from app.config import Settings, load_settings
 from .router import ModelRouter
 
 
+class CompatibleChatOpenAI(ChatOpenAI):
+    """`ChatOpenAI` that omits ``name`` on everything except tool messages.
+
+    LangChain serializes a message's ``name`` onto the wire for ``system``,
+    ``user`` and ``assistant`` roles. The OpenAI API tolerates that - it is an
+    optional participant label - but several OpenAI-*compatible* servers apply
+    the stricter reading and reject the whole request:
+
+        400 - messages.2: Value error, "name" is only valid on role="tool" messages.
+
+    That is fatal rather than cosmetic: the request never reaches the model, so
+    the stage fails outright. Nothing here needs the field either - deepagents
+    sets it to the agent's own name as bookkeeping, and no prompt in this
+    workflow addresses a named participant - so it is dropped on the way out
+    rather than being made a setting nobody would know to turn on.
+
+    ``_get_request_payload`` is the single place the request dict is assembled,
+    so overriding it covers invoke, stream, batch, tool calls and structured
+    output alike.
+    """
+
+    def _get_request_payload(self, input_, *, stop=None, **kwargs):  # type: ignore[override]
+        payload = super()._get_request_payload(input_, stop=stop, **kwargs)
+        for message in payload.get("messages", []):
+            if isinstance(message, dict) and message.get("role") != "tool":
+                message.pop("name", None)
+        return payload
+
+
 def _fallback_model(env_var: str, default: str) -> str:
     """Fallback model ids come from configuration, not from source.
 
@@ -30,6 +59,20 @@ def _fallback_model(env_var: str, default: str) -> str:
     return os.environ.get(env_var, default).strip() or default
 
 
+def _runtime_settings() -> Settings:
+    """Settings including admin overrides, falling back to the environment.
+
+    Imported lazily and guarded: this module is used by the CLI and by tests
+    that have no database, and a model factory must not start requiring one.
+    """
+    try:
+        from app.server.runtime_settings import effective_settings
+
+        return effective_settings()
+    except Exception:  # noqa: BLE001 - the environment is still a valid config
+        return load_settings()
+
+
 def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
     """Construct the chat model role agents use, from validated settings.
 
@@ -38,7 +81,10 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
     validated `Settings`, so behavior does not depend on whether some other
     part of the process happened to load `.env` first.
     """
-    resolved_settings = settings or load_settings()
+    # `effective_settings` is `load_settings` plus anything an administrator has
+    # changed through the settings API. Reading the bare environment here meant a
+    # corrected model URL never reached the worker that actually calls the model.
+    resolved_settings = settings or _runtime_settings()
     
     primary = None
     fallback = None
@@ -50,7 +96,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             max_retries=3,
         )
         if resolved_settings.openai_api_key:
-            fallback = ChatOpenAI(
+            fallback = CompatibleChatOpenAI(
                 api_key=resolved_settings.openai_api_key,
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
@@ -62,14 +108,14 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             max_retries=3,
         )
         if resolved_settings.openai_api_key:
-            fallback = ChatOpenAI(
+            fallback = CompatibleChatOpenAI(
                 api_key=resolved_settings.openai_api_key,
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
             )
     else:
         # Defaults to OpenAI or Local
-        primary = ChatOpenAI(
+        primary = CompatibleChatOpenAI(
             base_url=resolved_settings.openai_base_url,
             api_key=resolved_settings.openai_api_key,
             model=resolved_settings.model_name,

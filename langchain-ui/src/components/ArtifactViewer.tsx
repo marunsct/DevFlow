@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, Download, FileText } from 'lucide-react';
 import Markdown from 'react-markdown';
 import { api } from '../api';
@@ -36,7 +37,7 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
     window.open(`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(path)}`, '_blank');
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
       <div className="bg-[#1e2330]/95 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
         
@@ -94,6 +95,7 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };

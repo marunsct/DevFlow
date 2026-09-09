@@ -156,3 +156,119 @@ def test_an_upgraded_admin_keeps_its_role(users):
 
     init_db()
     assert get_user("admin").role == "admin"
+
+
+# ---------------------------------------------------------------------------
+# Run reconciliation
+# ---------------------------------------------------------------------------
+
+
+def _stored_run(run_store, run_id: str, status: str, stage: str):
+    from app.server.runner import RunRecord
+
+    record = RunRecord(
+        run_id=run_id, thread_id=f"thread-{run_id}",
+        document_names=[], document_paths=[],
+        status=status, current_stage=stage,
+    )
+    run_store.save(record)
+    return record
+
+
+def test_a_row_that_drifted_from_its_gate_is_repaired(run_store, capsys):
+    """status=failed while the graph waits on an approval leaves no usable route."""
+    _stored_run(run_store, "run-drift", "failed", "awaiting_approval:principal_architect")
+
+    assert manage.reconcile_runs() == 0
+
+    repaired = run_store.load("run-drift")
+    assert repaired.status == "waiting_for_approval"
+    assert repaired.stage_meaning == "Waiting for approval: principal_architect"
+    assert "Repaired 1 run(s)." in capsys.readouterr().out
+
+
+def test_a_dry_run_reports_without_writing(run_store, capsys):
+    _stored_run(run_store, "run-dry", "failed", "awaiting_user_review:specification")
+
+    assert manage.reconcile_runs(dry_run=True) == 0
+
+    assert run_store.load("run-dry").status == "failed"
+    assert "would be repaired" in capsys.readouterr().out
+
+
+def test_consistent_rows_are_left_alone(run_store, capsys):
+    _stored_run(run_store, "run-ok", "failed", "principal_architect")
+
+    assert manage.reconcile_runs() == 0
+
+    assert run_store.load("run-ok").status == "failed"
+    assert "All runs agree" in capsys.readouterr().out
+
+
+def test_terminal_runs_are_never_reopened(run_store):
+    """A cancelled run must not be dragged back to a gate by its stale stage."""
+    _stored_run(run_store, "run-cancelled", "cancelled", "awaiting_approval:principal_architect")
+
+    manage.reconcile_runs()
+
+    assert run_store.load("run-cancelled").status == "cancelled"
+
+
+# ---------------------------------------------------------------------------
+# Per-run provider pins
+# ---------------------------------------------------------------------------
+
+
+def _pinned_run(run_store, run_id: str, overrides: dict):
+    from app.server.runner import RunRecord
+
+    record = RunRecord(
+        run_id=run_id, thread_id=f"thread-{run_id}",
+        document_names=[], document_paths=[],
+        status="failed", current_stage="product_manager",
+        model_overrides=overrides,
+    )
+    run_store.save(record)
+    return record
+
+
+def test_a_stale_pin_is_cleared(run_store, capsys):
+    """The pin was a copy of global settings, never a deliberate choice."""
+    _pinned_run(run_store, "run-pinned", {"llm_provider": "local", "model_name": "old-model"})
+
+    assert manage.clear_run_overrides() == 0
+
+    assert run_store.load("run-pinned").model_overrides == {}
+    assert "Cleared 1 run(s)" in capsys.readouterr().out
+
+
+def test_a_single_run_can_be_targeted(run_store):
+    _pinned_run(run_store, "run-a", {"model_name": "old-a"})
+    _pinned_run(run_store, "run-b", {"model_name": "old-b"})
+
+    manage.clear_run_overrides("run-a")
+
+    assert run_store.load("run-a").model_overrides == {}
+    assert run_store.load("run-b").model_overrides == {"model_name": "old-b"}
+
+
+def test_a_dry_run_reports_without_writing(run_store, capsys):
+    _pinned_run(run_store, "run-dry", {"model_name": "old-model"})
+
+    assert manage.clear_run_overrides(dry_run=True) == 0
+
+    assert run_store.load("run-dry").model_overrides == {"model_name": "old-model"}
+    assert "would be cleared" in capsys.readouterr().out
+
+
+def test_runs_without_a_pin_are_left_alone(run_store, capsys):
+    _pinned_run(run_store, "run-clean", {})
+
+    assert manage.clear_run_overrides() == 0
+
+    assert "No run carries a provider pin." in capsys.readouterr().out
+
+
+def test_an_unknown_run_fails(run_store, capsys):
+    assert manage.clear_run_overrides("run-nope") == 1
+    assert "No run named" in capsys.readouterr().err

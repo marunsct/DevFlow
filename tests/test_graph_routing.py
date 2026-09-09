@@ -29,6 +29,7 @@ from app.graph import workflow as workflow_module
 from app.graph.checkpointing import build_checkpointer
 from app.graph.workflow import (
     MAX_ARCHITECTURE_REVISIONS,
+    MAX_SPECIFICATION_REPAIRS,
     SPECIFICATION_REVIEW,
     SPRINT_REVIEW,
     _entry_router,
@@ -182,8 +183,28 @@ def _tools() -> ToolsAndModelsOutput:
     return ToolsAndModelsOutput()
 
 
-def _spec(scope: str = "MVP booking flow") -> TechnicalSpecificationOutput:
-    return TechnicalSpecificationOutput(product_scope=scope)
+def _spec(scope: str = "MVP booking flow", **overrides) -> TechnicalSpecificationOutput:
+    """A specification complete enough to pass the architecture gate.
+
+    Every required section is populated. The architect node now routes a
+    specification with empty required sections straight back for repair, because
+    in practice the agent writes a full document to disk and then returns a
+    structured response covering only part of it - so a fixture with empty
+    sections no longer models a valid architect output.
+    """
+    fields = {
+        "product_scope": scope,
+        "component_boundaries": ["api", "worker"],
+        "api_and_event_contracts": ["POST /bookings"],
+        "data_flows": ["request -> api -> db"],
+        "security_and_privacy": ["tokens are scoped per tenant"],
+        "reliability_and_observability": ["health endpoint and request logs"],
+        "testing": ["unit and integration"],
+        "deployment": ["containers behind a load balancer"],
+        "acceptance_criteria": ["a booking can be created and read back"],
+    }
+    fields.update(overrides)
+    return TechnicalSpecificationOutput(**fields)
 
 
 def _approved_review() -> ArchitectureReviewOutput:
@@ -379,6 +400,66 @@ def test_happy_path_runs_every_stage_in_order_and_completes(agents: ScriptedAgen
     assert state["architecture_review"].status == "approved"
     assert state["sprint_plan"].sprints[0].goal == "Sprint 1: booking"
     assert "specialist_testing_0" in state["specialist_outputs"]
+
+
+def test_a_specification_missing_sections_goes_straight_back_to_the_architect(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A structured response that dropped sections is repaired before review.
+
+    Observed on a real run: the architect wrote a complete 215-line
+    specification to disk, then returned a structured response with seven
+    required sections empty. The reviewer reads the structured output, so it
+    correctly reported them as empty - and the run spent its entire revision
+    budget and died at the gate on a defect no amount of reviewing could fix.
+    """
+    agents.script("product_manager", [responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script(
+        "principal_architect",
+        [
+            responds_with(_spec("draft", security_and_privacy=[], testing=[], deployment=[])),
+            responds_with(_spec("repaired")),
+        ],
+    )
+    agents.script("architecture_review", [responds_with(_approved_review())])
+    _script_through_sprint(agents)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-repair")
+
+    assert state["stage"] == "complete"
+    # The reviewer was never asked to adjudicate the incomplete draft, so no
+    # revision was charged against the architecture budget.
+    assert state.get("architecture_revision_count", 0) == 0
+    assert state["specification_repair_count"] == 0
+
+    repair_request = agents.requests["principal_architect"][1]["messages"][0]["content"]
+    for section in ("security_and_privacy", "testing", "deployment"):
+        assert section in repair_request
+
+
+def test_the_repair_loop_gives_up_and_lets_the_reviewer_judge(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """An architect that keeps dropping sections must not spin forever."""
+    incomplete = _spec("still missing", testing=[], deployment=[])
+    agents.script("product_manager", [responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script(
+        "principal_architect",
+        [responds_with(incomplete) for _ in range(MAX_SPECIFICATION_REPAIRS + 1)],
+    )
+    agents.script("architecture_review", [responds_with(_approved_review())])
+    _script_through_sprint(agents)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-repair-limit")
+
+    assert len(agents.requests["principal_architect"]) == MAX_SPECIFICATION_REPAIRS + 1
+    assert state["specification_repair_count"] == MAX_SPECIFICATION_REPAIRS
+    # It reached the reviewer rather than looping.
+    assert agents.requests["architecture_review"]
 
 
 def test_rejected_architecture_returns_to_the_architect_with_the_findings(

@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, Response
 
 from app.agents.approval import approve_write_decision, reject_write_decision
@@ -40,6 +41,7 @@ from app.server.models import (
     RemediationInfo,
     ReviewInfo,
     ApprovalPayload,
+    CodebaseUploadResponse,
     CreateRunResponse,
     ReviewDecisionRequest,
     ReviewPayload,
@@ -50,7 +52,11 @@ from app.server.models import (
     StartRunRequest,
 )
 from app.server.runner import RunRecord, WorkflowRunner, _api_status, _stage_meaning
+from app.server.object_store import archive_directory, archive_file, ensure_local
+from app.server.seeding import SeedError, seed_workspace
 from app.server.uploads import (
+    ARCHIVE_EXTENSIONS,
+    DEFAULT_MAX_ARCHIVE_BYTES,
     FileTooLarge,
     UnsupportedFileType,
     UploadError,
@@ -130,6 +136,9 @@ def create_runs_router(
                 raise HTTPException(status_code=400, detail=str(exc))
             stored_paths.append(result.stored_path)
             original_names.append(result.original_name)
+            # A durable second copy, and the only way a worker on another node
+            # can read a document this replica received.
+            archive_file(f"uploads/{Path(result.stored_path).name}", result.stored_path)
 
         run_id = f"run-{uuid.uuid4()}"
         thread_id = f"thread-{uuid.uuid4()}"
@@ -152,6 +161,69 @@ def create_runs_router(
             created_at=record.created_at,
         )
 
+    def _resolve_upload(upload_id: str) -> str | None:
+        """Map an upload id back to a stored path, or None.
+
+        The id is a filename this server generated, but it arrives from a
+        request, so it is resolved under the upload directory with the same
+        containment check used for artifact downloads: an id of
+        ``../../etc/passwd`` must not name a file outside it.
+        """
+        if not upload_id:
+            return None
+        try:
+            candidate = resolve_within_workspace(upload_dir, upload_id)
+        except WorkspaceError:
+            return None
+        # Same reason as the document fetch: the archive may have been uploaded
+        # to a different replica.
+        ensure_local(f"uploads/{candidate.name}", candidate)
+        return str(candidate) if candidate.is_file() else None
+
+    @runs.post("/{run_id}/codebase", response_model=CodebaseUploadResponse, status_code=201)
+    async def upload_codebase(
+        run_id: str,
+        file: UploadFile = File(...),
+        user: UserInDB = Depends(require_operator),
+    ) -> CodebaseUploadResponse:
+        """Upload an existing codebase as an archive, for a brownfield run.
+
+        Stored, not yet extracted: it is unpacked into the workspace when the
+        run starts, so a run that is never started never expands an archive.
+        """
+        record = _require_run(runner, run_id, user)
+        if record.status != "created":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Run {run_id} is already {record.status}; its workspace is fixed.",
+            )
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="The archive must have a filename.")
+
+        try:
+            result = validate_and_store(
+                file.file, file.filename, upload_dir,
+                max_size_bytes=DEFAULT_MAX_ARCHIVE_BYTES,
+                allowed_extensions=ARCHIVE_EXTENSIONS,
+            )
+        except UnsupportedFileType as exc:
+            raise HTTPException(status_code=415, detail=str(exc))
+        except FileTooLarge as exc:
+            raise HTTPException(status_code=413, detail=str(exc))
+        except UploadError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        archive_file(f"uploads/{Path(result.stored_path).name}", result.stored_path)
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.codebase_upload",
+            subject=run_id, detail={"archive": result.original_name, "bytes": result.file_size_bytes},
+        )
+        return CodebaseUploadResponse(
+            upload_id=Path(result.stored_path).name,
+            original_name=result.original_name,
+            file_size_bytes=result.file_size_bytes,
+        )
+
     @runs.post("/{run_id}/start", status_code=202)
     async def start_run(
         run_id: str,
@@ -168,6 +240,12 @@ def create_runs_router(
 
         body = body or StartRunRequest()
 
+        # On a single node the files are already here and this is a no-op. On
+        # more than one, the upload may have landed on a different replica's
+        # disk, so pull it back from object storage before reading.
+        for stored in record.document_paths:
+            ensure_local(f"uploads/{Path(stored).name}", stored)
+
         try:
             document = read_document(record.document_paths)
         except (FileNotFoundError, DocumentReadError) as exc:
@@ -178,10 +256,26 @@ def create_runs_router(
         # the sandbox bind-mount at any directory on the host, including "/".
         try:
             workspace = allocate_workspace(run_id, body.workspace_label)
+        except WorkspaceError as exc:
+            raise HTTPException(status_code=500, detail=f"Could not prepare the workspace: {exc}")
+
+        # Seeding happens before the repository context is built, so a brownfield
+        # run reports the real branch and commit it was based on rather than the
+        # "unknown" a blank directory yields.
+        try:
+            seeded = await run_in_threadpool(
+                seed_workspace, workspace, body.source, resolve_upload=_resolve_upload
+            )
+        except SeedError as exc:
+            # The caller's own input was rejected, so this is a 400, and the
+            # message is the operator-facing reason.
+            raise HTTPException(status_code=400, detail=str(exc))
+
+        try:
             repository = build_repository_context(
                 str(workspace), allow_subdirectories=body.allow_subdirectories
             )
-        except (WorkspaceError, RepositoryToolError) as exc:
+        except RepositoryToolError as exc:
             raise HTTPException(status_code=500, detail=f"Could not prepare the workspace: {exc}")
 
         try:
@@ -203,7 +297,14 @@ def create_runs_router(
 
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.start", subject=run_id,
-            detail={"auto_approve": body.auto_approve, "reviewer": body.reviewer},
+            # `seeded.provenance` is built by the seeding module and carries a
+            # redacted URL. The access token from the request is deliberately
+            # not in it, and must not be added: this row is long-lived.
+            detail={
+                "auto_approve": body.auto_approve,
+                "reviewer": body.reviewer,
+                "workspace_source": seeded.provenance,
+            },
         )
         return {"message": f"Run {run_id} started."}
 

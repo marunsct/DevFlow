@@ -66,6 +66,16 @@ COPY --chown=appuser:appuser src/ ./src/
 COPY --chown=appuser:appuser pyproject.toml ./
 COPY --from=frontend-builder --chown=appuser:appuser /app/langchain-ui/dist /app/langchain-ui/dist
 
+# Node for the agents, not for this image's own build - the UI specialist is
+# expected to run `npm install` and compile what it writes, and cannot install a
+# runtime for itself. Copied from the frontend builder rather than downloaded
+# again, so both stages are pinned to exactly one Node version.
+COPY --from=frontend-builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node --version && npm --version
+
 RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser /app/data
 
 # Runs unprivileged. The image previously ran as root.

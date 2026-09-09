@@ -114,6 +114,16 @@ from app.state import HumanApprovalRequest, RepositoryContext, ReviewStatus, Wor
 from app.tracing import trace_metadata
 
 MAX_ARCHITECTURE_REVISIONS = 3
+
+MAX_SPECIFICATION_REPAIRS = 2
+"""How many times to ask the architect to refill sections it left empty.
+
+Separate from `MAX_ARCHITECTURE_REVISIONS` because it is a different failure:
+not "the reviewer disagrees with the design" but "the structured output came
+back missing sections the agent had already written". Spending review cycles on
+that wastes two model calls per attempt and burns the revision budget on a
+defect the reviewer cannot fix.
+"""
 """Bound how many times architecture review can send work back to the Principal
 Architect before the run is marked failed instead of looping forever."""
 
@@ -231,6 +241,7 @@ class WorkflowGraphState(TypedDict, total=False):
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
+    specification_repair_count: int
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
     current_sprint_index: int
@@ -263,6 +274,11 @@ class WorkflowGraphState(TypedDict, total=False):
 def _is_paused(stage: str) -> bool:
     """Return whether a stage value represents a pause rather than a next node."""
     return stage.startswith(_PAUSE_PREFIXES)
+
+
+def _is_awaiting_approval_for(state: WorkflowGraphState, stage_name: str) -> bool:
+    """Return whether `state` is parked on this stage's own approval gate."""
+    return state.get("stage", "") == f"{APPROVAL_PAUSE_PREFIX}{stage_name}"
 
 
 def _route_from_stage(state: WorkflowGraphState) -> str:
@@ -334,6 +350,22 @@ def _run_gated_agent(
         if not inner_thread_id:
             inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         result = resume_with_decision(agent, inner_thread_id, pending_decision)
+    elif _is_awaiting_approval_for(state, stage_name) and state.get("pending_inner_thread_id"):
+        # Re-entered our own approval pause with no decision attached. That
+        # happens whenever something resumes the run without answering the gate
+        # (the /resume endpoint, a retry after a transient error).
+        #
+        # Falling through to the `else` branch would mint a *fresh* inner thread
+        # and re-run the whole agent from scratch, which throws away the paused
+        # inner thread, burns a full context window, and lands back on this exact
+        # gate - a loop that makes no progress and costs a model call each time.
+        # Re-surface the pause instead: only a decision can clear it.
+        return {
+            "stage": f"{APPROVAL_PAUSE_PREFIX}{stage_name}",
+            "pending_approval": state.get("pending_approval"),
+            "pending_inner_thread_id": state.get("pending_inner_thread_id"),
+            "pending_decision": None,
+        }
     else:
         # Append a UUID to force a fresh context window for new attempts.
         # This prevents the LLM from drowning in the message history of previous failed attempts.
@@ -370,6 +402,41 @@ def _run_gated_agent(
         # they accumulate unreachable forever.
         "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
     }
+
+
+# Sections a specification is not usable without. `domain_model` and
+# `open_questions` are excluded: a small product legitimately has neither.
+_REQUIRED_SPECIFICATION_SECTIONS = (
+    "component_boundaries",
+    "api_and_event_contracts",
+    "data_flows",
+    "security_and_privacy",
+    "reliability_and_observability",
+    "testing",
+    "deployment",
+    "acceptance_criteria",
+)
+
+
+def _incomplete_specification_sections(specification: Any) -> list[str]:
+    """Return the required sections this specification left empty.
+
+    Every list field on `TechnicalSpecificationOutput` carries
+    `default_factory=list`, so a structured response that simply omits a section
+    validates cleanly and arrives as `[]`. In practice the architect writes a
+    complete document to disk and then returns a structured response covering
+    only part of it, and nothing downstream notices: the reviewer reads the
+    structured output, correctly reports the sections as empty, and the run
+    burns its whole revision budget on a defect no amount of re-reviewing can
+    fix. Catching it here turns that into one targeted retry.
+    """
+    if specification is None:
+        return []
+    return [
+        section
+        for section in _REQUIRED_SPECIFICATION_SECTIONS
+        if not getattr(specification, section, None)
+    ]
 
 
 def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
@@ -525,6 +592,23 @@ def _run_review_gate(
     return update
 
 
+def _effective_base_environment() -> dict[str, str]:
+    """The environment a run's model overrides are layered on top of.
+
+    Falls back to the raw environment when the settings store is unreachable:
+    the deployed configuration is still a valid one, and a run must not fail
+    because a settings lookup did.
+    """
+    import os
+
+    try:
+        from app.server.runtime_settings import effective_environment
+
+        return effective_environment()
+    except Exception:  # noqa: BLE001 - see docstring
+        return dict(os.environ)
+
+
 def build_workflow_graph(
     model: str | BaseChatModel | None = None,
     *,
@@ -544,11 +628,15 @@ def build_workflow_graph(
     shared_checkpointer = checkpointer or build_checkpointer()
     
     if model_overrides:
-        import os
         from app.config import load_settings
         from app.models import build_default_chat_model
-        
-        base_env = dict(os.environ)
+
+        # The base is the *effective* environment - the deployed one plus any
+        # setting an administrator has changed - not this container's raw
+        # environment. A run pins its provider and model, but the address the
+        # model is served from is deployment configuration and must come from
+        # whatever it is now.
+        base_env = _effective_base_environment()
         mapping = {
             "llm_provider": "LLM_PROVIDER",
             "openai_base_url": "OPENAI_BASE_URL",
@@ -661,6 +749,24 @@ def build_workflow_graph(
             # Consumed: the revision request above already delivered them, so
             # a later rerun must not re-apply stale comments.
             update["revision_comments"] = []
+
+            missing = _incomplete_specification_sections(update.get("technical_specification"))
+            repairs = state.get("specification_repair_count", 0)
+            if missing and repairs < MAX_SPECIFICATION_REPAIRS:
+                # Straight back to the architect with the exact field names,
+                # without spending an architecture-review cycle on it.
+                update["specification_repair_count"] = repairs + 1
+                update["stage"] = "principal_architect"
+                update["revision_comments"] = [
+                    "Your structured response left these required sections empty: "
+                    + ", ".join(missing)
+                    + ". The document you wrote may already cover them - the problem is the "
+                    "structured output, not the prose. Return the specification again with "
+                    "every one of those fields populated from the document; do not drop the "
+                    "sections that are already filled in."
+                ]
+            elif not missing:
+                update["specification_repair_count"] = 0
         return update
 
     def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
@@ -1257,6 +1363,37 @@ def start_workflow(
     )
 
 
+class WorkflowResumeError(RuntimeError):
+    """A run could not be resumed from its checkpoint."""
+
+
+# Bookkeeping checkpoints written by `update_state`/input, never a real stage.
+_SYNTHETIC_NODES = frozenset({"__start__", "__input__", "failed"})
+
+
+def _node_that_failed(graph: Any, config: dict[str, Any]) -> str | None:
+    """Find the node whose routing decision sent this run to the `failed` node.
+
+    History is most-recent-first. The previous implementation took the entry
+    immediately after the transition into `failed` and trusted its `next`. That
+    holds only on the first resume: every later resume prepends its own
+    `__start__` bookkeeping checkpoints, so the neighbour became `__start__`,
+    which matched none of the rewind branches and dropped through to a fallback
+    that restarted the whole run. Skip the synthetic entries and take the most
+    recent checkpoint that names a real node.
+    """
+    history = list(graph.get_state_history(config))
+    for index, snapshot in enumerate(history):
+        if snapshot.next != ("failed",):
+            continue
+        for earlier in history[index + 1:]:
+            node = earlier.next[0] if earlier.next else None
+            if node and node not in _SYNTHETIC_NODES:
+                return node
+        return None
+    return None
+
+
 def resume_failed_run(
     graph: Any,
     thread_id: str,
@@ -1271,21 +1408,19 @@ def resume_failed_run(
     """
     config = _run_config(thread_id, recursion_limit, metadata=metadata)
     state_snapshot = graph.get_state(config)
-    
+
+    # A run parked on a human gate cannot be resumed, only decided. Re-invoking
+    # here re-enters the gate node and returns the same pause, so the caller
+    # would see a "successful" resume that changed nothing. Say so instead.
+    if state_snapshot and _is_paused(state_snapshot.values.get("stage", "")):
+        raise WorkflowResumeError(
+            f"This run is paused at '{state_snapshot.values['stage']}' and is waiting for a "
+            "decision, not a retry. Answer the open approval or review to continue."
+        )
+
     if state_snapshot and state_snapshot.values.get("stage") == "failed":
-        history = list(graph.get_state_history(config))
-        
-        failed_node = None
-        prev_state = None
-        
-        # Scan backward (history is most-recent-first) to find the state that
-        # caused the transition to the 'failed' node.
-        for i in range(len(history) - 1):
-            if history[i].next == ('failed',):
-                prev_state = history[i+1]
-                failed_node = prev_state.next[0] if prev_state.next else None
-                break
-                
+        failed_node = _node_that_failed(graph, config)
+
         if failed_node:
             rewind_values = {
                 "stage": "product_manager", # fallback
@@ -1293,6 +1428,7 @@ def resume_failed_run(
             }
             if failed_node == "architecture_review":
                 rewind_values["architecture_revision_count"] = 0
+                rewind_values["specification_repair_count"] = 0
                 rewind_values["stage"] = "principal_architect"
             elif failed_node in ("test_and_triage", "sprint_advance"):
                 rewind_values["stage"] = "technical_lead"
@@ -1304,6 +1440,16 @@ def resume_failed_run(
                 
             # Overwrite the state on the node that originally failed so the router will route to our target
             graph.update_state(config, rewind_values, as_node=failed_node)
+        else:
+            # Refusing beats guessing. The old code fell back to
+            # stage="product_manager", which would silently restart a run from
+            # the very beginning - discarding every approved artifact and
+            # re-billing the whole pipeline - on a history shape it did not
+            # recognise.
+            raise WorkflowResumeError(
+                "Could not determine which stage this run failed at, so there is nothing "
+                "safe to rewind to. Clone the run to start a fresh attempt."
+            )
 
     # Self-healing: if we are resuming a corrupted run from before the token limit fix
     if state_snapshot and state_snapshot.values.get("stage") == "architecture_review" and state_snapshot.values.get("technical_specification") is None:

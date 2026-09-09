@@ -36,6 +36,13 @@ add_if_missing POSTGRES_USER      "postgres"
 add_if_missing POSTGRES_DB        "langchain"
 add_if_missing ENV                "production"
 add_if_missing CHECKPOINTER_TYPE  "postgres"
+# MinIO refuses to start without a root password, so this must be generated too.
+add_if_missing MINIO_ROOT_USER    "minioadmin"
+add_if_missing MINIO_ROOT_PASSWORD "$(genpw)"
+add_if_missing OBJECT_STORE_BUCKET "langchain-artifacts"
+# Without a dedicated key this is derived from JWT_SECRET_KEY, which means
+# rotating that one silently invalidates every stored provider credential.
+add_if_missing SETTINGS_ENCRYPTION_KEY "$(gen)"
 
 echo
 echo "Done. Sign in as 'admin' with:"

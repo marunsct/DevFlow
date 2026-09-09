@@ -334,4 +334,166 @@ async def test_the_gate_ceiling_is_enforced(runner, monkeypatch):
 
     stored = runner.run_store.load("run-1")
     assert stored.status == "failed"
-    assert "gates" in stored.error
+    assert "automatic approvals" in stored.error
+
+
+# ---------------------------------------------------------------------------
+# The status recorded when an invoke raises
+# ---------------------------------------------------------------------------
+#
+# A node that raises is never checkpointed, so the graph is still parked exactly
+# where it was before the attempt. Recording a flat "failed" desynchronised the
+# row from the graph and made the run unreachable: the UI offers Resume for a
+# failed run, but Resume cannot clear an approval gate, and /approve refuses
+# anything whose status is not `waiting_for_approval`.
+
+
+@pytest.mark.parametrize(
+    "stage, expected",
+    [
+        ("awaiting_approval:principal_architect", "waiting_for_approval"),
+        ("awaiting_user_review:specification", "waiting_for_review"),
+        ("principal_architect", "failed"),
+        ("", "failed"),
+    ],
+)
+def test_failure_status_follows_the_stage_the_graph_is_parked_on(runner, stage, expected):
+    record = RunRecord(
+        run_id="run-x", thread_id="thread-x", document_names=[], document_paths=[],
+        current_stage=stage,
+    )
+
+    assert runner._status_after_failure(record) == expected
+
+
+def test_a_failure_on_a_gate_leaves_exactly_one_usable_route(runner):
+    """The deadlock: status said `failed`, current_stage said waiting."""
+    record = RunRecord(
+        run_id="run-y", thread_id="thread-y", document_names=[], document_paths=[],
+        current_stage="awaiting_approval:principal_architect",
+    )
+
+    status = runner._status_after_failure(record)
+
+    assert status == _api_status(record.current_stage)
+
+
+# ---------------------------------------------------------------------------
+# What a run pins, and what it must not
+# ---------------------------------------------------------------------------
+#
+# `llm_provider` and `model_name` are experiment choices: re-running later
+# should use the same model. A base URL is not - it is where the model happens
+# to be hosted, and the host moves. Pinning it meant that relocating the model
+# server permanently broke every run that already existed: the stored URL beat
+# the corrected setting on every resume, so there was no way to repoint them.
+
+
+def test_the_model_and_provider_are_pinned_to_the_run():
+    from app.server.runner import _public_model_overrides
+
+    kept = _public_model_overrides({"llm_provider": "local", "model_name": "qwen-30b"})
+
+    assert kept == {"llm_provider": "local", "model_name": "qwen-30b"}
+
+
+def test_the_base_url_is_not_pinned_to_the_run():
+    from app.server.runner import _public_model_overrides
+
+    kept = _public_model_overrides(
+        {"llm_provider": "local", "model_name": "qwen-30b",
+         "openai_base_url": "http://old-host:1234/v1"}
+    )
+
+    assert "openai_base_url" not in kept
+
+
+def test_a_run_stored_before_the_fix_stops_using_its_stale_url():
+    """Rows written earlier still carry a base URL; it must not be applied."""
+    from app.server.runner import _applicable_overrides
+
+    applied = _applicable_overrides(
+        {"llm_provider": "local", "model_name": "qwen-30b",
+         "openai_base_url": "http://host-that-moved:1234/v1"}
+    )
+
+    assert applied == {"llm_provider": "local", "model_name": "qwen-30b"}
+
+
+def test_credentials_are_still_stripped_from_applied_overrides():
+    from app.server.runner import _applicable_overrides
+
+    applied = _applicable_overrides({"model_name": "m", "openai_api_key": "sk-secret"})
+
+    assert applied == {"model_name": "m"}
+
+
+# ---------------------------------------------------------------------------
+# The auto-approval ceiling
+# ---------------------------------------------------------------------------
+#
+# Only an unattended run gets near this. A supervised run returns to the human
+# at each gate, ending the segment; an unattended one answers every gate itself
+# and does the whole build in one segment, so every artifact write by every
+# specialist across every sprint is one round.
+
+
+def test_the_gate_ceiling_is_high_enough_for_a_real_unattended_build():
+    """200 was sized for a supervised run and stopped real builds part-way."""
+    from app.server.runner import MAX_GATES
+
+    assert MAX_GATES >= 1000
+
+
+def test_the_gate_ceiling_is_configurable(monkeypatch):
+    import importlib
+
+    monkeypatch.setenv("WORKFLOW_MAX_GATES", "42")
+    import app.server.runner as runner_module
+
+    reloaded = importlib.reload(runner_module)
+    try:
+        assert reloaded.MAX_GATES == 42
+    finally:
+        monkeypatch.delenv("WORKFLOW_MAX_GATES", raising=False)
+        importlib.reload(runner_module)
+
+
+@pytest.mark.asyncio
+async def test_exhausting_the_gate_ceiling_is_reported(runner, monkeypatch):
+    """The failure an unattended run is most likely to hit.
+
+    It used to be recorded silently - the row said "failed" while no event was
+    published and the stream was never closed - so a UI watching the run waited
+    forever for something that had already stopped.
+    """
+    import app.server.runner as runner_module
+
+    monkeypatch.setattr(runner_module, "MAX_GATES", 2)
+
+    record = _register(runner, "run-gates")
+    record.auto_approve = True
+    published = []
+
+    async def _capture(run_id, event):
+        published.append(event)
+
+    closed = []
+
+    async def _close(run_id):
+        closed.append(run_id)
+
+    monkeypatch.setattr(runner.event_bus, "publish", _capture)
+    monkeypatch.setattr(runner.event_bus, "close", _close)
+
+    # A stage that is neither terminal nor a pause, so the loop keeps going.
+    class _StuckGraph:
+        def invoke(self, _input, config=None):
+            return {"stage": "product_manager"}
+
+    await runner._handle_state(record, _StuckGraph(), {"stage": "product_manager"}, {})
+
+    assert record.status == "failed"
+    assert "automatic approvals" in record.error
+    assert any(e.event_type == "error" for e in published), "no error event was published"
+    assert closed == ["run-gates"], "the event stream was never closed"

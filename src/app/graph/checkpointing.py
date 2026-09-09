@@ -41,10 +41,11 @@ from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneRevie
 from app.agents.principal_architect import ArchitectureDecisionRecord, TechnicalSpecificationOutput
 from app.agents.product_manager import ProductManagerOutput
 from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+from app.agents.stack_selector import StackSelectorOutput
 from app.agents.security_reviewer import SecurityFinding, SecurityReviewOutput
 from app.agents.specialists import ReportedDefect, SpecialistOutput
 from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
-from app.agents.tools_models import TechnologyChoice, ToolsAndModelsOutput
+from app.agents.tools_models import TechnologyChoice, TechnologyStack, ToolsAndModelsOutput
 from app.documents import DocumentContent
 from app.sprint import Defect, RemediationCycle, TestRunRecord
 from app.state import (
@@ -64,6 +65,8 @@ CHECKPOINTED_TYPES = (
     ProductManagerOutput,
     ToolsAndModelsOutput,
     TechnologyChoice,
+    StackSelectorOutput,
+    TechnologyStack,
     TechnicalSpecificationOutput,
     ArchitectureDecisionRecord,
     SecurityReviewOutput,

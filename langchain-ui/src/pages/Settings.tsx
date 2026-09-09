@@ -4,33 +4,60 @@ import { api } from '../api';
 
 import type { SettingsView } from '../types';
 
-/** What the form can actually change. Credentials are managed by deployment
- *  configuration and are never sent through this API. */
+/** What the form can change.
+ *
+ *  Credentials are write-only: the server never returns one, so the inputs
+ *  start empty and are only sent when the operator actually types something.
+ *  Sending "" deletes the stored credential and lets the deployment's own
+ *  environment apply again. */
 interface ProviderForm {
   llm_provider: string;
   openai_base_url: string;
   model_name: string;
+  openai_api_key?: string;
+  anthropic_api_key?: string;
+  google_api_key?: string;
 }
+
+type CredentialField = 'openai_api_key' | 'anthropic_api_key' | 'google_api_key';
 
 export const Settings: React.FC = () => {
   const [user, setUser] = useState<{ username: string; role?: string } | null>(null);
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
+  // Held apart from `settings` because these are never read back from the
+  // server: an empty box means "leave it alone", not "there is no key".
+  const [credentials, setCredentials] = useState<Record<CredentialField, string>>({
+    openai_api_key: '',
+    anthropic_api_key: '',
+    google_api_key: '',
+  });
 
   useEffect(() => {
     api.get('/auth/me').then(res => setUser(res.data)).catch(() => {});
     api.get('/settings').then(res => setSettings(res.data)).catch(() => {});
   }, []);
 
-  const CredentialRow = ({ label, configured, hint }: {
-    label: string; configured: boolean; hint?: string | null;
+  const CredentialField = ({ label, field, configured, hint, placeholder }: {
+    label: string; field: CredentialField; configured: boolean;
+    hint?: string | null; placeholder: string;
   }) => (
-    <div className="flex justify-between items-center text-sm">
-      <span className="text-text-secondary">{label}</span>
-      <span className={configured ? 'font-mono text-success' : 'text-text-muted'}>
-        {configured ? (hint ?? 'configured') : 'not configured'}
-      </span>
+    <div>
+      <div className="flex justify-between items-baseline mb-1">
+        <label className="text-sm font-medium text-text-secondary">{label}</label>
+        <span className={configured ? 'text-xs font-mono text-success' : 'text-xs text-text-muted'}>
+          {configured ? (hint ?? 'configured') : 'not configured'}
+        </span>
+      </div>
+      <input
+        type="password"
+        autoComplete="new-password"
+        value={credentials[field]}
+        onChange={(e) => setCredentials({ ...credentials, [field]: e.target.value })}
+        className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-primary"
+        placeholder={configured ? 'Leave blank to keep the stored key' : placeholder}
+      />
     </div>
   );
 
@@ -52,8 +79,15 @@ export const Settings: React.FC = () => {
         openai_base_url: settings.openai_base_url,
         model_name: settings.model_name,
       };
+      // Only send a credential the operator actually typed into. An untouched
+      // box must not clear a key that is already working.
+      (Object.keys(credentials) as CredentialField[]).forEach((field) => {
+        if (credentials[field] !== '') form[field] = credentials[field];
+      });
+
       const res = await api.put('/settings', form);
       setSettings(res.data);
+      setCredentials({ openai_api_key: '', anthropic_api_key: '', google_api_key: '' });
       setMessage('Settings saved.');
     } catch (err: any) {
       setMessage(err.response?.data?.detail ?? 'Could not save settings.');
@@ -130,29 +164,37 @@ export const Settings: React.FC = () => {
                 />
               </div>
 
-              {/* Credentials are read-only here by design: an API that returns
-                  keys hands them to every caller and to every request log. */}
-              <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-2">
-                <p className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">API credentials</p>
-                <div className="space-y-1">
-                  <CredentialRow
+              {/* Write-only. The server never returns a key, so these start
+                  empty and only what is typed gets sent. */}
+              <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+                <p className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wider">API credentials</p>
+                <div className="space-y-3">
+                  <CredentialField
                     label="OpenAI"
+                    field="openai_api_key"
                     configured={settings.openai_api_key_configured}
                     hint={settings.openai_api_key_hint}
+                    placeholder="sk-..."
                   />
-                  <CredentialRow
+                  <CredentialField
                     label="Anthropic"
+                    field="anthropic_api_key"
                     configured={settings.anthropic_api_key_configured}
                     hint={settings.anthropic_api_key_hint}
+                    placeholder="sk-ant-..."
                   />
-                  <CredentialRow
+                  <CredentialField
                     label="Google"
+                    field="google_api_key"
                     configured={settings.google_api_key_configured}
                     hint={settings.google_api_key_hint}
+                    placeholder="AIza..."
                   />
                 </div>
-                <p className="text-xs text-text-muted mt-2">
-                  Set through deployment configuration or the secret store, not through this page.
+                <p className="text-xs text-text-muted mt-3">
+                  Stored encrypted and never shown again. Leave a box blank to keep the
+                  stored key; type a single space to remove it and fall back to the
+                  deployment&rsquo;s own configuration.
                 </p>
               </div>
 

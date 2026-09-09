@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import traceback
 from dataclasses import dataclass, field
+from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
 
@@ -40,12 +42,18 @@ from app.tracing import is_tracing_enabled, trace_metadata
 
 logger = logging.getLogger(__name__)
 
-MAX_GATES = 200
-"""Safety ceiling: stop after this many invoke rounds per run.
+MAX_GATES = int(os.environ.get("WORKFLOW_MAX_GATES", "1000"))
+"""Safety ceiling: stop after this many invoke rounds in one run segment.
 
-Higher than the CLI's 50 because the web runner handles gates automatically
-when a decision is already queued (e.g. auto-approve), so it can hit more
-gates per run without human interaction at each one.
+Only auto-approved runs get anywhere near this - a supervised run returns to the
+human at each gate, ending the segment. An unattended run does the opposite: it
+answers every gate itself and does the whole build in one segment, and every
+artifact write by every specialist across every sprint is one round. The old
+ceiling of 200 was sized for a mostly-supervised run and would stop a real
+unattended build part-way through.
+
+It exists to catch a stage that is genuinely looping, not to bound normal work,
+so it is set high and made configurable rather than tuned.
 """
 
 # Stage-meaning map, matching main.py's _STAGE_MEANINGS.
@@ -95,17 +103,43 @@ class RunConflict(RuntimeError):
 
 _SECRET_OVERRIDE_KEYS = frozenset({"openai_api_key", "anthropic_api_key", "google_api_key"})
 
+_DEPLOYMENT_OVERRIDE_KEYS = frozenset({"openai_base_url"})
+"""Overrides that describe *where the model is hosted*, not what the run chose.
+
+`llm_provider` and `model_name` are experiment choices worth pinning to a run:
+re-running it later should use the same model. A base URL is not - it is
+deployment configuration, and the host moves.
+
+Pinning it meant that moving the model server broke every run that already
+existed, permanently: the stored URL won over the corrected setting on every
+resume, so there was no way to point an existing run at the new address.
+"""
+
+_UNPINNED_OVERRIDE_KEYS = _SECRET_OVERRIDE_KEYS | _DEPLOYMENT_OVERRIDE_KEYS
+
 
 def _public_model_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
-    """Keep only the non-secret parts of a model override.
+    """Keep only the parts of a model override worth persisting on the run.
 
     API keys must not be persisted in the metadata table or shipped through the
     Celery broker; the worker resolves credentials from its own environment or
-    the secret store.
+    the secret store. The base URL is dropped for a different reason - see
+    `_DEPLOYMENT_OVERRIDE_KEYS`.
     """
     if not overrides:
         return {}
-    return {k: v for k, v in overrides.items() if v and k not in _SECRET_OVERRIDE_KEYS}
+    return {k: v for k, v in overrides.items() if v and k not in _UNPINNED_OVERRIDE_KEYS}
+
+
+def _applicable_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
+    """Filter overrides at the point of use, so rows written earlier self-heal.
+
+    Runs created before the base URL stopped being pinned still carry one in
+    their stored overrides. Dropping it here means those runs pick up the
+    current setting on their next attempt instead of staying pointed at a host
+    that may no longer exist.
+    """
+    return _public_model_overrides(overrides)
 
 
 def _approval_metadata(approval: Any) -> dict[str, Any]:
@@ -393,7 +427,9 @@ class WorkflowRunner:
         run_id = record.run_id
         repo_root = repository.root_path if repository else record.repo_root
         allow_subs = repository.allow_subdirectories if repository else True
-        overrides = model_overrides if model_overrides is not None else record.model_overrides
+        overrides = _applicable_overrides(
+            model_overrides if model_overrides is not None else record.model_overrides
+        )
 
         try:
             if self.run_store.is_cancel_requested(run_id):
@@ -451,7 +487,7 @@ class WorkflowRunner:
             # short message reaches the API, because run.error is rendered in the
             # browser and a traceback leaks paths, versions and module layout.
             logger.exception("Run %s failed", run_id)
-            record.status = "failed"
+            record.status = self._status_after_failure(record)
             record.error = f"{type(exc).__name__}: {exc}"[:500]
             record.updated_at = datetime.now(timezone.utc).isoformat()
             self._persist(record)
@@ -506,6 +542,7 @@ class WorkflowRunner:
                 record.error = state.get("error")
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
+                await asyncio.to_thread(self._archive_artifacts, record)
                 await self.event_bus.publish(
                     run_id,
                     RunEvent(
@@ -583,10 +620,81 @@ class WorkflowRunner:
             # loop would spin on unchanged state.
             state = await asyncio.to_thread(graph.invoke, None, _resume_config(record.thread_id, trace_meta))
 
+        # Reaching here means the auto-approval loop ran out of rounds. This is
+        # the one failure an unattended run is most likely to hit, and it used
+        # to be recorded silently: the row said "failed" while no event was
+        # published and the stream was never closed, so a UI watching the run
+        # simply waited forever. Report it like any other terminal state.
         record.status = "failed"
-        record.error = f"Stopped after {MAX_GATES} gates without reaching a terminal stage."
+        record.error = (
+            f"Stopped after {MAX_GATES} automatic approvals without finishing. "
+            "Raise WORKFLOW_MAX_GATES if this run legitimately needs more, or "
+            "inspect the log for a stage that is repeating."
+        )
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
+        await self.event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await self.event_bus.next_sequence(run_id),
+                stage=record.current_stage,
+                event_type="error",
+                message=record.error,
+            ),
+        )
+        await self.event_bus.close(run_id)
+
+    def _archive_artifacts(self, record: RunRecord) -> None:
+        """Push this run's produced files to object storage, if configured.
+
+        Runs once, when the run reaches a terminal stage. Two reasons this is
+        worth doing at all: the workspace volume is the only copy that exists,
+        and the API serves downloads by reading the workspace - which is a
+        different disk from this worker's as soon as there is more than one
+        node. Failures are logged, never raised: the run is finished and its
+        files are on disk, so a storage outage must not turn a completed run
+        into a failed one.
+        """
+        if not record.repo_root:
+            return
+        try:
+            from app.server.object_store import archive_directory
+            from app.tools.repository import list_repository_files
+
+            workspace = Path(record.repo_root)
+            if not workspace.is_dir():
+                return
+            # The same pruned listing the status page shows, so what is archived
+            # is exactly what the run reports as its artifacts.
+            relative = list_repository_files(workspace)
+            stored = archive_directory(
+                f"runs/{record.run_id}", workspace, relative_paths=relative
+            )
+            logger.info("Archived %d artifact(s) for run %s", stored, record.run_id)
+        except Exception:  # noqa: BLE001 - archiving is never load-bearing
+            logger.warning("Could not archive artifacts for run %s", record.run_id, exc_info=True)
+
+    def _status_after_failure(self, record: RunRecord) -> str:
+        """The status to record when an invoke raised.
+
+        A raising node is not checkpointed, so the graph is still parked exactly
+        where it was before the attempt - and if that was a human gate, the gate
+        is still the only thing that can move the run forward.
+
+        Recording a flat "failed" in that case desynchronised the row from the
+        graph: `status` said failed while `current_stage` still said
+        `awaiting_approval:...`. The API gates each lifecycle route on `status`
+        and the UI picks its controls from it, so the run became unreachable -
+        /resume was offered but could not clear an approval gate, and /approve
+        was rejected because the status was not `waiting_for_approval`. Keeping
+        the status derived from the stage keeps exactly one route open, and it is
+        the route that actually works. The error is still surfaced in `error`.
+        """
+        stage = record.current_stage or ""
+        if stage.startswith((APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX)):
+            return _api_status(stage)
+        return "failed"
 
     async def _finish_cancelled(self, record: RunRecord) -> None:
         record.status = "cancelled"

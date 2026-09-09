@@ -75,6 +75,35 @@ class TechnicalSpecificationOutput(BaseModel):
 
 from app.documents import DocumentContent
 
+REVISION_DOCUMENT_BUDGET = 20_000
+"""Characters of the original upload to carry into a *revision* request.
+
+A revision is a targeted edit, not a fresh reading of the brief. It already
+carries the previous specification, the approved intake (which is the product
+manager's distillation of these very documents) and the reviewer's findings, so
+re-sending the whole corpus mostly displaces the parts the architect needs.
+
+Measured on a real run: the uploaded documents were 96% of a ~35k-token first
+request and 90% of a ~38k-token revision. The architect responded with a
+structured specification whose sections were empty even though it had written a
+complete 215-line document to disk - the signature of a structured output
+generated with almost no room left.
+"""
+
+
+def _document_excerpt(document: DocumentContent, budget: int) -> str:
+    """The document text, trimmed to a budget with the trim made visible."""
+    text = document.text
+    if len(text) <= budget:
+        return text
+    return (
+        text[:budget]
+        + f"\n\n[Excerpt: {len(text):,} characters of source documents were trimmed to "
+        f"{budget:,} for this revision. The approved product intake above is the "
+        "complete distillation of them; ask for a specific document if you need more.]"
+    )
+
+
 def build_architecture_request(
     product_intake_text: str,
     tools_and_models_text: str,
@@ -131,7 +160,8 @@ def build_architecture_revision_request(
         f"--- Approved product intake ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection ---\n{stack_selection_text}\n\n"
-        f"--- Original Uploaded Documents ---\n{document.text}\n\n"
+        f"--- Original uploaded documents (excerpt) ---\n"
+        f"{_document_excerpt(document, REVISION_DOCUMENT_BUDGET)}\n\n"
         "Your previous technical specification was NOT accepted. Produce a new "
         "revision that resolves every required change listed below.\n\n"
         f"--- Your previous specification ---\n{previous_specification_text}\n\n"

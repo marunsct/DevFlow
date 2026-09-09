@@ -16,6 +16,57 @@ class CreateRunResponse(BaseModel):
     created_at: datetime = Field(description="Timestamp when the run was created.")
 
 
+class WorkspaceSource(BaseModel):
+    """Where a run's workspace content comes from.
+
+    Two scenarios use this platform. Greenfield - no existing code, the agents
+    create it - is the default and needs nothing here. Brownfield - adding
+    features to something that already exists - needs that code materialised
+    into the workspace before the first agent reads it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["empty", "git", "archive"] = Field(
+        default="empty",
+        description="empty: greenfield. git: clone a repository. archive: extract an upload.",
+    )
+    url: str | None = Field(
+        default=None, max_length=2048,
+        description="Repository URL, for type=git. HTTPS unless the operator widened it.",
+    )
+    ref: str | None = Field(
+        default=None, max_length=255,
+        description="Branch or tag to clone, for type=git. Defaults to the remote's HEAD.",
+    )
+    token: str | None = Field(
+        default=None, max_length=512, repr=False,
+        description=(
+            "Access token for a private repository, for type=git. Used for this "
+            "clone only: it is never written to the run record, the audit log or "
+            "the Celery broker."
+        ),
+    )
+    depth: int = Field(
+        default=1, ge=0, le=1000,
+        description="Clone depth; 0 for full history. Shallow by default - the agents need the code, not the history.",
+    )
+    upload_id: str | None = Field(
+        default=None, max_length=255,
+        description="Identifier returned by the codebase upload endpoint, for type=archive.",
+    )
+
+
+class CodebaseUploadResponse(BaseModel):
+    """Response after storing a codebase archive for a run."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    upload_id: str = Field(description="Pass this as WorkspaceSource.upload_id when starting the run.")
+    original_name: str = Field(description="The archive's original filename.")
+    file_size_bytes: int = Field(description="Stored size in bytes.")
+
+
 class StartRunRequest(BaseModel):
     """Request to start a run.
 
@@ -45,6 +96,10 @@ class StartRunRequest(BaseModel):
     )
     allow_subdirectories: bool = Field(
         default=True, description="Whether agents may work in subdirectories of the workspace."
+    )
+    source: WorkspaceSource | None = Field(
+        default=None,
+        description="Seed the workspace from an existing codebase. Omit for a greenfield run.",
     )
     auto_approve: bool = Field(
         default=False,

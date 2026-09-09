@@ -15,7 +15,8 @@ import {
   submitApproval,
   cancelRun,
   resumeRun,
-  cloneRun
+  cloneRun,
+  getStreamTicket
 } from '../api';
 import { DynamicWorkflowUI } from '../components/DynamicWorkflowUI';
 import { LogViewer } from '../components/LogViewer';
@@ -38,7 +39,32 @@ export const RunDashboard: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const logsRef = useRef<LogEntry[]>([]);
+  // Logs are keyed by event id so history pages and live events can be merged
+  // without duplicates. The previous version deduplicated by JSON.stringify
+  // across the whole array on every arriving message, and paged history using
+  // the merged length as an offset - so live events silently shifted the cursor
+  // past history the user had never seen.
+  const logsById = useRef<Map<string, LogEntry>>(new Map());
+  const historyCursor = useRef(0);
+  const lastSequence = useRef(0);
+
+  const mergeLogs = (incoming: LogEntry[]) => {
+    if (incoming.length === 0) return;
+    let changed = false;
+    for (const entry of incoming) {
+      const key = entry.event_id ?? `${entry.sequence}:${entry.timestamp}`;
+      if (!logsById.current.has(key)) {
+        logsById.current.set(key, entry);
+        changed = true;
+      }
+      if (typeof entry.sequence === 'number' && entry.sequence > lastSequence.current) {
+        lastSequence.current = entry.sequence;
+      }
+    }
+    if (changed) {
+      setLogs([...logsById.current.values()].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)));
+    }
+  };
 
   const fetchState = async () => {
     if (!runId) return;
@@ -60,26 +86,102 @@ export const RunDashboard: React.FC = () => {
         setApproval(null);
       }
 
-      const currentLogsLength = logsRef.current.length;
-      const logsData = await getLogs(runId, 100, currentLogsLength);
-      if (logsData.logs && logsData.logs.length > 0) {
-        const newLogs = [...logsRef.current, ...logsData.logs];
-        logsRef.current = newLogs;
-        setLogs(newLogs);
+      // History paging uses its own cursor, independent of what the live
+      // stream has already delivered.
+      const logsData = await getLogs(runId, 200, historyCursor.current);
+      if (logsData.logs?.length) {
+        historyCursor.current += logsData.logs.length;
+        mergeLogs(logsData.logs);
       }
 
+      setError(null);
       setLoading(false);
     } catch (err: any) {
       console.error(err);
-      setError("Failed to load run status.");
+      setError('Could not load this run. Retrying...');
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    if (!runId) return;
+
     fetchState();
-    const interval = setInterval(fetchState, 2000);
-    return () => clearInterval(interval);
+
+    let ws: WebSocket | null = null;
+    let isSubscribed = true;
+    let attempt = 0;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    const connect = async () => {
+      if (!isSubscribed) return;
+      try {
+        // A short-lived ticket, not the bearer token, so no credential ends up
+        // in the URL.
+        const ticket = await getStreamTicket(runId);
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url =
+          `${protocol}//${window.location.host}/api/runs/${runId}/events/stream` +
+          `?ticket=${encodeURIComponent(ticket)}&last_event_id=${lastSequence.current}`;
+        ws = new WebSocket(url);
+      } catch {
+        scheduleReconnect();
+        return;
+      }
+
+      ws.onopen = () => {
+        attempt = 0;
+      };
+
+      ws.onmessage = (event) => {
+        if (!isSubscribed) return;
+        try {
+          const message = JSON.parse(event.data);
+          if (message.event === 'ping') return;
+          if (message.event === 'closed') {
+            // The run finished and the server closed the stream deliberately.
+            isSubscribed = false;
+            fetchState();
+            return;
+          }
+          if (message.event === 'error') {
+            console.error('Stream error:', message.data);
+            return;
+          }
+
+          const logEntry: LogEntry = JSON.parse(message.data);
+          mergeLogs([logEntry]);
+
+          if (['stage_change', 'error', 'complete', 'approval_request', 'review_request', 'approval_auto'].includes(logEntry.event_type)) {
+            fetchState();
+          }
+        } catch (err) {
+          console.error('Could not parse a stream message:', err);
+        }
+      };
+
+      ws.onerror = () => ws?.close();
+      ws.onclose = () => {
+        if (isSubscribed) scheduleReconnect();
+      };
+    };
+
+    const scheduleReconnect = () => {
+      if (!isSubscribed) return;
+      // Exponential backoff capped at 30s. The old loop retried every 3s
+      // forever, including after the server closed a finished run.
+      const delay = Math.min(30000, 1000 * 2 ** attempt);
+      attempt += 1;
+      retryTimer = setTimeout(connect, delay);
+    };
+
+    connect();
+
+    return () => {
+      isSubscribed = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      ws?.close();
+    };
   }, [runId]);
 
   const handleReviewSubmit = async (action: 'approve' | 'changes' | 'skip', comment: string, file?: File) => {
@@ -249,7 +351,7 @@ export const RunDashboard: React.FC = () => {
 
         {run.error && (
           <div className="mt-4 p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm">
-            <strong>Error:</strong> {run.error.slice(0, 300)}
+            <strong>Error:</strong> {run.error}
           </div>
         )}
       </div>

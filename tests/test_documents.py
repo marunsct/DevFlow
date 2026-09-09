@@ -68,7 +68,7 @@ def test_missing_file_raises_document_read_error(tmp_path: Path) -> None:
 
 
 def test_unsupported_extension_raises_document_read_error(tmp_path: Path) -> None:
-    file_path = tmp_path / "brief.csv"
+    file_path = tmp_path / "brief.unknown"
     file_path.write_text("name,value\n", encoding="utf-8")
 
     with pytest.raises(DocumentReadError):

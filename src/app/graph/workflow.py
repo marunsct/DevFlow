@@ -75,6 +75,7 @@ from app.agents.principal_architect import (
 from app.agents.product_manager import ProductManagerOutput, build_intake_request, create_product_manager_agent
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import SprintPlanOutput, build_sprint_planning_request, create_scrum_master_agent
+from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
 from app.agents.specialists import (
     ReportedDefect,
     SpecialistOutput,
@@ -172,6 +173,7 @@ _NODE_NAMES = frozenset(
         "product_manager",
         "user_review_product_intake",
         "tools_models",
+        "stack_selector",
         "principal_architect",
         "architecture_review",
         "user_review_specification",
@@ -183,10 +185,17 @@ _NODE_NAMES = frozenset(
         "security_review",
         "milestone_review",
         "user_review_sprint",
+        "sprint_advance",
         "complete",
         "failed",
     }
 )
+"""Every node a router may name as the next stage.
+
+This must stay in sync with the nodes registered on the graph below: it is the
+key set for both the entry router and every `_route_from_stage` edge map, so a
+node missing here is unreachable and raises `KeyError` the moment a router
+returns its name. `test_graph_routing` asserts the two sets match."""
 
 _ITERATED_STAGE_OWNERS = {
     "specialist_": "specialist_dispatch",
@@ -217,7 +226,8 @@ class WorkflowGraphState(TypedDict, total=False):
     stage: str
 
     product_intake: ProductManagerOutput
-    tools_and_models: ToolsAndModelsOutput
+    tools_models: ToolsAndModelsOutput
+    stack_selection: StackSelectorOutput
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
@@ -245,6 +255,7 @@ class WorkflowGraphState(TypedDict, total=False):
 
     pending_approval: HumanApprovalRequest | None
     pending_inner_thread_id: str | None
+    inner_thread_ids: list[str]
     pending_decision: dict[str, Any] | None
     error: str | None
 
@@ -338,6 +349,7 @@ def _run_gated_agent(
             "pending_approval": approval,
             "pending_inner_thread_id": inner_thread_id,
             "pending_decision": None,
+            "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
         }
 
     structured_response = result.get("structured_response")
@@ -353,6 +365,10 @@ def _run_gated_agent(
         "pending_approval": None,
         "pending_inner_thread_id": None,
         "pending_decision": None,
+        # Recorded so a finished run can reclaim the checkpoints of every inner
+        # agent thread it created; each attempt mints a fresh id, so without this
+        # they accumulate unreachable forever.
+        "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
     }
 
 
@@ -580,15 +596,29 @@ def build_workflow_graph(
 
     def tools_models_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_tools_models_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
-        intake_text = state["product_intake"].model_dump_json(indent=2)
+        intake_text = state["product_intake"].model_dump_json(indent=2) if hasattr(state["product_intake"], "model_dump_json") else __import__("json").dumps(state["product_intake"], indent=2)
         request = build_tools_models_request(intake_text, state["repository"])
-        return _run_gated_agent(
+        update = _run_gated_agent(
             state,
             config,
             stage_name="tools_models",
             agent=agent,
             initial_request=request,
-            output_key="tools_and_models",
+            output_key="tools_models",
+            next_stage="stack_selector",
+        )
+        return update
+
+    def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        agent = create_stack_selector_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        request = {"messages": [{"role": "user", "content": f"Product Intake: {state['product_intake']}\nTools: {state.get('tools_models')}"}]}
+        return _run_gated_agent(
+            state,
+            config,
+            stage_name="stack_selector",
+            agent=agent,
+            initial_request=request,
+            output_key="stack_selection",
             next_stage="principal_architect",
         )
 
@@ -601,17 +631,19 @@ def build_workflow_graph(
         previous_specification = state.get("technical_specification")
         if required_changes and previous_specification is not None:
             request = build_architecture_revision_request(
-                previous_specification_text=previous_specification.model_dump_json(indent=2),
+                previous_specification_text=previous_specification.model_dump_json(indent=2) if hasattr(previous_specification, "model_dump_json") else __import__("json").dumps(previous_specification, indent=2),
                 required_changes=required_changes,
-                product_intake_text=state["product_intake"].model_dump_json(indent=2),
-                tools_and_models_text=state["tools_and_models"].model_dump_json(indent=2),
+                product_intake_text=state["product_intake"].model_dump_json(indent=2) if hasattr(state["product_intake"], "model_dump_json") else __import__("json").dumps(state["product_intake"], indent=2),
+                tools_and_models_text=state["tools_models"].model_dump_json(indent=2) if hasattr(state["tools_models"], "model_dump_json") else __import__("json").dumps(state["tools_models"], indent=2),
+                stack_selection_text=state["stack_selection"].model_dump_json(indent=2) if hasattr(state["stack_selection"], "model_dump_json") else __import__("json").dumps(state["stack_selection"], indent=2) if "stack_selection" in state else "",
                 repository=state["repository"],
                 document=state["document"],
             )
         else:
             request = build_architecture_request(
-                state["product_intake"].model_dump_json(indent=2),
-                state["tools_and_models"].model_dump_json(indent=2),
+                state["product_intake"].model_dump_json(indent=2) if hasattr(state["product_intake"], "model_dump_json") else __import__("json").dumps(state["product_intake"], indent=2),
+                state["tools_models"].model_dump_json(indent=2) if hasattr(state["tools_models"], "model_dump_json") else __import__("json").dumps(state["tools_models"], indent=2),
+                state["stack_selection"].model_dump_json(indent=2) if hasattr(state["stack_selection"], "model_dump_json") else __import__("json").dumps(state["stack_selection"], indent=2) if "stack_selection" in state else "",
                 state["repository"],
                 state["document"],
             )
@@ -984,16 +1016,16 @@ def build_workflow_graph(
         milestone = state["milestone_plan"]
         outputs = state.get("specialist_outputs", {})
         changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
-        test_evidence = "\\n".join(test for output in outputs.values() for test in output.tests) or "(none recorded)"
+        test_evidence = "\n".join(test for output in outputs.values() for test in output.tests) or "(none recorded)"
         cycle = state.get("remediation")
         defect_report = build_defect_report(cycle) if cycle else "No remediation cycle data."
         
         # Include security findings in the defect report if any exist
         sec_review = state.get("security_review")
         if sec_review and sec_review.status == "findings":
-            defect_report += "\\n\\n--- Security Findings ---\\n"
+            defect_report += "\n\n--- Security Findings ---\n"
             for f in sec_review.findings:
-                defect_report += f"[{f.severity}] {f.category}: {f.description}\\nRemediation: {f.remediation}\\n\\n"
+                defect_report += f"[{f.severity}] {f.category}: {f.description}\nRemediation: {f.remediation}\n\n"
         
         agent = create_milestone_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_milestone_review_request(
@@ -1024,7 +1056,7 @@ def build_workflow_graph(
                 "milestone_review": review,
             }
         elif review.status == "changes_required":
-            findings_text = "\\n".join(
+            findings_text = "\n".join(
                 f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}" 
                 for f in review.findings
             )
@@ -1090,7 +1122,7 @@ def build_workflow_graph(
         return {"stage": "failed"}
 
     graph = StateGraph(WorkflowGraphState)
-    from langgraph.pregel import RetryPolicy
+    from langgraph.types import RetryPolicy
     
     agent_retry_policy = RetryPolicy(
         initial_interval=2.0,
@@ -1099,19 +1131,20 @@ def build_workflow_graph(
         max_attempts=3,
     )
 
-    graph.add_node("product_manager", product_manager_node, retry=agent_retry_policy)
+    graph.add_node("product_manager", product_manager_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_product_intake", user_review_product_intake_node)
-    graph.add_node("tools_models", tools_models_node, retry=agent_retry_policy)
-    graph.add_node("principal_architect", principal_architect_node, retry=agent_retry_policy)
-    graph.add_node("architecture_review", architecture_review_node, retry=agent_retry_policy)
+    graph.add_node("tools_models", tools_models_node, retry_policy=agent_retry_policy)
+    graph.add_node("stack_selector", stack_selector_node, retry_policy=agent_retry_policy)
+    graph.add_node("principal_architect", principal_architect_node, retry_policy=agent_retry_policy)
+    graph.add_node("architecture_review", architecture_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_specification", user_review_specification_node)
-    graph.add_node("scrum_master", scrum_master_node, retry=agent_retry_policy)
-    graph.add_node("technical_lead", technical_lead_node, retry=agent_retry_policy)
-    graph.add_node("specialist_dispatch", specialist_dispatch_node, retry=agent_retry_policy)
-    graph.add_node("test_and_triage", test_and_triage_node, retry=agent_retry_policy)
-    graph.add_node("defect_remediation", defect_remediation_node, retry=agent_retry_policy)
-    graph.add_node("security_review", security_review_node, retry=agent_retry_policy)
-    graph.add_node("milestone_review", milestone_review_node, retry=agent_retry_policy)
+    graph.add_node("scrum_master", scrum_master_node, retry_policy=agent_retry_policy)
+    graph.add_node("technical_lead", technical_lead_node, retry_policy=agent_retry_policy)
+    graph.add_node("specialist_dispatch", specialist_dispatch_node, retry_policy=agent_retry_policy)
+    graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
+    graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
+    graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
+    graph.add_node("milestone_review", milestone_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_sprint", user_review_sprint_node)
     graph.add_node("sprint_advance", sprint_advance_node)
     graph.add_node("complete", complete_node)
@@ -1125,6 +1158,7 @@ def build_workflow_graph(
         "product_manager",
         "user_review_product_intake",
         "tools_models",
+        "stack_selector",
         "principal_architect",
         "architecture_review",
         "user_review_specification",
@@ -1146,9 +1180,42 @@ def build_workflow_graph(
     return graph.compile(checkpointer=shared_checkpointer)
 
 
-def _run_config(thread_id: str, recursion_limit: int) -> RunnableConfig:
+def load_thread_state(thread_id: str, checkpointer: BaseCheckpointSaver | None = None) -> dict[str, Any]:
+    """Return the checkpointed state for one run thread.
+
+    The checkpointer is the single source of truth for graph state. Reading it
+    on demand is why the run metadata table no longer carries a second copy: the
+    copy was never written, so approval and review payloads always came back
+    empty.
+    """
+    saver = checkpointer or build_checkpointer()
+    graph = StateGraph(WorkflowGraphState)
+    graph.add_node("noop", lambda state: {})
+    graph.add_edge(START, "noop")
+    graph.add_edge("noop", END)
+    compiled = graph.compile(checkpointer=saver)
+    snapshot = compiled.get_state({"configurable": {"thread_id": thread_id}})
+    return dict(snapshot.values) if snapshot and snapshot.values else {}
+
+
+def discard_thread(thread_id: str, checkpointer: BaseCheckpointSaver | None = None) -> None:
+    """Delete every checkpoint for one thread, if the backend supports it."""
+    saver = checkpointer or build_checkpointer()
+    deleter = getattr(saver, "delete_thread", None)
+    if deleter is None:
+        return
+    try:
+        deleter(thread_id)
+    except Exception:  # noqa: BLE001 - cleanup must never fail a run
+        pass
+
+
+def _run_config(thread_id: str, recursion_limit: int, metadata: dict | None = None) -> RunnableConfig:
     """Build the per-invoke config every entry point below shares."""
-    return {"configurable": {"thread_id": thread_id}, "recursion_limit": recursion_limit}
+    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}, "recursion_limit": recursion_limit}
+    if metadata:
+        config["metadata"] = metadata
+    return config
 
 
 def start_workflow(
@@ -1160,6 +1227,7 @@ def start_workflow(
     review_policy: dict[str, bool] | None = None,
     reviewer: str = "unassigned",
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
+    metadata: dict | None = None,
 ) -> dict[str, Any]:
     """Start a brand-new workflow run for one product document.
 
@@ -1175,6 +1243,7 @@ def start_workflow(
         reviewer: identity recorded on any review this run creates, so a review
             decision has an accountable owner.
         recursion_limit: superstep ceiling; see `DEFAULT_RECURSION_LIMIT`.
+        metadata: optional tracing metadata for LangSmith.
     """
     return graph.invoke(
         {
@@ -1184,7 +1253,7 @@ def start_workflow(
             "review_policy": review_policy or {},
             "reviewer": reviewer,
         },
-        config=_run_config(thread_id, recursion_limit),
+        config=_run_config(thread_id, recursion_limit, metadata=metadata),
     )
 
 
@@ -1193,13 +1262,14 @@ def resume_failed_run(
     thread_id: str,
     *,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
+    metadata: dict | None = None,
 ) -> dict[str, Any]:
     """Resume a failed run from its last checkpoint.
     
     If the run explicitly entered a terminal 'failed' state due to business logic
     (e.g., reaching max revisions), this rewinds the state to act as a retry.
     """
-    config = _run_config(thread_id, recursion_limit)
+    config = _run_config(thread_id, recursion_limit, metadata=metadata)
     state_snapshot = graph.get_state(config)
     
     if state_snapshot and state_snapshot.values.get("stage") == "failed":
@@ -1248,6 +1318,7 @@ def resume_pending_approval(
     decision: dict[str, Any],
     *,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
+    metadata: dict | None = None,
 ) -> dict[str, Any]:
     """Resume a run paused on a mandatory artifact-write approval.
 
@@ -1260,7 +1331,7 @@ def resume_pending_approval(
     `approve_write_decision()`, `edit_write_decision(...)`, or
     `reject_write_decision(...)`.
     """
-    return graph.invoke({"pending_decision": decision}, config=_run_config(thread_id, recursion_limit))
+    return graph.invoke({"pending_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata))
 
 
 def resume_pending_review(
@@ -1269,14 +1340,18 @@ def resume_pending_review(
     decision: dict[str, Any],
     *,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
+    metadata: dict | None = None,
 ) -> dict[str, Any]:
-    """Resume a run paused on an optional human review session (Step 3.3).
+    """Resume a run paused on an optional human review session.
 
-    Call this whenever `state["stage"]` starts with `awaiting_user_review:`.
-    Build `decision` with `approve_decision`, `skip_decision`, or
-    `request_changes_decision` below rather than hand-writing the dict.
+    Call this (instead of `start_workflow` or a raw `invoke`) whenever
+    `state["stage"]` starts with `awaiting_review:`.
+
+    Build `decision` with the helpers in `app.graph.workflow`:
+    `approve_decision()`, `request_changes_decision(...)`, or
+    `skip_decision()`.
     """
-    return graph.invoke({"pending_review_decision": decision}, config=_run_config(thread_id, recursion_limit))
+    return graph.invoke({"pending_review_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata))
 
 
 def approve_decision(comment: str | None = None, edited_content: str | None = None) -> dict[str, Any]:
@@ -1305,6 +1380,8 @@ def request_changes_decision(comment: str, edited_content: str | None = None) ->
 
 __all__ = [
     "APPROVAL_PAUSE_PREFIX",
+    "discard_thread",
+    "load_thread_state",
     "DEFAULT_RECURSION_LIMIT",
     "MAX_ARCHITECTURE_REVISIONS",
     "MAX_MILESTONE_REVISIONS",

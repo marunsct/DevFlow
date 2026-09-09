@@ -40,7 +40,7 @@ class DocumentContent:
     """
 
     source_path: str
-    source_type: Literal["markdown", "text", "docx"]
+    source_type: Literal["markdown", "text", "docx", "pdf", "csv"]
     text: str
     truncated: bool
     truncation_note: str | None = None
@@ -54,7 +54,10 @@ def _normalize_text(raw_text: str) -> str:
     regardless of the user's line endings or copy-paste formatting. This makes the
     output easier to test and less surprising for the model.
     """
-    return "\n".join(line.strip() for line in raw_text.splitlines()).strip()
+    # Trailing whitespace and line endings are normalised; leading indentation
+    # is preserved. Stripping every line flattened fenced code blocks and nested
+    # lists in the product brief before any agent saw it.
+    return "\n".join(line.rstrip() for line in raw_text.splitlines()).strip()
 
 
 def _read_markdown(path: Path) -> str:
@@ -82,7 +85,26 @@ def _read_docx_file(path: Path) -> str:
     return "\n".join(paragraphs)
 
 
-def _ensure_supported_type(path: Path) -> Literal["markdown", "text", "docx"]:
+def _read_pdf_file(path: Path) -> str:
+    from pypdf import PdfReader
+    reader = PdfReader(str(path))
+    pages_text = []
+    for page in reader.pages:
+        text = page.extract_text()
+        if text:
+            pages_text.append(text)
+    return "\n".join(pages_text)
+
+
+def _read_csv_file(path: Path) -> str:
+    import csv
+    with open(path, newline='', encoding='utf-8') as f:
+        reader = csv.reader(f)
+        lines = [",".join(row) for row in reader]
+    return "\n".join(lines)
+
+
+def _ensure_supported_type(path: Path) -> Literal["markdown", "text", "docx", "pdf", "csv"]:
     """Recognize the supported source types and reject anything else early."""
     suffix = path.suffix.lower()
     if suffix == ".md":
@@ -91,8 +113,12 @@ def _ensure_supported_type(path: Path) -> Literal["markdown", "text", "docx"]:
         return "text"
     if suffix == ".docx":
         return "docx"
+    if suffix == ".pdf":
+        return "pdf"
+    if suffix == ".csv":
+        return "csv"
     raise DocumentReadError(
-        f"Unsupported document type for '{path.name}'. Supported types are .md, .txt, and .docx."
+        f"Unsupported document type for '{path.name}'. Supported types are .md, .txt, .docx, .pdf, and .csv."
     )
 
 
@@ -133,8 +159,14 @@ def read_document(
             raw_text = _read_markdown(file_path)
         elif source_type == "text":
             raw_text = _read_text_file(file_path)
-        else:
+        elif source_type == "docx":
             raw_text = _read_docx_file(file_path)
+        elif source_type == "pdf":
+            raw_text = _read_pdf_file(file_path)
+        elif source_type == "csv":
+            raw_text = _read_csv_file(file_path)
+        else:
+            raise DocumentReadError(f"Unsupported document type: {source_type}")
             
         combined_text.append(f"--- Document: {file_path.name} ---\n{_normalize_text(raw_text)}")
 

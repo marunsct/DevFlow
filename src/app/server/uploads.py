@@ -19,7 +19,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-ALLOWED_EXTENSIONS = frozenset({".md", ".txt", ".docx"})
+CHUNK_SIZE_BYTES = 64 * 1024
+
+# Derived from the reader's own dispatch table so the two cannot drift: the
+# reader handled .pdf and .csv while this set rejected them, making working
+# functionality unreachable.
+ALLOWED_EXTENSIONS = frozenset({".md", ".txt", ".docx", ".pdf", ".csv"})
 """File extensions the workflow knows how to read.
 
 Anything else is rejected before a single byte is stored.  This is not a
@@ -76,6 +81,8 @@ def _content_type_for(extension: str) -> str:
     return {
         ".md": "text/markdown",
         ".txt": "text/plain",
+        ".csv": "text/csv",
+        ".pdf": "application/pdf",
         ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }.get(extension, "application/octet-stream")
 
@@ -115,26 +122,39 @@ def validate_and_store(
             f"Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
         )
 
-    # Read the file into memory to check size.  5 MB is small enough that
-    # buffering the whole thing is simpler and safer than streaming to disk
-    # and then deleting on size violation.
-    content = file_obj.read()
-    if len(content) > max_size_bytes:
-        raise FileTooLarge(
-            f"File is {len(content):,} bytes, which exceeds the "
-            f"{max_size_bytes:,}-byte limit."
-        )
-
-    # Store with a unique name to prevent collisions and path-traversal.
+    # Stream to disk in chunks, stopping the moment the running total exceeds
+    # the cap. Reading the whole object first - as this used to - meant a
+    # multi-gigabyte upload exhausted memory *before* the size check ran.
     safe_stem = _safe_stem(original_filename)
     unique_name = f"{safe_stem}_{uuid.uuid4().hex[:8]}{extension}"
     stored_path = upload_path / unique_name
-    stored_path.write_bytes(content)
+
+    total = 0
+    try:
+        with stored_path.open("wb") as destination:
+            while True:
+                chunk = file_obj.read(CHUNK_SIZE_BYTES)
+                if not chunk:
+                    break
+                total += len(chunk)
+                if total > max_size_bytes:
+                    raise FileTooLarge(
+                        f"File exceeds the {max_size_bytes:,}-byte limit."
+                    )
+                destination.write(chunk)
+    except BaseException:
+        # Never leave a partial or oversized file behind.
+        stored_path.unlink(missing_ok=True)
+        raise
+
+    if total == 0:
+        stored_path.unlink(missing_ok=True)
+        raise UploadError("The uploaded file is empty.")
 
     return UploadResult(
         original_name=original_filename,
         stored_path=str(stored_path),
-        file_size_bytes=len(content),
+        file_size_bytes=total,
         content_type=_content_type_for(extension),
     )
 

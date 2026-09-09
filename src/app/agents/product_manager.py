@@ -118,7 +118,7 @@ Responsibilities:
 Constraints:
 - Do not modify application source code.
 - Do not change repo files except through the approved artifact tool.
-- Only write an intake artifact inside the generated docs area.
+- Only write an intake artifact inside the `docs/` folder (e.g., `docs/product_intake.md`).
 - Do not claim a requirement is fact without evidence from the supplied brief or repository context.
 - Every write_artifact call pauses for a human decision before anything is saved; never tell the user the artifact is saved until you see a tool result confirming a completed write.
 - Keep the output structured and concise.

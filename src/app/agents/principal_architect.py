@@ -19,7 +19,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.role_agent import create_role_agent
 from app.state import RepositoryContext
-from app.tools.agent_toolkit import build_terminal_command_tool
 
 _STAGE = "architecture"
 _NAME = "principal_architect"
@@ -79,6 +78,7 @@ from app.documents import DocumentContent
 def build_architecture_request(
     product_intake_text: str,
     tools_and_models_text: str,
+    stack_selection_text: str,
     repository: RepositoryContext,
     document: DocumentContent,
 ) -> dict[str, list[dict[str, str]]]:
@@ -88,6 +88,7 @@ def build_architecture_request(
         f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
         f"--- Approved product intake ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan ---\n{tools_and_models_text}\n\n"
+        f"--- Approved stack selection ---\n{stack_selection_text}\n\n"
         f"--- Original Uploaded Documents ---\n{document.text}\n\n"
         f"**CRITICAL INSTRUCTION**: When scaffolding or creating projects (using terminal commands), ensure you place it strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub'). Do NOT use generic names like 'nest-app' and do NOT scaffold directly in the repository root without a named folder. Place all documentation in the `docs/` directory.\n"
     )
@@ -99,6 +100,7 @@ def build_architecture_revision_request(
     required_changes: list[str],
     product_intake_text: str,
     tools_and_models_text: str,
+    stack_selection_text: str,
     repository: RepositoryContext,
     document: DocumentContent,
 ) -> dict[str, list[dict[str, str]]]:
@@ -128,6 +130,7 @@ def build_architecture_revision_request(
         f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
         f"--- Approved product intake ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan ---\n{tools_and_models_text}\n\n"
+        f"--- Approved stack selection ---\n{stack_selection_text}\n\n"
         f"--- Original Uploaded Documents ---\n{document.text}\n\n"
         "Your previous technical specification was NOT accepted. Produce a new "
         "revision that resolves every required change listed below.\n\n"
@@ -159,7 +162,7 @@ Responsibilities:
   check without asking you follow-up questions.
 
 Constraints:
-- You MUST use the `run_terminal_command` tool to execute shell commands, fully scaffold the project using the framework's standard CLI (e.g., `npx create-react-app`, `npx @nestjs/cli new`), and install foundation dependencies. Do NOT return your specification until you have verified the scaffold compiles and starts.
+- Only write your technical specification artifact inside the `docs/` folder (e.g., `docs/technical_specification.md`).
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.
@@ -176,7 +179,6 @@ def create_principal_architect_agent(
         allow_subdirectories: bool = True,
 ) -> Any:
     resolved_repo_root = str(Path(repo_root).resolve()) if repo_root else str(Path.cwd())
-    extra_tools = [build_terminal_command_tool(resolved_repo_root)]
 
     return create_role_agent(
         name=_NAME,
@@ -186,7 +188,6 @@ def create_principal_architect_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
-        extra_tools=extra_tools,
     )
 
 

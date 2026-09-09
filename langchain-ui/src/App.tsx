@@ -1,77 +1,107 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
 import { RunDashboard } from './pages/RunDashboard';
 import { RunList } from './pages/RunList';
 import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { api } from './api';
+
+class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
+  constructor(props: any) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
+          <h2>Something went wrong.</h2>
+          <pre style={{ textAlign: 'left', background: '#f4f4f4', padding: '1rem', overflow: 'auto' }}>
+            {this.state.error?.toString()}
+          </pre>
+          <button onClick={() => window.location.reload()} style={{ marginTop: '1rem', padding: '0.5rem 1rem' }}>
+            Reload Application
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const token = localStorage.getItem('token');
-  const navigate = useNavigate();
+  const [isValidating, setIsValidating] = useState(true);
+  const [isValid, setIsValid] = useState(false);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token) {
+      setIsValidating(false);
+      return;
+    }
 
-    const checkToken = () => {
+    let isMounted = true;
+    const checkToken = async () => {
       try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        if (payload.exp && payload.exp * 1000 < Date.now()) {
-          localStorage.removeItem('token');
-          navigate('/login', { state: { from: location }, replace: true });
-        }
+        await api.get('/auth/me');
+        if (isMounted) setIsValid(true);
       } catch {
+        // Clearing the token is enough: the render path below redirects to
+        // /login whenever the session fails to validate, so an imperative
+        // navigate here would only duplicate that and race with it.
         localStorage.removeItem('token');
-        navigate('/login', { state: { from: location }, replace: true });
+        if (isMounted) setIsValid(false);
+      } finally {
+        if (isMounted) setIsValidating(false);
       }
     };
 
-    // Check immediately and then every minute
     checkToken();
     const interval = setInterval(checkToken, 60000);
-    return () => clearInterval(interval);
-  }, [token, navigate, location]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [token, location]);
 
   if (!token) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-
-  // Basic JWT expiry check for initial render
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    if (payload.exp && payload.exp * 1000 < Date.now()) {
-      localStorage.removeItem('token');
-      return <Navigate to="/login" state={{ from: location }} replace />;
-    }
-  } catch {
-    localStorage.removeItem('token');
-    return <Navigate to="/login" state={{ from: location }} replace />;
+  
+  if (isValidating) {
+    return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>Verifying session...</div>;
   }
 
-  return <>{children}</>;
+  return isValid ? <>{children}</> : <Navigate to="/login" state={{ from: location }} replace />;
 }
 
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <Layout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Home />} />
-          <Route path="runs" element={<RunList />} />
-          <Route path="runs/:runId" element={<RunDashboard />} />
-          <Route path="settings" element={<Settings />} />
-        </Route>
-      </Routes>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <Layout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Home />} />
+            <Route path="runs" element={<RunList />} />
+            <Route path="runs/:runId" element={<RunDashboard />} />
+            <Route path="settings" element={<Settings />} />
+          </Route>
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

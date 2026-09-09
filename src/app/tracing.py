@@ -60,6 +60,13 @@ def trace_metadata(
         "role": role,
         "thread_id": thread_id,
     }
+    try:
+        from app.server.context import get_correlation_id
+        corr_id = get_correlation_id()
+        if corr_id:
+            metadata["correlation_id"] = corr_id
+    except ImportError:
+        pass
     if product_name is not None:
         metadata["product_name"] = product_name
     if decision_status is not None:

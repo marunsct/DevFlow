@@ -1,79 +1,151 @@
-version: '3.8'
+# Production-shaped stack. For local development with hot reload, use:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# Every service that others depend on has a healthcheck, and dependents wait for
+# it rather than racing startup. Nothing runs as root, nothing is unbounded, and
+# no source tree is mounted over the built image.
+
+# Required values are NOT enforced with compose's `${VAR:?}` syntax. That fires
+# during interpolation, which happens for every command including `build` and
+# `config` - so it made it impossible to build an image without runtime secrets.
+#
+# Enforcement lives with the component that can actually check it at start:
+#   POSTGRES_PASSWORD  the postgres image refuses to initialise without one
+#   JWT_SECRET_KEY     app.server.auth raises unless ENV is a development value
+#   ADMIN_PASSWORD     init_db raises unless ENV is a development value
+# Nothing can start insecurely; only `build` stops needing secrets it never used.
+x-app-env: &app-env
+  ENV: ${ENV:-production}
+  JWT_SECRET_KEY: "${JWT_SECRET_KEY:-}"
+  ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+  AUTH_DB_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-langchain}"
+  DB_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-langchain}"
+  REDIS_URL: "redis://redis:6379/0"
+  DATA_DIR: /app/data
+  WORKFLOW_UPLOAD_DIR: /app/data/uploads
+  WORKFLOW_WORKSPACE_ROOT: /app/data/workspaces
+  # Postgres, so the API and the worker share one checkpoint store. SQLite put a
+  # separate database inside each container's ephemeral layer.
+  CHECKPOINTER_TYPE: ${CHECKPOINTER_TYPE:-postgres}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+  TRUSTED_PROXIES: ${TRUSTED_PROXIES:-}
+  # Execution is opt-in and requires a container runtime in the worker.
+  ALLOW_COMMAND_EXECUTION: ${ALLOW_COMMAND_EXECUTION:-false}
+  LLM_PROVIDER: ${LLM_PROVIDER:-local}
+  OPENAI_BASE_URL: "${OPENAI_BASE_URL:-http://host.docker.internal:1234/v1}"
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  GOOGLE_API_KEY: "${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}"
+  METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
 
 services:
   db:
     image: postgres:15-alpine
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=langchain_auth
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
+      POSTGRES_DB: ${POSTGRES_DB:-langchain}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  app:
-    build: .
-    ports:
-      - "8000:8000"
-    depends_on:
-      - db
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - ./uploads:/app/uploads
-      - ./src:/app/src
-      - ./data:/app/data
-      - ./tests:/app/tests
-      # Mount the user's home directory so artifact_directory paths work seamlessly
-      - /home/arun:/home/arun
-    environment:
-      - DATA_DIR=/app/data
-      - AUTH_DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
-      - DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
-      - REDIS_URL=redis://redis:6379/0
-      # Use the host's LM Studio server instead of container's localhost
-      - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
-      - OPENAI_API_KEY=lm-studio
-      - OPENAI_MODEL=openai/gpt-oss-20b
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - WORKFLOW_UPLOAD_DIR=/app/uploads
-      - PYTHONPATH=/app/src
-    command: python -m uvicorn app.server.api:app --host 0.0.0.0 --port 8000 --reload --reload-dir /app/src
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-langchain}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
     volumes:
       - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 768m
 
-  worker:
+  app:
     build: .
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - ./uploads:/app/uploads
-      - ./src:/app/src
-      - ./data:/app/data
-      - ./tests:/app/tests
-      - /home/arun:/home/arun
+      - appdata:/app/data
     environment:
-      - DATA_DIR=/app/data
-      - AUTH_DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
-      - DB_URL=postgresql://postgres:postgres@db:5432/langchain_auth
-      - REDIS_URL=redis://redis:6379/0
-      - OPENAI_BASE_URL=http://host.docker.internal:1234/v1
-      - OPENAI_API_KEY=lm-studio
-      - OPENAI_MODEL=openai/gpt-oss-20b
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - WORKFLOW_UPLOAD_DIR=/app/uploads
-      - PYTHONPATH=/app/src
-    command: celery -A app.server.tasks worker --loglevel=info
+      <<: *app-env
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g
+
+  worker:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - appdata:/app/data
+      # Only mounted when ALLOW_COMMAND_EXECUTION is enabled. Note that access to
+      # the Docker socket is equivalent to root on the host: run workers on
+      # dedicated nodes, or swap this for a rootless runtime, before enabling
+      # execution in a shared environment.
+      - ${DOCKER_SOCKET:-/dev/null}:/var/run/docker.sock
+    environment:
+      <<: *app-env
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-3600}
+    command:
+      - celery
+      - -A
+      - app.server.tasks
+      - worker
+      - --loglevel=info
+      - --concurrency=${CELERY_CONCURRENCY:-2}
+      - --max-tasks-per-child=50
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.server.tasks inspect ping -d celery@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4g
 
 volumes:
   pgdata:
   redisdata:
+  appdata:

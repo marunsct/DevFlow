@@ -17,38 +17,38 @@ class CreateRunResponse(BaseModel):
 
 
 class StartRunRequest(BaseModel):
-    """Request to start or resume a run."""
+    """Request to start a run.
+
+    Credentials are deliberately absent. They used to be accepted here, which put
+    provider API keys into request bodies and access logs; the worker now
+    resolves them from its own environment or the secret store.
+
+    ``artifact_directory`` is gone for the same class of reason: it named a
+    server path that became the repository root for every agent tool and the
+    sandbox bind mount, so a caller could point the whole run at any directory on
+    the host. A label is accepted instead, and the server derives the path.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
     review_policy: dict[str, bool] | None = Field(
-        default=None,
-        description="Optional overrides for review policies.",
+        default=None, description="Which optional human review gates to enable."
     )
-    reviewer: str | None = Field(
+    reviewer: str | None = Field(default=None, description="Identity recorded on review decisions.")
+    llm_provider: str | None = Field(default=None, description="Override the provider for this run.")
+    openai_base_url: str | None = Field(default=None, description="Override the OpenAI-compatible base URL.")
+    model_name: str | None = Field(default=None, description="Override the model for this run.")
+    workspace_label: str | None = Field(
         default=None,
-        description="The identity of the assigned reviewer.",
-    )
-    model_override: str | None = Field(
-        default=None,
-        description="Optional model override for the LLM to use.",
-    )
-    llm_provider: str | None = Field(default=None)
-    openai_base_url: str | None = Field(default=None)
-    openai_api_key: str | None = Field(default=None)
-    anthropic_api_key: str | None = Field(default=None)
-    google_api_key: str | None = Field(default=None)
-    model_name: str | None = Field(default=None)
-    artifact_directory: str | None = Field(
-        default=None,
-        description="Optional directory path on the server where artifacts should be written.",
+        max_length=48,
+        description="Optional human-readable label for this run's workspace directory.",
     )
     allow_subdirectories: bool = Field(
-        default=True,
-        description="Whether the workflow should create subdirectories in the artifact directory.",
+        default=True, description="Whether agents may work in subdirectories of the workspace."
     )
     auto_approve: bool = Field(
         default=False,
-        description="If true, automatically approve all file write requests without pausing for user input.",
+        description="Approve artifact writes automatically. Does not bypass execution gates.",
     )
 
 
@@ -119,7 +119,7 @@ class RunStatusResponse(BaseModel):
     stage_meaning: str | None = Field(default=None, description="Meaning of the current stage.")
     created_at: datetime = Field(description="Timestamp when the run was created.")
     updated_at: datetime = Field(description="Timestamp when the run was last updated.")
-    stages: list[RunStage] = Field(default_factory=list, description="History and status of stages.")
+    stages: list[RunStage] = Field(default_factory=list, description="Stage history, when available.")
     artifacts: list[ArtifactInfo] = Field(default_factory=list, description="Artifacts produced by the run.")
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
@@ -138,10 +138,11 @@ class RunSummary(BaseModel):
 
 
 class RunListResponse(BaseModel):
-    """Response containing a list of run summaries."""
+    """A page of run summaries."""
     model_config = ConfigDict(extra="forbid")
 
     runs: list[RunSummary] = Field(description="List of run summaries.")
+    total: int = Field(default=0, description="Total runs visible to the caller.")
 
 
 class ApprovalPayload(BaseModel):

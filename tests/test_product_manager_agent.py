@@ -74,6 +74,7 @@ def _local_model_server_available() -> bool:
     not _local_model_server_available(),
     reason="Local model server is not reachable; skipping end-to-end invocation.",
 )
+@__import__('pytest').mark.skipif(not __import__('os').getenv("OPENAI_API_KEY") or __import__('os').getenv("OPENAI_API_KEY") == "sk-test", reason="Requires real OPENAI_API_KEY")
 def test_product_manager_agent_returns_structured_intake_for_sample_brief(tmp_path: Path) -> None:
     """Run the agent against a small brief and inspect its real output structure.
 

@@ -89,24 +89,61 @@ def _api_status(stage: str) -> str:
     return "running"
 
 
+class RunConflict(RuntimeError):
+    """A lifecycle transition was attempted from the wrong status."""
+
+
+_SECRET_OVERRIDE_KEYS = frozenset({"openai_api_key", "anthropic_api_key", "google_api_key"})
+
+
+def _public_model_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
+    """Keep only the non-secret parts of a model override.
+
+    API keys must not be persisted in the metadata table or shipped through the
+    Celery broker; the worker resolves credentials from its own environment or
+    the secret store.
+    """
+    if not overrides:
+        return {}
+    return {k: v for k, v in overrides.items() if v and k not in _SECRET_OVERRIDE_KEYS}
+
+
+def _approval_metadata(approval: Any) -> dict[str, Any]:
+    return {
+        "artifact_path": getattr(approval, "artifact_path", "") if approval else "",
+        "risk_level": getattr(approval, "risk_level", "unknown") if approval else "unknown",
+        "requested_by": getattr(approval, "requested_by", "") if approval else "",
+    }
+
+
+def _resume_config(thread_id: str, metadata: dict[str, Any] | None) -> dict[str, Any]:
+    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    if metadata:
+        config["metadata"] = metadata
+    return config
+
+
 @dataclass
 class RunRecord:
-    """In-memory record of a single workflow run.
+    """Metadata envelope for one workflow run.
 
-    Tracks everything the API needs to answer status queries and route
-    decisions back to the graph.  Lives only as long as this process.
+    Graph state is deliberately *not* stored here. It lives in the checkpointer
+    keyed by ``thread_id`` and is read from there on demand - keeping a second
+    copy meant the two drifted, and in practice the copy was never written, so
+    every API read saw an empty dict.
     """
 
     run_id: str
     thread_id: str
     document_names: list[str]
     document_paths: list[str]
+    owner: str = "unknown"
+    tenant_id: str = "default"
     status: str = "created"
     current_stage: str = ""
     stage_meaning: str = ""
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    state: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
 
     # Settings captured at start time.
@@ -114,9 +151,29 @@ class RunRecord:
     review_policy: dict[str, bool] = field(default_factory=dict)
     reviewer: str = "unassigned"
     auto_approve: bool = False
+    model_overrides: dict[str, Any] = field(default_factory=dict)
 
-    # Decision handoff: the API sets this when enqueuing a resume task
+    # Execution bookkeeping.
+    task_id: str | None = None
+    cancel_requested: bool = False
+
+    # Decision handoff: set by the API when enqueuing a resume task.
     pending_decision_payload: dict[str, Any] | None = field(default=None, repr=False)
+
+    def graph_state(self, checkpointer: Any = None) -> dict[str, Any]:
+        """Read this run's live graph state from the checkpointer.
+
+        Returns an empty dict when the run has not started or the checkpoint is
+        unavailable, so callers can treat "no state yet" and "cannot reach the
+        store" the same way: nothing to show.
+        """
+        from app.graph.workflow import load_thread_state
+
+        try:
+            return load_thread_state(self.thread_id, checkpointer=checkpointer)
+        except Exception:  # noqa: BLE001
+            logger.warning("Could not load graph state for run %s", self.run_id, exc_info=True)
+            return {}
 
 
 class WorkflowRunner:
@@ -143,12 +200,17 @@ class WorkflowRunner:
         self.model = model
         self.repo_root = repo_root
         self.run_store = run_store
-        self.runs: dict[str, RunRecord] = {}
 
-        # Restore persisted run records on startup.
-        if self.run_store is not None:
-            for record in self.run_store.list_all():
-                self.runs[record.run_id] = record
+        # Built through app.graph.checkpointing so the deserialization allowlist
+        # and the configured backend actually apply. The previous hardcoded
+        # `sqlite3.connect("workflow_state.db")` bypassed both: it ignored
+        # DATA_DIR, put the database in each container's ephemeral layer, and
+        # meant the API and the worker held separate invisible checkpoint stores.
+        from app.graph.checkpointing import build_checkpointer
+
+        self.checkpointer = build_checkpointer()
+
+
 
 
 
@@ -158,6 +220,9 @@ class WorkflowRunner:
         thread_id: str,
         document_names: list[str],
         document_paths: list[str],
+        *,
+        owner: str = "unknown",
+        tenant_id: str = "default",
     ) -> RunRecord:
         """Register a new run without starting it."""
         record = RunRecord(
@@ -165,10 +230,23 @@ class WorkflowRunner:
             thread_id=thread_id,
             document_names=document_names,
             document_paths=document_paths,
+            owner=owner,
+            tenant_id=tenant_id,
         )
-        self.runs[run_id] = record
         self._persist(record)
         return record
+
+    def discard_run_threads(self, record: RunRecord) -> None:
+        """Delete the checkpoints this run created, outer and inner.
+
+        Each agent attempt mints a fresh inner thread id to get a clean context
+        window, so without this they accumulate unreachable forever.
+        """
+        from app.graph.workflow import discard_thread
+
+        state = record.graph_state(self.checkpointer)
+        for thread_id in [*state.get("inner_thread_ids", []), record.thread_id]:
+            discard_thread(thread_id, checkpointer=self.checkpointer)
 
     async def start_run(
         self,
@@ -181,95 +259,118 @@ class WorkflowRunner:
         auto_approve: bool = False,
         model_overrides: dict[str, str | None] | None = None,
     ) -> None:
-        """Launch the workflow in a background task."""
-        record = self.runs.get(run_id)
+        """Persist start settings and dispatch the run to a worker.
+
+        The status transition is atomic: two concurrent starts cannot both win,
+        because only one UPDATE can match ``status = 'created'``.
+        """
+        record = self.run_store.load(run_id)
         if record is None:
             raise ValueError(f"Run {run_id} is not registered")
-        if record.status != "created":
-            raise ValueError(f"Run {run_id} is already {record.status}")
 
         record.repo_root = str(repository.root_path)
         record.review_policy = review_policy or {}
         record.reviewer = reviewer
         record.auto_approve = auto_approve
-        record.status = "running"
+        # Overrides are persisted so the worker can apply them. They were
+        # previously built here and then dropped, so choosing a model in the UI
+        # had no effect at all. Secrets are filtered out: they must not travel
+        # through the broker or sit in the metadata table.
+        record.model_overrides = _public_model_overrides(model_overrides)
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
 
-        from app.server.tasks import execute_workflow_run
-        execute_workflow_run.delay(run_id=run_id, resume=False, decision_payload=None)
+        if not self.run_store.compare_and_set_status(
+            run_id, "created", "running", updated_at=record.updated_at
+        ):
+            raise RunConflict(f"Run {run_id} is not in the 'created' state.")
+
+        self._dispatch(run_id, resume=False, decision_payload=None)
 
     async def resume_run(self, run_id: str) -> None:
-        """Resume a failed workflow in a background task."""
-        record = self.runs.get(run_id)
-        if record is None:
-            raise ValueError(f"Run {run_id} is not registered")
-        if record.status != "failed":
-            raise ValueError(f"Run {run_id} is {record.status}, cannot resume")
-
-        record.status = "running"
-        record.error = None
-        record.updated_at = datetime.now(timezone.utc).isoformat()
-        self._persist(record)
-
-        from app.server.tasks import execute_workflow_run
-        execute_workflow_run.delay(run_id=run_id, resume=True, decision_payload=None)
-
+        """Resume a failed run from its last checkpoint."""
+        now = datetime.now(timezone.utc).isoformat()
+        if not self.run_store.compare_and_set_status(
+            run_id, "failed", "running", updated_at=now, clear_error=True
+        ):
+            raise RunConflict(f"Run {run_id} is not in the 'failed' state.")
+        self._dispatch(run_id, resume=True, decision_payload=None)
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
-        """Submit an approval decision for a paused run."""
-        record = self.runs.get(run_id)
-        if record is None:
-            raise ValueError(f"Run {run_id} not found")
-        if record.status != "waiting_for_approval":
-            raise ValueError(f"Run {run_id} is not waiting for approval (status: {record.status})")
-
-        payload = {"type": "approval", "decision": decision}
-        record.status = "running"
-        record.updated_at = datetime.now(timezone.utc).isoformat()
-        self._persist(record)
-        
-        from app.server.tasks import execute_workflow_run
-        execute_workflow_run.delay(run_id=run_id, resume=True, decision_payload=payload)
+        now = datetime.now(timezone.utc).isoformat()
+        if not self.run_store.compare_and_set_status(
+            run_id, "waiting_for_approval", "running", updated_at=now
+        ):
+            raise RunConflict(f"Run {run_id} is not waiting for approval.")
+        self._dispatch(run_id, resume=True, decision_payload={"type": "approval", "decision": decision})
 
     async def submit_review(self, run_id: str, decision: dict[str, Any]) -> None:
-        """Submit a review decision for a paused run."""
-        record = self.runs.get(run_id)
-        if record is None:
-            raise ValueError(f"Run {run_id} not found")
-        if record.status != "waiting_for_review":
-            raise ValueError(f"Run {run_id} is not waiting for review (status: {record.status})")
-
-        payload = {"type": "review", "decision": decision}
-        record.status = "running"
-        record.updated_at = datetime.now(timezone.utc).isoformat()
-        self._persist(record)
-        
-        from app.server.tasks import execute_workflow_run
-        execute_workflow_run.delay(run_id=run_id, resume=True, decision_payload=payload)
+        now = datetime.now(timezone.utc).isoformat()
+        if not self.run_store.compare_and_set_status(
+            run_id, "waiting_for_review", "running", updated_at=now
+        ):
+            raise RunConflict(f"Run {run_id} is not waiting for review.")
+        self._dispatch(run_id, resume=True, decision_payload={"type": "review", "decision": decision})
 
     async def cancel_run(self, run_id: str) -> None:
-        """Cancel a running or paused workflow."""
-        record = self.runs.get(run_id)
+        """Request cancellation and revoke the worker task.
+
+        Two mechanisms, because neither alone is sufficient: revoke stops a task
+        that has not started or kills one that has, while the cancel flag lets a
+        task that is mid-superstep stop cleanly at the next checkpoint rather
+        than being killed halfway through a graph write.
+        """
+        record = self.run_store.load(run_id)
         if record is None:
             raise ValueError(f"Run {run_id} not found")
         if record.status in ("completed", "failed", "cancelled"):
-            return  # already terminal
+            return
 
-        record.status = "cancelled"
-        record.updated_at = datetime.now(timezone.utc).isoformat()
-        self._persist(record)
+        now = datetime.now(timezone.utc).isoformat()
+        self.run_store.request_cancel(run_id, now)
+
+        if record.task_id:
+            try:
+                from app.server.tasks import celery_app
+
+                celery_app.control.revoke(record.task_id, terminate=True, signal="SIGTERM")
+            except Exception:  # noqa: BLE001 - the flag still stops it at the next check
+                logger.warning("Could not revoke task %s for run %s", record.task_id, run_id, exc_info=True)
+
+        # A run that is paused has no worker to notice the flag, so mark it
+        # terminal here. A running one is left to the worker, which will see the
+        # flag and record the cancellation itself.
+        if record.status in ("created", "waiting_for_approval", "waiting_for_review", "paused"):
+            self.run_store.compare_and_set_status(
+                run_id,
+                ("created", "waiting_for_approval", "waiting_for_review", "paused"),
+                "cancelled",
+                updated_at=now,
+            )
+
         await self.event_bus.publish(
             run_id,
             RunEvent(
                 run_id=run_id,
-                sequence=self.event_bus.next_sequence(run_id),
+                sequence=await self.event_bus.next_sequence(run_id),
                 stage=record.current_stage,
                 event_type="complete",
                 message="Run was cancelled by user.",
             ),
         )
         await self.event_bus.close(run_id)
+
+    def _dispatch(self, run_id: str, *, resume: bool, decision_payload: dict[str, Any] | None) -> None:
+        """Hand the run to a Celery worker and remember the task id."""
+        from app.server.tasks import execute_workflow_run
+
+        async_result = execute_workflow_run.delay(
+            run_id=run_id, resume=resume, decision_payload=decision_payload
+        )
+        try:
+            self.run_store.set_task_id(run_id, async_result.id)
+        except Exception:  # noqa: BLE001 - dispatch succeeded; cancel is just less precise
+            logger.warning("Could not record task id for run %s", run_id, exc_info=True)
 
     async def _run_loop(
         self,
@@ -279,187 +380,86 @@ class WorkflowRunner:
         resume: bool = False,
         model_overrides: dict[str, str | None] | None = None,
     ) -> None:
-        """Drive the graph invoke-loop, publishing events at every step.
+        """Drive one segment of the graph, publishing events as it goes.
 
-        This mirrors the loop in ``main.py`` but runs asynchronously and
-        hands off decisions via ``asyncio.Event`` instead of stdin prompts.
+        One invoke per call. The graph runs until it pauses for a human or
+        reaches a terminal stage, and this method then returns so the Celery task
+        finishes; a later decision dispatches a fresh task. The previous version
+        wrapped this in a 200-iteration loop whose non-terminal branch fell
+        through to `continue` without re-invoking anything, so it republished the
+        same event 200 times and then reported a gate-limit failure that had not
+        happened.
         """
-        # We might not have a full repository context when resuming.
-        # But we still need repo_root and allow_subdirectories for build_workflow_graph.
-        # We can extract it from record.repo_root if repository is None.
+        run_id = record.run_id
         repo_root = repository.root_path if repository else record.repo_root
         allow_subs = repository.allow_subdirectories if repository else True
-        
-        graph = build_workflow_graph(
-            model=self.model,
-            repo_root=repo_root,
-            allow_subdirectories=allow_subs,
-            model_overrides=model_overrides
-        )
-        run_id = record.run_id
-
-        # Build tracing metadata if LangSmith is enabled.
-        trace_meta = trace_metadata(
-            run_id=run_id,
-            stage="start",
-            role="controller",
-            thread_id=record.thread_id,
-        ) if is_tracing_enabled() else {}
+        overrides = model_overrides if model_overrides is not None else record.model_overrides
 
         try:
+            if self.run_store.is_cancel_requested(run_id):
+                await self._finish_cancelled(record)
+                return
+
+            graph = build_workflow_graph(
+                model=self.model,
+                repo_root=repo_root,
+                allow_subdirectories=allow_subs,
+                model_overrides=overrides or None,
+                checkpointer=self.checkpointer,
+            )
+
+            trace_meta = (
+                trace_metadata(
+                    run_id=run_id, stage="start", role="controller", thread_id=record.thread_id
+                )
+                if is_tracing_enabled()
+                else {}
+            )
+
             if resume:
-                from app.graph.workflow import resume_failed_run
-                state = await asyncio.to_thread(
-                    resume_failed_run,
-                    graph,
-                    record.thread_id,
-                )
+                decision = getattr(record, "pending_decision_payload", None)
+                if decision and decision.get("type") == "approval":
+                    state = await asyncio.to_thread(
+                        resume_pending_approval, graph, record.thread_id, decision["decision"],
+                        metadata=trace_meta,
+                    )
+                elif decision and decision.get("type") == "review":
+                    state = await asyncio.to_thread(
+                        resume_pending_review, graph, record.thread_id, decision["decision"],
+                        metadata=trace_meta,
+                    )
+                else:
+                    from app.graph.workflow import resume_failed_run
+
+                    state = await asyncio.to_thread(
+                        resume_failed_run, graph, record.thread_id, metadata=trace_meta
+                    )
             else:
                 state = await asyncio.to_thread(
-                    start_workflow,
-                    graph,
-                    document,
-                    repository,
-                    record.thread_id,
-                    review_policy=record.review_policy,
-                    reviewer=record.reviewer,
-                )
-            record.state = state
-            self._update_record(record, state)
-
-            for _ in range(MAX_GATES):
-                stage = state.get("stage", "")
-
-                # Publish a stage-change event.
-                await self.event_bus.publish(
-                    run_id,
-                    RunEvent(
-                        run_id=run_id,
-                        sequence=self.event_bus.next_sequence(run_id),
-                        stage=stage,
-                        event_type="stage_change",
-                        message=_stage_meaning(stage),
-                        metadata=redact_metadata({"status": _api_status(stage)}),
-                    ),
+                    start_workflow, graph, document, repository, record.thread_id,
+                    review_policy=record.review_policy, reviewer=record.reviewer,
+                    metadata=trace_meta,
                 )
 
-                if stage in ("complete", "failed"):
-                    record.status = "completed" if stage == "complete" else "failed"
-                    record.error = state.get("error")
-                    record.updated_at = datetime.now(timezone.utc).isoformat()
-                    self._persist(record)
-                    event_type = "complete" if stage == "complete" else "error"
-                    await self.event_bus.publish(
-                        run_id,
-                        RunEvent(
-                            run_id=run_id,
-                            sequence=self.event_bus.next_sequence(run_id),
-                            stage=stage,
-                            event_type=event_type,
-                            message=record.error or "Run completed successfully.",
-                        ),
-                    )
-                    await self.event_bus.close(run_id)
-                    return
-
-                if stage.startswith(APPROVAL_PAUSE_PREFIX):
-                    approval = state.get("pending_approval")
-
-                    if record.auto_approve:
-                        # Auto-approve: skip human interaction, approve immediately.
-                        await self.event_bus.publish(
-                            run_id,
-                            RunEvent(
-                                run_id=run_id,
-                                sequence=self.event_bus.next_sequence(run_id),
-                                stage=stage,
-                                event_type="approval_auto",
-                                message=f"Auto-approved: {approval.notes if approval else 'artifact write'}",
-                                metadata=redact_metadata({
-                                    "artifact_path": approval.artifact_path if approval else "",
-                                    "risk_level": approval.risk_level if approval else "unknown",
-                                    "requested_by": approval.requested_by if approval else "",
-                                }),
-                            ),
-                        )
-                        record.status = "running"
-                        record.updated_at = datetime.now(timezone.utc).isoformat()
-                        decision_payload = {"type": "approval", "decision": approve_write_decision()}
-                    else:
-                        record.status = "waiting_for_approval"
-                        record.updated_at = datetime.now(timezone.utc).isoformat()
-                        self._persist(record)
-
-                        # Publish approval request event.
-                        await self.event_bus.publish(
-                            run_id,
-                            RunEvent(
-                                run_id=run_id,
-                                sequence=self.event_bus.next_sequence(run_id),
-                                stage=stage,
-                                event_type="approval_request",
-                                message=f"Approval required: {approval.notes if approval else 'artifact write'}",
-                                metadata=redact_metadata({
-                                    "artifact_path": approval.artifact_path if approval else "",
-                                    "risk_level": approval.risk_level if approval else "unknown",
-                                    "requested_by": approval.requested_by if approval else "",
-                                }),
-                            ),
-                        )
-                        return # Exit the celery task; will be resumed via submit_approval
-
-                elif stage.startswith(REVIEW_PAUSE_PREFIX):
-                    record.status = "waiting_for_review"
-                    record.updated_at = datetime.now(timezone.utc).isoformat()
-                    self._persist(record)
-
-                    review_point = stage.removeprefix(REVIEW_PAUSE_PREFIX)
-                    review = state.get("pending_review")
-                    await self.event_bus.publish(
-                        run_id,
-                        RunEvent(
-                            run_id=run_id,
-                            sequence=self.event_bus.next_sequence(run_id),
-                            stage=stage,
-                            event_type="review_request",
-                            message=f"Optional review open: {review_point}",
-                            metadata=redact_metadata({
-                                "review_point": review_point,
-                                "artifact_id": review.artifact_id if review else "",
-                                "revision": review.revision if review else 0,
-                            }),
-                        ),
-                    )
-                    return # Exit the celery task; will be resumed via submit_review
-
-                # Stage is running (not paused, not terminal).  This should
-                # only happen on the initial invoke or when a resume pushes
-                # through multiple stages at once.  We loop back and the next
-                # invoke is implicit (the graph ran to its next pause/terminal).
-                continue
-
-            else:
-                record.status = "failed"
-                record.error = f"Stopped after {MAX_GATES} gates without reaching a terminal stage."
-                record.updated_at = datetime.now(timezone.utc).isoformat()
-                self._persist(record)
+            await self._handle_state(record, graph, state, trace_meta)
 
         except asyncio.CancelledError:
-            record.status = "cancelled"
-            record.updated_at = datetime.now(timezone.utc).isoformat()
-            self._persist(record)
-            logger.info("Run %s was cancelled", run_id)
-        except Exception:
+            await self._finish_cancelled(record)
+            raise
+        except Exception as exc:
+            # The full traceback goes to the log, keyed by correlation id. Only a
+            # short message reaches the API, because run.error is rendered in the
+            # browser and a traceback leaks paths, versions and module layout.
+            logger.exception("Run %s failed", run_id)
             record.status = "failed"
-            record.error = traceback.format_exc()
+            record.error = f"{type(exc).__name__}: {exc}"[:500]
             record.updated_at = datetime.now(timezone.utc).isoformat()
             self._persist(record)
-            logger.exception("Run %s failed with an unhandled exception", run_id)
             await self.event_bus.publish(
                 run_id,
                 RunEvent(
                     run_id=run_id,
-                    sequence=self.event_bus.next_sequence(run_id),
+                    sequence=await self.event_bus.next_sequence(run_id),
                     stage=record.current_stage,
                     event_type="error",
                     message=f"Run failed: {record.error}",
@@ -467,7 +467,133 @@ class WorkflowRunner:
             )
             await self.event_bus.close(run_id)
 
+    async def _handle_state(
+        self,
+        record: RunRecord,
+        graph: Any,
+        state: dict[str, Any],
+        trace_meta: dict[str, Any],
+    ) -> None:
+        """Interpret the state the graph returned and settle the run's status.
 
+        Auto-approval is the one case that legitimately loops, and it is bounded
+        by MAX_GATES with a real re-invoke on each pass.
+        """
+        run_id = record.run_id
+
+        for _ in range(MAX_GATES):
+            stage = state.get("stage", "")
+            self._update_record(record, state)
+
+            await self.event_bus.publish(
+                run_id,
+                RunEvent(
+                    run_id=run_id,
+                    sequence=await self.event_bus.next_sequence(run_id),
+                    stage=stage,
+                    event_type="stage_change",
+                    message=_stage_meaning(stage),
+                    metadata=redact_metadata({"status": _api_status(stage)}),
+                ),
+            )
+
+            if self.run_store.is_cancel_requested(run_id):
+                await self._finish_cancelled(record)
+                return
+
+            if stage in ("complete", "failed"):
+                record.status = "completed" if stage == "complete" else "failed"
+                record.error = state.get("error")
+                record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
+                await self.event_bus.publish(
+                    run_id,
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=await self.event_bus.next_sequence(run_id),
+                        stage=stage,
+                        event_type="complete" if stage == "complete" else "error",
+                        message=record.error or "Run completed successfully.",
+                    ),
+                )
+                await self.event_bus.close(run_id)
+                return
+
+            if stage.startswith(APPROVAL_PAUSE_PREFIX):
+                approval = state.get("pending_approval")
+                if record.auto_approve:
+                    await self.event_bus.publish(
+                        run_id,
+                        RunEvent(
+                            run_id=run_id,
+                            sequence=await self.event_bus.next_sequence(run_id),
+                            stage=stage,
+                            event_type="approval_auto",
+                            message=f"Auto-approved: {approval.notes if approval else 'artifact write'}",
+                            metadata=redact_metadata(_approval_metadata(approval)),
+                        ),
+                    )
+                    state = await asyncio.to_thread(
+                        resume_pending_approval, graph, record.thread_id,
+                        approve_write_decision(), metadata=trace_meta,
+                    )
+                    continue
+
+                record.status = "waiting_for_approval"
+                record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
+                await self.event_bus.publish(
+                    run_id,
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=await self.event_bus.next_sequence(run_id),
+                        stage=stage,
+                        event_type="approval_request",
+                        message=f"Approval required: {approval.notes if approval else 'artifact write'}",
+                        metadata=redact_metadata(_approval_metadata(approval)),
+                    ),
+                )
+                return
+
+            if stage.startswith(REVIEW_PAUSE_PREFIX):
+                record.status = "waiting_for_review"
+                record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
+                review_point = stage.removeprefix(REVIEW_PAUSE_PREFIX)
+                review = state.get("pending_review")
+                await self.event_bus.publish(
+                    run_id,
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=await self.event_bus.next_sequence(run_id),
+                        stage=stage,
+                        event_type="review_request",
+                        message=f"Review open: {review_point}",
+                        metadata=redact_metadata({
+                            "review_point": review_point,
+                            "artifact_id": review.artifact_id if review else "",
+                            "revision": review.revision if review else 0,
+                        }),
+                    ),
+                )
+                return
+
+            # A stage that is neither terminal nor a pause means the graph
+            # returned mid-flight. Re-invoke to make progress; without this the
+            # loop would spin on unchanged state.
+            state = await asyncio.to_thread(graph.invoke, None, _resume_config(record.thread_id, trace_meta))
+
+        record.status = "failed"
+        record.error = f"Stopped after {MAX_GATES} gates without reaching a terminal stage."
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+
+    async def _finish_cancelled(self, record: RunRecord) -> None:
+        record.status = "cancelled"
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+        logger.info("Run %s cancelled", record.run_id)
+        await self.event_bus.close(record.run_id)
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:
         """Sync the run record with the latest graph state."""

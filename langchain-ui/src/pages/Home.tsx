@@ -5,7 +5,7 @@ import { createRun, startRun, api } from '../api';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
-  const [artifactDirectory, setArtifactDirectory] = useState<string>('');
+  const [workspaceLabel, setWorkspaceLabel] = useState<string>('');
   const [allowSubdirectories, setAllowSubdirectories] = useState<boolean>(true);
   const [autoApprove, setAutoApprove] = useState<boolean>(false);
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
@@ -65,7 +65,7 @@ export const Home: React.FC = () => {
       
       const payload: any = {
         reviewer: "Product Manager",
-        artifact_directory: artifactDirectory || undefined,
+        workspace_label: workspaceLabel || undefined,
         allow_subdirectories: allowSubdirectories,
         auto_approve: autoApprove,
         review_policy: {
@@ -75,12 +75,11 @@ export const Home: React.FC = () => {
         }
       };
       
+      // Only non-secret overrides are sent. API keys used to be read from the
+      // settings endpoint and posted here, which put them in request logs.
       if (aiSettings) {
         payload.llm_provider = aiSettings.llm_provider;
         payload.openai_base_url = aiSettings.openai_base_url;
-        payload.openai_api_key = aiSettings.openai_api_key;
-        payload.anthropic_api_key = aiSettings.anthropic_api_key;
-        payload.google_api_key = aiSettings.google_api_key;
         payload.model_name = aiSettings.model_name;
       }
       
@@ -206,21 +205,23 @@ export const Home: React.FC = () => {
 
             {/* Configuration */}
             <div className="mt-8 space-y-6">
-              {/* Artifact Directory */}
+              {/* Workspace label */}
               <div>
-                <label className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
+                <label htmlFor="workspace-label" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
                   <FolderOpen className="h-4 w-4 text-primary" />
-                  Output Directory
+                  Workspace name
                 </label>
                 <input
+                  id="workspace-label"
                   type="text"
-                  value={artifactDirectory}
-                  onChange={(e) => setArtifactDirectory(e.target.value)}
-                  placeholder="e.g., /home/user/my_project"
+                  maxLength={48}
+                  value={workspaceLabel}
+                  onChange={(e) => setWorkspaceLabel(e.target.value)}
+                  placeholder="e.g., checkout-service"
                   className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-white placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
                 />
                 <p className="text-xs text-text-muted mt-1.5">
-                  Documents will go to <code className="text-primary/80">/docs</code> and code to <code className="text-primary/80">/{'<product-name>'}</code> within this directory.
+                  Names this run's isolated workspace. Documents go to <code className="text-primary/80">docs/</code> and code to <code className="text-primary/80">{'<product-name>'}/</code> inside it.
                 </p>
               </div>
 

@@ -12,7 +12,7 @@ This is the first Step 1 output for the supplied example product. It is intentio
 |---|---|---|---|---|
 | Web UI | Next.js with TypeScript | React SPA, server-rendered alternative | The product needs recording UI, authenticated views, responsive workflows, and typed contracts | Build a recording and thread-review flow |
 | Styling and components | Existing team design system or Tailwind only if absent | Component library | Avoid duplicate primitives while keeping accessible states consistent | Accessibility and responsive UI tests |
-| API | NestJS with TypeScript and OpenAPI | FastAPI-only, Go service | Modular boundaries fit auth, threads, approvals, uploads, and integrations | Contract and authorization tests |
+| API | FastAPI with Python and OpenAPI | Next.js/NestJS, Go service | Modular boundaries fit auth, threads, approvals, uploads, and integrations | Contract and authorization tests |
 | Database | PostgreSQL with Prisma | MySQL, document database | Relational tenant, approval, audit, and lifecycle invariants are central | Migration and isolation tests |
 | Object storage | S3-compatible storage, MinIO locally | Filesystem, provider-specific blob API | Direct browser uploads and portable deployment semantics | Pre-signed upload and expiry test |
 | Jobs | Redis with BullMQ | In-process jobs, managed queue | Video and AI work must be asynchronous, retryable, and observable | Idempotency and retry tests |

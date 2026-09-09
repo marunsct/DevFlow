@@ -26,6 +26,18 @@ _STAGE = "tools_models"
 _NAME = "tools_models_architect"
 
 
+class TechnologyStack(BaseModel):
+    """The unified technology stack for scaffolding the project."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    language: str = Field(..., description="Primary programming language (e.g., TypeScript, Python).")
+    framework: str = Field(..., description="Primary framework (e.g., React, NestJS, FastAPI).")
+    database: str = Field(..., description="Database technology (e.g., PostgreSQL, MongoDB).")
+    testing_framework: str = Field(..., description="Testing framework (e.g., Jest, Pytest).")
+    additional_tools: list[str] = Field(default_factory=list, description="Other notable tools to scaffold.")
+
+
 class TechnologyChoice(BaseModel):
     """One compared option for a technology category.
 
@@ -70,6 +82,7 @@ class ToolsAndModelsOutput(BaseModel):
     observability: list[TechnologyChoice] = Field(default_factory=list)
     testing_tools: list[TechnologyChoice] = Field(default_factory=list)
     deployment_options: list[TechnologyChoice] = Field(default_factory=list)
+    technology_stack: TechnologyStack | None = Field(default=None, description="The chosen integrated stack.")
     open_questions: list[str] = Field(default_factory=list)
 
 
@@ -113,7 +126,7 @@ Constraints:
 - Do not change repo files except through the approved artifact tool.
 - No implementation dependency should be treated as decided just because you
   named it here; this artifact is a proposal for human approval.
-- Every write_artifact call pauses for a human decision before anything is
+- Only write your artifact inside the `docs/` folder.\n- Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.
 
@@ -146,6 +159,7 @@ def create_tools_models_agent(
 
 __all__ = [
     "TechnologyChoice",
+    "TechnologyStack",
     "ToolsAndModelsOutput",
     "build_tools_models_request",
     "create_tools_models_agent",

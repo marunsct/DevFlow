@@ -131,6 +131,7 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         "create_technical_lead_agent": "technical_lead",
         "create_milestone_reviewer_agent": "milestone_reviewer",
         "create_security_reviewer_agent": "security_reviewer",
+        "create_stack_selector_agent": "stack_selector",
     }
     for factory_name, role in simple_roles.items():
         monkeypatch.setattr(
@@ -143,6 +144,27 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         workflow_module,
         "create_specialist_agent",
         lambda role, *args, **kwargs: registry.agent(f"specialist_{role}"),
+    )
+    
+    import app.scaffolding.executor
+    monkeypatch.setattr(
+        app.scaffolding.executor,
+        "execute_scaffolding",
+        lambda repo_root, app_name, framework: (True, "Scaffolding succeeded")
+    )
+    
+    import app.build.verifier
+    monkeypatch.setattr(
+        app.build.verifier.BuildVerifier,
+        "verify",
+        lambda self, command, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
+    )
+    
+    import app.analysis.static_analyzer
+    monkeypatch.setattr(
+        app.analysis.static_analyzer.StaticAnalyzer,
+        "analyze",
+        lambda self, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
     )
     return registry
 
@@ -263,10 +285,27 @@ def _graph() -> Any:
     return build_workflow_graph(model="fake-model", checkpointer=MemorySaver(serde=build_serializer()))
 
 
+from app.agents.stack_selector import StackSelectorOutput
+from app.agents.tools_models import TechnologyStack
+
+def _stack_selector() -> StackSelectorOutput:
+    return StackSelectorOutput(
+        technology_stack=TechnologyStack(
+            language="Python",
+            framework="FastAPI",
+            database="PostgreSQL",
+            testing_framework="pytest",
+            additional_tools=["Docker"]
+        ),
+        rationale="Standard Python stack."
+    )
+
+
 def _script_through_architecture(agents: ScriptedAgents, review: ArchitectureReviewOutput) -> None:
     """Script the four stages that run before sprint planning."""
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script("principal_architect", [responds_with(_spec())])
     agents.script("architecture_review", [responds_with(review)])
 
@@ -353,6 +392,7 @@ def test_rejected_architecture_returns_to_the_architect_with_the_findings(
     """
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script(
         "principal_architect",
         [responds_with(_spec("first draft")), responds_with(_spec("revised with auth"))],
@@ -379,6 +419,7 @@ def test_rejected_architecture_returns_to_the_architect_with_the_findings(
 def test_repeated_rejection_fails_the_run_instead_of_looping(agents: ScriptedAgents, tmp_path: Any) -> None:
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script("principal_architect", [responds_with(_spec())] * MAX_ARCHITECTURE_REVISIONS)
     agents.script("architecture_review", [responds_with(_rejected_review())] * MAX_ARCHITECTURE_REVISIONS)
 
@@ -446,13 +487,14 @@ def test_workflow_pauses_with_a_typed_approval_request(agents: ScriptedAgents, t
     assert approval.artifact_path == "intake.md"
     assert approval.requested_by == "product_manager"
     assert approval.risk_level == "low"
-    assert state["pending_inner_thread_id"] == "run-approval:product_manager"
+    assert state["pending_inner_thread_id"].startswith("run-approval:product_manager")
 
 
 def test_approving_a_write_resumes_the_run_to_completion(agents: ScriptedAgents, tmp_path: Any) -> None:
     graph = _graph()
     agents.script("product_manager", [pause_for_approval(), responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script("principal_architect", [responds_with(_spec())])
     agents.script("architecture_review", [responds_with(_approved_review())])
     _script_through_sprint(agents)
@@ -476,6 +518,7 @@ def test_rejecting_a_write_still_lets_the_agent_finish_without_the_artifact(
     graph = _graph()
     agents.script("product_manager", [pause_for_approval(), responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script("principal_architect", [responds_with(_spec())])
     agents.script("architecture_review", [responds_with(_approved_review())])
     _script_through_sprint(agents)
@@ -503,7 +546,7 @@ def test_a_specialist_can_pause_for_approval_and_resume_on_the_right_task(
 
     state = start_workflow(graph, _document(), _repository(tmp_path), "run-specialist-pause")
     assert state["stage"] == "awaiting_approval:specialist_backend_0"
-    assert state["pending_inner_thread_id"] == "run-specialist-pause:specialist_backend_0"
+    assert state["pending_inner_thread_id"].startswith("run-specialist-pause:specialist_backend_0")
 
     state = resume_pending_approval(graph, "run-specialist-pause", approve_write_decision())
 
@@ -604,6 +647,7 @@ def test_requested_changes_send_the_comment_back_to_the_architect(
     graph = _graph()
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script(
         "principal_architect",
         [responds_with(_spec("first draft")), responds_with(_spec("second draft"))],
@@ -675,6 +719,8 @@ def test_repeated_change_requests_stop_at_the_rerun_limit(agents: ScriptedAgents
     graph = _graph()
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script("stack_selector", [responds_with(_stack_selector())] * 4)
     agents.script("principal_architect", [responds_with(_spec())] * 4)
     agents.script("architecture_review", [responds_with(_approved_review())] * 4)
 

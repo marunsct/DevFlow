@@ -66,6 +66,20 @@ export interface RunSummary {
 
 export interface RunListResponse {
   runs: RunSummary[];
+  total: number;
+}
+
+/** Provider configuration as the API exposes it: credentials are masked. */
+export interface SettingsView {
+  llm_provider: string;
+  openai_base_url: string;
+  model_name: string;
+  openai_api_key_hint?: string | null;
+  anthropic_api_key_hint?: string | null;
+  google_api_key_hint?: string | null;
+  openai_api_key_configured: boolean;
+  anthropic_api_key_configured: boolean;
+  google_api_key_configured: boolean;
 }
 
 export interface ApprovalPayload {
@@ -95,13 +109,18 @@ export interface ReviewDecisionRequest {
 }
 
 export interface LogEntry {
+  /** Stable per-event identifier, used to deduplicate history and live events. */
+  event_id: string;
   event_type: string;
   run_id: string;
   timestamp: string;
   sequence: number;
   stage: string;
   message: string;
-  details?: Record<string, any>;
+  files_modified?: number;
+  tests_passed?: number;
+  tests_failed?: number;
+  metadata?: Record<string, unknown>;
 }
 
 export interface EventResponse {
@@ -115,14 +134,12 @@ export interface EventResponse {
 export interface StartRunRequest {
   review_policy?: Record<string, boolean>;
   reviewer?: string;
-  artifact_directory?: string;
+  /** A label for the run's workspace. The server owns the actual path. */
+  workspace_label?: string;
   allow_subdirectories?: boolean;
   auto_approve?: boolean;
   llm_provider?: string;
   openai_base_url?: string;
-  openai_api_key?: string;
-  anthropic_api_key?: string;
-  google_api_key?: string;
   model_name?: string;
 }
 

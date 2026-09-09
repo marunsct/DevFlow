@@ -248,13 +248,16 @@ def create_specialist_agent(
     read/write tools as any other role agent.
     """
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
-    
-    from app.tools.execution import get_execution_tools
+
+    # One execution path only. The previous `get_execution_tools` helpers ran
+    # `subprocess.run(shell=True)` directly on the host with no containment, and
+    # sat alongside the sandboxed tool as a silent fallback whenever the
+    # container runtime was missing - which is exactly what happened in the
+    # shipped image. Everything now goes through the contained executor.
     extra_tools = [
-        build_terminal_command_tool(resolved_repo_root),
-        *get_execution_tools(resolved_repo_root)
+        build_terminal_command_tool(resolved_repo_root, role_name=f"{role}_specialist"),
     ]
-    
+
     if role == "testing":
         extra_tools.append(build_validation_tool(resolved_repo_root))
 

@@ -28,9 +28,13 @@ from __future__ import annotations
 
 import os
 from langgraph.checkpoint.postgres import PostgresSaver
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 import psycopg
 from psycopg_pool import ConnectionPool
+import sqlite3
+from app.config import load_settings
 
 from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
 from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
@@ -100,17 +104,28 @@ def get_connection_pool() -> ConnectionPool:
     global _pool
     if _pool is None:
         db_url = os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
-        _pool = ConnectionPool(conninfo=db_url, max_size=20)
+        _pool = ConnectionPool(conninfo=db_url, max_size=20, kwargs={"autocommit": True})
     return _pool
 
-def build_checkpointer() -> PostgresSaver:
-    """Build the durable Postgres checkpointer with the allowlist applied.
-
-    The state is saved to Postgres so workflow runs survive server restarts.
-    """
-    saver = PostgresSaver(get_connection_pool(), serde=build_serializer())
-    saver.setup()
-    return saver
+def build_checkpointer():
+    """Build the checkpointer based on configuration with the allowlist applied."""
+    settings = load_settings()
+    serde = build_serializer()
+    
+    if settings.checkpointer_type == "sqlite":
+        data_dir = os.environ.get("DATA_DIR", ".")
+        sqlite_path = os.path.join(data_dir, "checkpoints.sqlite")
+        conn = sqlite3.connect(sqlite_path, check_same_thread=False)
+        saver = SqliteSaver(conn, serde=serde)
+        saver.setup()
+        return saver
+    elif settings.checkpointer_type == "postgres":
+        saver = PostgresSaver(get_connection_pool(), serde=serde)
+        saver.setup()
+        return saver
+    else:
+        # Default to memory
+        return MemorySaver(serde=serde)
 
 
 __all__ = ["CHECKPOINTED_TYPES", "build_checkpointer", "build_serializer"]

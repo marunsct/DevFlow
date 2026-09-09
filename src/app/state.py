@@ -24,6 +24,8 @@ class WorkflowStage(str, Enum):
 
     INTAKE = "intake"
     TOOLS_MODELS = "tools_models"
+    STACK_SELECTION = "stack_selection"
+    SCAFFOLDING = "scaffolding"
     ARCHITECTURE = "architecture"
     REVIEW = "review"
     SPRINT_PLANNING = "sprint_planning"

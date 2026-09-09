@@ -1,0 +1,38 @@
+# Development overrides. Layer on top of the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+#
+# This is where hot reload, a mounted source tree and relaxed secrets live, so
+# none of it can leak into the production-shaped base file by accident.
+
+services:
+  app:
+    environment:
+      ENV: development
+      # Any value satisfies the base file's required-variable check; the app
+      # generates an ephemeral key when ENV is a development value.
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-secret-not-for-production-use-32}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    volumes:
+      - ./src:/app/src:ro
+    command:
+      - python
+      - -m
+      - uvicorn
+      - app.server.api:create_app
+      - --factory
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/src
+
+  worker:
+    environment:
+      ENV: development
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-only-secret-not-for-production-use-32}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-admin}
+    volumes:
+      - ./src:/app/src:ro

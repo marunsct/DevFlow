@@ -37,8 +37,8 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-md animate-fade-in">
-      <div className="bg-[#1e2330]/95 backdrop-blur-xl border-l border-white/10 w-full max-w-2xl h-full flex flex-col shadow-2xl overflow-hidden animate-slide-in-right">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
+      <div className="bg-[#1e2330]/95 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-black/20">

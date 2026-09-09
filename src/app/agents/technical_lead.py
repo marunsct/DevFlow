@@ -106,7 +106,7 @@ Constraints:
 - Do not grant a specialist access beyond their delegated task.
 - Do not modify application source code yourself.
 - Do not change repo files except through the approved artifact tool.
-- Every write_artifact call pauses for a human decision before anything is
+- Only write your artifact inside the `docs/` folder.\n- Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.
 

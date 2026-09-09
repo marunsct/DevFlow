@@ -29,7 +29,11 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel
 
 from app.models import build_default_chat_model
-from app.tools.agent_toolkit import build_artifact_write_tool, build_repository_read_tools
+from app.tools.agent_toolkit import (
+    HUMAN_APPROVAL_TOOLS,
+    build_artifact_write_tool,
+    build_repository_read_tools,
+)
 
 
 def default_repo_root() -> Path:
@@ -68,6 +72,57 @@ def describe_artifact_write(repo_root: str, agent_name: str, stage: str):
         )
 
     return describe
+
+
+def describe_tool_call(repo_root: str, agent_name: str, stage: str, tool_name: str):
+    """Build the interrupt description shown to a human for a risky tool call."""
+
+    def describe(tool_call: dict[str, Any], state: Any, runtime: Any) -> str:  # noqa: ARG001
+        args = tool_call.get("args", {})
+        command = args.get("command")
+        if isinstance(command, list):
+            rendered = " ".join(str(part) for part in command)
+        else:
+            rendered = str(command)
+        return (
+            f"Agent: {agent_name} (stage: {stage})\n"
+            f"Tool: {tool_name}\n"
+            f"Command: {rendered}\n"
+            f"Workspace: {repo_root}\n"
+            f"Category: {args.get('category', 'default')}\n"
+            "This executes code inside the workspace. Approve only if the command is expected.\n"
+            "Allowed decisions: approve, reject"
+        )
+
+    return describe
+
+
+def _interrupt_config(
+    tools: list[BaseTool], repo_root: str, agent_name: str, stage: str
+) -> dict[str, dict[str, Any]]:
+    """Map every risky tool this agent holds to its approval gate.
+
+    Built from the tools actually attached rather than from a fixed literal, so
+    adding a tool to an agent cannot silently add an ungated capability.
+    """
+    config: dict[str, dict[str, Any]] = {}
+    for tool_obj in tools:
+        tool_name = getattr(tool_obj, "name", None)
+        if tool_name not in HUMAN_APPROVAL_TOOLS:
+            continue
+        if tool_name == "write_artifact":
+            config[tool_name] = {
+                "allowed_decisions": ["approve", "edit", "reject"],
+                "description": describe_artifact_write(repo_root, agent_name, stage),
+            }
+        else:
+            # Editing a command before it runs would let a reviewer approve one
+            # thing and execute another, so execution gates are approve/reject.
+            config[tool_name] = {
+                "allowed_decisions": ["approve", "reject"],
+                "description": describe_tool_call(repo_root, agent_name, stage, tool_name),
+            }
+    return config
 
 
 def create_role_agent(
@@ -142,18 +197,19 @@ def create_role_agent(
         permissions=[
             FilesystemPermission(operations=["read", "write"], paths=["/**"], mode="deny"),
         ],
-        # Every artifact write pauses for a human decision. "respond" is
-        # deliberately excluded: answering on the tool's behalf does not make
-        # sense for a file write.
-        interrupt_on={
-            "write_artifact": {
-                "allowed_decisions": ["approve", "edit", "reject"],
-                "description": describe_artifact_write(resolved_repo_root, name, stage),
-            },
-        },
+        # Every high-risk tool call pauses for a human decision - not just the
+        # artifact write. Gating is by what a call can do, so command execution
+        # and validation runs are included: both can execute code, and both were
+        # previously ungated while the far safer file write was not.
+        interrupt_on=_interrupt_config(tools, resolved_repo_root, name, stage),
         checkpointer=checkpointer,
         name=name,
     )
 
 
-__all__ = ["create_role_agent", "default_repo_root", "describe_artifact_write"]
+__all__ = [
+    "create_role_agent",
+    "default_repo_root",
+    "describe_artifact_write",
+    "describe_tool_call",
+]

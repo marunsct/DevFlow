@@ -7,7 +7,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+import os
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 class RunEvent(BaseModel):
@@ -36,6 +38,9 @@ class RunEvent(BaseModel):
         "complete",
     ] = Field(description="Type of the event.")
     message: str = Field(description="Human-readable message.")
+    files_modified: int = Field(default=0, description="Count of files modified so far.")
+    tests_passed: int = Field(default=0, description="Count of tests passed so far.")
+    tests_failed: int = Field(default=0, description="Count of tests failed so far.")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Safe, redacted metadata associated with the event.",
@@ -72,68 +77,111 @@ def redact_metadata(meta: dict[str, Any]) -> dict[str, Any]:
     return redacted
 
 
-import redis.asyncio as redis
-import os
-
 class EventBus:
-    """Redis pub/sub bus for distributed run events."""
+    """Redis-backed event history and live fan-out for run progress.
 
-    def __init__(self) -> None:
-        """Initialize the event bus."""
-        redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
-        self._redis = redis.from_url(redis_url, decode_responses=True)
+    History is a capped list rather than an unbounded one, and it is read by
+    range rather than in full. The previous implementation `RPUSH`ed forever with
+    no TTL and answered every poll with `LRANGE 0 -1`, parsing the entire history
+    into Pydantic models on each request - cost that grew linearly with run
+    length on a path the dashboard polls continuously.
+    """
 
-    def next_sequence(self, run_id: str) -> int:
-        """Get the next sequence number for a run using a Redis counter."""
-        # Using a blocking call isn't ideal but next_sequence needs to be sync right now for RunEvent creation
-        # Wait, if it's sync, how can we use redis.asyncio? 
-        # Actually, let's just generate a timestamp or UUID for sequence, or since we only care about relative ordering,
-        # we can fetch it via asyncio, but next_sequence is called synchronously in runner.py.
-        # Let's change next_sequence to just return 0, and we'll handle real sequence assigning on the publish side.
-        return 0
+    MAX_HISTORY = int(os.environ.get("RUN_EVENT_HISTORY_MAX", "5000"))
+    HISTORY_TTL_SECONDS = int(os.environ.get("RUN_EVENT_TTL_SECONDS", str(30 * 24 * 3600)))
+
+    def __init__(self, redis_client: Any | None = None) -> None:
+        self._redis_override = redis_client
+
+    @property
+    def _redis(self):
+        if self._redis_override is not None:
+            return self._redis_override
+        from app.server.redis_client import get_async_redis_client
+
+        return get_async_redis_client()
+
+    @staticmethod
+    def _history_key(run_id: str) -> str:
+        return f"run:{run_id}:history"
+
+    @staticmethod
+    def _channel(run_id: str) -> str:
+        return f"run:{run_id}:events"
+
+    @staticmethod
+    def _sequence_key(run_id: str) -> str:
+        return f"run:{run_id}:seq"
+
+    async def next_sequence(self, run_id: str) -> int:
+        return int(await self._redis.incr(self._sequence_key(run_id)))
 
     async def publish(self, run_id: str, event: RunEvent) -> None:
-        """Publish an event for a specific run."""
-        # Assign a real sequence number
-        seq = await self._redis.incr(f"run:{run_id}:seq")
-        event.sequence = seq
-        
-        # Save to history
-        await self._redis.rpush(f"run:{run_id}:history", event.model_dump_json())
-        
-        # Publish to subscribers
-        await self._redis.publish(f"run:{run_id}:events", event.model_dump_json())
+        payload = event.model_dump_json()
+        key = self._history_key(run_id)
+        pipe = self._redis.pipeline()
+        pipe.rpush(key, payload)
+        # Cap the list and give it a TTL so a long-lived deployment cannot fill
+        # Redis with the history of runs nobody will ever look at again.
+        pipe.ltrim(key, -self.MAX_HISTORY, -1)
+        pipe.expire(key, self.HISTORY_TTL_SECONDS)
+        pipe.expire(self._sequence_key(run_id), self.HISTORY_TTL_SECONDS)
+        pipe.publish(self._channel(run_id), payload)
+        await pipe.execute()
 
     @asynccontextmanager
     async def subscribe(self, run_id: str) -> AsyncIterator[AsyncIterator[RunEvent]]:
-        """Subscribe to live events for a run."""
         pubsub = self._redis.pubsub()
-        await pubsub.subscribe(f"run:{run_id}:events")
-        
+        await pubsub.subscribe(self._channel(run_id))
+
         async def event_generator() -> AsyncIterator[RunEvent]:
             try:
                 async for message in pubsub.listen():
-                    if message["type"] == "message":
-                        if message["data"] == "CLOSE":
-                            break
-                        yield RunEvent.model_validate_json(message["data"])
+                    if message.get("type") != "message":
+                        continue
+                    data = message["data"]
+                    if data == "CLOSE":
+                        break
+                    try:
+                        yield RunEvent.model_validate_json(data)
+                    except ValidationError:
+                        # A malformed payload must not tear down a live stream.
+                        continue
             finally:
-                await pubsub.unsubscribe(f"run:{run_id}:events")
-                await pubsub.close()
+                await pubsub.unsubscribe(self._channel(run_id))
+                await pubsub.aclose()
 
         try:
             yield event_generator()
         finally:
             pass
 
-    async def get_history(self, run_id: str) -> list[RunEvent]:
-        """Get all historical events for a run."""
-        raw_events = await self._redis.lrange(f"run:{run_id}:history", 0, -1)
-        return [RunEvent.model_validate_json(raw) for raw in raw_events]
+    async def get_history(
+        self, run_id: str, *, offset: int = 0, limit: int | None = None, since_sequence: int | None = None
+    ) -> list[RunEvent]:
+        """Return a page of history, or everything after a sequence number."""
+        key = self._history_key(run_id)
+        if since_sequence is not None:
+            # Replay is bounded by MAX_HISTORY, so scanning the retained window
+            # is cheap and avoids a second index.
+            raw = await self._redis.lrange(key, 0, -1)
+            events = [RunEvent.model_validate_json(item) for item in raw]
+            return [e for e in events if e.sequence > since_sequence]
+
+        stop = -1 if limit is None else offset + limit - 1
+        raw = await self._redis.lrange(key, offset, stop)
+        return [RunEvent.model_validate_json(item) for item in raw]
+
+    async def history_length(self, run_id: str) -> int:
+        return int(await self._redis.llen(self._history_key(run_id)))
 
     async def close(self, run_id: str) -> None:
-        """Signal subscribers that the run is complete."""
-        await self._redis.publish(f"run:{run_id}:events", "CLOSE")
+        """Tell live subscribers the run is finished."""
+        await self._redis.publish(self._channel(run_id), "CLOSE")
+
+    async def purge(self, run_id: str) -> None:
+        """Delete a run's event history and sequence counter."""
+        await self._redis.delete(self._history_key(run_id), self._sequence_key(run_id))
 
 
 async def publish_stage_event(
@@ -143,20 +191,18 @@ async def publish_stage_event(
     message: str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Convenience factory function for the most common event type."""
-    meta = redact_metadata(metadata) if metadata else {}
-    
-    # We need to get the next sequence number safely
-    async with bus._lock:
-        sequence = bus._next_sequence(run_id)
-        
+    """Publish one stage-change event with a real sequence number."""
     event = RunEvent(
         run_id=run_id,
-        sequence=sequence,
+        # This was hardcoded to 0, which collided every event published through
+        # this helper and broke both the polling cursor and reconnect replay.
+        sequence=await bus.next_sequence(run_id),
         stage=stage,
         event_type="stage_change",
         message=message,
-        metadata=meta,
+        metadata=redact_metadata(metadata) if metadata else {},
     )
-    
     await bus.publish(run_id, event)
+
+
+__all__ = ["EventBus", "RunEvent", "publish_stage_event", "redact_metadata"]

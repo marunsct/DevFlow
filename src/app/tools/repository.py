@@ -11,8 +11,14 @@ agent from wandering outside the project boundary.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
+import logging
+import tomllib
+from fnmatch import fnmatch
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class RepositoryToolError(ValueError):
@@ -22,14 +28,6 @@ class RepositoryToolError(ValueError):
     invalid file requests, or blocked commands. That gives agents and tests a
     precise way to handle unsafe activity instead of a generic Python exception.
     """
-
-
-_ALLOWED_VALIDATION_COMMANDS = {
-    "python",
-    "python3",
-    "pytest",
-    "compileall",
-}
 
 
 def _normalize_repo_root(repo_root: str | Path) -> Path:
@@ -63,24 +61,63 @@ def _assert_within_repo(repo_root: Path, target: Path) -> Path:
     return resolved
 
 
-def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list[Path]:
-    """List files while skipping folders that usually hold generated or temporary data.
+IGNORED_DIRECTORIES = frozenset({
+    ".git", ".hg", ".svn", ".venv", "venv", "env", "__pycache__", "node_modules",
+    ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".next", ".nuxt",
+    "dist", "build", ".terraform", ".gradle", "target", ".langchain", "site-packages",
+})
+"""Directories never descended into."""
 
-    This helper keeps the tool output useful without exposing runtime internals such
-    as Git metadata or dependency folders. The goal is to help the agent inspect the
-    project, not to map the entire developer machine.
+SECRET_FILE_PATTERNS = (
+    ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa*", "id_ed25519*",
+    "*.keystore", "credentials", "credentials.*", ".npmrc", ".pypirc", ".netrc",
+    "*.sqlite", "*.sqlite3", "*.db", ".htpasswd", "service-account*.json",
+)
+"""Filenames withheld from agents regardless of where they sit.
+
+An agent that can list and read repository files can hand the contents to the
+model, which means into the provider's logs and any tracing backend. Credential
+material must never enter that path, so it is excluded at the traversal layer
+rather than left to prompt instructions."""
+
+MAX_READABLE_FILE_BYTES = 512 * 1024
+"""Files larger than this are listed but not read, so one oversized file cannot
+exhaust memory or the model's context."""
+
+
+def is_secret_path(path: Path) -> bool:
+    """Whether a path looks like credential material."""
+    name = path.name
+    return any(fnmatch(name, pattern) for pattern in SECRET_FILE_PATTERNS)
+
+
+def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list[Path]:
+    """List project files, pruning noise directories and credential files.
+
+    The previous implementation filtered on `path.name in ignored_names` while
+    iterating `rglob("*")`. That only skipped the directory *entry*: rglob still
+    descended into it, so every file under `.git/`, `.venv/` and `node_modules/`
+    was still returned. This walks with `os.walk` and prunes `dirnames` in place,
+    which actually stops the descent.
     """
-    ignored_names = {".git", ".venv", "venv", "__pycache__", "node_modules", ".mypy_cache", ".pytest_cache"}
     files: list[Path] = []
-    
-    # If subdirectories are not allowed, only list files in the root folder.
-    iterator = repo_root.rglob("*") if allow_subdirectories else repo_root.iterdir()
-    
-    for path in sorted(iterator):
-        if path.name in ignored_names:
-            continue
-        if path.is_file():
-            files.append(path)
+
+    if not allow_subdirectories:
+        for path in sorted(repo_root.iterdir()):
+            if path.is_file() and not is_secret_path(path):
+                files.append(path)
+        return files
+
+    for dirpath, dirnames, filenames in os.walk(repo_root):
+        # Pruning in place is what stops os.walk descending further.
+        dirnames[:] = sorted(d for d in dirnames if d not in IGNORED_DIRECTORIES and not d.startswith(".cache"))
+        current = Path(dirpath)
+        for filename in sorted(filenames):
+            candidate = current / filename
+            if is_secret_path(candidate):
+                continue
+            if candidate.is_file():
+                files.append(candidate)
     return files
 
 
@@ -135,6 +172,11 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
     root = _normalize_repo_root(repo_root)
     target = (root / relative_path).resolve()
     _assert_within_repo(root, target)
+    if is_secret_path(target) or any(part in IGNORED_DIRECTORIES for part in target.parts):
+        raise RepositoryToolError(
+            f"Refusing to read '{relative_path}': it matches a credential or excluded-directory "
+            "pattern. Secrets must never be placed in a model prompt."
+        )
     if not target.exists():
         raise RepositoryToolError(f"File does not exist within the repository: {relative_path}")
     if not target.is_file():
@@ -169,9 +211,13 @@ def search_text(repo_root: str | Path, query: str, *, max_matches: int = 25) -> 
     # For safety, search_text should also probably respect allow_subdirectories, 
     # but the API doesn't pass it yet. We'll leave it as default True here unless modified.
     for path in _iter_repo_files(root):
-        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp"}:
+        if path.suffix.lower() in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".woff", ".woff2"}:
             continue
         try:
+            # Skip oversized files before reading: one large artefact would
+            # otherwise pull hundreds of megabytes into memory per search.
+            if path.stat().st_size > MAX_READABLE_FILE_BYTES:
+                continue
             content = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
@@ -212,10 +258,18 @@ def read_dependency_metadata(repo_root: str | Path) -> dict[str, object]:
         if candidate.exists() and candidate.is_file():
             content = candidate.read_text(encoding="utf-8")
             if filename.endswith(".toml"):
-                metadata["project"] = {"name": "demo-app"} if "name" in content else {}
+                try:
+                    metadata["project"] = tomllib.loads(content).get("project", {})
+                except tomllib.TOMLDecodeError as exc:
+                    logger.warning("Could not parse %s: %s", filename, exc)
+                    metadata["project"] = {}
                 metadata["raw_toml"] = content
             elif filename.endswith(".json"):
-                metadata["package_json"] = json.loads(content)
+                try:
+                    metadata["package_json"] = json.loads(content)
+                except json.JSONDecodeError as exc:
+                    logger.warning("Could not parse %s: %s", filename, exc)
+                    metadata["package_json"] = {}
             else:
                 metadata["requirements"] = content.splitlines()
     return metadata
@@ -254,18 +308,17 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
             f"Artifact path is outside the repository root: {relative_path}"
         )
 
-    print(f"DIAGNOSTIC: target={target}", flush=True)
-    print(f"DIAGNOSTIC: target.parent={target.parent}", flush=True)
-    print(f"DIAGNOSTIC: target.parent.exists() before mkdir={target.parent.exists()}", flush=True)
+    if is_secret_path(target):
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': the path matches a credential file pattern."
+        )
+
     target.parent.mkdir(parents=True, exist_ok=True)
-    print(f"DIAGNOSTIC: target.parent.exists() after mkdir={target.parent.exists()}", flush=True)
     try:
         target.write_text(content, encoding="utf-8")
-    except Exception as e:
-        print(f"DIAGNOSTIC: Exception during write_text: {repr(e)}", flush=True)
-        import os
-        print(f"DIAGNOSTIC: os.path.exists(target.parent)={os.path.exists(target.parent)}", flush=True)
-        raise
+    except OSError as exc:
+        logger.error("Failed to write artifact to %s: %s", target, exc)
+        raise RepositoryToolError(f"Could not write artifact to {relative_path}: {exc}") from exc
     return {
         "path": str(target.relative_to(root)),
         "summary": content[:80] + ("..." if len(content) > 80 else ""),
@@ -273,52 +326,45 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
 
 
 def run_approved_validation(repo_root: str | Path, command: list[str]) -> dict[str, object]:
-    """Run a minimal allowlist of validation commands in the project directory.
+    """Run one validation command inside the sandbox.
 
     Purpose:
-        Execute a safe, explicitly approved check such as a Python compile or test
-        suite without exposing a general-purpose shell.
-
-    Inputs:
-        repo_root: repository root to run the command from.
-        command: command and arguments, such as ["python", "-m", "compileall", "-q", "src"].
-
-    Returns:
-        A dictionary containing the command, exit code, stdout, and stderr.
-
-    Errors:
-        RepositoryToolError if the repo root is invalid or the command is not in the
-        approved allowlist.
+        Let a specialist prove a change works, without granting a general shell.
 
     Safety model:
-        This intentionally blocks arbitrary terminal execution. Only a small set of
-        validation commands is permitted, and each call runs with a fixed working
-        directory to reduce the risk of accidental file or process access.
+        This used to run the command directly on the host, allowlisting only
+        `argv[0]`. That was not a boundary: `python -c "..."` and `pytest`
+        (which executes any `conftest.py` in the tree the agent just wrote) are
+        both arbitrary code execution. Validation now goes through the same
+        contained executor as every other command, which rejects those argument
+        forms and runs with no network, bounded resources and dropped
+        capabilities.
+
+    Errors:
+        RepositoryToolError if the repo root is invalid or the command is empty.
+        A rejected or failed command is returned as data so the agent can adjust.
     """
+    from app.tools.sandbox import SandboxExecutor
+
     root = _normalize_repo_root(repo_root)
     if not command:
         raise RepositoryToolError("Validation command cannot be empty.")
-
-    executable = command[0]
-    if Path(executable).name not in _ALLOWED_VALIDATION_COMMANDS:
+    if isinstance(command, str):
         raise RepositoryToolError(
-            f"Command is not approved for the workflow: {executable}. Allowed: {sorted(_ALLOWED_VALIDATION_COMMANDS)}"
+            'Validation commands must be a list, e.g. ["pytest", "-q"]. A string would need a shell.'
         )
 
-    # This is intentionally not a general shell runner. We keep execution explicit
-    # and narrow so the workflow does not allow arbitrary terminal access.
-    completed = subprocess.run(
-        command,
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-        check=False,
+    result = SandboxExecutor.execute(
+        command=command,
+        repo_root=str(root),
+        role_name="testing_specialist",
+        category="test",
     )
     return {
-        "command": command,
-        "returncode": completed.returncode,
-        "stdout": completed.stdout,
-        "stderr": completed.stderr,
+        "command": list(command),
+        "returncode": int(result["returncode"]) if "returncode" in result else -1,
+        "stdout": result.get("stdout", ""),
+        "stderr": result.get("stderr", "") or result.get("error", ""),
     }
 
 

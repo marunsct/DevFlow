@@ -10,6 +10,7 @@ import type {
 
 export const api = axios.create({
   baseURL: '/api',
+  timeout: 30000,
 });
 
 api.interceptors.request.use((config) => {
@@ -148,5 +149,17 @@ export const cancelRun = async (runId: string) => {
 export const deleteRun = async (runId: string) => {
   const response = await api.delete(`/runs/${runId}`);
   return response.data;
+};
+
+/**
+ * Exchange the bearer token for a single-use streaming ticket.
+ *
+ * The JWT is never put in the WebSocket URL: query strings are recorded by
+ * proxy access logs, browser history and Referer headers. A ticket expires in
+ * seconds and is worthless once redeemed.
+ */
+export const getStreamTicket = async (runId: string): Promise<string> => {
+  const response = await api.post<{ ticket: string }>(`/runs/${runId}/events/ticket`);
+  return response.data.ticket;
 };
 

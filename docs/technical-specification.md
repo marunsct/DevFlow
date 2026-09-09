@@ -33,7 +33,7 @@ Semantic search and knowledge graph, Jira/GitHub/Linear/Slack integrations, anal
 ## 3. Proposed Architecture
 
 - **Web:** Next.js with SSR/ISR, recording UI, transcript and summary review, approval workflow, and secure preview surface.
-- **API:** NestJS modular service with Auth, Organizations, Workspaces, Threads, Approvals, Actions, Integrations, Audit, and Preview modules. OpenAPI is the API contract.
+- **API:** FastAPI modular service with Auth, Organizations, Workspaces, Threads, Approvals, Actions, Integrations, Audit, and Preview modules. OpenAPI is the API contract.
 - **Database:** PostgreSQL with Prisma. Relational tables hold tenant and workflow integrity; JSONB is reserved for versioned AI metadata whose shape can evolve.
 - **Storage:** MinIO or another S3-compatible service for original media and derived artifacts. Browser uploads use short-lived pre-signed URLs.
 - **Jobs:** Redis and BullMQ with distinct idempotent jobs for media processing, transcription, post-processing/redaction, summarization, action extraction, and ADR generation.

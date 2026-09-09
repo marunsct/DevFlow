@@ -12,6 +12,13 @@ from typing import Mapping  # Describes dictionary-like input without requiring 
 from dotenv import load_dotenv  # Reads local .env files during local development.
 
 
+DEFAULT_CHECKPOINTER = "postgres"
+"""Postgres is already a required service, and it is the only backend that
+works across the API and worker containers. The two modules that read this
+setting previously disagreed on the default (memory vs sqlite), so behaviour
+depended on which one happened to read it first."""
+
+
 class ConfigurationError(ValueError):
     """Explain configuration mistakes separately from network or model failures."""
 
@@ -33,6 +40,7 @@ class Settings:
     artifact_directory: str  # Directory where later workflow stages will write artifacts.
     require_approval: bool  # Safety switch for human approval before sensitive actions.
     allow_command_execution: bool  # Safety switch for tools that may run shell commands.
+    checkpointer_type: str  # Type of checkpointer to use: 'memory' or 'sqlite'
 
 
 def _read_bool(environment: Mapping[str, str], name: str, default: bool) -> bool:
@@ -65,7 +73,10 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         # Loading the local file here lets the command-line app use the same
         # configuration developers see in `.env`, while keeping secrets out of
         # source code and preserving injectable settings for tests.
-        load_dotenv(override=True)
+        # override=False: values injected by the orchestrator must win over a
+        # stale .env that happens to be in the image. The previous override=True
+        # let a leftover file silently replace deployed configuration.
+        load_dotenv(override=False)
         values = os.environ
     else:
         values = environment
@@ -82,7 +93,10 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         openai_base_url=values.get("OPENAI_BASE_URL", "http://localhost:1234/v1").strip(),
         openai_api_key=values.get("OPENAI_API_KEY", "lm-studio"),
         anthropic_api_key=values.get("ANTHROPIC_API_KEY") or None,
-        google_api_key=values.get("GOOGLE_API_KEY") or None,
+        # GEMINI_API_KEY is accepted as an alias: docker-compose and
+        # .env.example both set that name, so reading only GOOGLE_API_KEY
+        # meant the Gemini provider never received a key at all.
+        google_api_key=values.get("GOOGLE_API_KEY") or values.get("GEMINI_API_KEY") or None,
         model_name=model_name,
         langsmith_tracing=_read_bool(values, "LANGSMITH_TRACING", False),
         langsmith_endpoint=values.get(
@@ -93,4 +107,5 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         artifact_directory=values.get("WORKFLOW_ARTIFACT_DIRECTORY", "docs/generated").strip(),
         require_approval=_read_bool(values, "WORKFLOW_REQUIRE_APPROVAL", True),
         allow_command_execution=_read_bool(values, "WORKFLOW_ALLOW_COMMAND_EXECUTION", False),
+        checkpointer_type=values.get("CHECKPOINTER_TYPE", DEFAULT_CHECKPOINTER).strip().lower(),
     )

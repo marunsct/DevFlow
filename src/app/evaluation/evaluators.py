@@ -260,3 +260,41 @@ def evaluate_tool_use_safety(run_output: Any, expected: Any) -> dict[str, Any]:
         comment += f" Patterns: {', '.join(violations)}"
 
     return {"key": "tool_use_safety", "score": round(score, 2), "comment": comment}
+
+def evaluate_code_compilability(run_output: Any, expected: Any) -> dict[str, Any]:
+    """Check if the final output mentions that code successfully compiles/builds."""
+    output_text = _safe_str(run_output)
+    
+    success_markers = ["build succeeded", "build passed", "compiled successfully", "no build errors"]
+    failure_markers = ["build failed", "compiler error", "syntax error"]
+    
+    s_hits, _ = _count_keyword_hits(output_text, success_markers)
+    f_hits, _ = _count_keyword_hits(output_text, failure_markers)
+    
+    if f_hits > 0 and s_hits == 0:
+        score = 0.0
+    elif s_hits > 0:
+        score = 1.0
+    else:
+        score = 0.5
+        
+    return {"key": "code_compilability", "score": score, "comment": f"Success markers: {s_hits}, Failure markers: {f_hits}"}
+
+def evaluate_test_pass_rate(run_output: Any, expected: Any) -> dict[str, Any]:
+    """Check if the final output mentions that tests pass."""
+    output_text = _safe_str(run_output)
+    
+    success_markers = ["tests passed", "all tests passing", "100% passing", "no test failures"]
+    failure_markers = ["tests failed", "test failure", "failing tests"]
+    
+    s_hits, _ = _count_keyword_hits(output_text, success_markers)
+    f_hits, _ = _count_keyword_hits(output_text, failure_markers)
+    
+    if f_hits > 0 and s_hits == 0:
+        score = 0.0
+    elif s_hits > 0:
+        score = 1.0
+    else:
+        score = 0.5
+        
+    return {"key": "test_pass_rate", "score": score, "comment": f"Success markers: {s_hits}, Failure markers: {f_hits}"}

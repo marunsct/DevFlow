@@ -2,18 +2,19 @@ import React, { useEffect, useState } from 'react';
 import { Server, User, Shield, Info, Save } from 'lucide-react';
 import { api } from '../api';
 
-interface SettingsPayload {
+import type { SettingsView } from '../types';
+
+/** What the form can actually change. Credentials are managed by deployment
+ *  configuration and are never sent through this API. */
+interface ProviderForm {
   llm_provider: string;
   openai_base_url: string;
-  openai_api_key: string;
-  anthropic_api_key?: string;
-  google_api_key?: string;
   model_name: string;
 }
 
 export const Settings: React.FC = () => {
-  const [user, setUser] = useState<{ username: string } | null>(null);
-  const [settings, setSettings] = useState<SettingsPayload | null>(null);
+  const [user, setUser] = useState<{ username: string; role?: string } | null>(null);
+  const [settings, setSettings] = useState<SettingsView | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
 
@@ -21,6 +22,17 @@ export const Settings: React.FC = () => {
     api.get('/auth/me').then(res => setUser(res.data)).catch(() => {});
     api.get('/settings').then(res => setSettings(res.data)).catch(() => {});
   }, []);
+
+  const CredentialRow = ({ label, configured, hint }: {
+    label: string; configured: boolean; hint?: string | null;
+  }) => (
+    <div className="flex justify-between items-center text-sm">
+      <span className="text-text-secondary">{label}</span>
+      <span className={configured ? 'font-mono text-success' : 'text-text-muted'}>
+        {configured ? (hint ?? 'configured') : 'not configured'}
+      </span>
+    </div>
+  );
 
   const InfoRow = ({ label, value }: { label: string; value: string }) => (
     <div className="flex justify-between items-center py-3 border-b border-border/30 last:border-0">
@@ -35,11 +47,16 @@ export const Settings: React.FC = () => {
     setSaving(true);
     setMessage('');
     try {
-      const res = await api.put('/settings', settings);
+      const form: ProviderForm = {
+        llm_provider: settings.llm_provider,
+        openai_base_url: settings.openai_base_url,
+        model_name: settings.model_name,
+      };
+      const res = await api.put('/settings', form);
       setSettings(res.data);
-      setMessage('Settings saved successfully!');
+      setMessage('Settings saved.');
     } catch (err: any) {
-      setMessage('Failed to save settings.');
+      setMessage(err.response?.data?.detail ?? 'Could not save settings.');
     } finally {
       setSaving(false);
       setTimeout(() => setMessage(''), 3000);
@@ -61,7 +78,7 @@ export const Settings: React.FC = () => {
         </div>
         <div className="px-6 py-2">
           <InfoRow label="Username" value={user?.username || 'Loading...'} />
-          <InfoRow label="Role" value="Administrator" />
+          <InfoRow label="Role" value={user?.role ?? "-"} />
           <InfoRow label="Session" value="Active" />
         </div>
       </div>
@@ -102,55 +119,42 @@ export const Settings: React.FC = () => {
                 />
               </div>
 
-              {(settings.llm_provider === 'local' || settings.llm_provider === 'openai') && (
-                <>
-                  {settings.llm_provider === 'local' && (
-                    <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-1">Base URL</label>
-                      <input
-                        type="text"
-                        value={settings.openai_base_url}
-                        onChange={(e) => setSettings({ ...settings, openai_base_url: e.target.value })}
-                        className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                        placeholder="http://localhost:1234/v1"
-                      />
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1">OpenAI API Key</label>
-                    <input
-                      type="password"
-                      value={settings.openai_api_key}
-                      onChange={(e) => setSettings({ ...settings, openai_api_key: e.target.value })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                    />
-                  </div>
-                </>
-              )}
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">Base URL</label>
+                <input
+                  type="text"
+                  value={settings.openai_base_url}
+                  onChange={(e) => setSettings({ ...settings, openai_base_url: e.target.value })}
+                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                  placeholder="http://localhost:1234/v1"
+                />
+              </div>
 
-              {settings.llm_provider === 'anthropic' && (
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Anthropic API Key</label>
-                  <input
-                    type="password"
-                    value={settings.anthropic_api_key || ''}
-                    onChange={(e) => setSettings({ ...settings, anthropic_api_key: e.target.value })}
-                    className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+              {/* Credentials are read-only here by design: an API that returns
+                  keys hands them to every caller and to every request log. */}
+              <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-2">
+                <p className="text-xs font-medium text-text-secondary mb-2 uppercase tracking-wider">API credentials</p>
+                <div className="space-y-1">
+                  <CredentialRow
+                    label="OpenAI"
+                    configured={settings.openai_api_key_configured}
+                    hint={settings.openai_api_key_hint}
+                  />
+                  <CredentialRow
+                    label="Anthropic"
+                    configured={settings.anthropic_api_key_configured}
+                    hint={settings.anthropic_api_key_hint}
+                  />
+                  <CredentialRow
+                    label="Google"
+                    configured={settings.google_api_key_configured}
+                    hint={settings.google_api_key_hint}
                   />
                 </div>
-              )}
-
-              {settings.llm_provider === 'gemini' && (
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">Google API Key</label>
-                  <input
-                    type="password"
-                    value={settings.google_api_key || ''}
-                    onChange={(e) => setSettings({ ...settings, google_api_key: e.target.value })}
-                    className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                  />
-                </div>
-              )}
+                <p className="text-xs text-text-muted mt-2">
+                  Set through deployment configuration or the secret store, not through this page.
+                </p>
+              </div>
 
               <div className="pt-2 flex items-center justify-between">
                 <span className="text-sm text-primary">{message}</span>
@@ -176,8 +180,8 @@ export const Settings: React.FC = () => {
         </div>
         <div className="px-6 py-2">
           <InfoRow label="Authentication" value="JWT Bearer Token" />
-          <InfoRow label="Token Expiry" value="24 hours" />
-          <InfoRow label="Approval Gate" value="Enabled (per-file)" />
+          <InfoRow label="Token Expiry" value="60 minutes (refresh enabled)" />
+          <InfoRow label="Approval Gate" value="Writes and command execution" />
         </div>
       </div>
 
@@ -189,7 +193,7 @@ export const Settings: React.FC = () => {
         </div>
         <div className="px-6 py-2">
           <InfoRow label="Application" value="DevFlow.ai" />
-          <InfoRow label="Version" value="0.1.0" />
+          <InfoRow label="Version" value="0.2.0" />
           <InfoRow label="Backend" value="FastAPI + LangGraph" />
           <InfoRow label="Frontend" value="React + Vite + Tailwind" />
         </div>

@@ -1,166 +1,205 @@
-"""Configurable live progress endpoints: SSE streaming, polling, and spinner.
+"""Live progress endpoints: WebSocket streaming, polling, and a spinner status.
 
-Step 6.3 of the workflow plan.  Three progress modes, one canonical event
-format.  The client chooses its mode; the server supports all three
-simultaneously.  All three consume the same ``EventBus`` and ``RunEvent``
-schema from ``app.server.events``.
+All three read the same ``RunEvent`` history, and all three are authenticated and
+tenant-scoped.
 
-- **SSE** (``GET /events/stream``): real-time Server-Sent Events with
-  ``Last-Event-ID`` reconnect support and keepalive comments.
-- **Polling** (``GET /events``): returns a batch of events since a cursor.
-- **Spinner** (``GET /status``): minimal payload for a loading indicator.
+Two things worth knowing about the WebSocket:
+
+- It is authenticated with a **short-lived ticket**, not the JWT. A token in the
+  query string is recorded by every reverse-proxy access log, browser history
+  entry and Referer header on the way; a ticket is single-use, expires in
+  seconds, and is worthless once redeemed.
+- It sends periodic pings. Without them an idle connection is dropped by the
+  default 60-second timeout in most ingress configurations, and the client's
+  reconnect loop then runs forever.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import secrets
 from typing import Any
 
-from fastapi import APIRouter, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 
+from app.server.auth import UserInDB, get_current_active_user
 from app.server.events import EventBus, RunEvent
-from app.server.runner import RunRecord, WorkflowRunner, _stage_meaning
+from app.server.runner import WorkflowRunner, _stage_meaning
+
+logger = logging.getLogger(__name__)
+
+KEEPALIVE_INTERVAL_SECONDS = 20
+TICKET_TTL_SECONDS = 30
 
 router = APIRouter()
 
-KEEPALIVE_INTERVAL_SECONDS = 15
-"""Send an SSE comment every 15 seconds to prevent proxy timeouts."""
+
+def _event_payload(event: RunEvent) -> dict[str, Any]:
+    return {"id": str(event.sequence), "event": event.event_type, "data": event.model_dump_json()}
 
 
-def _event_to_sse_data(event: RunEvent) -> dict[str, str]:
-    """Format a RunEvent as an SSE data dict for sse-starlette."""
-    return {
-        "id": str(event.sequence),
-        "event": event.event_type,
-        "data": event.model_dump_json(),
-    }
+def _ticket_key(ticket: str) -> str:
+    return f"ws_ticket:{ticket}"
 
 
-async def _sse_generator(
-    request: Request,
-    event_bus: EventBus,
-    run_id: str,
-    last_event_id: int,
-) -> Any:
-    """Async generator that yields SSE events.
+async def issue_stream_ticket(run_id: str, username: str) -> str:
+    """Mint a single-use ticket authorising one WebSocket connection."""
+    from app.server.redis_client import get_async_redis_client
 
-    Sends missed events (for reconnect), then streams live events.
-    Sends keepalive comments to prevent proxy/CDN timeouts.
-    """
-    # Replay missed events on reconnect.
-    if last_event_id > 0:
-        missed = await event_bus.history(run_id, since_sequence=last_event_id)
-        for event in missed:
-            if await request.is_disconnected():
-                return
-            yield _event_to_sse_data(event)
+    ticket = secrets.token_urlsafe(32)
+    await get_async_redis_client().set(
+        _ticket_key(ticket),
+        json.dumps({"run_id": run_id, "user": username}),
+        ex=TICKET_TTL_SECONDS,
+    )
+    return ticket
 
-    # Stream live events.
-    async with event_bus.subscribe(run_id) as stream:
-        try:
-            async for event in stream:
-                if await request.is_disconnected():
-                    return
-                yield _event_to_sse_data(event)
-        except asyncio.CancelledError:
-            return
+
+async def redeem_stream_ticket(ticket: str, run_id: str) -> str | None:
+    """Consume a ticket, returning the username it was issued to."""
+    from app.server.redis_client import get_async_redis_client
+
+    client = get_async_redis_client()
+    key = _ticket_key(ticket)
+    raw = await client.get(key)
+    if raw is None:
+        return None
+    await client.delete(key)  # single use
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        return None
+    if payload.get("run_id") != run_id:
+        return None
+    return payload.get("user")
 
 
 def create_progress_router(runner: WorkflowRunner, event_bus: EventBus) -> APIRouter:
-    """Build the progress router with the shared runner and event bus.
-
-    This is a factory because the router needs access to the runner and
-    event bus instances, which are created at app startup, not at import
-    time.
-    """
+    """Build the progress router bound to the shared runner and event bus."""
     progress = APIRouter()
 
-    @progress.websocket("/{run_id}/events/stream")
-    async def stream_events(
-        websocket: WebSocket,
-        run_id: str,
-    ) -> None:
-        """WebSocket endpoint for live run progress.
-
-        Replaces the old Server-Sent Events endpoint to provide full-duplex,
-        real-time streaming of agent status and logs via WebSockets.
-        """
-        await websocket.accept()
-        record = runner.runs.get(run_id)
+    def _authorise(run_id: str, user: UserInDB):
+        record = runner.run_store.load(run_id)
         if record is None:
-            await websocket.send_text(json.dumps({"event": "error", "data": json.dumps({"error": f"Run {run_id} not found"})}))
-            await websocket.close()
+            return None
+        if user.role != "admin" and record.tenant_id != user.tenant_id:
+            return None
+        return record
+
+    @progress.post("/{run_id}/events/ticket")
+    async def create_ticket(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Exchange a bearer token for a short-lived streaming ticket."""
+        from fastapi import HTTPException
+
+        if _authorise(run_id, user) is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
+        return {
+            "ticket": await issue_stream_ticket(run_id, user.username),
+            "expires_in": TICKET_TTL_SECONDS,
+        }
+
+    @progress.websocket("/{run_id}/events/stream")
+    async def stream_events(websocket: WebSocket, run_id: str) -> None:
+        """Stream live run events to an authorised client."""
+        ticket = websocket.query_params.get("ticket")
+        username = await redeem_stream_ticket(ticket, run_id) if ticket else None
+        if username is None:
+            await websocket.close(code=1008)
             return
 
-        # Parse Last-Event-ID if sent as a query param (optional for reconnect).
-        last_event_id_param = websocket.query_params.get("last_event_id", "0")
+        from app.server.auth import get_user
+
+        user = await asyncio.to_thread(get_user, username)
+        if user is None or user.disabled or _authorise(run_id, user) is None:
+            await websocket.close(code=1008)
+            return
+
+        await websocket.accept()
+
         try:
-            last_event_id = int(last_event_id_param)
+            last_event_id = int(websocket.query_params.get("last_event_id", "0"))
         except ValueError:
             last_event_id = 0
 
-        # Replay missed events on reconnect.
-        if last_event_id > 0:
-            missed = await event_bus.get_history(run_id) # since_sequence logic can be filtered
-            for event in missed:
-                if event.sequence > last_event_id:
-                    await websocket.send_text(json.dumps(_event_to_sse_data(event)))
+        send_lock = asyncio.Lock()
 
-        # Stream live events.
+        async def send(payload: dict[str, Any]) -> None:
+            async with send_lock:
+                await websocket.send_text(json.dumps(payload))
+
+        async def keepalive() -> None:
+            """Ping periodically so proxies do not drop an idle connection."""
+            while True:
+                await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+                await send({"event": "ping", "data": "{}"})
+
+        keepalive_task = asyncio.create_task(keepalive())
         try:
+            # Replay whatever the client missed before joining the live feed, so
+            # a reconnect does not silently lose the gap.
+            for event in await event_bus.get_history(run_id, since_sequence=last_event_id):
+                await send(_event_payload(event))
+
             async with event_bus.subscribe(run_id) as stream:
                 async for event in stream:
-                    await websocket.send_text(json.dumps(_event_to_sse_data(event)))
-        except WebSocketDisconnect:
+                    await send(_event_payload(event))
+
+            # The stream ended because the run finished; tell the client so it
+            # stops reconnecting.
+            await send({"event": "closed", "data": "{}"})
+        except (WebSocketDisconnect, asyncio.CancelledError):
             pass
-        except asyncio.CancelledError:
-            pass
+        except Exception:  # noqa: BLE001
+            logger.warning("Event stream for run %s ended with an error", run_id, exc_info=True)
+        finally:
+            keepalive_task.cancel()
+            try:
+                await websocket.close()
+            except RuntimeError:
+                pass
 
     @progress.get("/{run_id}/events")
     async def poll_events(
         run_id: str,
         since: int = Query(0, ge=0, description="Return events after this sequence number."),
+        user: UserInDB = Depends(get_current_active_user),
     ) -> dict[str, Any]:
-        """Polling endpoint: returns events since a cursor.
+        """Polling fallback: events after a cursor."""
+        from fastapi import HTTPException
 
-        The client calls this periodically when SSE is unavailable.
-        Response includes a ``cursor`` for the next poll.
-        """
-        record = runner.runs.get(run_id)
-        if record is None:
-            return {"error": f"Run {run_id} not found", "events": [], "cursor": 0}
+        if _authorise(run_id, user) is None:
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
 
-        events = await event_bus.get_history(run_id)
-        events = [e for e in events if e.sequence > since]
-        cursor = events[-1].sequence if events else since
+        events = await event_bus.get_history(run_id, since_sequence=since)
         return {
             "events": [event.model_dump() for event in events],
-            "cursor": cursor,
+            "cursor": events[-1].sequence if events else since,
         }
 
     @progress.get("/{run_id}/status")
-    async def spinner_status(run_id: str) -> dict[str, Any]:
-        """Minimal status for a spinner UI.
+    async def spinner_status(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Minimal payload for a loading indicator."""
+        from fastapi import HTTPException
 
-        Returns only the current stage, its human-readable meaning, the
-        last update time, and whether the run has terminated.  No event
-        history, no log entries — just enough for a loading indicator.
-        """
-        record = runner.runs.get(run_id)
+        record = _authorise(run_id, user)
         if record is None:
-            return {"error": f"Run {run_id} not found"}
+            raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
 
-        is_terminal = record.status in ("completed", "failed", "cancelled")
         return {
             "stage": record.current_stage,
             "stage_meaning": record.stage_meaning or _stage_meaning(record.current_stage),
             "last_updated": record.updated_at,
-            "is_terminal": is_terminal,
+            "is_terminal": record.status in ("completed", "failed", "cancelled"),
             "status": record.status,
         }
 
     return progress
 
 
-__all__ = ["create_progress_router"]
+__all__ = ["create_progress_router", "issue_stream_ticket", "redeem_stream_ticket"]

@@ -114,61 +114,57 @@ def build_validation_tool(repo_root: str) -> BaseTool:
     return run_validation
 
 
-def build_terminal_command_tool(repo_root: str) -> BaseTool:
-    """Return a tool that runs arbitrary shell commands in the repository root.
-    
-    This is necessary for agents to scaffold projects, install dependencies,
-    and perform other project-level initialization tasks.
+def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> BaseTool:
+    """Return a contained command-execution tool bound to one workspace.
+
+    The command is taken as an argv *list*, never a string: there is no shell in
+    the execution path, so shell metacharacters carry no meaning and the
+    executable can be matched exactly rather than by prefix.
     """
 
     @tool
-    def run_terminal_command(command: str) -> dict[str, str]:
-        """Execute a shell command in the repository root directory.
-        
-        Use this tool to initialize projects (e.g. npx create-react-app, npx @nestjs/cli new),
-        install dependencies, or run build scripts.
+    def run_terminal_command(command: list[str], category: str = "default") -> dict[str, Any]:
+        """Run one command in the workspace, inside an isolated container.
+
+        Pass the command as a list of arguments, not as a single string:
+        `["npm", "install"]`, not `"npm install"`. There is no shell, so `;`,
+        `&&`, `|` and `$(...)` will not work - run separate commands instead.
+
+        Requires human approval before it runs.
+
+        Args:
+            command: argv list, e.g. ["npx", "create-next-app", "my-app"].
+            category: affects the timeout and whether the network is available.
+                'install' (300s, network on - use for dependency installs),
+                'build' (180s), 'test' (300s), or 'default' (120s). Everything
+                except 'install' runs with networking disabled.
         """
-        import subprocess
-        import re
+        from app.tools.sandbox import SandboxExecutor
 
-        # Strict allowlist for terminal commands
-        allowed_patterns = [
-            r"^npx\s+.*",
-            r"^npm\s+(install|run|test|init).*",
-            r"^yarn\s+(add|install|run|test|init|create).*",
-            r"^pnpm\s+(add|install|run|test|init|create).*",
-            r"^python3?\s+-m\s+(venv|pip|pytest).*",
-            r"^pip\s+install.*",
-            r"^pytest\s+.*",
-            r"^django-admin\s+startproject.*",
-            r"^git\s+(init|add|commit|status).*",
-            r"^ls\s+.*",
-            r"^echo\s+.*",
-        ]
-
-        is_allowed = any(re.match(pattern, command.strip()) for pattern in allowed_patterns)
-        
-        if not is_allowed:
-            return {"error": f"Command '{command}' is not allowed for security reasons. Allowed commands must match specific patterns (e.g., npm/npx, python -m, pytest)."}
-
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=repo_root,
-                capture_output=True,
-                text=True,
-                timeout=120
-            )
-            return {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "returncode": str(result.returncode)
-            }
-        except Exception as exc:
-            return {"error": str(exc)}
+        return SandboxExecutor.execute(
+            command=command,
+            repo_root=repo_root,
+            role_name=role_name,
+            category=category,
+        )
 
     return run_terminal_command
 
 
-__all__ = ["build_artifact_write_tool", "build_repository_read_tools", "build_validation_tool", "build_terminal_command_tool"]
+#: Tools that must never run without a human decision.
+#:
+#: Risk here is about what a call can *do*, not what it is named. Executing a
+#: command, installing a dependency or reaching the network can all compromise
+#: the host or exfiltrate data; writing a document cannot. The previous
+#: configuration gated only ``write_artifact`` and left every execution tool
+#: ungated, which is precisely backwards.
+HUMAN_APPROVAL_TOOLS = ("write_artifact", "run_terminal_command", "run_validation")
+
+
+__all__ = [
+    "HUMAN_APPROVAL_TOOLS",
+    "build_artifact_write_tool",
+    "build_repository_read_tools",
+    "build_terminal_command_tool",
+    "build_validation_tool",
+]

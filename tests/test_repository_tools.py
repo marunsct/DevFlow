@@ -85,14 +85,31 @@ def test_write_approved_artifact_only_allows_in_artifact_directory(repo_root: Pa
         write_approved_artifact(repo_root, "../not-allowed.txt", "bad")
 
 
-def test_run_approved_validation_accepts_whitelisted_commands(repo_root: Path) -> None:
-    import sys
-    result = run_approved_validation(repo_root, [sys.executable, "-m", "compileall", "-q", "src"])
+def test_run_approved_validation_is_contained(repo_root: Path, monkeypatch) -> None:
+    """Validation is no longer a host shell.
 
-    assert result["returncode"] == 0
+    It used to run directly on the host, allowlisting only argv[0] - which let
+    `python -c` through. It now routes through the sandbox, so a disallowed
+    executable is reported as data rather than executed.
+    """
+    monkeypatch.setenv("ALLOW_COMMAND_EXECUTION", "false")
 
+    result = run_approved_validation(repo_root, ["pytest", "-q"])
+    assert result["returncode"] != 0
+    assert "disabled" in result["stderr"]
+
+    rejected = run_approved_validation(repo_root, ["rm", "-rf", "/tmp/evil"])
+    assert rejected["returncode"] != 0
+
+
+def test_run_approved_validation_rejects_a_string_command(repo_root: Path) -> None:
+    with pytest.raises(RepositoryToolError, match="must be a list"):
+        run_approved_validation(repo_root, "pytest -q")
+
+
+def test_run_approved_validation_rejects_an_empty_command(repo_root: Path) -> None:
     with pytest.raises(RepositoryToolError):
-        run_approved_validation(repo_root, ["rm", "-rf", "/tmp/evil"])
+        run_approved_validation(repo_root, [])
 
 
 def test_repository_context_reports_the_current_git_revision() -> None:

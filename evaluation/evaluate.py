@@ -30,6 +30,8 @@ from app.evaluation.evaluators import (
     evaluate_review_accuracy,
     evaluate_tool_model_decision_quality,
     evaluate_tool_use_safety,
+    evaluate_code_compilability,
+    evaluate_test_pass_rate,
 )
 from app.graph.workflow import build_workflow_graph
 from app.documents import DocumentContent
@@ -137,6 +139,8 @@ def main() -> None:
         _adapt(evaluate_review_accuracy),
         _adapt(evaluate_explanation_quality),
         _adapt(evaluate_tool_use_safety),
+        _adapt(evaluate_code_compilability),
+        _adapt(evaluate_test_pass_rate),
     ]
 
     print("Running evaluation...")

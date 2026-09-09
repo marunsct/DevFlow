@@ -7,3 +7,23 @@ __pycache__/
 *.sqlite
 .agents/
 uploads/
+
+# Runtime state - never commit databases or workspaces
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+workflow_state.db
+data/
+uploads/
+.coverage
+htmlcov/
+dist/
+build/
+node_modules/
+
+# One-off scratch files
+fix_*.py
+patch*.py
+patch*.diff
+test_out.txt

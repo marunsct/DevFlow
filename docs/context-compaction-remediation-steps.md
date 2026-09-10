@@ -5,7 +5,7 @@ defects listed in [`context-compaction-remediation-plan.md`](context-compaction-
 the codebase-wide bug hunt that followed, and the improvements implemented on top.
 Every step includes the evidence that proves it works.
 
-**Final state:** `611 passed, 1 skipped` (full suite), coverage **82.92%** (> 80% target),
+**Final state:** `611 passed, 1 skipped` (full suite), coverage **83.00%** (> 80% target),
 bandit **0 medium / 0 high** severity issues, `tsc -b` exit 0, Docker stack healthy.
 
 ---
@@ -232,7 +232,7 @@ the test now writes the probe, executes once, and asserts on stdout.
 |---|---|---|
 | Full suite (authoritative) | `PYTHONPATH=src ENV=development PATH="/tmp/pyshim:$PATH" .venv/bin/python -m pytest tests/ -q --no-cov` | **611 passed, 1 skipped** (92.88 s) — exact plan match |
 | Suite without shim | same, minus the PATH prefix | sandbox file: 21 passed, 10 skipped; no failures |
-| Coverage | `pytest --cov` | **82.92%** (> 80% target) |
+| Coverage | `pytest --cov` | **83.00%** (> 80% target) |
 | Bandit | `.venv/bin/python -m bandit -r src/app -ll` | severity: **Low 15, Medium 0, High 0** |
 | Frontend types | `npx tsc -b` in `langchain-ui/` | exit 0 |
 | Graph routing | `pytest tests/test_graph_routing.py` | 38 passed |
@@ -258,7 +258,7 @@ belong to the confidence section.
 | `tests/test_sandbox_in_container.py` | D-3 assertion fixed; `needs_python` marker (10 tests); dead duplicate call removed |
 | `tests/test_context_compaction.py` | P-1/P-2/P-3 fixes |
 | `tests/test_graph_invariants.py` | Two structural regression tests added |
-| `.env.example`, `docker-compose.yml` | 11 consistent `CTX_*` entries each (feature config) |
+| `.env.example`, `docker-compose.yml` | 12 consistent `CTX_*` entries each (feature config) |
 | `src/app/agents/context_policy.py`, `src/app/agents/context_store.py`, `src/app/tools/journal.py` | New feature modules (context policy, per-agent store, truncation journal) |
 
 ## Concepts introduced
@@ -280,10 +280,15 @@ belong to the confidence section.
 
 ## Remaining limitations (accepted, documented)
 
-1. **Per-agent context accumulation.** Markdown summaries under
-   `DATA_DIR/context/<agent_name>/` accumulate slowly across runs and are not
-   cleaned up at run end (deleting them would clobber concurrent runs). Bounded by
-   file size; a retention policy is deferred work.
+1. ~~**Per-agent context accumulation.**~~ **Resolved** by the follow-up work.
+   Both scratch trees - `DATA_DIR/context/<agent_name>/` and `DATA_DIR/journal/` -
+   are pruned by age at every terminal stage via `WorkflowRunner._prune_scratch`,
+   configurable through `CTX_CONTEXT_RETENTION_HOURS` and
+   `CTX_JOURNAL_RETENTION_HOURS` (default 72 hours; 0 disables). Age-based rather
+   than run-scoped, because worker concurrency means two runs share the per-agent
+   directories and deleting one at a run's end would clobber the other's
+   in-flight scratch data. Empty directories are deliberately left in place for
+   the same reason.
 2. **Pre-existing crash-on-malformed-env pattern.** ~18 other module-scope
    `int(os.environ.get(...))` sites across `src/app/server/` and `tools/sandbox.py`
    share the old unguarded pattern. This is a codebase-wide convention; only the

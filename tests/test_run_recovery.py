@@ -179,7 +179,7 @@ def test_resume_refuses_rather_than_restarting_from_the_beginning():
     approved artifact and re-billing the entire pipeline."""
     graph = _FakeGraph([_snapshot(()), _snapshot(("failed",)), _snapshot(("__start__",))])
 
-    with pytest.raises(WorkflowResumeError, match="nothing safe to rewind"):
+    with pytest.raises(WorkflowResumeError, match="safe point to retry"):
         resume_failed_run(graph, "thread-1")
 
     assert graph.updates == []
@@ -207,6 +207,94 @@ def test_a_rewind_clears_both_revision_counters():
     assert values["specification_repair_count"] == 0
     assert values["stage"] == "principal_architect"
     assert values["error"] is None
+
+
+# ---------------------------------------------------------------------------
+# Where a resume rewinds to
+# ---------------------------------------------------------------------------
+#
+# The bug these cover: the rewind chain was an if/elif over an initialiser that
+# defaulted to stage="product_manager", so any node the chain did not name
+# restarted the run from intake - discarding every approved artifact and
+# re-billing the whole pipeline. That was unreachable until context compaction
+# gave every agent node a route to stage="failed", at which point seven nodes
+# started restarting runs from the beginning.
+
+
+def _resume_from(node: str):
+    """Resume a run whose failure is attributed to `node`; return the update."""
+    history = [_snapshot(()), _snapshot(("failed",)), _snapshot((node,))]
+    graph = _FakeGraph(history)
+    resume_failed_run(graph, "thread-1")
+    return graph.updates[0]
+
+
+@pytest.mark.parametrize(
+    "node",
+    [
+        "tools_models",
+        "stack_selector",
+        "principal_architect",
+        "scrum_master",
+        "technical_lead",
+    ],
+)
+def test_a_stage_that_failed_is_retried_not_restarted_from_intake(node):
+    values, as_node = _resume_from(node)
+
+    assert values["stage"] == node
+    assert as_node == node
+    assert values["error"] is None
+
+
+@pytest.mark.parametrize(
+    "node, target",
+    [
+        ("architecture_review", "principal_architect"),
+        ("milestone_review", "scrum_master"),
+        ("test_and_triage", "technical_lead"),
+        ("sprint_advance", "technical_lead"),
+        ("specialist_dispatch", "technical_lead"),
+        ("defect_remediation", "technical_lead"),
+    ],
+)
+def test_a_stage_with_no_useful_retry_rewinds_to_the_node_that_feeds_it(node, target):
+    """Retrying these as themselves reproduces the same failure immediately."""
+    values, _ = _resume_from(node)
+
+    assert values["stage"] == target
+
+
+def test_every_node_in_the_graph_has_a_declared_rewind_target():
+    """The structural guard: a new node cannot silently inherit a restart.
+
+    This is the invariant the old if/elif chain could not express. Without it,
+    adding a node to `_NODE_NAMES` and forgetting the rewind table reintroduces
+    exactly the defect this suite exists to prevent.
+    """
+    from app.graph.workflow import _NODE_NAMES, _UNREWINDABLE_NODES, _rewind_target
+
+    for node in _NODE_NAMES - _UNREWINDABLE_NODES:
+        target = _rewind_target(node)
+        assert target is not None, f"{node} has no rewind target"
+        assert target in _NODE_NAMES, f"{node} rewinds to unknown node {target}"
+
+
+def test_a_terminal_node_refuses_the_resume_rather_than_rewinding():
+    from app.graph.workflow import _rewind_target
+
+    assert _rewind_target("complete") is None
+    assert _rewind_target("failed") is None
+    assert _rewind_target("__start__") is None
+    assert _rewind_target(None) is None
+    assert _rewind_target("a_node_that_does_not_exist") is None
+
+
+def test_an_unrecognisable_failure_names_the_stage_in_its_refusal():
+    graph = _FakeGraph([_snapshot(()), _snapshot(("failed",)), _snapshot(("complete",))])
+
+    with pytest.raises(WorkflowResumeError, match="complete"):
+        resume_failed_run(graph, "thread-1")
 
 
 # ---------------------------------------------------------------------------

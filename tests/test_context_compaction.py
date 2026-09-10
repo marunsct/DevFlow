@@ -228,3 +228,156 @@ def test_the_architect_first_request_is_bounded():
     assert len(content) < 60_000
     assert "trimmed to" in content
     assert INITIAL_DOCUMENT_BUDGET > 0
+
+
+# ---------------------------------------------------------------------------
+# Retention
+# ---------------------------------------------------------------------------
+#
+# Both trees live under DATA_DIR, which is one volume shared by the API and
+# every worker. Neither had any bound: the journal grows by one >50 KB file per
+# truncated stream, the context store by one file per agent attempt.
+
+
+def _age(path, hours):
+    import os, time
+    stamp = time.time() - hours * 3600
+    os.utime(path, (stamp, stamp))
+
+
+def test_an_expired_journal_entry_is_deleted_and_a_fresh_one_is_kept(tmp_path, monkeypatch):
+    monkeypatch.setenv("CTX_JOURNAL_ROOT", str(tmp_path))
+    from app.tools.journal import journal_root, prune, read_entry, write_entry
+
+    stale = write_entry("stale", "old output")
+    fresh = write_entry("fresh", "new output")
+    _age(journal_root() / stale, 100)
+
+    assert prune() == 1
+    assert read_entry(stale) is None
+    assert read_entry(fresh) == "new output"
+
+
+def test_zero_retention_keeps_journal_entries_forever(tmp_path, monkeypatch):
+    monkeypatch.setenv("CTX_JOURNAL_ROOT", str(tmp_path))
+    monkeypatch.setenv("CTX_JOURNAL_RETENTION_HOURS", "0")
+    from app.tools.journal import journal_root, prune, write_entry
+
+    name = write_entry("ancient", "keep me")
+    _age(journal_root() / name, 10_000)
+
+    assert prune() == 0
+
+
+def test_a_malformed_retention_value_falls_back_instead_of_raising(monkeypatch):
+    """Same never-raise convention as ContextPolicy.from_environment."""
+    from app.tools import journal
+
+    monkeypatch.setenv("CTX_JOURNAL_RETENTION_HOURS", "three days")
+
+    assert journal.retention_seconds() == journal.DEFAULT_RETENTION_HOURS * 3600.0
+
+
+def test_pruning_context_leaves_the_directories_for_concurrent_runs(tmp_path, monkeypatch):
+    """Two runs share a per-agent directory; removing one mid-run breaks it."""
+    monkeypatch.setenv("CTX_STORE_ROOT", str(tmp_path))
+    from app.agents.context_store import context_directory, prune
+
+    directory = context_directory("principal_architect")
+    history = directory / "conversation_history"
+    history.mkdir(parents=True, exist_ok=True)
+    (history / "session_stale.md").write_text("old")
+    (history / "session_live.md").write_text("in flight")
+    _age(history / "session_stale.md", 100)
+
+    assert prune() == 1
+    assert not (history / "session_stale.md").exists()
+    assert (history / "session_live.md").exists()
+    assert history.is_dir()
+
+
+# ---------------------------------------------------------------------------
+# Reading back what truncation removed
+# ---------------------------------------------------------------------------
+
+
+def test_journalled_output_can_be_read_back_by_the_agent(tmp_path, monkeypatch):
+    """Without this the truncation pointer names a file nothing can fetch."""
+    monkeypatch.setenv("CTX_JOURNAL_ROOT", str(tmp_path))
+    import re
+
+    from app.tools.agent_toolkit import build_journal_read_tool
+    from app.tools.sandbox import _truncate
+
+    output = "\n".join(f"line {i}" for i in range(20_000)) + "\nFATAL: the real error"
+    pointer = _truncate(output, "build")
+    reference = re.search(r"saved as ([^\]\s]+)", pointer).group(1)
+
+    result = build_journal_read_tool().invoke({"reference": reference})
+
+    assert "FATAL: the real error" in result
+
+
+def test_a_read_back_is_bounded_so_it_cannot_reoverflow_the_window(tmp_path, monkeypatch):
+    monkeypatch.setenv("CTX_JOURNAL_ROOT", str(tmp_path))
+    from app.tools.agent_toolkit import JOURNAL_TOOL_MAX_CHARS, build_journal_read_tool
+    from app.tools.journal import write_entry
+
+    reference = write_entry("huge", "x" * 500_000)
+
+    result = build_journal_read_tool().invoke({"reference": reference})
+
+    assert len(result) < JOURNAL_TOOL_MAX_CHARS + 500
+
+
+def test_an_unknown_reference_is_a_tool_result_not_a_crash(tmp_path, monkeypatch):
+    monkeypatch.setenv("CTX_JOURNAL_ROOT", str(tmp_path))
+    from app.tools.agent_toolkit import build_journal_read_tool
+
+    assert "error" in build_journal_read_tool().invoke({"reference": "nope.log"})
+
+
+def test_a_read_back_cannot_escape_the_journal_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("CTX_JOURNAL_ROOT", str(tmp_path))
+    from app.tools.agent_toolkit import build_journal_read_tool
+
+    result = build_journal_read_tool().invoke({"reference": "../../../etc/passwd"})
+
+    assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# The first message, which compaction cannot rescue
+# ---------------------------------------------------------------------------
+#
+# SummarizationMiddleware compacts *between* model calls, keeping the most
+# recent CTX_KEEP_MESSAGES. A single oversized first message has nothing older
+# to evict, so the call overflows and the middleware never runs.
+
+
+@pytest.mark.parametrize(
+    "builder_path, what",
+    [
+        ("app.agents.architecture_reviewer.build_architecture_review_request", "review"),
+        ("app.agents.scrum_master.build_sprint_planning_request", "sprint planning"),
+    ],
+)
+def test_an_oversized_specification_is_trimmed_before_it_is_sent(builder_path, what):
+    import importlib
+
+    module_name, attribute = builder_path.rsplit(".", 1)
+    build = getattr(importlib.import_module(module_name), attribute)
+
+    body = build("S" * 400_000, "/workspace")["messages"][0]["content"]
+
+    assert len(body) < 70_000, f"the {what} request did not bound the specification"
+    assert "were trimmed to" in body, f"the {what} request trimmed silently"
+
+
+def test_a_specification_inside_the_budget_is_sent_whole():
+    from app.agents.scrum_master import build_sprint_planning_request
+
+    body = build_sprint_planning_request("A short specification.", "/w")["messages"][0]["content"]
+
+    assert "A short specification." in body
+    assert "trimmed" not in body

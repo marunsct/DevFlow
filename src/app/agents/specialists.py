@@ -21,7 +21,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.technical_lead import SpecialistRole
-from app.tools.agent_toolkit import build_validation_tool, build_terminal_command_tool
+from app.tools.agent_toolkit import (
+    build_journal_read_tool,
+    build_terminal_command_tool,
+    build_validation_tool,
+)
 
 _STAGE = "implementation"
 
@@ -256,6 +260,9 @@ def create_specialist_agent(
     # shipped image. Everything now goes through the contained executor.
     extra_tools = [
         build_terminal_command_tool(resolved_repo_root, role_name=f"{role}_specialist"),
+        # Paired with the command tool, never on its own: only a command can
+        # produce the truncation pointer this reads back.
+        build_journal_read_tool(),
     ]
 
     if role == "testing":

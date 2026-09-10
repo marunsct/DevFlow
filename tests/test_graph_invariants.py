@@ -238,3 +238,39 @@ def test_the_overflow_helpers_are_defined_once():
     assert source.count("def _is_context_overflow") == 1
     assert source.count("def _context_overflow_update") == 1
     assert source.count("_CONTEXT_OVERFLOW_MARKERS = (") == 1
+
+
+# ---------------------------------------------------------------------------
+# Rewind invariants (Part 4c)
+# ---------------------------------------------------------------------------
+
+
+def test_the_rewind_table_only_names_real_nodes():
+    """A target that is not a node is a KeyError in the conditional-edge map."""
+    from app.graph.workflow import _NODE_NAMES, _REWIND_TARGETS
+
+    for source, target in _REWIND_TARGETS.items():
+        assert source in _NODE_NAMES, f"{source} is not a node"
+        assert target in _NODE_NAMES, f"{source} rewinds to unknown node {target}"
+
+
+def test_every_counter_reset_belongs_to_a_node_that_rewinds():
+    from app.graph.workflow import _REWIND_COUNTER_RESETS, _REWIND_TARGETS
+
+    for node in _REWIND_COUNTER_RESETS:
+        assert node in _REWIND_TARGETS, (
+            f"{node} resets counters but rewinds to itself; the reset is dead"
+        )
+
+
+def test_the_overflow_message_names_the_settings_that_apply():
+    """After the rewind fix these stages retry themselves, so a resume with no
+    configuration change reproduces the failure exactly. The message has to say
+    which knob moves."""
+    from app.graph.workflow import _context_overflow_update
+
+    message = _context_overflow_update("scrum_master", RuntimeError("too long"))["error"]
+
+    assert "CTX_SPECIFICATION_BUDGET" in message
+    assert "CTX_ARCHITECT_DOCUMENT_BUDGET" in message
+    assert "CTX_MAX_TOKENS" in message

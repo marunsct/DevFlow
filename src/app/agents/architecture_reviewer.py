@@ -66,10 +66,23 @@ class ArchitectureReviewOutput(BaseModel):
 def build_architecture_review_request(
     technical_specification_text: str, repository_root: str
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input from the specification text awaiting review."""
+    """Build the Deep Agent input from the specification text awaiting review.
+
+    The specification is budgeted. It is the largest artifact in the pipeline
+    and it arrives in the *first* user message, which is the one case
+    compaction cannot rescue: with nothing older in the conversation, the
+    summariser has nothing to evict and the call simply overflows.
+    """
+    from app.agents.text_budget import excerpt, specification_budget
+
+    specification = excerpt(
+        technical_specification_text,
+        specification_budget(),
+        what="technical specification",
+    )
     brief = (
         f"Repository root: {repository_root}\n\n"
-        f"--- Technical specification and ADRs under review ---\n{technical_specification_text}\n"
+        f"--- Technical specification and ADRs under review ---\n{specification}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

@@ -497,3 +497,51 @@ async def test_exhausting_the_gate_ceiling_is_reported(runner, monkeypatch):
     assert "automatic approvals" in record.error
     assert any(e.event_type == "error" for e in published), "no error event was published"
     assert closed == ["run-gates"], "the event stream was never closed"
+
+
+# ---------------------------------------------------------------------------
+# An unattended run is not waiting for anyone (Part 4d)
+# ---------------------------------------------------------------------------
+#
+# The bug: `_update_record` persisted `_api_status(stage)` at the top of
+# `_handle_state`'s loop, before the auto-approve branch ran. The row said
+# "waiting_for_approval" for as long as the resumed agent took, which showed the
+# user an approval modal for a gate that was clearing itself - and, worse,
+# satisfied `submit_approval`'s compare-and-set guard, dispatching a second
+# Celery task onto a thread the first was still driving.
+
+
+def test_an_unattended_run_is_never_persisted_as_waiting_for_approval():
+    from app.server.runner import _stage_narration
+
+    _, status = _stage_narration("awaiting_approval:product_manager", auto_approve=True)
+
+    assert status == "running"
+
+
+def test_an_attended_run_still_reports_the_gate():
+    from app.server.runner import _stage_narration
+
+    message, status = _stage_narration("awaiting_approval:tools_models", auto_approve=False)
+
+    assert status == "waiting_for_approval"
+    assert "Waiting for approval" in message
+
+
+def test_auto_approve_does_not_swallow_a_review_gate():
+    """auto_approve answers artifact writes; review points are `review_policy`."""
+    from app.server.runner import _stage_narration
+
+    _, status = _stage_narration("awaiting_user_review:sprint", auto_approve=True)
+
+    assert status == "waiting_for_review"
+
+
+@pytest.mark.parametrize(
+    "stage, expected",
+    [("complete", "completed"), ("failed", "failed"), ("scrum_master", "running")],
+)
+def test_terminal_and_working_stages_are_unaffected_by_auto_approve(stage, expected):
+    from app.server.runner import _stage_narration
+
+    assert _stage_narration(stage, auto_approve=True)[1] == expected

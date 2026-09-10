@@ -307,8 +307,14 @@ def _context_overflow_update(stage_name: str, error: BaseException) -> dict[str,
         "stage": "failed",
         "error": (
             f"The '{stage_name}' stage exceeded the model's context window even after "
-            "compaction. Reduce CTX_MAX_TOKENS to compact sooner, use a model with a "
-            "larger window, or split the work into smaller stages."
+            "compaction.\n\n"
+            "If this stage is architecture_review or scrum_master, the specification "
+            "itself is too large for one request: lower CTX_SPECIFICATION_BUDGET.\n"
+            "If it is principal_architect, lower CTX_ARCHITECT_DOCUMENT_BUDGET.\n"
+            "Otherwise lower CTX_MAX_TOKENS so compaction triggers sooner, or use a "
+            "model with a larger window.\n\n"
+            "Resuming this run retries the same stage; change the setting first, or "
+            "the retry will overflow identically."
         ),
         "pending_approval": None,
         "pending_inner_thread_id": None,
@@ -1425,6 +1431,72 @@ class WorkflowResumeError(RuntimeError):
 # Bookkeeping checkpoints written by `update_state`/input, never a real stage.
 _SYNTHETIC_NODES = frozenset({"__start__", "__input__", "failed"})
 
+_REWIND_TARGETS: dict[str, str] = {
+    # A node that failed because it exhausted a bounded budget cannot be
+    # retried as itself - it would hit the same limit on the next attempt. It
+    # rewinds to whichever node produces the input it was judging, and the
+    # counter that stopped it is reset alongside (see _REWIND_COUNTER_RESETS).
+    "architecture_review": "principal_architect",
+    "milestone_review": "scrum_master",
+    "test_and_triage": "technical_lead",
+    # In-sprint nodes rewind to the Technical Lead rather than to themselves.
+    # A context overflow here means the delegated task was too large to state,
+    # and re-entering the same node re-issues the same oversized task; the
+    # Lead is the node that can split it. `sprint_advance` was already treated
+    # this way before this table existed.
+    "sprint_advance": "technical_lead",
+    "specialist_dispatch": "technical_lead",
+    "defect_remediation": "technical_lead",
+}
+"""Where a resume sends a run whose failure was attributed to a given node.
+
+Every other node in `_NODE_NAMES` rewinds to *itself*: it failed for a reason
+outside its own control - a context overflow, a provider outage, a bad base URL
+- and the operator fixes that cause before resuming. Retrying the node itself is
+then the only rewind that does not throw away completed work.
+
+This table exists because the previous implementation was an if/elif chain over
+an initialiser that defaulted to `{"stage": "product_manager"}`. Any node the
+chain did not name silently restarted the run from intake. That was unreachable
+until context compaction gave every agent node a path to `stage="failed"`, at
+which point seven nodes started restarting runs from the beginning.
+"""
+
+_REWIND_COUNTER_RESETS: dict[str, dict[str, int]] = {
+    "architecture_review": {
+        "architecture_revision_count": 0,
+        "specification_repair_count": 0,
+    },
+    "milestone_review": {"milestone_revision_count": 0},
+}
+"""Counters to clear when rewinding, so the retry gets a full budget again.
+
+Rewinding an exhausted review gate without clearing its counter re-enters the
+gate already at the limit, which fails immediately and looks to the user like
+the resume did nothing.
+"""
+
+_UNREWINDABLE_NODES = frozenset({"complete"}) | _SYNTHETIC_NODES
+"""Nodes a resume must refuse rather than rewind to.
+
+`complete` is terminal and `failed` is where the run already is; the two
+`__`-prefixed entries are LangGraph bookkeeping and never name real work.
+"""
+
+
+def _rewind_target(failed_node: str | None) -> str | None:
+    """The stage a resume should rewind to, or None to refuse the resume.
+
+    Returning None is a real answer, not an error path: a run whose failure
+    cannot be attributed to a node with a safe retry point must be cloned, not
+    silently restarted.
+    """
+    if not failed_node:
+        return None
+    if failed_node in _UNREWINDABLE_NODES or failed_node not in _NODE_NAMES:
+        return None
+    return _REWIND_TARGETS.get(failed_node, failed_node)
+
 
 def _node_that_failed(graph: Any, config: dict[str, Any]) -> str | None:
     """Find the node whose routing decision sent this run to the `failed` node.
@@ -1476,34 +1548,22 @@ def resume_failed_run(
     if state_snapshot and state_snapshot.values.get("stage") == "failed":
         failed_node = _node_that_failed(graph, config)
 
-        if failed_node:
-            rewind_values = {
-                "stage": "product_manager", # fallback
-                "error": None,
-            }
-            if failed_node == "architecture_review":
-                rewind_values["architecture_revision_count"] = 0
-                rewind_values["specification_repair_count"] = 0
-                rewind_values["stage"] = "principal_architect"
-            elif failed_node in ("test_and_triage", "sprint_advance"):
-                rewind_values["stage"] = "technical_lead"
-            elif failed_node == "milestone_review":
-                rewind_values["milestone_revision_count"] = 0
-                rewind_values["stage"] = "scrum_master"
-            elif "review" in failed_node:
-                rewind_values["stage"] = failed_node
-                
-            # Overwrite the state on the node that originally failed so the router will route to our target
+        target = _rewind_target(failed_node)
+
+        if target:
+            rewind_values: dict[str, Any] = {"stage": target, "error": None}
+            rewind_values.update(_REWIND_COUNTER_RESETS.get(failed_node, {}))
+            # Written as the node that failed, so the entry router reads the new
+            # stage on the next invoke instead of re-entering the failed node.
             graph.update_state(config, rewind_values, as_node=failed_node)
         else:
-            # Refusing beats guessing. The old code fell back to
-            # stage="product_manager", which would silently restart a run from
-            # the very beginning - discarding every approved artifact and
-            # re-billing the whole pipeline - on a history shape it did not
-            # recognise.
+            # Refusing beats guessing. Falling back to stage="product_manager"
+            # silently restarts a run from the very beginning - discarding every
+            # approved artifact and re-billing the whole pipeline.
             raise WorkflowResumeError(
-                "Could not determine which stage this run failed at, so there is nothing "
-                "safe to rewind to. Clone the run to start a fresh attempt."
+                f"Could not find a safe point to retry this run from "
+                f"(it failed at {failed_node or 'an unrecognised stage'}). "
+                "Clone the run to start a fresh attempt."
             )
 
     # Self-healing: if we are resuming a corrupted run from before the token limit fix

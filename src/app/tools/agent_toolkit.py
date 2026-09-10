@@ -151,6 +151,87 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
     return run_terminal_command
 
 
+JOURNAL_TOOL_MAX_CHARS = 20_000
+"""Ceiling on one `read_command_output` result.
+
+The journal exists because 50 KB of output did not fit in the context window.
+Handing the whole file back on request would undo that, so a read returns a
+bounded window: matching lines when a search term is given, otherwise the tail,
+because a build's real error is almost always in the last lines.
+"""
+
+JOURNAL_TOOL_MAX_MATCHES = 200
+
+
+def build_journal_read_tool() -> BaseTool:
+    """Return the read-back tool for output an earlier command had truncated.
+
+    Takes no repository root: journalled output lives under `DATA_DIR`, not in
+    the workspace, and `app.tools.journal.read_entry` sanitises the reference to
+    a single path segment, so there is nothing for a caller to escape.
+
+    Not in `HUMAN_APPROVAL_TOOLS`: this reads back bytes this same agent already
+    produced, under a directory it cannot write to by any other means. Gating it
+    would pause the run to approve re-reading a log it was just handed a pointer
+    to.
+    """
+
+    @tool
+    def read_command_output(reference: str, search: str = "") -> str | dict[str, str]:
+        """Read back the full output of an earlier command that was truncated.
+
+        When a command's output is too large for the conversation it is cut down
+        to its head and tail, with a pointer of the form
+        `...[N bytes omitted; full output saved as <reference>]...`. Pass that
+        `<reference>` here to see what was cut.
+
+        Args:
+            reference: the name from the truncation pointer, e.g.
+                `1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log`.
+            search: optional substring. When given, returns only the matching
+                lines, each prefixed with its line number - use this to find an
+                error in a long build log. When omitted, returns the tail.
+
+        Returns `{"error": "..."}` when the reference is unknown, so a wrong
+        guess is a recoverable tool result rather than a crashed agent run.
+        """
+        from app.tools.journal import read_entry
+
+        content = read_entry(reference)
+        if content is None:
+            return {
+                "error": (
+                    f"No journalled output named '{reference}'. Use the exact reference "
+                    "from the truncation pointer; entries are deleted after the "
+                    "configured retention window."
+                )
+            }
+
+        if search:
+            matches = [
+                f"{number}: {line}"
+                for number, line in enumerate(content.splitlines())
+                if search in line
+            ]
+            if not matches:
+                return {"error": f"'{search}' does not appear in '{reference}'."}
+            clipped = matches[:JOURNAL_TOOL_MAX_MATCHES]
+            body = "\n".join(clipped)[:JOURNAL_TOOL_MAX_CHARS]
+            if len(matches) > len(clipped):
+                body += f"\n\n[{len(matches) - len(clipped)} further matches not shown.]"
+            return body
+
+        if len(content) <= JOURNAL_TOOL_MAX_CHARS:
+            return content
+        return (
+            f"[Showing the last {JOURNAL_TOOL_MAX_CHARS:,} characters of "
+            f"{len(content):,}. Pass `search` to find an earlier line.]\n\n"
+            + content[-JOURNAL_TOOL_MAX_CHARS:]
+        )
+
+    return read_command_output
+
+
 #: Tools that must never run without a human decision.
 #:
 #: Risk here is about what a call can *do*, not what it is named. Executing a
@@ -163,7 +244,9 @@ HUMAN_APPROVAL_TOOLS = ("write_artifact", "run_terminal_command", "run_validatio
 
 __all__ = [
     "HUMAN_APPROVAL_TOOLS",
+    "JOURNAL_TOOL_MAX_CHARS",
     "build_artifact_write_tool",
+    "build_journal_read_tool",
     "build_repository_read_tools",
     "build_terminal_command_tool",
     "build_validation_tool",

@@ -97,6 +97,25 @@ def _api_status(stage: str) -> str:
     return "running"
 
 
+def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:
+    """The message and API status to report for a stage.
+
+    Returns `(message, status)`.
+
+    An unattended run is not waiting for anyone. Reporting
+    `waiting_for_approval` for a gate the run is about to clear itself is wrong
+    three times over: the dashboard renders an approval modal nobody needs to
+    answer, the log narrates a pause that is not happening, and - the reason
+    this is not merely cosmetic - `submit_approval`'s
+    compare-and-set guard accepts the transition, dispatching a second Celery
+    task onto a graph thread the first task is still driving.
+    """
+    status = _api_status(stage)
+    if auto_approve and status == "waiting_for_approval":
+        return (f"Auto-approving: {stage.removeprefix(APPROVAL_PAUSE_PREFIX)}", "running")
+    return (_stage_meaning(stage), status)
+
+
 class RunConflict(RuntimeError):
     """A lifecycle transition was attempted from the wrong status."""
 
@@ -331,6 +350,17 @@ class WorkflowRunner:
         self._dispatch(run_id, resume=True, decision_payload=None)
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
+        # Defence in depth against a stale status row. An unattended run answers
+        # its own gates inside the worker; accepting a decision here would
+        # dispatch a second task onto a thread that one is still driving, and
+        # both would write checkpoints to it.
+        record = self.run_store.load(run_id)
+        if record is not None and record.auto_approve:
+            raise RunConflict(
+                f"Run {run_id} is unattended and approves its own gates. "
+                "There is nothing to decide; cancel it if you want it to stop."
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         if not self.run_store.compare_and_set_status(
             run_id, "waiting_for_approval", "running", updated_at=now
@@ -520,6 +550,9 @@ class WorkflowRunner:
         for _ in range(MAX_GATES):
             stage = state.get("stage", "")
             self._update_record(record, state)
+            narration, narrated_status = _stage_narration(
+                stage, auto_approve=bool(record.auto_approve)
+            )
 
             await self.event_bus.publish(
                 run_id,
@@ -528,8 +561,8 @@ class WorkflowRunner:
                     sequence=await self.event_bus.next_sequence(run_id),
                     stage=stage,
                     event_type="stage_change",
-                    message=_stage_meaning(stage),
-                    metadata=redact_metadata({"status": _api_status(stage)}),
+                    message=narration,
+                    metadata=redact_metadata({"status": narrated_status}),
                 ),
             )
 
@@ -543,6 +576,7 @@ class WorkflowRunner:
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
                 await asyncio.to_thread(self._archive_artifacts, record)
+                await asyncio.to_thread(self._prune_scratch)
                 await self.event_bus.publish(
                     run_id,
                     RunEvent(
@@ -675,6 +709,31 @@ class WorkflowRunner:
         except Exception:  # noqa: BLE001 - archiving is never load-bearing
             logger.warning("Could not archive artifacts for run %s", record.run_id, exc_info=True)
 
+    def _prune_scratch(self) -> None:
+        """Age out the journal and the compaction context store.
+
+        Run at a terminal stage because that is a moment this worker is already
+        doing filesystem work and nothing is waiting on it. Both trees live
+        under `DATA_DIR`, which is one shared volume across the API and every
+        worker, and neither had any retention: the journal grows by one >50 KB
+        file per truncated stream, the context store by one evicted-history file
+        per inner-thread attempt.
+
+        Deliberately age-based rather than run-scoped - two runs share the
+        per-agent context directories under worker concurrency, so nothing here
+        may key off the run that happens to have just finished. Failures are
+        logged, never raised: the run is over and its artifacts are safe.
+        """
+        try:
+            from app.agents.context_store import prune as prune_context
+            from app.tools.journal import prune as prune_journal
+
+            removed = prune_journal() + prune_context()
+            if removed:
+                logger.info("Pruned %d expired scratch file(s)", removed)
+        except Exception:  # noqa: BLE001 - cleanup is never load-bearing
+            logger.warning("Could not prune scratch storage", exc_info=True)
+
     def _status_after_failure(self, record: RunRecord) -> str:
         """The status to record when an invoke raised.
 
@@ -706,9 +765,10 @@ class WorkflowRunner:
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:
         """Sync the run record with the latest graph state."""
         stage = state.get("stage", "")
+        meaning, status = _stage_narration(stage, auto_approve=bool(record.auto_approve))
         record.current_stage = stage
-        record.stage_meaning = _stage_meaning(stage)
-        record.status = _api_status(stage)
+        record.stage_meaning = meaning
+        record.status = status
         record.error = state.get("error")
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)

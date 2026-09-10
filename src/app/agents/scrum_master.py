@@ -52,10 +52,22 @@ class SprintPlanOutput(BaseModel):
 def build_sprint_planning_request(
     technical_specification_text: str, repository_root: str
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input from the approved technical specification."""
+    """Build the Deep Agent input from the approved technical specification.
+
+    Budgeted for the same reason as the architecture review request: this is a
+    first message, so compaction cannot save it if the specification alone
+    exceeds the window.
+    """
+    from app.agents.text_budget import excerpt, specification_budget
+
+    specification = excerpt(
+        technical_specification_text,
+        specification_budget(),
+        what="approved technical specification",
+    )
     brief = (
         f"Repository root: {repository_root}\n\n"
-        f"--- Approved technical specification ---\n{technical_specification_text}\n\n"
+        f"--- Approved technical specification ---\n{specification}\n\n"
         f"**CRITICAL INSTRUCTION**: Ensure all tasks and specialists are aware that projects must be scaffolded strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub') and not in generic directories like 'nest-app' or directly in the repository root. All documentation must be created in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

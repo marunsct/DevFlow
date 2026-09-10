@@ -201,3 +201,40 @@ def test_every_model_the_graph_state_can_hold_is_allowlisted():
         "These models can be stored in graph state but are not in "
         f"CHECKPOINTED_TYPES, so they deserialize as bare dicts: {missing}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Imports the graph depends on
+# ---------------------------------------------------------------------------
+#
+# `start_review` was once deleted from the import block by a bad paste. The
+# module still imported cleanly - the list was merely one name shorter - and
+# nothing failed until a review gate actually ran, which unattended runs never
+# do. Assert the names exist rather than waiting for a gate to find out.
+
+
+def test_every_name_the_graph_calls_is_imported():
+    """A missing import here fails at gate time, not at import time."""
+    import app.graph.workflow as workflow_module
+
+    for name in (
+        "start_review",
+        "approve_review",
+        "request_changes",
+        "skip_review",
+        "build_revision_prompt",
+        "ReviewRerunLimitExceeded",
+    ):
+        assert hasattr(workflow_module, name), f"workflow.py is missing {name}"
+
+
+def test_the_overflow_helpers_are_defined_once():
+    """Two identical copies means a later fix to one silently does nothing."""
+    import inspect
+
+    import app.graph.workflow as workflow_module
+
+    source = inspect.getsource(workflow_module)
+    assert source.count("def _is_context_overflow") == 1
+    assert source.count("def _context_overflow_update") == 1
+    assert source.count("_CONTEXT_OVERFLOW_MARKERS = (") == 1

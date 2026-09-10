@@ -17,17 +17,21 @@ configuration, and any future safety fix would need to be applied in every copy.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import Any
 
 from deepagents import create_deep_agent
 from deepagents.middleware.filesystem import FilesystemPermission
+from deepagents.middleware.summarization import SummarizationMiddleware
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel
 
+from app.agents.context_policy import ContextPolicy
+from app.agents.context_store import build_context_backend
 from app.models import build_default_chat_model
 from app.tools.agent_toolkit import (
     HUMAN_APPROVAL_TOOLS,
@@ -125,6 +129,55 @@ def _interrupt_config(
     return config
 
 
+logger = logging.getLogger(__name__)
+
+
+def _compaction_middleware(agent_name: str) -> list:
+    """Summarise this agent's history before it outgrows the model's window.
+
+    Returns an empty list when compaction is disabled or cannot be built, so a
+    failure here degrades to "no compaction" rather than "no agent".
+
+    The thread id is not known at construction time - `_run_gated_agent` mints
+    one per attempt - so the context directory is keyed by agent name. That is
+    stable per role and adequate: the content is scratch space for the
+    summariser, not run state.
+    """
+    policy = ContextPolicy.from_environment()
+    if not policy.enabled:
+        return []
+
+    try:
+        from app.config import load_settings
+        from app.server.runtime_settings import effective_environment
+
+        if policy.compaction_model:
+            environment = dict(effective_environment())
+            environment["OPENAI_MODEL"] = policy.compaction_model
+            summariser = build_default_chat_model(load_settings(environment))
+        else:
+            # The run's own model. Never a hardcoded hosted model id: this
+            # deployment may serve a local endpoint, where an OpenAI model name
+            # with no base URL or key fails on every compaction.
+            summariser = build_default_chat_model()
+
+        return [
+            SummarizationMiddleware(
+                summariser,
+                backend=build_context_backend(agent_name),
+                trigger=("tokens", policy.trigger_tokens),
+                keep=("messages", policy.keep_recent_messages),
+                trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
+            )
+        ]
+    except Exception:  # noqa: BLE001 - see docstring
+        logger.warning(
+            "Could not build compaction middleware for %s; continuing without it",
+            agent_name, exc_info=True,
+        )
+        return []
+
+
 def create_role_agent(
     *,
     name: str,
@@ -134,7 +187,7 @@ def create_role_agent(
     model: str | BaseChatModel | None = None,
     checkpointer: BaseCheckpointSaver | None = None,
     repo_root: str | Path | None = None,
-        allow_subdirectories: bool = True,
+    allow_subdirectories: bool = True,
     extra_tools: list[BaseTool] | None = None,
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
@@ -186,11 +239,18 @@ def create_role_agent(
         "- Write all code artifacts inside the `<product_name>/` folder (based on the determined product name).\n"
     )
 
+    # Compaction. Built here rather than at module scope so a policy change
+    # takes effect on the next agent, not the next restart. The context
+    # directory is keyed by agent name (not thread id), which is stable per
+    # role; see `_compaction_middleware` for why that is deliberate.
+    middleware = _compaction_middleware(name)
+
     return create_deep_agent(
         model=selected_model,
         tools=tools,
         system_prompt=full_system_prompt,
         response_format=response_format,
+        middleware=middleware,
         # See `app.agents.product_manager` for why this denies the built-in
         # filesystem tools rather than trying to "allow" real repo paths: the
         # default backend is an in-memory `StateBackend`, not the real repo.

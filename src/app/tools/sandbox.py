@@ -272,10 +272,26 @@ def execution_enabled() -> bool:
     return os.environ.get("ALLOW_COMMAND_EXECUTION", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _truncate(text: str) -> str:
+def _truncate(text: str, label: str = "output") -> str:
+    """Cap output for the model, keeping the whole of it on disk.
+
+    The tail is kept as well as the head: a build's actual error is almost
+    always in the last lines, and a head-only cut reliably discards it.
+    """
     if len(text) <= MAX_OUTPUT_SIZE:
         return text
-    return text[:MAX_OUTPUT_SIZE] + f"\n...[truncated, exceeded {MAX_OUTPUT_SIZE} bytes]"
+
+    from app.tools.journal import write_entry
+
+    reference = write_entry(label, text)
+    head = text[: int(MAX_OUTPUT_SIZE * 0.4)]
+    tail = text[-int(MAX_OUTPUT_SIZE * 0.4):]
+    pointer = (
+        f"\n\n...[{len(text) - len(head) - len(tail)} bytes omitted"
+        + (f"; full output saved as {reference}" if reference else "")
+        + "]...\n\n"
+    )
+    return head + pointer + tail
 
 
 class SandboxExecutor:
@@ -366,16 +382,16 @@ class SandboxExecutor:
         except subprocess.TimeoutExpired as expired:
             return {
                 "error": f"Command timed out after {timeout} seconds.",
-                "stdout": _truncate(expired.stdout or "" if isinstance(expired.stdout, str) else ""),
-                "stderr": _truncate(expired.stderr or "" if isinstance(expired.stderr, str) else ""),
+                "stdout": _truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"),
+                "stderr": _truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"),
                 "returncode": "124",
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
 
         return {
-            "stdout": _truncate(result.stdout),
-            "stderr": _truncate(result.stderr),
+            "stdout": _truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"),
+            "stderr": _truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"),
             "returncode": str(result.returncode),
         }
 
@@ -449,8 +465,8 @@ class SandboxExecutor:
             return {"error": f"Could not start the sandbox: {exc}"}
 
         return {
-            "stdout": _truncate(result.stdout),
-            "stderr": _truncate(result.stderr),
+            "stdout": _truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"),
+            "stderr": _truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"),
             "returncode": str(result.returncode),
         }
 

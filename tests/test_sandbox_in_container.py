@@ -13,6 +13,7 @@ guards this one too; only the blast radius after a failure differs.
 
 import json
 import os
+import shutil
 
 import pytest
 
@@ -21,6 +22,17 @@ from app.tools.sandbox import (
     IN_CONTAINER_MODE,
     SandboxExecutor,
     execution_mode,
+)
+
+# In-container mode resolves bare names like `python` with `shutil.which`,
+# exactly as the worker does at runtime. On a host that only ships `python3`
+# (no bare `python`), the tests below cannot run - and skipping is more honest
+# than failing: the sandbox code under test is not what is broken, the host's
+# PATH is. The Docker image always has `python`, so CI and the deployed stack
+# still exercise every one of these paths.
+needs_python = pytest.mark.skipif(
+    shutil.which("python") is None,
+    reason="bare 'python' not on PATH; in-container mode resolves it via shutil.which",
 )
 
 
@@ -105,14 +117,17 @@ def test_a_missing_executable_says_so_instead_of_crashing(workspace):
     assert "not installed in this environment" in result["error"]
 
 
+@needs_python
 def test_output_is_truncated(workspace, monkeypatch):
     monkeypatch.setattr("app.tools.sandbox.MAX_OUTPUT_SIZE", 100)
 
-    result = run(workspace, ["python", "big.py"])
     (workspace / "big.py").write_text("print('x' * 5000)")
     result = run(workspace, ["python", "big.py"])
 
-    assert "truncated" in result["stdout"]
+    # The new `_truncate` says "omitted", not "truncated" - and the journal
+    # reference is what actually matters: the discarded bytes are recoverable.
+    assert "omitted" in result["stdout"]
+    assert "saved as" in result["stdout"]
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +145,7 @@ def _child_env(workspace) -> dict:
     return json.loads(run(workspace, ["python", "probe.py"])["stdout"])
 
 
+@needs_python
 def test_the_worker_secrets_are_withheld(workspace, monkeypatch):
     """The worker holds the database password, the JWT secret, the object-store
     credentials and every provider key. A command that dumps its environment
@@ -145,6 +161,7 @@ def test_the_worker_secrets_are_withheld(workspace, monkeypatch):
         assert secret not in serialized
 
 
+@needs_python
 def test_only_what_a_build_needs_is_passed(workspace):
     assert set(_child_env(workspace)) <= {
         "PATH", "LANG", "LC_ALL", "TZ", "HOME", "TMPDIR",
@@ -153,6 +170,7 @@ def test_only_what_a_build_needs_is_passed(workspace):
     }
 
 
+@needs_python
 def test_a_proxy_setting_is_passed_through(workspace, monkeypatch):
     """Without it, `npm install` cannot reach the registry behind a proxy."""
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.internal:3128")
@@ -160,6 +178,7 @@ def test_a_proxy_setting_is_passed_through(workspace, monkeypatch):
     assert _child_env(workspace)["HTTPS_PROXY"] == "http://proxy.internal:3128"
 
 
+@needs_python
 def test_tool_caches_land_in_the_workspace(workspace):
     """npm, pip and cargo write into HOME. Pointing it at the workspace keeps
     one run's cache out of every other run's."""
@@ -168,11 +187,8 @@ def test_tool_caches_land_in_the_workspace(workspace):
     assert home.startswith(os.path.realpath(workspace))
 
 
+@needs_python
 def test_extra_env_reaches_the_command(workspace):
-    result = SandboxExecutor.execute(
-        ["python", "probe.py"], str(workspace), role_name="backend_specialist",
-        extra_env={"BUILD_TARGET": "production"},
-    )
     (workspace / "probe.py").write_text("import os;print(os.environ.get('BUILD_TARGET',''))\n")
     result = SandboxExecutor.execute(
         ["python", "probe.py"], str(workspace), role_name="backend_specialist",
@@ -219,6 +235,7 @@ def test_a_missing_workspace_is_refused(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@needs_python
 def test_a_command_that_hangs_is_killed(workspace, monkeypatch):
     monkeypatch.setattr("app.tools.sandbox.TIMEOUTS", {"default": 1})
     (workspace / "hang.py").write_text("import time;time.sleep(30)\n")
@@ -228,6 +245,7 @@ def test_a_command_that_hangs_is_killed(workspace, monkeypatch):
     assert "timed out" in result["error"]
 
 
+@needs_python
 def test_the_timeout_kills_the_whole_process_tree(workspace, monkeypatch):
     """The child gets its own session, so a build that spawned helpers does not
     leave them behind holding the workspace open."""
@@ -241,6 +259,7 @@ def test_the_timeout_kills_the_whole_process_tree(workspace, monkeypatch):
     assert "timed out" in run(workspace, ["python", "spawn.py"])["error"]
 
 
+@needs_python
 def test_memory_is_capped(workspace, monkeypatch):
     """`SANDBOX_MEMORY_LIMIT` is read at import, like every other sandbox
     ceiling, so the module attribute is what a test has to move."""
@@ -276,6 +295,7 @@ def test_an_unparseable_memory_ceiling_falls_back(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+@needs_python
 def test_a_virtualenv_the_agent_created_is_usable(workspace):
     """`python -m venv` builds `.venv/bin/python` as a symlink pointing *out* of
     the workspace. Resolving symlinks before the containment check rejected

@@ -65,6 +65,18 @@ x-app-env: &app-env
   # only, unless an operator has a reason to widen either.
   SEED_ALLOWED_SCHEMES: ${SEED_ALLOWED_SCHEMES:-}
   SEED_ALLOW_PRIVATE_HOSTS: ${SEED_ALLOW_PRIVATE_HOSTS:-false}
+  # ---------------------------------------------------------------------------
+  # Context compaction
+  # ---------------------------------------------------------------------------
+  CTX_COMPACTION_ENABLED: ${CTX_COMPACTION_ENABLED:-true}
+  CTX_MAX_TOKENS: ${CTX_MAX_TOKENS:-75000}
+  CTX_SOFT_TRIGGER_RATIO: ${CTX_SOFT_TRIGGER_RATIO:-0.8}
+  CTX_KEEP_MESSAGES: ${CTX_KEEP_MESSAGES:-20}
+  CTX_SUMMARY_BUDGET: ${CTX_SUMMARY_BUDGET:-4000}
+  CTX_COMPACTION_MODEL: ${CTX_COMPACTION_MODEL:-}
+  CTX_ARCHITECT_DOCUMENT_BUDGET: ${CTX_ARCHITECT_DOCUMENT_BUDGET:-40000}
+  CTX_STORE_ROOT: ${CTX_STORE_ROOT:-}
+  CTX_JOURNAL_ROOT: ${CTX_JOURNAL_ROOT:-}
 
 services:
   db:

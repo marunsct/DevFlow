@@ -10,6 +10,8 @@ a choice was made.
 
 from __future__ import annotations
 
+import logging
+import os
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +21,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.role_agent import create_role_agent
 from app.state import RepositoryContext
+
+logger = logging.getLogger(__name__)
 
 _STAGE = "architecture"
 _NAME = "principal_architect"
@@ -90,6 +94,36 @@ complete 215-line document to disk - the signature of a structured output
 generated with almost no room left.
 """
 
+def _initial_document_budget() -> int:
+    """Parse CTX_ARCHITECT_DOCUMENT_BUDGET without ever crashing the import.
+
+    A malformed value (e.g. "40k") must degrade to the default, not take the
+    whole app down at startup - the same never-raise convention as
+    `ContextPolicy.from_environment`.
+    """
+    raw = os.environ.get("CTX_ARCHITECT_DOCUMENT_BUDGET", "40000")
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "Malformed CTX_ARCHITECT_DOCUMENT_BUDGET=%r; using default 40000", raw
+        )
+        return 40_000
+
+
+INITIAL_DOCUMENT_BUDGET = _initial_document_budget()
+"""Characters of the original upload to carry into the *first* request.
+
+Measured on a real run: seven documents totalling 135,821 characters made the
+architect's first request ~35,200 tokens, of which 96% was those documents -
+sitting beside `product_intake`, which is the product manager's distillation of
+the same material. The structured response came back with required sections
+empty, the signature of a model with almost no room left to answer in.
+
+Higher than the revision budget because the first pass is the one that has to
+read the brief. Set to 0 to send everything.
+"""
+
 
 def _document_excerpt(document: DocumentContent, budget: int) -> str:
     """The document text, trimmed to a budget with the trim made visible."""
@@ -118,7 +152,8 @@ def build_architecture_request(
         f"--- Approved product intake ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection ---\n{stack_selection_text}\n\n"
-        f"--- Original Uploaded Documents ---\n{document.text}\n\n"
+        f"--- Original uploaded documents ---\n"
+        f"{_document_excerpt(document, INITIAL_DOCUMENT_BUDGET) if INITIAL_DOCUMENT_BUDGET else document.text}\n\n"
         f"**CRITICAL INSTRUCTION**: When scaffolding or creating projects (using terminal commands), ensure you place it strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub'). Do NOT use generic names like 'nest-app' and do NOT scaffold directly in the repository root without a named folder. Place all documentation in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

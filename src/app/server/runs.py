@@ -538,6 +538,15 @@ def create_runs_router(
             except WorkspaceError:
                 logger.warning("Refusing to delete workspace outside the configured root")
 
+        # Compaction context is deliberately NOT deleted here. The summariser's
+        # scratch space lives in per-agent directories (DATA_DIR/context/<agent_name>/),
+        # not per run: the worker runs with concurrency > 1, so at the moment one
+        # run ends its agent directory may still hold scratch data for another
+        # active run, and deleting it would clobber that run's in-flight
+        # compaction state. The files inside are small markdown summaries keyed
+        # by a per-invocation session id; their slow accumulation is a known,
+        # accepted limitation (see docs/context-compaction-remediation-steps.md).
+
         runner.discard_run_threads(record)
         await event_bus.purge(run_id)
         runner.run_store.delete(run_id)

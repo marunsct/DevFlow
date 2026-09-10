@@ -41,6 +41,7 @@ agent (via `resume_with_decision`) instead of restarting it.
 
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any, TypedDict
 
@@ -112,6 +113,8 @@ from app.sprint import (
 )
 from app.state import HumanApprovalRequest, RepositoryContext, ReviewStatus, WorkflowStage
 from app.tracing import trace_metadata
+
+logger = logging.getLogger(__name__)
 
 MAX_ARCHITECTURE_REVISIONS = 3
 
@@ -271,6 +274,48 @@ class WorkflowGraphState(TypedDict, total=False):
     error: str | None
 
 
+_CONTEXT_OVERFLOW_MARKERS = (
+    "maximum context length",
+    "context_length_exceeded",
+    "context length exceeded",
+    "too many tokens",
+    "reduce the length of the messages",
+    "prompt is too long",
+)
+
+
+def _is_context_overflow(error: BaseException) -> bool:
+    """Whether this exception is the model refusing an oversized prompt.
+
+    Matched on the message because providers disagree on the type: the same
+    condition arrives as BadRequestError, OpenAIInvalidRequestError, or a plain
+    ValueError depending on which client is in front of it.
+    """
+    return any(marker in str(error).lower() for marker in _CONTEXT_OVERFLOW_MARKERS)
+
+
+def _context_overflow_update(stage_name: str, error: BaseException) -> dict[str, Any]:
+    """State update for a stage the model refused as too large.
+
+    `stage` must name a real node. `_route_from_stage` returns it verbatim and
+    the conditional-edge map is built from `_NODE_NAMES`, so any other value is
+    a KeyError that kills the run instead of failing it - which is worse than
+    the overflow it was meant to handle.
+    """
+    logger.error("Context overflow in stage %s: %s", stage_name, error)
+    return {
+        "stage": "failed",
+        "error": (
+            f"The '{stage_name}' stage exceeded the model's context window even after "
+            "compaction. Reduce CTX_MAX_TOKENS to compact sooner, use a model with a "
+            "larger window, or split the work into smaller stages."
+        ),
+        "pending_approval": None,
+        "pending_inner_thread_id": None,
+        "pending_decision": None,
+    }
+
+
 def _is_paused(stage: str) -> bool:
     """Return whether a stage value represents a pause rather than a next node."""
     return stage.startswith(_PAUSE_PREFIXES)
@@ -349,7 +394,12 @@ def _run_gated_agent(
         inner_thread_id = state.get("pending_inner_thread_id")
         if not inner_thread_id:
             inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
-        result = resume_with_decision(agent, inner_thread_id, pending_decision)
+        try:
+            result = resume_with_decision(agent, inner_thread_id, pending_decision)
+        except Exception as exc:  # noqa: BLE001 - re-raised unless it is overflow
+            if not _is_context_overflow(exc):
+                raise
+            return _context_overflow_update(stage_name, exc)
     elif _is_awaiting_approval_for(state, stage_name) and state.get("pending_inner_thread_id"):
         # Re-entered our own approval pause with no decision attached. That
         # happens whenever something resumes the run without answering the gate
@@ -370,7 +420,12 @@ def _run_gated_agent(
         # Append a UUID to force a fresh context window for new attempts.
         # This prevents the LLM from drowning in the message history of previous failed attempts.
         inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
-        result = agent.invoke(initial_request, config={"configurable": {"thread_id": inner_thread_id}})
+        try:
+            result = agent.invoke(initial_request, config={"configurable": {"thread_id": inner_thread_id}})
+        except Exception as exc:  # noqa: BLE001 - re-raised unless it is overflow
+            if not _is_context_overflow(exc):
+                raise
+            return _context_overflow_update(stage_name, exc)
 
     if result.get("__interrupt__"):
         approval = extract_pending_approval(

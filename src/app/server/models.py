@@ -101,9 +101,13 @@ class StartRunRequest(BaseModel):
         default=None,
         description="Seed the workspace from an existing codebase. Omit for a greenfield run.",
     )
-    auto_approve: bool = Field(
-        default=False,
-        description="Approve artifact writes automatically. Does not bypass execution gates.",
+    auto_approve: bool | None = Field(
+        default=None,
+        description=(
+            "Approve artifact writes automatically. Does not bypass execution gates. "
+            "Omit to keep whatever the run was registered with - which is what a clone "
+            "of an unattended run needs."
+        ),
     )
 
 

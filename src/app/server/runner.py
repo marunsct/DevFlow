@@ -42,7 +42,51 @@ from app.tracing import is_tracing_enabled, trace_metadata
 
 logger = logging.getLogger(__name__)
 
-MAX_GATES = int(os.environ.get("WORKFLOW_MAX_GATES", "1000"))
+def _max_gates() -> int:
+    """The automatic-approval ceiling, read from the environment.
+
+    Exposed as a function as well as a constant so a test can exercise the
+    parsing without `importlib.reload`. Reloading this module rebinds every
+    class in it - `RunConflict`, `RunRecord`, `WorkflowRunner` - to new objects
+    while leaving every module that already imported one holding the old one, so
+    a later `except RunConflict` silently stops matching.
+    """
+    return int(os.environ.get("WORKFLOW_MAX_GATES", "1000"))
+
+
+MAX_GATES = _max_gates()
+
+
+def _max_gates_per_stage() -> int:
+    """How many auto-approvals one stage may take before the run is stopped.
+
+    `MAX_GATES` bounds the whole run, which is the wrong shape for the failure
+    that actually happens: an agent that re-requests a write at the same gate
+    forever. One real run spent all 1000 of its gates on
+    `awaiting_approval:product_manager` - a thousand model calls, every one
+    auto-approved, no progress - and only stopped at the global ceiling.
+
+    This is now a backstop, not the loop detector. `MAX_IDENTICAL_GATES` catches
+    the real failure - the same write requested over and over - precisely and
+    within a few rounds, so this only has to stop a stage that is expensive
+    rather than stuck.
+
+    It was 25, chosen when "a stage writes a handful of artifacts" was true.
+    Gating command execution as well as writes made it false: a testing
+    specialist writes a test, runs the suite, fixes what broke and runs it
+    again, and each of those is one gate. One was killed at 26 rounds of real
+    progress and told it was looping. The ceiling has to clear that kind of work
+    comfortably, because a stage that trips it loses everything it did.
+    """
+    default = 120
+    try:
+        return int(os.environ.get("WORKFLOW_MAX_GATES_PER_STAGE", str(default)))
+    except ValueError:
+        logger.warning("Malformed WORKFLOW_MAX_GATES_PER_STAGE; using %d", default)
+        return default
+
+
+MAX_GATES_PER_STAGE = _max_gates_per_stage()
 """Safety ceiling: stop after this many invoke rounds in one run segment.
 
 Only auto-approved runs get anywhere near this - a supervised run returns to the
@@ -161,6 +205,30 @@ def _applicable_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
     return _public_model_overrides(overrides)
 
 
+MAX_IDENTICAL_GATES = 4
+"""Consecutive identical approval requests before a stage is called a loop.
+
+A stage that asks for the same write over and over is making no progress, and
+four rounds is well past any legitimate retry. This is the check that actually
+catches looping; `MAX_GATES_PER_STAGE` is a blunt ceiling on total work and was
+never a good loop detector - a testing specialist writing code, running the
+suite, and fixing what broke tripped it after 26 rounds of real progress, and
+the run then reported itself as looping when it was not.
+"""
+
+
+def _approval_signature(approval: Any) -> tuple[str, str]:
+    """Identify what an approval is asking for, so repeats can be recognised.
+
+    `notes` carries the head of the content being written, so two requests share
+    a signature only when they target the same path with the same opening text.
+    """
+    return (
+        getattr(approval, "artifact_path", "") if approval else "",
+        (getattr(approval, "notes", "") or "") if approval else "",
+    )
+
+
 def _approval_metadata(approval: Any) -> dict[str, Any]:
     return {
         "artifact_path": getattr(approval, "artifact_path", "") if approval else "",
@@ -276,8 +344,21 @@ class WorkflowRunner:
         *,
         owner: str = "unknown",
         tenant_id: str = "default",
+        review_policy: dict[str, bool] | None = None,
+        reviewer: str | None = None,
+        auto_approve: bool = False,
+        model_overrides: dict[str, Any] | None = None,
     ) -> RunRecord:
-        """Register a new run without starting it."""
+        """Register a new run without starting it.
+
+        The settings parameters exist so the API can register *and* start in one
+        step instead of a separate ``start_run`` call. All are keyword-only and
+        optional - registering on its own (the only thing this method was ever
+        called for) behaves exactly as before, with attended defaults.
+
+        ``repo_root`` is deliberately not a parameter: it comes from the
+        repository context at start time, not from the caller's request body.
+        """
         record = RunRecord(
             run_id=run_id,
             thread_id=thread_id,
@@ -286,6 +367,13 @@ class WorkflowRunner:
             owner=owner,
             tenant_id=tenant_id,
         )
+        if review_policy is not None:
+            record.review_policy = dict(review_policy)
+        if reviewer is not None:
+            record.reviewer = reviewer
+        record.auto_approve = bool(auto_approve)
+        if model_overrides is not None:
+            record.model_overrides = dict(model_overrides)
         self._persist(record)
         return record
 
@@ -340,8 +428,24 @@ class WorkflowRunner:
 
         self._dispatch(run_id, resume=False, decision_payload=None)
 
+    UNRESUMABLE_ERROR_MARKER = "Interrupted:"
+    """Prefix on the error of a run whose checkpoint history cannot be trusted.
+
+    Set by the out-of-band repair for runs damaged by the auto-approve status
+    bug, where two Celery tasks wrote to one graph thread. Their history may be
+    interleaved, so resuming reads a state no single run ever produced.
+    """
+
     async def resume_run(self, run_id: str) -> None:
         """Resume a failed run from its last checkpoint."""
+        record = self.run_store.load(run_id)
+        if record is not None and (record.error or "").startswith(self.UNRESUMABLE_ERROR_MARKER):
+            raise RunConflict(
+                f"Run {run_id} was interrupted in a way that may have left its checkpoint "
+                "history inconsistent, so resuming it would read a state no single run "
+                "produced. Clone it to repeat the attempt from the beginning."
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         if not self.run_store.compare_and_set_status(
             run_id, "failed", "running", updated_at=now, clear_error=True
@@ -487,24 +591,30 @@ class WorkflowRunner:
                 if decision and decision.get("type") == "approval":
                     state = await asyncio.to_thread(
                         resume_pending_approval, graph, record.thread_id, decision["decision"],
-                        metadata=trace_meta,
+                        metadata=trace_meta, run_id=run_id,
                     )
                 elif decision and decision.get("type") == "review":
                     state = await asyncio.to_thread(
                         resume_pending_review, graph, record.thread_id, decision["decision"],
-                        metadata=trace_meta,
+                        metadata=trace_meta, run_id=run_id,
+                    )
+                elif self._resume_means_answering_own_gate(record):
+                    state = await asyncio.to_thread(
+                        resume_pending_approval, graph, record.thread_id,
+                        approve_write_decision(), metadata=trace_meta, run_id=run_id,
                     )
                 else:
                     from app.graph.workflow import resume_failed_run
 
                     state = await asyncio.to_thread(
-                        resume_failed_run, graph, record.thread_id, metadata=trace_meta
+                        resume_failed_run, graph, record.thread_id, metadata=trace_meta,
+                        run_id=run_id,
                     )
             else:
                 state = await asyncio.to_thread(
                     start_workflow, graph, document, repository, record.thread_id,
                     review_policy=record.review_policy, reviewer=record.reviewer,
-                    metadata=trace_meta,
+                    metadata=trace_meta, run_id=run_id,
                 )
 
             await self._handle_state(record, graph, state, trace_meta)
@@ -546,6 +656,15 @@ class WorkflowRunner:
         by MAX_GATES with a real re-invoke on each pass.
         """
         run_id = record.run_id
+        # Consecutive auto-approvals at one stage. Reset whenever the stage
+        # changes, so a long but progressing run is unaffected.
+        gate_stage: str | None = None
+        gates_at_stage = 0
+        # Consecutive gates asking for the exact same thing. A stage that varies
+        # what it asks for is working; one that repeats itself is looping, and
+        # only the second is worth failing fast on.
+        last_signature: tuple[str, str] | None = None
+        repeats = 0
 
         for _ in range(MAX_GATES):
             stage = state.get("stage", "")
@@ -604,9 +723,54 @@ class WorkflowRunner:
                             metadata=redact_metadata(_approval_metadata(approval)),
                         ),
                     )
+                    signature = _approval_signature(approval)
+                    if stage == gate_stage:
+                        gates_at_stage += 1
+                        repeats = repeats + 1 if signature == last_signature else 0
+                    else:
+                        gate_stage, gates_at_stage, repeats = stage, 1, 0
+                    last_signature = signature
+
+                    looping = repeats >= MAX_IDENTICAL_GATES
+                    if looping or gates_at_stage > MAX_GATES_PER_STAGE:
+                        stage_name = stage.removeprefix(APPROVAL_PAUSE_PREFIX)
+                        record.status = "failed"
+                        if looping:
+                            record.error = (
+                                f"The '{stage_name}' stage asked to write the same thing "
+                                f"{repeats + 1} times in a row without moving on, so it was "
+                                f"stopped. The repeated request was: {signature[0] or 'an artifact write'}. "
+                                "An agent re-requesting an identical write is looping, and every "
+                                "attempt costs a model call."
+                            )
+                        else:
+                            record.error = (
+                                f"The '{stage_name}' stage used all "
+                                f"{MAX_GATES_PER_STAGE} of its approvals without finishing, so it "
+                                "was stopped. The requests were not identical, so this looks like "
+                                "a stage doing more work than the ceiling allows rather than a "
+                                "loop - a specialist writing code and re-running tests reaches "
+                                "this legitimately. Raise WORKFLOW_MAX_GATES_PER_STAGE, or check "
+                                "the log if you expected this stage to be smaller."
+                            )
+                        record.updated_at = datetime.now(timezone.utc).isoformat()
+                        self._persist(record)
+                        await self.event_bus.publish(
+                            run_id,
+                            RunEvent(
+                                run_id=run_id,
+                                sequence=await self.event_bus.next_sequence(run_id),
+                                stage=stage,
+                                event_type="error",
+                                message=record.error,
+                            ),
+                        )
+                        await self.event_bus.close(run_id)
+                        return
+
                     state = await asyncio.to_thread(
                         resume_pending_approval, graph, record.thread_id,
-                        approve_write_decision(), metadata=trace_meta,
+                        approve_write_decision(), metadata=trace_meta, run_id=run_id,
                     )
                     continue
 
@@ -734,6 +898,27 @@ class WorkflowRunner:
         except Exception:  # noqa: BLE001 - cleanup is never load-bearing
             logger.warning("Could not prune scratch storage", exc_info=True)
 
+    def _resume_means_answering_own_gate(self, record: RunRecord) -> bool:
+        """Whether resuming this run should answer its approval gate itself.
+
+        An unattended run that stopped while parked on its own gate has nobody
+        to clear it. `submit_approval` refuses the run for being unattended
+        ("there is nothing to decide"), and `resume_failed_run` refuses it for
+        being parked ("waiting for a decision, not a retry") - so between them
+        the run had no way forward at all and its work could only be abandoned.
+
+        Answering the gate is exactly what this run does for itself every other
+        time it reaches one. Doing it here too is not a special case so much as
+        the absence of one.
+
+        Read from `current_stage` rather than the checkpoint deliberately: it is
+        the same field `_status_after_failure` uses to decide which route the UI
+        offers, so the route offered and the route taken cannot disagree.
+        """
+        return bool(record.auto_approve) and (record.current_stage or "").startswith(
+            APPROVAL_PAUSE_PREFIX
+        )
+
     def _status_after_failure(self, record: RunRecord) -> str:
         """The status to record when an invoke raised.
 
@@ -751,6 +936,16 @@ class WorkflowRunner:
         the route that actually works. The error is still surfaced in `error`.
         """
         stage = record.current_stage or ""
+        if record.auto_approve and stage.startswith(APPROVAL_PAUSE_PREFIX):
+            # An unattended run answers its own approval gates, so `submit_approval`
+            # refuses it outright ("there is nothing to decide"). Reporting
+            # `waiting_for_approval` here therefore closes the only door it left
+            # open: /approve rejects the run for being unattended and /resume
+            # rejects it for not being `failed`, so the run is strandable by
+            # nothing more than a mid-stage exception. A review gate still needs a
+            # human whether or not writes are auto-approved, so only the approval
+            # prefix is special-cased.
+            return "failed"
         if stage.startswith((APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX)):
             return _api_status(stage)
         return "failed"
@@ -760,6 +955,10 @@ class WorkflowRunner:
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)
         logger.info("Run %s cancelled", record.run_id)
+        # Cancellation is a terminal outcome like any other, and leaves the same
+        # journal and context files behind. Pruning only on complete/failed meant
+        # a deployment where runs are frequently cancelled never pruned at all.
+        await asyncio.to_thread(self._prune_scratch)
         await self.event_bus.close(record.run_id)
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:

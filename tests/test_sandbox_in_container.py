@@ -20,8 +20,10 @@ import pytest
 from app.tools.sandbox import (
     CONTAINER_MODE,
     IN_CONTAINER_MODE,
+    CommandNotAllowed,
     SandboxExecutor,
     execution_mode,
+    validate_command,
 )
 
 # In-container mode resolves bare names like `python` with `shutil.which`,
@@ -323,3 +325,80 @@ def test_a_workspace_tool_that_is_not_executable_reports_missing(workspace):
     result = run(workspace, [".venv/bin/pytest"], role="testing_specialist")
 
     assert "not installed" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# The execution ledger
+# ---------------------------------------------------------------------------
+#
+# Verification was self-reported: `tests: ["ran pytest, all green"]` was
+# indistinguishable from having run it. The executor always knew the truth - it
+# has the argv and the exit code - and discarded it.
+
+
+def test_a_command_that_runs_is_recorded(workspace, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    from app.tools.sandbox import read_execution_ledger
+
+    run(workspace, ["echo", "hello"])
+
+    entries = read_execution_ledger(str(workspace))
+    assert len(entries) == 1
+    assert entries[0]["command"] == ["echo", "hello"]
+    assert entries[0]["returncode"] == 0, "the exit code must be an int, not '0'"
+
+
+def test_a_refused_command_is_recorded_too(workspace, monkeypatch, tmp_path):
+    """'Tried and was refused' and 'never tried' are different failures."""
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    from app.tools.sandbox import read_execution_ledger
+
+    run(workspace, ["curl", "http://example.com"])
+
+    entries = read_execution_ledger(str(workspace))
+    assert len(entries) == 1
+    assert entries[0]["error"], "a refusal must carry its reason"
+    assert entries[0]["returncode"] is None
+
+
+def test_the_ledger_summary_is_readable_by_a_reviewer(workspace, monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    from app.tools.sandbox import summarise_executions
+
+    assert "No commands were executed" in summarise_executions(str(workspace))
+
+    run(workspace, ["echo", "built"])
+
+    summary = summarise_executions(str(workspace))
+    assert "echo built -> OK" in summary
+    assert "1 succeeded" in summary
+
+
+def test_two_runs_do_not_share_a_ledger(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
+    from app.tools.sandbox import _ledger_path
+
+    first = _ledger_path(str(tmp_path / "app-run-aaaa"))
+    second = _ledger_path(str(tmp_path / "app-run-bbbb"))
+
+    assert first is not None and first != second
+
+
+def test_make_cannot_be_pointed_at_another_makefile():
+    validate_command(["make", "build"], "backend_specialist")
+
+    with pytest.raises(CommandNotAllowed):
+        validate_command(["make", "-f", "/tmp/evil.mk"], "backend_specialist")
+
+
+def test_a_role_can_run_the_migration_it_writes():
+    """`database_specialist` had prisma/psql/alembic but no interpreter."""
+    validate_command(["python3", "migrate.py"], "database_specialist")
+
+
+def test_destructive_verbs_are_still_refused_for_every_role():
+    for role in ("ui_specialist", "backend_specialist", "testing_specialist",
+                 "database_specialist", "principal_architect"):
+        for verb in ("rm", "docker", "curl", "wget"):
+            with pytest.raises(CommandNotAllowed):
+                validate_command([verb, "anything"], role)

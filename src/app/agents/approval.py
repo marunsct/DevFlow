@@ -46,17 +46,117 @@ def reject_write_decision(message: str | None = None) -> dict[str, Any]:
     return decision
 
 
-def resume_with_decision(agent: Any, thread_id: str, decision: dict[str, Any]) -> dict[str, Any]:
-    """Resume a paused run with one human decision for the pending artifact write.
+def pending_action_requests(agent: Any, thread_id: str) -> list[dict[str, Any]]:
+    """The tool calls a paused agent is holding at its approval gate.
+
+    A model may ask for several gated calls in one turn. `HumanInTheLoopMiddleware`
+    collects all of them into a *single* interrupt carrying one `action_requests`
+    entry each, so the count is a property of the pause, not something the caller
+    can assume.
+
+    Returns an empty list when the thread is not paused, or when the paused
+    interrupt is not an approval gate.
+    """
+    try:
+        snapshot = agent.get_state({"configurable": {"thread_id": thread_id}})
+    except Exception:  # noqa: BLE001 - an unreadable checkpoint is not fatal here
+        return []
+
+    for pending in getattr(snapshot, "interrupts", ()) or ():
+        value = getattr(pending, "value", None)
+        requests = value.get("action_requests") if isinstance(value, dict) else None
+        if requests:
+            return list(requests)
+    return []
+
+
+def decisions_for(decision: dict[str, Any], action_count: int) -> list[dict[str, Any]]:
+    """Expand one human decision to cover every action the pause is holding.
+
+    LangGraph requires exactly one decision per hanging tool call and raises
+    `ValueError: Number of human decisions (1) does not match number of hanging
+    tool calls (N)` otherwise. Before agents could edit files this never bit:
+    a whole-file `write_artifact` is naturally one call per turn. Given a way to
+    change a passage at a time, an architect immediately asked for seven edits in
+    one turn - the right behaviour - and the resume path answered one of them and
+    failed the run.
+
+    `approve` and `reject` carry no per-action payload, so answering "yes to all"
+    or "no to all" is exactly what a reviewer means when they answer a gate that
+    lists several changes; the decision is replicated.
+
+    `edit` does carry a payload - a specific replacement action - so it can only
+    ever answer one call. Replicating it would apply one edit's arguments to
+    seven different tool calls and silently write the wrong thing six times, so
+    it is refused instead.
+    """
+    if action_count <= 1:
+        return [decision]
+    if decision.get("type") == "edit":
+        raise ValueError(
+            f"This pause is holding {action_count} tool calls, and an 'edit' decision "
+            "can only answer one of them. Approve or reject them together, or answer "
+            "each call with its own decision."
+        )
+    return [dict(decision) for _ in range(action_count)]
+
+
+def resume_with_decision(
+    agent: Any,
+    thread_id: str,
+    decision: dict[str, Any],
+    *,
+    callbacks: list[Any] | None = None,
+) -> dict[str, Any]:
+    """Resume a paused run with a human decision for every pending gated call.
 
     `thread_id` must match the id used for the original `invoke` call (and the
     agent must share the same checkpointer) so LangGraph finds the paused
     checkpoint instead of starting a brand new, empty conversation.
+
+    The pause may be holding more than one tool call; see `decisions_for` for why
+    one decision is replicated across all of them rather than sent alone.
+
+    `callbacks` is keyword-only and optional so the positional signature every
+    existing caller uses keeps working. It carries the agent-activity stream,
+    which observes the turn without changing it.
     """
-    return agent.invoke(
-        Command(resume={"decisions": [decision]}),
-        config={"configurable": {"thread_id": thread_id}},
-    )
+    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    if callbacks:
+        config["callbacks"] = callbacks
+    pending = pending_action_requests(agent, thread_id)
+    decisions = decisions_for(decision, len(pending))
+    return agent.invoke(Command(resume={"decisions": decisions}), config=config)
+
+
+def _clip(text: str, limit: int = 80) -> str:
+    text = str(text or "").strip().replace("\n", " ")
+    return text[:limit] + ("..." if len(text) > limit else "")
+
+
+def describe_action_request(action_request: dict[str, Any]) -> str:
+    """One line saying what a single pending tool call would do.
+
+    Reads the argument shape rather than the tool name, because the same gate
+    covers writes (`content`), edits (`find`/`replace`) and commands
+    (`command`), and a reviewer needs to see the change itself - an edit
+    described only by its filename tells them nothing about what it changes.
+    """
+    args = action_request.get("args", {}) or {}
+    path = args.get("relative_path") or args.get("file_path") or "<unknown path>"
+
+    if "find" in args or "replace" in args:
+        replacement = _clip(args.get("replace", ""))
+        return (
+            f"Edit {path}: replace \u201c{_clip(args.get('find', ''))}\u201d "
+            f"with \u201c{replacement}\u201d" if replacement
+            else f"Edit {path}: delete \u201c{_clip(args.get('find', ''))}\u201d"
+        )
+    if "command" in args:
+        command = args["command"]
+        rendered = " ".join(str(part) for part in command) if isinstance(command, list) else str(command)
+        return f"Run {_clip(rendered)}"
+    return f"Write {path}: {_clip(args.get('content', '')) or '(empty)'}"
 
 
 def extract_pending_approval(
@@ -74,37 +174,62 @@ def extract_pending_approval(
     `HumanApprovalRequest` (see `app.state`) so the rest of the workflow, tests,
     and any future UI share one stable shape instead of reaching into LangGraph
     internals directly.
+
+    Every pending call is described, not just the first. One pause can hold
+    several: a single approval answers all of them together, so showing one and
+    hiding six would ask a reviewer to consent to changes they were never shown.
     """
     interrupts = result.get("__interrupt__")
     if not interrupts:
         return None
 
     pending = interrupts[0]
-    action_request = pending.value["action_requests"][0]
-    args = action_request.get("args", {})
-    relative_path = args.get("relative_path", "<unknown path>")
-    content = args.get("content", "")
-    summary = content[:80] + ("..." if len(content) > 80 else "")
+    action_requests = pending.value.get("action_requests") or [{}]
 
-    target = (Path(repo_root) / relative_path).resolve()
-    risk_level = "medium" if target.exists() else "low"
+    paths: list[str] = []
+    for request in action_requests:
+        path = (request.get("args", {}) or {}).get("relative_path")
+        if path and path not in paths:
+            paths.append(path)
+
+    primary = paths[0] if paths else "<unknown path>"
+    artifact_path = (
+        primary if len(paths) <= 1 else f"{primary} (+{len(paths) - 1} more)"
+    )
+
+    descriptions = [describe_action_request(request) for request in action_requests]
+    if len(descriptions) == 1:
+        notes = descriptions[0]
+    else:
+        listed = "\n".join(f"{index}. {line}" for index, line in enumerate(descriptions, 1))
+        notes = f"{len(descriptions)} changes in one step:\n{listed}"
+
+    # Risk follows the riskiest call in the batch: approving is all-or-nothing,
+    # so the reviewer is accepting the worst of them, not the average.
+    touches_existing = any(
+        (Path(repo_root) / path.lstrip("/")).resolve().exists() for path in paths
+    )
+    risk_level = "medium" if touches_existing else "low"
 
     return HumanApprovalRequest(
         request_id=pending.id,
         stage=stage,
-        artifact_path=f"{relative_path}",
+        artifact_path=artifact_path,
         risk_level=risk_level,
         requested_by=requested_by,
         decision=ApprovalDecision.PENDING,
         requested_at=datetime.now(timezone.utc).isoformat(),
-        notes=summary,
+        notes=notes,
     )
 
 
 __all__ = [
     "approve_write_decision",
+    "decisions_for",
+    "describe_action_request",
     "edit_write_decision",
     "extract_pending_approval",
+    "pending_action_requests",
     "reject_write_decision",
     "resume_with_decision",
 ]

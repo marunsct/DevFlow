@@ -25,11 +25,15 @@ pattern list:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
@@ -45,10 +49,19 @@ class CommandNotAllowed(ValueError):
 
 # Executables each role may invoke, matched exactly against argv[0].
 ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
-    "ui_specialist": frozenset({"npm", "npx", "node", "yarn", "pnpm"}),
-    "backend_specialist": frozenset({"python", "python3", "pip", "pip3", "pytest", "cargo", "go", "uv"}),
-    "database_specialist": frozenset({"prisma", "psql", "alembic"}),
-    "testing_specialist": frozenset({"pytest", "python", "python3", "npm", "yarn", "pnpm", "go", "cargo"}),
+    # `make` is added across build-capable roles: a Makefile is the entry point
+    # for a large share of real projects, and without it those cannot be built
+    # at all. It executes only what the repository's own Makefile contains,
+    # which the agent wrote through the gated write tool.
+    "ui_specialist": frozenset({"npm", "npx", "node", "yarn", "pnpm", "make", "python3"}),
+    "backend_specialist": frozenset({
+        "python", "python3", "pip", "pip3", "pytest", "cargo", "go", "uv", "make", "npm", "npx",
+    }),
+    # A migration is a script, and the role that writes one has to run it.
+    "database_specialist": frozenset({"prisma", "psql", "alembic", "python", "python3", "make"}),
+    "testing_specialist": frozenset({
+        "pytest", "python", "python3", "npm", "npx", "yarn", "pnpm", "go", "cargo", "make",
+    }),
     "principal_architect": frozenset({"npx", "npm", "django-admin"}),
 }
 
@@ -67,6 +80,10 @@ _FORBIDDEN_ARGS: dict[str, frozenset[str]] = {
     "yarn": frozenset({"exec"}),
     "pnpm": frozenset({"exec"}),
     "git": frozenset({"-c", "--exec-path", "--upload-pack", "--receive-pack"}),
+    # -f/--file would run a makefile from anywhere; --eval injects rules on the
+    # command line. Both turn `make` into a general interpreter pointed at
+    # something the workspace does not contain.
+    "make": frozenset({"-f", "--file", "--makefile", "--eval", "-e"}),
 }
 
 _ALLOWED_PYTHON_MODULES = frozenset({"venv", "pip", "pytest", "unittest"})
@@ -294,6 +311,103 @@ def _truncate(text: str, label: str = "output") -> str:
     return head + pointer + tail
 
 
+def _ledger_path(repo_root: str) -> Path | None:
+    """Where this run's execution ledger lives, or None if it cannot be placed.
+
+    Keyed by the workspace directory name, which is per-run
+    (`<product>-run-<uuid>`), so no run id has to be plumbed through the tool
+    layer to reach here.
+
+    Under DATA_DIR rather than in the workspace: the workspace is product
+    output, listed as run artifacts and archived, and an execution log is
+    neither.
+    """
+    try:
+        name = Path(repo_root).resolve().name
+        if not name:
+            return None
+        directory = Path(os.environ.get("DATA_DIR", ".")) / "ledger"
+        directory.mkdir(parents=True, exist_ok=True)
+        return directory / f"{re.sub(r'[^A-Za-z0-9_.-]+', '-', name)}.jsonl"
+    except Exception:  # noqa: BLE001 - a missing ledger is not a failed command
+        return None
+
+
+def _as_exit_code(value: Any) -> int | None:
+    """Normalise a returncode to an int.
+
+    The executor renders it as a *string* on every path, which is fine for the
+    model but makes `== 0` quietly false for anything comparing programmatically.
+    """
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _record_execution(repo_root: str, role_name: str, command: Sequence[str], result: dict) -> None:
+    """Append one command's outcome to the run's ledger. Never raises.
+
+    Verification is otherwise self-reported: a specialist writes
+    `tests: ["ran pytest, all green"]` and nothing establishes whether anything
+    ran. The executor knows the truth - it has the argv and the exit code - and
+    used to discard it the moment the tool result was consumed.
+
+    Refusals are recorded too. A specialist that tried to run a test and was
+    refused is materially different from one that never tried, and only this
+    can tell them apart.
+    """
+    path = _ledger_path(repo_root)
+    if path is None:
+        return
+    try:
+        entry = {
+            "at": datetime.now(timezone.utc).isoformat(),
+            "role": role_name,
+            "command": [str(part) for part in command],
+            "returncode": _as_exit_code(result.get("returncode")),
+            "error": result.get("error"),
+        }
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(entry) + "\n")
+    except OSError:
+        logger.debug("Could not append to the execution ledger", exc_info=True)
+
+
+def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
+    """Every command this run actually ran, oldest first. Never raises."""
+    path = _ledger_path(repo_root)
+    if path is None or not path.is_file():
+        return []
+    entries: list[dict] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
+            try:
+                entries.append(json.loads(line))
+            except ValueError:
+                continue
+    except OSError:
+        return []
+    return entries
+
+
+def summarise_executions(repo_root: str) -> str:
+    """A short digest of what actually ran, for a reviewer or a model."""
+    entries = read_execution_ledger(repo_root)
+    if not entries:
+        return "No commands were executed in this workspace."
+    lines = []
+    for entry in entries[-40:]:
+        argv = " ".join(str(part) for part in entry.get("command") or [])
+        code = entry.get("returncode")
+        outcome = "OK" if code == 0 else (f"exit {code}" if code is not None else "refused")
+        lines.append(f"- [{entry.get('role', '?')}] {argv} -> {outcome}")
+    passed = sum(1 for e in entries if e.get("returncode") == 0)
+    return f"{len(entries)} command(s) executed, {passed} succeeded:\n" + "\n".join(lines)
+
+
 class SandboxExecutor:
     """Runs an argv list inside a locked-down throwaway container."""
 
@@ -404,6 +518,26 @@ class SandboxExecutor:
         category: str = "default",
         extra_env: Dict[str, str] | None = None,
     ) -> Dict[str, Any]:
+        """Run one command and record that it happened.
+
+        A thin recording wrapper around `_run`, rather than a `_record_execution`
+        call at each of the eight places that return: one entry point cannot be
+        forgotten when a ninth is added, and refusals - which return early - are
+        captured on the same path as successes.
+        """
+        outcome = cls._run(command, repo_root, role_name, category, extra_env)
+        _record_execution(repo_root, role_name, command, outcome)
+        return outcome
+
+    @classmethod
+    def _run(
+        cls,
+        command: Sequence[str],
+        repo_root: str,
+        role_name: str = "general",
+        category: str = "default",
+        extra_env: Dict[str, str] | None = None,
+    ) -> Dict[str, Any]:
         if not execution_enabled():
             return {"error": "Command execution is disabled (ALLOW_COMMAND_EXECUTION is not enabled)."}
 
@@ -473,6 +607,8 @@ class SandboxExecutor:
 
 __all__ = [
     "COMMON_EXECUTABLES",
+    "read_execution_ledger",
+    "summarise_executions",
     "CONTAINER_MODE",
     "IN_CONTAINER_MODE",
     "CommandNotAllowed",

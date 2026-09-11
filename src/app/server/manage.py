@@ -131,7 +131,7 @@ def reconcile_runs(dry_run: bool = False) -> int:
     """
     from app.graph.workflow import APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX
     from app.server.run_store import RunStore
-    from app.server.runner import _api_status, _stage_meaning
+    from app.server.runner import _stage_narration
 
     store = RunStore.shared()
 
@@ -155,8 +155,24 @@ def reconcile_runs(dry_run: bool = False) -> int:
         # node must stay failed, not be resurrected as running.
         if not stage.startswith((APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX)):
             continue
-        expected = _api_status(stage)
+        # An unattended run answers its own gates, so a row that says
+        # `awaiting_approval:...` is not evidence that anything is waiting. This
+        # command used to call `_api_status` directly and would set such a row to
+        # `waiting_for_approval` - which is the exact row state that lets
+        # `submit_approval`'s compare-and-set pass and puts a second Celery task
+        # on a thread the first is still driving.
+        expected_meaning, expected = _stage_narration(
+            stage, auto_approve=bool(record.auto_approve)
+        )
         if record.status == expected or record.status in ("cancelled", "completed"):
+            continue
+
+        # A run repaired out of the F-0 damage was deliberately marked `failed`
+        # while its stage still names a gate. Do not undo that: its checkpoint
+        # history may have had two concurrent writers, and the whole point of
+        # marking it failed was to stop it being resumed.
+        if record.auto_approve and record.status == "failed":
+            print(f"{record.run_id}: leaving failed (unattended run, repaired out of band)")
             continue
 
         print(f"{record.run_id}: {record.status} -> {expected}  (stage: {stage})")
@@ -164,7 +180,7 @@ def reconcile_runs(dry_run: bool = False) -> int:
         if dry_run:
             continue
         record.status = expected
-        record.stage_meaning = _stage_meaning(stage)
+        record.stage_meaning = expected_meaning
         store.save(record)
 
     if not repaired:

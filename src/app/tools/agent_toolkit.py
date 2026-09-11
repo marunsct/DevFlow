@@ -21,6 +21,8 @@ from app.tools.repository import (
     read_text_file,
     run_approved_validation,
     search_text,
+    edit_approved_artifact,
+    read_text_lines,
     write_approved_artifact,
 )
 
@@ -51,15 +53,31 @@ def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = Tru
         }
 
     @tool
-    def read_repository_file(relative_path: str) -> str | dict[str, str]:
-        """Read one text file from the repository by its path relative to the repo root.
+    def read_repository_file(
+        relative_path: str, start_line: int = 1, line_count: int | None = None
+    ) -> str | dict[str, object]:
+        """Read one text file from the repository, whole or in part.
+
+        Args:
+            relative_path: path relative to the repository root.
+            start_line: 1-based line to start at. Defaults to the first line.
+            line_count: how many lines to return. Omit to read to the end.
+
+        Reading part of a file matters for long documents: a specification can
+        run to tens of thousands of tokens, and pulling all of it in to change
+        one paragraph crowds out everything else. The result says which lines
+        came back and whether more follow, so the next slice needs no guessing.
 
         Returns `{"error": "..."}` instead of raising when the path escapes the
         repository or does not exist, so a wrong guess from the model becomes a
         recoverable tool result instead of crashing the whole agent run.
         """
         try:
-            return read_text_file(repo_root, relative_path)
+            if start_line == 1 and line_count is None:
+                return read_text_file(repo_root, relative_path)
+            return read_text_lines(
+                repo_root, relative_path, start_line=start_line, line_count=line_count
+            )
         except RepositoryToolError as exc:
             return {"error": str(exc)}
 
@@ -88,6 +106,48 @@ def build_artifact_write_tool(repo_root: str) -> BaseTool:
             return {"error": str(exc)}
 
     return write_artifact
+
+
+def build_artifact_edit_tool(repo_root: str) -> BaseTool:
+    """Return the targeted-edit counterpart to the artifact write tool.
+
+    Without this an agent can only replace whole files, so revising one sentence
+    of a long document means regenerating the entire thing in a single tool call.
+    On a real run the specification reached 71KB; asked to correct a contradiction
+    inside it, the agent produced a shorter second file called
+    `technical_specification_v2.md` rather than reproduce the original, and the
+    reviewer then read both and reported the differences between them as
+    contradictions in the design.
+
+    Gated exactly like `write_artifact`: it changes a file, so it stops at the
+    same approval interrupt.
+    """
+
+    @tool
+    def edit_artifact(relative_path: str, find: str, replace: str) -> dict[str, str]:
+        """Replace one exact passage inside a file that already exists.
+
+        Prefer this over `write_artifact` whenever the file is already there:
+        it changes only the passage you name and leaves the rest untouched, so
+        nothing is lost to a partial rewrite.
+
+        Args:
+            relative_path: the file to change, relative to the repository root.
+            find: the exact text to replace, including its whitespace. It must
+                appear exactly once - include surrounding lines to make it unique.
+            replace: the text to put in its place. Pass an empty string to delete
+                the passage.
+
+        Returns `{"error": "..."}` instead of raising when the file is missing or
+        the passage is absent or ambiguous, so the model can read the section and
+        try again rather than crashing the run.
+        """
+        try:
+            return edit_approved_artifact(repo_root, relative_path, find, replace)
+        except RepositoryToolError as exc:
+            return {"error": str(exc)}
+
+    return edit_artifact
 
 
 def build_validation_tool(repo_root: str) -> BaseTool:
@@ -239,11 +299,12 @@ def build_journal_read_tool() -> BaseTool:
 #: the host or exfiltrate data; writing a document cannot. The previous
 #: configuration gated only ``write_artifact`` and left every execution tool
 #: ungated, which is precisely backwards.
-HUMAN_APPROVAL_TOOLS = ("write_artifact", "run_terminal_command", "run_validation")
+HUMAN_APPROVAL_TOOLS = ("write_artifact", "edit_artifact", "run_terminal_command", "run_validation")
 
 
 __all__ = [
     "HUMAN_APPROVAL_TOOLS",
+    "build_artifact_edit_tool",
     "JOURNAL_TOOL_MAX_CHARS",
     "build_artifact_write_tool",
     "build_journal_read_tool",

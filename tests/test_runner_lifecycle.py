@@ -378,6 +378,74 @@ def test_a_failure_on_a_gate_leaves_exactly_one_usable_route(runner):
     assert status == _api_status(record.current_stage)
 
 
+def test_an_unattended_run_that_raises_on_a_gate_stays_resumable(runner):
+    """The mirror-image deadlock, for a run with nobody to ask.
+
+    Deriving the status from the stage opens the approval route, which is the
+    right call for a supervised run. An unattended run has no approval route:
+    `submit_approval` refuses it outright because it answers its own gates. So
+    reporting `waiting_for_approval` closed /approve *and* /resume at once, and
+    a real run lost 25 minutes of work with no way back in except cloning it.
+    """
+    record = RunRecord(
+        run_id="run-z", thread_id="thread-z", document_names=[], document_paths=[],
+        current_stage="awaiting_approval:principal_architect", auto_approve=True,
+    )
+
+    assert runner._status_after_failure(record) == "failed"
+
+
+def test_an_unattended_run_resumes_by_answering_its_own_gate(runner):
+    """The other half of the deadlock, on the way back in.
+
+    Reporting `failed` opens /resume, but resume alone re-enters the paused gate
+    and `resume_failed_run` rightly refuses it: a parked run needs a decision,
+    not a retry. For an unattended run there is no one to give that decision, so
+    it has to supply its own - which is what it does at every other gate.
+    """
+    record = RunRecord(
+        run_id="run-gate", thread_id="thread-gate", document_names=[], document_paths=[],
+        current_stage="awaiting_approval:principal_architect", auto_approve=True,
+    )
+
+    assert runner._resume_means_answering_own_gate(record) is True
+
+
+@pytest.mark.parametrize(
+    ("stage", "auto_approve"),
+    [
+        # A supervised run has a person who can answer; asking them is correct.
+        ("awaiting_approval:principal_architect", False),
+        # A review needs a human whether or not writes are auto-approved.
+        ("awaiting_user_review:specification", True),
+        # Not parked at all: this is a genuine retry.
+        ("principal_architect", True),
+        ("", True),
+    ],
+)
+def test_other_runs_resume_as_a_retry(runner, stage, auto_approve):
+    record = RunRecord(
+        run_id="run-other", thread_id="thread-other", document_names=[], document_paths=[],
+        current_stage=stage, auto_approve=auto_approve,
+    )
+
+    assert runner._resume_means_answering_own_gate(record) is False
+
+
+def test_an_unattended_run_still_defers_to_a_human_review_gate(runner):
+    """Auto-approve covers artifact writes, not review sessions.
+
+    A review point genuinely needs a person whether or not writes are gated, so
+    the review status must survive the unattended special case.
+    """
+    record = RunRecord(
+        run_id="run-w", thread_id="thread-w", document_names=[], document_paths=[],
+        current_stage="awaiting_user_review:specification", auto_approve=True,
+    )
+
+    assert runner._status_after_failure(record) == "waiting_for_review"
+
+
 # ---------------------------------------------------------------------------
 # What a run pins, and what it must not
 # ---------------------------------------------------------------------------
@@ -446,17 +514,18 @@ def test_the_gate_ceiling_is_high_enough_for_a_real_unattended_build():
 
 
 def test_the_gate_ceiling_is_configurable(monkeypatch):
-    import importlib
+    """Read through `_max_gates()` rather than by reloading the module.
+
+    `importlib.reload` re-executes `runner.py` into the same module namespace,
+    which rebinds every class in it. This file imports `RunConflict` at the top,
+    so after a reload that name pointed at a class the runner no longer raises -
+    and every `except RunConflict` below this line silently stopped matching.
+    """
+    from app.server.runner import _max_gates
 
     monkeypatch.setenv("WORKFLOW_MAX_GATES", "42")
-    import app.server.runner as runner_module
 
-    reloaded = importlib.reload(runner_module)
-    try:
-        assert reloaded.MAX_GATES == 42
-    finally:
-        monkeypatch.delenv("WORKFLOW_MAX_GATES", raising=False)
-        importlib.reload(runner_module)
+    assert _max_gates() == 42
 
 
 @pytest.mark.asyncio
@@ -545,3 +614,131 @@ def test_terminal_and_working_stages_are_unaffected_by_auto_approve(stage, expec
     from app.server.runner import _stage_narration
 
     assert _stage_narration(stage, auto_approve=True)[1] == expected
+
+
+# ---------------------------------------------------------------------------
+# Cloning and resuming
+# ---------------------------------------------------------------------------
+
+
+def test_a_clone_carries_the_source_runs_settings(runner):
+    """Dropping them turned an unattended run into an attended one - on the
+    path recommended for recovering a run damaged by the auto-approve bug."""
+    clone = runner.register_run(
+        run_id="run-clone", thread_id="thread-clone",
+        document_names=["brief.md"], document_paths=["/tmp/brief.md"],
+        review_policy={"product_intake": False, "technical_specification": False, "sprint": False},
+        reviewer="Product Manager",
+        auto_approve=True,
+        model_overrides={"model_name": "pinned-model"},
+    )
+
+    assert clone.auto_approve is True
+    assert clone.review_policy == {
+        "product_intake": False, "technical_specification": False, "sprint": False
+    }
+    assert clone.reviewer == "Product Manager"
+    assert clone.model_overrides == {"model_name": "pinned-model"}
+
+
+def test_registering_without_settings_still_defaults_to_attended(runner):
+    """The new parameters must not change an ordinary registration."""
+    record = _register(runner, run_id="run-plain")
+
+    assert record.auto_approve is False
+    assert record.status == "created"
+
+
+@pytest.mark.asyncio
+async def test_a_run_with_an_inconsistent_history_refuses_to_resume(runner):
+    """Two Celery tasks wrote to one graph thread; resuming reads a state no
+    single run produced."""
+    record = _register(runner, run_id="run-damaged")
+    record.status = "failed"
+    record.error = "Interrupted: this run predates the auto-approve status fix."
+    runner.run_store.save(record)
+
+    try:
+        await runner.resume_run("run-damaged")
+    except RunConflict:
+        pass
+    else:
+        pytest.fail("Expected RunConflict to be raised")
+
+    assert runner.run_store.load("run-damaged").error.startswith("Interrupted:")
+
+
+@pytest.mark.asyncio
+async def test_an_ordinary_failed_run_still_resumes(runner, dispatched):
+    record = _register(runner, run_id="run-ordinary")
+    record.status = "failed"
+    record.error = "OpenAIModelNotFoundError: the model was not found"
+    runner.run_store.save(record)
+
+    await runner.resume_run("run-ordinary")
+
+    assert [c["run_id"] for c in dispatched] == ["run-ordinary"]
+
+
+def test_no_single_stage_can_consume_the_whole_run():
+    """One real unattended run spent all 1000 of its gates on one stage.
+
+    They were all `awaiting_approval:product_manager`, all auto-approved, none
+    making progress, because the only ceiling was the whole-run one.
+    """
+    from app.server.runner import MAX_GATES, MAX_GATES_PER_STAGE
+
+    assert MAX_GATES_PER_STAGE < MAX_GATES / 3
+
+    # And it must clear the work a real stage does. A specialist writing code,
+    # running the suite and fixing what broke used 26 gates of genuine progress
+    # and was killed by a ceiling of 25.
+    assert MAX_GATES_PER_STAGE > 40, "a code-writing specialist needs room to iterate"
+
+
+def test_a_stage_repeating_one_request_is_caught_long_before_the_ceiling():
+    """Looping is detected by repetition, not by volume.
+
+    The ceiling is a blunt backstop. What identifies a stuck agent is asking for
+    the same write again and again, and that must fail fast - well before a
+    busy-but-productive stage would trip anything.
+    """
+    from app.server.runner import MAX_GATES_PER_STAGE, MAX_IDENTICAL_GATES
+
+    assert MAX_IDENTICAL_GATES < MAX_GATES_PER_STAGE / 10
+
+
+def test_approval_signatures_distinguish_work_from_repetition():
+    from app.server.runner import _approval_signature
+
+    class _A:
+        def __init__(self, path, notes):
+            self.artifact_path, self.notes = path, notes
+
+    first = _approval_signature(_A("docs/spec.md", "# Spec"))
+    again = _approval_signature(_A("docs/spec.md", "# Spec"))
+    other = _approval_signature(_A("docs/plan.md", "# Spec"))
+    edited = _approval_signature(_A("docs/spec.md", "# Spec, revised"))
+
+    assert first == again
+    assert first != other
+    assert first != edited
+    assert _approval_signature(None) == ("", "")
+
+
+def test_the_per_stage_ceiling_is_configurable(monkeypatch):
+    from app.server.runner import _max_gates_per_stage
+
+    monkeypatch.setenv("WORKFLOW_MAX_GATES_PER_STAGE", "7")
+
+    assert _max_gates_per_stage() == 7
+
+
+def test_a_malformed_per_stage_ceiling_falls_back(monkeypatch):
+    from app.server.runner import _max_gates_per_stage
+
+    monkeypatch.setenv("WORKFLOW_MAX_GATES_PER_STAGE", "lots")
+    fallback = _max_gates_per_stage()
+
+    monkeypatch.delenv("WORKFLOW_MAX_GATES_PER_STAGE")
+    assert fallback == _max_gates_per_stage()

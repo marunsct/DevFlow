@@ -508,7 +508,77 @@ def test_repeated_rejection_fails_the_run_instead_of_looping(agents: ScriptedAge
 
     assert state["stage"] == "failed"
     assert state["architecture_revision_count"] == MAX_ARCHITECTURE_REVISIONS
-    assert "reaching the limit" in state["error"]
+
+    # The message has to say what is still wrong, not just that the run stopped.
+    # The reviewer has already written the answer down; a run that dies with
+    # "reached the limit" makes the reader open the checkpoint to find out why.
+    error = state["error"]
+    assert str(MAX_ARCHITECTURE_REVISIONS) in error
+    assert "No authentication described" in error
+    assert "Describe the authentication and session model." in error
+
+
+def test_the_architecture_revision_budget_is_bounded_and_configurable(monkeypatch) -> None:
+    """Slow convergence is not the same failure as an architect that loops.
+
+    Three rounds was too tight: observed runs died at the cap with one finding
+    outstanding and a usable specification already written. It still has to be
+    bounded, because a reviewer and an architect that disagree never converge
+    and each round costs two model calls.
+    """
+    from app.graph.workflow import _max_architecture_revisions
+
+    assert 3 < _max_architecture_revisions() <= 10
+
+    monkeypatch.delenv("WORKFLOW_MAX_ARCHITECTURE_REVISIONS", raising=False)
+    default = _max_architecture_revisions()
+
+    monkeypatch.setenv("WORKFLOW_MAX_ARCHITECTURE_REVISIONS", "9")
+    assert _max_architecture_revisions() == 9
+
+    # A typo must not disable the bound; it falls back to the default.
+    monkeypatch.setenv("WORKFLOW_MAX_ARCHITECTURE_REVISIONS", "several")
+    assert _max_architecture_revisions() == default
+
+
+def test_gating_findings_are_separated_from_advisory_ones() -> None:
+    """The architect must be able to tell what actually blocks approval.
+
+    Only `blocking` and `major` force `changes_required`. Handed one flat list,
+    the architect spread a revision evenly between a missing authorization model
+    and a note about naming, and a real run reached the revision limit with the
+    blocking findings still open.
+    """
+    from app.graph.workflow import _collect_required_changes
+
+    review = ArchitectureReviewOutput(
+        status="changes_required",
+        findings=[
+            ArchitectureReviewFinding(
+                severity="minor", description="Naming is inconsistent.",
+                evidence="Section 3.", required_remediation="Rename the field.",
+            ),
+            ArchitectureReviewFinding(
+                severity="blocking", description="No authorization model.",
+                evidence="Section 7.", required_remediation="Define role to permission mapping.",
+            ),
+        ],
+    )
+
+    changes = _collect_required_changes({"architecture_review": review})
+    joined = "\n".join(changes)
+
+    assert changes[0].startswith("MUST FIX")
+    assert "No authorization model." in changes[1]
+    assert joined.index("No authorization model.") < joined.index("Naming is inconsistent.")
+    assert "Optional improvements" in joined
+
+
+def test_an_approved_review_asks_for_no_changes() -> None:
+    """Findings on an approved review are not revision instructions."""
+    from app.graph.workflow import _collect_required_changes
+
+    assert _collect_required_changes({"architecture_review": _approved_review()}) == []
 
 
 def test_specialist_dispatch_runs_every_delegated_task(agents: ScriptedAgents, tmp_path: Any) -> None:
@@ -590,6 +660,49 @@ def test_approving_a_write_resumes_the_run_to_completion(agents: ScriptedAgents,
     assert state["stage"] == "complete"
     assert state["pending_approval"] is None
     assert state["product_intake"].product_name == "Acme Scheduling"
+
+
+def test_resume_still_lands_when_every_invoke_carries_the_run_id(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A resume must apply its input even though the run id never changes.
+
+    The runner passes the same `run_id` to `start_workflow` and to every
+    `resume_pending_approval` that follows. LangGraph reserves the config key
+    `run_id`: it copies the value into checkpoint metadata, and an invoke whose
+    run id equals the checkpoint's is treated as re-entry into an already
+    running invocation, so its input is discarded without a node running.
+
+    Keying our id as `app_run_id` is what keeps that from happening. Every other
+    test here omits `run_id` entirely, which is why the workflow could ship for
+    weeks with every approval silently dropped: an unattended run re-answered
+    one gate until MAX_GATES_PER_STAGE failed it, and a supervised run sat back
+    down at the gate the human had just released.
+    """
+    graph = _graph()
+    agents.script("product_manager", [pause_for_approval(), responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script("principal_architect", [responds_with(_spec())])
+    agents.script("architecture_review", [responds_with(_approved_review())])
+    _script_through_sprint(agents)
+
+    run_id = "run-carried-id"
+    state = start_workflow(
+        graph, _document(), _repository(tmp_path), "run-carried", run_id=run_id
+    )
+    assert state["stage"] == "awaiting_approval:product_manager"
+
+    state = resume_pending_approval(
+        graph, "run-carried", approve_write_decision(), run_id=run_id
+    )
+
+    assert state["stage"] != "awaiting_approval:product_manager", (
+        "the approval was dropped: the graph came back on the same gate having "
+        "run no node, which is the loop that exhausts MAX_GATES_PER_STAGE"
+    )
+    assert state["stage"] == "complete"
+    assert state["pending_approval"] is None
 
 
 def test_rejecting_a_write_still_lets_the_agent_finish_without_the_artifact(

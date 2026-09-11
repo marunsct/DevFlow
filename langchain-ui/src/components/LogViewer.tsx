@@ -1,77 +1,109 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { LogEntry } from '../types';
-import { ChevronDown, ChevronUp, Terminal } from 'lucide-react';
+import { ArrowDown, Terminal } from 'lucide-react';
+import { describeStage } from '../lib/activity';
 
 interface LogViewerProps {
   logs: LogEntry[];
 }
 
+const EVENT_COLOR: Record<string, string> = {
+  error: 'text-danger',
+  approval_request: 'text-warning',
+  review_request: 'text-warning',
+  approval_auto: 'text-success',
+  complete: 'text-success',
+  stage_change: 'text-primary',
+  agent_message: 'text-slate-400',
+  tool_call: 'text-primary/70',
+  tool_result: 'text-text-muted',
+};
+
+/**
+ * Every event the run emitted, verbatim and in order.
+ *
+ * This is the escape hatch, not the main view: the dashboard's other panels say
+ * what is happening in plain words, and this one is here for when that is not
+ * enough and someone needs the raw record to file a bug against.
+ *
+ * Renders bare, without card chrome, because it sits inside the dashboard's
+ * tabbed panel which already provides the surface and the title.
+ */
 export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
-  const [isExpanded, setIsExpanded] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [pinned, setPinned] = useState(true);
 
-  useEffect(() => {
-    if (isExpanded && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [logs, isExpanded]);
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setPinned(el.scrollHeight - el.scrollTop - el.clientHeight < 48);
+  }, []);
 
-  const getEventColor = (eventType: string) => {
-    switch (eventType) {
-      case 'error': return 'text-danger';
-      case 'approval_request': return 'text-warning';
-      case 'approval_auto': return 'text-success';
-      case 'review_request': return 'text-warning';
-      case 'complete': return 'text-success';
-      case 'stage_change': return 'text-primary';
-      default: return 'text-text-secondary';
-    }
-  };
+  useLayoutEffect(() => {
+    if (!pinned) return;
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logs.length, pinned]);
+
+  if (logs.length === 0) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center gap-2 px-6 text-center">
+        <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+          <Terminal className="h-4 w-4 text-text-muted" />
+        </span>
+        <p className="text-sm text-text-secondary">No events yet</p>
+        <p className="text-xs text-text-muted">The raw event record appears here once the run starts.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="glass-card rounded-2xl overflow-hidden">
+    <div className="relative h-full">
       <div
-        className="flex justify-between items-center px-5 py-3.5 border-b border-border/50 cursor-pointer hover:bg-white/[0.02] transition-colors"
-        onClick={() => setIsExpanded(!isExpanded)}
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="absolute inset-0 overflow-y-auto bg-[#080c16] px-3 py-3 font-mono text-[11.5px] leading-relaxed"
       >
-        <div className="flex items-center gap-2.5">
-          <Terminal className="h-4.5 w-4.5 text-primary" />
-          <h3 className="font-semibold text-white text-sm">Live Logs</h3>
-          <span className="bg-primary/20 text-primary text-xs px-2 py-0.5 rounded-full font-semibold">
-            {logs.length}
-          </span>
-        </div>
-        <button className="text-text-muted hover:text-white focus:outline-none transition-colors">
-          {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-        </button>
+        {logs.map((log) => {
+          const time = new Date(log.timestamp).toLocaleTimeString([], {
+            hour12: false,
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          });
+          return (
+            <div
+              key={log.event_id ?? log.sequence}
+              className="flex gap-3 rounded px-2 py-1 hover:bg-white/[0.03]"
+            >
+              <span className="flex-none text-text-muted tabular-nums">{time}</span>
+              <span
+                className={`flex-none w-36 truncate font-semibold ${EVENT_COLOR[log.event_type] ?? 'text-text-secondary'}`}
+                title={`${log.stage} · ${log.event_type}`}
+              >
+                {describeStage(log.stage).title}
+              </span>
+              <span className="min-w-0 flex-1 break-words whitespace-pre-wrap text-slate-300">
+                {log.message}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
-      {isExpanded && (
-        <div
-          ref={scrollRef}
-          className="p-4 max-h-[400px] overflow-y-auto bg-[#0a0f1a] font-mono text-xs leading-relaxed"
+      {!pinned && (
+        <button
+          type="button"
+          onClick={() => {
+            const el = scrollRef.current;
+            if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
+            setPinned(true);
+          }}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-raised/95 px-3 py-1.5 text-[11px] font-medium text-text-secondary shadow-lg backdrop-blur hover:text-white transition-colors"
         >
-          {logs.length === 0 ? (
-            <div className="text-text-muted italic py-8 text-center">Waiting for logs...</div>
-          ) : (
-            <div className="space-y-1">
-              {logs.map((log) => {
-                const time = new Date(log.timestamp).toLocaleTimeString([], {
-                  hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
-                });
-                return (
-                  <div key={log.sequence} className="flex gap-3 hover:bg-white/[0.03] px-2 py-1 rounded">
-                    <span className="text-text-muted shrink-0">{time}</span>
-                    <span className={`font-semibold shrink-0 w-28 truncate ${getEventColor(log.event_type)}`} title={log.stage}>
-                      {log.stage}
-                    </span>
-                    <span className="text-slate-300 break-words">{log.message}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+          <ArrowDown className="h-3 w-3" />
+          Jump to latest
+        </button>
       )}
     </div>
   );

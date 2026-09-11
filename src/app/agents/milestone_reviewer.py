@@ -67,6 +67,21 @@ class MilestoneReviewOutput(BaseModel):
     tests_reviewed: bool = Field(..., description="Whether tests were reviewed.")
 
 
+def _execution_evidence(repository_root: str) -> str:
+    """What actually ran, from the executor's own record. Never raises.
+
+    The reviewer was given the specialists' account of their work and no way to
+    check it. This is the record of every command in this workspace, so "the
+    tests pass" can be compared against whether a test command ran at all.
+    """
+    try:
+        from app.tools.sandbox import summarise_executions
+
+        return summarise_executions(repository_root)
+    except Exception:  # noqa: BLE001 - a reviewer without evidence still reviews
+        return "The execution record could not be read for this workspace."
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
@@ -81,7 +96,9 @@ def build_milestone_review_request(
         f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"
-        f"--- Defect report ---\n{defect_report}\n"
+        f"--- Defect report ---\n{defect_report}\n\n"
+        f"--- Commands actually executed in this workspace ---\n"
+        f"{_execution_evidence(repository_root)}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -107,8 +124,14 @@ Constraints:
 - Do not change repo files except through the approved artifact tool.
 - Never approve based only on confidence statements; approval must be grounded
   in what you actually verified.
+- Write exactly one artifact, at `docs/milestone_review.md`. Use that path verbatim so the
+  filename is the same on every run and later stages can find it.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
+- Treat the executed-command record as authoritative over any specialist's
+  description of its own testing. A milestone whose specialists report passing
+  tests, but whose record shows no test command ran, is not verified - raise it
+  as a blocking finding.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.

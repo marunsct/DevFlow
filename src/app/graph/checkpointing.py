@@ -43,7 +43,7 @@ from app.agents.product_manager import ProductManagerOutput
 from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
 from app.agents.stack_selector import StackSelectorOutput
 from app.agents.security_reviewer import SecurityFinding, SecurityReviewOutput
-from app.agents.specialists import ReportedDefect, SpecialistOutput
+from app.agents.specialists import ReportedDefect, SpecialistOutput, VerificationRun
 from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
 from app.agents.tools_models import TechnologyChoice, TechnologyStack, ToolsAndModelsOutput
 from app.documents import DocumentContent
@@ -80,6 +80,7 @@ CHECKPOINTED_TYPES = (
     MilestonePlanOutput,
     SpecialistTask,
     SpecialistOutput,
+    VerificationRun,
     ReportedDefect,
     # Sprint remediation bookkeeping
     RemediationCycle,

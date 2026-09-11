@@ -117,15 +117,103 @@ def test_a_broken_summariser_degrades_to_no_compaction(tmp_path, monkeypatch):
     assert _compaction_middleware("product_manager") == []
 
 
-def test_the_agent_backend_is_not_replaced():
-    """Giving the agent a real filesystem backend would re-enable the built-in
-    file tools against the workspace, bypassing the approval-gated write tool."""
-    import inspect
+def _role_agent_tool_names(tmp_path, **kwargs):
+    """Build a role agent and return the tool names its model is offered."""
+    from pydantic import BaseModel
 
-    from app.agents import role_agent
+    from app.agents.role_agent import create_role_agent
 
-    source = inspect.getsource(role_agent.create_role_agent)
-    assert "backend=" not in source
+    class _Out(BaseModel):
+        summary: str
+
+    agent = create_role_agent(
+        name="probe",
+        stage="probe",
+        system_prompt="probe",
+        response_format=_Out,
+        model="openai:gpt-4o-mini",
+        repo_root=str(tmp_path),
+        **kwargs,
+    )
+    return set(agent.nodes["tools"].bound._tools_by_name)
+
+
+def test_the_agent_is_offered_no_built_in_write_tool(tmp_path):
+    """`write_artifact` must be the only way an agent can change a file.
+
+    The approval gate interrupts on `write_artifact`. Any built-in mutation tool
+    reaching the model is a second write path that the gate does not cover, so
+    none of them may be registered. This is asserted on the compiled agent
+    rather than by reading the source, because what matters is the tool surface
+    the model actually sees.
+    """
+    names = _role_agent_tool_names(tmp_path)
+
+    assert "write_artifact" in names
+    assert not {"write_file", "edit_file", "delete", "execute"} & names
+
+
+def test_the_agent_can_edit_an_existing_file_not_only_replace_it(tmp_path):
+    """Whole-file replacement was the only way to change anything.
+
+    Correcting one sentence in a 71KB specification meant reproducing the whole
+    document in a single tool call. Rather than do that, the architect wrote a
+    shorter second file, the reviewer read both, and the run stopped on
+    contradictions that existed only because there were two files.
+    """
+    names = _role_agent_tool_names(tmp_path)
+
+    assert "edit_artifact" in names
+    assert "write_artifact" in names
+
+
+def test_editing_a_file_stops_at_the_same_approval_gate_as_writing(tmp_path):
+    """An edit changes a file, so it cannot be the ungated way around the gate."""
+    from app.tools.agent_toolkit import HUMAN_APPROVAL_TOOLS
+
+    assert "edit_artifact" in HUMAN_APPROVAL_TOOLS
+
+
+def test_an_edit_approval_shows_the_change_not_an_empty_summary(tmp_path):
+    """The description read `content`, which an edit call does not carry.
+
+    A reviewer approving an edit saw a blank summary - the one case where seeing
+    what actually changes matters most.
+    """
+    from app.agents.role_agent import describe_artifact_write
+
+    describe = describe_artifact_write(str(tmp_path), "principal_architect", "design")
+    rendered = describe(
+        {"args": {"relative_path": "docs/spec.md", "find": "soft-deleted", "replace": "hard-deleted"}},
+        None,
+        None,
+    )
+
+    assert "soft-deleted" in rendered
+    assert "hard-deleted" in rendered
+    assert "docs/spec.md" in rendered
+
+
+def test_the_agent_read_tools_are_backed_by_the_real_workspace(tmp_path):
+    """The read-only built-ins must work, not merely be denied.
+
+    They used to be registered over an in-memory backend and then denied on
+    every path, so the model kept calling them and kept getting `permission
+    denied`. One architect stage read that denial as "I cannot write at all",
+    asked the human for permission instead of answering, and failed the run for
+    producing no structured response.
+    """
+    from deepagents.backends import FilesystemBackend
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+
+    names = _role_agent_tool_names(tmp_path)
+    assert {"ls", "read_file", "glob", "grep"} <= names
+
+    backend = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True)
+    assert [e["path"] for e in backend.ls("/docs").entries] == ["/docs/spec.md"]
+    assert backend.read("/docs/spec.md").file_data["content"] == "# Spec\n"
 
 
 # --- overflow handling ---------------------------------------------------

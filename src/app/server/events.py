@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -11,10 +12,26 @@ import os
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+logger = logging.getLogger(__name__)
+
 
 class RunEvent(BaseModel):
-    """Canonical event model for run updates."""
-    model_config = ConfigDict(extra="forbid")
+    """Canonical event model for run updates.
+
+    `extra="ignore"`, not `"forbid"`. This model is not only constructed in
+    process - it is parsed back out of a Redis history that outlives any single
+    deployment (30-day TTL). Forbidding extras meant that *removing* a field
+    made every event already on disk unparseable: dropping the unused
+    `files_modified` / `tests_passed` / `tests_failed` counters took out the log
+    stream for every existing run at once, because `get_history` validates the
+    whole page and one bad record fails all of them.
+
+    Ignoring extras makes a field removal backward-compatible. A field
+    *addition* was always safe. Input still cannot invent fields the model
+    exposes, because unknown keys are dropped rather than kept.
+    """
+
+    model_config = ConfigDict(extra="ignore")
 
     run_id: str = Field(description="The ID of the run.")
     event_id: str = Field(
@@ -36,11 +53,15 @@ class RunEvent(BaseModel):
         "approval_auto",
         "error",
         "complete",
+        # Agent activity. One event per assistant message, tool call and tool
+        # result - never per token: a token stream is one Redis write, one
+        # WebSocket frame and one React render per token, for text a human reads
+        # in paragraphs.
+        "agent_message",
+        "tool_call",
+        "tool_result",
     ] = Field(description="Type of the event.")
     message: str = Field(description="Human-readable message.")
-    files_modified: int = Field(default=0, description="Count of files modified so far.")
-    tests_passed: int = Field(default=0, description="Count of tests passed so far.")
-    tests_failed: int = Field(default=0, description="Count of tests failed so far.")
     metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Safe, redacted metadata associated with the event.",
@@ -156,6 +177,32 @@ class EventBus:
         finally:
             pass
 
+    @staticmethod
+    def _parse_page(raw: list) -> list[RunEvent]:
+        """Parse a page of stored events, skipping any that no longer validate.
+
+        The live stream has always skipped a malformed payload rather than
+        tearing itself down; history did not, so one unparseable record failed
+        the entire page. That is how a field removed from `RunEvent` took the
+        log view out for every existing run at once - the history in Redis
+        outlives the schema that wrote it, by up to `HISTORY_TTL_SECONDS`.
+
+        Skipping is the right trade for a display feed: a reader would rather
+        see 57 of 58 events than an error.
+        """
+        events: list[RunEvent] = []
+        skipped = 0
+        for item in raw:
+            try:
+                events.append(RunEvent.model_validate_json(item))
+            except ValidationError:
+                skipped += 1
+        if skipped:
+            logger.warning(
+                "Skipped %d stored event(s) that no longer match the RunEvent schema", skipped
+            )
+        return events
+
     async def get_history(
         self, run_id: str, *, offset: int = 0, limit: int | None = None, since_sequence: int | None = None
     ) -> list[RunEvent]:
@@ -165,12 +212,11 @@ class EventBus:
             # Replay is bounded by MAX_HISTORY, so scanning the retained window
             # is cheap and avoids a second index.
             raw = await self._redis.lrange(key, 0, -1)
-            events = [RunEvent.model_validate_json(item) for item in raw]
-            return [e for e in events if e.sequence > since_sequence]
+            return [e for e in self._parse_page(raw) if e.sequence > since_sequence]
 
         stop = -1 if limit is None else offset + limit - 1
         raw = await self._redis.lrange(key, offset, stop)
-        return [RunEvent.model_validate_json(item) for item in raw]
+        return self._parse_page(raw)
 
     async def history_length(self, run_id: str) -> int:
         return int(await self._redis.llen(self._history_key(run_id)))

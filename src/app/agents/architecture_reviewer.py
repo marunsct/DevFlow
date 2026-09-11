@@ -108,6 +108,8 @@ Constraints:
 - Do not change repo files except through the approved artifact tool.
 - Never approve based only on the Principal Architect's own confidence
   statements; approval must be grounded in what you actually verified.
+- Write exactly one artifact, at `docs/architecture_review.md`. Use that path verbatim so the
+  filename is the same on every run and later stages can find it.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.

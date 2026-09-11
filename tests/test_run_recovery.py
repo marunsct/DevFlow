@@ -350,3 +350,16 @@ def test_the_repair_budget_is_smaller_than_the_review_budget():
     from app.graph.workflow import MAX_ARCHITECTURE_REVISIONS
 
     assert MAX_SPECIFICATION_REPAIRS < MAX_ARCHITECTURE_REVISIONS
+
+
+def test_a_specialist_must_be_able_to_state_its_evidence():
+    """`tests` as prose was the only evidence; this makes a claim checkable."""
+    from app.agents.specialists import SpecialistOutput, VerificationRun
+
+    output = SpecialistOutput(
+        changed_files=["thehub/api/main.py"],
+        verification=[VerificationRun(command=["pytest", "-q"], exit_code=0, summary="17 passed")],
+    )
+
+    assert output.verification[0].exit_code == 0
+    assert SpecialistOutput().verification == [], "must default to empty, not fail"

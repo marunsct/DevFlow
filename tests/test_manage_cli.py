@@ -272,3 +272,30 @@ def test_runs_without_a_pin_are_left_alone(run_store, capsys):
 def test_an_unknown_run_fails(run_store, capsys):
     assert manage.clear_run_overrides("run-nope") == 1
     assert "No run named" in capsys.readouterr().err
+
+
+def test_reconcile_leaves_a_live_unattended_run_alone(run_store, capsys):
+    """The command used to set an unattended run to `waiting_for_approval`,
+    which is the row state that lets a second Celery task be dispatched onto a
+    thread the first is still driving."""
+    record = _stored_run(run_store, "run-unattended", "running",
+                         "awaiting_approval:product_manager")
+    record.auto_approve = True
+    run_store.save(record)
+
+    manage.reconcile_runs(dry_run=True)
+
+    assert "waiting_for_approval" not in capsys.readouterr().out
+    assert run_store.load("run-unattended").status == "running"
+
+
+def test_reconcile_does_not_unrepair_a_damaged_run(run_store):
+    """Item 4 of the previous phase marked these `failed` deliberately."""
+    record = _stored_run(run_store, "run-repaired", "failed",
+                         "awaiting_approval:product_manager")
+    record.auto_approve = True
+    run_store.save(record)
+
+    manage.reconcile_runs()
+
+    assert run_store.load("run-repaired").status == "failed"

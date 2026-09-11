@@ -16,14 +16,17 @@ import {
   cancelRun,
   resumeRun,
   cloneRun,
+  startRun,
   getStreamTicket
 } from '../api';
-import { DynamicWorkflowUI } from '../components/DynamicWorkflowUI';
 import { LogViewer } from '../components/LogViewer';
 import { ArtifactList } from '../components/ArtifactList';
+import { ExecutionFlow } from '../components/ExecutionFlow';
+import { AgentActivity } from '../components/AgentActivity';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy } from 'lucide-react';
+import { describeStage, describeStatus } from '../lib/activity';
 
 
 
@@ -38,6 +41,14 @@ export const RunDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  // The centre column carries two different audiences: what the run produced,
+  // and the raw event log. Tabs let each have the full width instead of
+  // splitting it and leaving both cramped.
+  const [centreTab, setCentreTab] = useState<'results' | 'log'>('results');
+  // A failure message can be a paragraph or twenty lines. Collapsed by default
+  // so a short screen still has room for the panels underneath; the first lines
+  // carry the summary, and the rest is one click away.
+  const [errorOpen, setErrorOpen] = useState(false);
 
   // Logs are keyed by event id so history pages and live events can be merged
   // without duplicates. The previous version deduplicated by JSON.stringify
@@ -66,8 +77,15 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  const fetchInFlight = useRef(false);
+  const refetchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+
   const fetchState = async () => {
     if (!runId) return;
+    // One refresh at a time. Without this an event burst stacks overlapping
+    // round-trips, each of which is two or three API calls.
+    if (fetchInFlight.current) return;
+    fetchInFlight.current = true;
     try {
       const runData = await getRun(runId);
       setRun(runData);
@@ -98,9 +116,34 @@ export const RunDashboard: React.FC = () => {
       setLoading(false);
     } catch (err: any) {
       console.error(err);
-      setError('Could not load this run. Retrying...');
+      setError(
+        err?.response?.status === 429
+          ? 'Too many updates at once. Catching up...'
+          : 'Could not load this run. Retrying...'
+      );
       setLoading(false);
+    } finally {
+      fetchInFlight.current = false;
     }
+  };
+
+  /**
+   * Refresh soon, and only once, however many events arrive.
+   *
+   * An unattended run emits an `approval_auto` per gate - a thousand of them on
+   * a long build - and the stream handler called `fetchState()` for each. Every
+   * call is two or three requests, so a run like that fired several thousand in
+   * a couple of minutes, tripped the 300-per-minute budget, and the resulting
+   * 429 surfaced as "Could not load this run". Coalescing a burst into one
+   * trailing refresh is what the UI actually wanted: the events themselves
+   * already stream into the log view, and this is only for the run's summary.
+   */
+  const scheduleRefetch = () => {
+    if (refetchTimer.current) clearTimeout(refetchTimer.current);
+    refetchTimer.current = setTimeout(() => {
+      refetchTimer.current = undefined;
+      fetchState();
+    }, 700);
   };
 
   useEffect(() => {
@@ -153,7 +196,7 @@ export const RunDashboard: React.FC = () => {
           mergeLogs([logEntry]);
 
           if (['stage_change', 'error', 'complete', 'approval_request', 'review_request', 'approval_auto'].includes(logEntry.event_type)) {
-            fetchState();
+            scheduleRefetch();
           }
         } catch (err) {
           console.error('Could not parse a stream message:', err);
@@ -180,6 +223,9 @@ export const RunDashboard: React.FC = () => {
     return () => {
       isSubscribed = false;
       if (retryTimer) clearTimeout(retryTimer);
+      // A pending refresh would otherwise fire after the page is gone, setting
+      // state on an unmounted component.
+      if (refetchTimer.current) clearTimeout(refetchTimer.current);
       ws?.close();
     };
   }, [runId]);
@@ -242,6 +288,27 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  /**
+   * Start a run that is registered but not running.
+   *
+   * A clone lands in `created` and nothing on this page could move it, so the
+   * recommended recovery path - clone the damaged run - produced a run that sat
+   * there. The settings the clone carried are already on the record; an empty
+   * payload keeps them rather than overwriting them with defaults.
+   */
+  const handleStart = async () => {
+    if (!runId) return;
+    setActionLoading(true);
+    try {
+      await startRun(runId, {});
+      await fetchState();
+    } catch (err: any) {
+      alert("Failed to start: " + (err.response?.data?.detail || err.message));
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   if (loading && !run) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -282,105 +349,207 @@ export const RunDashboard: React.FC = () => {
   const StatusIcon = config.icon;
   const isTerminal = ['completed', 'failed', 'cancelled'].includes(run.status);
 
+  // How long the run has been going, or took. The dashboard could say which
+  // node was current but never how long any of it had taken, which is the first
+  // thing anyone watching a long build wants to know.
+  const startedAt = new Date(run.created_at).getTime();
+  const endedAt = isTerminal ? new Date(run.updated_at).getTime() : Date.now();
+  const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
+  const elapsed =
+    totalSeconds < 60
+      ? `${totalSeconds}s`
+      : totalSeconds < 3600
+        ? `${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`
+        : `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
+
+  const stageCopy = describeStage(run.current_stage);
+  const statusCopy = describeStatus(run.status);
+
+  const actionButton =
+    'flex items-center gap-1.5 px-3 py-1.5 text-[13px] font-medium rounded-lg border transition-colors';
+
   return (
-    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
-      {/* Top Bar */}
-      <div className="flex items-center justify-between">
-        <Link to="/runs" className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-white transition-colors">
+    // `min-h`, not `h`: the panels below fill whatever the viewport has left
+    // after the summary, but when they cannot fit their own minimum the page
+    // grows and scrolls. Pinning the height instead made the workspace overflow
+    // its container on a short screen and render underneath the footer.
+    <div className="animate-fade-in flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]">
+      {/* Top bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          to="/runs"
+          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-white transition-colors"
+        >
           <ArrowLeft className="h-4 w-4" />
-          All Runs
+          All runs
         </Link>
-        <div className="flex gap-2">
-          {run.status === 'failed' && (
-            <button
-              onClick={handleResume}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-primary/80 hover:text-primary border border-primary/30 hover:border-primary/60 rounded-lg transition-all hover:bg-primary/5"
-            >
-              <Play className="h-3.5 w-3.5" />
-              Resume Run
+        <div className="flex flex-wrap gap-2">
+          {run.status === 'created' && (
+            <button onClick={handleStart} disabled={actionLoading}
+              className={`${actionButton} text-success/90 border-success/30 hover:border-success/60 hover:bg-success/5 disabled:opacity-50`}>
+              <Play className="h-3.5 w-3.5" /> Start
             </button>
           )}
-          <button
-            onClick={handleClone}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-white/80 hover:text-white border border-white/30 hover:border-white/60 rounded-lg transition-all hover:bg-white/5"
-          >
-            <Copy className="h-3.5 w-3.5" />
-            Clone Run
+          {run.status === 'failed' && !run.error?.startsWith('Interrupted:') && (
+            <button onClick={handleResume}
+              className={`${actionButton} text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+              <Play className="h-3.5 w-3.5" /> Resume
+            </button>
+          )}
+          <button onClick={handleClone}
+            className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>
+            <Copy className="h-3.5 w-3.5" /> Clone
           </button>
           {!isTerminal && (
-            <button
-              onClick={handleCancel}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-danger/80 hover:text-danger border border-danger/30 hover:border-danger/60 rounded-lg transition-all hover:bg-danger/5"
-            >
-              <Ban className="h-3.5 w-3.5" />
-              Cancel Run
+            <button onClick={handleCancel}
+              className={`${actionButton} text-danger/90 border-danger/30 hover:border-danger/60 hover:bg-danger/5`}>
+              <Ban className="h-3.5 w-3.5" /> Cancel
             </button>
           )}
         </div>
       </div>
 
-      {/* Header Card */}
-      <div className="glass-card-strong rounded-2xl p-6">
-        <div className="flex justify-between items-start mb-6">
-          <div>
-            <h1 className="text-xl font-bold text-white mb-1">Workflow Run</h1>
-            <p className="text-xs text-text-muted font-mono">{run.run_id}</p>
+      {/* Summary. Leads with what is happening in plain words; the run id and
+          stage name are present but demoted, because they matter only when
+          something has to be reported or looked up. */}
+      <div className="glass-card-strong rounded-2xl px-5 py-4">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 flex-1 basis-80">
+            <div className="flex items-center gap-2.5">
+              <span className={`grid place-items-center h-8 w-8 rounded-xl ${config.bg}`}>
+                <StatusIcon className={`h-4 w-4 ${config.text}`} />
+              </span>
+              <div className="min-w-0">
+                <h1 className="text-base sm:text-lg font-semibold text-white leading-tight truncate">
+                  {stageCopy.title}
+                </h1>
+                {/* A terminal run's stage title already *is* its status
+                    ("Stopped", "Finished"), so repeating it underneath read as
+                    a rendering bug rather than as emphasis. */}
+                {statusCopy.label !== stageCopy.title && (
+                  <p className={`text-xs font-medium ${config.text}`}>{statusCopy.label}</p>
+                )}
+              </div>
+            </div>
+            <p className="text-[13px] text-text-secondary leading-relaxed mt-2.5">
+              {stageCopy.blurb}
+            </p>
           </div>
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border ${config.bg} ${config.text} ${config.glow}`}>
-            <StatusIcon className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wider">{run.status.replace(/_/g, ' ')}</span>
-          </div>
+
+          <dl className="flex flex-wrap items-start gap-x-5 sm:gap-x-7 gap-y-3">
+            <div>
+              <dt className="text-[11px] text-text-muted uppercase tracking-wider">Started</dt>
+              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
+                {new Date(run.created_at).toLocaleString([], {
+                  month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                })}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[11px] text-text-muted uppercase tracking-wider">
+                {isTerminal ? 'Took' : 'Running for'}
+              </dt>
+              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">{elapsed}</dd>
+            </div>
+            <div>
+              <dt className="text-[11px] text-text-muted uppercase tracking-wider">Documents</dt>
+              <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
+                {run.artifacts?.length ?? 0} produced
+              </dd>
+            </div>
+          </dl>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div className="p-3 rounded-xl bg-surface/50 border border-border/30">
-            <p className="text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">Current Stage</p>
-            <p className="font-semibold text-white text-sm">{run.current_stage || 'Not started'}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-surface/50 border border-border/30">
-            <p className="text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">Activity</p>
-            <p className="font-medium text-text-primary text-sm">{run.stage_meaning || 'Waiting...'}</p>
-          </div>
-          <div className="p-3 rounded-xl bg-surface/50 border border-border/30">
-            <p className="text-xs font-medium text-text-muted mb-1 uppercase tracking-wider">Created</p>
-            <p className="font-medium text-text-primary text-sm">{new Date(run.created_at).toLocaleString()}</p>
-          </div>
-        </div>
+        <p className="mt-3 pt-3 border-t border-border/30 text-[11px] text-text-muted font-mono truncate">
+          {run.run_id}
+        </p>
 
-        <DynamicWorkflowUI run={run} />
-
+        {/* A failure message can run to a dozen lines when the reviewer lists
+            everything it is still unhappy about. Left unbounded it pushed the
+            workspace off a 768px screen entirely, so it is clamped and expands
+            on request. */}
         {run.error && (
-          <div className="mt-4 p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm">
-            <strong>Error:</strong> {run.error}
+          <div className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-[13px] text-danger">
+            <p
+              className={`whitespace-pre-wrap leading-relaxed ${
+                errorOpen ? 'max-h-64 overflow-y-auto pr-1' : 'line-clamp-2'
+              }`}
+            >
+              {run.error}
+            </p>
+            {run.error.length > 160 && (
+              <button
+                onClick={() => setErrorOpen((v) => !v)}
+                className="mt-1.5 text-[12px] font-medium text-danger/80 hover:text-danger underline underline-offset-2"
+              >
+                {errorOpen ? 'Show less' : 'Show the full reason'}
+              </button>
+            )}
+            {run.error.startsWith('Interrupted:') && (
+              <p className="mt-2 text-text-secondary">
+                This run cannot be resumed. Use <strong>Clone</strong> to start again from the
+                beginning with the same documents and settings.
+              </p>
+            )}
           </div>
         )}
       </div>
 
-      {/* Action Gates */}
+      {/* Anything waiting on a person goes full width, above the workspace. It
+          is the only thing on the page that is a request rather than a report. */}
       {review && (
-        <ReviewPanel
-          runId={runId!}
-          review={review}
-          onSubmit={handleReviewSubmit}
-          isLoading={actionLoading}
-        />
+        <ReviewPanel runId={runId!} review={review} onSubmit={handleReviewSubmit} isLoading={actionLoading} />
       )}
-
       {approval && (
-        <ApprovalGate
-          runId={runId!}
-          approval={approval}
-          onSubmit={handleApprovalSubmit}
-          isLoading={actionLoading}
-        />
+        <ApprovalGate runId={runId!} approval={approval} onSubmit={handleApprovalSubmit} isLoading={actionLoading} />
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <LogViewer logs={logs} />
+      {/* Workspace: steps on the left, output in the middle, live narration on
+          the right. Sized against the viewport so all three fill the screen and
+          scroll inside themselves, rather than the page growing and the rails
+          trailing off into whitespace. */}
+      {/* Three layouts, not two. Phones stack; tablets and small laptops get
+          the steps beside the output with the narration full width underneath,
+          which is the only arrangement that fits three panels into ~1024px
+          without making all three unreadable; from 1280px all three sit side by
+          side and share the viewport height. */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] xl:flex-1 xl:min-h-[28rem]">
+        <div className="min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
+          <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
         </div>
-        <div>
-          <ArtifactList artifacts={run.artifacts} runId={runId!} />
+
+        <div className="min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto glass-card rounded-2xl flex flex-col overflow-hidden">
+          <div className="flex-none flex items-center gap-1 px-3 py-2.5 border-b border-border/40">
+            {([
+              { id: 'results', label: 'Results', count: run.artifacts?.length ?? 0 },
+              { id: 'log', label: 'Technical log', count: logs.length },
+            ] as const).map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setCentreTab(tab.id)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
+                  centreTab === tab.id
+                    ? 'bg-white/[0.07] text-white'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-white/[0.03]'
+                }`}
+              >
+                {tab.label}
+                <span className="text-[11px] tabular-nums opacity-60">{tab.count}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex-1 min-h-0">
+            {centreTab === 'results' ? (
+              <ArtifactList artifacts={run.artifacts} runId={runId!} />
+            ) : (
+              <LogViewer logs={logs} />
+            )}
+          </div>
+        </div>
+
+        <div className="min-h-0 h-[26rem] sm:h-[30rem] lg:h-[24rem] lg:col-span-2 xl:col-span-1 xl:h-auto">
+          <AgentActivity logs={logs} isRunning={!isTerminal} />
         </div>
       </div>
     </div>

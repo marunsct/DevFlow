@@ -92,7 +92,7 @@ def build_tools_models_request(
     """Build the Deep Agent input from the approved product intake and repo context.
 
     `product_intake_text` is expected to be the already-approved product
-    intake artifact (e.g. the content behind `docs/generated/product-intake.md`),
+    intake artifact (the content behind `docs/product_intake.md`),
     not a raw, unreviewed document — this role only starts after Step 3's
     intake artifact is approved.
     """
@@ -126,7 +126,10 @@ Constraints:
 - Do not change repo files except through the approved artifact tool.
 - No implementation dependency should be treated as decided just because you
   named it here; this artifact is a proposal for human approval.
-- Only write your artifact inside the `docs/` folder.\n- Every write_artifact call pauses for a human decision before anything is
+- Write exactly one artifact, at `docs/tools_and_models.md`. Use that path
+  verbatim. Later stages look for it there, and a generic name like
+  `docs/spec.md` collides with the architect's own specification.
+- Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.
 

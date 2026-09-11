@@ -92,7 +92,9 @@ Constraints:
 - Do not change repo files except through the approved artifact tool.
 - Only plan against the already-approved specification; do not introduce new
   architecture decisions here.
-- Only write your artifact inside the `docs/` folder.\n- Every write_artifact call pauses for a human decision before anything is
+- Write exactly one artifact, at `docs/sprint_plan.md`. Use that path verbatim so the
+  filename is the same on every run and later stages can find it.
+- Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - Keep the output structured and concise.
 

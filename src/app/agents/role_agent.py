@@ -22,7 +22,11 @@ from pathlib import Path
 from typing import Any
 
 from deepagents import create_deep_agent
-from deepagents.middleware.filesystem import FilesystemPermission
+from deepagents.backends import FilesystemBackend
+from deepagents.middleware.filesystem import (
+    FilesystemMiddleware,
+    FilesystemPermission,
+)
 from deepagents.middleware.summarization import SummarizationMiddleware
 from dotenv import load_dotenv
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -35,6 +39,7 @@ from app.agents.context_store import build_context_backend
 from app.models import build_default_chat_model
 from app.tools.agent_toolkit import (
     HUMAN_APPROVAL_TOOLS,
+    build_artifact_edit_tool,
     build_artifact_write_tool,
     build_repository_read_tools,
 )
@@ -50,6 +55,12 @@ def default_repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def _clip_for_review(text: str, limit: int = 200) -> str:
+    """Shorten a value for an approval description without losing its shape."""
+    text = str(text or "")
+    return text[:limit] + ("..." if len(text) > limit else "")
+
+
 def describe_artifact_write(repo_root: str, agent_name: str, stage: str):
     """Build the interrupt description shown to a human before an artifact write.
 
@@ -63,14 +74,29 @@ def describe_artifact_write(repo_root: str, agent_name: str, stage: str):
     def describe(tool_call: dict[str, Any], state: Any, runtime: Any) -> str:  # noqa: ARG001
         args = tool_call.get("args", {})
         relative_path = args.get("relative_path", "<unknown path>")
-        content = args.get("content", "")
-        summary = content[:200] + ("..." if len(content) > 200 else "")
         target = (Path(repo_root) / relative_path).resolve()
-        risk_level = "medium (overwrites an existing file)" if target.exists() else "low (new file)"
+
+        # `edit_artifact` carries `find`/`replace`, not `content`. Reading only
+        # `content` showed a reviewer an empty summary for every edit, which is
+        # the one case where seeing what changes matters most.
+        if "find" in args or "replace" in args:
+            change = (
+                f"Replacing: {_clip_for_review(args.get('find', ''))}\n"
+                f"With: {_clip_for_review(args.get('replace', '')) or '(deletes the passage)'}"
+            )
+            risk_level = "low (changes one passage, leaves the rest of the file intact)"
+        else:
+            change = f"Proposed content summary: {_clip_for_review(args.get('content', ''))}"
+            risk_level = (
+                "medium (replaces the whole of an existing file)"
+                if target.exists()
+                else "low (new file)"
+            )
+
         return (
             f"Agent: {agent_name} (stage: {stage})\n"
             f"Proposed file path: {relative_path}\n"
-            f"Proposed content summary: {summary}\n"
+            f"{change}\n"
             f"Risk level: {risk_level}\n"
             "Allowed decisions: approve, edit, reject"
         )
@@ -114,7 +140,7 @@ def _interrupt_config(
         tool_name = getattr(tool_obj, "name", None)
         if tool_name not in HUMAN_APPROVAL_TOOLS:
             continue
-        if tool_name == "write_artifact":
+        if tool_name in ("write_artifact", "edit_artifact"):
             config[tool_name] = {
                 "allowed_decisions": ["approve", "edit", "reject"],
                 "description": describe_artifact_write(repo_root, agent_name, stage),
@@ -130,6 +156,46 @@ def _interrupt_config(
 
 
 logger = logging.getLogger(__name__)
+
+
+_WORKSPACE_READ_TOOLS = ["ls", "read_file", "glob", "grep"]
+"""The built-in filesystem tools a role agent is allowed to see.
+
+Deliberately read-only. Writing is `write_artifact` and nothing else, because
+that is the call the approval gate interrupts on.
+"""
+
+
+def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
+    """Point the built-in filesystem tools at the run's real workspace.
+
+    `create_deep_agent` always installs `FilesystemMiddleware`, and by default it
+    registers nine tools (`ls`, `read_file`, `glob`, `grep`, `write_file`,
+    `edit_file`, `delete`, `execute`, plus `task`) over an in-memory
+    `StateBackend` that has nothing to do with the repository.
+
+    This used to be handled by denying read and write on every path. The tools
+    stayed *advertised* though, so the model kept calling them and kept getting
+    `permission denied`. In one run that was 10 of 24 tool calls, and it was not
+    merely wasteful: the architect tried `write_file` for the specification,
+    concluded from the denial that it had no way to write at all, and spent its
+    remaining turns asking the human for permission instead of returning its
+    structured response. The stage then failed with "failed to produce a
+    structured response", which reads like a context-limit problem and is not.
+
+    So instead of denying the tools, give them a backend that works. Rooting a
+    `FilesystemBackend` at the workspace in virtual mode means `/docs/spec.md` -
+    exactly the path shape the middleware's own prompt teaches the model to use -
+    resolves inside this run's directory and nowhere else.
+
+    Only the read tools are registered. That grants nothing new: an agent could
+    already read any file under the root through `read_repository_file`
+    (`allow_subdirectories` narrows *listing* depth, never read access).
+    """
+    return FilesystemMiddleware(
+        backend=FilesystemBackend(root_dir=repo_root, virtual_mode=True),
+        tools=list(_WORKSPACE_READ_TOOLS),
+    )
 
 
 def _compaction_middleware(agent_name: str) -> list:
@@ -228,6 +294,7 @@ def create_role_agent(
     tools = [
         *build_repository_read_tools(resolved_repo_root, allow_subdirectories=allow_subdirectories),
         build_artifact_write_tool(resolved_repo_root),
+        build_artifact_edit_tool(resolved_repo_root),
         *(extra_tools or []),
     ]
 
@@ -237,6 +304,48 @@ def create_role_agent(
         "CRITICAL DIRECTORY RULES:\n"
         "- Write all document artifacts (intakes, specs, plans, reports) inside the `docs/` folder (e.g., `docs/spec.md`).\n"
         "- Write all code artifacts inside the `<product_name>/` folder (based on the determined product name).\n"
+        "\n"
+        "HOW TO WRITE:\n"
+        "- `write_artifact` CREATES a file, or replaces one completely. Its\n"
+        "  `relative_path` is relative to the workspace root: `docs/spec.md`.\n"
+        "- `edit_artifact` CHANGES part of a file that already exists. Give it the\n"
+        "  exact passage to replace and what to replace it with. Use this for\n"
+        "  every revision to an existing document: it leaves the rest of the file\n"
+        "  untouched, so nothing is lost and you do not have to reproduce work\n"
+        "  that is already correct.\n"
+        "- Revising an existing document? Read the section you need with\n"
+        "  `read_repository_file` (it takes `start_line` and `line_count`, so you\n"
+        "  can read part of a long file), then `edit_artifact` that passage.\n"
+        "  Do NOT rewrite a long document from memory to change part of it, and\n"
+        "  NEVER save your revision under a new name like `spec_v2.md` - two\n"
+        "  versions of one document contradict each other and a reviewer reads\n"
+        "  both.\n"
+        "- You already have permission to write. Call `write_artifact` directly.\n"
+        "  Never ask whether you should write a file, and never stop to request\n"
+        "  approval - approval is handled outside this conversation.\n"
+        "\n"
+        "PATHS - every path is inside the workspace:\n"
+        "- `docs/spec.md` and `/docs/spec.md` mean the same file. A leading slash\n"
+        "  reads as 'from the workspace root', which is what you mean by it.\n"
+        "- `ls`, `glob`, `grep`, `read_file` (read-only): browse from `/`. The\n"
+        "  intake is `/docs/product_intake.md`; `ls('/')` shows everything.\n"
+        "- The long absolute path quoted as the repository root elsewhere in this\n"
+        "  brief is the HOST's path and does not exist here - passing it returns\n"
+        "  `path_not_found`. Never use it; start from the workspace root.\n"
+        "- Shell commands already run inside the workspace directory, so use\n"
+        "  ordinary relative paths (`thehub/`). Do not prefix them with `/`.\n"
+        "\n"
+        "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
+        "- Artifact content must be human-readable Markdown: headings, prose,\n"
+        "  lists, tables. A person reads these files.\n"
+        "- NEVER pass JSON as `write_artifact` content, and never save your\n"
+        "  structured response to a file. The structured response is returned\n"
+        "  through the response schema, separately, and is not an artifact.\n"
+        "- Write each artifact ONCE. After a write_artifact tool result comes\n"
+        "  back, that file is saved and correct. Do not write it again, do not\n"
+        "  'confirm' it with a second write, and never overwrite good Markdown\n"
+        "  with a serialized copy of your answer. Return your structured\n"
+        "  response instead.\n"
     )
 
     # Compaction. Built here rather than at module scope so a policy change
@@ -244,6 +353,7 @@ def create_role_agent(
     # directory is keyed by agent name (not thread id), which is stable per
     # role; see `_compaction_middleware` for why that is deliberate.
     middleware = _compaction_middleware(name)
+    middleware = [*middleware, _workspace_filesystem_middleware(resolved_repo_root)]
 
     return create_deep_agent(
         model=selected_model,
@@ -251,11 +361,11 @@ def create_role_agent(
         system_prompt=full_system_prompt,
         response_format=response_format,
         middleware=middleware,
-        # See `app.agents.product_manager` for why this denies the built-in
-        # filesystem tools rather than trying to "allow" real repo paths: the
-        # default backend is an in-memory `StateBackend`, not the real repo.
+        # Writes stay denied at the permission layer as well as absent from the
+        # tool list. `write_artifact` is the only mutation path, and it is the
+        # one the approval gate is wired to; a built-in write would slip past it.
         permissions=[
-            FilesystemPermission(operations=["read", "write"], paths=["/**"], mode="deny"),
+            FilesystemPermission(operations=["write"], paths=["/**"], mode="deny"),
         ],
         # Every high-risk tool call pauses for a human decision - not just the
         # artifact write. Gating is by what a call can do, so command execution

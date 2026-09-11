@@ -117,9 +117,6 @@ export interface LogEntry {
   sequence: number;
   stage: string;
   message: string;
-  files_modified?: number;
-  tests_passed?: number;
-  tests_failed?: number;
   metadata?: Record<string, unknown>;
 }
 

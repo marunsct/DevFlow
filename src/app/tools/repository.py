@@ -10,10 +10,12 @@ agent from wandering outside the project boundary.
 
 from __future__ import annotations
 
+import re
 import json
 import os
 import subprocess
 import logging
+import threading
 import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
@@ -59,6 +61,55 @@ def _assert_within_repo(repo_root: Path, target: Path) -> Path:
             f"Path escapes the repository boundary: {target}. Allowed root: {repo_root_resolved}"
         )
     return resolved
+
+
+_MUTATION_LOCK = threading.RLock()
+"""Serialises every write and edit, because tool calls in one turn run in parallel.
+
+A model can ask for several gated calls in a single turn, and LangGraph executes
+them concurrently. `edit_approved_artifact` is a read-modify-write: it reads the
+whole file, replaces one passage, and writes the whole file back. Two of those
+running at once against the same file both read the original, and the second to
+finish writes over the first one's change - which is then *reported as applied*,
+because each call did succeed on the copy it was holding.
+
+That is the worst failure shape available: silent, and invisible to the agent,
+which believes all of its corrections landed. A real turn asked for seven edits
+to one specification; without this, at most one of them would have survived.
+
+One lock for all mutations rather than one per path: edits are rare next to
+reads, so the contention costs nothing, and a per-path registry would have to
+grow without bound to avoid the same race in its own bookkeeping.
+"""
+
+
+def _repo_relative_path(repo_root: Path, relative_path: str | Path) -> Path:
+    """Interpret a model-supplied path the way the model means it.
+
+    Models write `/docs/spec.md` for a file at the top of the workspace. They are
+    not asking for the filesystem root; the leading slash is how you say "from the
+    root of the project" in every document they have ever read.
+
+    `write_approved_artifact` already stripped that anchor, so writes worked.
+    Reads and edits did not, and `root / Path("/docs/spec.md")` is `/docs/spec.md`
+    in pathlib - the root is discarded entirely. A real run had an agent write
+    `docs/technical_specification_v2.md` successfully and then fail every edit to
+    the same file it had just created, because it addressed it the same way both
+    times and only one of the two tools understood it.
+
+    An absolute path that genuinely lands inside the workspace is kept as-is
+    (made relative to the root); anything else has its anchor stripped and is
+    read as workspace-relative. Traversal is unaffected: the joined result is
+    still checked by `_assert_within_repo`, and a path that used to escape the
+    root now resolves under it instead, which is the safer of the two outcomes.
+    """
+    candidate = Path(str(relative_path)).expanduser()
+    if not candidate.is_absolute():
+        return candidate
+    try:
+        return candidate.resolve().relative_to(repo_root.resolve())
+    except ValueError:
+        return candidate.relative_to(candidate.anchor)
 
 
 IGNORED_DIRECTORIES = frozenset({
@@ -170,7 +221,7 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
         such as "../outside.txt".
     """
     root = _normalize_repo_root(repo_root)
-    target = (root / relative_path).resolve()
+    target = (root / _repo_relative_path(root, relative_path)).resolve()
     _assert_within_repo(root, target)
     if is_secret_path(target) or any(part in IGNORED_DIRECTORIES for part in target.parts):
         raise RepositoryToolError(
@@ -182,6 +233,146 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
     if not target.is_file():
         raise RepositoryToolError(f"Requested path is not a file: {relative_path}")
     return target.read_text(encoding="utf-8")
+
+
+def read_text_lines(
+    repo_root: str | Path,
+    relative_path: str,
+    *,
+    start_line: int = 1,
+    line_count: int | None = None,
+) -> dict[str, object]:
+    """Read a slice of a file rather than the whole thing.
+
+    Purpose:
+        Let an agent look at one section of a large document without pulling the
+        entire file into its context. The technical specification on a real run
+        reached 71KB - roughly 18,000 tokens - and reading it whole to change one
+        paragraph crowded out everything else the agent needed to hold.
+
+    Inputs:
+        start_line: 1-based, inclusive.
+        line_count: how many lines to return; the rest of the file when omitted.
+
+    Returns:
+        The requested lines, plus where they sit in the file, so the agent can
+        ask for the next slice without guessing.
+
+    Errors:
+        RepositoryToolError for the same reasons `read_text_file` raises, and for
+        a `start_line` past the end of the file.
+    """
+    text = read_text_file(repo_root, relative_path)
+    # Reported back in workspace-relative form, never as the model typed it: the
+    # dashboard reads the path out of the result to label the row, and a raw
+    # `/docs/spec.md` there would be a path that exists nowhere.
+    reported_path = _repo_relative_path(_normalize_repo_root(repo_root), relative_path).as_posix()
+    lines = text.splitlines()
+    total = len(lines)
+
+    if start_line < 1:
+        raise RepositoryToolError(f"start_line must be 1 or greater, got {start_line}.")
+    if total and start_line > total:
+        raise RepositoryToolError(
+            f"'{relative_path}' has {total} lines, so line {start_line} is past the end."
+        )
+    if line_count is not None and line_count < 1:
+        raise RepositoryToolError(f"line_count must be 1 or greater, got {line_count}.")
+
+    begin = start_line - 1
+    end = total if line_count is None else min(total, begin + line_count)
+    selected = lines[begin:end]
+
+    return {
+        "path": reported_path,
+        "start_line": start_line,
+        "end_line": begin + len(selected),
+        "total_lines": total,
+        "has_more": end < total,
+        "content": "\n".join(selected),
+    }
+
+
+def edit_approved_artifact(
+    repo_root: str | Path, relative_path: str, find: str, replace: str
+) -> dict[str, str]:
+    """Replace one exact passage inside an existing artifact.
+
+    Purpose:
+        Change part of a document without regenerating it. `write_approved_artifact`
+        replaces a whole file, which is the only reason a 71KB specification had to
+        be rewritten end to end to correct a single contradictory sentence. Asked to
+        do that, an agent produced a shorter second file called
+        `technical_specification_v2.md` instead, and the reviewer then read both and
+        reported the differences between them as contradictions in the design.
+
+    Inputs:
+        find: the exact text to replace. Must appear exactly once.
+        replace: what to put in its place. Empty string deletes the passage.
+
+    Errors:
+        RepositoryToolError if the file is missing, or if `find` appears zero or
+        several times. Both refusals say what to do next, because a silent
+        first-match replacement in a long document corrupts it somewhere the
+        agent is not looking.
+    """
+    root = _normalize_repo_root(repo_root)
+    target = (root / _repo_relative_path(root, relative_path)).resolve()
+    _assert_within_repo(root, target)
+
+    if is_secret_path(target):
+        raise RepositoryToolError(
+            f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
+        )
+    if not target.is_file():
+        # When the missing file is a forked version of one that does exist, say
+        # so here. The generic "use write_artifact to create it" sends the agent
+        # to a write that `_supersedes_existing` then refuses, costing a model
+        # call to learn something this message already knows.
+        canonical = _supersedes_existing(target)
+        if canonical is not None:
+            raise RepositoryToolError(
+                f"Cannot edit '{relative_path}': it does not exist. "
+                f"Edit '{canonical.name}' instead - it is the current version of "
+                "this document. Do not recreate the file you just tried to edit."
+            )
+        raise RepositoryToolError(
+            f"Cannot edit '{relative_path}': it does not exist yet. "
+            "Use write_artifact to create it."
+        )
+    if not find:
+        raise RepositoryToolError(
+            "The `find` text is empty. Give the exact passage to replace, or use "
+            "write_artifact to replace the whole file."
+        )
+
+    # Read, replace and write as one step. Parallel tool calls in the same turn
+    # would otherwise each replace a passage in their own copy of the file and
+    # overwrite one another, reporting success for changes that were discarded.
+    with _MUTATION_LOCK:
+        original = target.read_text(encoding="utf-8")
+        occurrences = original.count(find)
+
+        if occurrences == 0:
+            raise RepositoryToolError(
+                f"Could not find that text in '{relative_path}'. It must match exactly, "
+                "including whitespace and punctuation. Read the section first and copy "
+                "the passage from what you read."
+            )
+        if occurrences > 1:
+            raise RepositoryToolError(
+                f"That text appears {occurrences} times in '{relative_path}', so it is "
+                "ambiguous which one to change. Include more surrounding text to make "
+                "the passage unique."
+            )
+
+        target.write_text(original.replace(find, replace, 1), encoding="utf-8")
+    summary = replace[:80] + ("..." if len(replace) > 80 else "")
+    return {
+        "path": str(target.relative_to(root)),
+        "status": "edited",
+        "summary": summary or "(passage removed)",
+    }
 
 
 def search_text(repo_root: str | Path, query: str, *, max_matches: int = 25) -> list[dict[str, str]]:
@@ -275,6 +466,53 @@ def read_dependency_metadata(repo_root: str | Path) -> dict[str, object]:
     return metadata
 
 
+_PROSE_SUFFIXES = frozenset({".md", ".markdown", ".rst", ".txt"})
+"""Artifact extensions whose content is meant to be read by a person."""
+
+_VERSION_SUFFIX = re.compile(
+    r"^(?P<base>.+?)[ _.-]+(?:v\d+|copy|new|final|updated|revised)$", re.IGNORECASE
+)
+"""A filename that is a second copy of another: `spec_v2`, `plan-final`, `notes copy`."""
+
+
+def _supersedes_existing(target: Path) -> Path | None:
+    """The canonical file this write would fork, if it is forking one.
+
+    Agents asked to revise a document sometimes write a new one beside it
+    instead. Observed live: the architect produced
+    `docs/technical_specification_v2.md` while `docs/technical_specification.md`
+    already existed. From that point the reviewer had two specifications to read
+    and reported the differences between them as contradictions in the design -
+    a blocking finding that existed only because the second file did. The run
+    spent its last two revisions on it and stopped unresolved.
+
+    Deliberately narrow. Only an explicit version marker counts, so a genuine
+    series like `adr_1.md` and `adr_2.md` is untouched, and nothing is refused
+    unless the file it forks is actually there.
+    """
+    match = _VERSION_SUFFIX.match(target.stem)
+    if not match:
+        return None
+    canonical = target.with_name(f"{match.group('base')}{target.suffix}")
+    return canonical if canonical.is_file() else None
+
+
+def _is_json_document(content: str) -> bool:
+    """Whether `content` is a whole JSON object or array rather than prose.
+
+    Deliberately narrow. A Markdown file may well contain a fenced JSON example,
+    so only content that is *entirely* one JSON value counts - that is the shape
+    a model produces when it saves its structured response by mistake.
+    """
+    stripped = content.strip()
+    if not stripped or stripped[0] not in "{[":
+        return False
+    try:
+        return isinstance(json.loads(stripped), (dict, list))
+    except ValueError:
+        return False
+
+
 def write_approved_artifact(repo_root: str | Path, relative_path: str, content: str) -> dict[str, str]:
     """Write a generated artifact only inside the repository root or its subfolders.
 
@@ -299,9 +537,7 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     """
     root = _normalize_repo_root(repo_root)
     artifact_root = Path(root).resolve()
-    cleaned_path = Path(relative_path).expanduser()
-    if cleaned_path.is_absolute():
-        cleaned_path = cleaned_path.relative_to(cleaned_path.anchor)
+    cleaned_path = _repo_relative_path(artifact_root, relative_path)
     target = (artifact_root / cleaned_path).resolve()
     if artifact_root not in target.parents and target != artifact_root:
         raise RepositoryToolError(
@@ -313,16 +549,70 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        target.write_text(content, encoding="utf-8")
-    except OSError as exc:
-        logger.error("Failed to write artifact to %s: %s", target, exc)
-        raise RepositoryToolError(f"Could not write artifact to {relative_path}: {exc}") from exc
-    return {
+    superseded = _supersedes_existing(target)
+    if superseded is not None:
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': "
+            f"'{superseded.name}' already exists and this would be a second copy of it. "
+            "Update that file in place instead. Two versions of the same document "
+            "disagree with each other, and a reviewer reads both."
+        )
+
+    if _is_json_document(content) and target.suffix.lower() in _PROSE_SUFFIXES:
+        # Agents conflate "write the artifact" with "return the structured
+        # response" and save the schema as the document. Observed live: the
+        # architect wrote a good Markdown specification, then overwrote it twice
+        # with a JSON dump of its own answer, leaving the run's headline artifact
+        # unreadable. Refusing is what makes it recoverable - the model gets a
+        # correction it can act on, instead of silently shipping the corruption.
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': the content is JSON, but this "
+            "is a prose document that a person reads. Write Markdown - headings, "
+            "prose, lists, tables. Your structured response is returned through "
+            "the response schema and must never be saved as an artifact."
+        )
+
+    # A rewrite of byte-identical content is reported as such rather than done
+    # silently. Models re-issue the same write to confirm it landed, and the old
+    # result gave them no way to tell a first write from a repeat - so they
+    # repeated it. Each repeat is a full model call *and* one approval gate, and
+    # enough of them in a row trip WORKFLOW_MAX_GATES_PER_STAGE and fail the run.
+    # Saying "unchanged" is the signal that lets the agent move on.
+    # Under the same lock as `edit_approved_artifact`, so "is it already this
+    # content?" and the write that follows cannot be split by a concurrent edit
+    # to the same file.
+    with _MUTATION_LOCK:
+        unchanged = False
+        if target.is_file():
+            try:
+                unchanged = target.read_text(encoding="utf-8") == content
+            except (OSError, UnicodeDecodeError):
+                unchanged = False
+
+        if not unchanged:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                target.write_text(content, encoding="utf-8")
+            except OSError as exc:
+                logger.error("Failed to write artifact to %s: %s", target, exc)
+                raise RepositoryToolError(
+                    f"Could not write artifact to {relative_path}: {exc}"
+                ) from exc
+
+    result = {
         "path": str(target.relative_to(root)),
         "summary": content[:80] + ("..." if len(content) > 80 else ""),
     }
+    if unchanged:
+        result["status"] = "unchanged"
+        result["detail"] = (
+            "This file already contained exactly this content, so nothing was "
+            "rewritten. The artifact is saved. Do not write it again; continue "
+            "with your response."
+        )
+    else:
+        result["status"] = "written"
+    return result
 
 
 def run_approved_validation(repo_root: str | Path, command: list[str]) -> dict[str, object]:
@@ -457,8 +747,10 @@ __all__ = [
     "build_repository_context",
     "list_repository_files",
     "read_text_file",
+    "read_text_lines",
     "search_text",
     "read_dependency_metadata",
     "write_approved_artifact",
+    "edit_approved_artifact",
     "run_approved_validation",
 ]

@@ -100,6 +100,23 @@ class ReportedDefect(BaseModel):
     )
 
 
+class VerificationRun(BaseModel):
+    """One command a specialist ran to prove its work, and what happened.
+
+    Free-text `tests` was the only evidence, so `["ran pytest, all green"]` was
+    indistinguishable from having run it. This is checkable:
+    `app.tools.sandbox.read_execution_ledger` holds what actually executed in
+    this workspace, and a claim here that is absent there is one the model
+    invented.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    command: list[str] = Field(description='The argv you ran, e.g. ["pytest", "-q"].')
+    exit_code: int = Field(description="The `returncode` the tool returned. 0 means success.")
+    summary: str = Field(default="", description="One line on what it proved, or how it failed.")
+
+
 class SpecialistOutput(BaseModel):
     """Structured result every specialist returns, regardless of role.
 
@@ -115,6 +132,15 @@ class SpecialistOutput(BaseModel):
     )
     decisions: list[str] = Field(default_factory=list, description="Notable decisions made while doing this task.")
     tests: list[str] = Field(default_factory=list, description="Tests added, updated, or run for this task.")
+    verification: list[VerificationRun] = Field(
+        default_factory=list,
+        description=(
+            "Commands you actually executed to prove this task works, with their exit codes. "
+            "Leave empty only if you executed nothing. Do not describe commands here that you "
+            "did not run - the workspace keeps its own record of every execution and the two "
+            "are compared."
+        ),
+    )
     documentation: list[str] = Field(default_factory=list, description="Documentation added or updated for this task.")
     risks: list[str] = Field(default_factory=list, description="Risks introduced or discovered by this task.")
     blockers: list[str] = Field(default_factory=list, description="Anything preventing this task from being completed.")
@@ -218,6 +244,13 @@ Responsibilities:
   expand scope on your own initiative.
 - Report every changed file, notable decision, added or updated test, added or
   updated documentation, risk, and blocker.
+- Prove your work by running it. Write the code, then use `run_terminal_command`
+  (or `run_validation`) to build it, start it, or test it, and record every
+  command you ran in `verification` with its exit code. A task reported complete
+  with an empty `verification` list is a task nobody checked.
+- If a command's output was truncated, call `read_command_output` with the
+  reference in the truncation pointer to see the part that was cut. The real
+  error is usually there.
 - If you cannot verify something (a test, a security property), say so as a
   risk or blocker instead of asserting it is fine.
 

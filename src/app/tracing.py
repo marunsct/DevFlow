@@ -11,6 +11,27 @@ When disabled, the helpers are no-ops that return empty dicts.
 import os
 from typing import Any
 
+APP_RUN_ID_KEY = "app_run_id"
+"""Config key carrying *our* run id, deliberately not named `run_id`.
+
+`run_id` is reserved by LangGraph. It propagates the key from `configurable`
+and from `metadata` into the checkpoint's metadata, and on the next invoke it
+compares the incoming value against the stored one. A match is read as
+re-entry into an already-running invocation (a stream reconnect), which skips
+the step that maps input into channel updates - the input is dropped in
+silence, no node runs, and the unchanged state comes straight back.
+
+Our run id is stable for the life of a run, so it matched on every resume
+after the first. `resume_pending_approval` and `resume_pending_review` were
+therefore no-ops: an approval never reached the graph, an unattended run
+re-answered the same gate until it hit MAX_GATES_PER_STAGE, and a supervised
+run sat back down at the gate it had just been released from.
+
+Anything in LangGraph's reserved set is unsafe here: thread_id, checkpoint_id,
+checkpoint_ns, task_id, run_id, assistant_id, graph_id.
+"""
+
+
 def is_tracing_enabled() -> bool:
     """Check if LangSmith tracing is enabled in the environment."""
     return os.getenv("LANGSMITH_TRACING", "").lower() in ("true", "1", "yes")
@@ -55,7 +76,7 @@ def trace_metadata(
         return {}
         
     metadata = {
-        "run_id": run_id,
+        APP_RUN_ID_KEY: run_id,
         "stage": stage,
         "role": role,
         "thread_id": thread_id,

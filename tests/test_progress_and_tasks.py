@@ -219,14 +219,17 @@ def test_tracing_is_off_unless_enabled(monkeypatch):
 
 
 def test_trace_metadata_carries_run_identity(monkeypatch):
-    from app.tracing import trace_metadata
+    from app.tracing import APP_RUN_ID_KEY, trace_metadata
 
     monkeypatch.setenv("LANGSMITH_TRACING", "true")
     meta = trace_metadata("run-1", "intake", "product_manager", "thread-1", product_name="Widget")
 
-    assert meta["run_id"] == "run-1"
+    assert meta[APP_RUN_ID_KEY] == "run-1"
     assert meta["stage"] == "intake"
     assert meta["product_name"] == "Widget"
+    # Never `run_id`: LangGraph reserves it and drops the input of any invoke
+    # whose run_id matches the checkpoint's, which silently voids every resume.
+    assert "run_id" not in meta
 
 
 def test_tracing_requires_a_key_when_enabled(monkeypatch):

@@ -41,6 +41,7 @@ agent (via `resume_with_decision`) instead of restarting it.
 
 from __future__ import annotations
 
+import os
 import logging
 import uuid
 from typing import Any, TypedDict
@@ -112,11 +113,32 @@ from app.sprint import (
     start_remediation,
 )
 from app.state import HumanApprovalRequest, RepositoryContext, ReviewStatus, WorkflowStage
-from app.tracing import trace_metadata
+from app.tracing import APP_RUN_ID_KEY, trace_metadata
 
 logger = logging.getLogger(__name__)
 
-MAX_ARCHITECTURE_REVISIONS = 3
+def _max_architecture_revisions() -> int:
+    """How many times review may send the specification back before failing.
+
+    Raised from 3 and made configurable on evidence: across observed runs on a
+    small local model, the reviewer kept surfacing one more major finding each
+    round, and the run died at the cap with a single finding outstanding after
+    having produced a perfectly usable specification. The reviewer converging
+    slowly is not the same failure as the architect looping, and three rounds is
+    a tight budget for a model that reviews thoroughly.
+
+    It stays bounded, because a reviewer and an architect that simply disagree
+    will never converge and each round costs two model calls.
+    """
+    default = 6
+    try:
+        return int(os.environ.get("WORKFLOW_MAX_ARCHITECTURE_REVISIONS", str(default)))
+    except ValueError:
+        logger.warning("Malformed WORKFLOW_MAX_ARCHITECTURE_REVISIONS; using %d", default)
+        return default
+
+
+MAX_ARCHITECTURE_REVISIONS = _max_architecture_revisions()
 
 MAX_SPECIFICATION_REPAIRS = 2
 """How many times to ask the architect to refill sections it left empty.
@@ -394,6 +416,11 @@ def _run_gated_agent(
     instance as the outer graph.
     """
     outer_thread_id = config["configurable"]["thread_id"]
+    # Narration only. `build_activity_callbacks` returns [] when the run id is
+    # unknown or the feature is switched off, and the handler never raises.
+    from app.server.agent_stream import build_activity_callbacks
+
+    activity = build_activity_callbacks(config["configurable"].get(APP_RUN_ID_KEY), stage_name)
 
     pending_decision = state.get("pending_decision")
     if pending_decision is not None:
@@ -401,7 +428,9 @@ def _run_gated_agent(
         if not inner_thread_id:
             inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         try:
-            result = resume_with_decision(agent, inner_thread_id, pending_decision)
+            result = resume_with_decision(
+                agent, inner_thread_id, pending_decision, callbacks=activity
+            )
         except Exception as exc:  # noqa: BLE001 - re-raised unless it is overflow
             if not _is_context_overflow(exc):
                 raise
@@ -427,7 +456,10 @@ def _run_gated_agent(
         # This prevents the LLM from drowning in the message history of previous failed attempts.
         inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         try:
-            result = agent.invoke(initial_request, config={"configurable": {"thread_id": inner_thread_id}})
+            result = agent.invoke(
+                initial_request,
+                config={"configurable": {"thread_id": inner_thread_id}, "callbacks": activity},
+            )
         except Exception as exc:  # noqa: BLE001 - re-raised unless it is overflow
             if not _is_context_overflow(exc):
                 raise
@@ -500,6 +532,18 @@ def _incomplete_specification_sections(specification: Any) -> list[str]:
     ]
 
 
+_GATING_SEVERITIES = frozenset({"blocking", "major"})
+"""Severities that force `changes_required`; see `ArchitectureReviewOutput`."""
+
+
+def _format_finding(finding: Any) -> str:
+    """Render one review finding as a line the architect can act on."""
+    return (
+        f"[{finding.severity}] {finding.description} "
+        f"Required remediation: {finding.required_remediation}"
+    )
+
+
 def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
     """Gather everything the Principal Architect must fix in its next revision.
 
@@ -516,10 +560,27 @@ def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
 
     review = state.get("architecture_review")
     if review is not None and review.status == "changes_required":
-        changes.extend(
-            f"[{finding.severity}] {finding.description} Required remediation: {finding.required_remediation}"
-            for finding in review.findings
-        )
+        # Only blocking and major findings gate approval, so they are listed
+        # first and marked as the ones that decide the outcome. Handing the
+        # architect one flat list put a note about naming beside a missing
+        # authorization model, and it spread its revision evenly across both.
+        # Three rounds of that is how a run reaches the revision limit with the
+        # blocking findings still open.
+        gating = [f for f in review.findings if f.severity in _GATING_SEVERITIES]
+        advisory = [f for f in review.findings if f.severity not in _GATING_SEVERITIES]
+
+        if gating:
+            changes.append(
+                "MUST FIX - the review cannot pass while any of these remain. "
+                "Address every one of them in this revision:"
+            )
+            changes.extend(_format_finding(finding) for finding in gating)
+        if advisory:
+            changes.append(
+                "Optional improvements. Do not spend this revision on them if "
+                "that risks leaving anything above unfixed:"
+            )
+            changes.extend(_format_finding(finding) for finding in advisory)
 
     changes.extend(state.get("revision_comments", []))
     return changes
@@ -857,8 +918,28 @@ def build_workflow_graph(
             revision_count = state.get("architecture_revision_count", 0) + 1
             update["architecture_revision_count"] = revision_count
             if revision_count >= MAX_ARCHITECTURE_REVISIONS:
+                # Name what is still wrong. The bare "reached the limit" message
+                # told a reader that the run died but not what to do about it,
+                # even though the reviewer had just written the answer down.
+                outstanding = [
+                    _format_finding(f)
+                    for f in review.findings
+                    if f.severity in _GATING_SEVERITIES
+                ]
+                detail = (
+                    "\n\nStill unresolved:\n" + "\n".join(f"- {line}" for line in outstanding)
+                    if outstanding
+                    else ""
+                )
                 update["stage"] = "failed"
-                update["error"] = f"Architecture review rejected after reaching the limit of {MAX_ARCHITECTURE_REVISIONS} revisions."
+                update["error"] = (
+                    f"The architecture reviewer still rejected the specification after "
+                    f"{MAX_ARCHITECTURE_REVISIONS} revisions, so the run stopped rather than "
+                    f"revising indefinitely. The specification written so far is kept in "
+                    f"docs/. Fix these points and resume, or raise "
+                    f"MAX_ARCHITECTURE_REVISIONS if the reviewer is simply being strict."
+                    f"{detail}"
+                )
             else:
                 update["stage"] = "principal_architect"
         return update
@@ -1377,9 +1458,26 @@ def discard_thread(thread_id: str, checkpointer: BaseCheckpointSaver | None = No
         pass
 
 
-def _run_config(thread_id: str, recursion_limit: int, metadata: dict | None = None) -> RunnableConfig:
-    """Build the per-invoke config every entry point below shares."""
-    config: dict[str, Any] = {"configurable": {"thread_id": thread_id}, "recursion_limit": recursion_limit}
+def _run_config(
+    thread_id: str,
+    recursion_limit: int,
+    metadata: dict | None = None,
+    run_id: str | None = None,
+) -> RunnableConfig:
+    """Build the per-invoke config every entry point below shares.
+
+    The run id rides in `configurable` rather than `metadata` because metadata
+    is only populated when LangSmith tracing is enabled, and the activity stream
+    must work whether or not anyone is tracing.
+
+    It is keyed `APP_RUN_ID_KEY`, never `run_id`: LangGraph reserves that name
+    and silently discards the input of any invoke whose `run_id` matches the one
+    already in the checkpoint. See the constant's docstring.
+    """
+    config: dict[str, Any] = {
+        "configurable": {"thread_id": thread_id, APP_RUN_ID_KEY: run_id},
+        "recursion_limit": recursion_limit,
+    }
     if metadata:
         config["metadata"] = metadata
     return config
@@ -1395,6 +1493,7 @@ def start_workflow(
     reviewer: str = "unassigned",
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     metadata: dict | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Start a brand-new workflow run for one product document.
 
@@ -1420,7 +1519,7 @@ def start_workflow(
             "review_policy": review_policy or {},
             "reviewer": reviewer,
         },
-        config=_run_config(thread_id, recursion_limit, metadata=metadata),
+        config=_run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id),
     )
 
 
@@ -1527,13 +1626,14 @@ def resume_failed_run(
     *,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     metadata: dict | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Resume a failed run from its last checkpoint.
     
     If the run explicitly entered a terminal 'failed' state due to business logic
     (e.g., reaching max revisions), this rewinds the state to act as a retry.
     """
-    config = _run_config(thread_id, recursion_limit, metadata=metadata)
+    config = _run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id)
     state_snapshot = graph.get_state(config)
 
     # A run parked on a human gate cannot be resumed, only decided. Re-invoking
@@ -1580,6 +1680,7 @@ def resume_pending_approval(
     *,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     metadata: dict | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Resume a run paused on a mandatory artifact-write approval.
 
@@ -1592,7 +1693,7 @@ def resume_pending_approval(
     `approve_write_decision()`, `edit_write_decision(...)`, or
     `reject_write_decision(...)`.
     """
-    return graph.invoke({"pending_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata))
+    return graph.invoke({"pending_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id))
 
 
 def resume_pending_review(
@@ -1602,6 +1703,7 @@ def resume_pending_review(
     *,
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     metadata: dict | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Resume a run paused on an optional human review session.
 
@@ -1612,7 +1714,7 @@ def resume_pending_review(
     `approve_decision()`, `request_changes_decision(...)`, or
     `skip_decision()`.
     """
-    return graph.invoke({"pending_review_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata))
+    return graph.invoke({"pending_review_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id))
 
 
 def approve_decision(comment: str | None = None, edited_content: str | None = None) -> dict[str, Any]:

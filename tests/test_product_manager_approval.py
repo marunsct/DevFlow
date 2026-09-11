@@ -23,6 +23,7 @@ from langchain_core.messages.tool import ToolCall
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
+from app.agents.approval import decisions_for
 from app.agents.product_manager import (
     approve_write_decision,
     edit_write_decision,
@@ -31,7 +32,7 @@ from app.agents.product_manager import (
     resume_with_decision,
 )
 from app.state import ApprovalDecision
-from app.tools.agent_toolkit import build_artifact_write_tool
+from app.tools.agent_toolkit import build_artifact_edit_tool, build_artifact_write_tool
 
 
 class _ScriptedToolCallingModel(FakeMessagesListChatModel):
@@ -168,4 +169,126 @@ def test_extract_pending_approval_describes_the_paused_write(tmp_path: Path) -> 
     assert approval.artifact_path == "brief.md"
     assert approval.risk_level == "low"
     assert approval.decision == ApprovalDecision.PENDING
-    assert approval.notes == "hello world"
+    # Prefixed with the action and its target: one pause can hold several
+    # calls, and a bare content snippet cannot say which one it belongs to.
+    assert approval.notes == "Write brief.md: hello world"
+
+
+# ---------------------------------------------------------------------------
+# Several gated calls in one turn
+#
+# `HumanInTheLoopMiddleware` raises ONE interrupt for a turn and attaches every
+# gated call in it to that interrupt, then demands exactly one decision per call
+# on resume. While `write_artifact` was the only mutation tool this never came
+# up: replacing a whole file is naturally one call per turn. The moment agents
+# could edit passages, a real architect asked for seven edits in a single turn -
+# correct behaviour - and the run died on
+# `ValueError: Number of human decisions (1) does not match number of hanging
+# tool calls (7).`
+# ---------------------------------------------------------------------------
+
+
+def _edit_calls(*edits: tuple[str, str, str]) -> AIMessage:
+    """One AIMessage asking for several `edit_artifact` calls at once."""
+    return AIMessage(
+        content="",
+        tool_calls=[
+            ToolCall(
+                name="edit_artifact",
+                args={"relative_path": path, "find": find, "replace": replace},
+                id=f"call_{index}",
+                type="tool_call",
+            )
+            for index, (path, find, replace) in enumerate(edits)
+        ],
+    )
+
+
+def _build_edit_agent(tmp_path: Path, responses: list[AIMessage]):
+    return create_deep_agent(
+        model=_ScriptedToolCallingModel(responses=responses),
+        tools=[build_artifact_edit_tool(str(tmp_path))],
+        interrupt_on={
+            "edit_artifact": {"allowed_decisions": ["approve", "edit", "reject"]},
+        },
+        checkpointer=InMemorySaver(),
+    )
+
+
+def test_one_approval_answers_every_gated_call_in_the_turn(tmp_path: Path) -> None:
+    (tmp_path / "spec.md").write_text("alpha\nbravo\ncharlie\n")
+    agent = _build_edit_agent(
+        tmp_path,
+        [
+            _edit_calls(
+                ("spec.md", "alpha", "ALPHA"),
+                ("spec.md", "bravo", "BRAVO"),
+                ("spec.md", "charlie", "CHARLIE"),
+            ),
+            AIMessage(content="All three applied."),
+        ],
+    )
+    config = {"configurable": {"thread_id": "thread-batch-approve"}}
+
+    paused = agent.invoke({"messages": [{"role": "user", "content": "fix these"}]}, config)
+    assert "__interrupt__" in paused
+
+    result = resume_with_decision(agent, "thread-batch-approve", approve_write_decision())
+
+    assert not result.get("__interrupt__")
+    assert (tmp_path / "spec.md").read_text() == "ALPHA\nBRAVO\nCHARLIE\n"
+
+
+def test_one_rejection_blocks_every_gated_call_in_the_turn(tmp_path: Path) -> None:
+    (tmp_path / "spec.md").write_text("alpha\nbravo\n")
+    agent = _build_edit_agent(
+        tmp_path,
+        [
+            _edit_calls(("spec.md", "alpha", "ALPHA"), ("spec.md", "bravo", "BRAVO")),
+            AIMessage(content="Understood."),
+        ],
+    )
+    config = {"configurable": {"thread_id": "thread-batch-reject"}}
+
+    agent.invoke({"messages": [{"role": "user", "content": "fix these"}]}, config)
+    resume_with_decision(agent, "thread-batch-reject", reject_write_decision("not yet"))
+
+    assert (tmp_path / "spec.md").read_text() == "alpha\nbravo\n"
+
+
+def test_an_edit_decision_refuses_to_answer_a_batch() -> None:
+    """One replacement action cannot stand in for several different calls.
+
+    Replicating it the way approve and reject are replicated would apply one
+    edit's arguments to every call in the turn, writing the wrong thing to all
+    but one of them - silently, and to files the reviewer never looked at.
+    """
+    import pytest
+
+    with pytest.raises(ValueError, match="can only answer one"):
+        decisions_for(edit_write_decision("final.md", "content"), 3)
+
+
+def test_a_single_decision_is_left_alone() -> None:
+    decision = approve_write_decision()
+    assert decisions_for(decision, 1) == [decision]
+    assert decisions_for(decision, 0) == [decision]
+
+
+def test_the_approval_shown_to_a_reviewer_lists_every_pending_change(tmp_path: Path) -> None:
+    """A reviewer approving a batch is consenting to all of it, so must see all of it."""
+    (tmp_path / "spec.md").write_text("alpha\nbravo\n")
+    agent = _build_edit_agent(
+        tmp_path,
+        [_edit_calls(("spec.md", "alpha", "ALPHA"), ("notes.md", "bravo", "BRAVO"))],
+    )
+    config = {"configurable": {"thread_id": "thread-batch-describe"}}
+
+    paused = agent.invoke({"messages": [{"role": "user", "content": "fix these"}]}, config)
+    approval = extract_pending_approval(paused, tmp_path)
+
+    assert approval is not None
+    assert approval.artifact_path == "spec.md (+1 more)"
+    assert "2 changes in one step" in approval.notes
+    assert "alpha" in approval.notes and "ALPHA" in approval.notes
+    assert "bravo" in approval.notes and "BRAVO" in approval.notes

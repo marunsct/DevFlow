@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { listRuns, deleteRun, cloneRun, resumeRun } from '../api';
 import type { RunSummary } from '../types';
 import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy } from 'lucide-react';
+import { describeStage, describeStatus } from '../lib/activity';
 
 export const RunList: React.FC = () => {
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -74,7 +75,7 @@ export const RunList: React.FC = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
+    <div className="max-w-[90rem] mx-auto space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-white">Workflow Runs</h1>
@@ -122,30 +123,39 @@ export const RunList: React.FC = () => {
                 key={run.run_id}
                 className="glass-card rounded-xl p-4 hover:bg-white/[0.03] transition-all duration-200 group"
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 min-w-0 flex-1">
+                {/* Stacks on a phone. Laid out as one row it put the status
+                    chip, the step, a full timestamp, the run id and four
+                    controls on a 390px line, which truncated the step name to
+                    "De..." and left the buttons sitting on top of the date. */}
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-start gap-3 min-w-0 flex-1 sm:items-center sm:gap-4">
                     <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border shrink-0 ${config.bg} ${config.text} ${config.glow}`}>
                       <StatusIcon className="h-3 w-3" />
-                      <span className="uppercase tracking-wider">{run.status.replace(/_/g, ' ')}</span>
+                      <span>{describeStatus(run.status).label}</span>
                     </div>
+                    {/* The step it is on, in words, is what tells you whether a
+                        run needs you. The run id is an identifier for support,
+                        so it moves underneath rather than leading the row. */}
                     <div className="min-w-0">
-                      <p className="text-sm font-mono text-text-primary truncate">{run.run_id}</p>
-                      <div className="flex items-center gap-3 mt-0.5 text-xs text-text-muted">
-                        <span>{new Date(run.created_at).toLocaleString()}</span>
-                        {run.current_stage && (
-                          <>
-                            <span>•</span>
-                            <span className="text-text-secondary">{run.current_stage}</span>
-                          </>
-                        )}
+                      <p className="text-sm font-medium text-white truncate">
+                        {describeStage(run.current_stage).title}
+                      </p>
+                      <div className="mt-0.5 text-xs text-text-muted">
+                        <span>
+                          {new Date(run.created_at).toLocaleString([], {
+                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+                          })}
+                        </span>
+                        <span className="hidden sm:inline"> · </span>
+                        <span className="block sm:inline font-mono truncate">{run.run_id}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
                     {isTerminal && (
                       <button
                         onClick={() => handleDelete(run.run_id)}
-                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
                         title="Delete run"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -154,7 +164,7 @@ export const RunList: React.FC = () => {
                     {run.status === 'failed' && (
                       <button
                         onClick={() => handleResume(run.run_id)}
-                        className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                        className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
                         title="Resume run"
                       >
                         <Activity className="h-4 w-4" />
@@ -162,7 +172,7 @@ export const RunList: React.FC = () => {
                     )}
                     <button
                       onClick={() => handleClone(run.run_id)}
-                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
                       title="Clone run"
                     >
                       <Copy className="h-4 w-4" />

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Download, FileText } from 'lucide-react';
-import Markdown from 'react-markdown';
+import { Markdown } from './Markdown';
 import { api } from '../api';
 
 interface ArtifactViewerProps {
@@ -24,8 +24,11 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
           responseType: 'text'
         });
         setContent(res.data);
-      } catch (err: any) {
-        setError('Failed to load artifact content.');
+      } catch (err) {
+        // Logged rather than swallowed: the banner tells the reader the load
+        // failed, and the console says why when someone comes to find out.
+        console.error('Could not load artifact', path, err);
+        setError('Could not load this document. Try again, or download it instead.');
       } finally {
         setLoading(false);
       }
@@ -85,11 +88,15 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
               </p>
             </div>
           ) : (
-            <div className="prose prose-invert prose-primary max-w-none prose-pre:bg-[#13161f] prose-pre:border prose-pre:border-white/5 prose-pre:shadow-xl prose-pre:rounded-xl">
-              {path.endsWith('.md') ? (
-                <Markdown>{content || ''}</Markdown>
+            // The `prose` classes here were inert: the Tailwind typography
+            // plugin that defines them is not installed, so every artifact
+            // rendered with default browser styles. The shared renderer styles
+            // each element explicitly instead.
+            <div className="max-w-none">
+              {/\.(md|markdown)$/i.test(path) ? (
+                <Markdown density="document">{content || ''}</Markdown>
               ) : (
-                <pre className="text-sm font-mono whitespace-pre-wrap leading-relaxed">{content}</pre>
+                <pre className="text-sm font-mono whitespace-pre-wrap leading-relaxed text-slate-200">{content}</pre>
               )}
             </div>
           )}

@@ -283,9 +283,13 @@ def create_runs_router(
                 run_id,
                 document,
                 repository,
-                review_policy=body.review_policy or {},
-                reviewer=body.reviewer or user.username,
-                auto_approve=body.auto_approve,
+                # Omitted means "keep what the run was registered with". A clone
+                # carries the source run's settings, and a Start button that sent
+                # an empty body used to overwrite every one of them with a
+                # default - turning an unattended run attended on start.
+                review_policy=body.review_policy if body.review_policy is not None else record.review_policy,
+                reviewer=body.reviewer or record.reviewer or user.username,
+                auto_approve=record.auto_approve if body.auto_approve is None else body.auto_approve,
                 model_overrides={
                     "llm_provider": body.llm_provider,
                     "openai_base_url": body.openai_base_url,
@@ -301,7 +305,7 @@ def create_runs_router(
             # redacted URL. The access token from the request is deliberately
             # not in it, and must not be added: this row is long-lived.
             detail={
-                "auto_approve": body.auto_approve,
+                "auto_approve": record.auto_approve if body.auto_approve is None else body.auto_approve,
                 "reviewer": body.reviewer,
                 "workspace_source": seeded.provenance,
             },
@@ -330,7 +334,14 @@ def create_runs_router(
     async def clone_run(
         run_id: str, user: UserInDB = Depends(require_operator)
     ) -> CreateRunResponse:
-        """Create a new run from an existing run's documents."""
+        """Create a new run from an existing run's documents.
+
+        The clone carries the source run's settings as well. Cloning exists so
+        an operator can repeat an attempt - for example after a run that died
+        in a way it cannot be resumed from - and it is only useful if the new
+        run behaves the same way: the same reviewer, the same review policy,
+        the same model choices, and the same attended/unattended mode.
+        """
         record = _require_run(runner, run_id, user)
         clone = runner.register_run(
             run_id=f"run-{uuid.uuid4()}",
@@ -339,10 +350,19 @@ def create_runs_router(
             document_paths=record.document_paths,
             owner=user.username,
             tenant_id=user.tenant_id,
+            review_policy=record.review_policy,
+            reviewer=record.reviewer,
+            auto_approve=record.auto_approve,
+            model_overrides=record.model_overrides,
         )
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action="run.clone",
-            subject=clone.run_id, detail={"cloned_from": run_id},
+            subject=clone.run_id,
+            detail={
+                "cloned_from": run_id,
+                "auto_approve": bool(record.auto_approve),
+                "review_policy": record.review_policy,
+            },
         )
         return CreateRunResponse(
             run_id=clone.run_id,
@@ -383,7 +403,7 @@ def create_runs_router(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
     ) -> RunStatusResponse:
         record = _require_run(runner, run_id, user)
-        return _build_status_response(record, runner)
+        return await _build_status_response(record, runner)
 
     @runs.get("/{run_id}/stages")
     async def get_stages(
@@ -730,8 +750,76 @@ def _collect_artifacts(record: RunRecord, runner: WorkflowRunner) -> list[dict[s
     return artifacts
 
 
-def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStatusResponse:
+def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[str, Any]]:
+    """Build the execution timeline from this run's `stage_change` history.
+
+    `stages` was returned as a hardcoded empty list, so the dashboard's flow
+    chart fell through to a fallback that fabricates a single node from
+    `current_stage` - which is why a run that had finished three stages showed
+    one.
+
+    One entry per distinct stage, in the order first seen, carrying the duration
+    to the next transition. A stage that repeats (the specialist loop, a review
+    revision) increments `retry_count` rather than adding a second node, so the
+    chart stays a readable spine instead of growing a row per iteration.
+    """
+    from datetime import datetime
+
+    def _parsed(value: str):
+        try:
+            return datetime.fromisoformat(value)
+        except (TypeError, ValueError):
+            return None
+
+    ordered: list[dict[str, Any]] = []
+    by_name: dict[str, dict[str, Any]] = {}
+
+    for event in events:
+        if event.event_type != "stage_change":
+            continue
+        name = event.stage or ""
+        if not name:
+            continue
+        existing = by_name.get(name)
+        if existing is not None:
+            existing["retry_count"] += 1
+            existing["meaning"] = event.message
+            existing["ended_at"] = None
+            continue
+        entry = {
+            "name": name,
+            "meaning": event.message,
+            "started_at": event.timestamp,
+            "ended_at": None,
+            "status": str(event.metadata.get("status") or "running"),
+            "duration_seconds": None,
+            "retry_count": 0,
+        }
+        by_name[name] = entry
+        ordered.append(entry)
+
+    # A stage ended when the next one began. The last stays open.
+    for earlier, later in zip(ordered, ordered[1:]):
+        earlier["ended_at"] = later["started_at"]
+        start, end = _parsed(earlier["started_at"]), _parsed(later["started_at"])
+        if start and end:
+            earlier["duration_seconds"] = max((end - start).total_seconds(), 0.0)
+        if earlier["status"] not in {"failed", "cancelled"}:
+            earlier["status"] = "completed"
+
+    return ordered
+
+
+async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStatusResponse:
     """Assemble the full status payload for one run."""
+    # Derived from the event history rather than stored: the history is already
+    # the authority on what ran, and a second source would drift from it.
+    try:
+        history = await runner.event_bus.get_history(record.run_id)
+        stages = _derive_stages(history, record.current_stage)
+    except Exception:  # noqa: BLE001 - a timeline is never worth failing a status call for
+        stages = []
+
     state = record.graph_state(runner.checkpointer)
 
     reviews = []
@@ -778,7 +866,7 @@ def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStat
         stage_meaning=record.stage_meaning or _stage_meaning(record.current_stage),
         created_at=record.created_at,
         updated_at=record.updated_at,
-        stages=[],
+        stages=stages,
         artifacts=artifacts,
         reviews=reviews,
         remediation=remediation,

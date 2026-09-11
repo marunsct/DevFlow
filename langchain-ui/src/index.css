@@ -83,6 +83,26 @@
   animation: fade-in 0.3s ease-out forwards;
 }
 
+/* A new entry arriving in the live feed. It rises a few pixels as it fades in,
+   which is what makes an appending list read as motion rather than as content
+   blinking into place. Short and eased-out so a burst of entries never feels
+   like it is animating one after another. */
+@keyframes activity-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-activity-in {
+  animation: activity-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Respect a reader who has asked the system for less movement. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-activity-in {
+    animation: none;
+  }
+}
+
 .animate-slide-in-right {
   animation: slide-in-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
@@ -108,12 +128,14 @@
 
 .glass-card {
   background: rgba(30, 41, 59, 0.7);
+  -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(51, 65, 85, 0.5);
 }
 
 .glass-card-strong {
   background: rgba(30, 41, 59, 0.9);
+  -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
   border: 1px solid rgba(51, 65, 85, 0.6);
 }

@@ -303,6 +303,10 @@ _CONTEXT_OVERFLOW_MARKERS = (
     "too many tokens",
     "reduce the length of the messages",
     "prompt is too long",
+    "max context length",
+    "context window",
+    "input is too long",
+    "exceeds the maximum",
 )
 
 

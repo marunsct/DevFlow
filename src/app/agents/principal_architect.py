@@ -79,7 +79,7 @@ class TechnicalSpecificationOutput(BaseModel):
 
 from app.documents import DocumentContent
 
-REVISION_DOCUMENT_BUDGET = 20_000
+REVISION_DOCUMENT_BUDGET = 5_000
 """Characters of the original upload to carry into a *revision* request.
 
 A revision is a targeted edit, not a fresh reading of the brief. It already
@@ -92,6 +92,11 @@ request and 90% of a ~38k-token revision. The architect responded with a
 structured specification whose sections were empty even though it had written a
 complete 215-line document to disk - the signature of a structured output
 generated with almost no room left.
+
+Reduced from 20,000 because revisions are iterative refinements — the architect
+already has the full spec and knows what to change. The intake document is the
+authoritative source of truth; the raw uploaded docs are only needed for edge
+cases the PM distillation might have missed.
 """
 
 def _initial_document_budget() -> int:
@@ -101,14 +106,14 @@ def _initial_document_budget() -> int:
     whole app down at startup - the same never-raise convention as
     `ContextPolicy.from_environment`.
     """
-    raw = os.environ.get("CTX_ARCHITECT_DOCUMENT_BUDGET", "40000")
+    raw = os.environ.get("CTX_ARCHITECT_DOCUMENT_BUDGET", "8000")
     try:
         return int(raw)
     except ValueError:
         logger.warning(
-            "Malformed CTX_ARCHITECT_DOCUMENT_BUDGET=%r; using default 40000", raw
+            "Malformed CTX_ARCHITECT_DOCUMENT_BUDGET=%r; using default 8000", raw
         )
-        return 40_000
+        return 8_000
 
 
 INITIAL_DOCUMENT_BUDGET = _initial_document_budget()
@@ -120,8 +125,13 @@ sitting beside `product_intake`, which is the product manager's distillation of
 the same material. The structured response came back with required sections
 empty, the signature of a model with almost no room left to answer in.
 
-Higher than the revision budget because the first pass is the one that has to
-read the brief. Set to 0 to send everything.
+Reduced from 40,000 to 8,000 because:
+- The product intake is already the distilled version of these documents.
+- A small budget forces the architect to rely on the intake rather than trying
+  to re-read raw docs it doesn't have room for.
+- The architect can request specific document excerpts if needed (via tool call).
+
+Set to 0 to send everything (not recommended for large inputs).
 """
 
 

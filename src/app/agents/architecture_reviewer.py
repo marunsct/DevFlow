@@ -102,6 +102,20 @@ Responsibilities:
 - Record any risk you are knowingly accepting rather than blocking on, and any
   condition that must remain true for your approval to stand.
 
+CRITICAL: When evaluating feasibility, distinguish between issues the architect
+can fix in this revision versus fundamental constraints of the technology stack.
+Do NOT mark items as "blocking" if they cannot be resolved by specification
+changes alone (e.g., "no Passport strategy exists when OAuth2 was chosen",
+"no CI/CD pipeline when GitHub Actions is not selected"). These are design
+choices, not specification defects. Only block on issues that indicate the
+specification is incomplete, contradictory, or missing critical details.
+
+Acceptable risks to note (do NOT block on):
+- Technology stack choices that differ from industry defaults but are justified
+- Trade-offs between consistency and availability in distributed systems
+- Missing operational runbooks (can be created post-approval)
+- Infrastructure choices (cloud provider, database engine) when they serve the requirements
+
 Constraints:
 - Do not modify application source code or the specification itself; you only
   review it and record findings.

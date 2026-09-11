@@ -128,6 +128,10 @@ Constraints:
   filename is the same on every run and later stages can find it.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
+- **Write the complete artifact in ONE single write_artifact call.** Do NOT
+  make follow-up edit calls to refine, fix typos, or improve the document after
+  the initial write. The document must be complete and correct before you write
+  it. Once the write is confirmed, immediately return your structured response.
 - Treat the executed-command record as authoritative over any specialist's
   description of its own testing. A milestone whose specialists report passing
   tests, but whose record shows no test command ran, is not verified - raise it

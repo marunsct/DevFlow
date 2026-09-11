@@ -66,13 +66,26 @@ class MilestonePlanOutput(BaseModel):
     )
 
 
+def _truncate(text: str, max_chars: int = 12_000) -> str:
+    """Truncate long text for local LLM context limits."""
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    split = int(max_chars * 0.6)
+    return (
+        text[:split]
+        + f"\n\n--- TRUNCATED ({len(text) - split} chars removed for context limits) ---\n\n"
+        + text[len(text) - (max_chars - split):]
+    )
+
+
 def build_milestone_planning_request(
     sprint_plan_text: str, selected_sprint_goal: str, repository_root: str
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for planning one milestone from the approved sprint plan."""
     brief = (
         f"Repository root: {repository_root}\n\n"
-        f"--- Approved sprint plan ---\n{sprint_plan_text}\n\n"
+        f"--- Approved sprint plan ---\n{_truncate(sprint_plan_text)}\n\n"
         f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
         f"**CRITICAL INSTRUCTION**: Ensure all tasks strictly instruct specialists to write application code inside a directory named after the app (e.g. `thehub/` for 'The Hub') and not in generic directories like 'nest-app' or directly in the repository root. All documentation must be placed in the `docs/` directory.\n"

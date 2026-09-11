@@ -86,6 +86,27 @@ class ToolsAndModelsOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
+def _truncate_for_llm(text: str, max_chars: int = 12_000) -> str:
+    """Truncate long text for local LLM context limits.
+
+    Local models (7B-35B params) typically have 8K-32K token windows. After
+    accounting for the system prompt (~2KB), tool definitions, and output
+    tokens, we need to keep input well under that ceiling. This function
+    preserves the beginning and end of long documents so reviewers can still
+    see the structure and conclusion even if the middle is truncated.
+    """
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    # Keep first 60% and last 40% with a visible truncation marker
+    split = int(max_chars * 0.6)
+    return (
+        text[:split]
+        + f"\n\n--- TRUNCATED ({len(text) - split} chars removed for context limits) ---\n\n"
+        + text[len(text) - (max_chars - split):]
+    )
+
+
 def build_tools_models_request(
     product_intake_text: str, repository: RepositoryContext
 ) -> dict[str, list[dict[str, str]]]:
@@ -96,10 +117,13 @@ def build_tools_models_request(
     not a raw, unreviewed document — this role only starts after Step 3's
     intake artifact is approved.
     """
+    # Truncate oversized inputs to prevent context overflow on local LLMs
+    truncated_intake = _truncate_for_llm(product_intake_text, max_chars=12_000)
+    
     brief = (
         f"Repository root: {repository.root_path} "
         f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
-        f"--- Approved product intake ---\n{product_intake_text}\n"
+        f"--- Approved product intake ---\n{truncated_intake}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

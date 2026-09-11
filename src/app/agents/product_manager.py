@@ -67,6 +67,19 @@ class ProductManagerOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
+def _truncate(text: str, max_chars: int = 12_000) -> str:
+    """Truncate long text for local LLM context limits."""
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    split = int(max_chars * 0.6)
+    return (
+        text[:split]
+        + f"\n\n--- TRUNCATED ({len(text) - split} chars removed for context limits) ---\n\n"
+        + text[len(text) - (max_chars - split):]
+    )
+
+
 def build_intake_request(
     document: DocumentContent, repository: RepositoryContext
 ) -> dict[str, list[dict[str, str]]]:
@@ -81,7 +94,7 @@ def build_intake_request(
         f"Product document source: {document.source_path} ({document.source_type})\n"
         f"Repository root: {repository.root_path} "
         f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
-        f"--- Product document text ---\n{document.text}\n"
+        f"--- Product document text ---\n{_truncate(document.text)}\n"
     )
     if document.truncated and document.truncation_note:
         brief += f"\nNote: {document.truncation_note}\n"

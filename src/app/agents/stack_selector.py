@@ -30,6 +30,18 @@ class StackSelectorOutput(BaseModel):
     rationale: str = Field(..., description="Why this stack was chosen.")
 
 
+def _truncate(text: str, max_chars: int = 12_000) -> str:
+    text = str(text or "")
+    if len(text) <= max_chars:
+        return text
+    split = int(max_chars * 0.6)
+    return (
+        text[:split]
+        + f"\n\n--- TRUNCATED ({len(text) - split} chars removed for context limits) ---\n\n"
+        + text[len(text) - (max_chars - split):]
+    )
+
+
 def build_stack_selector_request(
     product_intake_text: str, tools_models_text: str, repository: RepositoryContext
 ) -> dict[str, list[dict[str, str]]]:
@@ -37,8 +49,8 @@ def build_stack_selector_request(
     brief = (
         f"Repository root: {repository.root_path} "
         f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
-        f"--- Approved product intake ---\n{product_intake_text}\n\n"
-        f"--- Tools and Models Comparison ---\n{tools_models_text}\n"
+        f"--- Approved product intake ---\n{_truncate(product_intake_text)}\n\n"
+        f"--- Tools and Models Comparison ---\n{_truncate(tools_models_text)}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

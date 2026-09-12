@@ -35,7 +35,7 @@ class ContextPolicy(BaseModel):
         description="Fraction of the window at which compaction runs.",
     )
     keep_recent_messages: int = Field(
-        default=20,
+        default=10,
         ge=2,
         description="Messages left untouched at the tail when compacting.",
     )

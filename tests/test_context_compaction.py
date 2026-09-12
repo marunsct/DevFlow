@@ -313,7 +313,11 @@ def test_the_architect_first_request_is_bounded():
     )
     content = build_architecture_request("i", "t", "s", repository, document)["messages"][0]["content"]
 
-    assert len(content) < 60_000
+    # The request must be bounded by the document budget, not by document size.
+    # A 135k-char upload and a multi-megabyte one both produce a brief of roughly
+    # INITIAL_DOCUMENT_BUDGET + fixed framing; assert that bound, not an absolute
+    # character count (which is only as large as the configured budget).
+    assert len(content) <= INITIAL_DOCUMENT_BUDGET + 1_000
     assert "trimmed to" in content
     assert INITIAL_DOCUMENT_BUDGET > 0
 

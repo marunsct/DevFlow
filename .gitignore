@@ -27,3 +27,4 @@ fix_*.py
 patch*.py
 patch*.diff
 test_out.txt
+coverage.xml

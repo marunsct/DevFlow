@@ -101,7 +101,29 @@ workspace on the network, which is an escape hatch rather than a build step.
 """
 
 
-MAX_OUTPUT_SIZE = 50 * 1024
+def _max_output_size() -> int:
+    """Per-command output cap, in bytes.
+
+    Bounded well below the model window because an iterative specialist (build /
+    fix / start-server loops) accumulates one of these tool results per command,
+    and compaction keeps the most recent N messages *untouched*. A 50 KB result
+    (~12k tokens) in each of a 20-message kept tail can alone exceed the window,
+    so compaction cannot rescue it. Capping each result small keeps the whole
+    protected tail inside the window; the full output is still on disk and
+    reachable via `read_command_output`.
+    """
+    raw = os.environ.get("SANDBOX_MAX_OUTPUT", "").strip()
+    if not raw:
+        return 24 * 1024
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("Malformed SANDBOX_MAX_OUTPUT=%r; using %d", raw, 24 * 1024)
+        return 24 * 1024
+    return max(value, 1024)
+
+
+MAX_OUTPUT_SIZE = _max_output_size()
 
 TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120}
 

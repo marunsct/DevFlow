@@ -66,7 +66,7 @@ class MilestonePlanOutput(BaseModel):
     )
 
 
-def _truncate(text: str, max_chars: int = 12_000) -> str:
+def _truncate(text: str, max_chars: int = 80_000) -> str:
     """Truncate long text for local LLM context limits."""
     text = str(text or "")
     if len(text) <= max_chars:

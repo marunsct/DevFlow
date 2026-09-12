@@ -30,7 +30,7 @@ class StackSelectorOutput(BaseModel):
     rationale: str = Field(..., description="Why this stack was chosen.")
 
 
-def _truncate(text: str, max_chars: int = 12_000) -> str:
+def _truncate(text: str, max_chars: int = 80_000) -> str:
     text = str(text or "")
     if len(text) <= max_chars:
         return text

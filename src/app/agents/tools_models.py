@@ -86,7 +86,7 @@ class ToolsAndModelsOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
-def _truncate_for_llm(text: str, max_chars: int = 12_000) -> str:
+def _truncate_for_llm(text: str, max_chars: int = 80_000) -> str:
     """Truncate long text for local LLM context limits.
 
     Local models (7B-35B params) typically have 8K-32K token windows. After
@@ -118,7 +118,7 @@ def build_tools_models_request(
     intake artifact is approved.
     """
     # Truncate oversized inputs to prevent context overflow on local LLMs
-    truncated_intake = _truncate_for_llm(product_intake_text, max_chars=12_000)
+    truncated_intake = _truncate_for_llm(product_intake_text, max_chars=80_000)
     
     brief = (
         f"Repository root: {repository.root_path} "

@@ -79,7 +79,7 @@ class TechnicalSpecificationOutput(BaseModel):
 
 from app.documents import DocumentContent
 
-REVISION_DOCUMENT_BUDGET = 20_000
+REVISION_DOCUMENT_BUDGET = 80_000
 """Characters of the original upload to carry into a *revision* request.
 
 A revision is a targeted edit, not a fresh reading of the brief. It already
@@ -106,7 +106,7 @@ def _initial_document_budget() -> int:
     whole app down at startup - the same never-raise convention as
     `ContextPolicy.from_environment`.
     """
-    raw = os.environ.get("CTX_ARCHITECT_DOCUMENT_BUDGET", "60000")
+    raw = os.environ.get("CTX_ARCHITECT_DOCUMENT_BUDGET", "150000")
     try:
         return int(raw)
     except ValueError:

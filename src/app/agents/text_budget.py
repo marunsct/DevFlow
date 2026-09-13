@@ -24,7 +24,7 @@ import os
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SPECIFICATION_BUDGET = 60_000
+DEFAULT_SPECIFICATION_BUDGET = 150_000
 """Characters of the technical specification to carry into one request.
 
 Roughly 15k tokens, which leaves room in a 75k window for the system prompt,

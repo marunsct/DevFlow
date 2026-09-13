@@ -25,7 +25,7 @@ class ContextPolicy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     max_context_tokens: int = Field(
-        default=75_000,
+        default=200_000,
         description="The model's usable input window, in tokens.",
     )
     soft_trigger_ratio: float = Field(
@@ -35,7 +35,7 @@ class ContextPolicy(BaseModel):
         description="Fraction of the window at which compaction runs.",
     )
     keep_recent_messages: int = Field(
-        default=10,
+        default=15,
         ge=2,
         description="Messages left untouched at the tail when compacting.",
     )
@@ -91,7 +91,7 @@ class ContextPolicy(BaseModel):
         return cls(
             max_context_tokens=_read("CTX_MAX_TOKENS", 75_000, int),
             soft_trigger_ratio=_read("CTX_SOFT_TRIGGER_RATIO", 0.8, float),
-            keep_recent_messages=_read("CTX_KEEP_MESSAGES", 20, int),
+            keep_recent_messages=_read("CTX_KEEP_MESSAGES", 15, int),
             trim_tokens_to_summarize=_read("CTX_SUMMARY_BUDGET", 4_000, int),
             compaction_model=str(environment.get("CTX_COMPACTION_MODEL", "")).strip(),
             enabled=_read("CTX_COMPACTION_ENABLED", True, _flag),

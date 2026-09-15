@@ -126,6 +126,74 @@ def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[An
     return all(_call_signature(c) in seen_since_last_change for c in pending)
 
 
+#: At most this many field errors in one correction. A model that got every
+#: field wrong needs the first few and a fresh look, not a wall of text.
+MAX_REPORTED_ERRORS = 6
+
+
+def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
+    """Why the JSON in this message is not a valid answer, or "" if it is.
+
+    Measured on run-5c7d7d8d's `principal_architect`: twenty-one minutes,
+    fifteen answers, eight identical `ls {'path': '/'}` between them, no
+    progress. The schema declares `product_scope: str` and the model emitted
+    `"product_scope": {"covers": [...], "defers": [...]}` every time. Pydantic
+    says exactly what is wrong - "Input should be a valid string" - and the
+    model never saw it, because an answer written into the conversation goes
+    through no validation at all. Only the structured-output channel validates,
+    and the model was not using it.
+
+    The recovery that already exists reads such an answer back when the stage
+    ends, which helps only when the answer is CORRECT. A near miss is discarded
+    and the stage spins to the recursion limit with nothing to correct.
+    """
+    if schema is None:
+        return ""
+    text = str(getattr(message, "content", "") or "")
+    if "{" not in text:
+        return ""
+    from app.graph.workflow import _first_json_object
+
+    candidate = _first_json_object(text)
+    if not candidate:
+        return ""
+    try:
+        payload = json.loads(candidate)
+    except ValueError:
+        return ""
+    if not isinstance(payload, dict):
+        return ""
+    try:
+        schema.model_validate(payload)
+    except Exception as exc:  # noqa: BLE001 - any validation failure is the point
+        return _render_errors(exc)
+    return ""
+
+
+def _render_errors(exc: Exception) -> str:
+    """The validation failure as a short list of fields to fix."""
+    lines: list[str] = []
+    errors = getattr(exc, "errors", None)
+    if callable(errors):
+        try:
+            for error in list(errors())[:MAX_REPORTED_ERRORS]:
+                where = ".".join(str(part) for part in error.get("loc", ())) or "(root)"
+                lines.append(f"  {where}: {error.get('msg', 'is not valid')}")
+        except Exception:  # noqa: BLE001
+            lines = []
+    if not lines:
+        lines = [f"  {str(exc)[:300]}"]
+    return (
+        "Your last message contained a JSON object, and it is not a valid "
+        "response for this stage, so the workflow did not receive it. Nothing "
+        "has been recorded. These fields are wrong:\n"
+        + "\n".join(lines)
+        + "\n\nFix exactly those fields and send the object again. Do not "
+        "start the work over and do not call any more tools - everything else "
+        "you wrote was fine."
+    )
+
+
 def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
     """Middleware that stops a stage circling once its answer is written."""
     from langchain.agents.middleware import AgentMiddleware
@@ -133,6 +201,39 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
     from langchain_core.messages import AIMessage
 
     class SettledAnswerMiddleware(AgentMiddleware):
+        def wrap_model_call(self, request: Any, handler: Any) -> Any:
+            """Tell the model why its last answer was not a valid one.
+
+            Appended to the request rather than written to history, for the
+            same reason the workspace digest is: it is a correction the model
+            needs on this call, and appending to history after an assistant
+            message that has pending tool calls would break their pairing.
+            """
+            try:
+                messages = getattr(request, "messages", None)
+                if not isinstance(messages, list) or not messages:
+                    return handler(request)
+                last_ai = next(
+                    (m for m in reversed(messages) if getattr(m, "type", None) == "ai"),
+                    None,
+                )
+                if last_ai is None:
+                    return handler(request)
+                correction = _why_it_was_not_accepted(last_ai, schema)
+                if not correction:
+                    return handler(request)
+                logger.info(
+                    "Stage %s sent an answer that does not satisfy its schema; "
+                    "returning the validation errors",
+                    stage_name or "?",
+                )
+                request = request.override(
+                    messages=[*messages, {"role": "user", "content": correction}]
+                )
+            except Exception:  # noqa: BLE001 - never fail the call over a hint
+                return handler(request)
+            return handler(request)
+
         @hook_config(can_jump_to=["end"])
         def after_model(self, state: Any, runtime: Any = None) -> dict[str, Any] | None:
             # This runs after every model call of every gated stage. An
@@ -181,4 +282,8 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
     return SettledAnswerMiddleware()
 
 
-__all__ = ["MUTATING_TOOLS", "build_settled_answer_middleware"]
+__all__ = [
+    "MAX_REPORTED_ERRORS",
+    "MUTATING_TOOLS",
+    "build_settled_answer_middleware",
+]

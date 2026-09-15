@@ -361,3 +361,93 @@ def test_a_failure_inside_the_check_leaves_the_loop_alone() -> None:
     # `_answer_in` already swallows a validation failure, so the stage simply
     # is not stopped - and nothing propagates either way.
     assert _after(state, schema=Exploding) is None
+
+
+# --- an answer that is nearly right --------------------------------------
+
+
+def test_a_near_miss_is_told_which_fields_are_wrong() -> None:
+    """The twenty-one minutes that prompted this.
+
+    run-5c7d7d8d's `principal_architect` spent 21 minutes and fifteen answers
+    emitting `"product_scope": {"covers": [...], "defers": [...]}` against a
+    schema declaring `product_scope: str`. Pydantic says exactly what is wrong.
+    The model never saw it: an answer written into the conversation goes
+    through no validation at all, and only the structured-output channel
+    validates.
+    """
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    wrong = AIMessage(
+        content='{"status": {"covers": ["a"]}, "reason": "r"}', id="m"
+    )
+
+    why = _why_it_was_not_accepted(wrong, Verdict)
+
+    assert "not a valid response for this stage" in why
+    assert "status" in why
+    assert "valid string" in why
+    # It must forbid the two things a model does next: start over, or explain.
+    assert "Do not start the work over" in why
+
+
+def test_a_valid_answer_gets_no_correction() -> None:
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    assert _why_it_was_not_accepted(AIMessage(content=ANSWER, id="m"), Verdict) == ""
+
+
+def test_prose_with_no_json_gets_no_correction() -> None:
+    """A model narrating its work has not attempted an answer."""
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    assert _why_it_was_not_accepted(AIMessage(content="Let me look.", id="m"), Verdict) == ""
+
+
+def test_the_correction_reaches_the_request_without_touching_history() -> None:
+    """Appending to history after an assistant message with pending tool calls
+    would break their pairing, which is why this rides on the request."""
+    captured = {}
+
+    class _Request:
+        def __init__(self, messages):
+            self.messages = messages
+
+        def override(self, **changes):
+            captured["messages"] = changes.get("messages", self.messages)
+            return _Request(captured["messages"])
+
+    request = _Request(
+        [
+            HumanMessage(content="do it"),
+            AIMessage(content='{"status": {"covers": []}, "reason": "r"}', id="m"),
+        ]
+    )
+    before = list(request.messages)
+
+    build_settled_answer_middleware(Verdict, "principal_architect").wrap_model_call(
+        request, lambda r: "handled"
+    )
+
+    assert request.messages == before
+    assert "not a valid response" in str(captured["messages"][-1])
+
+
+def test_the_real_shape_from_run_5c7d7d8d_is_diagnosed() -> None:
+    """The exact payload, against the exact schema."""
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    emitted = AIMessage(
+        content=(
+            '{"product_scope": {"covers": ["A responsive single-page web '
+            'application."], "defers": ["Multi-user sync."]}, '
+            '"component_boundaries": []}'
+        ),
+        id="m",
+    )
+
+    why = _why_it_was_not_accepted(emitted, TechnicalSpecificationOutput)
+
+    assert "product_scope" in why
+    assert "valid string" in why

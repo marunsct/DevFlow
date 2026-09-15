@@ -40,6 +40,55 @@ window buys a longer ramble rather than a shorter one.
 """
 
 
+#: Twice the longest legitimate model call measured across the stored runs
+#: (`principal_architect` at 162 seconds).
+DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0
+
+#: Below this, real work starts being cancelled and retried.
+MIN_REQUEST_TIMEOUT_SECONDS = 180.0
+
+
+def _request_timeout() -> float:
+    """Seconds to wait for one model call before giving up on it.
+
+    Set explicitly because the alternative is not "no timeout" but the OpenAI
+    SDK's default, `Timeout(connect=5, read=600, write=600, pool=600)` - a
+    value nobody here chose and which does not match this deployment.
+
+    Measured on a local llama.cpp server. Twice now a request has wedged: the
+    server reported `llamacpp:requests_processing 1` with
+    `prompt_tokens_total` AND `tokens_predicted_total` both frozen across a
+    25-second sample, while the GPU sat at 88%. A slow generation still moves
+    those counters; a wedged one moves neither. run-6412366b lost 22 minutes to
+    that in `tools_models`, and run-caae7e32 never produced a single event.
+
+    The retry is the cheap part: on run-6412366b the identical request
+    succeeded in 66 seconds once the first attempt was abandoned.
+
+    300 seconds is roughly twice the longest legitimate call measured across
+    the stored runs - `principal_architect` at 162s, everything else well
+    under - so it bounds a wedge without touching real work. Override with
+    MODEL_REQUEST_TIMEOUT_SECONDS.
+    """
+    import logging
+    import os
+
+    raw = os.environ.get("MODEL_REQUEST_TIMEOUT_SECONDS", "").strip()
+    if not raw:
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "MODEL_REQUEST_TIMEOUT_SECONDS=%r is not a number; using %s",
+            raw, DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        )
+        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+    # A timeout below the longest legitimate call measured would turn real work
+    # into retries, which is the more expensive mistake.
+    return max(value, MIN_REQUEST_TIMEOUT_SECONDS)
+
+
 def _max_output_tokens() -> int:
     """Read `MODEL_MAX_OUTPUT_TOKENS` without ever raising at import time."""
     import logging
@@ -142,6 +191,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             api_key=resolved_settings.anthropic_api_key,
             model=resolved_settings.model_name,
             max_retries=3,
+            timeout=_request_timeout(),
             max_tokens=_max_output_tokens(),
             **thinking.anthropic_arguments(),
         )
@@ -150,6 +200,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
                 api_key=resolved_settings.openai_api_key,
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
+            timeout=_request_timeout(),
                 max_tokens=_max_output_tokens(),
             )
     elif resolved_settings.llm_provider == "gemini":
@@ -157,6 +208,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             api_key=resolved_settings.google_api_key,
             model=resolved_settings.model_name,
             max_retries=3,
+            timeout=_request_timeout(),
             max_output_tokens=_max_output_tokens(),
         )
         if resolved_settings.openai_api_key:
@@ -164,6 +216,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
                 api_key=resolved_settings.openai_api_key,
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
+            timeout=_request_timeout(),
                 max_tokens=_max_output_tokens(),
             )
     else:
@@ -173,6 +226,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             api_key=resolved_settings.openai_api_key,
             model=resolved_settings.model_name,
             max_retries=3,
+            timeout=_request_timeout(),
             max_tokens=_max_output_tokens(),
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
@@ -182,6 +236,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
                 api_key=resolved_settings.anthropic_api_key,
                 model=_fallback_model("ANTHROPIC_FALLBACK_MODEL", "claude-haiku-4-5-20251001"),
                 max_retries=3,
+            timeout=_request_timeout(),
                 max_tokens=_max_output_tokens(),
              )
 

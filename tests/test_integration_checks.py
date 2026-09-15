@@ -1041,3 +1041,128 @@ def test_a_renamed_import_binds_the_name_on_the_right(tmp_path):
     assert bound == {"make", "deleteTask", "everything", "loadTasks"}
     assert "addTask" not in bound
     assert "assert" not in bound
+
+
+# --- the cap the brief states, actually checked --------------------------
+
+
+def test_a_product_over_its_declared_budget_is_reported(tmp_path):
+    """The comparison the harness had both operands for and did not make.
+
+    Measured on run-1d1b6c9c: the milestone review was handed `550 of them
+    code`, directly under a sentence saying that is the number a cap means. The
+    cap appears six times in that run's own documents, once as the acceptance
+    criterion "Total source code stays within the 500-line limit". The review
+    accepted the milestone with two findings, neither about size, and the
+    sprint was tagged.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/product_intake.md").write_text(
+        "- Maximum 500 lines of code\n- Total source code stays within the "
+        "500-line limit\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "package.json").write_text('{"type": "module"}', encoding="utf-8")
+    (tmp_path / "app.js").write_text(
+        "export function a(x){ return x; }\n" * 600, encoding="utf-8"
+    )
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "against the 500-line maximum" in summary
+    assert "101 over" in summary, summary
+
+
+def test_a_product_inside_its_budget_says_nothing(tmp_path):
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/product_intake.md").write_text(
+        "Maximum 500 lines of code\n", encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export function a(x){ return x; }\n" * 10, encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+
+    assert "maximum this project" not in summarise_integration(str(tmp_path))
+
+
+def test_tests_do_not_count_against_the_product_budget(tmp_path):
+    """A brief capping "lines of code" does not mean the suite. run-18c0e34c
+    was 631 lines of application and 1,558 of tests the round had installed."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/intake.md").write_text("Maximum 500 lines of code\n", encoding="utf-8")
+    (tmp_path / "app.js").write_text("export function a(x){ return x; }\n" * 50, encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.test.mjs").write_text(
+        "import {a} from './app.js';\n" + "// a test line\n" * 900, encoding="utf-8"
+    )
+
+    assert "maximum this project" not in summarise_integration(str(tmp_path))
+
+
+def test_a_workspace_that_states_no_budget_is_not_judged(tmp_path):
+    from app.analysis.integration_checks import _declared_line_budget
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/intake.md").write_text("Build a to-do list.\n", encoding="utf-8")
+
+    assert _declared_line_budget(tmp_path) is None
+
+
+def test_both_spellings_the_workflow_writes_are_recognised(tmp_path):
+    from app.analysis.integration_checks import _declared_line_budget
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/a.md").write_text("Maximum 500 lines of code\n", encoding="utf-8")
+    assert _declared_line_budget(tmp_path) == 500
+
+    (tmp_path / "docs/a.md").write_text("stays within the 400-line limit\n", encoding="utf-8")
+    assert _declared_line_budget(tmp_path) == 400
+
+
+def test_one_passing_mention_cannot_move_the_budget(tmp_path):
+    """The most frequently stated number wins, ties to the smallest."""
+    from app.analysis.integration_checks import _declared_line_budget
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/intake.md").write_text(
+        "Maximum 500 lines of code\n"
+        "Total source code stays within the 500-line limit\n"
+        "A 5000-line limit would be typical of a larger product.\n",
+        encoding="utf-8",
+    )
+
+    assert _declared_line_budget(tmp_path) == 500
+
+
+def test_the_budget_check_and_the_size_report_count_the_same_lines(tmp_path):
+    """Finding 06 was these two disagreeing: a size report counting abandoned
+    probe scripts as product while the orphan check, in the same report, named
+    them as strays."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/intake.md").write_text("Maximum 100 lines of code\n", encoding="utf-8")
+    (tmp_path / "app.js").write_text("export function a(x){ return x; }\n" * 40, encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+    # A probe nothing loads: counted by neither.
+    (tmp_path / "verify-milestone.mjs").write_text("console.log(1);\n" * 500, encoding="utf-8")
+
+    summary = summarise_integration(str(tmp_path))
+
+    # 40 lines of app + 1 of html is under 100, and the 500-line probe must not
+    # drag it over.
+    assert "maximum this project" not in summary

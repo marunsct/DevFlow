@@ -756,23 +756,103 @@ def _code_lines(text: str) -> int:
     return count
 
 
-def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None) -> str:
-    """How many lines of code this project is, per file and in total.
+#: A line budget stated in the project's own documents. Both spellings the
+#: workflow actually writes: "Maximum 500 lines of code" straight from the
+#: brief, and "the 500-line limit" as the intake and specification restate it.
+_DECLARED_BUDGET = re.compile(
+    r"(?:maximum|max|no more than|within|under|cap(?:ped)?\s+(?:at|to)|limit\s+of)"
+    r"\s*(\d{2,5})\s*(?:total\s+)?lines"
+    r"|(\d{2,5})[-\s]line\s*(?:limit|cap|budget|maximum)",
+    re.I,
+)
 
-    Reported rather than judged. A brief that caps the product at a number of
-    lines - `brief_low` says "Maximum 500 lines of code" - is a constraint no
-    stage ever checked against what was built: run-18c0e34c shipped 627 lines,
-    390 of them CSS, and passed every review. The reviewer has the brief and
-    can compare, but only if someone counts.
 
-    Scripts nothing loads are counted apart from the application. They are not
-    the product - they are the probes and verifiers an agent left behind - and
-    including them makes the one number the reviewer judges the brief against
-    wrong in both directions: it can fail a product that is within its cap, and
-    it can hide an overrun behind a total nobody trusts. On run-61c5a5b6 the
-    application measured 901 lines against a 500-line cap, of which 443 (49%)
-    were `verify-milestone.mjs` and three abandoned cleanup scripts. The real
-    application was 454.
+def _declared_line_budget(root: Path) -> int | None:
+    """The line cap this project's own documents state, if they state one.
+
+    Taken from the workspace's documents rather than threaded through from the
+    brief, because those documents are where the number has already been
+    interpreted: `brief_low` says "Maximum 500 lines of code" and the intake
+    restates it as an acceptance criterion, "Total source code stays within the
+    500-line limit". Reading them needs no new plumbing and picks up a cap the
+    workflow set for itself.
+
+    The most frequently stated number wins, ties going to the smallest, so one
+    passing mention of a different figure cannot move the budget.
+    """
+    seen: list[int] = []
+    for folder in (root / "docs", root):
+        if not folder.is_dir():
+            continue
+        for document in sorted(folder.glob("*.md")):
+            try:
+                text = _read(document)
+            except Exception:  # noqa: BLE001 - a missing document is not a budget
+                continue
+            for match in _DECLARED_BUDGET.finditer(text):
+                value = match.group(1) or match.group(2)
+                try:
+                    number = int(value)
+                except (TypeError, ValueError):
+                    continue
+                if 50 <= number <= 100_000:
+                    seen.append(number)
+    if not seen:
+        return None
+    best = max(set(seen), key=lambda n: (seen.count(n), -n))
+    return best
+
+
+def _over_the_declared_budget(
+    files: list[Path], root: Path, orphans: set[str] | None = None
+) -> list[str]:
+    """The product measured against the cap its own documents state.
+
+    `_size_report` was written to report and not judge - "The reviewer has the
+    brief and can compare, but only if someone counts." run-1d1b6c9c settles
+    whether the reviewer compares. Its milestone review was handed
+    `550 of them code`, directly under a sentence saying that is the number a
+    cap means; the cap appears six times in that run's own documents, once as
+    the acceptance criterion "Total source code stays within the 500-line
+    limit". The review accepted the milestone with two findings, neither about
+    size, and the sprint was tagged.
+
+    So the comparison is one subtraction that the harness has both operands for
+    and does not do. Model judgment is the wrong instrument for it.
+    """
+    budget = _declared_line_budget(root)
+    if budget is None:
+        return []
+    application, _, _, counted_code = _measure_sizes(files, root, orphans)
+    if not application:
+        return []
+    code_total = sum(counted_code.get(name, 0) for _, name in application)
+    if code_total <= budget:
+        return []
+    biggest = ", ".join(
+        f"{name} ({counted_code.get(name, 0):,})"
+        for _, name in sorted(application, reverse=True)[:3]
+    )
+    return [
+        f"The product is {code_total:,} lines of code against the {budget:,}-line "
+        f"maximum this project's own documents state - {code_total - budget:,} over. "
+        f"Counted without blank lines, comments, tests or files nothing loads. "
+        f"Largest: {biggest}. This is a stated acceptance criterion, not a "
+        f"preference: either bring it under {budget:,} or say in the review why "
+        f"the criterion no longer holds."
+    ]
+
+
+def _measure_sizes(
+    files: list[Path], root: Path, orphans: set[str] | None = None
+) -> tuple[list[tuple[int, str]], list[tuple[int, str]], list[tuple[int, str]], dict[str, int]]:
+    """Count once, for both the report and the budget check.
+
+    Separated so the number shown to a reviewer and the number judged against
+    the brief cannot be arrived at differently. They already did once: finding
+    06 was a size report counting abandoned probe scripts as product while the
+    orphan check, in the same report, named them as strays. The two halves
+    never spoke.
     """
     application: list[tuple[int, str]] = []
     tests: list[tuple[int, str]] = []
@@ -798,6 +878,28 @@ def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None)
         # the wrong thing. On run-18c0e34c the application was 631 lines and the
         # tests the round installed were 1,558 more.
         (tests if _NOT_APPLICATION.search(relative) else application).append((lines, relative))
+    return application, tests, stray, counted_code
+
+
+def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None) -> str:
+    """How many lines of code this project is, per file and in total.
+
+    Reported rather than judged. A brief that caps the product at a number of
+    lines - `brief_low` says "Maximum 500 lines of code" - is a constraint no
+    stage ever checked against what was built: run-18c0e34c shipped 627 lines,
+    390 of them CSS, and passed every review. The reviewer has the brief and
+    can compare, but only if someone counts.
+
+    Scripts nothing loads are counted apart from the application. They are not
+    the product - they are the probes and verifiers an agent left behind - and
+    including them makes the one number the reviewer judges the brief against
+    wrong in both directions: it can fail a product that is within its cap, and
+    it can hide an overrun behind a total nobody trusts. On run-61c5a5b6 the
+    application measured 901 lines against a 500-line cap, of which 443 (49%)
+    were `verify-milestone.mjs` and three abandoned cleanup scripts. The real
+    application was 454.
+    """
+    application, tests, stray, counted_code = _measure_sizes(files, root, orphans)
 
     if not application and not tests and not stray:
         return ""
@@ -930,6 +1032,14 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
     return problems
 
 
+def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
+    """The orphan set, or an empty one. Never raises."""
+    try:
+        return set(_orphaned_scripts(files, root))
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def summarise_integration(repository_root: str | Path, stack: Any = None) -> str:
     """What the files in this workspace say about each other. Never raises."""
     try:
@@ -956,6 +1066,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _application_embedded_in_html(files, root)
             + _languages_sharing_a_directory(files, root)
             + _module_system_mismatch(files, root)
+            + _over_the_declared_budget(files, root, _orphans_quietly(files, root))
         )
     except Exception:  # noqa: BLE001
         return "The cross-file checks could not complete on this workspace."

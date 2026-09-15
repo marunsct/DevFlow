@@ -17,8 +17,9 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 from app.state import RepositoryContext
 
@@ -32,10 +33,62 @@ class TechnologyStack(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     language: str = Field(..., description="Primary programming language (e.g., TypeScript, Python).")
-    framework: str = Field(..., description="Primary framework (e.g., React, NestJS, FastAPI).")
+    framework: str = Field(
+        ...,
+        description=(
+            "The framework the backend or, for a client-only product, the "
+            "application itself is built on."
+        ),
+    )
+    # Optional so a checkpoint written before this field existed still loads,
+    # and so a client-only product is not made to invent a backend.
+    frontend_framework: str = Field(
+        default="",
+        description=(
+            "The framework the user interface is built on, when the product has "
+            "one that is chosen separately from the backend. Leave empty only "
+            "when there is genuinely no separate frontend."
+        ),
+    )
     database: str = Field(..., description="Database technology (e.g., PostgreSQL, MongoDB).")
     testing_framework: str = Field(..., description="Testing framework (e.g., Jest, Pytest).")
     additional_tools: list[str] = Field(default_factory=list, description="Other notable tools to scaffold.")
+
+    @field_validator("testing_framework")
+    @classmethod
+    def _must_be_runnable(cls, value: str) -> str:
+        """Reject a testing approach nothing in this environment can perform.
+
+        There is no browser in the sandbox, none on any role's allowlist, and no
+        human watching the workspace, so "manual browser testing" is not a
+        testing approach here - it is the absence of one. Every stage that later
+        asks "did the tests pass?" gets no answer, and the milestone reviewer
+        treats an absent test run as a blocking finding.
+
+        Stated in the stack selector's prompt first, including the sentence
+        "'Manual browser testing' cannot be carried out here by anyone". On
+        run-78804673 the selector read that and chose "Manual browser testing"
+        anyway. An instruction that has failed twice is not made truer by
+        repetition; this removes the option instead.
+
+        The message names what to do, because a validation error is what the
+        model sees when it retries.
+        """
+        text = (value or "").strip()
+        lowered = text.lower()
+        impossible = ("manual", "by hand", "devtools", "browser testing", "visual inspection")
+        if any(marker in lowered for marker in impossible):
+            raise ValueError(
+                f"'{text}' cannot be carried out in this environment: there is no "
+                "browser, no display, and no person watching the workspace, so "
+                "nothing can perform a manual or visual check. Choose something "
+                "that runs headless and reports a pass or fail - a plain Node or "
+                "Python script asserting against the code is enough for a small "
+                "product, and 'none' is valid only if the product genuinely needs "
+                "no verification."
+            )
+        return text
+
 
 
 class TechnologyChoice(BaseModel):
@@ -86,7 +139,7 @@ class ToolsAndModelsOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
-def _truncate_for_llm(text: str, max_chars: int = 80_000) -> str:
+def _truncate_for_llm(text: str, max_chars: int | None = None) -> str:
     """Truncate long text for local LLM context limits.
 
     Local models (7B-35B params) typically have 8K-32K token windows. After
@@ -95,6 +148,13 @@ def _truncate_for_llm(text: str, max_chars: int = 80_000) -> str:
     preserves the beginning and end of long documents so reviewers can still
     see the structure and conclusion even if the middle is truncated.
     """
+    # Derived from the configured context window, not a fixed number: a
+    # budget that does not move with the model is how every overflow in
+    # this pipeline's history began.
+    if max_chars is None:
+        from app.agents.context_budget import ContextBudget
+
+        max_chars = ContextBudget.resolve().document_budget_chars
     text = str(text or "")
     if len(text) <= max_chars:
         return text
@@ -118,17 +178,23 @@ def build_tools_models_request(
     intake artifact is approved.
     """
     # Truncate oversized inputs to prevent context overflow on local LLMs
-    truncated_intake = _truncate_for_llm(product_intake_text, max_chars=80_000)
+    truncated_intake = _truncate_for_llm(product_intake_text)
     
     brief = (
-        f"Repository root: {repository.root_path} "
-        f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
+        # Deliberately not the repository's absolute path. That is the HOST's
+        # path; inside the agent the workspace is rooted at "/". Quoting it here
+        # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # in a row, and fed it to shell commands, every attempt failing with
+        # path_not_found. The reliable fix is not to show it.
+        f"Repository: branch {repository.branch}, commit {repository.commit}\n"
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- Approved product intake ---\n{truncated_intake}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
-_SYSTEM_PROMPT = """You are the Tools and Models Architect for this workflow.
+_SYSTEM_PROMPT = f"""You are the Tools and Models Architect for this workflow.
 
 Your role is to turn an approved product intake and repository evidence into an
 evidence-based comparison of the technology choices this project might use.
@@ -150,9 +216,11 @@ Constraints:
 - Do not change repo files except through the approved artifact tool.
 - No implementation dependency should be treated as decided just because you
   named it here; this artifact is a proposal for human approval.
-- Write exactly one artifact, at `docs/tools_and_models.md`. Use that path
-  verbatim. Later stages look for it there, and a generic name like
-  `docs/spec.md` collides with the architect's own specification.
+- Do not write a document. The workflow renders `docs/tools_and_models.md` from the
+  structured response you return, so your comparison reaches its readers
+  either way - and only through that response. Writing it yourself
+  produces the same work twice from one understanding, and the two
+  copies then disagree.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - **Write the complete artifact in ONE single write_artifact call.** Do NOT
@@ -162,6 +230,8 @@ Constraints:
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 
@@ -185,6 +255,9 @@ def create_tools_models_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        # Its document is rendered from the structured response, so it needs no
+        # write tool - see `app.agents.artifact_document`.
+        can_write=False,
     )
 
 

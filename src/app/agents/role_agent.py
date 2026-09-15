@@ -23,6 +23,11 @@ from typing import Any
 
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
+
+from app.agents.response_reminder import build_response_reminder_middleware
+from app.agents.workspace_backend import WorkspaceBackend
+from app.agents.workspace_digest import build_workspace_digest_middleware
+from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
     FilesystemMiddleware,
     FilesystemPermission,
@@ -34,11 +39,14 @@ from langchain_core.tools import BaseTool
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel
 
+from app.agents.context_budget import MAX_TOOL_ARG_CHARS, ContextBudget
 from app.agents.context_policy import ContextPolicy
 from app.agents.context_store import build_context_backend
 from app.models import build_default_chat_model
 from app.tools.agent_toolkit import (
     HUMAN_APPROVAL_TOOLS,
+    build_artifact_delete_tool,
+    build_artifact_move_tool,
     build_artifact_edit_tool,
     build_artifact_write_tool,
     build_repository_read_tools,
@@ -110,6 +118,20 @@ def describe_tool_call(repo_root: str, agent_name: str, stage: str, tool_name: s
     def describe(tool_call: dict[str, Any], state: Any, runtime: Any) -> str:  # noqa: ARG001
         args = tool_call.get("args", {})
         command = args.get("command")
+        # Not every approve/reject tool runs a command. `delete_artifact` names
+        # a path, and describing it as "Command: None" tells the reviewer
+        # nothing about what is being removed - which is the one fact that
+        # matters for a deletion.
+        if command is None and args.get("relative_path"):
+            return (
+                f"Agent: {agent_name} (stage: {stage})\n"
+                f"Tool: {tool_name}\n"
+                f"File: {args['relative_path']}\n"
+                f"Workspace: {repo_root}\n"
+                "This permanently removes the file. Approve only if it is a temporary\n"
+                "helper and not part of the deliverable.\n"
+                "Allowed decisions: approve, reject"
+            )
         if isinstance(command, list):
             rendered = " ".join(str(part) for part in command)
         else:
@@ -125,6 +147,24 @@ def describe_tool_call(repo_root: str, agent_name: str, stage: str, tool_name: s
         )
 
     return describe
+
+
+def writing_tools(repo_root: str) -> list[BaseTool]:
+    """The mutation tools a writing role gets - always as a set.
+
+    Create, change and remove belong together. Handed the first two and told
+    scratch files must not be kept, an agent improvises the third: on
+    run-61c5a5b6 the UI specialist wrote nine generations of cleanup script,
+    each one a new file it then wanted gone, and spent about fifty approval
+    gates never converging. A named list is here so the invariant is one thing
+    to test rather than one call site to remember.
+    """
+    return [
+        build_artifact_write_tool(repo_root),
+        build_artifact_edit_tool(repo_root),
+        build_artifact_delete_tool(repo_root),
+        build_artifact_move_tool(repo_root),
+    ]
 
 
 def _interrupt_config(
@@ -184,7 +224,7 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     structured response", which reads like a context-limit problem and is not.
 
     So instead of denying the tools, give them a backend that works. Rooting a
-    `FilesystemBackend` at the workspace in virtual mode means `/docs/spec.md` -
+    `FilesystemBackend` at the workspace in virtual mode means `/docs/NAME.md` -
     exactly the path shape the middleware's own prompt teaches the model to use -
     resolves inside this run's directory and nowhere else.
 
@@ -193,7 +233,11 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     (`allow_subdirectories` narrows *listing* depth, never read access).
     """
     return FilesystemMiddleware(
-        backend=FilesystemBackend(root_dir=repo_root, virtual_mode=True),
+        # `WorkspaceBackend`, not `FilesystemBackend`: the run's own package
+        # caches live inside the workspace because container mode mounts
+        # nothing else, and without this they appear in every listing an agent
+        # makes. See `app.agents.workspace_backend`.
+        backend=WorkspaceBackend(root_dir=repo_root, virtual_mode=True),
         tools=list(_WORKSPACE_READ_TOOLS),
     )
 
@@ -210,6 +254,7 @@ def _compaction_middleware(agent_name: str) -> list:
     summariser, not run state.
     """
     policy = ContextPolicy.from_environment()
+    budget = ContextBudget.resolve()
     if not policy.enabled:
         return []
 
@@ -234,6 +279,23 @@ def _compaction_middleware(agent_name: str) -> list:
                 trigger=("tokens", policy.trigger_tokens),
                 keep=("messages", policy.keep_recent_messages),
                 trim_tokens_to_summarize=policy.trim_tokens_to_summarize,
+                # Shorten large tool-call arguments in older messages before
+                # resorting to summarisation. Left unset - which it was - the
+                # trigger defaults to None and this never fires at all, so the
+                # only relief available was the expensive one.
+                #
+                # It is also the better-aimed relief for this pipeline. The
+                # bulkiest thing in an agent's history is artifact content: a
+                # `write_artifact` call carries the whole document in its
+                # arguments, so one 51 KB specification occupies ~13k tokens of
+                # every subsequent request for the rest of the stage. The file
+                # is on disk the moment the call returns; the copy in the
+                # transcript is redundant once the agent has moved past it.
+                truncate_args_settings={
+                    "trigger": ("tokens", budget.truncate_args_trigger_tokens),
+                    "keep": ("messages", policy.keep_recent_messages),
+                    "max_length": MAX_TOOL_ARG_CHARS,
+                },
             )
         ]
     except Exception:  # noqa: BLE001 - see docstring
@@ -242,6 +304,105 @@ def _compaction_middleware(agent_name: str) -> list:
             agent_name, exc_info=True,
         )
         return []
+
+
+_WRITING_RULES = (
+    "CRITICAL DIRECTORY RULES:\n"
+        "- Write all document artifacts (intakes, specs, plans, reports) inside the\n"
+        "  `docs/` folder. Use the exact filename your brief names - never invent\n"
+        "  a shorter one. A second document about the same subject is worse than\n"
+        "  no document: a reviewer reads whichever it finds first.\n"
+        "- Write all code artifacts inside ONE top-level project folder. Run `ls`\n"
+        "  first: if a project folder already exists, use it exactly as spelled.\n"
+        "  Do NOT create a second folder that differs only in separators or case\n"
+        "  (`my-app` vs `my_app`) - that builds the project twice and finishes\n"
+        "  neither. Only create one if none exists.\n"
+        "- Scratch files (debug scripts, one-off probes) do not belong in the\n"
+        "  workspace root. Put them in the project folder, and call\n"
+        "  `delete_artifact` on them once they have told you what you needed.\n"
+        "- NEVER write a script whose purpose is to delete another script. A\n"
+        "  cleanup script is itself a file you then want gone, and a program\n"
+        "  cannot unlink itself while it is running, so this never converges.\n"
+        "  `delete_artifact` removes a file in one call.\n"
+        "\n"
+        "HOW TO WRITE:\n"
+        "- `write_artifact` CREATES a file, or replaces one completely. Its\n"
+        "  `relative_path` is relative to the workspace root, e.g. the filename\n"
+        "  your brief gives you, under `docs/`.\n"
+        "- `edit_artifact` CHANGES part of a file that already exists. Give it the\n"
+        "  exact passage to replace and what to replace it with. Use this for\n"
+        "  every revision to an existing document: it leaves the rest of the file\n"
+        "  untouched, so nothing is lost and you do not have to reproduce work\n"
+        "  that is already correct.\n"
+        "- Revising an existing document? Read the section you need with\n"
+        "  `read_repository_file` (it takes `start_line` and `line_count`, so you\n"
+        "  can read part of a long file), then `edit_artifact` that passage.\n"
+        "  Do NOT rewrite a long document from memory to change part of it, and\n"
+        "  NEVER save your revision under a new name like `spec_v2.md` - two\n"
+        "  versions of one document contradict each other and a reviewer reads\n"
+        "  both.\n"
+        "- `delete_artifact` REMOVES a file. Use it for temporary helpers you\n"
+        "  created; it takes the same workspace-relative path. It will refuse a\n"
+        "  test: a test you wrote to prove an acceptance criterion is part of\n"
+        "  what this run delivers, not scratch, and the reviewer reads it as the\n"
+        "  evidence your work is sound. Deleting it throws that evidence away.\n"
+        "- `move_artifact` RENAMES or RELOCATES a file, keeping its exact bytes.\n"
+        "  Use it rather than rewriting a file at a new path and deleting the\n"
+        "  old one: a rewrite regenerates content that was already correct.\n"
+        "\n"
+        "THE WHOLE FILE TOOLSET - there is a tool for every case, so you never\n"
+        "need to improvise one out of a script:\n"
+        "  list      `ls`, `glob`            what is there\n"
+        "  search    `grep`                  which file contains it\n"
+        "  read all  `read_file`             the whole file\n"
+        "  read part `read_file` + offset/limit, or `read_repository_file`\n"
+        "            with start_line/line_count - for a long document, read the\n"
+        "            section you need instead of all of it\n"
+        "  create    `write_artifact`        a new file\n"
+        "  replace   `write_artifact`        the whole file, again\n"
+        "  change    `edit_artifact`         one exact passage, rest untouched\n"
+        "  cut       `edit_artifact` with an empty `replace` - deletes that\n"
+        "            passage without touching the rest of the file\n"
+        "  remove    `delete_artifact`       the whole file\n"
+        "  relocate  `move_artifact`         rename or move, bytes unchanged\n"
+        "- You already have permission to write. Call `write_artifact` directly.\n"
+        "  Never ask whether you should write a file, and never stop to request\n"
+        "  approval - approval is handled outside this conversation.\n"
+        "\n"
+        "PATHS - every path is inside the workspace:\n"
+        "- `docs/NAME.md` and `/docs/NAME.md` mean the same file. A leading slash\n"
+        "  reads as 'from the workspace root', which is what you mean by it.\n"
+        "- `ls`, `glob`, `grep`, `read_file` (read-only): browse from `/`. The\n"
+        "  intake is `/docs/product_intake.md`; `ls('/')` shows everything.\n"
+        "- The long absolute path quoted as the repository root elsewhere in this\n"
+        "  brief is the HOST's path and does not exist here - passing it returns\n"
+        "  `path_not_found`. Never use it; start from the workspace root.\n"
+        "- Shell commands already run inside the workspace directory, so use\n"
+        "  paths relative to that directory. Do not prefix them with `/`.\n"
+        "\n"
+        "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
+        "- Artifact content must be human-readable Markdown: headings, prose,\n"
+        "  lists, tables. A person reads these files.\n"
+        "- NEVER pass JSON as `write_artifact` content, and never save your\n"
+        "  structured response to a file. The structured response is returned\n"
+        "  through the response schema, separately, and is not an artifact.\n"
+        "- Write each artifact ONCE. After a write_artifact tool result comes\n"
+        "  back, that file is saved and correct. Do not write it again, do not\n"
+        "  'confirm' it with a second write, and never overwrite good Markdown\n"
+        "  with a serialized copy of your answer. Return your structured\n"
+        "  response instead.\n"
+)
+
+_READ_ONLY_RULES = (
+    "YOUR OUTPUT:\n"
+    "- You have no file-writing or editing tools, and need none. Everything you\n"
+    "  produce travels in your structured response, and the workflow renders any\n"
+    "  document from it. Do not look for a write tool, and do not report that one\n"
+    "  is missing - nothing is missing.\n"
+    "- You may read anything in the workspace: `ls`, `read_file`, `glob`, `grep`\n"
+    "  and the repository read tools are all available, and reading widely before\n"
+    "  you answer is the whole of your job.\n"
+)
 
 
 def create_role_agent(
@@ -255,6 +416,7 @@ def create_role_agent(
     repo_root: str | Path | None = None,
     allow_subdirectories: bool = True,
     extra_tools: list[BaseTool] | None = None,
+    can_write: bool = True,
 ) -> Any:
     """Create a narrow, safe Deep Agent for one workflow role.
 
@@ -291,69 +453,45 @@ def create_role_agent(
     resolved_repo_root = str(repo_root) if repo_root is not None else str(default_repo_root())
     selected_model = model if model is not None else build_default_chat_model()
 
+    # A role whose document the workflow generates has no reason to hold a
+    # write tool, and holding one is not neutral. Measured on run-c826ae90:
+    # the architecture reviewer was told "do not write a review document",
+    # kept `write_artifact`, and wrote `docs/architecture_review.md` five times
+    # in a row - printing its structured response as prose between each write
+    # and never returning it - until the repeat guard stopped the stage.
+    # Taking the tool away settles it; arguing with the model in the prompt did
+    # not.
     tools = [
         *build_repository_read_tools(resolved_repo_root, allow_subdirectories=allow_subdirectories),
-        build_artifact_write_tool(resolved_repo_root),
-        build_artifact_edit_tool(resolved_repo_root),
+        *(writing_tools(resolved_repo_root) if can_write else []),
         *(extra_tools or []),
     ]
 
-    # Inject directory instructions dynamically so every agent knows the artifact layout rules.
-    full_system_prompt = (
-        f"{system_prompt}\n\n"
-        "CRITICAL DIRECTORY RULES:\n"
-        "- Write all document artifacts (intakes, specs, plans, reports) inside the `docs/` folder (e.g., `docs/spec.md`).\n"
-        "- Write all code artifacts inside the `<product_name>/` folder (based on the determined product name).\n"
-        "\n"
-        "HOW TO WRITE:\n"
-        "- `write_artifact` CREATES a file, or replaces one completely. Its\n"
-        "  `relative_path` is relative to the workspace root: `docs/spec.md`.\n"
-        "- `edit_artifact` CHANGES part of a file that already exists. Give it the\n"
-        "  exact passage to replace and what to replace it with. Use this for\n"
-        "  every revision to an existing document: it leaves the rest of the file\n"
-        "  untouched, so nothing is lost and you do not have to reproduce work\n"
-        "  that is already correct.\n"
-        "- Revising an existing document? Read the section you need with\n"
-        "  `read_repository_file` (it takes `start_line` and `line_count`, so you\n"
-        "  can read part of a long file), then `edit_artifact` that passage.\n"
-        "  Do NOT rewrite a long document from memory to change part of it, and\n"
-        "  NEVER save your revision under a new name like `spec_v2.md` - two\n"
-        "  versions of one document contradict each other and a reviewer reads\n"
-        "  both.\n"
-        "- You already have permission to write. Call `write_artifact` directly.\n"
-        "  Never ask whether you should write a file, and never stop to request\n"
-        "  approval - approval is handled outside this conversation.\n"
-        "\n"
-        "PATHS - every path is inside the workspace:\n"
-        "- `docs/spec.md` and `/docs/spec.md` mean the same file. A leading slash\n"
-        "  reads as 'from the workspace root', which is what you mean by it.\n"
-        "- `ls`, `glob`, `grep`, `read_file` (read-only): browse from `/`. The\n"
-        "  intake is `/docs/product_intake.md`; `ls('/')` shows everything.\n"
-        "- The long absolute path quoted as the repository root elsewhere in this\n"
-        "  brief is the HOST's path and does not exist here - passing it returns\n"
-        "  `path_not_found`. Never use it; start from the workspace root.\n"
-        "- Shell commands already run inside the workspace directory, so use\n"
-        "  ordinary relative paths (`thehub/`). Do not prefix them with `/`.\n"
-        "\n"
-        "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
-        "- Artifact content must be human-readable Markdown: headings, prose,\n"
-        "  lists, tables. A person reads these files.\n"
-        "- NEVER pass JSON as `write_artifact` content, and never save your\n"
-        "  structured response to a file. The structured response is returned\n"
-        "  through the response schema, separately, and is not an artifact.\n"
-        "- Write each artifact ONCE. After a write_artifact tool result comes\n"
-        "  back, that file is saved and correct. Do not write it again, do not\n"
-        "  'confirm' it with a second write, and never overwrite good Markdown\n"
-        "  with a serialized copy of your answer. Return your structured\n"
-        "  response instead.\n"
-    )
+    # The directory and write-tool rules are only true for an agent that has
+    # those tools. On run-db3a4a0b the scrum master - whose document the
+    # workflow now renders - was handed "CRITICAL DIRECTORY RULES: Write all
+    # document artifacts ... inside `docs/`" alongside "Do not write a
+    # document", went looking for the tool, and reported "I don't have a
+    # `write_artifact` tool or any file-writing/editing tools available"
+    # instead of returning its structured response. Contradictory instructions
+    # cost a stage; withholding the irrelevant half costs nothing.
+    full_system_prompt = f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _READ_ONLY_RULES)
 
     # Compaction. Built here rather than at module scope so a policy change
     # takes effect on the next agent, not the next restart. The context
     # directory is keyed by agent name (not thread id), which is stable per
     # role; see `_compaction_middleware` for why that is deliberate.
     middleware = _compaction_middleware(name)
-    middleware = [*middleware, _workspace_filesystem_middleware(resolved_repo_root)]
+    middleware = [
+        *middleware,
+        # Ahead of the filesystem middleware so the path is already
+        # root-relative by the time its tools resolve it.
+        build_workspace_path_middleware(resolved_repo_root),
+        # After the path rewrite so both see the same request the model will.
+        build_workspace_digest_middleware(resolved_repo_root),
+        build_response_reminder_middleware(),
+        _workspace_filesystem_middleware(resolved_repo_root),
+    ]
 
     return create_deep_agent(
         model=selected_model,
@@ -379,6 +517,7 @@ def create_role_agent(
 
 __all__ = [
     "create_role_agent",
+    "writing_tools",
     "default_repo_root",
     "describe_artifact_write",
     "describe_tool_call",

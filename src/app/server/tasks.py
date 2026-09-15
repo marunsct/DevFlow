@@ -42,8 +42,20 @@ celery_app.conf.update(
     # human can inspect and resume instead.
     task_acks_late=False,
     task_reject_on_worker_lost=False,
-    task_time_limit=int(os.environ.get("CELERY_TASK_TIME_LIMIT", "3600")),
-    task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "3300")),
+    # One dispatch runs the graph until it pauses or finishes, and on an
+    # unattended run that means the *whole* workflow: a dozen stages, each a
+    # sequence of model calls. Against a local model that is hours of work, and
+    # the old hour-long ceiling cut it off mid-stage - measured on run-0b55ad49,
+    # 54.3 minutes of healthy progress from stack_selector to technical_lead,
+    # then SoftTimeLimitExceeded with the specialists still ahead of it.
+    #
+    # The limit still exists to reclaim a worker from a task that is genuinely
+    # wedged; it is sized for the work rather than for an API-latency workload.
+    # Nothing is lost when it fires - the graph checkpoints at every node
+    # boundary and the run resumes from the last one - but each cut costs a
+    # manual resume, so the ceiling should be reached only by a real hang.
+    task_time_limit=int(os.environ.get("CELERY_TASK_TIME_LIMIT", "21900")),
+    task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "21600")),
     worker_max_tasks_per_child=int(os.environ.get("CELERY_MAX_TASKS_PER_CHILD", "50")),
     broker_connection_retry_on_startup=True,
 )

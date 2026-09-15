@@ -363,3 +363,320 @@ def test_a_specialist_must_be_able_to_state_its_evidence():
 
     assert output.verification[0].exit_code == 0
     assert SpecialistOutput().verification == [], "must default to empty, not fail"
+
+
+# ---------------------------------------------------------------------------
+# A stage that returns no structured response
+#
+# From run-0b55ad49: `specialist_ui_ux_0` did its work, then wrote the heading
+# "## Structured Response" in prose and continued for 431,441 characters. The
+# stage raised, the run was resumed, and the resume re-entered that same inner
+# thread, replayed it, and failed identically four minutes later - forever.
+# ---------------------------------------------------------------------------
+
+
+class _NoStructuredResponseAgent:
+    """Completes its turn but never fills `structured_response`."""
+
+    def __init__(self, succeed_after: int = 99) -> None:
+        self.invocations = 0
+        self.threads: list[str] = []
+        self._succeed_after = succeed_after
+
+    def invoke(self, request, config=None):
+        self.invocations += 1
+        self.threads.append((config or {}).get("configurable", {}).get("thread_id", ""))
+        if self.invocations > self._succeed_after:
+            return {"structured_response": SimpleNamespace(ok=True), "messages": []}
+        return {"messages": [SimpleNamespace(type="ai", content="## Structured Response\n" + "x" * 900)]}
+
+
+def _fresh_state() -> dict:
+    return {"stage": "specialist_ui_ux_0", "repository": SimpleNamespace(root_path="/workspace")}
+
+
+def test_a_missing_structured_response_retries_instead_of_failing():
+    agent = _NoStructuredResponseAgent()
+
+    update = _gated(_fresh_state(), agent, stage_name="specialist_ui_ux_0")
+
+    # The owning node, not the stage name: `specialist_ui_ux_0` is not a graph
+    # node, and returning it raised KeyError and killed the run.
+    assert update["stage"] == "specialist_dispatch"
+    assert update["structured_retries"]["specialist_ui_ux_0"] == 1
+    # The poisoned conversation must not be carried into the retry.
+    assert update["pending_inner_thread_id"] is None
+    assert update["pending_decision"] is None
+
+
+class _DeafAgent:
+    """Never returns a structured response, however it is asked.
+
+    Distinct from `_NoStructuredResponseAgent(succeed_after=n)`: that one
+    succeeds on its next invocation whatever thread it lands on, which the
+    nudge now satisfies. This one fails the nudge too, so the restart behind it
+    is what gets exercised.
+    """
+
+    def __init__(self) -> None:
+        self.threads: list[str] = []
+
+    def invoke(self, request, config=None):  # noqa: ARG002
+        self.threads.append((config or {}).get("configurable", {}).get("thread_id", ""))
+        return {"messages": [SimpleNamespace(type="ai", content="prose, not a schema")]}
+
+
+def test_a_stage_is_asked_again_before_its_conversation_is_discarded():
+    """The prose answer means the work is done and the last step was skipped.
+
+    Restarting throws away the work as well. Measured on run-61c5a5b6: the
+    restart of `test_round_0` re-read the same four files and re-ran the same
+    two globs to arrive back where it already was.
+    """
+    agent = _NoStructuredResponseAgent(succeed_after=1)
+
+    update = _gated(_fresh_state(), agent, stage_name="specialist_ui_ux_0")
+
+    assert agent.invocations == 2, "the stage should have been asked a second time"
+    assert agent.threads[0] == agent.threads[1], "the nudge must keep the work above it"
+    assert update["stage"] == "architecture_review", "the answer should have been accepted"
+    assert not update.get("structured_retries"), "a nudge that worked is not a retry"
+
+
+def test_the_retry_runs_on_a_different_conversation():
+    """Replaying the failed conversation is what made this unrecoverable.
+
+    This is the fallback behind the nudge: once asking again has not worked,
+    the conversation really is spent and the restart must not re-enter it.
+    """
+    agent = _DeafAgent()
+
+    first = _gated(_fresh_state(), agent, stage_name="specialist_ui_ux_0")
+    second_state = {**_fresh_state(), **{k: v for k, v in first.items() if k != "stage"}}
+    _gated(second_state, agent, stage_name="specialist_ui_ux_0")
+
+    # Two attempts, each an invocation plus a nudge on that same thread.
+    assert len(agent.threads) == 4
+    assert agent.threads[0] == agent.threads[1], "the nudge stays on the thread"
+    assert agent.threads[2] == agent.threads[3]
+    assert agent.threads[0] != agent.threads[2], "the retry reused the failed thread"
+    assert first["structured_retries"]["specialist_ui_ux_0"] == 1
+
+
+def test_the_retry_budget_is_not_infinite(monkeypatch):
+    monkeypatch.setenv("WORKFLOW_MAX_STRUCTURED_RETRIES", "1")
+    agent = _NoStructuredResponseAgent()
+
+    first = _gated(_fresh_state(), agent, stage_name="specialist_ui_ux_0")
+    state = {**_fresh_state(), **{k: v for k, v in first.items() if k != "stage"}}
+
+    with pytest.raises(ValueError, match="tried 2 times"):
+        _gated(state, agent, stage_name="specialist_ui_ux_0")
+
+
+def test_a_stage_that_succeeds_clears_its_retry_debt():
+    """A later failure in the same stage should start from a full budget."""
+    agent = _NoStructuredResponseAgent(succeed_after=0)
+    state = {**_fresh_state(), "structured_retries": {"specialist_ui_ux_0": 2}}
+
+    update = _gated(state, agent, stage_name="specialist_ui_ux_0")
+
+    assert "specialist_ui_ux_0" not in update["structured_retries"]
+
+
+# ---------------------------------------------------------------------------
+# A revision has to assign the change, not just record it
+#
+# The generic revision prompt asks an agent to "address every requested change",
+# and for a *plan* there is a way to do that which changes nothing: write it
+# down. On run-0b55ad49 a review named the exact file, line and fix for a
+# test-suite failure; the lead reproduced it verbatim under `## Integration
+# Notes`; no delegated task mentioned it; eighty minutes later the file was
+# byte-for-byte unchanged. The relay worked. The assignment never happened.
+# ---------------------------------------------------------------------------
+
+
+def _milestone(assignments=None, notes=None):
+    from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
+
+    return MilestonePlanOutput(
+        selected_sprint_goal="goal",
+        delegated_tasks=[
+            SpecialistTask(specialist_role="testing", task_description="write tests",
+                           acceptance_criteria=["they pass"])
+        ],
+        integration_notes=notes or [],
+        review_task_assignments=assignments or [],
+    )
+
+
+class _PlanningAgent:
+    def __init__(self, plan):
+        self._plan = plan
+
+    def invoke(self, request, config=None):
+        return {"structured_response": self._plan, "messages": []}
+
+
+def _gated_lead(state, agent):
+    return _run_gated_agent(
+        state,
+        {"configurable": {"thread_id": "thread-outer"}},
+        stage_name="technical_lead",
+        agent=agent,
+        initial_request={"messages": []},
+        output_key="milestone_plan",
+        next_stage="specialist_dispatch",
+    )
+
+
+def test_a_revision_that_changes_nothing_is_refused():
+    """The proof is an identical task list, not an empty bespoke field.
+
+    Measured on run-95ca3f72: the lead left `review_task_assignments` empty on
+    three fresh conversations while returning the same seven tasks each time.
+    An empty field alone does not prove the work was unassigned; an unchanged
+    task list does.
+    """
+    from app.graph.workflow import unassigned_review_changes
+
+    before = _milestone(notes=["some note"])
+    unchanged = _milestone(notes=["Add jest.setup.js with the TextEncoder polyfill"])
+
+    refusal = unassigned_review_changes(unchanged, revising=True, previous=before)
+
+    assert refusal is not None
+    assert "same tasks" in refusal
+
+
+def test_a_revision_that_changes_the_tasks_is_accepted_without_the_field():
+    """A model that will not fill a bespoke field can still do the work."""
+    from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
+    from app.graph.workflow import unassigned_review_changes
+
+    before = _milestone()
+    after = MilestonePlanOutput(
+        selected_sprint_goal="goal",
+        delegated_tasks=[
+            SpecialistTask(specialist_role="testing", task_description="write tests",
+                           acceptance_criteria=["they pass"]),
+            SpecialistTask(specialist_role="testing", task_description="add jest.setup.js",
+                           acceptance_criteria=["TextEncoder defined"]),
+        ],
+    )
+
+    assert unassigned_review_changes(after, revising=True, previous=before) is None
+
+
+def test_a_revision_that_names_the_task_proceeds():
+    from app.graph.workflow import unassigned_review_changes
+
+    assigned = _milestone(assignments=["Fix the TextEncoder polyfill -> task 1 (testing)"])
+
+    assert unassigned_review_changes(assigned, revising=True, previous=_milestone()) is None
+
+
+def test_a_first_plan_needs_no_assignments():
+    """Nothing has been reviewed yet; requiring assignments would block every run."""
+    from app.graph.workflow import unassigned_review_changes
+
+    assert unassigned_review_changes(_milestone(), revising=False, previous=None) is None
+
+
+def test_the_revision_request_asks_for_assignment_not_acknowledgement():
+    """"Address every requested change" is what allowed a note to count."""
+    from app.agents.technical_lead import build_milestone_revision_request
+
+    content = build_milestone_revision_request(
+        "{}", ["Fix the TextEncoder polyfill in tests/filter.test.js"]
+    )["messages"][0]["content"]
+
+    assert "DELEGATED TASK" in content
+    assert "integration_notes" in content, "the failure mode must be named"
+    assert "review_task_assignments" in content
+    # And the original comment still reaches the agent verbatim.
+    assert "tests/filter.test.js" in content
+
+
+def test_an_unassigned_revision_retries_before_failing_the_run():
+    """One lapse must not discard every stage that came before it.
+
+    The guard is right that a change nobody owns will not be made - but failing
+    the run for a single omission throws away hours of work when asking again on
+    a clean conversation usually suffices. Seen on run-95ca3f72: the milestone
+    reviewer requested changes, the re-plan omitted the assignments once, and
+    the whole run stopped.
+    """
+    from app.graph.workflow import _max_structured_retries
+
+    assert _max_structured_retries() >= 1
+
+
+def test_the_retry_budget_is_shared_with_the_structured_response_retry():
+    """Both remedies are the same act: abandon the conversation and ask again."""
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    assert "technical_lead:assignments" in source
+    assert "structured_retries" in source
+
+
+class _Review:
+    """The reviewer's output, shaped like MilestoneReviewOutput."""
+
+    def __init__(self, findings=(), acceptance_evidence=""):
+        self.status = "changes_required"
+        self.findings = list(findings)
+        self.acceptance_evidence = acceptance_evidence
+
+
+def test_a_review_with_no_findings_still_says_what_to_change():
+    """`findings` is optional in the schema, so a model may leave it empty.
+
+    Observed on run-95ca3f72: `changes_required` with `findings == []` and
+    three concrete complaints in `acceptance_evidence`. Joining the empty list
+    produced `""`, and the technical lead was asked to revise a plan against a
+    revision request that contained nothing.
+    """
+    from app.graph.workflow import _milestone_changes_requested
+
+    evidence = 'The root `package.json` test script is `exit 1`; `npm test` exits 1.'
+    text = _milestone_changes_requested(_Review(acceptance_evidence=evidence))
+
+    assert text is not None
+    assert "exit 1" in text
+    assert "required change" in text
+
+
+def test_a_review_that_says_nothing_anywhere_is_refused():
+    """A reviewer that cannot be obeyed is a failure of the review, not the lead."""
+    from app.graph.workflow import _milestone_changes_requested
+
+    assert _milestone_changes_requested(_Review(acceptance_evidence="   ")) is None
+
+
+def test_findings_are_preferred_when_the_reviewer_records_them():
+    from app.graph.workflow import _milestone_changes_requested
+
+    class _Finding:
+        severity = "blocking"
+        category = "tests"
+        description = "no tests ran"
+        required_remediation = "run them"
+
+    text = _milestone_changes_requested(
+        _Review(findings=[_Finding()], acceptance_evidence="ignored")
+    )
+
+    assert text == "[blocking] tests: no tests ran -> run them"
+    assert "ignored" not in text
+
+
+def test_a_blank_comment_does_not_count_as_a_requested_change():
+    """`[""]` is a truthy list. It used to select the revising branch."""
+    from app.graph.workflow import _collect_required_changes
+
+    assert _collect_required_changes({"revision_comments": ["", "  "]}) == []
+    assert _collect_required_changes({"revision_comments": ["", "fix it"]}) == ["fix it"]

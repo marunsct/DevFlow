@@ -20,14 +20,36 @@ from datetime import datetime, timezone
 
 from app.state import ReviewRequestStatus, ReviewStatus, WorkflowStage
 
-DEFAULT_MAX_REVIEW_RERUNS = 3
-"""Bound the number of automatic reruns triggered by 'changes requested'.
+def _max_review_reruns() -> int:
+    """Bound the automatic reruns triggered by 'changes requested'.
 
-Without a limit, a review that never converges could loop the same role agent
-forever. Once the limit is reached, `request_changes` raises instead of
-producing another revision, so the workflow pauses with an actionable error
-for a human to intervene.
-"""
+    Without a limit, a review that never converges loops the same role agent
+    forever. Once reached, `request_changes` raises instead of producing another
+    revision, so the workflow pauses for a human.
+
+    Configurable because the limit counts *rejections*, not failures to improve,
+    and those are not always the same thing. On run-0b55ad49 all three were
+    spent on defects in the workflow itself - a sandbox limit that broke every
+    test, a prompt example that built the project in the wrong directory, two
+    competing npm projects - each fixed between rejections. The budget was
+    exhausted before the agent was given a single actionable instruction.
+    """
+    import logging
+    import os
+
+    raw = os.environ.get("WORKFLOW_MAX_REVIEW_RERUNS", "").strip()
+    if not raw:
+        return 3
+    try:
+        return max(1, int(raw))
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "Malformed WORKFLOW_MAX_REVIEW_RERUNS=%r; using 3", raw
+        )
+        return 3
+
+
+DEFAULT_MAX_REVIEW_RERUNS = _max_review_reruns()
 
 
 class ReviewRerunLimitExceeded(RuntimeError):
@@ -96,11 +118,18 @@ def request_changes(review: ReviewStatus, *, comment: str) -> ReviewStatus:
     """
     next_revision = review.revision + 1
     if next_revision > DEFAULT_MAX_REVIEW_RERUNS:
+        # `review.stage` is a `WorkflowStage`, and an f-string renders that as
+        # `WorkflowStage.IMPLEMENTATION` on Python 3.11+. The value is what a
+        # reader recognises.
+        stage_name = getattr(review.stage, "value", review.stage)
         raise ReviewRerunLimitExceeded(
-            f"Review for stage '{review.stage}' has already requested changes "
-            f"{review.revision - 1} time(s), reaching the limit of "
-            f"{DEFAULT_MAX_REVIEW_RERUNS} automatic reruns. Pausing instead of "
-            "rerunning automatically; a human must intervene."
+            f"The '{stage_name}' stage has been sent back for changes "
+            f"{review.revision - 1} time(s), which is the configured limit of "
+            f"{DEFAULT_MAX_REVIEW_RERUNS}. It will not rerun again on its own.\n\n"
+            "If the earlier rejections were about problems that have since been "
+            "fixed elsewhere, raise WORKFLOW_MAX_REVIEW_RERUNS and resume - the "
+            "budget counts rejections, not failures to improve. Otherwise this "
+            "stage is not converging and needs a person to look at the work."
         )
     return review.model_copy(
         update={

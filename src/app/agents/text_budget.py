@@ -53,8 +53,15 @@ def _budget(name: str, default: int) -> int:
 
 
 def specification_budget() -> int:
-    """Characters of technical specification one request may carry; 0 = all."""
-    return _budget("CTX_SPECIFICATION_BUDGET", DEFAULT_SPECIFICATION_BUDGET)
+    """Characters of the specification to carry into one request.
+
+    Derived from the configured context window, so retuning for a different
+    model carries this with it. `CTX_SPECIFICATION_BUDGET` still overrides, and
+    0 still means "send the whole specification".
+    """
+    from app.agents.context_budget import ContextBudget
+
+    return _budget("CTX_SPECIFICATION_BUDGET", ContextBudget.resolve().specification_budget_chars)
 
 
 def excerpt(text: str, budget: int, *, what: str) -> str:

@@ -175,3 +175,61 @@ def test_status_reports_every_configured_router():
 
 def test_status_is_informative_when_nothing_is_configured():
     assert "detail" in get_router_status()
+
+
+# ---------------------------------------------------------------------------
+# Output ceiling
+# ---------------------------------------------------------------------------
+
+
+def test_a_model_turn_is_bounded_by_the_context_window() -> None:
+    """Unbounded, one turn burned 108,000 tokens and 38 minutes on run-0b55ad49."""
+    from app.agents.context_budget import ContextBudget
+    from app.models import _max_output_tokens
+
+    assert _max_output_tokens() == ContextBudget.resolve().max_output_tokens
+    # Above the largest legitimate write (a 51 KB specification, ~13k tokens)
+    # and far below the observed runaway.
+    assert 13_000 < _max_output_tokens() < 108_000
+
+
+def test_the_reply_ceiling_follows_the_window(monkeypatch) -> None:
+    """A bigger model gets a bigger allowance without anyone retuning it."""
+    from app.models import _max_output_tokens
+
+    monkeypatch.delenv("MODEL_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "40000")
+    small = _max_output_tokens()
+    monkeypatch.setenv("MODEL_CONTEXT_WINDOW", "262144")
+    large = _max_output_tokens()
+
+    assert small < large
+
+
+def test_the_ceiling_is_configurable(monkeypatch) -> None:
+    from app.models import _max_output_tokens
+
+    monkeypatch.setenv("MODEL_MAX_OUTPUT_TOKENS", "50000")
+    assert _max_output_tokens() == 50_000
+
+
+def test_a_ceiling_too_low_to_write_an_artifact_is_raised(monkeypatch) -> None:
+    """Truncating a write_artifact call mid-document corrupts the file.
+
+    An override is a deliberate exception, not a licence to break the floor.
+    """
+    from app.models import _max_output_tokens
+
+    monkeypatch.setenv("MODEL_MAX_OUTPUT_TOKENS", "10")
+    assert _max_output_tokens() >= 4_000
+
+
+def test_a_malformed_ceiling_falls_back_to_the_derived_value(monkeypatch) -> None:
+    from app.agents.context_budget import ContextBudget
+    from app.models import _max_output_tokens
+
+    monkeypatch.setenv("MODEL_MAX_OUTPUT_TOKENS", "lots")
+    monkeypatch.delenv("MODEL_CONTEXT_WINDOW", raising=False)
+    assert _max_output_tokens() == ContextBudget.from_window(
+        ContextBudget.resolve().window_tokens
+    ).max_output_tokens

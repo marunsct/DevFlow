@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type { ReviewPayload } from '../types';
 import { MessageSquare, CheckCircle, XCircle, Download, UploadCloud, SkipForward } from 'lucide-react';
+import { downloadArtifact } from '../api';
 
 interface ReviewPanelProps {
   runId: string;
@@ -41,15 +42,16 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
             </p>
           </div>
           {review.artifact_id && (
-            <a
-              href={`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(review.artifact_id)}`}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              // Through the client, so the auth header goes with it; a plain
+              // link is a navigation and the endpoint rejects it.
+              onClick={() => void downloadArtifact(runId, review.artifact_id)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-lg text-text-secondary text-xs font-medium hover:text-white hover:border-primary/50 transition-all shrink-0"
             >
               <Download className="h-3.5 w-3.5" />
               Download
-            </a>
+            </button>
           )}
         </div>
 

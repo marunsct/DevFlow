@@ -41,6 +41,7 @@ agent (via `resume_with_decision`) instead of restarting it.
 
 from __future__ import annotations
 
+import json
 import os
 import logging
 import uuid
@@ -57,6 +58,9 @@ from app.agents.architecture_reviewer import (
     build_architecture_review_request,
     create_architecture_reviewer_agent,
 )
+from app.agents.review_document import render_architecture_review
+from app.agents.artifact_document import render_artifact
+from app.agents.specification_document import render_specification
 from app.agents.milestone_reviewer import (
     MilestoneReviewOutput,
     build_milestone_review_request,
@@ -87,6 +91,7 @@ from app.agents.specialists import (
     create_specialist_agent,
 )
 from app.agents.technical_lead import (
+    build_milestone_revision_request,
     MilestonePlanOutput,
     build_milestone_planning_request,
     create_technical_lead_agent,
@@ -129,6 +134,16 @@ def _max_architecture_revisions() -> int:
 
     It stays bounded, because a reviewer and an architect that simply disagree
     will never converge and each round costs two model calls.
+
+    That reasoning was incomplete, and run-c4f17841 showed why. The reviewer was
+    not converging slowly on a fixed specification - the specification was
+    growing under it. Each round the architect answered a finding by adding
+    ADRs, and each new ADR gave the reviewer more artefacts to find missing:
+    four blocking findings became five, citing ADR-12 and ADR-17 that did not
+    exist a round earlier. None of it was in the brief. Raising this number
+    buys more rounds of that; `app.agents.scope_discipline` is what stops the
+    specification growing, and is the actual fix. The cap remains as a bound on
+    the case it was written for.
     """
     default = 6
     try:
@@ -267,6 +282,8 @@ class WorkflowGraphState(TypedDict, total=False):
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
     specification_repair_count: int
+    # Per-stage count of attempts that ended without a structured response.
+    structured_retries: dict[str, int]
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
     current_sprint_index: int
@@ -313,11 +330,63 @@ _CONTEXT_OVERFLOW_MARKERS = (
 def _is_context_overflow(error: BaseException) -> bool:
     """Whether this exception is the model refusing an oversized prompt.
 
-    Matched on the message because providers disagree on the type: the same
-    condition arrives as BadRequestError, OpenAIInvalidRequestError, or a plain
-    ValueError depending on which client is in front of it.
+    Checked by type first. `langchain_core` raises `ContextOverflowError` for
+    exactly this condition, and a type is not a guess: substring matching has to
+    be kept in step with every provider's wording, and a provider that rephrases
+    its message silently turns a handled overflow into an unhandled crash.
+
+    The substring list stays as a fallback, because providers still disagree on
+    the type - the same condition arrives as `BadRequestError`,
+    `OpenAIInvalidRequestError` or a plain `ValueError` depending on which
+    client is in front of it, and the OpenAI-compatible servers this runs
+    against are the ones least likely to raise the typed error.
     """
+    try:
+        from langchain_core.exceptions import ContextOverflowError
+
+        if isinstance(error, ContextOverflowError):
+            return True
+    except ImportError:  # older langchain-core; the markers below still apply
+        pass
+
     return any(marker in str(error).lower() for marker in _CONTEXT_OVERFLOW_MARKERS)
+
+
+#: Model-side failures worth another attempt on a fresh conversation. These are
+#: generation faults, not requests the model refused: the same input usually
+#: succeeds next time, and the run has nothing to gain from stopping.
+_TRANSIENT_MODEL_MARKERS = (
+    # A local model truncated a tool call mid-string and the server rejected it.
+    # Measured on run-cbd22a34: "Failed to parse tool call arguments as JSON:
+    # parse error at line 1, column 26: invalid string: missing closing quote".
+    # The run ended at 2,333 events over one malformed message.
+    "failed to parse tool call",
+    "invalid tool call",
+    "tool call arguments",
+    # The server stumbled rather than refusing the request.
+    "internal server error",
+    "server_error",
+    "service unavailable",
+    "connection reset",
+    "connection aborted",
+    "read timed out",
+    "timeout",
+)
+
+
+def _is_transient_model_error(error: BaseException) -> bool:
+    """Whether this is a generation fault worth retrying, not a refusal.
+
+    A context overflow is a statement about the request, and re-sending it
+    unchanged achieves nothing; these are statements about one attempt. The
+    responses differ - overflow compacts and retries with less, this simply
+    tries again - so they are classified apart.
+    """
+    if _is_context_overflow(error):
+        return False
+    text = str(error).lower()
+    return any(m in text for m in _TRANSIENT_MODEL_MARKERS)
+
 
 
 def _context_overflow_update(stage_name: str, error: BaseException) -> dict[str, Any]:
@@ -391,15 +460,302 @@ def _entry_router(state: WorkflowGraphState) -> str:
         return _REVIEW_NODES.get(review_point, "failed")
     if stage.startswith(APPROVAL_PAUSE_PREFIX):
         inner_stage_name = stage.split(":", 1)[1]
-        if inner_stage_name in _NODE_NAMES:
-            return inner_stage_name
-        # Three node types name their stages per iteration rather than after
-        # themselves, so their pauses need mapping back to the owning node.
-        for prefix, owning_node in _ITERATED_STAGE_OWNERS.items():
-            if inner_stage_name.startswith(prefix):
-                return owning_node
-        return "failed"
+        return _owning_node(inner_stage_name)
     return stage
+
+
+#: State belonging to a stage's pause, which must not outlive that stage.
+#:
+#: `_run_gated_agent` clears these on success, but a node that pops its private
+#: result key and then returns a *fresh* dict silently drops that reset. The
+#: next stage inherits `pending_decision` and `pending_inner_thread_id` from the
+#: stage before it - and `_run_gated_agent`, seeing a pending decision, resumes
+#: that inherited thread instead of starting its own.
+#:
+#: Observed on run-0b55ad49: `milestone_review` finished with `changes_required`
+#: and handed back to `technical_lead`, which resumed the *reviewer's*
+#: conversation and was handed a `MilestoneReviewOutput`. It stored that under
+#: `milestone_plan` and died on `'MilestoneReviewOutput' object has no attribute
+#: 'selected_sprint_goal'` - an error naming neither the stage that leaked nor
+#: the field that carried it.
+_PAUSE_CLEARED: dict[str, Any] = {
+    "pending_approval": None,
+    "pending_inner_thread_id": None,
+    "pending_decision": None,
+}
+
+
+def _task_fingerprint(milestone: Any) -> tuple[tuple[str, str], ...]:
+    """What a plan actually delegates, ignoring prose that does not assign work."""
+    return tuple(
+        (str(getattr(task, "specialist_role", "")), str(getattr(task, "task_description", "")))
+        for task in getattr(milestone, "delegated_tasks", []) or []
+    )
+
+
+def unassigned_review_changes(
+    milestone: Any, *, revising: bool, previous: Any = None
+) -> str | None:
+    """Why this revised milestone plan cannot proceed, or None if it can.
+
+    A plan is a list of assignments. Asked to "address every requested change",
+    an agent can satisfy that for a *plan* by writing the change down, which
+    changes nothing: on run-0b55ad49 a review named the exact file, line and fix
+    for a test-suite failure, the lead reproduced it verbatim under
+    `## Integration Notes`, no delegated task mentioned it, and eighty minutes
+    later the file was byte-for-byte unchanged.
+
+    `review_task_assignments` is the forcing function: naming the task that took
+    each change is something you cannot do without having created one.
+    """
+    if not revising:
+        return None
+    # Saying which task took each change is the clearest signal, and when a
+    # model gives it there is nothing to check.
+    if getattr(milestone, "review_task_assignments", None):
+        return None
+
+    # Not every model fills a bespoke field. Measured on run-95ca3f72, this one
+    # left it empty on three fresh conversations while producing a plan that was
+    # otherwise complete - so an empty field alone cannot mean the work was not
+    # assigned. What *does* prove it is a revision whose delegated tasks are
+    # identical to the ones it was asked to change: the same seven tasks came
+    # back all three times.
+    if previous is not None and _task_fingerprint(milestone) != _task_fingerprint(previous):
+        return None
+
+    return (
+        "The revised milestone plan delegates exactly the same tasks as the plan the "
+        "review sent back, so nothing was assigned to the requested changes. A change "
+        "recorded in `integration_notes`, or left out entirely, belongs to nobody and "
+        "will not be made. Resume to re-plan this milestone."
+    )
+
+
+def _handing_on(**fields: Any) -> dict[str, Any]:
+    """A state update that leaves none of the finished stage's pause behind.
+
+    Use this for every return that follows a completed `_run_gated_agent` call.
+    Spelling the fields out at each site was the arrangement that failed: five
+    nodes have between two and seven such returns, and one of them forgetting is
+    invisible until two stages later.
+    """
+    return {**_PAUSE_CLEARED, **fields}
+
+
+def _owning_node(stage_name: str) -> str:
+    """The graph node that runs a given stage, or `"failed"` if none does.
+
+    Most stages are named after their node. The three looping nodes are not:
+    they name each iteration's stage after the iteration - `specialist_ui_ux_0`,
+    `test_round_2`, `defect_fix_1_0` - and those names are not nodes.
+
+    Anything that sets `stage` must route through here. `_route_from_stage`
+    returns the value verbatim and the conditional-edge map is keyed by
+    `_NODE_NAMES`, so a stage that is not a node raises `KeyError` and kills the
+    run outright - a worse outcome than whatever was being handled. That is not
+    hypothetical: the structured-response retry below set `stage` to the stage's
+    own name and took down the run it was written to rescue.
+    """
+    if stage_name in _NODE_NAMES:
+        return stage_name
+    for prefix, owning_node in _ITERATED_STAGE_OWNERS.items():
+        if stage_name.startswith(prefix):
+            return owning_node
+    return "failed"
+
+
+def _max_structured_retries() -> int:
+    """How many times a stage may be restarted for producing no structured answer.
+
+    A retry here is not a repeat of the same request: the previous attempt's
+    conversation is abandoned and the stage starts a fresh one. That distinction
+    is the whole reason retrying works. The failure is not "the model cannot do
+    this" but "this particular conversation went somewhere it could not come
+    back from" - on run-0b55ad49 a specialist answered in 431,441 characters of
+    prose under a heading it wrote itself, and every resume replayed that same
+    conversation and failed the same way in four minutes.
+
+    Two by default: a stage costs minutes, so a third attempt is cheap next to a
+    dead run, and a model that fails three fresh conversations is not going to
+    succeed on a fourth.
+    """
+    raw = os.environ.get("WORKFLOW_MAX_STRUCTURED_RETRIES", "").strip()
+    if not raw:
+        return 2
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        logger.warning("Malformed WORKFLOW_MAX_STRUCTURED_RETRIES=%r; using 2", raw)
+        return 2
+
+
+def _transient_retry_update(
+    state: WorkflowGraphState, stage_name: str, error: BaseException
+) -> dict[str, Any] | None:
+    """Retry a stage whose model call failed in a way another attempt may fix.
+
+    Returns None when the error is not transient, or when the budget is spent -
+    the caller then re-raises, so a persistent fault still ends the run with the
+    provider's own message rather than looping on it.
+    """
+    if not _is_transient_model_error(error):
+        return None
+    retries = dict(state.get("structured_retries") or {})
+    key = f"{stage_name}:transient"
+    attempted = retries.get(key, 0)
+    if attempted >= _max_structured_retries():
+        return None
+    retries[key] = attempted + 1
+    logger.warning(
+        "Stage %s hit a transient model error (attempt %d of %d): %s",
+        stage_name, attempted + 1, _max_structured_retries(), str(error)[:200],
+    )
+    return {
+        "stage": _owning_node(stage_name),
+        "structured_retries": retries,
+        "pending_approval": None,
+        "pending_inner_thread_id": None,
+        "pending_decision": None,
+    }
+
+
+def _hand_back(update: dict[str, Any], output_key: str) -> bool:
+    """Whether the caller must return this update unchanged.
+
+    A gated agent hands back without output in two shapes: paused waiting on a
+    human, and retrying after a stage produced no structured response. Both
+    look the same from here - the output key is simply absent - and both must
+    be returned untouched.
+
+    Callers used to test only for the pause. A retry therefore fell through
+    into code that rewrote `stage` and read an output key that was not there:
+    on run-c826ae90 `product_manager_node` overwrote the retry's
+    "go back to product_manager" with "tools_models" and sent a state carrying
+    no `product_intake` downstream, which is how the run reached
+    `KeyError: 'product_intake'` despite the retry working correctly.
+    """
+    return output_key not in update
+
+
+_STRUCTURED_RESPONSE_NUDGE = (
+    "Stop. You wrote your answer into the conversation as text. Text in the "
+    "conversation is not returned to the workflow - only the structured "
+    "response is, and you have not produced one, so from the workflow's side "
+    "this stage has delivered nothing.\n\n"
+    "Do not redo the work, do not write any more files, and do not call any "
+    "more tools. You already have the answer above. Return it now through the "
+    "response schema, and nothing else."
+)
+"""What to say to a model that answered in prose.
+
+It is addressed to a model that has the answer and failed only at the last
+step, so it forbids the two things such a model does next: starting over, and
+explaining itself in more prose."""
+
+
+def _nudge_for_the_structured_response(
+    agent: Any, inner_thread_id: str, callbacks: Any
+) -> dict[str, Any] | None:
+    """Ask the same conversation for the answer it already worked out.
+
+    The retry below starts the stage over on a clean conversation, which works
+    but throws away everything the stage learned. Measured on run-61c5a5b6:
+    `test_round_0` read four files, globbed for existing tests, and wrote a
+    paragraph of correct analysis - then returned it as prose. The restart
+    re-read the same four files and re-ran the same globs, about twenty-seven
+    events and five approval gates to get back to where it already was.
+
+    A restart is also the wrong remedy for the observed failure. The model did
+    not run out of room or lose the thread; it did the work and skipped the
+    schema. So ask it for the schema.
+
+    Returns the new result when the nudge produced something worth acting on (a
+    structured response, or an approval pause), and None when it changed
+    nothing and the caller should fall through to the restart.
+    """
+    try:
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": _STRUCTURED_RESPONSE_NUDGE}]},
+            config={"configurable": {"thread_id": inner_thread_id}, "callbacks": callbacks},
+        )
+    except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
+        # Whatever went wrong here, the restart below is still available and is
+        # the path this code took before the nudge existed.
+        logger.warning(
+            "Nudging thread %s for its structured response failed; falling back "
+            "to a fresh conversation", inner_thread_id, exc_info=True,
+        )
+        return None
+
+    if result.get("structured_response") is not None:
+        # Logged because a nudge that works is otherwise invisible: it leaves no
+        # warning, so the only measurable trace of this whole mechanism was the
+        # restarts it failed to prevent. Comparing the two counts is how anyone
+        # tells "the nudge is working" from "prose failures got rarer".
+        logger.info(
+            "Thread %s returned its structured response after one reminder; "
+            "no restart needed", inner_thread_id,
+        )
+        return result
+    if result.get("__interrupt__"):
+        return result
+    return None
+
+
+def _missing_structured_response(
+    stage_name: str, result: dict[str, Any], *, attempts: int = 1
+) -> str:
+    """Say why a stage produced no structured response, from what it did produce.
+
+    The old message guessed - "this often happens if the context limit or max
+    token limit was reached" - and the guess was usually wrong. It cost five
+    commits of context-budget tuning on a branch where the budgets were never
+    the problem.
+
+    The last message is the evidence. A model that ran out of room stops
+    mid-sentence and leaves a short tail; a model that answered in prose leaves
+    a long one, often with the words it was asked to structure written out as a
+    heading. Reporting the length and the tail lets a reader tell those apart
+    without going to the event log.
+    """
+    messages = result.get("messages") or []
+    last = next(
+        (m for m in reversed(messages) if getattr(m, "type", None) == "ai"), None
+    )
+    text = str(getattr(last, "content", "") or "")
+
+    detail = (
+        f"Its last message was {len(text):,} characters."
+        if text
+        else "It produced no final message at all."
+    )
+    if "structured response" in text.lower():
+        detail += (
+            " That message mentions a structured response, so the model most "
+            "likely wrote the answer as prose instead of returning it through "
+            "the response schema."
+        )
+
+    tried = (
+        f" This was tried {attempts} times, each on a fresh conversation."
+        if attempts > 1
+        else ""
+    )
+    return (
+        f"Agent '{stage_name}' finished without returning its structured response. "
+        f"{detail}{tried}\n\n"
+        "The work it did is not lost - artifacts it wrote are on disk - but the "
+        "workflow needs the structured answer to continue.\n"
+        "Common causes, in the order worth checking:\n"
+        "- The model answered in prose rather than calling the response schema. "
+        "Smaller local models do this; a model with stronger structured-output "
+        "support fixes it.\n"
+        "- The reply was cut off by MODEL_MAX_OUTPUT_TOKENS. Raise it if the "
+        "last message ends mid-sentence.\n"
+        "- The conversation outgrew the window. Lower CTX_MAX_TOKENS so "
+        "compaction runs sooner."
+    )
 
 
 def _run_gated_agent(
@@ -435,10 +791,13 @@ def _run_gated_agent(
             result = resume_with_decision(
                 agent, inner_thread_id, pending_decision, callbacks=activity
             )
-        except Exception as exc:  # noqa: BLE001 - re-raised unless it is overflow
-            if not _is_context_overflow(exc):
-                raise
-            return _context_overflow_update(stage_name, exc)
+        except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
+            if _is_context_overflow(exc):
+                return _context_overflow_update(stage_name, exc)
+            retry = _transient_retry_update(state, stage_name, exc)
+            if retry is not None:
+                return retry
+            raise
     elif _is_awaiting_approval_for(state, stage_name) and state.get("pending_inner_thread_id"):
         # Re-entered our own approval pause with no decision attached. That
         # happens whenever something resumes the run without answering the gate
@@ -464,10 +823,13 @@ def _run_gated_agent(
                 initial_request,
                 config={"configurable": {"thread_id": inner_thread_id}, "callbacks": activity},
             )
-        except Exception as exc:  # noqa: BLE001 - re-raised unless it is overflow
-            if not _is_context_overflow(exc):
-                raise
-            return _context_overflow_update(stage_name, exc)
+        except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
+            if _is_context_overflow(exc):
+                return _context_overflow_update(stage_name, exc)
+            retry = _transient_retry_update(state, stage_name, exc)
+            if retry is not None:
+                return retry
+            raise
 
     if result.get("__interrupt__"):
         approval = extract_pending_approval(
@@ -483,14 +845,65 @@ def _run_gated_agent(
 
     structured_response = result.get("structured_response")
     if structured_response is None:
+        # Before throwing the conversation away, ask it for the answer it
+        # already has. Once per node execution, so this cannot loop.
+        nudged = _nudge_for_the_structured_response(agent, inner_thread_id, activity)
+        if nudged is not None:
+            if nudged.get("__interrupt__"):
+                approval = extract_pending_approval(
+                    nudged,
+                    state["repository"].root_path,
+                    requested_by=stage_name,
+                    stage=stage_name,
+                )
+                return {
+                    "stage": f"{APPROVAL_PAUSE_PREFIX}{stage_name}",
+                    "pending_approval": approval,
+                    "pending_inner_thread_id": inner_thread_id,
+                    "pending_decision": None,
+                    "inner_thread_ids": [
+                        *state.get("inner_thread_ids", []), inner_thread_id
+                    ],
+                }
+            result = nudged
+            structured_response = nudged["structured_response"]
+
+    if structured_response is None:
+        # Start the stage over on a clean conversation rather than failing the
+        # run. Clearing `pending_inner_thread_id` is what makes this a retry
+        # instead of a loop: without it the resume path re-enters the very
+        # conversation that failed, replays it, and fails identically - which is
+        # exactly what happened on run-0b55ad49 until this existed.
+        retries = dict(state.get("structured_retries") or {})
+        attempted = retries.get(stage_name, 0)
+        if attempted < _max_structured_retries():
+            retries[stage_name] = attempted + 1
+            logger.warning(
+                "Stage %s produced no structured response; retrying on a fresh "
+                "conversation (attempt %d of %d)",
+                stage_name, attempted + 2, _max_structured_retries() + 1,
+            )
+            return {
+                # The node that owns this stage, never the stage's own name:
+                # `specialist_ui_ux_0` is not a graph node.
+                "stage": _owning_node(stage_name),
+                "structured_retries": retries,
+                "pending_approval": None,
+                "pending_inner_thread_id": None,
+                "pending_decision": None,
+                "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
+            }
         raise ValueError(
-            f"Agent '{stage_name}' failed to produce a structured response. "
-            "This often happens if the context limit or max token limit was reached."
+            _missing_structured_response(stage_name, result, attempts=attempted + 1)
         )
+
+    succeeded = dict(state.get("structured_retries") or {})
+    succeeded.pop(stage_name, None)
 
     return {
         output_key: structured_response,
         "stage": next_stage,
+        "structured_retries": succeeded,
         "pending_approval": None,
         "pending_inner_thread_id": None,
         "pending_decision": None,
@@ -548,6 +961,134 @@ def _format_finding(finding: Any) -> str:
     )
 
 
+def _record_document(state: WorkflowGraphState, relative_path: str, content: str) -> None:
+    """Write one generated document into the run's workspace.
+
+    Never raises: a review that has already been decided must not be lost
+    because the document could not be saved.
+    """
+    from app.tools.repository import write_approved_artifact
+
+    try:
+        write_approved_artifact(state["repository"].root_path, relative_path, content)
+    except Exception:  # noqa: BLE001 - the decision matters more than the record
+        logger.warning("Could not write %s", relative_path, exc_info=True)
+
+
+def _record_review_document(
+    state: WorkflowGraphState, review: Any, milestone_goal: str
+) -> None:
+    """Write `docs/milestone_review.md` from the reviewer's decision."""
+    from app.agents.review_document import render_milestone_review
+
+    _record_document(
+        state, "docs/milestone_review.md", render_milestone_review(review, milestone_goal)
+    )
+
+
+#: Which stage produces each artifact the pipeline later reads. Used to send a
+#: run back to the stage that owes the output rather than crashing downstream.
+_PRODUCED_BY: dict[str, str] = {
+    "product_intake": "product_manager",
+    "tools_models": "tools_models",
+    "stack_selection": "stack_selector",
+    "technical_specification": "principal_architect",
+    "sprint_plan": "scrum_master",
+    "milestone_plan": "technical_lead",
+}
+
+
+def _as_text(value: Any) -> str:
+    """One artifact as JSON text, whatever shape it arrived in."""
+    if value is None:
+        return ""
+    if hasattr(value, "model_dump_json"):
+        return value.model_dump_json(indent=2)
+    return json.dumps(value, indent=2)
+
+
+def _missing_upstream(state: WorkflowGraphState, *keys: str) -> dict[str, Any] | None:
+    """Route back to whichever stage owes a missing artifact, or None if all present.
+
+    A stage that answers in prose instead of returning its structured response
+    leaves its artifact out of state, and every later stage that reads the key
+    directly dies with a bare `KeyError` raised from inside LangGraph - naming
+    neither the stage that failed nor anything to do about it.
+
+    That is not a rare shape. Measured directly against this deployment's model,
+    driving the product manager agent to completion twice with identical input:
+    one run returned its structured response, the other wrote "# Product Intake
+    Complete" as a message and returned nothing. Roughly half. Across a pipeline
+    of ten sequential stages, something will land on it most runs.
+
+    So this is treated as a retryable stage failure rather than an error: send
+    the run back to the producer on a fresh conversation, bounded by the shared
+    `structured_retries` budget, and only fail once that is spent.
+    """
+    for key in keys:
+        if state.get(key) is not None:
+            continue
+        producer = _PRODUCED_BY.get(key)
+        if producer is None:
+            return _handing_on(
+                stage="failed",
+                error=f"The workflow needs '{key}' and no stage has produced it.",
+            )
+        retries = dict(state.get("structured_retries") or {})
+        budget_key = f"{producer}:{key}"
+        attempted = retries.get(budget_key, 0)
+        if attempted < _max_structured_retries():
+            retries[budget_key] = attempted + 1
+            return _handing_on(stage=_owning_node(producer), structured_retries=retries)
+        return _handing_on(
+            stage="failed",
+            error=(
+                f"The {producer.replace('_', ' ')} stage finished without returning its "
+                f"structured response, so '{key}' is missing and the run cannot "
+                f"continue. It was re-run {attempted} time(s) on a fresh conversation "
+                "and did the same each time. Any document it wrote is still in docs/."
+            ),
+        )
+    return None
+
+
+def _milestone_changes_requested(review: Any) -> str | None:
+    """What the milestone reviewer wants changed, in words the lead can act on.
+
+    `findings` is the field designed to carry this, but it is optional in the
+    schema and a model may leave it empty while still voting
+    `changes_required` - putting its whole argument in `acceptance_evidence`,
+    which is required and so always gets written.
+
+    Observed on run-95ca3f72: the reviewer returned `changes_required` with
+    `findings == []` and three concrete complaints in `acceptance_evidence`
+    (a root `package.json` whose test script was `exit 1`, duplicate installs
+    in CI, `npm test` exiting 1). Joining an empty list produced `""`, and the
+    technical lead was sent back to re-plan with a revision request containing
+    nothing. It returned the same seven tasks three times, which was the only
+    correct response to being told to change something unspecified.
+
+    Returns None only when the reviewer wrote nothing anywhere, which is a
+    reviewer that cannot be obeyed rather than a lead that will not comply.
+    """
+    findings = getattr(review, "findings", None) or []
+    if findings:
+        return "\n".join(
+            f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}"
+            for f in findings
+        )
+
+    evidence = (getattr(review, "acceptance_evidence", "") or "").strip()
+    if evidence:
+        return (
+            "The milestone review requires changes. It recorded no structured "
+            "findings, so this is its own account of what it checked and what "
+            "it found wrong. Treat every problem named here as a required "
+            "change:\n\n" + evidence
+        )
+    return None
+
+
 def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
     """Gather everything the Principal Architect must fix in its next revision.
 
@@ -586,7 +1127,12 @@ def _collect_required_changes(state: WorkflowGraphState) -> list[str]:
             )
             changes.extend(_format_finding(finding) for finding in advisory)
 
-    changes.extend(state.get("revision_comments", []))
+    # A blank comment is not a requested change. It reached the architect as a
+    # revision request that asked for nothing - see
+    # `_milestone_changes_requested` for where these came from.
+    changes.extend(
+        comment for comment in state.get("revision_comments", []) or [] if str(comment).strip()
+    )
     return changes
 
 
@@ -790,8 +1336,14 @@ def build_workflow_graph(
             output_key="product_intake",
             next_stage="tools_models",
         )
-        if _is_paused(update["stage"]):
+        if _hand_back(update, "product_intake"):
             return update
+
+        _record_document(
+            state,
+            "docs/product_intake.md",
+            render_artifact(update["product_intake"], title="Product Intake"),
+        )
         
         # After product manager finishes, optionally route to review
         next_stage = "user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) else "tools_models"
@@ -810,7 +1362,45 @@ def build_workflow_graph(
 
     def tools_models_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_tools_models_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
-        intake_text = state["product_intake"].model_dump_json(indent=2) if hasattr(state["product_intake"], "model_dump_json") else __import__("json").dumps(state["product_intake"], indent=2)
+        intake = state.get("product_intake")
+        if intake is None:
+            # Send it back to the stage that owes the output, on a fresh
+            # conversation, rather than failing here. Resuming re-enters *this*
+            # node, where the intake is still missing - so telling the operator
+            # to resume, as the first version of this guard did, was advice that
+            # could not work. Measured on run-c826ae90: resumed once, failed
+            # again in the same place.
+            retries = dict(state.get("structured_retries") or {})
+            key = "product_manager:intake"
+            attempted = retries.get(key, 0)
+            if attempted < _max_structured_retries():
+                retries[key] = attempted + 1
+                return _handing_on(stage="product_manager", structured_retries=retries)
+            # The stage before this one finished without returning its
+            # structured response - on run-c826ae90 the product manager wrote
+            # `docs/product_intake.md`, then reported "Product intake complete.
+            # Here is the structured summary:" as prose. Reading the key
+            # directly turned that into `KeyError: 'product_intake'` from deep
+            # inside LangGraph, which says nothing about which stage failed or
+            # what to do. Every sibling condition in this module returns a
+            # recoverable error instead.
+            return _handing_on(
+                stage="failed",
+                error=(
+                    "The product manager finished without returning its structured "
+                    "response, so there is no product intake for the next stage to "
+                    f"read. It was re-run {attempted} time(s) on a fresh conversation "
+                    "and did the same thing each time. Its document may still be in "
+                    "docs/. A model that writes the answer as prose instead of "
+                    "returning it through the response schema usually needs its "
+                    "reasoning settings checked - see Settings."
+                ),
+            )
+        intake_text = (
+            intake.model_dump_json(indent=2)
+            if hasattr(intake, "model_dump_json")
+            else json.dumps(intake, indent=2)
+        )
         request = build_tools_models_request(intake_text, state["repository"])
         update = _run_gated_agent(
             state,
@@ -821,6 +1411,12 @@ def build_workflow_graph(
             output_key="tools_models",
             next_stage="stack_selector",
         )
+        if not _hand_back(update, "tools_models"):
+            _record_document(
+                state,
+                "docs/tools_and_models.md",
+                render_artifact(update["tools_models"], title="Tools and Models"),
+            )
         return update
 
     def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
@@ -837,6 +1433,9 @@ def build_workflow_graph(
         )
 
     def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "product_intake", "tools_models")
+        if missing is not None:
+            return missing
         agent = create_principal_architect_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
 
         # A rejected specification must come back with the reasons attached,
@@ -847,17 +1446,17 @@ def build_workflow_graph(
             request = build_architecture_revision_request(
                 previous_specification_text=previous_specification.model_dump_json(indent=2) if hasattr(previous_specification, "model_dump_json") else __import__("json").dumps(previous_specification, indent=2),
                 required_changes=required_changes,
-                product_intake_text=state["product_intake"].model_dump_json(indent=2) if hasattr(state["product_intake"], "model_dump_json") else __import__("json").dumps(state["product_intake"], indent=2),
-                tools_and_models_text=state["tools_models"].model_dump_json(indent=2) if hasattr(state["tools_models"], "model_dump_json") else __import__("json").dumps(state["tools_models"], indent=2),
-                stack_selection_text=state["stack_selection"].model_dump_json(indent=2) if hasattr(state["stack_selection"], "model_dump_json") else __import__("json").dumps(state["stack_selection"], indent=2) if "stack_selection" in state else "",
+                product_intake_text=_as_text(state.get("product_intake")),
+                tools_and_models_text=_as_text(state.get("tools_models")),
+                stack_selection_text=_as_text(state.get("stack_selection")),
                 repository=state["repository"],
                 document=state["document"],
             )
         else:
             request = build_architecture_request(
-                state["product_intake"].model_dump_json(indent=2) if hasattr(state["product_intake"], "model_dump_json") else __import__("json").dumps(state["product_intake"], indent=2),
-                state["tools_models"].model_dump_json(indent=2) if hasattr(state["tools_models"], "model_dump_json") else __import__("json").dumps(state["tools_models"], indent=2),
-                state["stack_selection"].model_dump_json(indent=2) if hasattr(state["stack_selection"], "model_dump_json") else __import__("json").dumps(state["stack_selection"], indent=2) if "stack_selection" in state else "",
+                _as_text(state.get("product_intake")),
+                _as_text(state.get("tools_models")),
+                _as_text(state.get("stack_selection")),
                 state["repository"],
                 state["document"],
             )
@@ -871,10 +1470,22 @@ def build_workflow_graph(
             output_key="technical_specification",
             next_stage="architecture_review",
         )
-        if not _is_paused(update["stage"]):
+        if not _hand_back(update, "technical_specification"):
             # Consumed: the revision request above already delivered them, so
             # a later rerun must not re-apply stale comments.
             update["revision_comments"] = []
+
+            # Rendered from the decision the pipeline routes on, so the
+            # document and the structured answer cannot disagree. See
+            # `app.agents.specification_document`.
+            _record_document(
+                state,
+                "docs/technical_specification.md",
+                render_specification(
+                    update["technical_specification"],
+                    getattr(state.get("product_intake"), "product_name", ""),
+                ),
+            )
 
             missing = _incomplete_specification_sections(update.get("technical_specification"))
             repairs = state.get("specification_repair_count", 0)
@@ -896,8 +1507,11 @@ def build_workflow_graph(
         return update
 
     def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "technical_specification")
+        if missing is not None:
+            return missing
         agent = create_architecture_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
-        spec_text = state["technical_specification"].model_dump_json(indent=2)
+        spec_text = _as_text(state.get("technical_specification"))
         request = build_architecture_review_request(spec_text, state["repository"].root_path)
         update = _run_gated_agent(
             state,
@@ -908,10 +1522,15 @@ def build_workflow_graph(
             output_key="architecture_review",
             next_stage="scrum_master",  # placeholder; always overridden below
         )
-        if _is_paused(update["stage"]):
+        if _hand_back(update, "architecture_review"):
             return update
 
         review: ArchitectureReviewOutput = update["architecture_review"]
+
+        # Rendered from the decision, not written by the reviewer as a second
+        # copy that can disagree with it. See `app.agents.review_document`.
+        _record_document(state, "docs/architecture_review.md", render_architecture_review(review))
+
         if review.status == "approved":
             # The mandatory gate passed. Only now may an optional human review
             # session run; it can never substitute for this gate.
@@ -959,8 +1578,11 @@ def build_workflow_graph(
         )
 
     def scrum_master_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "technical_specification")
+        if missing is not None:
+            return missing
         agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
-        spec_text = state["technical_specification"].model_dump_json(indent=2)
+        spec_text = _as_text(state.get("technical_specification"))
         request = build_sprint_planning_request(spec_text, state["repository"].root_path)
         update = _run_gated_agent(
             state,
@@ -971,13 +1593,21 @@ def build_workflow_graph(
             output_key="sprint_plan",
             next_stage="technical_lead",
         )
-        if not _is_paused(update["stage"]):
+        if not _hand_back(update, "sprint_plan"):
             update["current_sprint_index"] = 0
+            _record_document(
+                state,
+                "docs/sprint_plan.md",
+                render_artifact(update["sprint_plan"], title="Sprint Plan"),
+            )
         return update
 
     def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "sprint_plan")
+        if missing is not None:
+            return missing
         agent = create_technical_lead_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
-        plan_text = state["sprint_plan"].model_dump_json(indent=2)
+        plan_text = _as_text(state.get("sprint_plan"))
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state["sprint_plan"].sprints
         current_goal = sprints[sprint_index].goal if sprints and sprint_index < len(sprints) else ""
@@ -985,19 +1615,18 @@ def build_workflow_graph(
         # A sprint review that requested changes re-enters here. Reuse the
         # shared revision prompt so the lead sees its previous milestone plan
         # alongside the comments, rather than re-planning from scratch.
-        revision_comments = state.get("revision_comments", [])
+        # Blank comments are dropped before the truthiness test: `[""]` is a
+        # truthy list, so a revision request carrying one empty string used to
+        # send the lead down the revising branch with nothing to revise.
+        revision_comments = [
+            comment for comment in state.get("revision_comments", []) or [] if str(comment).strip()
+        ]
         previous_milestone = state.get("milestone_plan")
-        if revision_comments and previous_milestone is not None:
-            request = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": build_revision_prompt(
-                            previous_milestone.model_dump_json(indent=2), revision_comments
-                        ),
-                    }
-                ]
-            }
+        revising = bool(revision_comments) and previous_milestone is not None
+        if revising:
+            request = build_milestone_revision_request(
+                previous_milestone.model_dump_json(indent=2), revision_comments
+            )
         else:
             request = build_milestone_planning_request(plan_text, current_goal, state["repository"].root_path)
         update = _run_gated_agent(
@@ -1009,16 +1638,62 @@ def build_workflow_graph(
             output_key="milestone_plan",
             next_stage="specialist_dispatch",
         )
-        if _is_paused(update["stage"]):
+        if _hand_back(update, "milestone_plan"):
             return update
 
+        _record_document(
+            state,
+            "docs/milestone_plan.md",
+            render_artifact(update["milestone_plan"], title="Milestone Plan"),
+        )
+
         milestone: MilestonePlanOutput = update["milestone_plan"]
+
+        # A revision that assigns nothing is a revision that changes nothing.
+        # The lead can satisfy "address every requested change" by writing it
+        # into `integration_notes`, which no specialist is given - so the plan
+        # reads as if the change were handled while the file stays untouched.
+        unassigned = unassigned_review_changes(
+            milestone, revising=revising, previous=previous_milestone
+        )
+        if unassigned:
+            # Retry on a fresh conversation before giving up. Omitting the
+            # assignments once is a lapse, not an inability - and failing the
+            # whole run for it throws away every stage that came before. The
+            # budget is shared with the structured-response retry because both
+            # are the same remedy: abandon this conversation and ask again.
+            retries = dict(state.get("structured_retries") or {})
+            key = "technical_lead:assignments"
+            attempted = retries.get(key, 0)
+            if attempted < _max_structured_retries():
+                retries[key] = attempted + 1
+                logger.warning(
+                    "Milestone revision assigned no task to the requested changes; "
+                    "re-planning on a fresh conversation (attempt %d of %d)",
+                    attempted + 2, _max_structured_retries() + 1,
+                )
+                return _handing_on(
+                    stage="technical_lead",
+                    structured_retries=retries,
+                    revision_comments=revision_comments,
+                )
+            return _handing_on(
+                stage="failed",
+                error=(
+                    f"{unassigned}\n\nThis was tried {attempted + 1} times, each on a "
+                    "fresh conversation."
+                ),
+            )
+
         update["remediation"] = start_remediation(milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS)
         update["specialist_task_index"] = 0
         update["revision_comments"] = []
         return update
 
     def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "milestone_plan")
+        if missing is not None:
+            return missing
         milestone = state["milestone_plan"]
         tasks = milestone.delegated_tasks
         index = state.get("specialist_task_index", 0)
@@ -1029,8 +1704,12 @@ def build_workflow_graph(
             agent = create_specialist_agent(
                 task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
             )
+            selection = state.get("stack_selection")
             request = build_specialist_task_request(
-                task.task_description, task.acceptance_criteria, state["repository"].root_path
+                task.task_description,
+                task.acceptance_criteria,
+                state["repository"].root_path,
+                getattr(selection, "technology_stack", None),
             )
             update = _run_gated_agent(
                 state,
@@ -1053,9 +1732,12 @@ def build_workflow_graph(
         # Every delegated task is done, so the increment is built. Verification
         # is its own stage (Step 5.4): the Test Engineer runs the tests and
         # turns failures into tracked, owned defects.
-        return {"stage": "test_and_triage"}
+        return _handing_on(stage="test_and_triage")
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "milestone_plan")
+        if missing is not None:
+            return missing
         """Run the tests for this milestone and triage every failure into a tracked defect.
 
         This is steps 2 and 3 of the plan's remediation loop. It runs after each
@@ -1078,7 +1760,10 @@ def build_workflow_graph(
             "testing", model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         request = build_test_run_request(
-            milestone.selected_sprint_goal, changed_files, state["repository"].root_path
+            milestone.selected_sprint_goal,
+            changed_files,
+            state["repository"].root_path,
+            getattr(state.get("stack_selection"), "technology_stack", None),
         )
         update = _run_gated_agent(
             state,
@@ -1123,11 +1808,11 @@ def build_workflow_graph(
                 new_defects=new_defects,
             )
         except RemediationLimitExceeded as exc:
-            return {
-                "stage": "user_review_sprint",
-                "remediation": cycle,
-                "test_round": test_round + 1,
-            }
+            return _handing_on(
+                stage="user_review_sprint",
+                remediation=cycle,
+                test_round=test_round + 1,
+            )
 
         base_update: dict[str, Any] = {
             "remediation": cycle,
@@ -1138,32 +1823,32 @@ def build_workflow_graph(
         }
 
         if cycle.escalated:
-            return {
+            return _handing_on(
                 **base_update,
-                "stage": "failed",
-                "error": (
+                stage="failed",
+                error=(
                     f"Sprint '{cycle.sprint_goal}' exhausted its {cycle.max_attempts} remediation attempts "
                     f"with defects still open. A human must intervene.\n\n{build_defect_report(cycle)}"
                 ),
-            }
+            )
 
         if any(defect.status == "open" for defect in cycle.defects):
-            return {**base_update, "stage": "defect_remediation", "defect_cursor": 0}
+            return _handing_on(**base_update, stage="defect_remediation", defect_cursor=0)
 
         # Tests pass and nothing is open. The acceptance gate is still the
         # authority on whether this sprint may be accepted - it also refuses a
         # fix with missing regression coverage or an undocumented accepted risk.
         if not is_sprint_acceptable(cycle):
-            return {
+            return _handing_on(
                 **base_update,
-                "stage": "failed",
-                "error": (
+                stage="failed",
+                error=(
                     "The sprint cannot be accepted despite passing tests; a defect is missing "
                     f"regression coverage or a documented accepted risk.\n\n{build_defect_report(cycle)}"
                 ),
-            }
+            )
 
-        return {**base_update, "stage": "security_review"}
+        return _handing_on(**base_update, stage="security_review")
 
     def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Route one open defect to the specialist who owns it, then re-test.
@@ -1205,6 +1890,7 @@ def build_workflow_graph(
             defect.affected_files,
             defect.regression_test_required,
             state["repository"].root_path,
+            getattr(state.get("stack_selection"), "technology_stack", None),
         )
         update = _run_gated_agent(
             state,
@@ -1262,9 +1948,12 @@ def build_workflow_graph(
             
         review: SecurityReviewOutput = update.pop("__security_review__")
         # Record it and move to milestone_review
-        return {"stage": "milestone_review", "security_review": review}
+        return _handing_on(stage="milestone_review", security_review=review)
 
     def milestone_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        missing = _missing_upstream(state, "milestone_plan")
+        if missing is not None:
+            return missing
         milestone = state["milestone_plan"]
         outputs = state.get("specialist_outputs", {})
         changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
@@ -1286,6 +1975,7 @@ def build_workflow_graph(
             test_evidence,
             defect_report,
             state["repository"].root_path,
+            getattr(state.get("stack_selection"), "technology_stack", None),
         )
         update = _run_gated_agent(
             state,
@@ -1300,31 +1990,43 @@ def build_workflow_graph(
             return update
             
         review: MilestoneReviewOutput = update.pop("__milestone_review__")
+
+        # The document is rendered here, from the decision the workflow routes
+        # on, rather than written by the reviewer as a second copy that can
+        # disagree with it. See `app.agents.review_document`.
+        _record_review_document(state, review, milestone.selected_sprint_goal)
         
         if review.status == "blocked":
-            return {
-                "stage": "failed",
-                "error": "Milestone review blocked the sprint from continuing. See findings.",
-                "milestone_review": review,
-            }
-        elif review.status == "changes_required":
-            findings_text = "\n".join(
-                f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}" 
-                for f in review.findings
+            return _handing_on(
+                stage="failed",
+                error="Milestone review blocked the sprint from continuing. See findings.",
+                milestone_review=review,
             )
+        elif review.status == "changes_required":
+            findings_text = _milestone_changes_requested(review)
+            if findings_text is None:
+                return _handing_on(
+                    stage="failed",
+                    error=(
+                        "The milestone review asked for changes but did not say what "
+                        "to change: `findings` was empty and it recorded no evidence "
+                        "either. Resume to re-run the review."
+                    ),
+                    milestone_review=review,
+                )
             revision_count = state.get("milestone_revision_count", 0) + 1
             if revision_count >= MAX_MILESTONE_REVISIONS:
-                return {
-                    "stage": "user_review_sprint",
-                    "milestone_revision_count": revision_count,
-                    "milestone_review": review,
-                }
-            return {
-                "stage": "technical_lead",
-                "revision_comments": state.get("revision_comments", []) + [findings_text],
-                "milestone_revision_count": revision_count,
-                "milestone_review": review,
-            }
+                return _handing_on(
+                    stage="user_review_sprint",
+                    milestone_revision_count=revision_count,
+                    milestone_review=review,
+                )
+            return _handing_on(
+                stage="technical_lead",
+                revision_comments=state.get("revision_comments", []) + [findings_text],
+                milestone_revision_count=revision_count,
+                milestone_review=review,
+            )
         
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
@@ -1337,7 +2039,7 @@ def build_workflow_graph(
         else:
             next_stage = "complete"
 
-        return {"stage": next_stage, "milestone_review": review}
+        return _handing_on(stage=next_stage, milestone_review=review)
 
     def user_review_sprint_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         sprint_index = state.get("current_sprint_index", 0)

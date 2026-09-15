@@ -274,3 +274,214 @@ def test_the_overflow_message_names_the_settings_that_apply():
     assert "CTX_SPECIFICATION_BUDGET" in message
     assert "CTX_ARCHITECT_DOCUMENT_BUDGET" in message
     assert "CTX_MAX_TOKENS" in message
+
+
+# ---------------------------------------------------------------------------
+# A stage that produced no structured response
+#
+# Observed on run-0b55ad49: `specialist_ui_ux_0` did its work, then wrote the
+# heading "## Structured Response" in prose and continued for 431,469
+# characters - about 108,000 tokens over 38 minutes - and the stage failed
+# because the schema was never called. The old message blamed the context
+# limit, which was not the cause, and that guess cost five commits of budget
+# tuning on a branch where the budgets were fine.
+# ---------------------------------------------------------------------------
+
+
+def _ai(text: str):
+    from langchain_core.messages import AIMessage
+
+    return AIMessage(content=text)
+
+
+def test_a_prose_answer_is_named_as_the_likely_cause() -> None:
+    from app.graph.workflow import _missing_structured_response
+
+    message = _missing_structured_response(
+        "specialist_ui_ux_0",
+        {"messages": [_ai("All verifications pass.\n\n## Structured Response\n\n| File |" + "x" * 5000)]},
+    )
+
+    assert "wrote the answer as prose" in message
+    assert "characters" in message
+    assert "not lost" in message
+
+
+def test_a_truncated_answer_is_not_blamed_on_prose() -> None:
+    """A short tail is the signature of running out of room, not of rambling."""
+    from app.graph.workflow import _missing_structured_response
+
+    message = _missing_structured_response("scrum_master", {"messages": [_ai("The sprint plan is")]})
+
+    assert "wrote the answer as prose" not in message
+    assert "MODEL_MAX_OUTPUT_TOKENS" in message
+
+
+def test_no_final_message_is_reported_as_such() -> None:
+    from app.graph.workflow import _missing_structured_response
+
+    message = _missing_structured_response("technical_lead", {"messages": []})
+
+    assert "no final message at all" in message
+
+
+def test_the_message_never_asserts_a_cause_it_cannot_know() -> None:
+    """The old text said 'this often happens if the context limit was reached'."""
+    from app.graph.workflow import _missing_structured_response
+
+    message = _missing_structured_response("x", {"messages": [_ai("done")]})
+
+    assert "This often happens" not in message
+
+
+def test_a_failed_stage_retries_on_a_fresh_conversation() -> None:
+    """The retry must abandon the conversation, not replay it.
+
+    On run-0b55ad49 the stage failed, the run was resumed, and the resume path
+    re-entered the same inner thread - the one holding 431,441 characters of
+    prose - and failed identically in four minutes. Clearing
+    `pending_inner_thread_id` is what turns that loop into a retry.
+    """
+    from app.graph.workflow import _max_structured_retries
+
+    assert _max_structured_retries() >= 1
+
+
+def test_the_retry_budget_is_configurable(monkeypatch) -> None:
+    from app.graph.workflow import _max_structured_retries
+
+    monkeypatch.setenv("WORKFLOW_MAX_STRUCTURED_RETRIES", "5")
+    assert _max_structured_retries() == 5
+    monkeypatch.setenv("WORKFLOW_MAX_STRUCTURED_RETRIES", "nope")
+    assert _max_structured_retries() == 2
+
+
+def test_the_final_message_says_how_many_fresh_attempts_were_made() -> None:
+    from app.graph.workflow import _missing_structured_response
+
+    once = _missing_structured_response("x", {"messages": [_ai("done")]})
+    thrice = _missing_structured_response("x", {"messages": [_ai("done")]}, attempts=3)
+
+    assert "tried" not in once
+    assert "tried 3 times, each on a fresh conversation" in thrice
+
+
+def test_a_typed_context_overflow_is_recognised_without_matching_words() -> None:
+    """A provider that rephrases its message must not turn a handled overflow
+    into an unhandled crash."""
+    from langchain_core.exceptions import ContextOverflowError
+
+    from app.graph.workflow import _is_context_overflow
+
+    assert _is_context_overflow(ContextOverflowError("anything at all"))
+
+
+def test_the_substring_fallback_still_applies() -> None:
+    """Most OpenAI-compatible servers never raise the typed error."""
+    from app.graph.workflow import _is_context_overflow
+
+    assert _is_context_overflow(ValueError("This model's maximum context length is 8192 tokens"))
+    assert not _is_context_overflow(ValueError("connection reset by peer"))
+
+
+# ---------------------------------------------------------------------------
+# A stage's pause must not outlive the stage
+#
+# `_run_gated_agent` clears `pending_decision` and `pending_inner_thread_id` on
+# success, but a node that pops its private result key and returns a *fresh*
+# dict drops that reset. The next stage then inherits them, and
+# `_run_gated_agent` - seeing a pending decision - resumes the inherited thread
+# instead of starting its own.
+#
+# Observed on run-0b55ad49 at 1833 events: `milestone_review` finished with
+# `changes_required` and handed back to `technical_lead`, which resumed the
+# reviewer's conversation, was handed a `MilestoneReviewOutput`, stored it under
+# `milestone_plan`, and died on
+# `'MilestoneReviewOutput' object has no attribute 'selected_sprint_goal'`.
+# ---------------------------------------------------------------------------
+
+
+def test_handing_on_always_clears_the_pause() -> None:
+    from app.graph.workflow import _handing_on
+
+    update = _handing_on(stage="technical_lead", milestone_review="anything")
+
+    assert update["pending_decision"] is None
+    assert update["pending_inner_thread_id"] is None
+    assert update["pending_approval"] is None
+    assert update["stage"] == "technical_lead"
+
+
+def test_handing_on_does_not_let_a_caller_resurrect_a_pause() -> None:
+    """A node passing its own value wins, but nothing here defaults to carrying one."""
+    from app.graph.workflow import _handing_on
+
+    update = _handing_on(stage="x", pending_inner_thread_id="deliberate")
+
+    assert update["pending_inner_thread_id"] == "deliberate"
+    assert update["pending_decision"] is None
+
+
+def test_no_node_returns_a_bare_dict_after_consuming_an_agent_result() -> None:
+    """The arrangement that failed was spelling the reset out at each site.
+
+    Five nodes have between two and seven such returns; one forgetting is
+    invisible until two stages later. This reads the source because the defect
+    is structural - a return that *looks* complete and is missing three keys.
+    """
+    import inspect
+    import re
+
+    from app.graph import workflow
+
+    lines = inspect.getsource(workflow).split("\n")
+    pops = [i for i, line in enumerate(lines) if '.pop("__' in line]
+    assert pops, "the private-result pattern has moved; update this test"
+
+    offenders = []
+    for start in pops:
+        indent = len(lines[start]) - len(lines[start].lstrip())
+        for index in range(start + 1, len(lines)):
+            stripped = lines[index].lstrip()
+            if stripped.startswith("def ") and (len(lines[index]) - len(stripped)) < indent:
+                break
+            if re.match(r"return \{", stripped):
+                offenders.append(stripped[:70])
+
+    assert not offenders, (
+        "these returns follow a completed agent run and build a fresh dict, so they "
+        f"drop the pause reset - use `_handing_on`: {offenders}"
+    )
+
+
+def test_a_missing_product_intake_fails_with_an_explanation():
+    """A stage that skipped its structured response must not raise a KeyError.
+
+    Observed on run-c826ae90: the product manager wrote
+    `docs/product_intake.md` and then reported "Product intake complete. Here
+    is the structured summary:" as prose, so `product_intake` never entered
+    state. `tools_models_node` read the key directly and the run died with
+    `KeyError: 'product_intake'` raised from inside LangGraph - a message that
+    names neither the stage that failed nor anything to do about it.
+    """
+    import json
+    import re
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parent.parent / "src/app/graph/workflow.py"
+    text = source.read_text()
+
+    body = text[text.index("def tools_models_node") : text.index("def stack_selector_node")]
+
+    assert 'state["product_intake"]' not in body, (
+        "read `product_intake` with .get() and hand back a recoverable error; "
+        "a direct subscript raises KeyError from inside LangGraph"
+    )
+    assert 'state.get("product_intake")' in body
+    assert "without returning its structured" in body
+    # Resuming re-enters this node, where the intake is still missing, so the
+    # guard must route back to the stage that owes the output rather than tell
+    # the operator to resume. run-c826ae90 was resumed once and failed in the
+    # same place.
+    assert 'stage="product_manager"' in body
+    assert "structured_retries" in body

@@ -19,13 +19,20 @@ from pydantic import BaseModel, ConfigDict, Field
 logger = logging.getLogger(__name__)
 
 
+def _derived():
+    """The window-derived budget, imported lazily to avoid a circular import."""
+    from app.agents.context_budget import ContextBudget
+
+    return ContextBudget.resolve()
+
+
 class ContextPolicy(BaseModel):
     """How much context an agent may use, and when to compact it."""
 
     model_config = ConfigDict(extra="forbid")
 
     max_context_tokens: int = Field(
-        default=200_000,
+        default_factory=lambda: _derived().input_ceiling_tokens,
         description="The model's usable input window, in tokens.",
     )
     soft_trigger_ratio: float = Field(
@@ -35,7 +42,7 @@ class ContextPolicy(BaseModel):
         description="Fraction of the window at which compaction runs.",
     )
     keep_recent_messages: int = Field(
-        default=15,
+        default_factory=lambda: _derived().keep_recent_messages,
         ge=2,
         description="Messages left untouched at the tail when compacting.",
     )
@@ -85,13 +92,21 @@ class ContextPolicy(BaseModel):
                 logger.warning("Ignoring malformed %s=%r; using %r", name, raw, default)
                 return default
 
+        from app.agents.context_budget import ContextBudget
+
+        budget = ContextBudget.resolve(environment)
+
         def _flag(raw: str) -> bool:
             return raw.strip().lower() in {"1", "true", "yes", "on"}
 
         return cls(
-            max_context_tokens=_read("CTX_MAX_TOKENS", 75_000, int),
+            # Derived from the configured context window rather than carried as
+            # independent numbers. Three separate bugs came from these drifting
+            # apart from the model they describe; `context_budget` is now the
+            # single place that relationship lives.
+            max_context_tokens=_read("CTX_MAX_TOKENS", budget.input_ceiling_tokens, int),
             soft_trigger_ratio=_read("CTX_SOFT_TRIGGER_RATIO", 0.8, float),
-            keep_recent_messages=_read("CTX_KEEP_MESSAGES", 15, int),
+            keep_recent_messages=_read("CTX_KEEP_MESSAGES", budget.keep_recent_messages, int),
             trim_tokens_to_summarize=_read("CTX_SUMMARY_BUDGET", 4_000, int),
             compaction_model=str(environment.get("CTX_COMPACTION_MODEL", "")).strip(),
             enabled=_read("CTX_COMPACTION_ENABLED", True, _flag),

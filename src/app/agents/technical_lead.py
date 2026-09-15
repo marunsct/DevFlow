@@ -19,6 +19,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
 _STAGE = "implementation"
@@ -59,15 +61,79 @@ class MilestonePlanOutput(BaseModel):
     milestone_scope: list[str] = Field(default_factory=list, description="What this milestone will actually deliver.")
     delegated_tasks: list[SpecialistTask] = Field(default_factory=list)
     integration_notes: list[str] = Field(
-        default_factory=list, description="How the delegated pieces fit together once complete."
+        default_factory=list,
+        description=(
+            "How the delegated pieces fit together once complete. Context only - never "
+            "work. A change recorded here and not in `delegated_tasks` belongs to nobody "
+            "and will not be made."
+        ),
+    )
+    review_task_assignments: list[str] = Field(
+        default_factory=list,
+        description=(
+            "When revising after a review, one line per requested change naming the "
+            "delegated task that will make it, e.g. 'Add jest.setup.js polyfill -> task 3 "
+            "(testing)'. Empty on a first plan. Purpose: a requested change that no task "
+            "owns is a change nobody makes. Producer: Technical Lead. Consumer: the "
+            "workflow, which refuses a revision that assigns nothing."
+        ),
     )
     blockers: list[str] = Field(
         default_factory=list, description="Anything preventing this milestone from starting or completing."
     )
 
 
-def _truncate(text: str, max_chars: int = 80_000) -> str:
+def build_milestone_revision_request(
+    previous_plan_json: str, comments: list[str]
+) -> dict[str, list[dict[str, str]]]:
+    """The revision request for a milestone plan sent back by a review.
+
+    The generic revision prompt asks the agent to "address every requested
+    change", and for a *plan* there is a way to do that which changes nothing:
+    write it down. Measured on run-0b55ad49 - a review named the exact file,
+    line and fix for a test-suite failure, the lead reproduced it verbatim under
+    `## Integration Notes`, no delegated task mentioned it, and eighty minutes
+    later the file was byte-for-byte unchanged. The relay worked; the assignment
+    never happened.
+
+    So the instruction here is not "address" but "assign": every requested
+    change becomes a task with an owner, and the plan states which task took it.
+    """
+    from app.review import build_revision_prompt
+
+    return {
+        "messages": [
+            {
+                "role": "user",
+                "content": build_revision_prompt(previous_plan_json, comments)
+                + "\n\n"
+                "HOW TO ADDRESS A REQUESTED CHANGE IN A PLAN:\n"
+                "- Every requested change must become a DELEGATED TASK with an owning "
+                "specialist and acceptance criteria. A plan is a list of assignments; "
+                "writing a change into `integration_notes` assigns it to nobody and it "
+                "will not be made.\n"
+                "- If a change names an exact file, line or code, put that detail in the "
+                "task itself. The specialist doing the work sees the task, not this "
+                "conversation.\n"
+                "- Fill `review_task_assignments` with one line per requested change "
+                "naming the task that took it. If you cannot name a task for a change, "
+                "you have not assigned it yet.\n"
+                "- Fixing what the review raised comes before adding new work. Do not "
+                "add new tests or features while a reported failure is unfixed.",
+            }
+        ]
+    }
+
+
+def _truncate(text: str, max_chars: int | None = None) -> str:
     """Truncate long text for local LLM context limits."""
+    # Derived from the configured context window, not a fixed number: a
+    # budget that does not move with the model is how every overflow in
+    # this pipeline's history began.
+    if max_chars is None:
+        from app.agents.context_budget import ContextBudget
+
+        max_chars = ContextBudget.resolve().document_budget_chars
     text = str(text or "")
     if len(text) <= max_chars:
         return text
@@ -88,12 +154,12 @@ def build_milestone_planning_request(
         f"--- Approved sprint plan ---\n{_truncate(sprint_plan_text)}\n\n"
         f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
-        f"**CRITICAL INSTRUCTION**: Ensure all tasks strictly instruct specialists to write application code inside a directory named after the app (e.g. `thehub/` for 'The Hub') and not in generic directories like 'nest-app' or directly in the repository root. All documentation must be placed in the `docs/` directory.\n"
+        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
-_SYSTEM_PROMPT = """You are the Technical Lead for this workflow.
+_SYSTEM_PROMPT = f"""You are the Technical Lead for this workflow.
 
 Your role is to select exactly one sprint from the approved plan, define a
 small milestone for it, and delegate only the specialist work that sprint
@@ -109,6 +175,8 @@ Responsibilities:
   executable code and explicitly mandate that they compile/verify their code using terminal commands.
 - Record blockers explicitly instead of silently assuming they are resolved.
 
+{SCOPE_DISCIPLINE}
+
 Constraints:
 - Do not execute or plan more than one sprint at a time.
 - Do not hide or downplay failing tests; if tests are failing, that is a
@@ -119,8 +187,11 @@ Constraints:
 - Do not grant a specialist access beyond their delegated task.
 - Do not modify application source code yourself.
 - Do not change repo files except through the approved artifact tool.
-- Write exactly one artifact, at `docs/milestone_plan.md`. Use that path verbatim so the
-  filename is the same on every run and later stages can find it.
+- Do not write a document. The workflow renders `docs/milestone_plan.md` from the
+  structured response you return, so your milestone plan reaches its readers
+  either way - and only through that response. Writing it yourself
+  produces the same work twice from one understanding, and the two
+  copies then disagree.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - **Write the complete artifact in ONE single write_artifact call.** Do NOT
@@ -130,6 +201,8 @@ Constraints:
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 
@@ -149,6 +222,9 @@ def create_technical_lead_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        # Its document is rendered from the structured response, so it needs no
+        # write tool - see `app.agents.artifact_document`.
+        can_write=False,
     )
 
 

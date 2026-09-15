@@ -68,20 +68,35 @@ x-app-env: &app-env
   # ---------------------------------------------------------------------------
   # Context compaction
   # ---------------------------------------------------------------------------
+  # The model's context window, in tokens. This is the only context number that
+  # needs setting: every budget below is derived from it by
+  # `app.agents.context_budget`. It is also editable per model in Settings,
+  # which is where it belongs - the window and the model change together.
+  #
+  # The derived budgets (CTX_MAX_TOKENS, CTX_KEEP_MESSAGES,
+  # MODEL_MAX_OUTPUT_TOKENS, SANDBOX_MAX_OUTPUT, CTX_ARCHITECT_DOCUMENT_BUDGET,
+  # CTX_REVISION_DOCUMENT_BUDGET, CTX_SPECIFICATION_BUDGET) are deliberately
+  # NOT given defaults here. A default here wins over the derivation, which is
+  # how a budget tuned for one model silently stayed in force under another.
+  # Set one only to override the derivation on purpose.
+  MODEL_CONTEXT_WINDOW: ${MODEL_CONTEXT_WINDOW:-100000}
+  # Per-process heap for a sandboxed command, applied as RLIMIT_DATA. A test
+  # runner forks one worker per CPU and each gets this much, so it must leave
+  # room for several inside the worker container's own memory limit.
+  SANDBOX_MEMORY_LIMIT: ${SANDBOX_MEMORY_LIMIT:-1g}
   CTX_COMPACTION_ENABLED: ${CTX_COMPACTION_ENABLED:-true}
-  CTX_MAX_TOKENS: ${CTX_MAX_TOKENS:-200000}
   CTX_SOFT_TRIGGER_RATIO: ${CTX_SOFT_TRIGGER_RATIO:-0.8}
-  CTX_KEEP_MESSAGES: ${CTX_KEEP_MESSAGES:-15}
   CTX_SUMMARY_BUDGET: ${CTX_SUMMARY_BUDGET:-4000}
   CTX_COMPACTION_MODEL: ${CTX_COMPACTION_MODEL:-}
-  CTX_ARCHITECT_DOCUMENT_BUDGET: ${CTX_ARCHITECT_DOCUMENT_BUDGET:-150000}
   CTX_STORE_ROOT: ${CTX_STORE_ROOT:-}
   CTX_JOURNAL_ROOT: ${CTX_JOURNAL_ROOT:-}
   CTX_JOURNAL_RETENTION_HOURS: ${CTX_JOURNAL_RETENTION_HOURS:-72}
   CTX_CONTEXT_RETENTION_HOURS: ${CTX_CONTEXT_RETENTION_HOURS:-72}
-  CTX_SPECIFICATION_BUDGET: ${CTX_SPECIFICATION_BUDGET:-60000}
   STREAM_AGENT_ACTIVITY: ${STREAM_AGENT_ACTIVITY:-true}
-  WORKFLOW_MAX_GATES_PER_STAGE: ${WORKFLOW_MAX_GATES_PER_STAGE:-25}
+  WORKFLOW_MAX_GATES_PER_STAGE: ${WORKFLOW_MAX_GATES_PER_STAGE:-120}
+  # Counts rejections of a stage, not failures to improve. Raise it when
+  # earlier rejections were about problems fixed elsewhere.
+  WORKFLOW_MAX_REVIEW_RERUNS: ${WORKFLOW_MAX_REVIEW_RERUNS:-8}
 
 services:
   db:
@@ -202,7 +217,8 @@ services:
       - ${DOCKER_SOCKET:-/dev/null}:/var/run/docker.sock
     environment:
       <<: *app-env
-      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-3600}
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-21900}
+      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-21600}
     command:
       - celery
       - -A
@@ -221,7 +237,18 @@ services:
       resources:
         limits:
           cpus: "2"
-          memory: 4g
+          # 4g was not enough for a JavaScript toolchain. Measured on
+          # run-cbd22a34: `npx vitest run` forks one worker per CPU, each
+          # allowed SANDBOX_MEMORY_LIMIT (2g) of heap by RLIMIT_DATA, and the
+          # tree collectively reached memory.peak = 4,294,975,488 - exactly this
+          # limit. The kernel killed the Celery workers mid-task
+          # (`WorkerLostError: signal 9`), the run was orphaned with its row
+          # still reading `running`, and nothing said why.
+          #
+          # Per-process rlimits do not bound a process tree, so the container
+          # limit is the real ceiling. SANDBOX_MEMORY_LIMIT is lowered to 1g
+          # below so several concurrent children still fit inside it.
+          memory: 8g
 
 volumes:
   pgdata:

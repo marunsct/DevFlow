@@ -472,6 +472,14 @@ class HumanApprovalRequest(BaseModel):
             "Purpose: human explanation or approved edit instruction. Producer: approver. Consumer: resume and re-run logic. Failure meaning: the approval may not capture the requested change."
         ),
     )
+    action_kind: Literal["write", "command", "read", "unknown"] = Field(
+        default="unknown",
+        description=(
+            "Purpose: what the paused call would do, so a repeat can be judged. Producer: "
+            "workflow. Consumer: the loop detector. Failure meaning: a command re-run after "
+            "each fix is mistaken for an agent rewriting the same file forever."
+        ),
+    )
 
 
 class ErrorInfo(BaseModel):

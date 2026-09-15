@@ -82,6 +82,21 @@ SETTABLE_KEYS: dict[str, str] = {
     "llm_provider": "LLM_PROVIDER",
     "openai_base_url": "OPENAI_BASE_URL",
     "model_name": "OPENAI_MODEL",
+    # The model's context window, in tokens. Every context budget in the
+    # pipeline is derived from it (see `app.agents.context_budget`), so it
+    # belongs beside the model it describes rather than in a deploy file: the
+    # two change together, and a window left behind after a model change is how
+    # every overflow in this repository's history began.
+    "model_context_window": "MODEL_CONTEXT_WINDOW",
+    # Reasoning models can deliberate before answering. Kept beside the model
+    # because support is a property of the model, not of the deployment: a
+    # window and a thinking budget both change when the model does.
+    # The longest single reply. It shares one window with the conversation, so
+    # raising it shrinks the room the conversation has - `context_budget`
+    # re-derives every other limit from what it leaves behind.
+    "model_max_output_tokens": "MODEL_MAX_OUTPUT_TOKENS",
+    "thinking_mode": "MODEL_THINKING_MODE",
+    "thinking_effort": "MODEL_THINKING_EFFORT",
 }
 
 CACHE_TTL_SECONDS = float(os.environ.get("SETTINGS_CACHE_TTL", "5"))

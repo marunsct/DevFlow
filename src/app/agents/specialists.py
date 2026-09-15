@@ -19,6 +19,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.testability import TESTABILITY_RULE
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.technical_lead import SpecialistRole
 from app.tools.agent_toolkit import (
@@ -153,22 +155,81 @@ class SpecialistOutput(BaseModel):
     )
 
 
+def describe_stack(stack: Any) -> str:
+    """The chosen stack, as the one specialists must build on.
+
+    A specialist used to be given its task, its acceptance criteria and nothing
+    about the technology. Each one then guessed, and reasonable guesses differ.
+
+    Measured on run-64df2b20, whose stack selection was Python / FastAPI /
+    PostgreSQL / pytest / React: the project directory ended up holding two
+    complete, incompatible backends. One specialist wrote `package.json` with
+    express, jsonwebtoken and mongoose plus `src/routes/auth.js` and a jest
+    suite; another wrote `main.py` with FastAPI and a `requirements.txt`. Both
+    were sensible answers to "build the authentication endpoints". Neither was
+    told that a database and a test framework had already been chosen, or that
+    the other existed.
+
+    Returns an empty string when no stack was recorded, so an older run or a
+    test fixture without one is unaffected.
+    """
+    if stack is None:
+        return ""
+    fields = (
+        ("Language", "language"),
+        ("Framework", "framework"),
+        ("Frontend framework", "frontend_framework"),
+        ("Database", "database"),
+        ("Testing framework", "testing_framework"),
+    )
+    lines = [
+        f"- {label}: {value}"
+        for label, attribute in fields
+        if (value := getattr(stack, attribute, "") or "")
+    ]
+    extra = list(getattr(stack, "additional_tools", None) or [])
+    if extra:
+        lines.append(f"- Other tools: {', '.join(str(tool) for tool in extra)}")
+    if not lines:
+        return ""
+    return (
+        "--- The technology stack for this project (already decided) ---\n"
+        + "\n".join(lines)
+        + "\nBuild on exactly this. Do not introduce a different language, "
+        "framework, database or test runner, even if one would suit your task "
+        "better - other specialists are building the rest of this product on "
+        "the stack above, and a second one in the same directory means neither "
+        "works. If your task cannot be done on this stack, say so as a blocker "
+        "rather than switching.\n\n"
+    )
+
+
 def build_specialist_task_request(
-    task_description: str, acceptance_criteria: list[str], repository_root: str
+    task_description: str,
+    acceptance_criteria: list[str],
+    repository_root: str,
+    stack: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for one delegated specialist task."""
     criteria_text = "\n".join(f"- {criterion}" for criterion in acceptance_criteria)
     brief = (
-        f"Repository root: {repository_root}\n\n"
+        # Deliberately not the host repository path. Inside the agent the
+        # workspace is rooted at "/", and quoting the host path here sends
+        # agents looking for files under a root that does not exist for them.
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
+        f"{describe_stack(stack)}"
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
-        f"**CRITICAL INSTRUCTION**: When writing application code or scaffolding projects, ensure you place it strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub'). Do NOT use generic names like 'nest-app' and do NOT scaffold directly in the repository root without a named folder. Place all documentation in the `docs/` directory.\n"
+        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
 def build_test_run_request(
-    milestone_goal: str, changed_files: list[str], repository_root: str
+    milestone_goal: str,
+    changed_files: list[str],
+    repository_root: str,
+    stack: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Testing specialist's input for one verification round (Step 5.4).
 
@@ -181,12 +242,18 @@ def build_test_run_request(
     """
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
     brief = (
-        f"Repository root: {repository_root}\n\n"
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
+        f"{describe_stack(stack)}"
         f"--- Milestone under test ---\n{milestone_goal}\n\n"
         f"--- Files changed in this milestone ---\n{files_text}\n\n"
         "Run the unit, integration, contract, end-to-end, accessibility, and security "
-        "tests that apply to this increment. Use the run_validation tool to actually "
-        "execute them.\n\n"
+        "tests that apply to this increment, using the testing approach this project "
+        "already chose. Use the run_validation tool to actually execute them.\n\n"
+        "Do not install a test framework or add a dependency. If the stack above names "
+        "no testing framework, that was a decision - the product is meant to be "
+        "verified the way the stack says, and `npm init` or `pip install` here creates "
+        "the very dependency the brief ruled out. If you cannot run a check without "
+        "new tooling, report that as a blocker instead of installing it.\n\n"
         "Report EVERY failure in the `defects` field, each with a severity, reproduction "
         "steps, expected behavior, actual behavior, affected files, and the specialist "
         "role that must fix it. If everything passes, return an empty `defects` list."
@@ -202,6 +269,7 @@ def build_defect_fix_request(
     affected_files: list[str],
     regression_test_required: bool,
     repository_root: str,
+    stack: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that routes one tracked defect to the specialist who owns it.
 
@@ -220,7 +288,8 @@ def build_defect_fix_request(
         else "A regression test is not required for this defect, but name any test you did run."
     )
     brief = (
-        f"Repository root: {repository_root}\n\n"
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
+        f"{describe_stack(stack)}"
         "A test failure has been assigned to you to fix.\n\n"
         f"--- Defect ---\n{description}\n\n"
         f"--- Reproduction steps ---\n{reproduction_steps}\n\n"
@@ -261,6 +330,14 @@ Beginner documentation requirement:
 
 Constraints:
 - You may use the `run_terminal_command` tool to execute shell commands, build code, install dependencies, and perform end-to-end development.
+- There is no shell, so `cd`, `&&`, `|` and `$(...)` do not work and `cd` is not
+  a program you can run. To act on a subdirectory, pass `working_directory` -
+  for a project directory named `myapp`, run `["npx", "jest"]` with
+  `working_directory="myapp"` rather than trying to change into it first.
+- Commands run at the workspace root unless you pass `working_directory`. Run
+  package-manager and test commands in the project directory, not at the root:
+  the root has no manifest of yours, and creating one there makes a second
+  project that disagrees with the real one.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - **Write the complete artifact in ONE single write_artifact call.** Do NOT
@@ -269,7 +346,11 @@ Constraints:
   it. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
+{TESTABILITY_RULE}
+
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 

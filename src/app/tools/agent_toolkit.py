@@ -16,6 +16,8 @@ from langchain_core.tools import BaseTool, tool
 
 from app.tools.repository import (
     RepositoryToolError,
+    delete_approved_artifact,
+    move_approved_artifact,
     list_repository_files,
     read_dependency_metadata,
     read_text_file,
@@ -150,6 +152,71 @@ def build_artifact_edit_tool(repo_root: str) -> BaseTool:
     return edit_artifact
 
 
+def build_artifact_delete_tool(repo_root: str) -> BaseTool:
+    """Return the delete counterpart to the artifact write tool.
+
+    An agent told to leave no scratch files behind, holding only a write tool,
+    cleans up the only way it can: by writing another file. See
+    `delete_approved_artifact` for what that cost on a real run. Gated exactly
+    like `write_artifact` - it changes the workspace, so it stops at the same
+    approval interrupt.
+    """
+
+    @tool
+    def delete_artifact(relative_path: str) -> dict[str, str]:
+        """Delete one file inside the workspace.
+
+        Use this to remove a temporary helper you created - a probe script, a
+        one-off validator - once it has served its purpose. Never write a
+        script whose job is to delete another script: call this instead.
+
+        Args:
+            relative_path: the file to delete, relative to the workspace root.
+
+        Returns `{"error": "..."}` instead of raising when the file is missing
+        or the path is not allowed, so the model can list the directory and try
+        again rather than crashing the run.
+        """
+        try:
+            return delete_approved_artifact(repo_root, relative_path)
+        except RepositoryToolError as exc:
+            return {"error": str(exc)}
+
+    return delete_artifact
+
+
+def build_artifact_move_tool(repo_root: str) -> BaseTool:
+    """Return the move/rename member of the mutation set.
+
+    Completes the matrix: create, read, change, remove, relocate. Gated exactly
+    like `write_artifact` - it changes where a file is, so it stops at the same
+    approval interrupt.
+    """
+
+    @tool
+    def move_artifact(relative_path: str, destination: str) -> dict[str, str]:
+        """Move or rename one file inside the workspace.
+
+        Use this instead of rewriting a file at a new path and deleting the old
+        one: it keeps the exact bytes, so a long document cannot come back
+        subtly different from the version that was already approved.
+
+        Args:
+            relative_path: the file to move, relative to the workspace root.
+            destination: where it should end up, relative to the workspace root.
+                Parent directories are created. It must not already exist.
+
+        Returns `{"error": "..."}` instead of raising when either path is not
+        allowed, so the model can list the directory and try again.
+        """
+        try:
+            return move_approved_artifact(repo_root, relative_path, destination)
+        except RepositoryToolError as exc:
+            return {"error": str(exc)}
+
+    return move_artifact
+
+
 def build_validation_tool(repo_root: str) -> BaseTool:
     """Return a tool that runs one allowlisted validation command bound to a repo root.
 
@@ -159,15 +226,21 @@ def build_validation_tool(repo_root: str) -> BaseTool:
     """
 
     @tool
-    def run_validation(command: list[str]) -> dict[str, object]:
+    def run_validation(
+        command: list[str], working_directory: str | None = None
+    ) -> dict[str, object]:
         """Run one allowlisted validation command, e.g. ["pytest", "tests/", "-q"].
+
+        Runs in this run's project directory by default, so `["npm", "test"]`
+        finds the project's own manifest. Pass `working_directory` (relative to
+        the workspace root) only to run somewhere else.
 
         Returns `{"error": "..."}` instead of raising when the command is not
         on the allowlist, so the specialist can pick an approved command
         instead of crashing the whole agent run.
         """
         try:
-            return run_approved_validation(repo_root, command)
+            return run_approved_validation(repo_root, command, working_directory)
         except RepositoryToolError as exc:
             return {"error": str(exc)}
 
@@ -183,21 +256,32 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
     """
 
     @tool
-    def run_terminal_command(command: list[str], category: str = "default") -> dict[str, Any]:
+    def run_terminal_command(
+        command: list[str],
+        category: str = "default",
+        working_directory: str | None = None,
+    ) -> dict[str, Any]:
         """Run one command in the workspace, inside an isolated container.
 
         Pass the command as a list of arguments, not as a single string:
         `["npm", "install"]`, not `"npm install"`. There is no shell, so `;`,
         `&&`, `|` and `$(...)` will not work - run separate commands instead.
 
+        To run inside a subdirectory, pass `working_directory` - do not try to
+        `cd`, which is not a program and cannot be run. For example, to run the
+        project's tests from a project directory named `myapp`:
+        `command=["npx", "jest"], working_directory="myapp"`.
+
         Requires human approval before it runs.
 
         Args:
-            command: argv list, e.g. ["npx", "create-next-app", "my-app"].
+            command: argv list, e.g. ["npx", "vitest", "run"].
             category: affects the timeout and whether the network is available.
                 'install' (300s, network on - use for dependency installs),
                 'build' (180s), 'test' (300s), or 'default' (120s). Everything
                 except 'install' runs with networking disabled.
+            working_directory: path relative to the workspace root to run in.
+                Defaults to the workspace root. Must be a directory inside it.
         """
         from app.tools.sandbox import SandboxExecutor
 
@@ -206,6 +290,7 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
             repo_root=repo_root,
             role_name=role_name,
             category=category,
+            working_directory=working_directory,
         )
 
     return run_terminal_command
@@ -299,11 +384,20 @@ def build_journal_read_tool() -> BaseTool:
 #: the host or exfiltrate data; writing a document cannot. The previous
 #: configuration gated only ``write_artifact`` and left every execution tool
 #: ungated, which is precisely backwards.
-HUMAN_APPROVAL_TOOLS = ("write_artifact", "edit_artifact", "run_terminal_command", "run_validation")
+HUMAN_APPROVAL_TOOLS = (
+    "write_artifact",
+    "edit_artifact",
+    "delete_artifact",
+    "move_artifact",
+    "run_terminal_command",
+    "run_validation",
+)
 
 
 __all__ = [
     "HUMAN_APPROVAL_TOOLS",
+    "build_artifact_delete_tool",
+    "build_artifact_move_tool",
     "build_artifact_edit_tool",
     "JOURNAL_TOOL_MAX_CHARS",
     "build_artifact_write_tool",

@@ -41,6 +41,8 @@ class Settings:
     require_approval: bool  # Safety switch for human approval before sensitive actions.
     allow_command_execution: bool  # Safety switch for tools that may run shell commands.
     checkpointer_type: str  # Type of checkpointer to use: 'memory' or 'sqlite'
+    thinking_mode: str  # "default" (leave the server alone), "on", or "off".
+    thinking_effort: str  # How much of the reply budget thinking may use: low, medium, high.
 
 
 def _read_bool(environment: Mapping[str, str], name: str, default: bool) -> bool:
@@ -108,4 +110,8 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         require_approval=_read_bool(values, "WORKFLOW_REQUIRE_APPROVAL", True),
         allow_command_execution=_read_bool(values, "WORKFLOW_ALLOW_COMMAND_EXECUTION", False),
         checkpointer_type=values.get("CHECKPOINTER_TYPE", DEFAULT_CHECKPOINTER).strip().lower(),
+        # "default" sends nothing, so adding this setting cannot change how an
+        # existing deployment behaves - see `app.agents.thinking.ThinkingMode`.
+        thinking_mode=values.get("MODEL_THINKING_MODE", "default").strip().lower(),
+        thinking_effort=values.get("MODEL_THINKING_EFFORT", "medium").strip().lower(),
     )

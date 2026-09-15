@@ -15,6 +15,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
 _STAGE = "milestone_review"
@@ -82,12 +84,28 @@ def _execution_evidence(repository_root: str) -> str:
         return "The execution record could not be read for this workspace."
 
 
+def _integration_evidence(repository_root: str, stack: Any = None) -> str:
+    """What the files in this workspace say about each other. Never raises.
+
+    Each specialist writes files that are defensible alone, and no stage checks
+    whether they connect. On run-95ca3f72 that let a stylesheet target an id no
+    page declared, and a script no page loaded, through four review stages.
+    """
+    try:
+        from app.analysis.integration_checks import summarise_integration
+
+        return summarise_integration(repository_root, stack)
+    except Exception:  # noqa: BLE001 - a reviewer without evidence still reviews
+        return "The cross-file checks could not be run for this workspace."
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
     test_evidence: str,
     defect_report: str,
     repository_root: str,
+    stack: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the milestone artifacts awaiting review."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
@@ -99,11 +117,13 @@ def build_milestone_review_request(
         f"--- Defect report ---\n{defect_report}\n\n"
         f"--- Commands actually executed in this workspace ---\n"
         f"{_execution_evidence(repository_root)}\n"
+        f"\n--- Cross-file checks (deterministic, not a model's opinion) ---\n"
+        f"{_integration_evidence(repository_root, stack)}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
-_SYSTEM_PROMPT = """You are the Milestone Reviewer for this workflow.
+_SYSTEM_PROMPT = f"""You are the Milestone Reviewer for this workflow.
 
 Your role is to independently review a completed milestone against acceptance
 criteria, focusing on correctness, contracts, migrations, authorization,
@@ -118,20 +138,29 @@ Responsibilities:
 - Ensure you document what was checked and passed in `acceptance_evidence`.
 - Confirm whether you reviewed documentation and tests.
 
+{SCOPE_DISCIPLINE}
+
 Constraints:
 - Do not modify application source code or the milestone artifacts themselves; you only
   review them and record findings.
 - Do not change repo files except through the approved artifact tool.
 - Never approve based only on confidence statements; approval must be grounded
   in what you actually verified.
-- Write exactly one artifact, at `docs/milestone_review.md`. Use that path verbatim so the
-  filename is the same on every run and later stages can find it.
-- Every write_artifact call pauses for a human decision before anything is
-  saved; never claim the artifact is saved until a tool result confirms it.
-- **Write the complete artifact in ONE single write_artifact call.** Do NOT
-  make follow-up edit calls to refine, fix typos, or improve the document after
-  the initial write. The document must be complete and correct before you write
-  it. Once the write is confirmed, immediately return your structured response.
+- You have no write tool and need none. When you have finished reviewing,
+  return your structured response immediately - that is the whole of your
+  output, and the only thing the next stage receives. Do not print it as a
+  message first; a response written into the conversation is not returned.
+- Do not write a review document. The workflow generates
+  `docs/milestone_review.md` from the structured response you return, so your
+  findings reach the reader either way - and only through that response.
+- Put every finding in the `findings` list. A finding described only in
+  `acceptance_evidence`, or in any document, is not one the workflow can act
+  on: the next stage is given your findings and nothing else.
+- The cross-file checks are deterministic: they read the files themselves, not
+  a report about them. A problem listed there is a fact about this workspace
+  and must become a finding, at blocking severity when it means code cannot
+  run - a stylesheet targeting an id no page declares, or a module nothing
+  loads, is dead code however well written it is.
 - Treat the executed-command record as authoritative over any specialist's
   description of its own testing. A milestone whose specialists report passing
   tests, but whose record shows no test command ran, is not verified - raise it
@@ -139,6 +168,8 @@ Constraints:
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 
@@ -158,6 +189,10 @@ def create_milestone_reviewer_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        # The workflow renders this reviewer's document from the structured
+        # decision it returns, so it needs no write tool - see
+        # `app.agents.review_document`.
+        can_write=False,
     )
 
 

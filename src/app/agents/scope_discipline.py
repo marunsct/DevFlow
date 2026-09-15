@@ -1,0 +1,49 @@
+"""One rule, shared by the stages that can inflate a project's scope.
+
+Scope inflation in this pipeline is not one agent's mistake. It compounds
+down the chain, and each step is locally reasonable:
+
+Measured on run-c4f17841 (brief_medium), whose brief names FastAPI or Express,
+React or Vue, JWT, migrations and Docker - and mentions Helm, Kubernetes,
+Prometheus, Grafana, Redis, Celery and encryption exactly zero times:
+
+1. The stack selector added "Celery with Redis" and "Prometheus + Grafana",
+   justified by "future features like notifications" and observability.
+2. The architect, given that stack, wrote ADRs for Helm deployment artefacts,
+   Prometheus middleware and pgcrypto encryption at rest.
+3. The architecture reviewer then raised three **blocking** findings because
+   the Helm charts, the Prometheus `/metrics` middleware and the pgcrypto
+   migrations were missing - none of which the brief ever asked for.
+
+By step 3 the project cannot proceed until it ships Kubernetes deployment
+artefacts for a task dashboard. The same shape killed the previous run, where
+a stack with two test frameworks consumed a whole sprint and all of its
+remediation attempts without the application being started.
+
+No single stage was unreasonable given its input, which is why the rule has to
+be stated at every one of them rather than at the one that started it.
+"""
+
+from __future__ import annotations
+
+SCOPE_DISCIPLINE = """
+Scope discipline - the brief is the boundary:
+- The product intake is the whole of what this product must do. Something it
+  does not ask for is not a requirement, however standard the practice is.
+- You may recommend work beyond it. Record that as a suggestion, or as
+  future work in the specification - never as a blocking or major finding, and
+  never as a delegated task. A stage cannot be held up for omitting something
+  nobody asked for.
+- Judge what is here against what was asked for. "This is missing" is only a
+  defect when the intake asked for it; otherwise it is an idea, and ideas do
+  not block.
+- Observed on run-c4f17841: a brief naming FastAPI, React, JWT, migrations and
+  Docker produced three blocking findings demanding Helm charts, a Prometheus
+  metrics endpoint and pgcrypto encryption at rest. The brief mentions none of
+  those words. Each step that got there was reasonable given the step before
+  it, and the result was a task dashboard that could not proceed without
+  Kubernetes deployment artefacts.
+""".strip()
+
+
+__all__ = ["SCOPE_DISCIPLINE"]

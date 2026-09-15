@@ -8,9 +8,18 @@ from app.agents.context_policy import ContextPolicy
 # --- policy --------------------------------------------------------------
 
 def test_defaults_are_usable_with_no_configuration():
+    # Asserted against the field defaults rather than a literal: this pinned
+    # 60,000 and broke the day the window was retuned for a larger model, which
+    # says nothing about whether the defaults are usable.
+    from app.agents.context_budget import ContextBudget
+
     policy = ContextPolicy.from_environment({})
+    budget = ContextBudget.resolve({})
     assert policy.enabled is True
-    assert policy.trigger_tokens == 60_000
+    # The policy must agree with the window, not with a literal of its own.
+    assert policy.max_context_tokens == budget.input_ceiling_tokens
+    assert policy.keep_recent_messages == budget.keep_recent_messages
+    assert 0 < policy.trigger_tokens < policy.max_context_tokens
 
 
 def test_the_window_and_ratio_are_configurable():
@@ -22,8 +31,10 @@ def test_the_window_and_ratio_are_configurable():
 
 def test_a_malformed_value_falls_back_instead_of_raising():
     """A typo in one threshold must not stop every agent from starting."""
+    from app.agents.context_budget import ContextBudget
+
     policy = ContextPolicy.from_environment({"CTX_MAX_TOKENS": "seventy-five-thousand"})
-    assert policy.max_context_tokens == 75_000
+    assert policy.max_context_tokens == ContextBudget.resolve({}).input_ceiling_tokens
 
 
 @pytest.mark.parametrize("raw,expected", [("false", False), ("0", False), ("true", True), ("on", True)])
@@ -305,21 +316,26 @@ def test_the_architect_first_request_is_bounded():
     from app.documents import DocumentContent
     from app.state import RepositoryContext
 
+    # Sized from the budget rather than from the measurement in the docstring.
+    # Pinned at 135,821 this test asserted trimming of a document that a later,
+    # larger budget no longer needed to trim, so it failed on a request that was
+    # behaving correctly. What is worth asserting is the property - anything over
+    # the budget comes back bounded and says so - and that holds at every budget.
+    oversized = "D" * (INITIAL_DOCUMENT_BUDGET * 2)
     document = DocumentContent(
-        source_path="x", source_type="markdown", text="D" * 135_821, truncated=False
+        source_path="x", source_type="markdown", text=oversized, truncated=False
     )
     repository = RepositoryContext(
         root_path="/w", branch="main", commit="abc", status="clean"
     )
     content = build_architecture_request("i", "t", "s", repository, document)["messages"][0]["content"]
 
-    # The request must be bounded by the document budget, not by document size.
-    # A 135k-char upload and a multi-megabyte one both produce a brief of roughly
-    # INITIAL_DOCUMENT_BUDGET + fixed framing; assert that bound, not an absolute
-    # character count (which is only as large as the configured budget).
-    assert len(content) <= INITIAL_DOCUMENT_BUDGET + 1_000
-    assert "trimmed to" in content
     assert INITIAL_DOCUMENT_BUDGET > 0
+    assert len(content) < len(oversized), "the document was sent whole"
+    # The budget plus this builder's fixed framing; the slack is for the framing,
+    # not for the document.
+    assert len(content) <= INITIAL_DOCUMENT_BUDGET + 2_000
+    assert "trimmed to" in content
 
 
 # ---------------------------------------------------------------------------
@@ -460,9 +476,16 @@ def test_an_oversized_specification_is_trimmed_before_it_is_sent(builder_path, w
     module_name, attribute = builder_path.rsplit(".", 1)
     build = getattr(importlib.import_module(module_name), attribute)
 
-    body = build("S" * 400_000, "/workspace")["messages"][0]["content"]
+    # Twice whatever the budget currently is, so raising the budget cannot turn
+    # this into a test of an input that no longer needs trimming.
+    from app.agents.text_budget import specification_budget
 
-    assert len(body) < 70_000, f"the {what} request did not bound the specification"
+    budget = specification_budget()
+    oversized = "S" * (budget * 2)
+    body = build(oversized, "/workspace")["messages"][0]["content"]
+
+    assert len(body) < len(oversized), f"the {what} request sent the specification whole"
+    assert len(body) <= budget + 2_000, f"the {what} request did not bound the specification"
     assert "were trimmed to" in body, f"the {what} request trimmed silently"
 
 

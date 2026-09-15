@@ -163,3 +163,42 @@ export const getStreamTicket = async (runId: string): Promise<string> => {
   return response.data.ticket;
 };
 
+
+/**
+ * Download an artifact through the authenticated client.
+ *
+ * The obvious implementation - an `<a href>` or `window.open` pointing at the
+ * download endpoint - cannot work here. The token lives in `localStorage` and
+ * is attached by the request interceptor above; a browser *navigation* goes out
+ * without it, so the endpoint answers `{"detail": "Not authenticated"}` and the
+ * user sees that JSON instead of their document.
+ *
+ * Fetching the bytes with the client and handing the browser a blob keeps the
+ * header on the request, which is the only part that was ever missing.
+ */
+export const downloadArtifact = async (runId: string, path: string): Promise<void> => {
+  const response = await api.get(`/runs/${runId}/artifacts/download`, {
+    params: { path },
+    responseType: 'blob',
+  });
+
+  // Prefer the name the server chose; fall back to the last path segment so a
+  // download is never saved as the run id.
+  const disposition = String(response.headers['content-disposition'] ?? '');
+  const named = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  const filename = decodeURIComponent(named?.[1] ?? path.split('/').pop() ?? 'artifact');
+
+  const url = URL.createObjectURL(response.data as Blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    // Revoking immediately can cancel the download in some browsers; a tick is
+    // enough for the click to have been handed off.
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};

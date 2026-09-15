@@ -74,6 +74,18 @@ export interface SettingsView {
   llm_provider: string;
   openai_base_url: string;
   model_name: string;
+  /** The model's context window in tokens; every context budget derives from it. */
+  model_context_window: number;
+  /** The longest single reply in tokens; shares the window with the conversation. */
+  model_max_output_tokens: number;
+  /** 'default' leaves the model server's own setting alone; 'on'/'off' override it. */
+  thinking_mode: 'default' | 'on' | 'off';
+  /** How much of the reply budget thinking may spend. */
+  thinking_effort: 'low' | 'medium' | 'high';
+  /** Read-only: the tokens thinking actually gets at the current setting. */
+  thinking_budget_tokens?: number;
+  /** Read-only: what that window currently implies, so a change shows its consequences. */
+  derived_budgets?: Record<string, number>;
   openai_api_key_hint?: string | null;
   anthropic_api_key_hint?: string | null;
   google_api_key_hint?: string | null;

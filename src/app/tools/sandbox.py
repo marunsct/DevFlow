@@ -53,14 +53,56 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # for a large share of real projects, and without it those cannot be built
     # at all. It executes only what the repository's own Makefile contains,
     # which the agent wrote through the gated write tool.
-    "ui_specialist": frozenset({"npm", "npx", "node", "yarn", "pnpm", "make", "python3"}),
+    # Keyed by the name the sandbox is actually called with -
+    # `f"{role}_specialist"` for each `SpecialistRole`. This read
+    # `ui_specialist` while the role is `ui_ux`, so the key matched nothing and
+    # the frontend specialist silently ran with the common set alone: on
+    # run-0b55ad49 it was refused `node` eight times while building a web page.
+    # `test_every_specialist_role_has_an_allowlist` now pins the correspondence.
+    "ui_ux_specialist": frozenset({
+        "npm", "npx", "node", "yarn", "pnpm", "make", "python3", "jest", "vitest", "tsc",
+    }),
+    # `node` belongs here for the same reason `npx` already did: a JavaScript
+    # backend's entry point is `node server.js`, and without it the role that
+    # wrote the file cannot run it. On run-95ca3f72 the backend specialist was
+    # refused `node -e "require('./todo-app/script.js').initTodoApp()"` - a
+    # smoke test of code it had just written - while `npx` (which can run any
+    # package at all) was permitted.
     "backend_specialist": frozenset({
-        "python", "python3", "pip", "pip3", "pytest", "cargo", "go", "uv", "make", "npm", "npx",
+        "python", "python3", "pip", "pip3", "pytest", "cargo", "go", "uv", "make",
+        "npm", "npx", "node", "yarn", "pnpm",
     }),
     # A migration is a script, and the role that writes one has to run it.
     "database_specialist": frozenset({"prisma", "psql", "alembic", "python", "python3", "make"}),
+    # Test runners as well as package managers. The role whose entire job is
+    # running tests could run `pytest` and no JavaScript runner at all - on a
+    # brief that is explicitly HTML/CSS/JavaScript. Worse, the refusal bought
+    # nothing: `npx` was already permitted, so `npx jest` ran jest anyway. What
+    # it did buy, on run-95ca3f72, was the agent reasoning "We cannot run jest
+    # because not allowed... we can set package.json test script and run npm
+    # test" - writing a manifest at the workspace root, which is the collision
+    # that cost the previous run three remediation rounds.
+    #
+    # These are test runners, not shells. `_FORBIDDEN_ARGS` still blocks the
+    # argument forms that turn an interpreter back into a general one.
     "testing_specialist": frozenset({
         "pytest", "python", "python3", "npm", "npx", "yarn", "pnpm", "go", "cargo", "make",
+        "jest", "mocha", "vitest", "jasmine", "karma", "tsc",
+        # The role whose job is running tests must be able to run a test script.
+        # Measured on run-3da8dd91: the testing specialist wrote a plain
+        # `test-harness.js`, found `node` missing, and reasoned that it had
+        # `npx` available - running it as `npx node test-harness.js`. That works
+        # by accident, and `npx` can execute any package at all, so withholding
+        # `node` bought no safety and cost a turn.
+        "node",
+    }),
+    # Writes prose, and checks it against the code it documents.
+    "documentation_specialist": frozenset({"python3", "node", "npx"}),
+    # Audits what the other roles built: it has to be able to run the project
+    # to test it. Refused `node` and `python3` on run-0b55ad49 while auditing a
+    # JavaScript application.
+    "security_reliability_specialist": frozenset({
+        "python", "python3", "pip", "pip3", "pytest", "node", "npm", "npx", "make",
     }),
     "principal_architect": frozenset({"npx", "npm", "django-admin"}),
 }
@@ -68,7 +110,14 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
 # Available to every role. Deliberately excludes `rm`, `mv` and `cp`: the write
 # tool is the only sanctioned mutation path, and a destructive filesystem verb
 # adds no capability an agent legitimately needs.
-COMMON_EXECUTABLES = frozenset({"ls", "cat", "echo", "mkdir", "touch", "git", "pwd", "find", "head", "tail", "wc"})
+COMMON_EXECUTABLES = frozenset({
+    "ls", "cat", "echo", "mkdir", "touch", "git", "pwd", "find", "head", "tail", "wc",
+    # Read-only inspection. Neither can modify a file or execute anything, and
+    # both are what an agent reaches for by reflex: `grep` was the single most
+    # refused command on run-0b55ad49 (17 of 43 refusals), and every refusal
+    # cost a model call to learn something the allowlist could have allowed.
+    "grep", "which",
+})
 
 # Argument forms that would turn an allowed interpreter back into a general one.
 _FORBIDDEN_ARGS: dict[str, frozenset[str]] = {
@@ -104,22 +153,19 @@ workspace on the network, which is an escape hatch rather than a build step.
 def _max_output_size() -> int:
     """Per-command output cap, in bytes.
 
-    With a 262K model window and CTX_MAX_TOKENS defaulting to 200k, compaction
-    fires at ~160k tokens and keeps the most recent 15 messages untouched. Each
-    tool result is capped here so that even a full kept tail fits comfortably:
-    15 × 32 KB ≈ 480 KB text → ~120K tokens, well under the 200k compaction
-    trigger. The full output is still on disk and reachable via
-    `read_command_output`.
+    An iterative specialist accumulates one of these per command, and compaction
+    keeps the most recent messages *untouched* - so this cap multiplied by the
+    protected tail is a floor on context that compaction cannot reduce. Held
+    independent of the window, that product is what killed a specialist stage:
+    a 50 KB cap across a 20-message tail is ~123k tokens of untouchable context.
+
+    Derived from the window instead, so the two cannot drift apart. The full
+    output is still on disk and reachable via `read_command_output`; this bounds
+    what enters the conversation, not what is kept.
     """
-    raw = os.environ.get("SANDBOX_MAX_OUTPUT", "").strip()
-    if not raw:
-        return 32 * 1024
-    try:
-        value = int(raw)
-    except ValueError:
-        logger.warning("Malformed SANDBOX_MAX_OUTPUT=%r; using %d", raw, 32 * 1024)
-        return 32 * 1024
-    return max(value, 1024)
+    from app.agents.context_budget import ContextBudget
+
+    return ContextBudget.resolve().tool_output_bytes
 
 
 MAX_OUTPUT_SIZE = _max_output_size()
@@ -191,6 +237,33 @@ _ENV_PASSTHROUGH = (
 )
 
 
+def _usable_cpus() -> int:
+    """How many CPUs this container may actually use, not how many exist.
+
+    Kept as a name here because callers and tests use it; the reading lives in
+    `app.tools.resources`, which the pre-flight check also uses, so there is one
+    answer rather than two that can drift.
+    """
+    from app.tools.resources import usable_cpus
+
+    return usable_cpus()
+
+
+def _concurrency_environment() -> Dict[str, str]:
+    """Environment that tells child tools the real concurrency and heap budget.
+
+    Per-process rlimits multiply by the number of processes, so bounding one
+    process is not bounding the command. The numbers come from
+    `app.tools.resources`, which reads what is free now rather than only what
+    the configuration allows: a container already holding a large conversation
+    hands out a smaller heap than an idle one, which is the case that killed
+    run-cbd22a34 twice.
+    """
+    from app.tools.resources import concurrency_environment
+
+    return concurrency_environment(_memory_limit_bytes())
+
+
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
     """A minimal environment for a directly-executed command."""
     environment = {
@@ -203,6 +276,8 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
     os.makedirs(home, exist_ok=True)
     environment["HOME"] = home
     environment["TMPDIR"] = home
+    # Before `extra_env`, so a caller can still override a specific value.
+    environment.update(_concurrency_environment())
     environment.update(extra_env or {})
     return environment
 
@@ -221,8 +296,23 @@ def _apply_limits() -> None:
     # just the process this module started.
     os.setsid()
 
+    # RLIMIT_DATA, not RLIMIT_AS. `RLIMIT_AS` caps *address space*, and a modern
+    # runtime reserves far more of that than it ever uses: V8 and WebAssembly
+    # reserve multi-gigabyte contiguous ranges up front as a bounds-check trick
+    # and touch almost none of it. Against a 2 GB address-space cap every WASM
+    # instantiation fails - on run-0b55ad49, `WebAssembly.Instance(): Out of
+    # memory: Cannot allocate Wasm memory for new instance` appeared 24 times,
+    # the milestone review concluded "no test commands succeeded in the
+    # workspace", and agents had started writing `WebAssembly = null` stubs to
+    # work around a limit that was never about their memory use.
+    #
+    # `RLIMIT_DATA` bounds the heap that a runaway actually grows (and since
+    # Linux 4.7 covers mmap'd data too), which is the thing worth bounding. The
+    # container path sets a real cgroup limit besides; this is the backstop for
+    # local execution, where there is no cgroup.
+    memory_limit = getattr(resource, "RLIMIT_DATA", resource.RLIMIT_AS)
     for limit, value in (
-        (resource.RLIMIT_AS, _memory_limit_bytes()),
+        (memory_limit, _memory_limit_bytes()),
         (resource.RLIMIT_FSIZE, MAX_WRITE_BYTES),
     ):
         try:
@@ -244,6 +334,182 @@ def _image_for(executable: str) -> str:
     if executable == "cargo":
         return os.environ.get("SANDBOX_RUST_IMAGE", "rust:1-slim")
     return os.environ.get("SANDBOX_BASE_IMAGE", "debian:12-slim")
+
+
+#: Package-manager subcommands that create or rewrite a project manifest.
+_MANIFEST_WRITING_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "npm": frozenset({"init", "install", "i", "add", "create"}),
+    "yarn": frozenset({"init", "add", "install"}),
+    "pnpm": frozenset({"init", "add", "install"}),
+    "npx": frozenset({"create-react-app", "create-next-app", "create-vite"}),
+}
+
+#: Flags that aim a package manager at a directory other than where it runs.
+_PREFIX_FLAGS = ("--prefix", "--cwd", "--dir", "-C")
+
+
+def manifest_written_outside_the_project(command: Sequence[str], repo_root: str) -> str | None:
+    """Why this command would scaffold beside the project, or None if it would not.
+
+    Commands always run with the workspace root as their working directory, so
+    `npm install` there creates `package.json` and `node_modules` at the root -
+    beside a project that already has its own. The two then disagree about
+    dependency versions and test configuration, which on run-0b55ad49 meant jest
+    30 at the root running the project's jest-29 tests and three remediation
+    rounds spent on "Identifier 'jest' has already been declared".
+
+    `write_artifact` already refuses a root manifest once a project is pinned,
+    but a package manager reaches the same file through a different door.
+
+    Only fires when a project is actually pinned, and passing `--prefix` (or
+    equivalent) is taken as knowing where you are aiming.
+    """
+    if not command:
+        return None
+    from app.tools.repository import pinned_project_directory
+
+    executable = Path(str(command[0])).name
+    subcommands = _MANIFEST_WRITING_SUBCOMMANDS.get(executable)
+    if not subcommands:
+        return None
+    arguments = [str(part) for part in command[1:]]
+    if not any(argument in subcommands for argument in arguments):
+        return None
+    if any(argument.startswith(_PREFIX_FLAGS) for argument in arguments):
+        return None
+
+    try:
+        pinned = pinned_project_directory(Path(repo_root))
+    except Exception:  # noqa: BLE001 - a guard must not fail the command it guards
+        return None
+    if not pinned:
+        return None
+
+    return (
+        f"'{' '.join([executable, *arguments[:2]])}' would create or rewrite a project "
+        f"manifest at the workspace root, and this run's project is '{pinned}'. Two "
+        "manifests disagree about dependency versions and test configuration, and the "
+        f"tests then run under the wrong one. Use --prefix {pinned} (or run the "
+        f"equivalent command against '{pinned}/') instead."
+    )
+
+
+class WorkingDirectoryRejected(Exception):
+    """The requested working directory is not a directory inside the workspace."""
+
+
+def resolve_working_directory(workspace: str, working_directory: str | None) -> str:
+    """The absolute directory a command should run in, always inside `workspace`.
+
+    There is no shell, so an agent cannot `cd`. Without this parameter the only
+    way to act on a subdirectory was a tool that happens to take one - `npm`
+    has `--prefix`, `npx` and a shell script have nothing - and every role that
+    tried `cd todo-app && npx jest` was refused with no alternative to fall
+    back on.
+
+    Measured on run-95ca3f72: eight commands were spent discovering `--prefix`,
+    and `./scripts/line_count_check.sh` inside the project was never runnable
+    at all. Four of the refusals were `cd`, one was `bash -lc`; putting either
+    on the allowlist would hand back the shell this sandbox exists to withhold.
+    """
+    root = Path(workspace).resolve()
+    if not working_directory:
+        return str(root)
+
+    candidate = Path(working_directory)
+    if candidate.is_absolute():
+        # Two different things arrive here wearing the same leading slash.
+        #
+        # One is the workspace's own absolute path, which agents read out of
+        # tool results. The other is `/project-name`, which is how every role
+        # is taught to address the workspace root - the read tools, the write
+        # tool and the prompt all use it - and which means the subdirectory,
+        # not a path at the filesystem root.
+        #
+        # Only the first was accepted. On run-61c5a5b6 the UI specialist ran
+        # its verifier with `working_directory="/simple-to-do-list-app"`, was
+        # told the directory it was standing in was "outside the workspace",
+        # and had to retry - a gate spent on a convention this codebase itself
+        # taught it.
+        try:
+            resolved = candidate.resolve()
+        except OSError as exc:
+            raise WorkingDirectoryRejected(
+                f"'{working_directory}' is not inside the workspace."
+            ) from exc
+        if resolved == root or root in resolved.parents:
+            candidate = Path(os.path.relpath(resolved, root))
+        else:
+            candidate = Path(str(candidate).lstrip("/"))
+
+    target = (root / candidate).resolve()
+    if target != root and root not in target.parents:
+        raise WorkingDirectoryRejected(
+            f"'{working_directory}' is outside the workspace. Give a path relative to "
+            "the workspace root, such as the project directory's name."
+        )
+    if not target.is_dir():
+        raise WorkingDirectoryRejected(
+            f"'{working_directory}' is not a directory in this workspace."
+        )
+    return str(target)
+
+
+def workspace_rooted_arguments(
+    argv: list[str], workspace: str, run_in: str
+) -> list[str]:
+    """Read `/project/file` in a command argument the way every other tool does.
+
+    `ls`, `read_file`, `glob`, `write_artifact` and `working_directory` all take
+    a leading slash to mean the workspace root, and the prompt teaches it. A
+    command argument was the one place that did not: the command runs in a
+    container where `/` is the container's own root, so `/todo-app/index.html`
+    named nothing.
+
+    Measured on run-61c5a5b6: the documentation specialist ran
+    `wc -l /simple-to-do-list-app/index.html`, got "No such file", and spent six
+    approval gates on `pwd`, `ls /`, `find` and two more `wc` spellings working
+    out a convention it had been taught correctly everywhere else.
+
+    Deliberately narrow. An argument is rewritten only when all three hold: it
+    is absolute, nothing is at that path, and something *is* at the same path
+    inside the workspace. So a regex, a URL, a compiler flag and a real absolute
+    path are all left exactly as they are - there is no reading of them under
+    which the rewrite would fire.
+
+    The replacement is relative to the directory the command will run in, which
+    is correct whether the workspace is mounted at `/workspace` in a sandbox
+    container or used in place.
+    """
+    rewritten = list(argv)
+    for index, argument in enumerate(rewritten[1:], start=1):
+        if not argument.startswith("/") or argument == "/":
+            continue
+        if os.path.exists(argument):
+            continue
+        candidate = os.path.join(workspace, argument.lstrip("/"))
+        # `commonpath` rather than `startswith`: the argument may contain `..`.
+        try:
+            resolved = os.path.realpath(candidate)
+            if os.path.commonpath([resolved, workspace]) != workspace:
+                continue
+        except ValueError:  # different drives; cannot be inside
+            continue
+        # The path itself, or - for a path being created - its parent. A
+        # `mkdir` target does not exist yet by definition, so requiring the
+        # path itself to be there excluded exactly the case that needs this.
+        # Measured on run-2b5def74: the testing specialist spent five gates on
+        # `mkdir -p /simple-to-do-list-app/tests`, `mkdir -p /tests`, `ls`,
+        # `pwd` and finally a relative path - and put the tests in the wrong
+        # directory as a result.
+        #
+        # The parent still has to exist inside the workspace, so this stays
+        # narrow: `/nothing-here/x` and a regex like `/foo/` have no parent
+        # here and are left alone.
+        if not os.path.exists(candidate) and not os.path.isdir(os.path.dirname(candidate)):
+            continue
+        rewritten[index] = os.path.relpath(candidate, run_in)
+    return rewritten
 
 
 def allowed_executables(role_name: str) -> frozenset[str]:
@@ -280,7 +546,8 @@ def validate_command(command: Sequence[str], role_name: str) -> list[str]:
         if arg in forbidden:
             raise CommandNotAllowed(
                 f"'{executable} {arg}' is not permitted: it can execute arbitrary code. "
-                "Put the code in a file and run the file instead."
+                "Put the code in a file inside the project folder, run the file, then "
+                "remove it with `delete_artifact`."
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""
@@ -308,6 +575,38 @@ def _docker_binary() -> str:
 def execution_enabled() -> bool:
     """Execution is opt-in. The previous default was 'true' - fail-open."""
     return os.environ.get("ALLOW_COMMAND_EXECUTION", "false").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _as_workspace_relative(text: str, workspace: str) -> str:
+    """Rewrite the host's workspace path out of command output.
+
+    A command runs with the workspace mounted at its real path, so anything it
+    prints - a traceback, a "file not found", a compiler error - quotes that
+    path. The agent reads it and uses it, and every filesystem tool it holds
+    then fails, because inside the agent the workspace is rooted at "/".
+
+    Measured on run-0b55ad49: agents called `ls` against that exact string four
+    times in a row across two stages, every attempt returning `path_not_found`,
+    and passed it to `node` and `read_file` besides. Removing it from the
+    prompts is only half the fix - command output puts it back.
+
+    Rewritten to a *relative* path, not a rooted one. Command output is most
+    often read back into another command, and commands already run with the
+    workspace as their working directory - so `simple-todo-list-app/app.js`
+    works there while `/simple-todo-list-app/app.js` does not. That second form
+    is not hypothetical either: agents built shell commands from rooted paths
+    three times in one stage on run-0b55ad49, and every one failed. The artifact
+    tools accept a relative path too, so this form is the one that works
+    everywhere the agent might paste it.
+    """
+    if not workspace or not text:
+        return text
+    root = str(workspace).rstrip("/")
+    if not root:
+        return text
+    # The trailing-slash form first, so `<root>/docs` becomes `docs` rather than
+    # a stray leading separator; the bare root becomes `.`, the workspace itself.
+    return text.replace(f"{root}/", "").replace(root, ".")
 
 
 def _truncate(text: str, label: str = "output") -> str:
@@ -433,7 +732,7 @@ class SandboxExecutor:
     """Runs an argv list inside a locked-down throwaway container."""
 
     @staticmethod
-    def _resolve_executable(name: str, workspace: str) -> str | None:
+    def _resolve_executable(name: str, workspace: str, run_in: str | None = None) -> str | None:
         """Find the binary to run, allowing ones the run installed for itself.
 
         A real build uses tools it installed: `.venv/bin/pytest`,
@@ -447,6 +746,10 @@ class SandboxExecutor:
         """
         if os.sep in name or (os.altsep and os.altsep in name):
             root = os.path.realpath(workspace)
+            # A relative path is relative to where the command runs, which is
+            # what `./scripts/check.sh` means to whoever typed it. The bound is
+            # still the workspace root, checked below.
+            base = os.path.realpath(run_in) if run_in else root
             # Normalised, not resolved: `..` is collapsed lexically so a path
             # out of the workspace is refused, while a symlink whose *target*
             # sits outside is still allowed. That distinction matters because
@@ -457,7 +760,7 @@ class SandboxExecutor:
             # on the basename, and an agent already runs code it wrote itself
             # every time it does `python app.py`; the allowlist bounds which
             # interpreters exist, not whether the agent's own code runs.
-            candidate = os.path.normpath(os.path.join(root, name))
+            candidate = os.path.normpath(os.path.join(base, name))
             if candidate != root and not candidate.startswith(root + os.sep):
                 raise CommandNotAllowed(
                     f"'{name}' points outside the workspace. Run a tool from the "
@@ -475,6 +778,7 @@ class SandboxExecutor:
         category: str,
         timeout: int,
         extra_env: Dict[str, str] | None,
+        run_in: str | None = None,
     ) -> Dict[str, Any]:
         """Run a validated command in this container, in the run's workspace.
 
@@ -485,7 +789,7 @@ class SandboxExecutor:
         blast radius if something gets through.
         """
         try:
-            executable = cls._resolve_executable(argv[0], workspace)
+            executable = cls._resolve_executable(argv[0], workspace, run_in)
         except CommandNotAllowed as exc:
             return {"error": str(exc)}
         if executable is None:
@@ -505,7 +809,7 @@ class SandboxExecutor:
         try:
             result = subprocess.run(  # noqa: S603 - argv list, no shell, validated above
                 [executable, *argv[1:]],
-                cwd=workspace,
+                cwd=run_in or workspace,
                 env=_child_environment(workspace, extra_env),
                 capture_output=True,
                 text=True,
@@ -517,16 +821,16 @@ class SandboxExecutor:
         except subprocess.TimeoutExpired as expired:
             return {
                 "error": f"Command timed out after {timeout} seconds.",
-                "stdout": _truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"),
-                "stderr": _truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"),
+                "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"), workspace),
+                "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"), workspace),
                 "returncode": "124",
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
 
         return {
-            "stdout": _truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"),
-            "stderr": _truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"),
+            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"), workspace),
+            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"), workspace),
             "returncode": str(result.returncode),
         }
 
@@ -538,6 +842,7 @@ class SandboxExecutor:
         role_name: str = "general",
         category: str = "default",
         extra_env: Dict[str, str] | None = None,
+        working_directory: str | None = None,
     ) -> Dict[str, Any]:
         """Run one command and record that it happened.
 
@@ -546,7 +851,19 @@ class SandboxExecutor:
         forgotten when a ninth is added, and refusals - which return early - are
         captured on the same path as successes.
         """
-        outcome = cls._run(command, repo_root, role_name, category, extra_env)
+        # A manifest command aimed at the project directory is the behaviour the
+        # guard asks for, so it is checked against where the command will run.
+        scaffolding = (
+            None
+            if working_directory
+            else manifest_written_outside_the_project(command, repo_root)
+        )
+        if scaffolding is not None:
+            outcome: Dict[str, Any] = {"error": scaffolding}
+        else:
+            outcome = cls._run(
+                command, repo_root, role_name, category, extra_env, working_directory
+            )
         _record_execution(repo_root, role_name, command, outcome)
         return outcome
 
@@ -558,6 +875,7 @@ class SandboxExecutor:
         role_name: str = "general",
         category: str = "default",
         extra_env: Dict[str, str] | None = None,
+        working_directory: str | None = None,
     ) -> Dict[str, Any]:
         if not execution_enabled():
             return {"error": "Command execution is disabled (ALLOW_COMMAND_EXECUTION is not enabled)."}
@@ -571,10 +889,34 @@ class SandboxExecutor:
         if not os.path.isdir(workspace):
             return {"error": f"Workspace does not exist: {workspace}"}
 
+        try:
+            run_in = resolve_working_directory(workspace, working_directory)
+        except WorkingDirectoryRejected as exc:
+            return {"error": str(exc)}
+
+        argv = workspace_rooted_arguments(argv, workspace, run_in)
+
+        # Ask what is free before starting, not after the kernel has answered.
+        # A refusal is a tool result the model can read and work around; an OOM
+        # kill takes the worker with it, and a run whose worker is gone has no
+        # process left to write an error. Run-cbd22a34 ended that way twice.
+        from app.tools.resources import enough_headroom, read_resource_state
+
+        state = read_resource_state()
+        viable, why = enough_headroom(_memory_limit_bytes(), state)
+        if not viable:
+            logger.warning(
+                "refusing %s: %s", argv[0], state.describe(),
+                extra={"sandbox_resource_state": state.describe()},
+            )
+            return {"error": why}
+
         timeout = TIMEOUTS.get(category, TIMEOUTS["default"])
 
         if execution_mode() == IN_CONTAINER_MODE:
-            return cls._execute_here(argv, workspace, role_name, category, timeout, extra_env)
+            return cls._execute_here(
+                argv, workspace, role_name, category, timeout, extra_env, run_in
+            )
 
         try:
             docker = _docker_binary()
@@ -598,7 +940,11 @@ class SandboxExecutor:
             # A tmpfs mount flag for the container, not a host temp path.
             "--tmpfs", "/tmp:rw,noexec,nosuid,size=256m",  # nosec B108
             "-v", f"{workspace}:/workspace",
-            "-w", "/workspace",
+            # The mount is always the workspace root; only the working directory
+            # inside it moves, so a subdirectory still sees its siblings.
+            "-w", "/workspace/" + os.path.relpath(run_in, workspace)
+            if run_in and os.path.relpath(run_in, workspace) != "."
+            else "/workspace",
             "-u", f"{os.getuid()}:{os.getgid()}",
             "--env", "HOME=/tmp",
         ]
@@ -620,8 +966,8 @@ class SandboxExecutor:
             return {"error": f"Could not start the sandbox: {exc}"}
 
         return {
-            "stdout": _truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"),
-            "stderr": _truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"),
+            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"), repo_root),
+            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"), repo_root),
             "returncode": str(result.returncode),
         }
 
@@ -637,6 +983,7 @@ __all__ = [
     "SandboxExecutor",
     "SandboxUnavailable",
     "allowed_executables",
+    "workspace_rooted_arguments",
     "execution_enabled",
     "execution_mode",
     "validate_command",

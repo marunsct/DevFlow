@@ -20,10 +20,15 @@ from __future__ import annotations
 
 import logging
 import os
+from typing import Literal
+
+from app.agents.thinking import thinking_budget_tokens
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agents import context_budget
+from app.agents.context_budget import DEFAULT_CONTEXT_WINDOW
 from app.server import runtime_settings
 from app.server.auth import UserInDB, get_current_active_user, record_audit, require_admin
 
@@ -32,6 +37,14 @@ logger = logging.getLogger(__name__)
 settings_router = APIRouter(prefix="/api/settings", tags=["settings"])
 
 ALLOWED_PROVIDERS = {"local", "openai", "anthropic", "gemini"}
+
+
+MIN_CONTEXT_WINDOW = 8_000
+"""Below this nothing runs: the framing alone is most of it."""
+
+MAX_CONTEXT_WINDOW = 2_000_000
+"""A sanity bound, not a prediction. A typo of 100000000 would otherwise
+schedule compaction past any real window and disable it silently."""
 
 
 def _mask(secret: str | None) -> str | None:
@@ -49,6 +62,16 @@ class SettingsView(BaseModel):
     llm_provider: str
     openai_base_url: str
     model_name: str
+    model_context_window: int
+    model_max_output_tokens: int
+    thinking_mode: str = "default"
+    thinking_effort: str = "medium"
+    #: Read-only: what the window currently implies, so the form can show the
+    #: consequences of a change instead of only the number.
+    derived_budgets: dict[str, int] = {}
+    #: Read-only: the tokens thinking would actually get at the current setting,
+    #: which is a share of the reply budget rather than a separate allowance.
+    thinking_budget_tokens: int = 0
     openai_api_key_hint: str | None = None
     anthropic_api_key_hint: str | None = None
     google_api_key_hint: str | None = None
@@ -78,6 +101,46 @@ class SettingsUpdate(BaseModel):
     llm_provider: str
     openai_base_url: str
     model_name: str = Field(min_length=1, max_length=200)
+    model_context_window: int = Field(
+        default=DEFAULT_CONTEXT_WINDOW,
+        ge=MIN_CONTEXT_WINDOW,
+        le=MAX_CONTEXT_WINDOW,
+        description=(
+            "The model's context window in tokens. Every context budget in the "
+            "pipeline is derived from this, so it must match the model actually "
+            "loaded - a window larger than the truth schedules compaction to "
+            "fire at a point the model never reaches."
+        ),
+    )
+
+    model_max_output_tokens: int = Field(
+        default=0,
+        ge=0,
+        le=MAX_CONTEXT_WINDOW,
+        description=(
+            "The longest single reply, in tokens. 0 derives it from the context "
+            "window (a quarter of it, capped). The reply and the conversation "
+            "share one window, so raising this shrinks the conversation - every "
+            "other budget is re-derived from what it leaves behind."
+        ),
+    )
+    thinking_mode: Literal["default", "on", "off"] = Field(
+        default="default",
+        description=(
+            "'default' sends nothing and leaves the model server's own setting in "
+            "force; 'on' asks a reasoning-capable model to deliberate; 'off' "
+            "explicitly disables it. 'off' is not the absence of 'on' - a server "
+            "launched with reasoning enabled keeps it under 'default'."
+        ),
+    )
+    thinking_effort: Literal["low", "medium", "high"] = Field(
+        default="medium",
+        description=(
+            "How much of the reply budget thinking may spend: low a quarter, "
+            "medium a half, high three quarters. Thinking tokens are output "
+            "tokens, so a higher setting leaves less room for the answer."
+        ),
+    )
 
     openai_api_key: str | None = Field(default=None, max_length=512, repr=False)
     anthropic_api_key: str | None = Field(default=None, max_length=512, repr=False)
@@ -134,10 +197,30 @@ def _current_view() -> SettingsView:
     # reported whatever it happened to hold - the page looked like it reverted
     # on its own, and consecutive reads returned different values.
     s = runtime_settings.effective_settings()
+    budget = context_budget.ContextBudget.resolve(runtime_settings.effective_environment())
     return SettingsView(
         llm_provider=s.llm_provider,
         openai_base_url=s.openai_base_url,
         model_name=s.model_name,
+        model_context_window=budget.window_tokens,
+        model_max_output_tokens=budget.max_output_tokens,
+        thinking_mode=getattr(s, "thinking_mode", "default"),
+        thinking_effort=getattr(s, "thinking_effort", "medium"),
+        thinking_budget_tokens=thinking_budget_tokens(
+            getattr(s, "thinking_effort", None), budget.max_output_tokens
+        )
+        if getattr(s, "thinking_mode", "default") == "on"
+        else 0,
+        derived_budgets={
+            "reply_ceiling_tokens": budget.max_output_tokens,
+            "input_ceiling_tokens": budget.input_ceiling_tokens,
+            "compaction_trigger_tokens": budget.trigger_tokens,
+            "protected_tail_tokens": budget.protected_tail_tokens,
+            "keep_recent_messages": budget.keep_recent_messages,
+            "document_budget_chars": budget.document_budget_chars,
+            "specification_budget_chars": budget.specification_budget_chars,
+            "command_output_bytes": budget.tool_output_bytes,
+        },
         openai_api_key_hint=_mask(s.openai_api_key),
         anthropic_api_key_hint=_mask(s.anthropic_api_key),
         google_api_key_hint=_mask(s.google_api_key),
@@ -151,6 +234,41 @@ def _current_view() -> SettingsView:
 async def get_settings_view(user: UserInDB = Depends(get_current_active_user)) -> SettingsView:
     """Current provider configuration, with credentials masked."""
     return _current_view()
+
+
+class DetectedWindow(BaseModel):
+    """What a context-window probe found, and how."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    detected: int | None = Field(
+        default=None, description="Tokens the server reported, or null if it could not be measured."
+    )
+    explanation: str = Field(description="What happened, in a sentence the operator can act on.")
+
+
+@settings_router.post("/detect-context-window", response_model=DetectedWindow)
+async def detect_context_window_endpoint(
+    user: UserInDB = Depends(require_admin),
+) -> DetectedWindow:
+    """Measure the configured server's context window by asking it to refuse.
+
+    Admin-only and rate-limited by its own cost: it sends one deliberately
+    oversized request, which the server rejects before generating anything.
+
+    This exists because the window is the one setting that must be right and the
+    one nobody reliably knows. A model's advertised window is not what it was
+    loaded with - the same `gpt-oss-20b` serves 131,072 tokens or 8,192
+    depending on a slider - and no standard endpoint reports it. The refusal
+    does.
+    """
+    from app.models.window_probe import detect_from_settings
+
+    detected, explanation = detect_from_settings(
+        runtime_settings.effective_environment(), runtime_settings.secrets()
+    )
+    logger.info("Context-window probe by %s: %s", user.username, explanation)
+    return DetectedWindow(detected=detected, explanation=explanation)
 
 
 @settings_router.put("", response_model=SettingsView)
@@ -179,6 +297,19 @@ async def update_settings(
             "llm_provider": payload.llm_provider,
             "openai_base_url": payload.openai_base_url,
             "model_name": payload.model_name,
+            "model_context_window": str(payload.model_context_window),
+            # Empty clears the override, so the reply ceiling goes back to being
+            # derived from the window rather than pinned to a stale number.
+            "model_max_output_tokens": (
+                str(payload.model_max_output_tokens)
+                if payload.model_max_output_tokens
+                else ""
+            ),
+            # Stored as the strings `_read_bool` and the effort lookup expect,
+            # so a value read back out of Postgres parses the same way one read
+            # out of the environment does.
+            "thinking_mode": payload.thinking_mode,
+            "thinking_effort": payload.thinking_effort,
         },
         actor=user.username,
     )

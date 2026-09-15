@@ -249,13 +249,18 @@ def _sprint_plan() -> SprintPlanOutput:
     return SprintPlanOutput(sprints=[SprintDefinition(goal="Sprint 1: booking", user_value="Patients can book")])
 
 
-def _milestone(*roles: str) -> MilestonePlanOutput:
+def _milestone(*roles: str, assignments: list[str] | None = None) -> MilestonePlanOutput:
     return MilestonePlanOutput(
         selected_sprint_goal="Sprint 1: booking",
         delegated_tasks=[
             SpecialistTask(specialist_role=role, task_description=f"do {role} work", acceptance_criteria=["works"])
             for role in roles
         ],
+        # A plan produced *after* a review must name the task that takes each
+        # requested change; one that assigns nothing is refused. Defaulting to a
+        # populated list keeps every first-plan fixture working, and the
+        # assignment rule has its own tests.
+        review_task_assignments=assignments if assignments is not None else ["change -> task 1"],
     )
 
 
@@ -934,7 +939,10 @@ def test_repeated_change_requests_stop_at_the_rerun_limit(agents: ScriptedAgents
 
     state = resume_pending_review(graph, "run-review-limit", request_changes_decision("third pass"))
     assert state["stage"] == "failed"
-    assert "automatic reruns" in state["error"]
+    # The message now names the stage and how to lift the limit, rather
+    # than the phrase "automatic reruns".
+    assert "the configured limit" in state["error"]
+    assert "WORKFLOW_MAX_REVIEW_RERUNS" in state["error"]
 
 
 def test_sprint_review_pauses_after_tests_pass_and_can_be_approved(
@@ -1224,3 +1232,61 @@ def test_entry_router_maps_the_iterated_stage_names_to_their_owning_nodes() -> N
 def test_entry_router_fails_closed_on_an_unrecognised_approval_stage() -> None:
     """An unknown pause must not be silently rerouted into an unrelated stage."""
     assert _entry_router({"stage": "awaiting_approval:not_a_real_stage"}) == "failed"
+
+
+# ---------------------------------------------------------------------------
+# Anything that sets `stage` must name a node
+#
+# `_route_from_stage` returns the value verbatim and the edge map is keyed by
+# `_NODE_NAMES`, so a stage that is not a node is a KeyError that kills the run.
+# The structured-response retry set `stage` to the stage's own name
+# (`specialist_ui_ux_0`) and took down the run it existed to rescue.
+# ---------------------------------------------------------------------------
+
+
+def test_every_iterated_stage_resolves_to_a_real_node():
+    from app.graph.workflow import _NODE_NAMES, _owning_node
+
+    for stage in (
+        "specialist_ui_ux_0", "specialist_backend_2", "specialist_testing_11",
+        "test_round_0", "test_round_7",
+        "defect_fix_0_0", "defect_fix_3_12",
+    ):
+        assert _owning_node(stage) in _NODE_NAMES, f"{stage} routes nowhere"
+
+
+def test_a_plain_stage_resolves_to_itself():
+    from app.graph.workflow import _owning_node
+
+    for stage in ("principal_architect", "architecture_review", "scrum_master"):
+        assert _owning_node(stage) == stage
+
+
+def test_an_unknown_stage_fails_closed():
+    """Better a failed run than a KeyError that kills the process."""
+    from app.graph.workflow import _owning_node
+
+    assert _owning_node("something_invented") == "failed"
+
+
+def test_the_structured_retry_targets_a_routable_node():
+    """The exact regression: the retry's stage must be dispatchable."""
+    from types import SimpleNamespace
+
+    from app.graph.workflow import _NODE_NAMES, _run_gated_agent
+
+    class _NoStructured:
+        def invoke(self, request, config=None):
+            return {"messages": [SimpleNamespace(type="ai", content="prose")]}
+
+    for stage in ("specialist_ui_ux_0", "test_round_1", "principal_architect"):
+        update = _run_gated_agent(
+            {"stage": stage, "repository": SimpleNamespace(root_path="/w")},
+            {"configurable": {"thread_id": "t"}},
+            stage_name=stage,
+            agent=_NoStructured(),
+            initial_request={"messages": []},
+            output_key="out",
+            next_stage="complete",
+        )
+        assert update["stage"] in _NODE_NAMES, f"retry from {stage} routes nowhere"

@@ -328,7 +328,12 @@ async def test_the_gate_ceiling_is_enforced(runner, monkeypatch):
 
     monkeypatch.setattr(runner_module, "MAX_GATES", 3)
     record = _register(runner, status="running")
-    graph = _FakeGraph([{"stage": "product_manager"} for _ in range(10)])
+    # Alternating stages: the graph never settles, but it *is* running something
+    # each round. A graph returning one unchanging stage is the idle-spin case,
+    # which is caught sooner and reported differently.
+    graph = _FakeGraph([
+        {"stage": "product_manager" if index % 2 else "tools_models"} for index in range(10)
+    ])
 
     await runner._handle_state(record, graph, {"stage": "product_manager"}, {})
 
@@ -555,12 +560,19 @@ async def test_exhausting_the_gate_ceiling_is_reported(runner, monkeypatch):
     monkeypatch.setattr(runner.event_bus, "publish", _capture)
     monkeypatch.setattr(runner.event_bus, "close", _close)
 
-    # A stage that is neither terminal nor a pause, so the loop keeps going.
-    class _StuckGraph:
-        def invoke(self, _input, config=None):
-            return {"stage": "product_manager"}
+    # Stages that are neither terminal nor a pause, and that *change* each
+    # round - so the loop keeps going and genuinely exhausts its rounds. A graph
+    # returning one unchanging stage is a different failure, caught sooner by
+    # the idle check and tested separately below.
+    class _EndlessGraph:
+        def __init__(self):
+            self.calls = 0
 
-    await runner._handle_state(record, _StuckGraph(), {"stage": "product_manager"}, {})
+        def invoke(self, _input, config=None):
+            self.calls += 1
+            return {"stage": "product_manager" if self.calls % 2 else "tools_models"}
+
+    await runner._handle_state(record, _EndlessGraph(), {"stage": "product_manager"}, {})
 
     assert record.status == "failed"
     assert "automatic approvals" in record.error
@@ -742,3 +754,299 @@ def test_a_malformed_per_stage_ceiling_falls_back(monkeypatch):
 
     monkeypatch.delenv("WORKFLOW_MAX_GATES_PER_STAGE")
     assert fallback == _max_gates_per_stage()
+
+
+# ---------------------------------------------------------------------------
+# What a failed run tells the person who has to fix it
+# ---------------------------------------------------------------------------
+
+
+def test_a_backend_with_no_model_loaded_is_explained_not_dumped() -> None:
+    """The reader needs the instruction, not the provider's nested JSON.
+
+    Observed live: a run stopped mid-stage because LM Studio had unloaded its
+    model, and the dashboard showed
+    `OpenAIInvalidRequestError: Error code: 400 - {'error': {'message': 'No
+    model loaded. Call POST /inference/load first...'}}`. Nothing was wrong with
+    the run - both artifacts and the pending gate survived, and it continued
+    once a model was loaded - but finding that out meant reading a dict.
+    """
+    from app.server.runner import _explain_failure
+
+    class OpenAIInvalidRequestError(Exception):
+        pass
+
+    message = _explain_failure(
+        OpenAIInvalidRequestError(
+            "Error code: 400 - {'error': {'message': 'No model loaded. Call POST "
+            "/inference/load first. Or enable Model auto-switch (Settings > API) "
+            "to load a requested model automatically.', 'type': 'invalid_request_error'}}"
+        )
+    )
+
+    assert message.startswith("The model server would not serve the model this run asked for")
+    assert "resume" in message
+    # The provider's own words are kept, after the instruction.
+    assert "No model loaded" in message
+
+
+def test_an_unreachable_backend_says_so() -> None:
+    from app.server.runner import _explain_failure
+
+    message = _explain_failure(ConnectionError("Connection refused by host"))
+    assert "could not be reached" in message
+
+
+def test_an_unrecognised_failure_is_shown_verbatim() -> None:
+    """A failure we cannot name must not be paraphrased into a guess."""
+    from app.server.runner import _explain_failure
+
+    message = _explain_failure(ValueError("structured response was empty"))
+    assert message == "ValueError: structured response was empty"
+
+
+def test_the_error_stays_short_enough_to_render() -> None:
+    from app.server.runner import RUN_ERROR_MAX_CHARS, _explain_failure
+
+    noisy = _explain_failure(RuntimeError("no model loaded. " + "x" * 5_000))
+    plain = _explain_failure(RuntimeError("y" * 5_000))
+    assert len(noisy) <= RUN_ERROR_MAX_CHARS
+    assert len(plain) <= RUN_ERROR_MAX_CHARS
+    # The instruction is what survives the cap, not the noise.
+    assert noisy.startswith("The model server would not serve the model this run asked for")
+
+
+def test_a_task_time_limit_says_the_run_was_still_working() -> None:
+    """`SoftTimeLimitExceeded: SoftTimeLimitExceeded()` tells the reader nothing.
+
+    Observed on run-0b55ad49: 54.3 minutes of healthy progress, from
+    stack_selector through two architecture-review rounds to technical_lead,
+    ended by a 3300-second ceiling. Nothing was wrong with the run and nothing
+    was lost - but the message named a Celery class, not a clock, so the obvious
+    reading was that the workflow had broken.
+    """
+    from app.server.runner import _explain_failure
+
+    class SoftTimeLimitExceeded(Exception):
+        pass
+
+    message = _explain_failure(SoftTimeLimitExceeded())
+
+    assert "task time limit" in message
+    assert "still making progress" in message
+    assert "CELERY_TASK_SOFT_TIME_LIMIT" in message
+
+
+def test_the_task_time_limit_is_sized_for_a_whole_run() -> None:
+    """A dispatch runs every stage of an unattended run, not one model call."""
+    import os
+
+    from app.server.tasks import celery_app
+
+    soft = celery_app.conf.task_soft_time_limit
+    hard = celery_app.conf.task_time_limit
+    assert soft >= 6 * 3600, "a full local-model run does not fit in an hour"
+    assert hard > soft, "the hard limit must leave room for the soft one to fire first"
+    assert os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT") is None or soft > 0
+
+
+def test_a_loaded_but_different_model_is_explained_too() -> None:
+    """The server may hold a model and still refuse the one that was asked for.
+
+    Observed on run-0b55ad49: settings named `unsloth/Qwen3.8-27B-GGUF` while
+    the server had `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` loaded with
+    'Switch model by request' off. Saying "no model loaded" would have sent the
+    reader looking for a problem that was not there.
+    """
+    from app.server.runner import _explain_failure
+
+    class OpenAIModelNotFoundError(Exception):
+        pass
+
+    message = _explain_failure(
+        OpenAIModelNotFoundError(
+            "Error code: 404 - {'error': {'message': \"The model "
+            "'unsloth/Qwen3.8-27B-GGUF' is downloaded but not loaded, and 'Switch "
+            "model by request' is off, so this server can only serve the loaded model.\"}}"
+        )
+    )
+
+    assert "would not serve the model this run asked for" in message
+    assert "already" in message and "loaded" in message
+
+
+# ---------------------------------------------------------------------------
+# Re-running a command is not a loop
+#
+# `MAX_IDENTICAL_GATES` catches an agent that re-requests an identical *write*:
+# nothing changed between attempts, and `write_approved_artifact` says so by
+# reporting `unchanged`. Applying the same rule to a command inverts it.
+#
+# On run-0b55ad49 `specialist_backend_1` ran `npm test`, read `app.js`, ran it
+# again, read four more files, ran it again - real diagnosis between every run,
+# with the tests passing - and was stopped after five as "asking to write the
+# same thing 5 times in a row". It had written nothing at all.
+# ---------------------------------------------------------------------------
+
+
+def _approval(kind: str, path: str = "", notes: str = ""):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(action_kind=kind, artifact_path=path, notes=notes)
+
+
+def test_an_identical_write_still_counts_as_a_loop() -> None:
+    from app.server.runner import _repeat_is_a_loop
+
+    assert _repeat_is_a_loop(_approval("write", "docs/spec.md", "Write docs/spec.md: ..."))
+
+
+def test_an_identical_command_is_not_a_loop() -> None:
+    from app.server.runner import _repeat_is_a_loop
+
+    assert not _repeat_is_a_loop(_approval("command", "", "Run npm test"))
+
+
+def test_an_approval_of_unknown_kind_is_treated_as_a_write() -> None:
+    """Old checkpoints carry no kind; the stricter reading is the safe default."""
+    from app.server.runner import _repeat_is_a_loop
+
+    assert _repeat_is_a_loop(_approval("unknown"))
+    assert _repeat_is_a_loop(None)
+
+
+def test_the_approval_records_what_the_pause_would_do() -> None:
+    from types import SimpleNamespace
+
+    from app.agents.approval import extract_pending_approval
+
+    def paused(args):
+        return {"__interrupt__": [SimpleNamespace(id="i1", value={"action_requests": [{"args": args}]})]}
+
+    write = extract_pending_approval(
+        paused({"relative_path": "docs/a.md", "content": "x"}), "/w",
+        requested_by="s", stage="s",
+    )
+    command = extract_pending_approval(
+        paused({"command": ["npm", "test"], "category": "test"}), "/w",
+        requested_by="s", stage="s",
+    )
+
+    assert write.action_kind == "write"
+    assert command.action_kind == "command"
+
+
+def test_a_repeated_command_reports_the_command_not_an_unknown_path() -> None:
+    """`The repeated request was: <unknown path>` names nothing a reader can act on."""
+    from app.server.runner import _approval_signature
+
+    signature = _approval_signature(_approval("command", "<unknown path>", "Run npm test"))
+    shown = signature[0] if signature[0] and "unknown" not in signature[0] else signature[1]
+
+    assert shown == "Run npm test"
+
+
+# ---------------------------------------------------------------------------
+# A graph with nothing to resume must be caught, not spun on
+#
+# `graph.invoke(None, ...)` runs something only when the thread has a task
+# pending. A checkpoint written with values but no scheduled node - which
+# `update_state` produces unless told `as_node` - has none, so the runner's
+# "re-invoke to make progress" fallback returns identical state forever.
+#
+# Bounded only by MAX_GATES, that spun 1000 times in five seconds on
+# run-0b55ad49 and reported "Stopped after 1000 automatic approvals" when not
+# one approval had happened.
+# ---------------------------------------------------------------------------
+
+
+def test_the_idle_reinvoke_ceiling_is_small() -> None:
+    """A graph with work to do makes progress on the first re-invoke."""
+    from app.server.runner import MAX_GATES, MAX_IDLE_REINVOKES
+
+    assert 1 <= MAX_IDLE_REINVOKES <= 5
+    assert MAX_IDLE_REINVOKES < MAX_GATES / 100, (
+        "the idle check must fire long before the gate ceiling, or the run still "
+        "spins and still reports the wrong reason"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_graph_with_nothing_to_resume_is_caught_quickly(runner, monkeypatch):
+    """The spin, and the message that sent a reader looking for the wrong thing."""
+    import app.server.runner as runner_module
+
+    monkeypatch.setattr(runner_module, "MAX_GATES", 500)
+
+    record = _register(runner, "run-stalled")
+    record.auto_approve = True
+    published = []
+    closed = []
+
+    async def _capture(run_id, event):
+        published.append(event)
+
+    async def _close(run_id):
+        closed.append(run_id)
+
+    monkeypatch.setattr(runner.event_bus, "publish", _capture)
+    monkeypatch.setattr(runner.event_bus, "close", _close)
+
+    class _NothingToResume:
+        """`invoke(None)` on a thread with no pending task returns it unchanged."""
+
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, _input, config=None):
+            self.calls += 1
+            return {"stage": "milestone_review"}
+
+    graph = _NothingToResume()
+    await runner._handle_state(record, graph, {"stage": "milestone_review"}, {})
+
+    assert record.status == "failed"
+    assert "without running anything" in record.error
+    assert "no pending work to resume" in record.error
+    # Caught in a handful of rounds, not five hundred.
+    assert graph.calls <= runner_module.MAX_IDLE_REINVOKES + 2, (
+        f"spun {graph.calls} times before noticing"
+    )
+    assert "automatic approvals" not in record.error, "reported as the wrong failure"
+    assert closed == ["run-stalled"], "the event stream was never closed"
+
+
+def test_gate_exhaustion_reports_what_the_stage_kept_doing():
+    """"Raise the ceiling" was the whole message, and it is often wrong advice.
+
+    Measured on run-db3a4a0b: `defect_fix_1_0` spent all 120 approvals running
+    `node test.js` against a test whose assertion could not be satisfied - the
+    defect was "test.js AC-BE-1 regex was too strict, expected literal
+    'todo_tasks' but code uses a constant". A larger budget would have bought
+    more non-convergence, not a fix.
+
+    The repeat guard does not catch this by design: identical *commands* are
+    the build-and-fix cycle working, and only identical *writes* count as a
+    loop. So the ceiling is the right catch - it just has to say what it caught.
+    """
+    import inspect
+
+    from app.server import runner
+
+    source = " ".join(inspect.getsource(runner).split())
+
+    assert "Its most repeated request was" in source
+    assert "is not converging" in source
+    assert "a larger budget only helps the first case" in source
+
+
+def test_the_repeat_guard_still_distinguishes_writes_from_commands():
+    """Re-running a command is diagnosis; re-writing a file is a loop."""
+    from app.server.runner import _repeat_is_a_loop
+
+    class _Approval:
+        def __init__(self, kind):
+            self.action_kind = kind
+
+    assert _repeat_is_a_loop(_Approval("write"))
+    assert not _repeat_is_a_loop(_Approval("command"))

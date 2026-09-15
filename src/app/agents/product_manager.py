@@ -37,6 +37,7 @@ from app.agents.approval import (
 from app.agents.approval import (
     resume_with_decision as resume_with_decision,
 )
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.documents import DocumentContent
 from app.state import HumanApprovalRequest, RepositoryContext
@@ -67,8 +68,15 @@ class ProductManagerOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
-def _truncate(text: str, max_chars: int = 80_000) -> str:
+def _truncate(text: str, max_chars: int | None = None) -> str:
     """Truncate long text for local LLM context limits."""
+    # Derived from the configured context window, not a fixed number: a
+    # budget that does not move with the model is how every overflow in
+    # this pipeline's history began.
+    if max_chars is None:
+        from app.agents.context_budget import ContextBudget
+
+        max_chars = ContextBudget.resolve().document_budget_chars
     text = str(text or "")
     if len(text) <= max_chars:
         return text
@@ -92,8 +100,14 @@ def build_intake_request(
     """
     brief = (
         f"Product document source: {document.source_path} ({document.source_type})\n"
-        f"Repository root: {repository.root_path} "
-        f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
+        # Deliberately not the repository's absolute path. That is the HOST's
+        # path; inside the agent the workspace is rooted at "/". Quoting it here
+        # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # in a row, and fed it to shell commands, every attempt failing with
+        # path_not_found. The reliable fix is not to show it.
+        f"Repository: branch {repository.branch}, commit {repository.commit}\n"
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- Product document text ---\n{_truncate(document.text)}\n"
     )
     if document.truncated and document.truncation_note:
@@ -115,7 +129,7 @@ def extract_pending_approval(
     return _extract_pending_approval(result, repo_root, requested_by=requested_by, stage=_STAGE)
 
 
-_SYSTEM_PROMPT = """You are the Product Manager and UX discovery partner for this workflow.
+_SYSTEM_PROMPT = f"""You are the Product Manager and UX discovery partner for this workflow.
 
 Your role is to turn a supplied product brief and repository evidence into a clear product intake artifact.
 
@@ -131,13 +145,19 @@ Responsibilities:
 Constraints:
 - Do not modify application source code.
 - Do not change repo files except through the approved artifact tool.
-- Only write an intake artifact inside the `docs/` folder (e.g., `docs/product_intake.md`).
+- Do not write a document. The workflow renders `docs/product_intake.md` from the
+  structured response you return, so your product intake reaches its readers
+  either way - and only through that response. Writing it yourself
+  produces the same work twice from one understanding, and the two
+  copies then disagree.
 - Do not claim a requirement is fact without evidence from the supplied brief or repository context.
 - Every write_artifact call pauses for a human decision before anything is saved; never tell the user the artifact is saved until you see a tool result confirming a completed write.
 - **Write the complete intake in ONE single write_artifact call.** Do NOT make follow-up edit calls to refine or improve it after the initial write. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 
@@ -162,6 +182,9 @@ def create_product_manager_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        # Its document is rendered from the structured response, so it needs no
+        # write tool - see `app.agents.artifact_document`.
+        can_write=False,
     )
 
 

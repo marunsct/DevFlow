@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { ArtifactInfo } from '../types';
 import { Download, FileText, Eye, Boxes } from 'lucide-react';
 import { ArtifactViewer } from './ArtifactViewer';
+import { downloadArtifact } from '../api';
 
 interface ArtifactListProps {
   artifacts: ArtifactInfo[];
@@ -88,12 +89,11 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                     <Eye className="h-4 w-4" />
                   </button>
                   <button
-                    onClick={() =>
-                      window.open(
-                        `/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(artifact.path)}`,
-                        '_blank'
-                      )
-                    }
+                    onClick={() => {
+                      // Through the client: a browser navigation carries no
+                      // auth header and the endpoint answers with JSON.
+                      void downloadArtifact(runId, artifact.path);
+                    }}
                     title="Download"
                     className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
                   >

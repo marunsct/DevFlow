@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { X, Download, FileText } from 'lucide-react';
 import { Markdown } from './Markdown';
 import { api } from '../api';
+import { downloadArtifact } from '../api';
 
 interface ArtifactViewerProps {
   runId: string;
@@ -36,8 +37,18 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
     fetchArtifact();
   }, [runId, path]);
 
-  const handleDownload = () => {
-    window.open(`/api/runs/${runId}/artifacts/download?path=${encodeURIComponent(path)}`, '_blank');
+  const [downloadError, setDownloadError] = useState('');
+
+  /** Through the client, so the auth header goes with it. A plain
+   *  `window.open` is a browser navigation and carries no header, which is why
+   *  this button used to render `{"detail": "Not authenticated"}`. */
+  const handleDownload = async () => {
+    setDownloadError('');
+    try {
+      await downloadArtifact(runId, path);
+    } catch {
+      setDownloadError('Could not download this document.');
+    }
   };
 
   return createPortal(
@@ -85,6 +96,12 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
             <div className="flex items-center justify-center h-full">
               <p className="text-red-400 bg-red-400/10 px-6 py-4 rounded-xl border border-red-400/20 font-medium flex items-center gap-2">
                 <X className="h-5 w-5" /> {error}
+              </p>
+            </div>
+          ) : downloadError ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-red-400 bg-red-400/10 px-6 py-4 rounded-xl border border-red-400/20 font-medium flex items-center gap-2">
+                <X className="h-5 w-5" /> {downloadError}
               </p>
             </div>
           ) : (

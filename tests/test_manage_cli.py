@@ -299,3 +299,78 @@ def test_reconcile_does_not_unrepair_a_damaged_run(run_store):
     manage.reconcile_runs()
 
     assert run_store.load("run-repaired").status == "failed"
+
+
+# ---------------------------------------------------------------------------
+# Orphaned-run recovery
+#
+# A run is handed to one Celery task and the row says `running` for as long as
+# that task lives. When the process dies without unwinding - a host losing
+# power, a container replaced mid-task - nothing writes a terminal status. The
+# row then says `running` forever: `resume_run` compare-and-sets from `failed`
+# so it refuses, and `reconcile-runs` only repairs rows parked on a pause. Hit
+# twice on run-0b55ad49, both times needing hand-written SQL to get out of.
+# ---------------------------------------------------------------------------
+
+
+def _with_task(run_store, run_id: str, status: str, stage: str, task_id: str | None):
+    record = _stored_run(run_store, run_id, status, stage)
+    if task_id:
+        run_store.set_task_id(run_id, task_id)
+    return record
+
+
+def test_a_run_whose_worker_died_becomes_resumable(run_store, monkeypatch, capsys):
+    _with_task(run_store, "run-orphan", "running", "specialist_ui_ux_0", "task-gone")
+    # A worker answered, and did not claim this task.
+    monkeypatch.setattr(manage, "_live_task_ids", lambda: {"task-someone-else"})
+
+    assert manage.recover_orphaned_runs() == 0
+
+    recovered = run_store.load("run-orphan")
+    assert recovered.status == "failed", "the run must reach the state resume accepts"
+    assert "resume continues from the last checkpoint" in recovered.error
+    assert "Recovered 1 run(s)." in capsys.readouterr().out
+
+
+def test_a_run_whose_task_is_alive_is_never_touched(run_store, monkeypatch, capsys):
+    """Resurrecting a live run puts two writers on one thread."""
+    _with_task(run_store, "run-live", "running", "principal_architect", "task-alive")
+    monkeypatch.setattr(manage, "_live_task_ids", lambda: {"task-alive"})
+
+    assert manage.recover_orphaned_runs() == 0
+
+    assert run_store.load("run-live").status == "running"
+    assert "No orphaned runs" in capsys.readouterr().out
+
+
+def test_nothing_is_repaired_when_no_worker_answers(run_store, monkeypatch, capsys):
+    """Silence from the broker is not evidence that a task is dead."""
+    _with_task(run_store, "run-unknown", "running", "scrum_master", "task-maybe")
+    monkeypatch.setattr(manage, "_live_task_ids", lambda: None)
+
+    assert manage.recover_orphaned_runs() == 1
+
+    assert run_store.load("run-unknown").status == "running"
+    assert "nothing can be judged orphaned" in capsys.readouterr().out
+
+
+def test_orphan_recovery_leaves_other_statuses_alone(run_store, monkeypatch, capsys):
+    _with_task(run_store, "run-done", "completed", "complete", None)
+    _with_task(run_store, "run-failed", "failed", "principal_architect", None)
+    monkeypatch.setattr(manage, "_live_task_ids", lambda: set())
+
+    assert manage.recover_orphaned_runs() == 0
+
+    assert run_store.load("run-done").status == "completed"
+    assert run_store.load("run-failed").status == "failed"
+
+
+def test_orphan_recovery_dry_run_writes_nothing(run_store, monkeypatch, capsys):
+    _with_task(run_store, "run-dry-orphan", "running", "technical_lead", "task-gone")
+    monkeypatch.setattr(manage, "_live_task_ids", lambda: set())
+
+    assert manage.recover_orphaned_runs(dry_run=True) == 0
+
+    assert run_store.load("run-dry-orphan").status == "running"
+    assert "would be recovered" in capsys.readouterr().out

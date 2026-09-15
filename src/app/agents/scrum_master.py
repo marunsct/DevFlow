@@ -16,6 +16,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
 _STAGE = "sprint_planning"
@@ -68,12 +70,12 @@ def build_sprint_planning_request(
     brief = (
         f"Repository root: {repository_root}\n\n"
         f"--- Approved technical specification ---\n{specification}\n\n"
-        f"**CRITICAL INSTRUCTION**: Ensure all tasks and specialists are aware that projects must be scaffolded strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub') and not in generic directories like 'nest-app' or directly in the repository root. All documentation must be created in the `docs/` directory.\n"
+        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
-_SYSTEM_PROMPT = """You are the Scrum Master for this workflow.
+_SYSTEM_PROMPT = f"""You are the Scrum Master for this workflow.
 
 Your role is to turn an approved technical specification into an implementation
 plan made of independently verifiable sprints.
@@ -87,13 +89,18 @@ Responsibilities:
 - Sequence sprints so each one is verifiable before the next begins.
 - List open questions instead of guessing when the specification is silent.
 
+{SCOPE_DISCIPLINE}
+
 Constraints:
 - Do not modify application source code.
 - Do not change repo files except through the approved artifact tool.
 - Only plan against the already-approved specification; do not introduce new
   architecture decisions here.
-- Write exactly one artifact, at `docs/sprint_plan.md`. Use that path verbatim so the
-  filename is the same on every run and later stages can find it.
+- Do not write a document. The workflow renders `docs/sprint_plan.md` from the
+  structured response you return, so your sprint plan reaches its readers
+  either way - and only through that response. Writing it yourself
+  produces the same work twice from one understanding, and the two
+  copies then disagree.
 - Every write_artifact call pauses for a human decision before anything is
   saved; never claim the artifact is saved until a tool result confirms it.
 - **Write the complete artifact in ONE single write_artifact call.** Do NOT
@@ -103,6 +110,8 @@ Constraints:
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 
@@ -122,6 +131,9 @@ def create_scrum_master_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        # Its document is rendered from the structured response, so it needs no
+        # write tool - see `app.agents.artifact_document`.
+        can_write=False,
     )
 
 

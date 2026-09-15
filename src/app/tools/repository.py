@@ -116,6 +116,13 @@ IGNORED_DIRECTORIES = frozenset({
     ".git", ".hg", ".svn", ".venv", "venv", "env", "__pycache__", "node_modules",
     ".mypy_cache", ".pytest_cache", ".ruff_cache", ".tox", ".next", ".nuxt",
     "dist", "build", ".terraform", ".gradle", "target", ".langchain", "site-packages",
+    # The sandbox points HOME here so npm, pip and cargo caches land inside the
+    # workspace instead of a directory shared by every run (see
+    # `sandbox._child_environment`). That makes them ours, and they are not the
+    # product: on run-61c5a5b6 one `npm install` left 26 `_cacache` blobs with
+    # sha512 filenames, and a listing of the workspace was mostly those rather
+    # than the application.
+    ".agent-home",
 })
 """Directories never descended into."""
 
@@ -293,6 +300,193 @@ def read_text_lines(
     }
 
 
+_READ_LINE_NUMBER = re.compile(r"^\s*\d+\s{1,}")
+"""The `NNN  ` prefix `read_file` puts in front of every line it returns."""
+
+
+def _without_read_line_numbers(wanted: str) -> str | None:
+    """`wanted` with `read_file`'s line-number prefixes removed, or None.
+
+    The read tool decorates its output with line numbers and the edit tool
+    demands byte exactness, so an agent that copies a passage out of a read is
+    copying something the file does not contain. It shows up as a `find` whose
+    first line is clean - the agent stripped the prefix it could see - and whose
+    later lines each begin `27  `, `124      `, and so on.
+
+    Observed on run-0b55ad49 in three of four consecutive failed edits, against
+    `index.html`, `styles.css` and `app.js` alike. Nothing about the agent's
+    intent was wrong; it was quoting our own output back at us.
+
+    Returns None when no line carries a prefix, so the caller can tell "nothing
+    to try" from "try this".
+    """
+    lines = wanted.splitlines()
+    stripped: list[str] = []
+    removed = 0
+    for line in lines:
+        found = _READ_LINE_NUMBER.match(line)
+        if found:
+            stripped.append(line[found.end():])
+            removed += 1
+        else:
+            stripped.append(line)
+    return "\n".join(stripped) if removed else None
+
+
+def _without_double_escaping(wanted: str) -> str | None:
+    """`wanted` with doubled backslashes collapsed, or None if there are none.
+
+    A model writing a tool call in JSON has to escape a backslash, and one that
+    is already thinking about escaping tends to escape it twice. The result is a
+    `find` of `\\\\n` against a file holding `\\n` - three characters searched
+    for where two exist.
+
+    Observed on run-0b55ad49 fixing the very corruption this describes: a test
+    file contained a literal backslash-n where a newline belonged, and the agent
+    was stopped as a loop after five identical attempts to delete it, each one
+    over-escaped the same way.
+
+    Like the other fallbacks, this only proposes a candidate; the caller still
+    requires it to match exactly once.
+    """
+    collapsed = wanted.replace("\\\\", "\\")
+    return collapsed if collapsed != wanted else None
+
+
+def _without_json_escaping(wanted: str) -> str | None:
+    """`wanted` with JSON escape sequences interpreted, or None if it has none.
+
+    The mirror image of `_without_double_escaping`. That one is for a `find`
+    carrying `\\\\n` against a file holding a literal backslash-n. This one is for
+    a `find` carrying `\\n` and `\\"` against a file holding a real newline and a
+    plain quote - a model that escaped its payload as if it were writing the
+    JSON string by hand, one level too deep.
+
+    Observed on run-95ca3f72 at 10:28: the agent read `todo-app/package.json`,
+    then issued the same edit three times, each with
+    `'"devDependencies": {\\n    \\"jest\\": ...'` where the file holds a newline
+    and unescaped quotes. Collapsing doubled backslashes does nothing for it -
+    there are none - so every fallback missed and the agent had no signal that
+    its transcription rather than its intent was wrong.
+
+    Only the unambiguous sequences are decoded. `\\b` and `\\f` are left alone
+    because a file is far likelier to contain that text than those control
+    characters, and an unknown escape is left intact rather than guessed at.
+
+    Like the other fallbacks this only proposes a candidate; the caller still
+    requires it to match exactly once, so a file that genuinely contains the
+    literal text is not at risk.
+    """
+    decoded: list[str] = []
+    index = 0
+    changed = False
+    simple = {"n": "\n", "t": "\t", "r": "\r", '"': '"', "'": "'", "/": "/", "\\": "\\"}
+    while index < len(wanted):
+        character = wanted[index]
+        if character == "\\" and index + 1 < len(wanted):
+            following = wanted[index + 1]
+            if following in simple:
+                decoded.append(simple[following])
+                index += 2
+                changed = True
+                continue
+        decoded.append(character)
+        index += 1
+    return "".join(decoded) if changed else None
+
+
+def _indentation_insensitive_span(content: str, wanted: str) -> tuple[int, int] | None:
+    """The one region matching `wanted` ignoring each line's indentation.
+
+    Returns `(start, end)` character offsets, or None when there is no match or
+    more than one - the uniqueness requirement is the whole safety property of
+    an exact-match edit tool and is not relaxed here.
+
+    Why this exists: indentation is the difference an agent gets wrong, because
+    it is the part of a line it reconstructs rather than reads. Twice on
+    run-0b55ad49 a stage was stopped as a loop for re-issuing the same edit; the
+    second time the file was indented with two spaces and every attempt used
+    four, and the agent re-read the region four times without seeing it. Nothing
+    else about those edits was wrong.
+
+    Only leading and trailing whitespace is ignored. Text inside the line must
+    still match character for character, so this cannot silently hit a different
+    statement that merely looks similar.
+    """
+    wanted_lines = [line.strip() for line in wanted.splitlines()]
+    if not wanted_lines or not any(wanted_lines):
+        return None
+
+    lines = content.splitlines(keepends=True)
+    stripped = [line.strip() for line in lines]
+    span = len(wanted_lines)
+
+    matches: list[tuple[int, int]] = []
+    for start in range(0, len(lines) - span + 1):
+        if stripped[start : start + span] != wanted_lines:
+            continue
+        offset = sum(len(line) for line in lines[:start])
+        region = lines[start : start + span]
+        end = offset + sum(len(line) for line in region)
+        # Stop at the end of the last matched line's *text*, not its newline.
+        # Swallowing the terminator merges whatever followed onto the
+        # replacement's final line - it put a closing brace on the end of a
+        # return statement the first time this ran.
+        last = region[-1]
+        end -= len(last) - len(last.rstrip("\r\n"))
+        matches.append((offset, end))
+        if len(matches) > 1:
+            return None
+    return matches[0] if matches else None
+
+
+_NEAR_MATCH_LINES = 3
+"""Lines of context to quote back around the closest match."""
+
+
+def _closest_passage(content: str, wanted: str) -> str | None:
+    """The text in `content` most like `wanted`, quoted with its line numbers.
+
+    An exact-match edit tool is only usable if a failure says *how* it failed.
+    Without this the agent is told the text is absent and nothing else, so its
+    only move is to read again and guess again - measured on run-0b55ad49,
+    `specialist_ui_ux_0` issued the identical failing edit five times, re-reading
+    the file between each, and was stopped as a loop. Every one of those was a
+    model call spent discovering a difference this function can simply show.
+
+    Matched on the first line of `wanted`, because that is where an edit's
+    `find` usually goes wrong - a leading indent, a smart quote, a line the
+    model reconstructed from memory rather than copied.
+    """
+    import difflib
+
+    first = next((line for line in wanted.splitlines() if line.strip()), "")
+    if not first:
+        return None
+
+    lines = content.splitlines()
+    if not lines:
+        return None
+
+    scores = [
+        (difflib.SequenceMatcher(None, first.strip(), line.strip()).ratio(), index)
+        for index, line in enumerate(lines)
+    ]
+    ratio, best = max(scores)
+    # Below this the "closest" line shares a keyword and nothing else, and
+    # quoting it would send the agent somewhere unrelated.
+    if ratio < 0.6:
+        return None
+
+    start = max(0, best - _NEAR_MATCH_LINES)
+    end = min(len(lines), best + _NEAR_MATCH_LINES + 1)
+    quoted = []
+    for index in range(start, end):
+        marker = ">" if index == best else " "
+        quoted.append(f"{marker} {index + 1:>4} | {lines[index]}")
+    return "\n".join(quoted)
+
+
 def edit_approved_artifact(
     repo_root: str | Path, relative_path: str, find: str, replace: str
 ) -> dict[str, str]:
@@ -354,10 +548,78 @@ def edit_approved_artifact(
         occurrences = original.count(find)
 
         if occurrences == 0:
+            # Before refusing, try the two things that are wrong with a `find`
+            # far more often than the agent's intent is: line-number prefixes
+            # copied out of `read_file`, and a different left margin. Each
+            # fallback still requires a *unique* match, so the exactness
+            # guarantee is unchanged - only the transcription is forgiven.
+            attempts: list[tuple[str, str]] = []
+            unescaped = _without_double_escaping(find)
+            if unescaped is not None:
+                attempts.append((
+                    unescaped,
+                    "Matched after collapsing doubled backslashes in your text. A "
+                    "backslash needs escaping once in JSON, not twice.",
+                ))
+            unjsoned = _without_json_escaping(find)
+            if unjsoned is not None:
+                attempts.append((
+                    unjsoned,
+                    "Matched after reading your text as JSON escapes - your `find` "
+                    "carried \\n and \\\" where the file has a real newline and a plain "
+                    "quote. The tool call is already JSON; put the literal text in "
+                    "`find`, not an escaped copy of it.",
+                ))
+            renumbered = _without_read_line_numbers(find)
+            if renumbered is not None:
+                attempts.append((
+                    renumbered,
+                    "Matched after removing the line numbers from your text. Those come "
+                    "from `read_file`'s output and are not in the file - strip them before "
+                    "editing.",
+                ))
+            attempts.append((
+                find,
+                "Matched ignoring indentation - the passage you gave was indented "
+                "differently from the file. Copy indentation exactly from what you read.",
+            ))
+
+            for candidate, explanation in attempts:
+                if candidate != find and original.count(candidate) == 1:
+                    start = original.index(candidate)
+                    span = (start, start + len(candidate))
+                else:
+                    span = _indentation_insensitive_span(original, candidate)
+                if span is None:
+                    continue
+                start, end = span
+                target.write_text(original[:start] + replace + original[end:], encoding="utf-8")
+                summary = replace[:80] + ("..." if len(replace) > 80 else "")
+                return {
+                    "path": str(target.relative_to(root)),
+                    "status": "edited",
+                    "summary": summary or "(passage removed)",
+                    "detail": explanation,
+                }
+
+            if len(find.strip()) < 10:
+                raise RepositoryToolError(
+                    f"Could not find that text in '{relative_path}'. The text you gave is "
+                    f"only {len(find)} characters, which rarely identifies one passage. "
+                    "Give the whole line you want changed, copied from a read, and put the "
+                    "change in `replace`."
+                )
+
+            nearest = _closest_passage(original, find)
+            detail = (
+                f"\n\nThe closest text in the file is (> marks the nearest line):\n{nearest}\n\n"
+                "Copy the passage from there exactly, including its indentation."
+                if nearest
+                else " Read the section first and copy the passage from what you read."
+            )
             raise RepositoryToolError(
                 f"Could not find that text in '{relative_path}'. It must match exactly, "
-                "including whitespace and punctuation. Read the section first and copy "
-                "the passage from what you read."
+                f"including whitespace and punctuation.{detail}"
             )
         if occurrences > 1:
             raise RepositoryToolError(
@@ -475,6 +737,206 @@ _VERSION_SUFFIX = re.compile(
 """A filename that is a second copy of another: `spec_v2`, `plan-final`, `notes copy`."""
 
 
+PROJECT_MARKER = ".project-directory"
+"""Names the one directory this run's application code lives in.
+
+A marker on disk rather than a value in graph state, because the thing it has to
+survive is not a node boundary but a *process*: agents are built per stage, each
+derives paths for itself, and none of them can see what an earlier stage decided.
+The file is the only thing every stage shares.
+
+run-0b55ad49 built the same to-do application three times over - in
+`simple-todo-list-app`, `simple_todo_list_app`, and `thehub` - because each
+stage picked a name and nothing carried the first choice forward. None of the
+three was ever finished.
+"""
+
+#: Files that define a Node/Python project. At the workspace root, once a
+#: project directory is pinned, each of these creates a *second* project that
+#: competes with it.
+#:
+#: run-0b55ad49 ended with two: `package.json` at the root declaring jest 30 and
+#: another in the project declaring jest 29, two `jest.config.js`, two
+#: `jestSetup.js`, two `node_modules`. `npm test` ran the root's jest against
+#: the project's tests and failed with "Identifier 'jest' has already been
+#: declared" - three remediation rounds chased that and never had a chance.
+_PROJECT_MANIFESTS = frozenset({
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "tsconfig.json", "jsconfig.json", "requirements.txt", "pyproject.toml",
+    "setup.py", "setup.cfg", "Pipfile", "Cargo.toml", "go.mod",
+})
+
+_MANIFEST_PREFIXES = ("jest.config", "jest.setup", "jestsetup", "vite.config", "webpack.config", "babel.config")
+
+
+#: Extensions that are source code, not a document a person reads.
+_CODE_SUFFIXES = frozenset({
+    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".rb", ".go", ".rs",
+    ".java", ".php", ".c", ".h", ".cpp", ".cs", ".sh", ".css", ".html", ".htm",
+})
+
+
+def _code_in_the_documents_directory(relative_parts: tuple[str, ...]) -> str | None:
+    """Why this file does not belong in `docs/`, or None if it does.
+
+    `docs/` is what every reviewer reads as documentation, and what the
+    workflow's own generated documents share. Code there is read as prose by
+    one stage and imported by none.
+
+    Measured on run-304add54: the testing specialist wrote `/docs/test_suite.js`
+    and then edited it five times running, fighting JSDOM scope problems in a
+    file that no test runner would ever collect - the project's runner looks in
+    the project directory. The repeat guard stopped the stage; the file was in
+    the wrong place from the first write.
+    """
+    if len(relative_parts) < 2 or relative_parts[0] != "docs":
+        return None
+    suffix = Path(relative_parts[-1]).suffix.lower()
+    if suffix not in _CODE_SUFFIXES:
+        return None
+    return (
+        f"Refusing to write '{'/'.join(relative_parts)}': `docs/` is for documents "
+        "a person reads, and a reviewer reads everything there as documentation. "
+        f"A {suffix} file belongs in the project directory, where the test runner "
+        "and the build will actually find it."
+    )
+
+
+def _is_project_manifest(name: str) -> bool:
+    lowered = name.lower()
+    return lowered in _PROJECT_MANIFESTS or lowered.startswith(_MANIFEST_PREFIXES)
+
+
+#: Top-level directories that are not the project and never pin it.
+_NON_PROJECT_DIRECTORIES = frozenset({"docs", "large_tool_results", "tests", "test"})
+
+
+def _is_project_directory(name: str) -> bool:
+    return (
+        bool(name)
+        and not name.startswith(".")
+        and name not in _NON_PROJECT_DIRECTORIES
+        and name not in IGNORED_DIRECTORIES
+    )
+
+
+def pinned_project_directory(root: Path) -> str | None:
+    """The project directory this run has already committed to, if any."""
+    marker = root / PROJECT_MARKER
+    try:
+        name = marker.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    return name or None
+
+
+def _pin_project_directory(root: Path, name: str) -> None:
+    """Record the project directory the first time one is written to.
+
+    Written once and never rewritten: the point is that the first choice is the
+    one that lasts. A failure to write is not worth failing the artifact over -
+    the guard simply has nothing to enforce next time.
+    """
+    marker = root / PROJECT_MARKER
+    if marker.exists():
+        return
+    try:
+        marker.write_text(f"{name}\n", encoding="utf-8")
+    except OSError:
+        logger.warning("Could not record the project directory at %s", marker, exc_info=True)
+
+
+def _file_blocking_directory(root: Path, target: Path) -> str | None:
+    """The workspace-relative path of a plain file standing where a directory must go.
+
+    Returns None when the parents are clear. Checked before `mkdir` rather than
+    after, because the exception `mkdir` raises names the collision but not what
+    the agent should do about it - and it escapes as a crash rather than as a
+    tool result the agent can act on.
+    """
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        return None
+    walked = root
+    for part in relative.parts[:-1]:
+        walked = walked / part
+        if walked.exists() and not walked.is_dir():
+            return str(walked.relative_to(root))
+    return None
+
+
+def _directory_slug(name: str) -> str:
+    """A directory name reduced to what distinguishes it.
+
+    Separators and case are exactly what agents disagree about when each one
+    derives a folder name from the same product name, so they are what this
+    removes: `simple-todo-list-app` and `simple_todo_list_app` both reduce to
+    `simpletodolistapp`.
+    """
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _forks_existing_directory(root: Path, target: Path) -> Path | None:
+    """The top-level directory this write would fork, if it is forking one.
+
+    The shared prompt tells every agent to put code in a folder named after the
+    product, and every agent derives that name for itself. Sprint 1 of
+    run-0b55ad49 built `simple-todo-list-app`; sprint 2 derived
+    `simple_todo_list_app` and rebuilt the application from scratch beside it,
+    so the project existed twice and neither copy was finished.
+
+    Matched on the slug rather than the exact name, because a name that differs
+    only in separators or case is not a new component - it is the same folder
+    spelled differently. `frontend` and `backend` share no slug and are left
+    alone, which is the distinction that keeps this from refusing real work.
+    """
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        return None
+    if len(relative.parts) < 2:
+        return None  # a file at the root forks nothing
+
+    wanted = relative.parts[0]
+    slug = _directory_slug(wanted)
+    if not slug:
+        return None
+
+    try:
+        siblings = [
+            entry
+            for entry in root.iterdir()
+            if entry.is_dir()
+            and entry.name not in IGNORED_DIRECTORIES
+            and not entry.name.startswith(".")
+            and _directory_slug(entry.name) == slug
+        ]
+    except OSError:
+        return None
+    if not siblings:
+        return None
+
+    # When a fork already exists - because it was made before this guard, or by
+    # hand - refusing writes to *both* copies leaves the agent unable to write
+    # anywhere, which is worse than the duplication. Nominate the established
+    # one and send everything there: the copy with more files, oldest first on a
+    # tie, because the one that has been built in is the one to keep building.
+    def _weight(directory: Path) -> tuple[int, float]:
+        try:
+            count = sum(1 for _ in directory.rglob("*") if _.is_file())
+        except OSError:
+            count = 0
+        try:
+            age = -directory.stat().st_mtime
+        except OSError:
+            age = 0.0
+        return (count, age)
+
+    canonical = max(siblings, key=_weight)
+    return None if canonical.name == wanted else canonical
+
+
 def _supersedes_existing(target: Path) -> Path | None:
     """The canonical file this write would fork, if it is forking one.
 
@@ -549,6 +1011,56 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
 
+    # One project directory per run, pinned the first time code is written and
+    # honoured by every stage afterwards. Without this each stage derived its own
+    # name and the same application was built three times over.
+    relative_parts = target.relative_to(artifact_root).parts
+    misplaced = _code_in_the_documents_directory(relative_parts)
+    if misplaced is not None:
+        raise RepositoryToolError(misplaced)
+    if len(relative_parts) == 1 and _is_project_manifest(relative_parts[0]):
+        pinned_here = pinned_project_directory(artifact_root)
+        if pinned_here:
+            raise RepositoryToolError(
+                f"Refusing to write '{relative_path}': this is a project manifest and "
+                f"this run's project is '{pinned_here}'. Write it to "
+                f"'{pinned_here}/{relative_parts[0]}' instead. A manifest at the "
+                "workspace root creates a second project, and the two then disagree "
+                "about which dependency versions and test configuration apply."
+            )
+    if len(relative_parts) > 1 and _is_project_directory(relative_parts[0]):
+        wanted_directory = relative_parts[0]
+        pinned = pinned_project_directory(artifact_root)
+        if pinned and pinned != wanted_directory:
+            raise RepositoryToolError(
+                f"Refusing to write '{relative_path}': this run's project directory is "
+                f"'{pinned}', pinned when the first code was written. Write into "
+                f"'{pinned}/' instead. Building the same application in a second "
+                "directory leaves neither copy finished."
+            )
+        # NOT pinned here. Every check below can still reject this write, and a
+        # rejected write must not pin anything: the pin is permanent and every
+        # later path is measured against it.
+        #
+        # Observed on run-64df2b20: the technical lead wrote a 1-byte file named
+        # `med2`, then a specialist wrote `med2/app/__init__.py`. That pinned
+        # `med2` and *then* failed, because `med2` was a file and not a
+        # directory. The specialist removed the file, created `med2-app`, and
+        # every write into it was refused for not being `med2` - as were
+        # `med2-app-1` and `med2-application`. The run could not name any
+        # directory it was allowed to use.
+        pin_after_writing = wanted_directory if not pinned else None
+    else:
+        pin_after_writing = None
+
+    forked = _forks_existing_directory(artifact_root, target)
+    if forked is not None:
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': the directory '{forked.name}' already "
+            f"exists and differs only in spelling. Write into '{forked.name}/' instead - "
+            "two copies of one project means neither gets finished."
+        )
+
     superseded = _supersedes_existing(target)
     if superseded is not None:
         raise RepositoryToolError(
@@ -590,6 +1102,20 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
                 unchanged = False
 
         if not unchanged:
+            # `exist_ok=True` tolerates an existing *directory* and nothing else.
+            # When a plain file already occupies the path - `todo-app` created by
+            # a stray `touch` or a write with no extension - this raises
+            # FileExistsError, and on run-95ca3f72 that escaped as an unhandled
+            # exception and killed the stage. Every other failure in this module
+            # is a RepositoryToolError the agent can read and act on; this one
+            # should be too, and it has to say what is actually in the way.
+            blocker = _file_blocking_directory(artifact_root, target)
+            if blocker is not None:
+                raise RepositoryToolError(
+                    f"Cannot write '{relative_path}': '{blocker}' already exists as a "
+                    "file, so it cannot also be a directory. Delete or rename that file, "
+                    "or write to a different path."
+                )
             target.parent.mkdir(parents=True, exist_ok=True)
             try:
                 target.write_text(content, encoding="utf-8")
@@ -598,6 +1124,10 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
                 raise RepositoryToolError(
                     f"Could not write artifact to {relative_path}: {exc}"
                 ) from exc
+
+        # The write landed, so this directory is real and is the project.
+        if pin_after_writing is not None:
+            _pin_project_directory(artifact_root, pin_after_writing)
 
     result = {
         "path": str(target.relative_to(root)),
@@ -615,7 +1145,174 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     return result
 
 
-def run_approved_validation(repo_root: str | Path, command: list[str]) -> dict[str, object]:
+_LOOKS_LIKE_A_TEST = re.compile(
+    r"(^|/)(__tests__|tests?|e2e)/"
+    r"|\.(test|spec)\.[jt]sx?$"
+    r"|(^|/)test[-_][^/]*\.[jt]sx?$"
+    r"|(^|/)test_[^/]*\.py$"
+    r"|_test\.py$"
+)
+
+
+def looks_like_a_test(relative_path: str) -> bool:
+    """Whether a path is a test file, by the conventions test runners use.
+
+    Kept beside the delete tool rather than imported from `app.analysis`, which
+    sits above this layer. `test_the_two_definitions_of_a_test_agree` pins them
+    together so they cannot drift.
+    """
+    return bool(_LOOKS_LIKE_A_TEST.search(relative_path))
+
+
+def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:
+    """Delete one file the agent created inside the workspace.
+
+    Why this exists:
+        Agents are told scratch files do not belong in the deliverable, and
+        until now had no way to act on that. On run-61c5a5b6 the UI specialist
+        needed to remove one temporary `.mjs` probe. With no delete tool it
+        wrote a second `.mjs` that unlinked the first - which was itself a
+        scratch file it then wanted gone. Fifty approval gates and nine
+        generations of `_selfdestruct.mjs`, `_finalclean.mjs`,
+        `_cleanup_selfdestruct2.mjs` later the stage ended with more litter
+        than it started with, because a Node script cannot unlink itself while
+        it is running. One tool call ends that regress.
+
+    Safety model:
+        The same envelope as `write_approved_artifact`: the path is resolved
+        the way the model means it, confined to the workspace root, and the
+        call stops at the same approval interrupt. Files only - a directory
+        would delete work in bulk and no legitimate cleanup needs it. Secret
+        paths are refused, matching the read side: an agent that cannot see
+        `.env` must not be able to remove it either.
+
+    Errors:
+        RepositoryToolError if the repo root is invalid, the path escapes it,
+        the target is missing, is a directory, or looks like credentials.
+    """
+    root = _normalize_repo_root(repo_root)
+    candidate = _repo_relative_path(root, relative_path)
+    if not str(candidate).strip():
+        raise RepositoryToolError("Give the path of the file to delete.")
+
+    target = _assert_within_repo(root, root / candidate)
+    shown = target.relative_to(root).as_posix()
+
+    if is_secret_path(target):
+        raise RepositoryToolError(
+            f"'{shown}' looks like credential material and cannot be deleted."
+        )
+    # The pin is the only thing every stage shares about where code lives, and
+    # it looks exactly like the dotfile clutter an agent tidying the workspace
+    # root would remove. Losing it does not fail loudly; it makes the next
+    # stage build the application a second time in a second directory, which is
+    # the failure the pin was added to prevent (run-0b55ad49, three copies).
+    if target.name == PROJECT_MARKER:
+        raise RepositoryToolError(
+            f"'{shown}' records which directory this project lives in and is not "
+            "clutter. Leave it alone; every later stage reads it."
+        )
+    # A test is evidence, not clutter. Measured on run-2b5def74: the test round
+    # wrote four suites, ran them - 27 assertions passing against the real
+    # application - and then deleted three of them as "temporary helper
+    # scripts", leaving only the one suite that tested a copy of the code.
+    # The delete tool was added to end a cleanup loop; without this it also
+    # hands an agent a way to throw away the only proof the product works.
+    if looks_like_a_test(shown):
+        raise RepositoryToolError(
+            f"'{shown}' is a test, and tests are part of what this run delivers - "
+            "the reviewer reads them as the evidence the product works. Leave it. "
+            "If it is genuinely a throwaway probe rather than a test, give it a "
+            "name that is not a test name, so nothing later mistakes it for one."
+        )
+    if target.is_dir():
+        raise RepositoryToolError(
+            f"'{shown}' is a directory. This tool deletes one file at a time; "
+            "name the file you want removed."
+        )
+    if not target.exists():
+        raise RepositoryToolError(
+            f"'{shown}' does not exist - there is nothing to delete. "
+            "Run `ls` to see what is actually there."
+        )
+
+    target.unlink()
+    return {"deleted": shown, "status": "deleted"}
+
+
+def move_approved_artifact(
+    repo_root: str | Path, relative_path: str, destination: str
+) -> dict[str, str]:
+    """Move or rename one file inside the workspace.
+
+    Why this exists:
+        The other four operations compose into every file task except this one.
+        Without it, an agent that put a file in the wrong place must rewrite the
+        whole thing at the new path and delete the old - two gated calls, and
+        the rewrite is a fresh generation of content that was already correct,
+        so a long document can come back shorter or subtly different. That is
+        the same failure `_supersedes_existing` exists to catch, arrived at from
+        the other direction.
+
+    Safety model:
+        Both ends are resolved the way the model means them and confined to the
+        workspace, so this cannot be used to read a file out or write one in.
+        The destination must not already exist - an overwrite here would be a
+        silent delete of whatever was there, and `write_artifact` is the tool
+        for replacing a file you mean to replace. Secrets and the project pin
+        are refused at both ends for the reasons `delete_approved_artifact`
+        gives.
+
+    Errors:
+        RepositoryToolError if either path escapes the workspace, the source is
+        missing or a directory, the destination exists, or either end is
+        credential material or the project pin.
+    """
+    root = _normalize_repo_root(repo_root)
+
+    source = _assert_within_repo(root, root / _repo_relative_path(root, relative_path))
+    target = _assert_within_repo(root, root / _repo_relative_path(root, destination))
+    from_shown = source.relative_to(root).as_posix()
+    to_shown = target.relative_to(root).as_posix()
+
+    for path, shown in ((source, from_shown), (target, to_shown)):
+        if is_secret_path(path):
+            raise RepositoryToolError(
+                f"'{shown}' looks like credential material and cannot be moved."
+            )
+        if path.name == PROJECT_MARKER:
+            raise RepositoryToolError(
+                f"'{shown}' records which directory this project lives in. "
+                "Moving it would point every later stage at the wrong place."
+            )
+
+    if source == target:
+        raise RepositoryToolError(
+            f"'{from_shown}' is already where you are asking to put it."
+        )
+    if not source.exists():
+        raise RepositoryToolError(
+            f"'{from_shown}' does not exist. Run `ls` to see what is actually there."
+        )
+    if source.is_dir():
+        raise RepositoryToolError(
+            f"'{from_shown}' is a directory. This tool moves one file at a time."
+        )
+    if target.exists():
+        raise RepositoryToolError(
+            f"'{to_shown}' already exists. Moving onto it would delete it without "
+            "showing anyone what was lost; use `write_artifact` if you mean to "
+            "replace it, or choose another name."
+        )
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    source.rename(target)
+    return {"moved": from_shown, "to": to_shown, "status": "moved"}
+
+
+def run_approved_validation(
+    repo_root: str | Path, command: list[str], working_directory: str | None = None
+) -> dict[str, object]:
     """Run one validation command inside the sandbox.
 
     Purpose:
@@ -644,14 +1341,24 @@ def run_approved_validation(repo_root: str | Path, command: list[str]) -> dict[s
             'Validation commands must be a list, e.g. ["pytest", "-q"]. A string would need a shell.'
         )
 
+    # Validation runs where the project is, not where the workspace starts.
+    # The pin already decides where code is written; a test command that
+    # ignored it ran the workspace root's manifest instead - on run-95ca3f72
+    # that was npm's `npm init -y` default, whose test script is
+    # `echo "Error: no test specified" && exit 1`. Every test round reported a
+    # failure that had nothing to do with the tests.
+    run_in = working_directory or pinned_project_directory(root)
+
     result = SandboxExecutor.execute(
         command=command,
         repo_root=str(root),
         role_name="testing_specialist",
         category="test",
+        working_directory=run_in,
     )
     return {
         "command": list(command),
+        "working_directory": run_in or ".",
         "returncode": int(result["returncode"]) if "returncode" in result else -1,
         "stdout": result.get("stdout", ""),
         "stderr": result.get("stderr", "") or result.get("error", ""),
@@ -752,5 +1459,8 @@ __all__ = [
     "read_dependency_metadata",
     "write_approved_artifact",
     "edit_approved_artifact",
+    "delete_approved_artifact",
+    "looks_like_a_test",
+    "move_approved_artifact",
     "run_approved_validation",
 ]

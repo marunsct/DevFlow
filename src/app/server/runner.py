@@ -205,6 +205,81 @@ def _applicable_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
     return _public_model_overrides(overrides)
 
 
+#: Recognised backend problems, and what the operator can do about each.
+#:
+#: A run that stops because the model server is not ready has nothing wrong with
+#: it: the checkpoint, the artifacts and the pending gate are all intact, and it
+#: continues the moment the server does. What reached the dashboard, though, was
+#: the raw exception - `OpenAIInvalidRequestError: Error code: 400 - {'error':
+#: {'message': 'No model loaded...'}}` - which asks the reader to pick a
+#: sentence out of a nested dict to find out that they need to load a model.
+#:
+#: This is the same treatment `_context_overflow_update` already gives the one
+#: other failure an operator can act on, applied to the ones that come from the
+#: provider rather than from the conversation.
+_PROVIDER_FAILURE_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        ("no model loaded", "inference/load", "model_not_found", "no models loaded",
+         "downloaded but not loaded", "switch model by request", "is not loaded"),
+        "The model server would not serve the model this run asked for: either "
+        "nothing is loaded, or a different model is loaded and the server is not "
+        "set to switch on request. Load the configured model there, turn on "
+        "load-on-request, or point the model setting at whatever is already "
+        "loaded - then resume. No work has been lost.",
+    ),
+    (
+        ("connection refused", "failed to connect", "connection error",
+         "name or service not known", "max retries exceeded"),
+        "The model server could not be reached at the configured address. Check "
+        "that it is running and that the base URL is right, then resume this run.",
+    ),
+    (
+        ("invalid api key", "incorrect api key", "unauthorized", "authentication_error"),
+        "The model server rejected the API key. Correct it in settings, then "
+        "resume this run.",
+    ),
+    (
+        ("softtimelimitexceeded", "timelimitexceeded", "task timed out"),
+        "This run hit the worker's task time limit while it was still making "
+        "progress. It stopped at a checkpoint, so resuming continues from there "
+        "rather than starting over. If it keeps hitting the limit, raise "
+        "CELERY_TASK_SOFT_TIME_LIMIT - a slow local model needs hours for a "
+        "full run.",
+    ),
+)
+
+RUN_ERROR_MAX_CHARS = 500
+"""Ceiling on the error text stored on a run; it is rendered in the browser."""
+
+
+def _explain_failure(exc: BaseException) -> str:
+    """Describe a failed run in terms the person reading it can act on.
+
+    Falls back to the exception itself whenever the cause is not one of the
+    recognised backend problems, because an unrecognised failure is better shown
+    verbatim than paraphrased into something that might not be true.
+
+    The guidance is placed first so that it survives the length cap: the raw
+    text is the part that can run to hundreds of characters of nested JSON, and
+    it is the part the reader needs least.
+    """
+    raw = f"{type(exc).__name__}: {exc}"
+    haystack = raw.lower()
+    for markers, guidance in _PROVIDER_FAILURE_HINTS:
+        if any(marker in haystack for marker in markers):
+            room = RUN_ERROR_MAX_CHARS - len(guidance) - len("\n\nThe server said: ")
+            return f"{guidance}\n\nThe server said: {raw[:max(room, 0)]}"
+    return raw[:RUN_ERROR_MAX_CHARS]
+
+
+MAX_IDLE_REINVOKES = 2
+"""Re-invokes returning the same stage with nothing run before calling it stuck.
+
+Two, because a graph that has work to do makes progress on the first re-invoke.
+More rounds only delay a diagnosis that is already certain, and each round
+publishes an event - the spin this catches wrote 1000 of them in five seconds.
+"""
+
 MAX_IDENTICAL_GATES = 4
 """Consecutive identical approval requests before a stage is called a loop.
 
@@ -227,6 +302,22 @@ def _approval_signature(approval: Any) -> tuple[str, str]:
         getattr(approval, "artifact_path", "") if approval else "",
         (getattr(approval, "notes", "") or "") if approval else "",
     )
+
+
+def _repeat_is_a_loop(approval: Any) -> bool:
+    """Whether repeating this request means the stage has stopped progressing.
+
+    Only a write. Re-requesting an identical write means nothing changed between
+    attempts - `write_approved_artifact` reports exactly that, as `unchanged`.
+
+    Re-running an identical *command* is the opposite: it is the build/fix cycle
+    working. On run-0b55ad49 `specialist_backend_1` ran `npm test`, read
+    `app.js`, ran it again, read four more files, ran it again - real diagnosis
+    between every run, with the tests passing - and was stopped as a loop after
+    five. Commands stay bounded by `MAX_GATES_PER_STAGE`, which is the right
+    ceiling for work that is expensive rather than stuck.
+    """
+    return getattr(approval, "action_kind", "unknown") != "command"
 
 
 def _approval_metadata(approval: Any) -> dict[str, Any]:
@@ -389,6 +480,36 @@ class WorkflowRunner:
         for thread_id in [*state.get("inner_thread_ids", []), record.thread_id]:
             discard_thread(thread_id, checkpointer=self.checkpointer)
 
+    def _require_a_reachable_model(self) -> None:
+        """Refuse to start when nothing is serving the configured endpoint.
+
+        A model server that is not there and one that is merely slow produce
+        the same symptom: the first call blocks and the run sits at `running`.
+
+        Measured on run-18c0e34c: Docker Desktop wedged, the worker died, and
+        the run reported `running` at the same stage for about ten hours.
+        Telling the operator which address failed turns that into a one-line
+        fix.
+
+        The probe only reports absence on a transport failure - an auth
+        challenge, a missing route, or a probe that cannot run all count as
+        serving - so this refuses a run that was going to stall, not one that
+        was going to work.
+        """
+        from app.config import load_settings
+        from app.models.endpoint_probe import describe_model_endpoint
+        from app.server.runtime_settings import effective_environment
+
+        try:
+            settings = load_settings(dict(effective_environment()))
+        except Exception:  # noqa: BLE001 - never block on reading settings
+            logger.warning("Could not read settings for the endpoint probe", exc_info=True)
+            return
+
+        status = describe_model_endpoint(settings)
+        if not status.reachable:
+            raise RunConflict(status.detail)
+
     async def start_run(
         self,
         run_id: str,
@@ -408,6 +529,8 @@ class WorkflowRunner:
         record = self.run_store.load(run_id)
         if record is None:
             raise ValueError(f"Run {run_id} is not registered")
+
+        self._require_a_reachable_model()
 
         record.repo_root = str(repository.root_path)
         record.review_policy = review_policy or {}
@@ -445,6 +568,8 @@ class WorkflowRunner:
                 "history inconsistent, so resuming it would read a state no single run "
                 "produced. Clone it to repeat the attempt from the beginning."
             )
+
+        self._require_a_reachable_model()
 
         now = datetime.now(timezone.utc).isoformat()
         if not self.run_store.compare_and_set_status(
@@ -628,7 +753,7 @@ class WorkflowRunner:
             # browser and a traceback leaks paths, versions and module layout.
             logger.exception("Run %s failed", run_id)
             record.status = self._status_after_failure(record)
-            record.error = f"{type(exc).__name__}: {exc}"[:500]
+            record.error = _explain_failure(exc)
             record.updated_at = datetime.now(timezone.utc).isoformat()
             self._persist(record)
             await self.event_bus.publish(
@@ -659,12 +784,19 @@ class WorkflowRunner:
         # Consecutive auto-approvals at one stage. Reset whenever the stage
         # changes, so a long but progressing run is unaffected.
         gate_stage: str | None = None
+        # Which request this stage made most often, for the message if its
+        # gate budget runs out - non-convergence is invisible without it.
+        stage_signatures: dict[Any, int] = {}
         gates_at_stage = 0
         # Consecutive gates asking for the exact same thing. A stage that varies
         # what it asks for is working; one that repeats itself is looping, and
         # only the second is worth failing fast on.
         last_signature: tuple[str, str] | None = None
         repeats = 0
+        # Consecutive re-invokes that returned the same stage without running
+        # anything. Distinct from `repeats`, which counts *gates*; this counts
+        # rounds where the graph did not even reach one.
+        stalled_at_stage = 0
 
         for _ in range(MAX_GATES):
             stage = state.get("stage", "")
@@ -724,14 +856,25 @@ class WorkflowRunner:
                         ),
                     )
                     signature = _approval_signature(approval)
+                    # A read-only look at the workspace is approved and
+                    # recorded, but does not spend the budget meant for writes
+                    # and builds. On run-3f8e387d a testing specialist used all
+                    # 120 gates on `ls -la`, `find` and `cat` - work its ungated
+                    # filesystem tools could have done - and was stopped before
+                    # writing anything.
+                    costs_budget = getattr(approval, "action_kind", "") != "read"
                     if stage == gate_stage:
-                        gates_at_stage += 1
+                        if costs_budget:
+                            gates_at_stage += 1
                         repeats = repeats + 1 if signature == last_signature else 0
+                        stage_signatures[signature] = stage_signatures.get(signature, 0) + 1
                     else:
-                        gate_stage, gates_at_stage, repeats = stage, 1, 0
+                        gate_stage, repeats = stage, 0
+                        gates_at_stage = 1 if costs_budget else 0
+                        stage_signatures = {signature: 1}
                     last_signature = signature
 
-                    looping = repeats >= MAX_IDENTICAL_GATES
+                    looping = repeats >= MAX_IDENTICAL_GATES and _repeat_is_a_loop(approval)
                     if looping or gates_at_stage > MAX_GATES_PER_STAGE:
                         stage_name = stage.removeprefix(APPROVAL_PAUSE_PREFIX)
                         record.status = "failed"
@@ -739,19 +882,53 @@ class WorkflowRunner:
                             record.error = (
                                 f"The '{stage_name}' stage asked to write the same thing "
                                 f"{repeats + 1} times in a row without moving on, so it was "
-                                f"stopped. The repeated request was: {signature[0] or 'an artifact write'}. "
+                                f"stopped. The repeated request was: "
+                                f"{signature[0] if signature[0] and 'unknown' not in signature[0] else (signature[1] or 'an artifact write')}. "
                                 "An agent re-requesting an identical write is looping, and every "
                                 "attempt costs a model call."
                             )
                         else:
+                            # What it kept doing is the part worth reporting.
+                            # "Raise the ceiling" alone was the whole message,
+                            # and on run-db3a4a0b that was the wrong advice: the
+                            # stage ran `node test.js` over and over against a
+                            # test whose assertion could not be satisfied, so a
+                            # larger budget would only have bought more of it.
+                            busiest = max(stage_signatures.items(), key=lambda kv: kv[1], default=(None, 0))
+                            repeated = ""
+                            if busiest[0] and busiest[1] > 2:
+                                # A command approval carries no artifact path, so
+                                # the path half is a placeholder. Prefer whichever
+                                # half actually says something: on run-3f8e387d
+                                # this read "<unknown path>, 21 times", which
+                                # names the repetition without naming the thing.
+                                path, notes = busiest[0]
+                                what = next(
+                                    (
+                                        part
+                                        for part in (path, notes)
+                                        if part and "unknown" not in part.lower()
+                                    ),
+                                    "",
+                                )
+                                if what:
+                                    repeated = (
+                                        f" Its most repeated request was "
+                                        f"{what[:120]}, {busiest[1]} times."
+                                    )
+                                else:
+                                    repeated = (
+                                        f" It made the same request {busiest[1]} times; "
+                                        "the event log for this stage says which."
+                                    )
                             record.error = (
                                 f"The '{stage_name}' stage used all "
                                 f"{MAX_GATES_PER_STAGE} of its approvals without finishing, so it "
-                                "was stopped. The requests were not identical, so this looks like "
-                                "a stage doing more work than the ceiling allows rather than a "
-                                "loop - a specialist writing code and re-running tests reaches "
-                                "this legitimately. Raise WORKFLOW_MAX_GATES_PER_STAGE, or check "
-                                "the log if you expected this stage to be smaller."
+                                "was stopped. The requests were not identical, so this is either a "
+                                "stage doing more work than the ceiling allows, or an edit-and-retest "
+                                f"cycle that is not converging.{repeated} Check whether the same "
+                                "check keeps failing before raising WORKFLOW_MAX_GATES_PER_STAGE - "
+                                "a larger budget only helps the first case."
                             )
                         record.updated_at = datetime.now(timezone.utc).isoformat()
                         self._persist(record)
@@ -814,9 +991,46 @@ class WorkflowRunner:
                 return
 
             # A stage that is neither terminal nor a pause means the graph
-            # returned mid-flight. Re-invoke to make progress; without this the
-            # loop would spin on unchanged state.
+            # returned mid-flight. Re-invoke to make progress.
+            #
+            # `graph.invoke(None, ...)` only runs something when the thread has a
+            # task pending. A checkpoint written with values but no scheduled
+            # node - which `update_state` produces unless it is told `as_node` -
+            # has none, so this returns the same state forever. Bounded only by
+            # MAX_GATES, that spun 1000 times in five seconds and then reported
+            # "Stopped after 1000 automatic approvals", when not one approval had
+            # happened. Catching it here costs two iterations and says what is
+            # actually wrong.
+            previous_stage = stage
             state = await asyncio.to_thread(graph.invoke, None, _resume_config(record.thread_id, trace_meta))
+            if state.get("stage", "") == previous_stage:
+                stalled_at_stage += 1
+            else:
+                stalled_at_stage = 0
+            if stalled_at_stage >= MAX_IDLE_REINVOKES:
+                record.status = "failed"
+                record.error = (
+                    f"The graph returned at stage '{previous_stage}' without running "
+                    f"anything, {stalled_at_stage + 1} times in a row. The checkpoint has "
+                    "no pending work to resume, so re-invoking cannot move it. This "
+                    "usually means the state was edited without scheduling a node to act "
+                    "on it. Clone the run, or set the stage through a node that routes "
+                    "onward."
+                )
+                record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
+                await self.event_bus.publish(
+                    run_id,
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=await self.event_bus.next_sequence(run_id),
+                        stage=previous_stage,
+                        event_type="error",
+                        message=record.error,
+                    ),
+                )
+                await self.event_bus.close(run_id)
+                return
 
         # Reaching here means the auto-approval loop ran out of rounds. This is
         # the one failure an unattended run is most likely to hit, and it used

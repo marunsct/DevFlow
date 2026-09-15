@@ -90,40 +90,21 @@ def decisions_for(decision: dict[str, Any], action_count: int) -> list[dict[str,
     seven different tool calls and silently write the wrong thing six times, so
     it is refused instead.
 
-    However, when an "edit" decision arrives with multiple pending calls, we now
-    take a pragmatic approach: if the agent requested N edits in one turn (which
-    means it wants to apply all of them together), and the human approved the
-    overall direction, we replicate the edit *only* when the edit targets are
-    identical — which means the agent is asking to apply the same change pattern
-    across multiple files. Otherwise, we reject the batch and ask the agent to
-    split into sequential turns. This prevents the "1 decision vs 7 tool calls"
-    crash while still protecting against silent data corruption.
+    Do not "pragmatically" replicate an `edit` to clear the crash. That was
+    tried: the replication was added with a docstring promising it applied only
+    when the edit targets matched, and no such check was written - the branch it
+    added returned exactly what the line below it already returned. Nothing was
+    fixed, the guard was gone, and the test that pins this behaviour went red
+    and stayed red.
     """
     if action_count <= 1:
         return [decision]
-
-    decision_type = decision.get("type")
-
-    if decision_type == "edit":
-        # Check if all pending actions are edits to the same file with the same
-        # find/replace — this means the agent is applying a systematic change.
-        # In that case, replicate the decision safely.
-        edits = []
-        for i in range(action_count):
-            # Each replicated decision will get its own copy; we don't have access
-            # to individual action_requests here, so we check if this looks like
-            # a safe replication scenario by verifying the decision has standard
-            # edit fields.
-            edits.append(dict(decision))
-
-        # For multi-edit scenarios, we replicate the edit decision for each
-        # pending call. The agent's tool implementation will apply each one
-        # sequentially, and since they were all generated together as part of
-        # a single coherent plan, this is safe. The key insight: the agent
-        # requested ALL these edits in ONE turn, meaning it designed them to
-        # work together. Rejecting forces a full re-think which is wasteful.
-        return edits
-
+    if decision.get("type") == "edit":
+        raise ValueError(
+            f"This pause is holding {action_count} tool calls, and an 'edit' decision "
+            "can only answer one of them. Approve or reject them together, or answer "
+            "each call with its own decision."
+        )
     return [dict(decision) for _ in range(action_count)]
 
 
@@ -158,6 +139,36 @@ def resume_with_decision(
 def _clip(text: str, limit: int = 80) -> str:
     text = str(text or "").strip().replace("\n", " ")
     return text[:limit] + ("..." if len(text) > limit else "")
+
+
+#: Commands that read and change nothing. An agent already has ungated tools
+#: for all of these - `ls`, `read_file`, `glob`, `grep` - so reaching for the
+#: shell to do the same work costs an approval that buys no safety.
+_READ_ONLY_EXECUTABLES = frozenset({
+    "ls", "cat", "find", "pwd", "wc", "which", "head", "tail", "grep", "file",
+    "stat", "du", "df", "echo", "env", "printenv", "basename", "dirname",
+})
+
+
+def is_read_only_command(request: dict) -> bool:
+    """Whether this action only looks at the workspace.
+
+    Measured on run-3f8e387d: `specialist_testing_2` spent its whole 120-gate
+    budget on `ls -la`, `find` and `cat` against the workspace - exploration it
+    could have done with its ungated filesystem tools - and was stopped before
+    finishing any work. The approval still happens and is still recorded; it
+    just should not consume the budget meant for writes and builds.
+    """
+    command = (request.get("args") or {}).get("command")
+    if not isinstance(command, (list, tuple)) or not command:
+        return False
+    executable = str(command[0]).rsplit("/", 1)[-1]
+    if executable not in _READ_ONLY_EXECUTABLES:
+        return False
+    # A redirection or a shell operator turns any of these into something else.
+    return not any(
+        str(part) in {">", ">>", "|", ";", "&&", "||", "<"} for part in command[1:]
+    )
 
 
 def describe_action_request(action_request: dict[str, Any]) -> str:
@@ -237,10 +248,27 @@ def extract_pending_approval(
     )
     risk_level = "medium" if touches_existing else "low"
 
+    # What the pause would actually do. A command re-run after every fix is the
+    # build/fix cycle; an identical write is a stage that has stopped making
+    # progress. Telling them apart is the loop detector's whole job, and it
+    # cannot be done from the path, because a command has none.
+    kinds = {
+        "command" if "command" in (request.get("args") or {}) else "write"
+        for request in action_requests
+    }
+    action_kind = kinds.pop() if len(kinds) == 1 else "unknown"
+    # A read-only command is still approved and still recorded; it simply must
+    # not spend the per-stage budget that writes and builds need.
+    if action_kind == "command" and all(
+        is_read_only_command(request) for request in action_requests
+    ):
+        action_kind = "read"
+
     return HumanApprovalRequest(
         request_id=pending.id,
         stage=stage,
         artifact_path=artifact_path,
+        action_kind=action_kind,
         risk_level=risk_level,
         requested_by=requested_by,
         decision=ApprovalDecision.PENDING,

@@ -124,3 +124,29 @@ def test_product_manager_agent_returns_structured_intake_for_sample_brief(tmp_pa
         f"tool; got {type(structured).__name__}."
     )
     assert structured.product_name
+
+def test_the_brief_never_quotes_the_host_workspace_path():
+    """The agent's filesystem is rooted at "/"; the host path resolves nowhere.
+
+    Quoting it and then instructing the agent not to use it does not work:
+    agents retried `ls` against that exact string four times in a row on
+    run-0b55ad49, every attempt failing with path_not_found.
+    """
+    from types import SimpleNamespace
+
+    from app.agents.product_manager import build_intake_request
+
+    repository = SimpleNamespace(
+        root_path="/app/data/workspaces/low-run-abc123", branch="main",
+        commit="deadbeef", status="clean",
+    )
+    document = SimpleNamespace(
+        text="a brief", source_path="brief.md", source_type="markdown",
+        truncated=False, truncation_note=None,
+    )
+
+    brief = build_intake_request(document, repository)["messages"][0]["content"]
+
+    assert "/app/data/workspaces" not in brief
+    # The information that is actually useful survives.
+    assert "main" in brief and "deadbeef" in brief

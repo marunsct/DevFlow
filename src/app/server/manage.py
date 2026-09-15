@@ -192,6 +192,153 @@ def reconcile_runs(dry_run: bool = False) -> int:
     return 0
 
 
+def _live_task_ids() -> set[str] | None:
+    """Task ids the broker still knows about, or None if it cannot be asked.
+
+    Active, reserved and scheduled together: a task that has been handed to a
+    worker but not started yet is every bit as alive as one mid-execution, and
+    resurrecting its run would put a second writer on the same thread.
+
+    Returning None rather than an empty set when the broker is unreachable is
+    the whole safety property here. An empty set means "nothing is running";
+    None means "cannot tell", and the caller must do nothing rather than treat
+    silence as permission.
+    """
+    try:
+        from app.server.tasks import celery_app
+
+        inspector = celery_app.control.inspect(timeout=5)
+        live: set[str] = set()
+        seen_a_worker = False
+        for probe in (inspector.active, inspector.reserved, inspector.scheduled):
+            replies = probe() or {}
+            if replies:
+                seen_a_worker = True
+            for entries in replies.values():
+                for entry in entries or []:
+                    task_id = entry.get("id") or (entry.get("request") or {}).get("id")
+                    if task_id:
+                        live.add(task_id)
+        return live if seen_a_worker else None
+    except Exception as exc:  # noqa: BLE001 - unreachable broker must not repair anything
+        print(f"Could not ask the broker which tasks are alive: {exc}")
+        return None
+
+
+def _worker_ran_out_of_memory() -> bool:
+    """Whether this worker container has been OOM-killed. Never raises.
+
+    An OOM kill is invisible from the run's side: Celery reports
+    `WorkerLostError: signal 9`, the row stays `running`, and the generic
+    "the container went away" message sends the operator looking for an
+    infrastructure fault that did not happen.
+
+    Measured on run-cbd22a34: `npx vitest run` forked one worker per CPU, each
+    permitted `SANDBOX_MEMORY_LIMIT` of heap by RLIMIT_DATA, and the tree
+    reached `memory.peak = 4,294,975,488` - exactly the container's limit. The
+    kernel killed the Celery workers mid-test. Per-process rlimits do not bound
+    a process tree, so the container limit is the real ceiling and the run died
+    without anything naming the cause.
+    """
+    for path in ("/sys/fs/cgroup/memory.events", "/sys/fs/cgroup/memory/memory.oom_control"):
+        try:
+            with open(path, encoding="utf-8") as handle:
+                for line in handle:
+                    name, _, value = line.partition(" ")
+                    if name in {"oom_kill", "oom_kill_disable"} and value.strip().isdigit():
+                        if name == "oom_kill" and int(value) > 0:
+                            return True
+        except OSError:
+            continue
+    return False
+
+
+def recover_orphaned_runs(dry_run: bool = False) -> int:
+    """Return runs whose worker died to a state that can be resumed.
+
+    A run is handed to one Celery task, and the row says `running` for as long
+    as that task lives. If the process dies without unwinding - the host loses
+    power, the container is replaced mid-task, the worker is killed - nothing
+    ever writes a terminal status, and the row says `running` forever.
+
+    Such a row has no way forward. `resume_run` compare-and-sets from `failed`,
+    so it refuses; `reconcile-runs` only repairs rows parked on a pause and
+    deliberately leaves unattended runs alone. The work is all still there - the
+    graph checkpoints at every node boundary - but nothing can reach it.
+
+    Marking the run `failed` is what makes it reachable again: resume then picks
+    up from the last checkpoint and re-runs only the node that was interrupted.
+
+    Safety rests on the broker, not on a timeout. A run is only touched when a
+    worker answered and did not claim its task; if no worker answers at all, or
+    the broker cannot be reached, nothing is repaired - guessing wrong here puts
+    two writers on one thread, which is the damage `UNRESUMABLE_ERROR_MARKER`
+    exists to mark.
+    """
+    from datetime import datetime, timezone
+
+    from app.server.run_store import RunStore
+
+    oom_killed = _worker_ran_out_of_memory()
+    live = _live_task_ids()
+    if live is None:
+        print("No worker answered, so nothing can be judged orphaned. Nothing changed.")
+        return 1
+
+    store = RunStore.shared()
+    records: list = []
+    offset = 0
+    while True:
+        page = store.list_all(limit=500, offset=offset)
+        records.extend(page)
+        if len(page) < 500:
+            break
+        offset += 500
+
+    repaired = 0
+    for record in records:
+        if record.status != "running":
+            continue
+        if record.task_id and record.task_id in live:
+            continue
+        print(f"{record.run_id}: running -> failed  (stage: {record.current_stage or '?'})")
+        repaired += 1
+        if dry_run:
+            continue
+        record.status = "failed"
+        record.error = (
+            "The worker running this stage stopped without finishing - the host or "
+            "the container went away mid-task. Nothing was lost: resume continues "
+            "from the last checkpoint and repeats only the interrupted step."
+            + (
+                "\n\nThis worker container has been OOM-killed at least once, so "
+                "that is the likely cause. A test runner that forks a worker per "
+                "CPU can exceed the container's memory limit while every single "
+                "process stays inside SANDBOX_MEMORY_LIMIT - per-process rlimits "
+                "do not bound a process tree. Raise the worker's memory limit, "
+                "lower SANDBOX_MEMORY_LIMIT, or choose a test runner that does "
+                "not fork (`node --test` rather than vitest or jest)."
+                if oom_killed
+                else ""
+            )
+        )
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        store.save(record)
+
+    if repaired and oom_killed:
+        print(
+            "\nThis worker container has been OOM-killed; that is the likely cause. "
+            "See the runs' error text for what to change."
+        )
+    if not repaired:
+        print("No orphaned runs; every running row has a live task.")
+    elif dry_run:
+        print(f"\n{repaired} run(s) would be recovered. Re-run without --dry-run to apply.")
+    else:
+        print(f"\nRecovered {repaired} run(s). Resume them to continue.")
+    return 0
+
+
 def clear_run_overrides(run_id: str | None = None, dry_run: bool = False) -> int:
     """Drop per-run provider pins so runs inherit the current settings again.
 
@@ -283,6 +430,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     reconcile.add_argument("--dry-run", action="store_true", help="Report without changing anything")
 
+    orphans = sub.add_parser(
+        "recover-orphans",
+        help="Make runs resumable whose worker died without finishing",
+    )
+    orphans.add_argument("--dry-run", action="store_true", help="Report without changing anything")
+
     pins = sub.add_parser(
         "clear-run-overrides",
         help="Drop per-run provider pins so runs use the current settings",
@@ -307,6 +460,8 @@ def main(argv: list[str] | None = None) -> int:
         return set_role(args.username, args.role)
     if args.command == "list-users":
         return list_users()
+    if args.command == "recover-orphans":
+        return recover_orphaned_runs(args.dry_run)
     if args.command == "reconcile-runs":
         return reconcile_runs(args.dry_run)
     if args.command == "clear-run-overrides":

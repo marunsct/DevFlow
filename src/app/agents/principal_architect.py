@@ -19,6 +19,9 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.testability import TESTABILITY_RULE
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 from app.state import RepositoryContext
 
@@ -79,7 +82,24 @@ class TechnicalSpecificationOutput(BaseModel):
 
 from app.documents import DocumentContent
 
-REVISION_DOCUMENT_BUDGET = 80_000
+def _revision_budget() -> int:
+    """Characters of the document carried into a revision request.
+
+    Half the initial budget: a revision carries the document *and* the findings
+    raised against it, and the findings are the part that must fit beside it.
+    """
+    from app.agents.context_budget import ContextBudget
+
+    raw = os.environ.get("CTX_REVISION_DOCUMENT_BUDGET", "").strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning("Malformed CTX_REVISION_DOCUMENT_BUDGET=%r; deriving it", raw)
+    return ContextBudget.resolve().revision_budget_chars
+
+
+REVISION_DOCUMENT_BUDGET = _revision_budget()
 """Characters of the original upload to carry into a *revision* request.
 
 A revision is a targeted edit, not a fresh reading of the brief. It already
@@ -106,7 +126,12 @@ def _initial_document_budget() -> int:
     whole app down at startup - the same never-raise convention as
     `ContextPolicy.from_environment`.
     """
-    raw = os.environ.get("CTX_ARCHITECT_DOCUMENT_BUDGET", "150000")
+    from app.agents.context_budget import ContextBudget
+
+    raw = os.environ.get(
+        "CTX_ARCHITECT_DOCUMENT_BUDGET",
+        str(ContextBudget.resolve().document_budget_chars),
+    )
     try:
         return int(raw)
     except ValueError:
@@ -157,14 +182,20 @@ def build_architecture_request(
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved intake, tools/models plan, and repo context."""
     brief = (
-        f"Repository root: {repository.root_path} "
-        f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
+        # Deliberately not the repository's absolute path. That is the HOST's
+        # path; inside the agent the workspace is rooted at "/". Quoting it here
+        # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # in a row, and fed it to shell commands, every attempt failing with
+        # path_not_found. The reliable fix is not to show it.
+        f"Repository: branch {repository.branch}, commit {repository.commit}\n"
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- Approved product intake ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection ---\n{stack_selection_text}\n\n"
         f"--- Original uploaded documents ---\n"
         f"{_document_excerpt(document, INITIAL_DOCUMENT_BUDGET) if INITIAL_DOCUMENT_BUDGET else document.text}\n\n"
-        f"**CRITICAL INSTRUCTION**: When scaffolding or creating projects (using terminal commands), ensure you place it strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub'). Do NOT use generic names like 'nest-app' and do NOT scaffold directly in the repository root without a named folder. Place all documentation in the `docs/` directory.\n"
+        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -200,8 +231,14 @@ def build_architecture_revision_request(
     """
     changes_text = "\n".join(f"- {change}" for change in required_changes)
     brief = (
-        f"Repository root: {repository.root_path} "
-        f"(branch: {repository.branch}, commit: {repository.commit})\n\n"
+        # Deliberately not the repository's absolute path. That is the HOST's
+        # path; inside the agent the workspace is rooted at "/". Quoting it here
+        # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # in a row, and fed it to shell commands, every attempt failing with
+        # path_not_found. The reliable fix is not to show it.
+        f"Repository: branch {repository.branch}, commit {repository.commit}\n"
+        f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- Approved product intake ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection ---\n{stack_selection_text}\n\n"
@@ -213,12 +250,12 @@ def build_architecture_revision_request(
         f"--- Required changes ---\n{changes_text}\n\n"
         "Address every item explicitly. Do not silently drop specification "
         "content or ADRs that were not flagged.\n\n"
-        f"**CRITICAL INSTRUCTION**: When scaffolding or creating projects (using terminal commands), ensure you place it strictly inside a directory named after the app (e.g. `thehub/` for 'The Hub'). Do NOT use generic names like 'nest-app' and do NOT scaffold directly in the repository root without a named folder. Place all documentation in the `docs/` directory.\n"
+        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
 
-_SYSTEM_PROMPT = """You are the Principal Architect for this workflow.
+_SYSTEM_PROMPT = f"""You are the Principal Architect for this workflow.
 
 Your role is to turn an approved product intake and an approved tools-and-models
 plan into a complete technical specification, recording every material decision
@@ -236,17 +273,27 @@ Responsibilities:
 - Define acceptance criteria specific enough for an independent reviewer to
   check without asking you follow-up questions.
 
+{SCOPE_DISCIPLINE}
+
+{TESTABILITY_RULE}
+
 Constraints:
-- Only write your technical specification artifact inside the `docs/` folder (e.g., `docs/technical_specification.md`).
-- Every write_artifact call pauses for a human decision before anything is
-  saved; never claim the artifact is saved until a tool result confirms it.
-- **Write the complete specification in ONE single write_artifact call.** Do NOT
-  make follow-up edit calls to refine, fix typos, or improve the document after
-  the initial write. The document must be complete and correct before you write
-  it. Once the write is confirmed, immediately return your structured response.
+- Do not write a specification document. The workflow renders
+  `docs/technical_specification.md` from the structured response you return,
+  so your specification reaches its readers either way - and only through that
+  response. Writing it yourself produces the whole document twice from one
+  understanding, and the two copies then disagree.
+- Put the specification in the response fields. Each field is a section of the
+  document: `product_scope`, `component_boundaries`, `domain_model`,
+  `api_and_event_contracts`, `data_flows`, `security_and_privacy`,
+  `reliability_and_observability`, `testing`, `deployment`,
+  `acceptance_criteria`, `open_questions`, and `decisions` for the ADRs. A
+  section you leave empty is a section the document says nothing about.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 
@@ -267,6 +314,9 @@ def create_principal_architect_agent(
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        # Its document is rendered from the structured response, so it needs no
+        # write tool - see `app.agents.artifact_document`.
+        can_write=False,
     )
 
 

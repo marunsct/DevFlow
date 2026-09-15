@@ -13,6 +13,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
 _STAGE = "security_review"
@@ -78,7 +80,7 @@ def build_security_review_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
-_SYSTEM_PROMPT = """You are the Security Reviewer for this workflow.
+_SYSTEM_PROMPT = f"""You are the Security Reviewer for this workflow.
 
 Your role is to independently review changed files and tool permissions for
 security and reliability issues.
@@ -90,11 +92,15 @@ Responsibilities:
 - Set status to "findings" if any issues are identified, else "passed".
 - Document any valid exceptions for local-only features in `local_only_exceptions`.
 
+{SCOPE_DISCIPLINE}
+
 Constraints:
 - Do not modify application source code; you only review and record findings.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.
+
+{STRUCTURED_RESPONSE_RULE}
 """
 
 

@@ -78,3 +78,63 @@ def test_build_revision_prompt_includes_artifact_and_comments() -> None:
     assert "old text" in prompt
     assert "fix typo" in prompt
     assert "add section" in prompt
+
+
+# ---------------------------------------------------------------------------
+# The rerun limit, and what it says when it fires
+#
+# The budget counts *rejections*, which are not the same as failures to
+# improve. On run-0b55ad49 all three were spent on defects in the workflow
+# itself - a sandbox limit that broke every test, a prompt example that built
+# the project in the wrong directory, two competing npm projects - each fixed
+# between rejections. The budget was exhausted before the agent had been given
+# one actionable instruction.
+# ---------------------------------------------------------------------------
+
+
+def test_the_limit_message_names_the_stage_not_its_enum():
+    """`WorkflowStage.IMPLEMENTATION` is a Python repr, not a stage a reader knows."""
+    import app.review as review_module
+    from app.state import WorkflowStage
+
+    review = review_module.start_review(
+        run_id="r", thread_id="t", stage=WorkflowStage.IMPLEMENTATION,
+        artifact_id="sprint-milestone", reviewer="arun",
+    )
+    for index in range(review_module.DEFAULT_MAX_REVIEW_RERUNS):
+        try:
+            review = review_module.request_changes(review, comment=f"round {index}")
+        except review_module.ReviewRerunLimitExceeded as exceeded:
+            message = str(exceeded)
+            assert "implementation" in message
+            assert "WorkflowStage" not in message, "the enum repr leaked into the message"
+            return
+    pytest.fail("the limit never fired")
+
+
+def test_the_limit_message_says_what_to_do_about_it():
+    import app.review as review_module
+    from app.state import WorkflowStage
+
+    review = review_module.start_review(
+        run_id="r", thread_id="t", stage=WorkflowStage.IMPLEMENTATION,
+        artifact_id="a", reviewer="arun",
+    )
+    with pytest.raises(review_module.ReviewRerunLimitExceeded) as excinfo:
+        for index in range(review_module.DEFAULT_MAX_REVIEW_RERUNS + 1):
+            review = review_module.request_changes(review, comment=f"round {index}")
+
+    message = str(excinfo.value)
+    assert "WORKFLOW_MAX_REVIEW_RERUNS" in message, "no way out is offered"
+    assert "counts rejections" in message
+
+
+def test_the_rerun_budget_is_configurable(monkeypatch):
+    from app.review import _max_review_reruns
+
+    monkeypatch.setenv("WORKFLOW_MAX_REVIEW_RERUNS", "6")
+    assert _max_review_reruns() == 6
+    monkeypatch.setenv("WORKFLOW_MAX_REVIEW_RERUNS", "nonsense")
+    assert _max_review_reruns() == 3
+    monkeypatch.setenv("WORKFLOW_MAX_REVIEW_RERUNS", "0")
+    assert _max_review_reruns() >= 1, "a limit of zero would reject the first change request"

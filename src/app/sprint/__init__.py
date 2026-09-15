@@ -15,6 +15,9 @@ remediation cycle has a bounded number of attempts; exceeding it raises
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
+
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -76,6 +79,86 @@ class RemediationCycle(BaseModel):
     defects: list[Defect] = Field(default_factory=list)
     escalated: bool = Field(
         default=False, description="Set once the attempt limit is reached; a human must intervene."
+    )
+
+
+#: Words that carry no signal when comparing two defect descriptions.
+_DEFECT_NOISE = frozenset({
+    "a", "an", "and", "are", "as", "at", "because", "by", "cannot", "due", "for",
+    "from", "in", "is", "issue", "issues", "of", "on", "or", "test", "tests",
+    "that", "the", "to", "with", "fail", "fails", "failing", "failure", "error",
+})
+
+
+def _defect_terms(description: str) -> frozenset[str]:
+    """The meaningful words of a defect description, for comparing two of them."""
+    # Dots and dashes are kept inside a token so `jest.config.js` survives, then
+    # stripped from the ends so a sentence-final period does not make `issues.`
+    # a different word from `issues`.
+    words = (word.strip(".-_") for word in re.findall(r"[A-Za-z0-9_.-]+", description.lower()))
+    return frozenset(word for word in words if word not in _DEFECT_NOISE and len(word) > 2)
+
+
+def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
+    """An already-fixed defect this one is a restatement of, if there is one.
+
+    A defect marked fixed that comes back is not a new defect - it is evidence
+    the fix did not work. Treating it as new spends another attempt on the same
+    problem and tells the specialist nothing it does not already believe.
+
+    Measured on run-95ca3f72, which exhausted all six remediation attempts:
+
+        fixed: Regression test fails due to missing y18n module import
+        fixed: Regression test fails due to improper import of y18n module.
+        fixed: Regression tests fail due to y18n module import issues.
+
+    One problem, three wordings, three attempts, each closed as done. Half the
+    sprint's budget went on it and no application code was ever written.
+
+    Similarity is deliberately crude - overlapping significant words, ignoring
+    the connectives that every failure description shares. It only has to
+    notice that two sentences are about the same thing, and a false negative
+    just restores today's behaviour.
+    """
+    terms = _defect_terms(defect.description)
+    if len(terms) < 2:
+        return None
+    for candidate in earlier:
+        if candidate.status != "fixed":
+            continue
+        candidate_terms = _defect_terms(candidate.description)
+        if not candidate_terms:
+            continue
+        overlap = len(terms & candidate_terms)
+        smaller = min(len(terms), len(candidate_terms))
+        if overlap >= 2 and overlap / smaller >= 0.6:
+            return candidate
+    return None
+
+
+def recurring_defect_note(cycle: RemediationCycle) -> str:
+    """What to tell the specialist about defects its earlier fixes did not close.
+
+    Empty when nothing has recurred, so the caller can append it unconditionally.
+    """
+    lines: list[str] = []
+    for index, defect in enumerate(cycle.defects):
+        if defect.status != "open":
+            continue
+        earlier = recurrence_of(defect, cycle.defects[:index])
+        if earlier is None:
+            continue
+        lines.append(
+            f"- '{defect.description}' is the same problem as '{earlier.description}', "
+            "which was already marked fixed. That fix did not work. Do not repeat it - "
+            "find out why the previous change did not take effect, and say so plainly "
+            "if the cause is outside what you can change."
+        )
+    if not lines:
+        return ""
+    return (
+        "\n\nThese defects have already been 'fixed' once and came back:\n"
+        + "\n".join(lines)
     )
 
 
@@ -198,7 +281,9 @@ def build_defect_report(cycle: RemediationCycle) -> str:
         lines.append(f"- {' '.join(run.command)}: {outcome} {run.summary}".rstrip())
     for defect in cycle.defects:
         lines.append(f"- Defect ({defect.status}): {defect.description} [owner: {defect.owner}]")
-    return "\n".join(lines)
+    # A defect that was fixed and came back says something the list above does
+    # not: that an earlier attempt was spent and achieved nothing.
+    return "\n".join(lines) + recurring_defect_note(cycle)
 
 
 __all__ = [
@@ -210,6 +295,8 @@ __all__ = [
     "accept_risk",
     "build_defect_report",
     "is_sprint_acceptable",
+    "recurrence_of",
+    "recurring_defect_note",
     "mark_defect_fixed",
     "record_test_run",
     "start_remediation",

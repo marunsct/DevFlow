@@ -19,6 +19,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
@@ -176,6 +177,8 @@ Responsibilities:
 - Record blockers explicitly instead of silently assuming they are resolved.
 
 {SCOPE_DISCIPLINE}
+
+{PROJECT_LAYOUT}
 
 Constraints:
 - Do not execute or plan more than one sprint at a time.

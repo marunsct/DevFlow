@@ -65,6 +65,29 @@ _IMPORT_TARGET = re.compile(r"""(?:from|require\()\s*["']([^"']+)["']""")
 _SCRIPT_FILENAME = re.compile(r"([\w.-]+\.(?:js|mjs|cjs|sh))")
 
 
+#: What language a source file belongs to. Only languages whose projects carry
+#: their own manifest and their own runner, because that is what makes sharing a
+#: directory a problem rather than a preference.
+_LANGUAGE_OF: dict[str, str] = {
+    ".py": "Python", ".rb": "Ruby", ".go": "Go", ".rs": "Rust",
+    ".java": "Java", ".cs": "C#", ".php": "PHP",
+    ".js": "JavaScript", ".mjs": "JavaScript", ".cjs": "JavaScript",
+    ".ts": "TypeScript", ".tsx": "TypeScript",
+}
+_MANIFEST_OF: dict[str, str] = {
+    "package.json": "JavaScript", "requirements.txt": "Python",
+    "pyproject.toml": "Python", "Pipfile": "Python", "Gemfile": "Ruby",
+    "go.mod": "Go", "Cargo.toml": "Rust", "pom.xml": "Java",
+}
+
+
+_COLLECTED_SUFFIXES = frozenset({
+    ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json",
+    ".py", ".rb", ".go", ".rs", ".java", ".cs", ".php", ".ts", ".tsx", ".jsx",
+    ".scss", ".sass", ".vue", ".svelte", ".toml", ".cfg",
+})
+
+
 def _source_files(root: Path) -> list[Path]:
     found: list[Path] = []
     for path in root.rglob("*"):
@@ -72,7 +95,13 @@ def _source_files(root: Path) -> list[Path]:
             continue
         if any(part in _SKIP for part in path.relative_to(root).parts):
             continue
-        if path.suffix.lower() in {".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json"}:
+        # Web files plus every language whose projects carry their own manifest
+        # and runner. It was web-only, which made every cross-file check blind
+        # on a product with a Python or Go backend - and `brief_medium` asks for
+        # exactly that. Each check filters this list by the suffixes it
+        # understands, so widening the collection adds files without changing
+        # what any existing check looks at.
+        if path.suffix.lower() in _COLLECTED_SUFFIXES or path.name in _MANIFEST_OF:
             found.append(path)
     return found
 
@@ -178,6 +207,54 @@ _INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>", re
 #: Below this an inline script is a bootstrap line or an analytics snippet, not
 #: the application. Above it, it is the product and nothing can test it.
 _EMBEDDED_APPLICATION_LINES = 30
+
+
+def _languages_sharing_a_directory(files: list[Path], root: Path) -> list[str]:
+    """Directories holding source from two languages at once.
+
+    A directory is what a manifest and a test runner address. Two languages in
+    one means neither runner sees a complete project, and no single command
+    runs the tests.
+
+    Measured on run-64df2b20, whose stack was Python/FastAPI/pytest: its
+    `tests/` directory held `test_auth.py` beside `auth.test.js`,
+    `password.test.js` and `user.test.js`, and its project root held
+    `__init__.py` beside `package.json` and `requirements.txt`. Each file was a
+    sensible answer to the task its author was given; nothing could run the set.
+
+    TypeScript and JavaScript are counted separately only when a manifest says
+    so - a `.ts` file beside a `.js` file is ordinary in one project.
+    """
+    by_directory: dict[Path, dict[str, set[str]]] = {}
+    for path in files:
+        relative = str(path.relative_to(root))
+        if _NOT_COUNTED.search(relative):
+            continue
+        language = _LANGUAGE_OF.get(path.suffix.lower()) or _MANIFEST_OF.get(path.name)
+        if language is None:
+            continue
+        if language == "TypeScript":
+            language = "JavaScript"  # one toolchain, one manifest
+        seen = by_directory.setdefault(path.parent, {})
+        seen.setdefault(language, set()).add(path.name)
+
+    problems = []
+    for directory, languages in sorted(by_directory.items()):
+        if len(languages) < 2:
+            continue
+        shown = str(directory.relative_to(root)) or "."
+        detail = "; ".join(
+            f"{language}: {', '.join(sorted(names)[:3])}"
+            for language, names in sorted(languages.items())
+        )
+        problems.append(
+            f"{shown}/ holds source from {len(languages)} languages at once "
+            f"({detail}). A directory is what a manifest and a test runner "
+            "address, so neither one sees a complete project here and no single "
+            "command runs the tests. Give each language its own directory inside "
+            "the project, with its own manifest and its own tests."
+        )
+    return problems
 
 
 def _application_embedded_in_html(files: list[Path], root: Path) -> list[str]:
@@ -692,6 +769,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _unreferenced_scripts(files, root)
             + _redefined_instead_of_imported(files, root)
             + _application_embedded_in_html(files, root)
+            + _languages_sharing_a_directory(files, root)
             + _module_system_mismatch(files, root)
         )
     except Exception:  # noqa: BLE001

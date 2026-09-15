@@ -24,6 +24,7 @@ from typing import Any
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 
+from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.workspace_backend import WorkspaceBackend
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
@@ -317,6 +318,8 @@ _WRITING_RULES = (
         "  Do NOT create a second folder that differs only in separators or case\n"
         "  (`my-app` vs `my_app`) - that builds the project twice and finishes\n"
         "  neither. Only create one if none exists.\n"
+        + PROJECT_LAYOUT + "\n"
+        "\n"
         "- Scratch files (debug scripts, one-off probes) do not belong in the\n"
         "  workspace root. Put them in the project folder, and call\n"
         "  `delete_artifact` on them once they have told you what you needed.\n"

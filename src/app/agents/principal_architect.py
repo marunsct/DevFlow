@@ -20,6 +20,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
@@ -276,6 +277,8 @@ Responsibilities:
 {SCOPE_DISCIPLINE}
 
 {TESTABILITY_RULE}
+
+{PROJECT_LAYOUT}
 
 Constraints:
 - Do not write a specification document. The workflow renders

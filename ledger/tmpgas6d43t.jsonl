@@ -1,0 +1,2 @@
+{"at": "2026-09-15T18:09:52.946432+00:00", "role": "r", "command": ["node", "--test", "proj/app.test.mjs"], "returncode": 1, "error": null}
+{"at": "2026-09-15T18:09:52.967537+00:00", "role": "r", "command": ["node", "--test", "proj/app.test.mjs"], "returncode": 1, "error": null}

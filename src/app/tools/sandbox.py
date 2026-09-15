@@ -34,6 +34,8 @@ import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from app.tools.repository import IGNORED_DIRECTORIES
 from typing import Any, Dict, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
@@ -875,11 +877,44 @@ def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
         entries = read_execution_ledger(repo_root)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
-    return sum(
-        1
+    failures = [
+        entry
         for entry in entries
         if entry.get("command") == argv and _as_exit_code(entry.get("returncode")) not in (0, None)
-    )
+    ]
+    if not failures:
+        return 0
+    # Only failures with NOTHING written since. An agent that edits the file
+    # under test and re-runs the same command has changed the situation, and
+    # telling it "running it again unchanged will fail again" is both false and
+    # discouraging exactly the right behaviour.
+    #
+    # Caught on run-37476645's `specialist_testing_2`, live, in the first run
+    # after this check shipped: the trace is EDIT, RUN, EDIT, RUN, EDIT, RUN -
+    # a specialist debugging a suite properly - and it was told twenty-six
+    # times that it had changed nothing. The settled-answer middleware and the
+    # repeat-read notices all treat a write as invalidating what came before;
+    # this did not, and should have.
+    return sum(1 for entry in failures if not _written_since(repo_root, entry.get("at")))
+
+
+def _written_since(repo_root: str, when: str | None) -> bool:
+    """Whether any project file has changed since `when`. Never raises."""
+    if not when:
+        return True
+    try:
+        moment = datetime.fromisoformat(when).timestamp()
+        root = Path(repo_root)
+        for path in root.rglob("*"):
+            if not path.is_file():
+                continue
+            if any(part in IGNORED_DIRECTORIES for part in path.parts):
+                continue
+            if path.stat().st_mtime > moment:
+                return True
+    except Exception:  # noqa: BLE001 - unknown means "assume it changed"
+        return True
+    return False
 
 
 def summarise_executions(repo_root: str) -> str:

@@ -687,3 +687,52 @@ def test_an_unwritable_ledger_never_fails_the_command() -> None:
     from app.tools.sandbox import failed_this_way_before
 
     assert failed_this_way_before("/definitely/not/here", ["node", "a.js"]) == 0
+
+
+def test_an_edit_clears_the_previous_failure(tmp_path) -> None:
+    """The false positive this check shipped with.
+
+    Caught live on run-37476645's `specialist_testing_2`, in the first run
+    after the check shipped. The trace is EDIT, RUN, EDIT, RUN, EDIT, RUN - a
+    specialist debugging a suite exactly as it should - and it was told
+    twenty-six times that it had changed nothing and should change something.
+
+    The settled-answer middleware and both repeat-read notices already treat a
+    write as invalidating what came before. This did not, and should have.
+    """
+    import time
+
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    (tmp_path / "proj").mkdir()
+    suite = tmp_path / "proj/app.test.mjs"
+    suite.write_text("v1\n", encoding="utf-8")
+    command = ["node", "--test", "proj/app.test.mjs"]
+
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1})
+    time.sleep(0.02)
+    assert failed_this_way_before(str(tmp_path), command) == 1
+
+    suite.write_text("v2 - the agent fixed it\n", encoding="utf-8")
+
+    assert failed_this_way_before(str(tmp_path), command) == 0
+
+
+def test_a_failure_with_nothing_written_since_still_counts(tmp_path) -> None:
+    """The case the check exists for: run-e9e7f48f's 14 identical greps and
+    run-9ff00d5b's four identical failing commands, neither preceded by a
+    change of any kind."""
+    import time
+
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj/a.js").write_text("x\n", encoding="utf-8")
+    command = ["node", "proj/a.js"]
+
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1})
+    time.sleep(0.02)
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1})
+    time.sleep(0.02)
+
+    assert failed_this_way_before(str(tmp_path), command) == 2

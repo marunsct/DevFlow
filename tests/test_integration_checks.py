@@ -963,3 +963,81 @@ def test_a_project_with_no_tests_is_not_asked_for_a_test_script(tmp_path):
     (tmp_path / "package.json").write_text('{"type": "module"}\n', encoding="utf-8")
 
     assert "declares no `test` script" not in summarise_integration(str(tmp_path))
+
+
+def test_importing_a_module_and_shadowing_its_exports_is_still_a_copy(tmp_path):
+    """The defect wearing an import.
+
+    Measured on run-5d83e946: `script.test.mjs` opened with "Inline copies of
+    the pure functions (mirrors script.js exactly)", ran every behavioural
+    assertion against those copies, and closed with nine tests that did import
+    the real module - to assert `typeof mod.addTask === 'function'` and nothing
+    more. The rule exempted any file holding a relative import, so it was
+    silent on a suite bound to the application by existence checks alone.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="script.js"></script>',
+        encoding="utf-8",
+    )
+    (tmp_path / "script.js").write_text(
+        "export function addTask(t){ return {t}; }\n", encoding="utf-8"
+    )
+    (tmp_path / "script.test.mjs").write_text(
+        "import {it} from 'node:test';\n"
+        "import assert from 'node:assert/strict';\n"
+        "function addTask(t){ return {t}; }\n"
+        "it('adds', () => { assert.ok(addTask('a')); });\n"
+        "it('exports addTask', async () => {\n"
+        "  const mod = await import('./script.js');\n"
+        "  assert.strictEqual(typeof mod.addTask, 'function');\n"
+        "});\n",
+        encoding="utf-8",
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "defines addTask itself" in summary
+    assert "tests a copy" in summary
+    assert "not these names" in summary
+
+
+def test_a_name_reached_through_the_imported_namespace_is_not_a_copy(tmp_path):
+    """`const mod = await import('./script.js')` then `mod.addTask(...)`.
+
+    The lookbehind in the call check drops anything reached through an object,
+    so a suite that only ever spells the name that way is left alone.
+    """
+    from app.analysis.integration_checks import _redefined_instead_of_imported
+
+    (tmp_path / "script.js").write_text(
+        "export function addTask(t){ return {t}; }\n", encoding="utf-8"
+    )
+    (tmp_path / "script.test.mjs").write_text(
+        "import {it} from 'node:test';\n"
+        "const mod = await import('./script.js');\n"
+        "it('adds', () => { mod.addTask('a'); });\n",
+        encoding="utf-8",
+    )
+
+    assert not _redefined_instead_of_imported(
+        sorted(tmp_path.rglob("*")), tmp_path
+    )
+
+
+def test_a_renamed_import_binds_the_name_on_the_right(tmp_path):
+    """`import {addTask as make}` binds `make`, and `make` is what the tests
+    call. A local `addTask` alongside it is then genuinely unused by them."""
+    from app.analysis.integration_checks import _names_bound_from_a_relative_module
+
+    bound = _names_bound_from_a_relative_module(
+        "import {addTask as make, deleteTask} from './script.js';\n"
+        "import * as everything from './other.js';\n"
+        "const {loadTasks} = await import('./store.js');\n"
+        "import assert from 'node:assert/strict';\n"
+    )
+
+    assert bound == {"make", "deleteTask", "everything", "loadTasks"}
+    assert "addTask" not in bound
+    assert "assert" not in bound

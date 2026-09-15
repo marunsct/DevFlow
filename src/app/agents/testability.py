@@ -49,6 +49,23 @@ the module still could not be imported, and the testing specialist wrote:
 test file defines the same pure logic functions inline." Six tests passed
 against a copy of the code. `analysis.integration_checks` now detects that.
 
+run-5d83e946 had every structural part of this rule right and copied the code
+anyway. `script.js` exported eight functions under a guarded bootstrap, a
+`package.json` declared `{"type": "module"}`, and `script.test.mjs` imported
+the real module nine times - to assert `typeof mod.addTask === 'function'` and
+nothing else. Above those, under the heading "Inline copies of the pure
+functions (mirrors script.js exactly)", it redeclared all four and ran every
+behavioural assertion against them. Its stated reason was that
+`crypto.randomUUID()` "may not be the same as the browser's", which the test
+itself disproves by importing `randomUUID` from `node:crypto`. So the
+clause about "this test defines the same logic inline" was not enough: it
+answers the case where importing is impossible, and this one could import.
+
+That run is also why a rename is a poor way to check a suite is bound.
+Renaming an export breaks the `typeof` checks, which reports failures and
+makes the suite look connected while every assertion about behaviour still
+passes against the copy. A mutation has to change what a function DOES.
+
 Nothing in the product needed to be that way. The logic under test - create a
 task, toggle it, filter the list - is pure. Only the wiring needs a document,
 and wiring is the part a test does not need to load.
@@ -70,6 +87,19 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   instead, and a copy passes whatever your code does. If you find yourself
   writing "this test defines the same logic inline", stop: that test proves
   nothing, and it will be rejected.
+- CALL THE FUNCTION YOU IMPORTED. This defect survives importing. A test that
+  imports the module and then asserts `typeof mod.addTask === 'function'` has
+  checked that an export exists, which is not testing it; if the assertions
+  about what the function DOES run against a `function addTask` declared in the
+  test file, they still pass whatever your code does. When a name appears both
+  as an import and as your own declaration of the same name, the tests are
+  calling yours. Import it once, call that, and declare nothing of that name.
+- IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST. "The
+  browser's random ids may differ, so I re-implemented it here" is not a reason
+  to copy - it is a reason to take the id generator as an argument, or to
+  assert on the shape of what comes back rather than the exact value. Copying
+  turns an awkward design into a suite that proves nothing, and the awkward
+  design ships unchanged.
 - THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN. JavaScript inside a
   `<script>` tag in your HTML is unreachable: no runner can import it, so the
   only way to test it is to copy it, and a copy passes whatever your code does.

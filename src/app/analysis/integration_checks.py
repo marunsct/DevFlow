@@ -390,6 +390,57 @@ def _application_embedded_in_html(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: A relative import, in any of the forms a test file actually uses:
+#: `import x from './a.js'`, `import {a, b as c} from './a.js'`,
+#: `import * as ns from './a.js'`, `const {a} = await import('./a.js')`,
+#: `const a = require('./a.js')`. A leading dot is what makes it the product.
+_RELATIVE_BINDING = re.compile(
+    r"""import\s+(?P<clause>[^;'"]+?)\s+from\s*["']\.[^"']*["']"""
+    r"""|(?:const|let|var)\s+(?P<lhs>\{[^{}]*\}|[A-Za-z_$][\w$]*)\s*="""
+    r"""\s*(?:await\s+)?(?:import|require)\s*\(\s*["']\.[^"']*["']\s*\)""",
+    re.M,
+)
+_IDENTIFIER = re.compile(r"^[A-Za-z_$][\w$]*$")
+_NAMESPACE_CLAUSE = re.compile(r"^\*\s+as\s+([A-Za-z_$][\w$]*)$")
+
+
+def _names_bound_from_a_relative_module(text: str) -> set[str]:
+    """Every identifier the file binds from a relative module.
+
+    Written for the shadowing case: a test may import the application and still
+    define its own `addTask`, and only the names it actually binds tell the two
+    apart. Destructuring renames bind the name on the right of `as`/`:`, which
+    is the one the tests then call.
+    """
+    names: set[str] = set()
+    for match in _RELATIVE_BINDING.finditer(text):
+        clause = (match.group("clause") or match.group("lhs") or "").strip()
+        opening = clause.find("{")
+        if opening != -1:
+            closing = clause.find("}", opening)
+            inside = clause[opening + 1 : closing if closing != -1 else len(clause)]
+            for piece in inside.split(","):
+                piece = piece.strip()
+                if not piece:
+                    continue
+                bound = re.split(r"\s+as\s+|:", piece)[-1].strip()
+                if _IDENTIFIER.match(bound):
+                    names.add(bound)
+            clause = clause[:opening] + (
+                clause[closing + 1 :] if closing != -1 else ""
+            )
+        for piece in clause.split(","):
+            piece = piece.strip().rstrip("=").strip()
+            if not piece:
+                continue
+            namespace = _NAMESPACE_CLAUSE.match(piece)
+            if namespace:
+                names.add(namespace.group(1))
+            elif _IDENTIFIER.match(piece):
+                names.add(piece)
+    return names
+
+
 def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
     """Test files that define the application's own functions rather than import them.
 
@@ -405,9 +456,18 @@ def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
     inline" - and six tests passed against a copy. Nothing in the workflow
     noticed, because six tests did pass.
 
-    Only fires when the test imports nothing from the application at all. A
-    test that imports the real module and also defines a helper of the same
-    name is doing something deliberate, and is left alone.
+    Fires per NAME, not per file. run-5d83e946 shipped the same defect wearing
+    an import: `script.test.mjs` opened with "Inline copies of the pure
+    functions (mirrors script.js exactly)", ran every behavioural assertion
+    against those copies, and closed with nine tests that did import the real
+    module - to assert `typeof mod.addTask === 'function'` and nothing more.
+    The first version of this rule exempted any file holding a relative import,
+    so it said nothing. A name the test defines itself and never binds from the
+    application is a copy however many other imports the file carries.
+
+    That run is also why a rename is not a mutation test: renaming `addTask`
+    broke the eight `typeof` checks, which made the suite look bound while
+    every assertion about behaviour still passed against the copy.
     """
     application: dict[str, str] = {}
     for path in files:
@@ -433,25 +493,34 @@ def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
         if not _NOT_APPLICATION.search(relative):
             continue
         text = _read(path)
-        # A test that reaches the application at all is not this defect.
-        # Only a RELATIVE import can name the application: `node:assert/strict`
-        # and a bare package specifier both contain a slash and neither is the
-        # product, which is what made the first version of this check silent on
-        # the very file it was written for.
-        if any(t.startswith((".", "/")) for t in _IMPORT_TARGET.findall(text)):
-            continue
+        # Names this file binds from the application itself. Only a RELATIVE
+        # specifier can name the product: `node:assert/strict` and a bare
+        # package specifier both contain a slash and neither is the product,
+        # which is what made the first version of this check silent on the very
+        # file it was written for.
+        imported = _names_bound_from_a_relative_module(text)
+        defined = set(_TOP_LEVEL_FUNCTION.findall(text)) | set(
+            _TOP_LEVEL_CONST_FN.findall(text)
+        )
         shared = sorted(
-            {name for name in _TOP_LEVEL_FUNCTION.findall(text) if name in application}
-            | {name for name in _TOP_LEVEL_CONST_FN.findall(text) if name in application}
+            name for name in defined if name in application and name not in imported
         )
         if not shared:
             continue
         source = application[shared[0]]
         named = ", ".join(shared[:4]) + (f" and {len(shared) - 4} more" if len(shared) > 4 else "")
+        reaches = bool(imported)
         problems.append(
-            f"{relative} defines {named} itself and imports nothing from the "
-            f"application, so it tests a copy rather than {source}. These tests "
-            f"pass whatever {source} does."
+            f"{relative} defines {named} itself and calls its own copy rather "
+            f"than {source}'s, so it tests a copy: those assertions pass "
+            f"whatever {source} does."
+            + (
+                " The file does import from the application, but not these "
+                "names - importing a module and then shadowing what it exports "
+                "leaves the assertions pointing at the copy."
+                if reaches
+                else f" It imports nothing from {source} at all."
+            )
         )
     return problems
 

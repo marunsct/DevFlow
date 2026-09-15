@@ -801,3 +801,63 @@ def test_an_mjs_application_file_is_not_a_test(name: str):
     from app.analysis.integration_checks import _NOT_APPLICATION
 
     assert not _NOT_APPLICATION.search(name)
+
+
+# --- a stylesheet rule nothing ever applies --------------------------------
+
+
+def test_a_class_nothing_applies_is_reported(tmp_path):
+    """Found on run-da6c5e19's second sprint by a reviewer reading three files
+    against each other: `.task-text` and `.empty-message` were styled and used
+    by nothing."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><div class="task-item"></div><script src="app.js"></script>',
+        encoding="utf-8",
+    )
+    (tmp_path / "app.js").write_text("const item = 'task-item';\n", encoding="utf-8")
+    (tmp_path / "style.css").write_text(
+        ".task-item { color: red; }\n.empty-message { display: none; }\n", encoding="utf-8"
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert ".empty-message" in summary
+    assert ".task-item" not in summary.split("styles")[-1].split(",")[0]
+
+
+def test_a_class_added_at_runtime_is_not_reported(tmp_path):
+    """Unlike an id, a class is often applied by script - so any mention of the
+    word anywhere in the code counts, however it is built."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text(
+        "button.classList.add('selected');\nel.className = `row ${'striped'}`;\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "style.css").write_text(
+        ".selected { color: red; }\n.striped { background: grey; }\n", encoding="utf-8"
+    )
+
+    assert "no page or script ever puts" not in summarise_integration(str(tmp_path))
+
+
+def test_the_check_is_conservative_about_common_words(tmp_path):
+    """A word used for another reason keeps its rule. On run-da6c5e19 `.active`
+    was genuinely dead, and this check correctly left it alone because "active"
+    is one of that product's filter names - the reviewer caught it instead."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text(
+        "const filters = ['all', 'active', 'completed'];\n", encoding="utf-8"
+    )
+    (tmp_path / "style.css").write_text("button.active { color: blue; }\n", encoding="utf-8")
+
+    assert "no page or script ever puts" not in summarise_integration(str(tmp_path))

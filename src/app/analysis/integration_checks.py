@@ -129,6 +129,57 @@ def _read(path: Path) -> str:
         return ""
 
 
+_CLASS_SELECTOR = re.compile(r"\.([A-Za-z_][\w-]*)")
+_HTML_CLASS = re.compile(r"""\bclass\s*=\s*["']([^"']+)["']""")
+
+
+def _dangling_class_selectors(files: list[Path], root: Path) -> list[str]:
+    """Stylesheet rules for a class nothing ever puts on an element.
+
+    Unlike an id, a class is often added at runtime - so this counts any
+    mention of the name anywhere in the scripts, not only a `classList.add`.
+    A rule survives if the word appears at all; it is reported only when no
+    page and no script contains it in any form.
+
+    Measured on run-da6c5e19's second sprint, where the reviewer found this by
+    reading: `#filters button.active` was styled, `init()` never added the
+    class, and the filter buttons gave no indication of which view was
+    selected. `.task-text` and `.empty-message` were styled and never used at
+    all. Real defects, found by one careful read of three files against each
+    other - which is the kind of thing worth not depending on.
+    """
+    used: set[str] = set()
+    for path in files:
+        suffix = path.suffix.lower()
+        if suffix in {".html", ".htm"}:
+            text = _read(path)
+            for attribute in _HTML_CLASS.findall(text):
+                used.update(attribute.split())
+        elif suffix in {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte"}:
+            # Any occurrence of the bare word counts: a class may be built into
+            # a template string, a variable, or a `classList.toggle`.
+            used.update(re.findall(r"[A-Za-z_][\w-]*", _read(path)))
+
+    problems = []
+    for path in files:
+        if path.suffix.lower() not in {".css", ".scss", ".sass"}:
+            continue
+        targeted = set(_CLASS_SELECTOR.findall(_css_selectors_only(_read(path))))
+        dead = sorted(name for name in targeted if name not in used)
+        if not dead:
+            continue
+        listed = ", ".join(f".{name}" for name in dead[:4])
+        more = f" and {len(dead) - 4} more" if len(dead) > 4 else ""
+        problems.append(
+            f"{path.relative_to(root)} styles {listed}{more}, and no page or "
+            "script ever puts those classes on an element. Either the rule is "
+            "dead, or the code that was meant to apply it is missing - on one "
+            "run that was a filter bar whose selected button never looked "
+            "selected."
+        )
+    return problems
+
+
 def _dangling_id_selectors(files: list[Path], root: Path) -> list[str]:
     """Stylesheet rules that target an element id no page contains.
 
@@ -765,6 +816,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             _stack_conflicts(files, root, stack)
             + _manifest_defects(files, root, stack)
             + _dangling_id_selectors(files, root)
+            + _dangling_class_selectors(files, root)
             + _broken_local_references(files, root)
             + _unreferenced_scripts(files, root)
             + _redefined_instead_of_imported(files, root)

@@ -169,6 +169,58 @@ def writing_tools(repo_root: str) -> list[BaseTool]:
     ]
 
 
+_SUBAGENT_PROFILE_REGISTERED = False
+
+
+def _disable_the_general_purpose_subagent() -> None:
+    """Take the `task` tool away from every role agent.
+
+    `create_deep_agent` installs a general-purpose subagent spawner by default.
+    No role here needs one: each is a single stage with one structured answer,
+    and the tools it may use are chosen deliberately - the filesystem set is
+    narrowed to `ls`, `read_file`, `glob` and `grep` a few lines below, and
+    every mutating call is gated. `task` arrived with none of that.
+
+    What it cost, measured on run-d6369866's `scrum_master`. The stage produced
+    a valid sprint plan at 15:23:30, then in the same turn called `task`, and
+    the subagent it spawned ran `glob {'pattern': '**/*'}` 835 times over
+    eleven and a half minutes - 802 tool calls in one stage, against 21
+    assistant messages. Zero globs occurred before the first `task` call.
+
+    The parent's `recursion_limit` does not reach inside a subagent, so nothing
+    bounded it: no GraphRecursionError was ever raised. The settled-answer
+    middleware could not stop it either - it reads the LAST message, and by
+    then the stage was writing prose about creating files it has no tools to
+    create.
+
+    Registered under the provider key rather than the model identifier, so it
+    survives a change of model - which this deployment does regularly.
+    """
+    global _SUBAGENT_PROFILE_REGISTERED
+    if _SUBAGENT_PROFILE_REGISTERED:
+        return
+    try:
+        from deepagents.profiles.harness.harness_profiles import (
+            GeneralPurposeSubagentProfile,
+            HarnessProfile,
+            register_harness_profile,
+        )
+
+        register_harness_profile(
+            "openai",
+            HarnessProfile(
+                general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False)
+            ),
+        )
+        _SUBAGENT_PROFILE_REGISTERED = True
+    except Exception:  # noqa: BLE001 - an agent without this is the old behaviour
+        logger.warning(
+            "Could not disable the general-purpose subagent; the `task` tool "
+            "will be available and is not bounded by the stage recursion limit",
+            exc_info=True,
+        )
+
+
 def _interrupt_config(
     tools: list[BaseTool], repo_root: str, agent_name: str, stage: str
 ) -> dict[str, dict[str, Any]]:
@@ -507,6 +559,7 @@ def create_role_agent(
         ),
     ]
 
+    _disable_the_general_purpose_subagent()
     agent = create_deep_agent(
         model=selected_model,
         tools=tools,

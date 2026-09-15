@@ -223,3 +223,66 @@ def test_the_agent_graph_actually_stops() -> None:
     tail = result["messages"][-1]
     assert not getattr(tail, "tool_calls", None)
     assert ANSWER in str(tail.content)
+
+
+def test_the_deep_agent_graph_also_stops() -> None:
+    """The real path builds agents with `create_deep_agent`, not `create_agent`.
+
+    It composes its own middleware around the caller's, so the conditional edge
+    reaching the compiled graph is a separate claim from the one above. Asserted
+    separately because a middleware that works in one and not the other would
+    pass every test here and change nothing in production.
+    """
+    from deepagents import create_deep_agent
+    from langchain_core.callbacks import CallbackManagerForLLMRun
+    from langchain_core.language_models import BaseChatModel
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langchain_core.tools import tool
+
+    ran: list[str] = []
+
+    @tool
+    def peek(path: str) -> str:
+        """Read a path."""
+        ran.append(path)
+        return "the same twenty lines every time"
+
+    class AlwaysTheSame(BaseChatModel):
+        @property
+        def _llm_type(self) -> str:
+            return "always-the-same"
+
+        def bind_tools(self, tools, **kwargs):  # noqa: ANN001, ARG002
+            return self
+
+        def with_structured_output(self, schema, **kwargs):  # noqa: ANN001, ARG002
+            return self
+
+        def _generate(
+            self,
+            messages,  # noqa: ANN001
+            stop=None,  # noqa: ANN001
+            run_manager: CallbackManagerForLLMRun | None = None,
+            **kwargs,
+        ) -> ChatResult:
+            message = AIMessage(
+                content=ANSWER,
+                tool_calls=[_call("peek", {"path": "/a/script.test.mjs"}, f"c{len(ran)}")],
+            )
+            return ChatResult(generations=[ChatGeneration(message=message)])
+
+    agent = create_deep_agent(
+        model=AlwaysTheSame(),
+        tools=[peek],
+        system_prompt="review the milestone",
+        response_format=Verdict,
+        middleware=[build_settled_answer_middleware(Verdict, "milestone_review")],
+    )
+
+    result = agent.invoke(
+        {"messages": [HumanMessage(content="review it")]},
+        {"recursion_limit": 25},
+    )
+
+    assert ran == ["/a/script.test.mjs"], f"expected one tool run, got {ran}"
+    assert not getattr(result["messages"][-1], "tool_calls", None)

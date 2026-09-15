@@ -189,3 +189,68 @@ def test_the_agent_s_own_cache_is_never_suggested(tmp_path) -> None:
     error = backend.read("/docs/plan.md").error
 
     assert "agent-home" not in error
+
+
+# --- reading the same unchanged file over and over -----------------------
+
+
+def test_an_unchanged_repeat_read_is_told_so(backend) -> None:
+    """Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
+    them the same `read_file` of `app.js` at the same range, in runs of six,
+    five and four, two to three seconds apart, with no write between them."""
+    first = backend.read("/todo-app/app.js")
+    second = backend.read("/todo-app/app.js")
+    third = backend.read("/todo-app/app.js")
+
+    assert "byte-identical" not in first.file_data["content"]
+    assert "byte-identical" not in second.file_data["content"]
+    assert "byte-identical" in third.file_data["content"]
+
+
+def test_the_content_is_always_returned(backend) -> None:
+    """A note that withheld the text would strand a model that had genuinely
+    lost it. The note is an addition, never a replacement."""
+    for _ in range(5):
+        result = backend.read("/todo-app/app.js")
+        assert "export function a" in result.file_data["content"]
+
+
+def test_an_edit_clears_the_count(tmp_path) -> None:
+    """Keyed on the CONTENT, so a specialist that edits and reads back gets
+    different bytes and no note - no write-tracking needed."""
+    (tmp_path / "app.js").write_text("export function a(){}\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    backend.read("/app.js")
+    backend.read("/app.js")
+    assert "byte-identical" in backend.read("/app.js").file_data["content"]
+
+    (tmp_path / "app.js").write_text("export function a(){}\nexport function b(){}\n", encoding="utf-8")
+
+    assert "byte-identical" not in backend.read("/app.js").file_data["content"]
+    assert "byte-identical" not in backend.read("/app.js").file_data["content"]
+    assert "byte-identical" in backend.read("/app.js").file_data["content"]
+
+
+def test_the_text_is_read_from_the_field_that_holds_it(backend) -> None:
+    """The first version of this read `result.content`, which does not exist.
+
+    It failed safely and did nothing, so every check that asked "did it error?"
+    passed while the feature was inert. A silent no-op is the quietest kind of
+    broken and the one this codebase keeps finding in its own checks.
+    """
+    result = backend.read("/todo-app/app.js")
+
+    assert getattr(result, "content", None) is None
+    assert isinstance(result.file_data, dict)
+    assert "export function a" in result.file_data["content"]
+
+
+def test_different_ranges_of_one_file_are_counted_apart(tmp_path) -> None:
+    """Paging through a long file is progress, not repetition."""
+    (tmp_path / "big.js").write_text("\n".join(f"line {i}" for i in range(500)), encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    for offset in (0, 100, 200, 300):
+        result = backend.read("/big.js", offset=offset, limit=100)
+        assert "byte-identical" not in result.file_data["content"]

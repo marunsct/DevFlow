@@ -19,6 +19,7 @@ not mean a command cannot write to it.
 
 from __future__ import annotations
 
+import hashlib
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -84,6 +85,58 @@ class _Suggesting:
         )
 
 
+#: After this many identical reads of unchanged bytes, say so. The second read
+#: of a file is ordinary - a model checks its work. The sixth is a loop.
+REPEATS_BEFORE_SAYING_SO = 2
+
+
+class _NoticingRepeats:
+    """Say when a file comes back byte-identical to the last time it was read.
+
+    Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
+    them the same `read_file` of `app.js` at the same range, in runs of six,
+    five and four, two to three seconds apart, with no write between them.
+    That is 16 model turns spent re-reading 400 lines the model already had.
+
+    Keyed on the CONTENT, not on whether a write happened. A specialist that
+    edits a file and reads it back gets different bytes and no note, which is
+    the case that makes write-tracking necessary everywhere else; here the
+    bytes answer the question directly.
+
+    The content is always returned. A note that withheld it would strand a
+    model that had genuinely lost the text - and while compaction is not
+    firing on these stages today (it triggers at 70,200 tokens and the largest
+    stage of run-1d1b6c9c carried about 22,600), a fix whose failure mode is
+    "the agent cannot get its file back" is not worth the tokens it saves.
+
+    The note is delivered in the result the model just asked for, which is
+    where correction has been shown to work on this pipeline: the "there is a
+    file of that name at ..." hint changed behaviour on the very next call,
+    while the same guidance in a brief changed nothing.
+    """
+
+    def _note_if_repeated(self, key: str, text: str) -> str:
+        seen = getattr(self, "_read_digests", None)
+        if seen is None:
+            seen = {}
+            self._read_digests = seen  # noqa: SLF001 - own attribute
+        digest = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+        previous, count = seen.get(key, (None, 0))
+        if previous == digest:
+            count += 1
+            seen[key] = (digest, count)
+            if count >= REPEATS_BEFORE_SAYING_SO:
+                return (
+                    f"\n\n[This file is byte-identical to the {count} previous "
+                    "times you read it in this stage. Nothing has changed it. "
+                    "Reading it again will return exactly this. Use what you "
+                    "have and move on.]"
+                )
+            return ""
+        seen[key] = (digest, 0)
+        return ""
+
+
 def _path_of(entry: Any) -> str:
     """The path an entry names, whatever shape the backend returned it in.
 
@@ -103,7 +156,7 @@ def _is_hidden(entry: Any) -> bool:
     return any(part in IGNORED_DIRECTORIES for part in parts)
 
 
-class WorkspaceBackend(_Suggesting, FilesystemBackend):
+class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
     """A `FilesystemBackend` that omits the run's own machinery from listings.
 
     Only the three tools that enumerate are filtered. `read` is deliberately
@@ -115,10 +168,23 @@ class WorkspaceBackend(_Suggesting, FilesystemBackend):
     def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
         result = super().read(file_path, *args, **kwargs)
         error = getattr(result, "error", None)
-        if not error or "not found" not in error:
+        if error:
+            if "not found" not in error:
+                return result
+            hint = self._where_it_actually_is(file_path)
+            return replace(result, error=error + hint) if hint else result
+
+        # The text lives in `file_data["content"]`, not on the result itself.
+        # Reading the wrong attribute made this a silent no-op, which is the
+        # quietest kind of broken: every test that asked "did it fail?" passed.
+        data = getattr(result, "file_data", None)
+        content = data.get("content") if isinstance(data, dict) else None
+        if not isinstance(content, str):
             return result
-        hint = self._where_it_actually_is(file_path)
-        return replace(result, error=error + hint) if hint else result
+        note = self._note_if_repeated(f"{file_path}|{args}|{sorted(kwargs.items())}", content)
+        if not note:
+            return result
+        return replace(result, file_data={**data, "content": content + note})
 
     def ls(self, path: str) -> Any:
         result = super().ls(path)

@@ -527,3 +527,24 @@ def test_the_commands_the_workflow_depends_on_are_not_refused() -> None:
         ["npx", "vite", "build"],
     ):
         assert _starts_a_server(argv) is None, argv
+
+
+def test_a_timeout_says_why_a_command_might_not_finish() -> None:
+    """"Command timed out" alone tells an agent nothing about the cause.
+
+    The commonest cause is not slowness: it is a command that was never going
+    to exit. The name check refuses the ones it can recognise, but
+    run-2eb3aa24's ui specialist wrote its own server, `node serve-test.mjs`,
+    and ran it twice for 120 seconds each. No name check can catch that; the
+    message it gets back can still explain it.
+    """
+    import inspect
+
+    from app.tools import sandbox
+
+    source = inspect.getsource(sandbox)
+    # Both return paths carry it, which is the mistake this codebase keeps
+    # making: reaching one of two.
+    assert source.count("_TIMEOUT_ADVICE") == 3
+    assert "usually one that was not meant to" in sandbox._TIMEOUT_ADVICE
+    assert "import it and call it" in sandbox._TIMEOUT_ADVICE

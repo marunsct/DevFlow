@@ -620,6 +620,21 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
     return None
 
 
+#: What to say when a command hits the wall. "Command timed out" alone tells an
+#: agent nothing about why, and the commonest cause is not slowness: it is a
+#: command that was never going to exit. `_SERVER_COMMANDS` refuses the ones
+#: that can be recognised by name, but run-2eb3aa24's ui specialist wrote its
+#: own - `node serve-test.mjs` - and no name check can catch that.
+_TIMEOUT_ADVICE = (
+    " A command that does not finish is usually one that was not meant to: a "
+    "server, a watcher, or something waiting on input that will never come. "
+    "Nothing here will connect to a server and there is no browser to open a "
+    "page with, so it would have served nobody. To check a page, read the file "
+    "and assert on its contents from a test; to check logic, import it and call "
+    "it. If the command really is just slow, run the smaller part of it."
+)
+
+
 def _docker_binary() -> str:
     binary = shutil.which("docker") or shutil.which("podman")
     if not binary:
@@ -881,7 +896,7 @@ class SandboxExecutor:
             )
         except subprocess.TimeoutExpired as expired:
             return {
-                "error": f"Command timed out after {timeout} seconds.",
+                "error": f"Command timed out after {timeout} seconds." + _TIMEOUT_ADVICE,
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"), workspace),
                 "returncode": "124",
@@ -1022,7 +1037,9 @@ class SandboxExecutor:
             result = subprocess.run(docker_cmd, capture_output=True, text=True, timeout=timeout)
         except subprocess.TimeoutExpired:
             subprocess.run([docker, "kill", container], capture_output=True, check=False)
-            return {"error": f"Command timed out after {timeout} seconds."}
+            return {
+                "error": f"Command timed out after {timeout} seconds." + _TIMEOUT_ADVICE
+            }
         except OSError as exc:
             return {"error": f"Could not start the sandbox: {exc}"}
 

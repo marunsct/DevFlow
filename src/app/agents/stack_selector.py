@@ -63,8 +63,8 @@ def build_stack_selector_request(
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"--- Approved product intake (docs/product_intake.md) ---\n{_truncate(product_intake_text)}\n\n"
-        f"--- Tools and Models Comparison (docs/tools_and_models.md) ---\n{_truncate(tools_models_text)}\n"
+        f"--- Approved product intake (/docs/product_intake.md) ---\n{_truncate(product_intake_text)}\n\n"
+        f"--- Tools and Models Comparison (/docs/tools_and_models.md) ---\n{_truncate(tools_models_text)}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

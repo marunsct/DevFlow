@@ -113,8 +113,14 @@ def test_a_quoted_document_names_the_file_it_came_from() -> None:
         "content"
     ]
 
-    assert "docs/product_intake.md" in body
-    assert "docs/tools_and_models.md" in body
+    # ABSOLUTE, with the leading slash. Written as `docs/product_intake.md`,
+    # run-6412366b's architecture_review prepended its own `/docs/` and asked
+    # for `/docs/docs/technology_stack.md` six times. That spelling appears in
+    # no run before this change shipped. An absolute workspace path is what the
+    # read tools accept and is the one thing an agent cannot prefix.
+    assert "(/docs/product_intake.md)" in body
+    assert "(/docs/tools_and_models.md)" in body
+    assert "docs/docs/" not in body
 
 
 class _Repo:

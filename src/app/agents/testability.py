@@ -14,7 +14,17 @@ defect-fix round afterwards. run-304add54 failed outright on the same problem.
 run-cbd22a34 paid for it in dependencies instead - vitest and jsdom took the
 workspace from 46 MB to 221 MB against a brief that asked for none.
 
-run-2b5def74 shows why the second half matters as much as the first. With this
+run-2b5def74 traced it to the decision that causes it. Its technical
+specification said, in as many words, "No module system (no ES modules, no
+CommonJS) - single global scope", and two lines later "Tests run with a single
+command: node --test tests/". Those cannot both hold: a runner can only test
+what it can import. Seven test files then reimplemented the application rather
+than import it, 169 assertions passed against a copy, and three milestone
+reviews accepted it. The specialists were not careless - they were building to
+a specification that had already ruled testing out, to honour a "no external
+dependencies" constraint that native modules never breached.
+
+run-2b5def74 also shows why the second half matters as much as the first. With this
 rule in force the application came back correctly shaped - pure functions
 taking their arguments, a storage adapter, every DOM reference inside `init()`.
 But `init()` was still called bare at module scope and nothing was exported, so
@@ -44,6 +54,12 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   instead, and a copy passes whatever your code does. If you find yourself
   writing "this test defines the same logic inline", stop: that test proves
   nothing, and it will be rejected.
+- A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and
+  `<script type="module">` are part of the browser and part of Node; they
+  install nothing and add no package. A brief that forbids external
+  dependencies does not forbid them. Choosing "no module system, single global
+  scope" to honour such a constraint gives up every real test in exchange for
+  nothing, because a test runner can only test what it can import.
 - Reach storage through a small adapter passed in as an argument, so a test can
   hand it a plain object instead of mocking a browser API.
 - The test for a rule then imports the function and calls it. Only the wiring

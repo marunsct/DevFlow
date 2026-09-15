@@ -76,3 +76,25 @@ def test_the_rule_requires_exports() -> None:
 
     assert "EXPORT the pure functions" in flat
     assert "a copy passes whatever your code does" in flat
+
+
+def test_the_rule_says_a_module_system_is_not_a_dependency() -> None:
+    """The decision that caused every copy-test in run-2b5def74.
+
+    Its specification said "No module system (no ES modules, no CommonJS) -
+    single global scope" and, two lines later, "Tests run with a single
+    command: node --test tests/". Those cannot both hold - a runner can only
+    test what it can import - and the reason given was a "no external
+    dependencies" constraint that native modules never breached.
+    """
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY" in flat
+    assert "install nothing and add no package" in flat
+
+
+def test_the_rule_explains_what_the_choice_costs() -> None:
+    """A prohibition without its reason gets argued away by the next agent."""
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "a test runner can only test what it can import" in flat

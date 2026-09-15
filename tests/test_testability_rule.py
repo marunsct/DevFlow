@@ -141,3 +141,18 @@ def test_the_rule_answers_the_copy_that_imports_the_module_anyway() -> None:
     # And the excuse that produced it: an awkward-to-call function is a reason
     # to change the function, not to reimplement it in the test.
     assert "CHANGE THE FUNCTION, NOT THE TEST" in flat
+
+
+def test_the_rule_asks_for_the_script_that_runs_the_tests() -> None:
+    """Five of the nine delivered workspaces that ship a manifest alongside
+    tests have no `test` script, so `npm test` answers "missing script: test".
+
+    The cross-file check reports it at review and the reviewer has called it
+    minor in every run it appeared in; sometimes a later sprint fixes it and
+    sometimes it ships. Saying it where the manifest is written costs nothing.
+    """
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "MUST SAY HOW TO RUN THE TESTS" in flat
+    assert '"scripts": {"test"' in flat
+    assert "missing script: test" in flat

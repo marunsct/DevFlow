@@ -111,6 +111,13 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   named ..." and the exports are invisible - the code looks importable and is
   not. Ship a `package.json` containing `{"type": "module"}` beside it, or name
   the files `.mjs`. Neither installs anything.
+- THE SAME `package.json` MUST SAY HOW TO RUN THE TESTS. If you are writing one
+  at all and the project has tests, give it
+  `"scripts": {"test": "node --test <your test files>"}`. Without it `npm test`
+  answers "missing script: test", so the suite is reachable only by someone who
+  already knows the command - and to anyone else the project reads as having no
+  tests. Measured across the delivered workspaces: five of the nine that ship a
+  manifest alongside tests have no way to run them by the obvious command.
 - A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and
   `<script type="module">` are part of the browser and part of Node; they
   install nothing and add no package. A brief that forbids external

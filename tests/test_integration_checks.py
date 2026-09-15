@@ -777,3 +777,27 @@ def test_a_declared_module_type_clears_it(tmp_path):
     (tmp_path / "package.json").write_text('{"type": "module"}\n', encoding="utf-8")
 
     assert "does not provide an export named" not in summarise_integration(str(tmp_path))
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["a.test.mjs", "a.test.cjs", "a.spec.mjs", "test-contract.mjs", "tests/x.test.mjs"],
+)
+def test_an_mjs_test_is_a_test(name: str):
+    """`.mjs` is how a project declares ESM without a package.json, so it is
+    exactly what a testable design produces - and the pattern matched only
+    `.js`, so those files were reported as orphaned probes nothing runs.
+
+    Measured on run-da6c5e19: the two files that proved the copy-test fix had
+    worked were the two the report told the reviewer to delete.
+    """
+    from app.analysis.integration_checks import _NOT_APPLICATION
+
+    assert _NOT_APPLICATION.search(name)
+
+
+@pytest.mark.parametrize("name", ["app.mjs", "app.js", "latest-news.js"])
+def test_an_mjs_application_file_is_not_a_test(name: str):
+    from app.analysis.integration_checks import _NOT_APPLICATION
+
+    assert not _NOT_APPLICATION.search(name)

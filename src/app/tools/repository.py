@@ -1286,8 +1286,8 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
 
 _LOOKS_LIKE_A_TEST = re.compile(
     r"(^|/)(__tests__|tests?|e2e)/"
-    r"|\.(test|spec)\.[jt]sx?$"
-    r"|(^|/)test[-_][^/]*\.[jt]sx?$"
+    r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
+    r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
     r"|(^|/)test_[^/]*\.py$"
     r"|_test\.py$"
 )

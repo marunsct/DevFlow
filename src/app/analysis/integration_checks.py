@@ -40,11 +40,11 @@ _SKIP = {
 #: Files whose job is configuration or testing, not application source.
 _NOT_APPLICATION = re.compile(
     r"(^|[./])(jest|vite|webpack|babel|rollup|eslint|cypress|karma|tailwind)\.config\."
-    r"|\.(test|spec)\.[jt]sx?$"
+    r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
     # `test-contract.js` and `test_helpers.py` are tests too. Without this they
     # are read as application code, which on run-2b5def74 reported two test
     # files as orphaned scripts "nothing runs" - they are run by `node --test`.
-    r"|(^|/)test[-_][^/]*\.[jt]sx?$"
+    r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
     r"|(^|/)(__tests__|tests?|cypress|e2e)/"
     # Vendored and built output is not the project's own source. A
     # `vendor.min.js` that nothing imports is a bundle, not an orphan, and

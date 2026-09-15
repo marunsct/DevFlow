@@ -349,3 +349,12 @@ def test_the_two_definitions_of_a_test_agree() -> None:
     for path in ("project/app.js", "project/verify-css.js"):
         assert not looks_like_a_test(path), path
         assert not _NOT_APPLICATION.search(path), path
+
+
+@pytest.mark.parametrize("name", ["a.test.mjs", "a.test.cjs", "test-contract.mjs"])
+def test_an_mjs_test_is_protected_from_deletion(name: str) -> None:
+    """The delete guard read the same too-narrow pattern, so a `.mjs` suite -
+    which is what a testable design actually produces - was deletable."""
+    from app.tools.repository import looks_like_a_test
+
+    assert looks_like_a_test(name)

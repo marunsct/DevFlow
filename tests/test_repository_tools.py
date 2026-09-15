@@ -1331,3 +1331,53 @@ def test_documents_stay_out_of_it_either_way(repo_root: Path) -> None:
     write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
 
     assert write_approved_artifact(repo_root, "docs/plan.md", "# Plan")["path"] == "docs/plan.md"
+
+
+# --- the host path, written verbatim --------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("given", "expected"),
+    [
+        # The host path exactly as a prompt or tool result quoted it.
+        ("/ROOT/index.html", "index.html"),
+        # Refused once, the agent drops the leading slash and tries again. That
+        # is a real path inside the workspace, so it used to be created - a
+        # mirror of the host layout nested inside the workspace it describes.
+        ("app/data/workspaces/RUNDIR/index.html", "index.html"),
+        # Refused again, it drops another component.
+        ("data/workspaces/RUNDIR/index.html", "index.html"),
+        ("workspaces/RUNDIR/todo/app.js", "todo/app.js"),
+        ("RUNDIR/index.html", "index.html"),
+        # Anchored on the workspace directory's own name, so a project with a
+        # real `data/` folder of its own is untouched.
+        ("todo-app/data/config.json", "todo-app/data/config.json"),
+        ("data/seed.json", "data/seed.json"),
+        ("index.html", "index.html"),
+        ("docs/plan.md", "docs/plan.md"),
+    ],
+)
+def test_a_host_path_resolves_to_the_workspace(given: str, expected: str) -> None:
+    """Measured on run-2f252e4e, which created
+    `app/data/workspaces/<run>/index.html` inside its own workspace and pinned
+    `app` as the project directory along the way."""
+    from pathlib import Path
+
+    from app.tools.repository import _repo_relative_path
+
+    root = Path("/app/data/workspaces/t12-run-abc")
+    given = given.replace("/ROOT/", f"{root}/").replace("RUNDIR", root.name)
+
+    assert str(_repo_relative_path(root, given)) == expected
+
+
+def test_the_host_path_does_not_become_a_project_directory(repo_root: Path) -> None:
+    """It pinned `app`, from `/app/data/...`, and every later stage would have
+    built into it."""
+    from app.tools.repository import pinned_project_directory
+
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+    write_approved_artifact(repo_root, f"{repo_root}/todo-app/app.js", "// app")
+
+    assert pinned_project_directory(repo_root) == "todo-app"
+    assert (repo_root / "todo-app/app.js").exists()

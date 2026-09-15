@@ -104,12 +104,38 @@ def _repo_relative_path(repo_root: Path, relative_path: str | Path) -> Path:
     root now resolves under it instead, which is the safer of the two outcomes.
     """
     candidate = Path(str(relative_path)).expanduser()
-    if not candidate.is_absolute():
-        return candidate
-    try:
-        return candidate.resolve().relative_to(repo_root.resolve())
-    except ValueError:
-        return candidate.relative_to(candidate.anchor)
+    if candidate.is_absolute():
+        try:
+            return candidate.resolve().relative_to(repo_root.resolve())
+        except ValueError:
+            candidate = candidate.relative_to(candidate.anchor)
+
+    # The workspace's own absolute path, with its leading slash gone.
+    #
+    # An agent handed the host path writes it verbatim; refused, it drops the
+    # slash and tries again, and `/app/data/workspaces/<run>/index.html` becomes
+    # the relative `app/data/workspaces/<run>/index.html`. That is a real path
+    # inside the workspace, so it was created - a mirror of the host layout,
+    # nested inside the workspace it describes. Measured on run-2f252e4e, where
+    # it also pinned `app` as the project directory.
+    # Any trailing portion of it, not only the whole thing: refused once, the
+    # agent drops another leading component and retries, so
+    # `data/workspaces/<run>/index.html` arrives next. The match is anchored on
+    # the workspace directory's own name - which carries the run id and cannot
+    # occur by accident - so a project with a real `data/` folder is untouched.
+    root_parts = repo_root.resolve().parts[1:]  # drop the anchor
+    parts = candidate.parts
+    if root_parts:
+        workspace_name = root_parts[-1]
+        for index, part in enumerate(parts):
+            if part != workspace_name:
+                continue
+            prefix = parts[: index + 1]
+            if prefix == root_parts[-len(prefix):]:
+                remainder = parts[index + 1:]
+                return Path(*remainder) if remainder else Path(".")
+            break
+    return candidate
 
 
 IGNORED_DIRECTORIES = frozenset({

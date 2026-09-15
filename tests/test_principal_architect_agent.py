@@ -52,3 +52,42 @@ def test_principal_architect_agent_factory_creates_graph() -> None:
 
     assert agent is not None
     assert hasattr(agent, "invoke")
+
+
+def test_a_revision_is_told_to_change_nothing_else() -> None:
+    """The instruction guarded removal and said nothing about addition.
+
+    On run-37476645 four consecutive architecture reviews returned
+    changes_required with 5, then 4, then 6, then 8 findings, escalating from
+    minor to blocking, each round raising subjects the round before had not
+    mentioned - an export prompt, a persistent banner, a quota warning.
+
+    Whether the architect added those while revising or the reviewer noticed
+    them late cannot be separated from the record, since the specification is
+    overwritten each revision. The instruction is asymmetric either way: it
+    forbade dropping unflagged content and permitted adding unreviewed content.
+    """
+    from app.agents.principal_architect import build_architecture_revision_request
+
+    class _Doc:
+        source_path = "/uploads/brief.md"
+        source_type = "markdown"
+        text = "build a to-do list"
+        truncated = False
+        truncation_note = None
+
+    class _Repo:
+        branch = "master"
+        commit = "abc1234"
+        root_path = "/app/data/workspaces/t29"
+        files: list = []
+
+    brief = build_architecture_revision_request(
+        "previous spec", ["fix the testing framework contradiction"],
+        "intake", "tools", "stack", _Repo(), _Doc(),
+    )["messages"][0]["content"]
+
+    assert "do not add scope that was not asked for" in brief
+    assert "changes nothing else" in brief
+    # The existing half must survive.
+    assert "Do not silently drop specification content" in brief

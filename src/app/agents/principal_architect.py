@@ -250,7 +250,14 @@ def build_architecture_revision_request(
         f"--- Your previous specification ---\n{previous_specification_text}\n\n"
         f"--- Required changes ---\n{changes_text}\n\n"
         "Address every item explicitly. Do not silently drop specification "
-        "content or ADRs that were not flagged.\n\n"
+        "content or ADRs that were not flagged, and do not add scope that was "
+        "not asked for: a revision resolves the listed findings and changes "
+        "nothing else. New sections, new features and new behaviours added "
+        "here arrive unreviewed and under-specified, and the next review finds "
+        "them. On run-37476645 four consecutive reviews returned "
+        "changes_required with 5, then 4, then 6, then 8 findings, escalating "
+        "from minor to blocking, each round raising subjects the round before "
+        "had not mentioned.\n\n"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

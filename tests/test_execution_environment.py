@@ -195,3 +195,45 @@ def test_a_runtime_runner_still_passes_the_validator():
             testing_framework=runner,
         )
         assert stack.testing_framework == runner
+
+
+# --- nothing is running --------------------------------------------------
+
+
+def test_the_selector_is_told_no_service_is_running():
+    """`brief_medium` requires PostgreSQL, migrations and a REST API. The
+    sandbox has no network beyond dependency installation and no way to start
+    anything that outlives one command, and nothing said so - so a stack whose
+    tests need a live server would have been chosen, and every later stage
+    asked "did this work?" would have had no answer.
+
+    The same shape as "manual browser testing": choosing something the
+    environment cannot perform.
+    """
+    from app.agents.stack_selector import EXECUTION_ENVIRONMENT
+
+    flat = " ".join(EXECUTION_ENVIRONMENT.split())
+
+    assert "NOTHING IS RUNNING except the command you start" in flat
+    assert "no database server" in flat
+
+
+def test_the_selector_is_not_told_to_refuse_the_brief():
+    """A brief may still require PostgreSQL. The constraint is on how the design
+    is verified, not on what it is built with."""
+    from app.agents.stack_selector import EXECUTION_ENVIRONMENT
+
+    flat = " ".join(EXECUTION_ENVIRONMENT.split())
+
+    assert "you should still choose it" in flat
+    assert "migrations written and reviewed rather than applied" in flat
+
+
+def test_the_adapter_rule_covers_a_database():
+    """It was written for the DOM. The reasoning is identical for a database
+    that is not running."""
+    from app.agents.testability import TESTABILITY_RULE
+
+    flat = " ".join(TESTABILITY_RULE.split())
+
+    assert "code that talks to PostgreSQL directly is code no test can execute" in flat

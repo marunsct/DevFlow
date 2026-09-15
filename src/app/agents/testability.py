@@ -88,7 +88,10 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   scope" to honour such a constraint gives up every real test in exchange for
   nothing, because a test runner can only test what it can import.
 - Reach storage through a small adapter passed in as an argument, so a test can
-  hand it a plain object instead of mocking a browser API.
+  hand it a plain object instead of mocking a browser API. The same holds for a
+  database: nothing is running here, so code that talks to PostgreSQL directly
+  is code no test can execute. Put the queries behind an adapter and let the
+  tests substitute it.
 - The test for a rule then imports the function and calls it. Only the wiring
   needs a DOM, and a thin wiring layer is worth far less test effort than the
   rules are."""

@@ -166,9 +166,14 @@ def test_the_timeline_has_one_node_per_stage_in_execution_order():
     assert stages[-1]["status"] == "running", "the last stage is still open"
 
 
-def test_a_repeated_stage_increments_rather_than_adding_a_node():
+def test_a_repeated_stage_stays_one_node():
     """The specialist loop and review revisions re-enter the same node; a row
-    per iteration would make the chart unreadable."""
+    per iteration would make the chart unreadable.
+
+    What those repeats are *counted* as changed: consecutive events from one
+    stage are that stage working, not restarting. Counting them as retries told
+    an operator a run with two retries had sixty-six.
+    """
     from app.server.runs import _derive_stages
 
     stages = _derive_stages([
@@ -178,7 +183,23 @@ def test_a_repeated_stage_increments_rather_than_adding_a_node():
     ], "specialist_dispatch")
 
     assert len(stages) == 1
-    assert stages[0]["retry_count"] == 2
+    assert stages[0]["retry_count"] == 0
+
+
+def test_a_stage_re_entered_after_another_one_ran_is_counted():
+    """This is what a retry actually looks like: the remediation loop coming
+    back to a test round after a defect fix."""
+    from app.server.runs import _derive_stages
+
+    stages = _derive_stages([
+        _stage_event("test_round_0", "Testing.", "2026-09-10T10:00:00+00:00"),
+        _stage_event("defect_fix_1_0", "Fixing.", "2026-09-10T10:01:00+00:00"),
+        _stage_event("test_round_0", "Testing.", "2026-09-10T10:02:00+00:00"),
+    ], "test_round_0")
+
+    rounds = [s for s in stages if s["name"] == "test_round_0"]
+    assert len(rounds) == 1
+    assert rounds[0]["retry_count"] == 1
 
 
 def test_an_empty_history_yields_an_empty_timeline():

@@ -124,12 +124,22 @@ def _workspace_for(run_id: str) -> Path:
     return matches[0]
 
 
-def test_a_greenfield_run_starts_with_an_empty_workspace(client, run_id):
-    """Scenario 1: no existing code, the agents create it."""
+def test_a_greenfield_run_starts_with_no_code_of_its_own(client, run_id):
+    """Scenario 1: no existing code, the agents create it.
+
+    Not literally empty any more: the workspace is made a git repository so
+    each accepted milestone has somewhere to be recorded and a later sprint can
+    ask what the last one changed. What must be absent is *product* - anything
+    the agents did not write themselves.
+    """
     response = client.post(f"/api/runs/{run_id}/start", json={})
 
     assert response.status_code == 202, response.text
-    assert not any(_workspace_for(run_id).iterdir())
+    workspace = _workspace_for(run_id)
+
+    seeded = [p.name for p in workspace.iterdir() if p.name not in {".git", ".gitignore"}]
+    assert seeded == [], f"a greenfield workspace should hold no code: {seeded}"
+    assert (workspace / ".git").is_dir(), "each sprint needs somewhere to be recorded"
 
 
 def test_an_explicit_empty_source_is_also_greenfield(client, run_id):

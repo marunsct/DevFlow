@@ -12,10 +12,14 @@ events and five approval gates to arrive back where it already was.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
+from pydantic import BaseModel
 
 from app.graph.workflow import (
     _STRUCTURED_RESPONSE_NUDGE,
+    _answer_written_into_the_conversation,
     _nudge_for_the_structured_response,
 )
 
@@ -120,3 +124,122 @@ def test_a_successful_nudge_is_recorded(caplog):
         _nudge_for_the_structured_response(agent, "run-1:test_round_0:abcd", None)
 
     assert any("after one reminder" in record.getMessage() for record in caplog.records)
+
+
+# --- the answer was there all along ---------------------------------------
+
+
+class _Out(BaseModel):
+    changed_files: list[str]
+    decisions: list[str]
+
+
+def _ai(text: str):
+    return SimpleNamespace(type="ai", content=text)
+
+
+def test_an_answer_printed_as_a_message_is_recovered():
+    """The failure is not a model that could not answer.
+
+    Measured on run-2b5def74: `specialist_backend_0` emitted its complete
+    response object as a chat message three times - 2,027 characters, each
+    followed by a sentence of commentary - and the workflow discarded all three
+    and failed the stage on attempt 3 of 3.
+    """
+    message = _ai(
+        '{\n  "changed_files": ["app.js"],\n  "decisions": ["uses findIndex"]\n}\n\n'
+        "All acceptance criteria are already met in the existing code."
+    )
+
+    recovered = _answer_written_into_the_conversation({"messages": [message]}, _Out)
+
+    assert recovered is not None
+    assert recovered.changed_files == ["app.js"]
+
+
+def test_trailing_prose_does_not_defeat_it():
+    """`json.loads` fails with "Extra data" on an answer that is fully present."""
+    import json as _json
+
+    text = '{"changed_files": [], "decisions": ["x"]}\n\nAnd here is why.'
+    with pytest.raises(ValueError):
+        _json.loads(text)
+
+    assert _answer_written_into_the_conversation({"messages": [_ai(text)]}, _Out)
+
+
+def test_a_fenced_block_is_recovered():
+    message = _ai('Here it is:\n```json\n{"changed_files":[],"decisions":["x"]}\n```\ndone')
+
+    assert _answer_written_into_the_conversation({"messages": [message]}, _Out)
+
+
+def test_nested_objects_do_not_truncate_the_match():
+    """A brace counter that stopped at the first `}` would take half the answer."""
+    message = _ai('{"changed_files": [], "decisions": ["a"], "extra": {"nested": {"deep": 1}}} tail')
+
+    assert _answer_written_into_the_conversation({"messages": [message]}, _Out)
+
+
+def test_a_brace_inside_a_string_is_not_a_brace():
+    message = _ai('{"changed_files": ["a{b.js"], "decisions": ["}"]} tail')
+
+    recovered = _answer_written_into_the_conversation({"messages": [message]}, _Out)
+
+    assert recovered and recovered.changed_files == ["a{b.js"]
+
+
+def test_json_that_is_not_the_answer_is_ignored():
+    """Validated against the stage's own schema, so this recognises an answer
+    rather than guessing at one."""
+    assert _answer_written_into_the_conversation(
+        {"messages": [_ai('{"unrelated": 1} trailing')]}, _Out
+    ) is None
+
+
+def test_prose_with_no_object_is_ignored():
+    assert _answer_written_into_the_conversation(
+        {"messages": [_ai("I have finished the task.")]}, _Out
+    ) is None
+
+
+def test_a_stage_with_no_schema_recovers_nothing():
+    """There is nothing to validate against, so there is no way to be sure."""
+    message = _ai('{"changed_files": [], "decisions": []}')
+
+    assert _answer_written_into_the_conversation({"messages": [message]}, None) is None
+
+
+def test_the_latest_answer_wins():
+    """A stage that answered twice means the second one."""
+    first = _ai('{"changed_files": ["old.js"], "decisions": []}')
+    second = _ai('{"changed_files": ["new.js"], "decisions": []}')
+
+    recovered = _answer_written_into_the_conversation({"messages": [first, second]}, _Out)
+
+    assert recovered.changed_files == ["new.js"]
+
+
+def test_recovery_is_tried_before_any_model_call():
+    """It costs nothing; the nudge costs a turn and the restart costs a stage."""
+    import inspect
+
+    from app.graph.workflow import _run_gated_agent
+
+    source = inspect.getsource(_run_gated_agent)
+
+    assert source.index("_answer_written_into_the_conversation") < source.index(
+        "_nudge_for_the_structured_response"
+    )
+
+
+def test_the_schema_travels_with_the_agent():
+    """The compiled graph does not expose it, and threading it through the
+    fifteen places that build an agent is how fourteen of fifteen get it."""
+    import inspect
+
+    from app.agents.role_agent import create_role_agent
+
+    assert "agent.workflow_response_format = response_format" in inspect.getsource(
+        create_role_agent
+    )

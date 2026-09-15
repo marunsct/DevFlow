@@ -50,6 +50,7 @@ from app.tools.agent_toolkit import (
     build_artifact_edit_tool,
     build_artifact_write_tool,
     build_repository_read_tools,
+    build_sprint_history_tool,
 )
 
 
@@ -463,6 +464,9 @@ def create_role_agent(
     # not.
     tools = [
         *build_repository_read_tools(resolved_repo_root, allow_subdirectories=allow_subdirectories),
+        # Read-only, and the cheap answer to a question every stage otherwise
+        # works out by re-reading the workspace.
+        build_sprint_history_tool(resolved_repo_root),
         *(writing_tools(resolved_repo_root) if can_write else []),
         *(extra_tools or []),
     ]
@@ -493,7 +497,7 @@ def create_role_agent(
         _workspace_filesystem_middleware(resolved_repo_root),
     ]
 
-    return create_deep_agent(
+    agent = create_deep_agent(
         model=selected_model,
         tools=tools,
         system_prompt=full_system_prompt,
@@ -513,6 +517,14 @@ def create_role_agent(
         checkpointer=checkpointer,
         name=name,
     )
+
+    # Kept on the agent because the compiled graph does not expose it, and the
+    # workflow needs it to recognise an answer the model wrote into the
+    # conversation instead of returning. Set here, once, rather than threaded
+    # through the fifteen places that build an agent - reaching fourteen of
+    # fifteen is the mistake this codebase has made four times.
+    agent.workflow_response_format = response_format
+    return agent
 
 
 __all__ = [

@@ -271,6 +271,15 @@ def create_runs_router(
             # message is the operator-facing reason.
             raise HTTPException(status_code=400, detail=str(exc))
 
+        # After seeding, never before it: a `git clone` needs to own an empty
+        # directory, and initialising at allocation broke every brownfield run.
+        # A seeded codebase that is already a repository keeps its own history;
+        # this only adds one where there is none, so that each accepted
+        # milestone has somewhere to be recorded.
+        from app.tools.version_control import initialise_repository
+
+        await run_in_threadpool(initialise_repository, workspace)
+
         try:
             repository = build_repository_context(
                 str(workspace), allow_subdirectories=body.allow_subdirectories
@@ -750,18 +759,33 @@ def _collect_artifacts(record: RunRecord, runner: WorkflowRunner) -> list[dict[s
     return artifacts
 
 
+#: Events that mean "this stage was allowed to act", as opposed to any other
+#: event it happened to emit. Counting the latter reported 203 approvals for a
+#: stage that passed 35 gates.
+_APPROVAL_EVENTS = frozenset({"approval_auto", "approval_request", "approval_decision"})
+
+
 def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[str, Any]]:
     """Build the execution timeline from this run's `stage_change` history.
 
-    `stages` was returned as a hardcoded empty list, so the dashboard's flow
-    chart fell through to a fallback that fabricates a single node from
-    `current_stage` - which is why a run that had finished three stages showed
-    one.
+    Three things this has to get right, each of which it previously got wrong.
 
-    One entry per distinct stage, in the order first seen, carrying the duration
-    to the next transition. A stage that repeats (the specialist loop, a review
-    revision) increments `retry_count` rather than adding a second node, so the
-    chart stays a readable spine instead of growing a row per iteration.
+    **A pause is not a stage.** `stage_change` events carry the
+    `awaiting_approval:` prefix, and the UI strips it for display - so every
+    gated stage rendered twice under the same title, once as itself and once as
+    its own pause. The pause row is folded into its parent here.
+
+    **An approval is not a retry.** A gated stage bounces
+    `X -> awaiting_approval:X -> X` on every single approval, and each bounce
+    incremented `retry_count`. A run whose authoritative retry count was 2 was
+    telling the operator "retried 66 times" - it was counting gates. They are
+    now separate numbers, because they mean opposite things: approvals are the
+    stage working, retries are the stage starting over.
+
+    **A stage name is not unique.** `technical_lead`, `test_round_0` and every
+    specialist recur once per sprint. Keyed by name alone they collapsed into
+    one row whose duration and counts summed across sprints. Entries are keyed
+    by `(sprint, name)` and carry the sprint, so the timeline can group.
     """
     from datetime import datetime
 
@@ -772,31 +796,66 @@ def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[st
             return None
 
     ordered: list[dict[str, Any]] = []
-    by_name: dict[str, dict[str, Any]] = {}
+    by_key: dict[tuple[int, str], dict[str, Any]] = {}
+    sprint = 0
+    previous: str | None = None
 
     for event in events:
-        if event.event_type != "stage_change":
+        # Every event carries the stage that produced it, and only pauses emit
+        # `stage_change` - the runner publishes one per gate, so a timeline
+        # built from those alone showed 8 of run-2b5def74's 17 stages and none
+        # of the planning or review. Reading the stage off all events costs
+        # nothing and shows the run that actually happened.
+        raw = event.stage or ""
+        if not raw:
             continue
-        name = event.stage or ""
+
+        paused = raw.startswith(APPROVAL_PAUSE_PREFIX)
+        name = raw[len(APPROVAL_PAUSE_PREFIX):] if paused else raw
         if not name:
             continue
-        existing = by_name.get(name)
+
+        # Each planning stage opens a sprint. The stages before the first one
+        # are the run's preamble, which the UI shows as sprint 0.
+        if name == "technical_lead" and previous != "technical_lead":
+            sprint += 1
+        key = (sprint, name)
+        existing = by_key.get(key)
+
+        approved = event.event_type in _APPROVAL_EVENTS
+
         if existing is not None:
-            existing["retry_count"] += 1
-            existing["meaning"] = event.message
+            if approved:
+                # The stage asked to do something and was allowed to. Progress,
+                # not repetition - and the number the old code reported as
+                # "retries".
+                existing["approval_count"] += 1
+            elif previous != name:
+                # Re-entered after another stage ran: this one is starting over.
+                # A structured-response retry does not appear here, because it
+                # re-enters the same stage on a fresh conversation and the stage
+                # name never changes; the runner's log is authoritative for those.
+                existing["retry_count"] += 1
+            if event.event_type == "stage_change":
+                existing["meaning"] = event.message or existing["meaning"]
             existing["ended_at"] = None
+            previous = name
             continue
+
         entry = {
             "name": name,
-            "meaning": event.message,
+            "sprint": sprint,
+            "meaning": event.message if event.event_type == "stage_change" else None,
             "started_at": event.timestamp,
             "ended_at": None,
-            "status": str(event.metadata.get("status") or "running"),
+            "status": str((event.metadata or {}).get("status") or "running"),
             "duration_seconds": None,
             "retry_count": 0,
+            "approval_count": 1 if approved else 0,
         }
-        by_name[name] = entry
+        by_key[key] = entry
         ordered.append(entry)
+        previous = name
 
     # A stage ended when the next one began. The last stays open.
     for earlier, later in zip(ordered, ordered[1:]):

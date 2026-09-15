@@ -6,6 +6,10 @@ export interface RunStage {
   status: string;
   duration_seconds: number | null;
   retry_count: number;
+  /** Approvals this stage passed through - progress, not repetition. */
+  approval_count: number;
+  /** Which sprint the stage belongs to; 0 is the planning before the first. */
+  sprint: number;
 }
 
 export interface ArtifactInfo {

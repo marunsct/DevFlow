@@ -121,7 +121,26 @@ class RunStage(BaseModel):
     ended_at: datetime | None = Field(default=None, description="When the stage ended.")
     status: str = Field(description="Current status of the stage.")
     duration_seconds: float | None = Field(default=None, description="Duration of the stage in seconds.")
-    retry_count: int = Field(default=0, description="Number of times the stage was retried.")
+    retry_count: int = Field(
+        default=0,
+        description=(
+            "Times the stage started over without having produced its output. "
+            "An approval is not a retry: a gated stage returns to itself after "
+            "every approval, and counting those told operators a run with two "
+            "retries had sixty-six."
+        ),
+    )
+    approval_count: int = Field(
+        default=0, description="Approvals this stage passed through - progress, not repetition."
+    )
+    sprint: int = Field(
+        default=0,
+        description=(
+            "Which sprint this stage belongs to; 0 is the planning that precedes "
+            "the first. Stage names recur every sprint, so this is what makes an "
+            "entry identifiable."
+        ),
+    )
 
 
 class ArtifactInfo(BaseModel):

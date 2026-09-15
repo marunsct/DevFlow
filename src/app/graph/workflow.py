@@ -42,6 +42,7 @@ agent (via `resume_with_decision`) instead of restarting it.
 from __future__ import annotations
 
 import json
+import re
 import os
 import logging
 import uuid
@@ -638,6 +639,88 @@ def _hand_back(update: dict[str, Any], output_key: str) -> bool:
     return output_key not in update
 
 
+_JSON_FENCE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.S)
+
+
+def _first_json_object(text: str) -> str | None:
+    """The first balanced `{...}` in `text`, fenced or bare.
+
+    A plain `json.loads` is not enough. The model writes the object and then
+    keeps talking, so the message is valid JSON followed by prose and
+    `json.loads` fails with "Extra data" on an answer that is entirely present.
+    Measured on run-2b5def74: two such messages, 2,027 and 2,028 characters,
+    each a complete response object with a paragraph after it.
+    """
+    fenced = _JSON_FENCE.search(text)
+    if fenced:
+        return fenced.group(1)
+
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
+
+
+def _answer_written_into_the_conversation(result: dict[str, Any], schema: Any) -> Any | None:
+    """The structured response, recovered from a message that contains it.
+
+    The failure this exists for is not a model that could not answer. It is a
+    model that answered correctly and sent it down the wrong channel: on
+    run-2b5def74 `specialist_backend_0` emitted its complete response object as
+    a chat message three times, each followed by a sentence of commentary, and
+    the workflow discarded all three and then failed the stage. The nudge did
+    not help, because being asked for the schema produced the same thing again.
+
+    Validated against the stage's own response model before it is accepted, so
+    this recognises the answer rather than guessing at one: anything that does
+    not satisfy the schema is ignored exactly as before.
+    """
+    if schema is None:
+        return None
+    messages = result.get("messages") or []
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "ai":
+            continue
+        text = str(getattr(message, "content", "") or "")
+        if "{" not in text:
+            continue
+        candidate = _first_json_object(text)
+        if not candidate:
+            continue
+        try:
+            payload = json.loads(candidate)
+        except ValueError:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        try:
+            return schema.model_validate(payload)
+        except Exception:  # noqa: BLE001 - a near-miss is not the answer
+            continue
+    return None
+
+
 _STRUCTURED_RESPONSE_NUDGE = (
     "Stop. You wrote your answer into the conversation as text. Text in the "
     "conversation is not returned to the workflow - only the structured "
@@ -845,8 +928,22 @@ def _run_gated_agent(
 
     structured_response = result.get("structured_response")
     if structured_response is None:
-        # Before throwing the conversation away, ask it for the answer it
-        # already has. Once per node execution, so this cannot loop.
+        # First, look for the answer in what the model already said. This costs
+        # no model call and recovers the common case: the schema was produced
+        # and printed rather than returned.
+        recovered = _answer_written_into_the_conversation(
+            result, getattr(agent, "workflow_response_format", None)
+        )
+        if recovered is not None:
+            logger.info(
+                "Stage %s wrote its structured response into the conversation; "
+                "recovered it without a retry", stage_name,
+            )
+            structured_response = recovered
+
+    if structured_response is None:
+        # Then ask the conversation for it. Once per node execution, so this
+        # cannot loop.
         nudged = _nudge_for_the_structured_response(agent, inner_thread_id, activity)
         if nudged is not None:
             if nudged.get("__interrupt__"):
@@ -2031,6 +2128,22 @@ def build_workflow_graph(
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
         has_more_sprints = sprint_index < len(sprints) - 1
+
+        # Accepted: the tests ran, the reviewer read them and said yes. This is
+        # the only point in a sprint where the workflow has an opinion that the
+        # work is sound, so it is the only sensible thing to record as a state
+        # worth returning to. Never fails the sprint that has just passed.
+        try:
+            from app.tools.version_control import commit_milestone
+
+            commit_milestone(
+                state["repository"].root_path,
+                sprint=sprint_index + 1,
+                goal=milestone.selected_sprint_goal,
+                summary=_as_text(review.acceptance_evidence),
+            )
+        except Exception:  # noqa: BLE001 - history is a convenience, not the run
+            logger.warning("Could not record a commit for this sprint", exc_info=True)
 
         if _review_enabled(state, SPRINT_REVIEW):
             next_stage = "user_review_sprint"

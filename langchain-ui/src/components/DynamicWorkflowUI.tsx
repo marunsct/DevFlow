@@ -68,9 +68,16 @@ export const DynamicWorkflowUI: React.FC<DynamicWorkflowUIProps> = ({ run }) => 
                   {stage.duration_seconds.toFixed(1)}s
                 </span>
               )}
+              {/* An approval is the step working, not repeating. These were one
+                  number, and it reported a run with two retries as sixty-six. */}
+              {stage.approval_count > 0 && (
+                <span className="mt-1 font-mono bg-surface/50 px-2 py-0.5 rounded border border-border/30">
+                  {stage.approval_count} approved
+                </span>
+              )}
               {stage.retry_count > 0 && (
                 <span className="text-warning mt-1 font-medium bg-warning/10 px-2 py-0.5 rounded">
-                  Retries: {stage.retry_count}
+                  Started over: {stage.retry_count}
                 </span>
               )}
             </div>
@@ -90,7 +97,9 @@ export const DynamicWorkflowUI: React.FC<DynamicWorkflowUIProps> = ({ run }) => 
       ended_at: null,
       status: run.status,
       duration_seconds: null,
-      retry_count: 0
+      retry_count: 0,
+      approval_count: 0,
+      sprint: 0
     });
   }
 

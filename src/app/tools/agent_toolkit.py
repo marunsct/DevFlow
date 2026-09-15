@@ -86,6 +86,53 @@ def build_repository_read_tools(repo_root: str, allow_subdirectories: bool = Tru
     return [inspect_repository, read_repository_file]
 
 
+def build_sprint_history_tool(repo_root: str) -> BaseTool:
+    """Return a read-only tool answering "what did the last sprint change?".
+
+    Every stage currently works that out by re-reading the workspace: 257
+    `read_file` calls over 22 distinct files on run-61c5a5b6, most of them
+    files an earlier sprint had not touched. The accepted-milestone commits
+    (see `app.tools.version_control`) already hold the answer.
+
+    Not in `HUMAN_APPROVAL_TOOLS`: it reads history this run wrote itself and
+    changes nothing.
+    """
+
+    @tool
+    def changed_since_sprint(sprint: int) -> dict[str, Any]:
+        """List the files changed since the end of a numbered sprint.
+
+        Use this instead of reading the whole project to find out what moved.
+        Sprint 1 means "since sprint 1 was accepted", so from sprint 2 you
+        would ask for 1.
+
+        Args:
+            sprint: the sprint number to compare against, 1 for the first.
+
+        Returns `{"changed": [...]}`, or `{"error": "..."}` when that sprint
+        has no recorded state - which is normal in the first sprint of a run.
+        """
+        from app.tools.version_control import changed_since, is_repository
+
+        if not is_repository(repo_root):
+            return {"error": "This workspace has no sprint history to compare against."}
+        if sprint < 1:
+            return {"error": "Sprint numbers start at 1."}
+
+        changed = changed_since(repo_root, f"sprint-{sprint}")
+        if not changed:
+            return {
+                "changed": [],
+                "note": (
+                    f"Nothing has changed since sprint {sprint} was accepted, or "
+                    f"sprint {sprint} has not been accepted yet."
+                ),
+            }
+        return {"changed": changed, "since": f"sprint-{sprint}"}
+
+    return changed_since_sprint
+
+
 def build_artifact_write_tool(repo_root: str) -> BaseTool:
     """Return the single controlled artifact-write tool bound to a repository root.
 
@@ -403,6 +450,7 @@ __all__ = [
     "build_artifact_write_tool",
     "build_journal_read_tool",
     "build_repository_read_tools",
+    "build_sprint_history_tool",
     "build_terminal_command_tool",
     "build_validation_tool",
 ]

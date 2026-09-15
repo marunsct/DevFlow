@@ -35,8 +35,10 @@ logger = logging.getLogger(__name__)
 #: Beyond this the digest costs more context than the calls it saves.
 MAX_FILES = 40
 
-#: Only the first model call of a stage. By the second the agent has the
-#: digest, and repeating it would be the accumulation this avoids.
+#: Retained for the tests that pin the old behaviour's boundary. The digest is
+#: now injected on every call: `override` does not persist it, so "repeating
+#: it" costs one copy per request and accumulates nothing, while injecting it
+#: once left the agent with no map from the second call onwards.
 FIRST_CALL_MESSAGES = 2
 
 _SYMBOL_PATTERNS = (
@@ -138,11 +140,30 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
 
 
 def build_workspace_digest_middleware(repo_root: str) -> Any:
-    """Middleware that hands a stage the workspace listing on its first call.
+    """Middleware that hands a stage the workspace listing on every call.
 
     Built as middleware rather than added to each request builder because there
     are thirteen of those, and reaching twelve of thirteen is the specific
     mistake this codebase has made four times.
+
+    On EVERY call, not just the first. Injected once, the listing is in the
+    opening request and nowhere afterwards - `override` does not write it to
+    stored history - so from the second call the agent has no map and goes
+    looking again. Measured on run-2eb3aa24's `principal_architect`: six
+    identical `ls {'path': '/'}` and four `ls` of a project directory that did
+    not exist yet, in one stage, against a digest that had already said what
+    was there. It is also why the listing count fell only 43% (46 to 26) when
+    this middleware shipped rather than to nearly nothing.
+
+    Re-injecting costs one copy per request and accumulates nothing, because
+    `override` applies to that call alone. It is also always current, so an
+    agent sees the files it has just written - which the first-call-only
+    version could never show.
+
+    This does not address a re-READ of a file's contents; a listing is not
+    content. Those were measured separately and are not eviction: compaction
+    triggers at 70,200 tokens and the largest stage of run-1d1b6c9c carried
+    about 22,600, with no compaction in the logs at all.
     """
     from langchain.agents.middleware import AgentMiddleware
 
@@ -153,7 +174,7 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             messages = getattr(request, "messages", None)
-            if not isinstance(messages, list) or len(messages) > FIRST_CALL_MESSAGES:
+            if not isinstance(messages, list):
                 return handler(request)
             if os.environ.get("WORKSPACE_DIGEST", "1").lower() in ("0", "false", "off"):
                 return handler(request)

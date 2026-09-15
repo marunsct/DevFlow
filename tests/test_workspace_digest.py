@@ -115,12 +115,35 @@ def test_the_digest_arrives_on_the_opening_call(workspace: Path) -> None:
     assert "The workspace as it stands" in str(messages[-1])
 
 
-def test_it_is_not_repeated_once_the_agent_has_it(workspace: Path) -> None:
-    """By the second call the agent has the digest; repeating it would be the
-    accumulation this avoids."""
+def test_it_is_given_on_later_calls_too(workspace: Path) -> None:
+    """The reverse of what this file asserted until run-2eb3aa24.
+
+    The old rule was "by the second call the agent has the digest". It does
+    not: `override` applies to one call and is never written to stored
+    history, so from the second call the agent has no map and goes looking.
+    Measured on run-2eb3aa24's `principal_architect` - six identical
+    `ls {'path': '/'}` and four `ls` of a project directory that did not exist
+    yet, in one stage, against a digest that had already said what was there.
+    """
     messages = _seen(_Request(12), workspace)
 
-    assert all("The workspace as it stands" not in str(m) for m in messages)
+    assert any("The workspace as it stands" in str(m) for m in messages)
+
+
+def test_it_still_never_accumulates(workspace: Path) -> None:
+    """The property the old rule was protecting, which survives the change.
+
+    Re-injecting is safe precisely because it does not build up: each request
+    carries exactly one copy however many calls have gone before, because the
+    override is discarded with the call.
+    """
+    request = _Request(12)
+    before = list(request.messages)
+
+    seen = _seen(request, workspace)
+
+    assert sum("The workspace as it stands" in str(m) for m in seen) == 1
+    assert request.messages == before
 
 
 def test_the_opening_history_is_not_modified(workspace: Path) -> None:

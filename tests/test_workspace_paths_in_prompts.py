@@ -81,3 +81,44 @@ def test_every_brief_builder_that_takes_a_root_withholds_it() -> None:
         body = request["messages"][0]["content"]
         assert root not in body
         assert "rooted at '/'" in body
+
+
+def test_no_brief_claims_a_completeness_it_does_not_have() -> None:
+    """Several briefs quote a document through `_truncate`.
+
+    Saying "quoted in full below" over truncated text tells an agent not to
+    read the real file exactly when it should - the same defect as a document
+    naming a file that does not exist, pointed the other way. The headers name
+    the source path instead, which is true whether or not the text was cut.
+    """
+    import re
+
+    offenders = []
+    for module in AGENTS.glob("*.py"):
+        source = module.read_text(encoding="utf-8")
+        for line in source.splitlines():
+            if "quoted in full" in line and not line.lstrip().startswith("#"):
+                offenders.append(f"{module.name}: {line.strip()}")
+
+    assert not offenders, offenders
+
+
+def test_a_quoted_document_names_the_file_it_came_from() -> None:
+    """So an agent that wants the untruncated text knows where to look, instead
+    of inventing `/home/user/workspace/docs/product_intake.md` - which
+    run-5c7d7d8d's stack selector did five times."""
+    from app.agents.stack_selector import build_stack_selector_request
+
+    body = build_stack_selector_request("intake", "tools", _Repo())["messages"][0][
+        "content"
+    ]
+
+    assert "docs/product_intake.md" in body
+    assert "docs/tools_and_models.md" in body
+
+
+class _Repo:
+    branch = "master"
+    commit = "abc1234"
+    root_path = "/app/data/workspaces/t21-run-1"
+    files: list = []

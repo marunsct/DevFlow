@@ -86,7 +86,7 @@ def build_architecture_review_request(
     )
     brief = (
         WORKSPACE_ROOT_NOTE
-        + f"--- Technical specification and ADRs under review ---\n{specification}\n"
+        + f"--- Technical specification and ADRs under review (docs/technical_specification.md) ---\n{specification}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

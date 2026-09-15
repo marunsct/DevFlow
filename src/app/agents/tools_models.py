@@ -203,7 +203,7 @@ def build_tools_models_request(
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"--- Approved product intake ---\n{truncated_intake}\n"
+        f"--- Approved product intake (docs/product_intake.md) ---\n{truncated_intake}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

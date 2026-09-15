@@ -109,8 +109,11 @@ def build_intake_request(
         # This is the rule the comment below already states, applied to the
         # other path on the same line - it was written for the repository and
         # the document was left as it was.
+        # "quoted below", never "in full": the text goes through `_truncate`,
+        # and a brief that claims completeness it does not have tells an agent
+        # not to read the real file precisely when it should.
         f"Product document: {Path(document.source_path).name} "
-        f"({document.source_type}), quoted in full below\n"
+        f"({document.source_type}), quoted below\n"
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on

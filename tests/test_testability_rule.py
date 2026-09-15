@@ -156,3 +156,22 @@ def test_the_rule_asks_for_the_script_that_runs_the_tests() -> None:
     assert "MUST SAY HOW TO RUN THE TESTS" in flat
     assert '"scripts": {"test"' in flat
     assert "missing script: test" in flat
+
+
+def test_the_rule_rejects_an_assertion_that_only_checks_it_did_not_throw() -> None:
+    """Measured on run-44e9fc83: `saveTasks` was covered only by
+    `doesNotThrow`, inside a describe block named "saveTasks + loadTasks
+    round-trip", and replacing its whole body with `return tasks` left all 33
+    tests passing. Persistence was an acceptance criterion of that brief.
+
+    The copy-test detector is silent here - the suite imports the module
+    correctly - and a static check for weak assertions was written, measured
+    against mutation ground truth, and found to contradict it, so none shipped.
+    """
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "IT DID NOT THROW" in flat
+    assert "doesNotThrow" in flat
+    # The rule must give a test the specialist can apply itself, not just a
+    # prohibition.
+    assert "would any test fail" in flat

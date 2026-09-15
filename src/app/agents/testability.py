@@ -94,6 +94,17 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   test file, they still pass whatever your code does. When a name appears both
   as an import and as your own declaration of the same name, the tests are
   calling yours. Import it once, call that, and declare nothing of that name.
+- "IT DID NOT THROW" IS NOT A RESULT. `assert.doesNotThrow(() => saveTasks(x))`
+  passes whether the function saves anything or nothing at all; so does a test
+  that only checks `typeof`. Assert on what the function RETURNED, or on the
+  state it changed - read it back and compare. Measured on run-44e9fc83:
+  `saveTasks` was covered only by `doesNotThrow`, inside a block named
+  "saveTasks + loadTasks round-trip", and replacing the whole function body
+  with `return tasks` left all 33 tests passing. Persistence was an acceptance
+  criterion of that brief.
+- THE TEST FOR THIS: if you replaced the body of the function with
+  `return <its first argument>`, would any test fail? If not, that function is
+  not tested, however many tests name it.
 - IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST. "The
   browser's random ids may differ, so I re-implemented it here" is not a reason
   to copy - it is a reason to take the id generator as an argument, or to

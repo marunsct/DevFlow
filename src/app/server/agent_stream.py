@@ -100,6 +100,11 @@ class AgentActivityStream(BaseCallbackHandler):
                 "Could not publish agent activity for %s", self.run_id, exc_info=True
             )
 
+    def publish_outcome(self, summary: str) -> None:
+        """Record what this stage decided. See `publish_stage_outcome`."""
+        if summary:
+            self._publish("log", _clip(summary))
+
     # -- callbacks ----------------------------------------------------------
 
     def on_llm_end(self, response: Any, **kwargs: Any) -> None:  # noqa: ARG002
@@ -142,8 +147,34 @@ def build_activity_callbacks(run_id: str | None, stage: str) -> list[BaseCallbac
     return [AgentActivityStream(run_id, stage)]
 
 
+def publish_stage_outcome(
+    callbacks: list[BaseCallbackHandler], summary: str
+) -> None:
+    """Record what a stage decided, as a `log` event on its own stage.
+
+    A stage's answer reaches the run through its structured response, and the
+    structured response is not a message - so nothing in the event stream
+    carries it. The effect on run-5d83e946 was that sprint 2's milestone was
+    rejected and the reasons appeared nowhere an operator could see: the sprint
+    simply went round again. The reasons existed, in the next stage's prompt,
+    which is not somewhere anyone can look.
+
+    The property that made it worth fixing is the direction of the bias. When
+    the model MISBEHAVES and writes its verdict as prose, `on_llm_end` publishes
+    it and the timeline shows everything; when the model behaves correctly, the
+    timeline shows nothing. Observability was inversely related to correctness.
+    """
+    if not summary:
+        return
+    for handler in callbacks:
+        if isinstance(handler, AgentActivityStream):
+            handler.publish_outcome(summary)
+            return
+
+
 __all__ = [
     "AgentActivityStream",
     "activity_stream_enabled",
     "build_activity_callbacks",
+    "publish_stage_outcome",
 ]

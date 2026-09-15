@@ -789,6 +789,45 @@ def _answer_left_in_a_spinning_stage(
     return _answer_written_into_the_conversation(values, schema)
 
 
+def _outcome_summary(structured_response: Any) -> str:
+    """One line saying what a stage decided, or "" when it decided nothing.
+
+    Read off the response object by field name rather than by stage, because
+    every reviewing stage has its own schema and they agree on the two fields
+    that matter: what the verdict was, and what has to change. A stage whose
+    schema has neither - a specialist returning a report, say - produces
+    nothing, which is the right amount of narration for it.
+    """
+    status = getattr(structured_response, "status", None)
+    findings = getattr(structured_response, "findings", None)
+    if status is None and not findings:
+        return ""
+
+    verdict = str(getattr(status, "value", status) or "").strip()
+    parts = [f"Outcome: {verdict}"] if verdict else []
+
+    described: list[str] = []
+    for finding in list(findings or [])[:3]:
+        severity = getattr(finding, "severity", "") or ""
+        severity = str(getattr(severity, "value", severity)).strip()
+        text = str(
+            getattr(finding, "description", None)
+            or getattr(finding, "summary", None)
+            or finding
+        ).strip()
+        if not text:
+            continue
+        described.append(f"[{severity}] {text}" if severity else text)
+
+    total = len(list(findings or []))
+    if total:
+        parts.append(f"{total} finding(s)")
+    parts.extend(described)
+    if total > len(described):
+        parts.append(f"... and {total - len(described)} more")
+    return "\n".join(parts)
+
+
 def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     """Explain a stage that hit its superstep ceiling, or None if it did not.
 
@@ -1134,6 +1173,15 @@ def _run_gated_agent(
 
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)
+
+    # What the stage decided, on the record. Narration only, and never allowed
+    # to fail the stage that produced it.
+    try:
+        from app.server.agent_stream import publish_stage_outcome
+
+        publish_stage_outcome(activity, _outcome_summary(structured_response))
+    except Exception:  # noqa: BLE001 - narration is never load-bearing
+        logger.debug("Could not publish the outcome of %s", stage_name, exc_info=True)
 
     return {
         output_key: structured_response,

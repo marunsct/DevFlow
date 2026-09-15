@@ -635,6 +635,66 @@ _TIMEOUT_ADVICE = (
 )
 
 
+def strip_a_doubled_working_directory(
+    command: Sequence[str], repo_root: str, working_directory: str | None
+) -> tuple[list[str], str | None]:
+    """Drop a project directory an argument repeats from `working_directory`.
+
+    An agent that sets `working_directory` to the project and then writes the
+    project into the path as well produces `todo-app/todo-app/app.test.mjs`,
+    which exists nowhere. Seen in at least seven runs:
+
+        run-2b5def74  simple-to-do-list-app/simple-to-do-list-app/app.test.js
+        run-61c5a5b6  simple-to-do-list-app/simple-to-do-list-app/tests.test.js  (x6)
+        run-cbb1a5fc  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
+        run-da6c5e19  task-manager/task-manager/*.test.*
+        run-2eb3aa24  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
+
+    The ambiguity is real - nothing says whether a path argument resolves
+    against the workspace root or against `working_directory` - so the agent
+    guesses, and half the time it guesses the same prefix twice.
+
+    Rewritten only when the path as given does NOT exist and the stripped one
+    DOES. That is what makes this safe rather than clever: a project that
+    genuinely contains a directory of its own name still resolves as written,
+    because then the original exists and nothing is touched.
+    """
+    if not working_directory:
+        return list(command), None
+    prefix = str(working_directory).strip("/")
+    if not prefix:
+        return list(command), None
+    try:
+        base = Path(repo_root).resolve() / prefix
+    except Exception:  # noqa: BLE001 - a guard must not fail the command
+        return list(command), None
+
+    rewritten: list[str] = []
+    changed: list[str] = []
+    for part in command:
+        argument = str(part)
+        if argument.startswith(f"{prefix}/"):
+            shortened = argument[len(prefix) + 1 :]
+            try:
+                if not (base / argument).exists() and (base / shortened).exists():
+                    rewritten.append(shortened)
+                    changed.append(f"{argument} -> {shortened}")
+                    continue
+            except OSError:
+                pass
+        rewritten.append(argument)
+    if not changed:
+        return list(command), None
+    return rewritten, (
+        "Note: the working directory is already '"
+        + prefix
+        + "', so "
+        + ", ".join(changed)
+        + " (the path as given does not exist; the shortened one does). Paths "
+        "in a command are relative to the working directory."
+    )
+
+
 def _docker_binary() -> str:
     binary = shutil.which("docker") or shutil.which("podman")
     if not binary:
@@ -937,9 +997,14 @@ class SandboxExecutor:
         if scaffolding is not None:
             outcome: Dict[str, Any] = {"error": scaffolding}
         else:
+            command, doubled = strip_a_doubled_working_directory(
+                command, repo_root, working_directory
+            )
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
+            if doubled:
+                outcome = {**outcome, "note": doubled}
         _record_execution(repo_root, role_name, command, outcome)
         return outcome
 

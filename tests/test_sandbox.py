@@ -548,3 +548,72 @@ def test_a_timeout_says_why_a_command_might_not_finish() -> None:
     assert source.count("_TIMEOUT_ADVICE") == 3
     assert "usually one that was not meant to" in sandbox._TIMEOUT_ADVICE
     assert "import it and call it" in sandbox._TIMEOUT_ADVICE
+
+
+# --- the project directory written twice ---------------------------------
+
+
+def test_a_doubled_project_directory_is_repaired(tmp_path) -> None:
+    """`todo-app/todo-app/app.test.mjs` exists nowhere.
+
+    An agent that sets `working_directory` to the project and then writes the
+    project into the path as well produces it. Seen in at least seven runs:
+    run-2b5def74, run-61c5a5b6 (six times), run-cbb1a5fc, run-da6c5e19,
+    run-2eb3aa24. Nothing says whether a path argument resolves against the
+    workspace root or against `working_directory`, so the agent guesses.
+    """
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    (tmp_path / "todo-app").mkdir()
+    (tmp_path / "todo-app/app.test.mjs").write_text("//\n", encoding="utf-8")
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "--test", "todo-app/app.test.mjs"], str(tmp_path), "todo-app"
+    )
+
+    assert command == ["node", "--test", "app.test.mjs"]
+    assert "already" in note and "todo-app/app.test.mjs -> app.test.mjs" in note
+
+
+def test_a_path_that_exists_as_written_is_never_touched(tmp_path) -> None:
+    """The property that makes this safe rather than clever.
+
+    A project that genuinely contains a directory of its own name resolves as
+    written, because then the original exists and nothing is rewritten.
+    """
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    (tmp_path / "pkg/pkg").mkdir(parents=True)
+    (tmp_path / "pkg/pkg/real.mjs").write_text("//\n", encoding="utf-8")
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "pkg/real.mjs"], str(tmp_path), "pkg"
+    )
+
+    assert command == ["node", "pkg/real.mjs"]
+    assert note is None
+
+
+def test_nothing_is_rewritten_when_neither_path_exists(tmp_path) -> None:
+    """A genuine typo must still fail, and say what it was given."""
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    (tmp_path / "todo-app").mkdir()
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "todo-app/missing.mjs"], str(tmp_path), "todo-app"
+    )
+
+    assert command == ["node", "todo-app/missing.mjs"]
+    assert note is None
+
+
+def test_no_working_directory_means_nothing_to_double(tmp_path) -> None:
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "--test", "todo-app/app.test.mjs"], str(tmp_path), None
+    )
+
+    assert command == ["node", "--test", "todo-app/app.test.mjs"]
+    assert note is None

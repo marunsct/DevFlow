@@ -328,3 +328,58 @@ def test_the_check_keys_on_the_file_not_the_returned_slice(tmp_path) -> None:
     result = backend.read("/a.txt", offset=50, limit=50)
 
     assert "already read lines" in result.file_data["content"]
+
+
+# --- guessing at the project directory ------------------------------------
+
+
+def test_a_wrong_project_guess_is_told_the_real_name(tmp_path) -> None:
+    """The run has already committed to a project directory and recorded it;
+    the guess is the only part missing.
+
+    Measured across six runs, 53 failed listings of a directory that never
+    existed while the marker sat on disk the whole time: ae4b717e 16,
+    37476645 11, 304add54 8, db3a4a0b 8, 2eb3aa24 5, d6369866 5.
+    run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times and
+    `task-manager` - the real one - four.
+    """
+    from app.tools.repository import PROJECT_MARKER
+
+    (tmp_path / "task-manager").mkdir()
+    (tmp_path / "task-manager/index.html").write_text("x", encoding="utf-8")
+    (tmp_path / PROJECT_MARKER).write_text("task-manager\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    for guess in ("task-manager-ui", "/task-tracker"):
+        error = backend.ls(guess).error
+        assert "project directory is 'task-manager'" in error
+
+
+def test_a_nested_path_is_not_a_project_guess(tmp_path) -> None:
+    """`ls /docs/nope` means something else entirely."""
+    from app.tools.repository import PROJECT_MARKER
+
+    (tmp_path / "task-manager").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / PROJECT_MARKER).write_text("task-manager\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    assert "project directory is" not in backend.ls("docs/nope").error
+
+
+def test_no_pinned_project_means_no_hint(tmp_path) -> None:
+    """Before any code is written there is nothing to name, and inventing one
+    would be worse than silence."""
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    assert "project directory is" not in backend.ls("todo-app").error
+
+
+def test_the_real_name_is_never_hinted_at_itself(tmp_path) -> None:
+    from app.tools.repository import PROJECT_MARKER
+
+    (tmp_path / "task-manager").mkdir()
+    (tmp_path / PROJECT_MARKER).write_text("task-manager\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    assert not getattr(backend.ls("task-manager"), "error", None)

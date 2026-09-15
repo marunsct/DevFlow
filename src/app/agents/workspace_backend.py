@@ -176,6 +176,46 @@ class _NoticingRepeats:
             "you did not already have.]"
         )
 
+    def _the_project_is_called(self, wanted: str) -> str:
+        """Name the project directory when an agent guesses at it and misses.
+
+        This run has already committed to one and recorded it; the guess is
+        the only part that is missing. Measured across six runs, 53 failed
+        listings of a directory that never existed while the marker sat on
+        disk the whole time:
+
+            ae4b717e 16   37476645 11   304add54 8
+            db3a4a0b  8   2eb3aa24  5   d6369866 5
+
+        run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times
+        and `task-manager` - the real one - four. The digest already lists the
+        files, and it guessed anyway; what changes this model's behaviour is
+        being told at the point of failure, which is where the "there is a file
+        of that name at ..." hint corrects a path on the very next call.
+
+        Only for a guess that plausibly meant the project: a bare first segment
+        with no extension. `ls /docs/nope` is not this.
+        """
+        root = getattr(self, "cwd", None)
+        if not root:
+            return ""
+        segments = [part for part in str(wanted).strip("/").split("/") if part]
+        if len(segments) != 1 or "." in segments[0]:
+            return ""
+        try:
+            from app.tools.repository import pinned_project_directory
+
+            pinned = pinned_project_directory(Path(root))
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        if not pinned or pinned == segments[0]:
+            return ""
+        return (
+            f" This run's project directory is '{pinned}' - that is where the "
+            "application lives, and it is recorded in the workspace. Use it "
+            "rather than guessing another name."
+        )
+
     def _note_if_repeated(self, key: str, text: str) -> str:
         seen = getattr(self, "_read_digests", None)
         if seen is None:
@@ -260,7 +300,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         result = super().ls(path)
         error = getattr(result, "error", None)
         if error and "path_not_found" in error:
-            hint = self._where_it_actually_is(path)
+            hint = self._where_it_actually_is(path) or self._the_project_is_called(path)
             return replace(result, error=error + hint) if hint else result
         entries = getattr(result, "entries", None)
         if not entries:

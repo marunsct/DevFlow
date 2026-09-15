@@ -18,7 +18,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -58,6 +58,42 @@ class ArchitectureReviewOutput(BaseModel):
     status: Literal["approved", "changes_required"] = Field(
         ..., description="Routing decision: forward to sprint planning, or back to the Principal Architect."
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_status_when_omitted(cls, data: Any) -> Any:
+        """Fill `status` from the findings when the model leaves it out.
+
+        Not a guess. The rule is stated in the system prompt as mandatory -
+        "Set status to 'changes_required' if any finding is blocking or major.
+        Only use 'approved' when no blocking or major finding remains" - so a
+        review that lists its findings has already decided; it has only failed
+        to write the word down.
+
+        Measured on run-6412366b: the reviewer answered
+        `{"findings": [...]}` with no `status` four times in one stage, which
+        cost two stage restarts and reached "attempt 3 of 3", the last retry
+        before the stage fails outright. Across all stored runs, 8 of 74
+        answers carrying findings omit the field.
+
+        Deliberately only fills what is ABSENT. A status the model did write is
+        left exactly as written: across those same runs there are zero cases of
+        a verdict approving around its own blocking finding, so there is
+        nothing to enforce and overriding a stated decision on no evidence
+        would be the worse error.
+        """
+        if not isinstance(data, dict) or data.get("status"):
+            return data
+        findings = data.get("findings")
+        if not isinstance(findings, list):
+            return data
+        severities = {
+            str((f or {}).get("severity", "")).strip().lower()
+            for f in findings
+            if isinstance(f, dict)
+        }
+        blocking = severities & {"blocking", "major"}
+        return {**data, "status": "changes_required" if blocking else "approved"}
     findings: list[ArchitectureReviewFinding] = Field(default_factory=list)
     approval_conditions: list[str] = Field(
         default_factory=list, description="Conditions that must hold for this approval to remain valid."

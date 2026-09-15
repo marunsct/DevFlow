@@ -79,14 +79,36 @@ def test_no_node_tests_only_for_a_pause():
 
 
 def test_a_retry_carries_no_output_key():
-    """The property `_hand_back` relies on."""
-    text = WORKFLOW.read_text()
-    start = text.index("    structured_response = result.get(\"structured_response\")")
-    end = text.index("    succeeded = ", start)
-    retry_block = text[start:end]
+    """The property `_hand_back` relies on.
 
-    assert '"stage": _owning_node(stage_name)' in retry_block
-    assert "output_key" not in retry_block, (
+    Asserted against the retry update itself rather than a block of source
+    text. Both ways a stage can produce no answer - returning empty, and
+    spinning to the recursion limit - now build their restart in
+    `_restart_on_a_fresh_conversation`, so reading one inline block would have
+    checked only the half that happened to remain there.
+    """
+    import inspect
+
+    from app.graph.workflow import _restart_on_a_fresh_conversation
+
+    update = _restart_on_a_fresh_conversation({}, "specialist_ui_ux_0", "t", "why")
+
+    assert update is not None
+    assert update["stage"] == _owning_node_of("specialist_ui_ux_0")
+    assert not any("output" in key for key in update), (
         "the retry update must not carry the output key, or callers cannot "
         "distinguish it from a finished stage"
     )
+    # Both NO-ANSWER paths build their restart here; `_transient_retry_update`
+    # is a separate case (a transient model error, not a missing answer) and
+    # keeps its own update. That the two no-answer paths share this one is
+    # asserted in tests/test_spin_restart.py.
+    assert "_restart_on_a_fresh_conversation" in inspect.getsource(
+        __import__("app.graph.workflow", fromlist=["x"])._run_gated_agent
+    )
+
+
+def _owning_node_of(stage_name: str) -> str:
+    from app.graph.workflow import _owning_node
+
+    return _owning_node(stage_name)

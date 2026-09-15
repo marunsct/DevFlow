@@ -856,6 +856,48 @@ def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     )
 
 
+def _restart_on_a_fresh_conversation(
+    state: WorkflowGraphState,
+    stage_name: str,
+    inner_thread_id: str,
+    why: str,
+) -> dict[str, Any] | None:
+    """Start the stage over on a clean conversation, or None when spent.
+
+    Clearing `pending_inner_thread_id` is what makes this a retry instead of a
+    loop: without it the resume path re-enters the very conversation that
+    failed, replays it, and fails identically - which is exactly what happened
+    on run-0b55ad49 until this existed.
+
+    Shared by the two ways a stage can produce no answer. They were handled
+    differently for no reason anyone could defend: a stage that RETURNED
+    without a structured response got three fresh conversations, and a stage
+    that SPUN until the recursion limit got none - it failed the whole run on
+    its first attempt. run-e9e7f48f died that way in `specialist_ui_ux_2`,
+    with three restarts unused, while the error it raised said in as many
+    words that "a resume re-runs it on a fresh conversation".
+    """
+    retries = dict(state.get("structured_retries") or {})
+    attempted = retries.get(stage_name, 0)
+    if attempted >= _max_structured_retries():
+        return None
+    retries[stage_name] = attempted + 1
+    logger.warning(
+        "Stage %s %s; retrying on a fresh conversation (attempt %d of %d)",
+        stage_name, why, attempted + 2, _max_structured_retries() + 1,
+    )
+    return {
+        # The node that owns this stage, never the stage's own name:
+        # `specialist_ui_ux_0` is not a graph node.
+        "stage": _owning_node(stage_name),
+        "structured_retries": retries,
+        "pending_approval": None,
+        "pending_inner_thread_id": None,
+        "pending_decision": None,
+        "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
+    }
+
+
 def _nudge_text(result: dict[str, Any] | None, schema: Any) -> str:
     """What to say to a model that has not returned its structured response.
 
@@ -1076,6 +1118,11 @@ def _run_gated_agent(
                             *state.get("inner_thread_ids", []), inner_thread_id
                         ],
                     }
+                restarted = _restart_on_a_fresh_conversation(
+                    state, stage_name, inner_thread_id, "spun without returning an answer"
+                )
+                if restarted is not None:
+                    return restarted
                 return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
@@ -1137,6 +1184,11 @@ def _run_gated_agent(
                             *state.get("inner_thread_ids", []), inner_thread_id
                         ],
                     }
+                restarted = _restart_on_a_fresh_conversation(
+                    state, stage_name, inner_thread_id, "spun without returning an answer"
+                )
+                if restarted is not None:
+                    return restarted
                 return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
@@ -1206,25 +1258,12 @@ def _run_gated_agent(
         # instead of a loop: without it the resume path re-enters the very
         # conversation that failed, replays it, and fails identically - which is
         # exactly what happened on run-0b55ad49 until this existed.
-        retries = dict(state.get("structured_retries") or {})
-        attempted = retries.get(stage_name, 0)
-        if attempted < _max_structured_retries():
-            retries[stage_name] = attempted + 1
-            logger.warning(
-                "Stage %s produced no structured response; retrying on a fresh "
-                "conversation (attempt %d of %d)",
-                stage_name, attempted + 2, _max_structured_retries() + 1,
-            )
-            return {
-                # The node that owns this stage, never the stage's own name:
-                # `specialist_ui_ux_0` is not a graph node.
-                "stage": _owning_node(stage_name),
-                "structured_retries": retries,
-                "pending_approval": None,
-                "pending_inner_thread_id": None,
-                "pending_decision": None,
-                "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
-            }
+        restarted = _restart_on_a_fresh_conversation(
+            state, stage_name, inner_thread_id, "produced no structured response"
+        )
+        if restarted is not None:
+            return restarted
+        attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
         raise ValueError(
             _missing_structured_response(stage_name, result, attempts=attempted + 1)
         )

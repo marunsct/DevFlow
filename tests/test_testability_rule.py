@@ -120,3 +120,24 @@ def test_the_rule_requires_the_module_type_to_be_declared() -> None:
     assert "IF YOU USE `export`, DECLARE IT" in flat
     assert '{"type": "module"}' in flat
     assert "Neither installs anything" in flat
+
+
+def test_the_rule_answers_the_copy_that_imports_the_module_anyway() -> None:
+    """run-5d83e946 satisfied every structural clause and copied the code.
+
+    It exported the pure functions, declared `{"type": "module"}`, guarded the
+    bootstrap, and imported the real module nine times - to assert
+    `typeof mod.addTask === 'function'` and nothing else, with every
+    behavioural assertion running against inline copies. The standing clause
+    ("if you find yourself writing 'this test defines the same logic inline'")
+    addresses the case where importing is impossible; this run could import.
+    """
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "CALL THE FUNCTION YOU IMPORTED" in flat
+    # Checking an export exists must be named as not-a-test, since that is the
+    # spelling the copy hides behind.
+    assert "has checked that an export exists, which is not testing it" in flat
+    # And the excuse that produced it: an awkward-to-call function is a reason
+    # to change the function, not to reimplement it in the test.
+    assert "CHANGE THE FUNCTION, NOT THE TEST" in flat

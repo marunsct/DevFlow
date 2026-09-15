@@ -852,6 +852,36 @@ def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
     return entries
 
 
+def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
+    """How many times this exact command has already failed in this run.
+
+    Measured twice on run-9ff00d5b's `specialist_backend_2`: the agent wrote a
+    `verify.js`, hit `node:fs:448 ... binding.readFileUtf8` on a path that does
+    not exist, and ran the identical command four times with the identical
+    failure. Earlier, run-e9e7f48f's `specialist_ui_ux_2` made 14 identical
+    `grep` calls and rode the stage into the recursion limit, failing the run.
+
+    Nothing told either of them. A command that failed and is run again
+    unchanged will fail again, and the only thing that reliably changes this
+    model's behaviour is being told so in the result it just asked for - the
+    "there is a file of that name at ..." hint corrected a path on the very
+    next call, while the same guidance in a brief changed nothing.
+
+    Counted from the run's own ledger, which already records argv and exit code
+    for every execution, so this needs no new state.
+    """
+    argv = [str(part) for part in command]
+    try:
+        entries = read_execution_ledger(repo_root)
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return 0
+    return sum(
+        1
+        for entry in entries
+        if entry.get("command") == argv and _as_exit_code(entry.get("returncode")) not in (0, None)
+    )
+
+
 def summarise_executions(repo_root: str) -> str:
     """A short digest of what actually ran, for a reviewer or a model."""
     entries = read_execution_ledger(repo_root)
@@ -1008,6 +1038,18 @@ class SandboxExecutor:
             )
             if doubled:
                 outcome = {**outcome, "note": doubled}
+            already = failed_this_way_before(repo_root, command)
+            if already and _as_exit_code(outcome.get("returncode")) not in (0, None):
+                note = (
+                    f"This exact command has already failed {already} time(s) in "
+                    "this run. Running it again unchanged will fail again - "
+                    "change the command, or change the file it runs, before "
+                    "retrying."
+                )
+                outcome = {
+                    **outcome,
+                    "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
+                }
         _record_execution(repo_root, role_name, command, outcome)
         return outcome
 

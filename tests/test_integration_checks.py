@@ -611,3 +611,77 @@ def test_a_test_named_with_a_prefix_is_still_a_test(tmp_path):
     assert _NOT_APPLICATION.search("proj/test_helpers.js")
     assert not _NOT_APPLICATION.search("proj/app.js")
     assert not _NOT_APPLICATION.search("proj/latest-news.js")
+
+
+# --- "lines of code" is not "lines of file" -------------------------------
+
+
+def test_the_report_separates_code_from_blank_and_comment(tmp_path):
+    """A brief capping "lines of code" means the code lines.
+
+    Reporting only the raw count left the reviewer comparing a number against a
+    limit that means something else: on run-2b5def74 nothing could say whether
+    609 raw lines broke a 500-line cap. They did not - 315 of them were code.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text(
+        "// a comment\n"
+        "\n"
+        "function createTask(t){\n"
+        "    return t;\n"
+        "}\n"
+        "/* a block\n"
+        "   that runs on */\n"
+        "const x = 1;\n",
+        encoding="utf-8",
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "of them code (neither blank nor comment)" in summary
+
+
+def test_comment_and_blank_lines_are_not_code(tmp_path):
+    from app.analysis.integration_checks import _code_lines
+
+    source = (
+        "// line comment\n"
+        "\n"
+        "   \n"
+        "function a(){}\n"
+        "/* block\n"
+        "   continues\n"
+        "   ends */\n"
+        "const b = 2;\n"
+        "# python style\n"
+    )
+
+    assert _code_lines(source) == 2
+
+
+def test_an_html_comment_is_not_code():
+    from app.analysis.integration_checks import _code_lines
+
+    source = "<!doctype html>\n<!-- a note\n     over lines -->\n<div></div>\n"
+
+    assert _code_lines(source) == 2
+
+
+def test_a_single_line_block_comment_does_not_swallow_the_file():
+    """An unterminated-block bug here would report almost nothing as code."""
+    from app.analysis.integration_checks import _code_lines
+
+    source = "/* one line */\nconst a = 1;\nconst b = 2;\n"
+
+    assert _code_lines(source) == 2
+
+
+def test_an_empty_file_has_no_code():
+    from app.analysis.integration_checks import _code_lines
+
+    assert _code_lines("") == 0
+    assert _code_lines("\n\n   \n") == 0

@@ -424,6 +424,45 @@ _COUNTED_SUFFIXES = frozenset({".html", ".htm", ".css", ".js", ".mjs", ".cjs", "
 _NOT_COUNTED = re.compile(r"(^|/)(package-lock\.json|.*\.min\.(js|css))$")
 
 
+_LINE_COMMENT = re.compile(r"^\s*(//|#)")
+_BLOCK_COMMENT_EDGES = (("/*", "*/"), ("<!--", "-->"))
+
+
+def _code_lines(text: str) -> int:
+    """Lines that are neither blank nor comment.
+
+    "Maximum 500 lines of code" does not mean 500 lines of file. Reporting only
+    the raw count leaves the reviewer comparing a number against a limit that
+    means something else, and on run-2b5def74 that ambiguity is why nothing
+    could say whether 609 raw lines broke a 500-line cap. The workflow's own
+    agent reached the same conclusion unprompted: the audit it wrote in sprint 1
+    counted "non-blank, non-comment" lines, and then never ran again.
+    """
+    count = 0
+    in_block: str | None = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if in_block:
+            if in_block in line:
+                in_block = None
+            continue
+        if not line:
+            continue
+        opened = False
+        for start, end in _BLOCK_COMMENT_EDGES:
+            if line.startswith(start):
+                if end not in line[len(start):]:
+                    in_block = end
+                opened = True
+                break
+        if opened:
+            continue
+        if _LINE_COMMENT.match(line):
+            continue
+        count += 1
+    return count
+
+
 def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None) -> str:
     """How many lines of code this project is, per file and in total.
 
@@ -445,18 +484,22 @@ def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None)
     application: list[tuple[int, str]] = []
     tests: list[tuple[int, str]] = []
     stray: list[tuple[int, str]] = []
+    counted_code: dict[str, int] = {}
     orphans = orphans or set()
     for path in files:
         relative = str(path.relative_to(root))
         if path.suffix.lower() not in _COUNTED_SUFFIXES or _NOT_COUNTED.search(relative):
             continue
         try:
-            lines = _read(path).count("\n") + 1
+            text = _read(path)
         except Exception:  # noqa: BLE001 - a size report must never fail the checks
             continue
+        lines = text.count("\n") + 1
+        code = _code_lines(text)
         if relative in orphans:
             stray.append((lines, relative))
             continue
+        counted_code[relative] = code
         # Split, because a brief capping "lines of code" almost never means the
         # test suite - and reporting one number invites the reviewer to judge
         # the wrong thing. On run-18c0e34c the application was 631 lines and the
@@ -473,10 +516,12 @@ def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None)
 
     listed = "\n".join(f"  {n:5d}  {name}" for n, name in application[:8])
     more = f"\n  ... and {len(application) - 8} more" if len(application) > 8 else ""
+    code_total = sum(counted_code.get(name, 0) for _, name in application)
     report = (
-        f"\n\nSize of the product as built. If the brief caps the size, compare "
-        f"it against the application total:\n"
+        f"\n\nSize of the product as built. A brief that caps \"lines of code\" "
+        f"means the second number, not the first:\n"
         f"  application: {app_total:,} lines across {len(application)} file(s)\n"
+        f"               {code_total:,} of them code (neither blank nor comment)\n"
         f"{listed}{more}"
     )
     if tests:

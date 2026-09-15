@@ -802,8 +802,6 @@ def _scaffolding_at_the_workspace_root(
       shape of the mistake. A file written to `my-app/index.html` pins
       `my-app` and is exactly what is wanted.
     """
-    if pinned_project_directory(root):
-        return None
     if not relative_parts:
         return None
     if Path(relative_parts[-1]).suffix.lower() not in _SCAFFOLDABLE_SUFFIXES:
@@ -818,6 +816,17 @@ def _scaffolding_at_the_workspace_root(
         return None
 
     shown = "/".join(relative_parts)
+    project = pinned_project_directory(root)
+    if project:
+        # A source file at the root once a project exists is the other half of
+        # the same mistake: on run-7b11cb67 `index.html` sat at the workspace
+        # root beside the `css/` that had been pinned, belonging to neither.
+        return (
+            f"Refusing to write '{shown}': this run's project is '{project}', and "
+            f"source files belong inside it. Write '{project}/{shown}' instead - "
+            "a file at the workspace root is part of no project and nothing will "
+            "build or test it."
+        )
     return (
         f"Refusing to write '{shown}': the application needs one top-level "
         "project directory, and this run does not have one yet. Writing here "
@@ -903,6 +912,9 @@ _NON_PROJECT_DIRECTORIES = frozenset({
     "css", "js", "scss", "sass", "less", "styles", "stylesheets", "scripts",
     "assets", "static", "public", "img", "images", "media", "fonts",
     "components", "lib", "vendor", "node_modules", "bin", "obj",
+    # `src` is where a project keeps its source, not the name of one. Left out
+    # of this list it pinned as readily as `css` did.
+    "src", "source", "app_src",
 })
 
 

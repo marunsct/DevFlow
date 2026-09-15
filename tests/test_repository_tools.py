@@ -1292,3 +1292,42 @@ def test_once_pinned_the_rule_never_contradicts_the_pin(repo_root: Path) -> None
     write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
 
     assert write_approved_artifact(repo_root, "todo-app/css/a.css", "body{}")["path"]
+
+
+def test_src_is_where_a_project_keeps_its_source_not_a_project(repo_root: Path) -> None:
+    """Left off the list it pinned as readily as `css` did."""
+    with pytest.raises(RepositoryToolError, match="one top-level"):
+        write_approved_artifact(repo_root, "src/index.html", "<html>")
+
+
+def test_a_source_file_at_the_root_is_refused_after_a_project_exists(repo_root: Path) -> None:
+    """The other half of the same mistake: on run-7b11cb67 `index.html` sat at
+    the workspace root beside the `css/` that had been pinned, belonging to
+    neither. Guarding only the unpinned case left that open."""
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+
+    with pytest.raises(RepositoryToolError, match="source files belong inside it"):
+        write_approved_artifact(repo_root, "app.js", "// app")
+
+
+def test_that_refusal_names_the_project_and_the_path(repo_root: Path) -> None:
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(repo_root, "app.js", "// app")
+
+    assert "todo-app/app.js" in str(caught.value)
+
+
+def test_an_asset_folder_inside_the_project_is_untouched(repo_root: Path) -> None:
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+
+    result = write_approved_artifact(repo_root, "todo-app/css/style.css", "body{}")
+
+    assert result["path"] == "todo-app/css/style.css"
+
+
+def test_documents_stay_out_of_it_either_way(repo_root: Path) -> None:
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+
+    assert write_approved_artifact(repo_root, "docs/plan.md", "# Plan")["path"] == "docs/plan.md"

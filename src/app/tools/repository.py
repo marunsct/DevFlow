@@ -1367,11 +1367,26 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
     # The delete tool was added to end a cleanup loop; without this it also
     # hands an agent a way to throw away the only proof the product works.
     if looks_like_a_test(shown):
+        # The refusal has to name the way out, or an agent that genuinely wrote
+        # a throwaway probe has nowhere to go. run-9ff00d5b's
+        # `specialist_testing_1` wrote `todo-app/debug.test.mjs`, ran it, then
+        # asked to delete it five times in a row - refused every time - until
+        # the repeat guard stopped the stage and FAILED THE RUN. The old text
+        # said "give it a name that is not a test name", which reads as advice
+        # for next time and not as something to do with the file in hand.
+        #
+        # The two steps below are verified: `move_artifact` accepts a test name
+        # as its source, and `delete_artifact` accepts the renamed file.
+        suggestion = shown.replace(".test.", ".").replace(".spec.", ".")
+        if suggestion == shown:
+            suggestion = f"{shown}.probe"
         raise RepositoryToolError(
             f"'{shown}' is a test, and tests are part of what this run delivers - "
             "the reviewer reads them as the evidence the product works. Leave it. "
-            "If it is genuinely a throwaway probe rather than a test, give it a "
-            "name that is not a test name, so nothing later mistakes it for one."
+            "If it is genuinely a throwaway probe and not a test, rename it out of "
+            f"the way first: `move_artifact` from '{shown}' to '{suggestion}', then "
+            "`delete_artifact` on that. Asking to delete this path again will be "
+            "refused the same way."
         )
     if target.is_dir():
         raise RepositoryToolError(

@@ -10,6 +10,8 @@ that ends the regress and the instructions that point at it.
 
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 import pytest
@@ -303,7 +305,14 @@ def test_the_refusal_says_what_to_do_instead(repo_root: Path) -> None:
     with pytest.raises(RepositoryToolError) as caught:
         delete_approved_artifact(repo_root, "project/a.test.js")
 
-    assert "a name that is not a test name" in " ".join(str(caught.value).split())
+    # Naming the route, not just the rule. The old wording ("give it a name
+    # that is not a test name") reads as advice for next time and left an agent
+    # holding a throwaway probe with nowhere to go: run-9ff00d5b asked to
+    # delete one five times, was refused each time, and the repeat guard failed
+    # the run.
+    message = " ".join(str(caught.value).split())
+    assert "move_artifact" in message
+    assert "delete_artifact" in message
 
 
 def test_a_genuine_scratch_probe_is_still_deletable(repo_root: Path) -> None:
@@ -358,3 +367,70 @@ def test_an_mjs_test_is_protected_from_deletion(name: str) -> None:
     from app.tools.repository import looks_like_a_test
 
     assert looks_like_a_test(name)
+
+
+# --- the refusal has to name a way out -----------------------------------
+
+
+def test_the_test_refusal_names_the_two_steps_that_work(tmp_path):
+    """run-9ff00d5b's `specialist_testing_1` wrote `todo-app/debug.test.mjs`,
+    ran it, then asked to delete it five times in a row - refused every time -
+    until the repeat guard stopped the stage and FAILED THE RUN.
+
+    The old text said "give it a name that is not a test name", which reads as
+    advice for next time, not as something to do with the file in hand. Two of
+    this codebase's own guards collided: the test protection from finding 08
+    and the identical-request guard.
+    """
+    from app.tools.repository import PROJECT_MARKER, delete_approved_artifact
+
+    (tmp_path / "todo-app").mkdir()
+    (tmp_path / PROJECT_MARKER).write_text("todo-app\n", encoding="utf-8")
+    (tmp_path / "todo-app/debug.test.mjs").write_text("probe\n", encoding="utf-8")
+
+    with pytest.raises(Exception) as refusal:
+        delete_approved_artifact(str(tmp_path), "todo-app/debug.test.mjs")
+
+    message = str(refusal.value)
+    assert "move_artifact" in message
+    assert "todo-app/debug.mjs" in message
+    # And it must say that repeating will not help, which is what it did.
+    assert "refused the same way" in message
+
+
+def test_the_route_the_refusal_names_actually_works(tmp_path):
+    """Advice that does not work is worse than none.
+
+    Verified end to end rather than asserted: `move_artifact` accepts a test
+    name as its source, and `delete_artifact` accepts the renamed file.
+    """
+    from app.tools.repository import (
+        PROJECT_MARKER,
+        delete_approved_artifact,
+        move_approved_artifact,
+    )
+
+    (tmp_path / "todo-app").mkdir()
+    (tmp_path / PROJECT_MARKER).write_text("todo-app\n", encoding="utf-8")
+    (tmp_path / "todo-app/debug.test.mjs").write_text("probe\n", encoding="utf-8")
+
+    move_approved_artifact(str(tmp_path), "todo-app/debug.test.mjs", "todo-app/debug.mjs")
+    deleted = delete_approved_artifact(str(tmp_path), "todo-app/debug.mjs")
+
+    assert deleted["status"] == "deleted"
+    assert not (tmp_path / "todo-app/debug.mjs").exists()
+
+
+def test_a_real_test_is_still_protected(tmp_path):
+    """The protection exists because run-2b5def74's test round deleted three of
+    its four suites as "temporary helper scripts", leaving only the one that
+    tested a copy of the code."""
+    from app.tools.repository import PROJECT_MARKER, delete_approved_artifact
+
+    (tmp_path / "todo-app").mkdir()
+    (tmp_path / PROJECT_MARKER).write_text("todo-app\n", encoding="utf-8")
+    (tmp_path / "todo-app/app.test.mjs").write_text("real tests\n", encoding="utf-8")
+
+    with pytest.raises(Exception):
+        delete_approved_artifact(str(tmp_path), "todo-app/app.test.mjs")
+    assert (tmp_path / "todo-app/app.test.mjs").exists()

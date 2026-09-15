@@ -322,10 +322,17 @@ def _module_system_mismatch(files: list[Path], root: Path) -> list[str]:
             return []
 
     listed = ", ".join(sorted(str(p.relative_to(root)) for p in esm_sources)[:4])
+    # Naming only Jest made this dismissible by every project that does not use
+    # Jest - which is most of them here. Measured on run-da6c5e19: `app.js`
+    # exported three objects, nothing declared the module type, and `node --test`
+    # loaded it as CommonJS. The test file then reported "we can't directly
+    # import app.js", wrote its own copy of the logic, and passed.
     return [
-        f"{listed} use ES module syntax, but no `jest.config.*` declares a "
-        '`transform` and no `package.json` sets `"type": "module"`. Jest cannot '
-        "parse these files."
+        f'{listed} use ES module syntax, but nothing declares it: no '
+        '`package.json` sets `"type": "module"` and the files are not named '
+        "`.mjs`. A test that imports them gets \"does not provide an export "
+        "named ...\" - the runner loads them as CommonJS and the exports are "
+        "invisible. Jest additionally needs a `transform`."
     ]
 
 

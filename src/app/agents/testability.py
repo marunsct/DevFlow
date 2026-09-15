@@ -31,6 +31,15 @@ specification correctly described pure functions, a storage adapter and an
 `index.html` - "No external files, no build step, no module system". Getting
 the shape right does not help if nothing can open the file.
 
+run-da6c5e19 got everything else right and still could not be tested. Its
+specification asked for ES modules and a guarded bootstrap; its `app.js`
+delivered both - `export { logic, storage, ui }` under
+`if (typeof document !== "undefined") init();`. No `package.json` declared the
+module type, so `node --test` loaded the file as CommonJS, the exports were
+invisible, and the testing specialist wrote "we can't directly import app.js",
+copied the logic, and passed. Every part correct except the one line that tells
+the runtime what kind of file it is reading.
+
 run-2b5def74 also shows why the second half matters as much as the first. With this
 rule in force the application came back correctly shaped - pure functions
 taking their arguments, a storage adapter, every DOM reference inside `init()`.
@@ -67,6 +76,11 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   One `app.js` beside `index.html` costs nothing - it is still a single-page
   application, still no build step, still no dependency - and it is the whole
   difference between a suite that tests the product and one that tests itself.
+- IF YOU USE `export`, DECLARE IT. A `.js` file is CommonJS unless something
+  says otherwise, so a test importing it gets "does not provide an export
+  named ..." and the exports are invisible - the code looks importable and is
+  not. Ship a `package.json` containing `{"type": "module"}` beside it, or name
+  the files `.mjs`. Neither installs anything.
 - A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and
   `<script type="module">` are part of the browser and part of Node; they
   install nothing and add no package. A brief that forbids external

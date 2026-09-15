@@ -109,3 +109,14 @@ def test_the_rule_requires_the_logic_to_be_in_its_own_file() -> None:
 
     assert "THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN" in flat
     assert "no runner can import it" in flat
+
+
+def test_the_rule_requires_the_module_type_to_be_declared() -> None:
+    """run-da6c5e19 got everything else right and still could not be tested:
+    ES module exports under a guarded bootstrap, in their own file, with
+    nothing declaring what kind of file it was."""
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "IF YOU USE `export`, DECLARE IT" in flat
+    assert '{"type": "module"}' in flat
+    assert "Neither installs anything" in flat

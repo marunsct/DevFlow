@@ -129,7 +129,11 @@ def test_esm_source_under_a_commonjs_test_config_is_reported(tmp_path):
     report = summarise_integration(root)
 
     assert "ES module syntax" in report
-    assert "Jest cannot parse" in report
+    # The message used to name only Jest, which let every project that does not
+    # use Jest dismiss it - and most here do not. It now leads with the
+    # consequence any runner hits and mentions Jest's extra requirement after.
+    assert "does not provide an export named" in report
+    assert "Jest additionally needs a `transform`" in report
 
 
 @pytest.mark.parametrize(
@@ -737,3 +741,39 @@ def test_a_small_inline_script_is_not_an_application(tmp_path):
     )
 
     assert "No test runner can import it" not in summarise_integration(str(tmp_path))
+
+
+def test_the_module_mismatch_names_the_real_consequence(tmp_path):
+    """Naming only Jest made this dismissible by every project that does not
+    use Jest - which is most of them here.
+
+    Measured on run-da6c5e19: `app.js` exported three objects, nothing declared
+    the module type, `node --test` loaded it as CommonJS, and the test file
+    reported "we can't directly import app.js", wrote its own copy of the
+    logic, and passed.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text(
+        "function createTask(t){ return t; }\nexport { createTask };\n", encoding="utf-8"
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "does not provide an export named" in summary
+    assert "loads them as CommonJS" in summary
+
+
+def test_a_declared_module_type_clears_it(tmp_path):
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export function a(){}\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"type": "module"}\n', encoding="utf-8")
+
+    assert "does not provide an export named" not in summarise_integration(str(tmp_path))

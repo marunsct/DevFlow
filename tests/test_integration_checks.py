@@ -1166,3 +1166,75 @@ def test_the_budget_check_and_the_size_report_count_the_same_lines(tmp_path):
     # 40 lines of app + 1 of html is under 100, and the 500-line probe must not
     # drag it over.
     assert "maximum this project" not in summary
+
+
+# --- a test that only passes from one directory ---------------------------
+
+
+def test_a_test_that_opens_a_cwd_relative_path_is_reported(tmp_path):
+    """The defect that passes every check the workflow makes.
+
+    On run-9ff00d5b the suite read `'./todo-app/index.html'`, and the test
+    round ran `node --test todo-app/app.test.mjs` from the workspace root,
+    where that resolves. It passed eight times. From inside the project
+    directory - which is where anyone handed the project runs it - every test
+    fails with ENOENT.
+
+    run-5d83e946 hit the same shape with `path.resolve('./script.js')`, the
+    test round happened to run from the other directory, the tests failed, and
+    a defect-fix round corrected it. The difference between a caught defect and
+    a shipped one was which directory the command happened to use.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "app.js").write_text("export function a(){}\n", encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.test.mjs").write_text(
+        "import {readFileSync} from 'node:fs';\n"
+        "const page = readFileSync('./todo-app/index.html', 'utf-8');\n",
+        encoding="utf-8",
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "relative to whatever directory it is run from" in summary
+    assert "import.meta.url" in summary
+
+
+def test_a_path_anchored_to_the_test_file_is_left_alone(tmp_path):
+    """19 of the 20 delivered test files do this correctly; the check must not
+    report them."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "app.js").write_text("export function a(){}\n", encoding="utf-8")
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.test.mjs").write_text(
+        "import {readFileSync} from 'node:fs';\n"
+        "import {fileURLToPath} from 'node:url';\n"
+        "import {dirname, join} from 'node:path';\n"
+        "const here = dirname(fileURLToPath(import.meta.url));\n"
+        "const page = readFileSync(join(here, 'index.html'), 'utf-8');\n",
+        encoding="utf-8",
+    )
+
+    assert "relative to whatever directory" not in summarise_integration(str(tmp_path))
+
+
+def test_application_code_is_not_reported(tmp_path):
+    """Only tests. Application code reading a relative path is its own
+    business and runs from wherever the page loads it."""
+    from app.analysis.integration_checks import _tests_that_depend_on_the_working_directory
+
+    (tmp_path / "app.js").write_text(
+        "import {readFileSync} from 'node:fs';\n"
+        "const x = readFileSync('./data/seed.json');\n",
+        encoding="utf-8",
+    )
+
+    assert not _tests_that_depend_on_the_working_directory(
+        sorted(tmp_path.rglob("*")), tmp_path
+    )

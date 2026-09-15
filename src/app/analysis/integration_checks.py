@@ -441,6 +441,62 @@ def _names_bound_from_a_relative_module(text: str) -> set[str]:
     return names
 
 
+#: `readFileSync("./x")` and friends. A bare `x/y` is relative too; a leading
+#: `/` is not, and neither is a path built from `import.meta.url`.
+_READS_A_PATH = re.compile(
+    r"""readFile(?:Sync)?\s*\(\s*["'](\.{1,2}/[^"']+|[A-Za-z][^"'/]*/[^"']+)["']""",
+)
+
+#: The two ways a test file anchors a path to its own location.
+_ANCHORED = ("import.meta.url", "__dirname")
+
+
+def _tests_that_depend_on_the_working_directory(files: list[Path], root: Path) -> list[str]:
+    """Test files that open a path relative to wherever they were run from.
+
+    This is the defect that passes every check the workflow makes. On
+    run-9ff00d5b the suite read `'./todo-app/index.html'`, and the test round
+    ran it as `node --test todo-app/app.test.mjs` from the workspace root,
+    where that path resolves. It passed eight times. From inside the project
+    directory - `cd todo-app && node --test app.test.mjs`, which is how anyone
+    who is handed the project runs it - every test fails with ENOENT.
+
+    So the workflow cannot find this by running the tests: they pass. It is
+    only visible by reading how the path is built.
+
+    run-5d83e946 hit the same thing with `path.resolve('./script.js')`, where
+    the test round happened to run from the other directory, the tests failed,
+    and a defect-fix round corrected it to `import.meta.url`. The difference
+    between a caught defect and a shipped one was which directory the command
+    happened to use.
+
+    Measured across the delivered workspaces: 19 test files anchor their paths
+    to the test file and one does not, so this reports the one.
+    """
+    problems = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        if not _NOT_APPLICATION.search(relative):
+            continue
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts"}:
+            continue
+        text = _read(path)
+        if any(anchor in text for anchor in _ANCHORED):
+            continue
+        found = _READS_A_PATH.findall(text)
+        if not found:
+            continue
+        named = ", ".join(sorted(set(found))[:3])
+        problems.append(
+            f"{relative} opens {named} relative to whatever directory it is "
+            "run from, not to itself. It passes when run from the workspace "
+            "root and fails from the project directory, which is where anyone "
+            "handed this project will run it. Resolve the path against "
+            "`import.meta.url` (or `__dirname`) so it works from either."
+        )
+    return problems
+
+
 def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
     """Test files that define the application's own functions rather than import them.
 
@@ -1075,6 +1131,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _application_embedded_in_html(files, root)
             + _languages_sharing_a_directory(files, root)
             + _module_system_mismatch(files, root)
+            + _tests_that_depend_on_the_working_directory(files, root)
             + _over_the_declared_budget(files, root, _orphans_quietly(files, root))
         )
     except Exception:  # noqa: BLE001

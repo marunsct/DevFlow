@@ -2198,7 +2198,17 @@ def build_workflow_graph(
             return update
             
         review: SecurityReviewOutput = update.pop("__security_review__")
-        # Record it and move to milestone_review
+
+        # Rendered from the decision, like the architecture and milestone
+        # reviews. This was the last reviewer still holding a write tool with
+        # no document of its own to render - the same latent shape that ended
+        # run-0b18e403 at stage three when the stack selector finally used it.
+        # It had never misbehaved; neither had the stack selector, until it did.
+        _record_document(
+            state,
+            "docs/security_review.md",
+            render_artifact(review, title="Security Review"),
+        )
         return _handing_on(stage="milestone_review", security_review=review)
 
     def milestone_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:

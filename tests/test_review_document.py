@@ -212,3 +212,36 @@ def test_a_role_that_can_write_still_gets_its_tools():
     from app.agents.role_agent import create_role_agent
 
     assert inspect.signature(create_role_agent).parameters["can_write"].default is True
+
+
+def test_every_reviewer_is_read_only():
+    """A reviewer's decision is its output; a document it writes is a second
+    copy that can disagree with the one the workflow routes on.
+
+    The security reviewer was the last one still holding a write tool with no
+    rendered document of its own. It had never misbehaved - neither had the
+    stack selector, until run-0b18e403 ended at stage three when it finally
+    used the tool it had always had.
+    """
+    import inspect
+
+    from app.agents import architecture_reviewer, milestone_reviewer, security_reviewer
+
+    for module in (architecture_reviewer, milestone_reviewer, security_reviewer):
+        assert "can_write=False" in inspect.getsource(module), module.__name__
+
+
+def test_every_review_has_a_rendered_document():
+    """If the agent cannot write one, the workflow must produce one, or the
+    review leaves no record a person can read."""
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+
+    for document in (
+        "docs/architecture_review.md",
+        "docs/security_review.md",
+    ):
+        assert document in source, document

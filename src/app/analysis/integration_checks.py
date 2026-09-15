@@ -809,16 +809,25 @@ def _over_the_declared_budget(
     """The product measured against the cap its own documents state.
 
     `_size_report` was written to report and not judge - "The reviewer has the
-    brief and can compare, but only if someone counts." run-1d1b6c9c settles
-    whether the reviewer compares. Its milestone review was handed
-    `550 of them code`, directly under a sentence saying that is the number a
-    cap means; the cap appears six times in that run's own documents, once as
-    the acceptance criterion "Total source code stays within the 500-line
-    limit". The review accepted the milestone with two findings, neither about
-    size, and the sprint was tagged.
+    brief and can compare, but only if someone counts." run-1d1b6c9c shows the
+    reviewer comparing only when something else makes size an explicit
+    criterion for that milestone.
 
-    So the comparison is one subtraction that the harness has both operands for
-    and does not do. Model judgment is the wrong instrument for it.
+    Sprint 2's review was handed `550 of them code`, directly under a sentence
+    saying that is the number a cap means; the cap appears six times in that
+    run's own documents, once as the acceptance criterion "Total source code
+    stays within the 500-line limit". It accepted the milestone with two
+    findings, neither about size, and the sprint was tagged sprint-2.
+
+    Sprint 3's review DID catch it - "total 893 lines (602 code lines) exceeds
+    the stated 500-line target" - because that milestone's goal named code size
+    compliance and a prior audit had recorded it as AC-9.
+
+    So the difference was not the evidence, which was the same both times. It
+    was whether that sprint's goal happened to mention size. A constraint that
+    holds for the whole product should not be enforced only in the sprint whose
+    goal remembers it, and one subtraction over two numbers the harness already
+    has is the wrong thing to leave to model judgment.
     """
     budget = _declared_line_budget(root)
     if budget is None:

@@ -776,6 +776,59 @@ _CODE_SUFFIXES = frozenset({
 })
 
 
+_SCAFFOLDABLE_SUFFIXES = frozenset({
+    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py", ".rb", ".go", ".rs",
+    ".java", ".html", ".htm", ".css", ".scss", ".vue", ".svelte",
+})
+
+
+def _scaffolding_at_the_workspace_root(
+    root: Path, relative_parts: tuple[str, ...]
+) -> str | None:
+    """Why this file cannot go here, or None if it can.
+
+    Every prompt says to build inside one top-level project directory, and
+    until now nothing enforced it. Measured on run-7b11cb67: the UI specialist
+    wrote `css/style.css` and `index.html` straight into the workspace root, so
+    the pin took `css` as the project and the application would have been built
+    inside a directory named after its stylesheets.
+
+    Deliberately narrow, because a refusal that fires on a legitimate write
+    costs a stage:
+
+    - only source files, never documents or configuration;
+    - only while NO project is pinned, so this can never contradict the pin;
+    - only at the root or inside a conventional asset folder, which is the
+      shape of the mistake. A file written to `my-app/index.html` pins
+      `my-app` and is exactly what is wanted.
+    """
+    if pinned_project_directory(root):
+        return None
+    if not relative_parts:
+        return None
+    if Path(relative_parts[-1]).suffix.lower() not in _SCAFFOLDABLE_SUFFIXES:
+        return None
+
+    at_root = len(relative_parts) == 1
+    in_asset_folder = len(relative_parts) > 1 and relative_parts[0] in _NON_PROJECT_DIRECTORIES
+    if not (at_root or in_asset_folder):
+        return None
+    # `docs/` and `tests/` have their own rules and their own reasons.
+    if relative_parts[0] in ("docs", "tests", "test"):
+        return None
+
+    shown = "/".join(relative_parts)
+    return (
+        f"Refusing to write '{shown}': the application needs one top-level "
+        "project directory, and this run does not have one yet. Writing here "
+        "leaves the product scattered across the workspace root, and whichever "
+        "folder is written to first becomes the project for every later stage - "
+        f"on one run that was 'css'. Create the directory first by writing "
+        f"inside it: name it after the product in lowercase-with-hyphens, for "
+        f"example 'my-app/{shown}'."
+    )
+
+
 def _tests_outside_the_project(root: Path, relative_parts: tuple[str, ...]) -> str | None:
     """Why this test does not belong at the workspace root, or None if it does.
 
@@ -840,7 +893,17 @@ def _is_project_manifest(name: str) -> bool:
 
 
 #: Top-level directories that are not the project and never pin it.
-_NON_PROJECT_DIRECTORIES = frozenset({"docs", "large_tool_results", "tests", "test"})
+_NON_PROJECT_DIRECTORIES = frozenset({
+    "docs", "large_tool_results", "tests", "test",
+    # Conventional folders that live INSIDE a project and are never the project
+    # itself. Measured on run-7b11cb67: the UI specialist wrote
+    # `css/style.css` before anything else, the pin took `css` as the project,
+    # and every later stage would have built the application inside a directory
+    # called `css` - with `index.html` stranded at the workspace root beside it.
+    "css", "js", "scss", "sass", "less", "styles", "stylesheets", "scripts",
+    "assets", "static", "public", "img", "images", "media", "fonts",
+    "components", "lib", "vendor", "node_modules", "bin", "obj",
+})
 
 
 def _is_project_directory(name: str) -> bool:
@@ -1053,6 +1116,9 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     stranded = _tests_outside_the_project(artifact_root, relative_parts)
     if stranded is not None:
         raise RepositoryToolError(stranded)
+    scattered = _scaffolding_at_the_workspace_root(artifact_root, relative_parts)
+    if scattered is not None:
+        raise RepositoryToolError(scattered)
     if len(relative_parts) == 1 and _is_project_manifest(relative_parts[0]):
         pinned_here = pinned_project_directory(artifact_root)
         if pinned_here:

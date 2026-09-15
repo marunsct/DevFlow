@@ -1226,3 +1226,69 @@ def test_a_document_is_not_a_test(repo_root: Path) -> None:
     result = write_approved_artifact(repo_root, "docs/plan.md", "# Plan")
 
     assert result["path"] == "docs/plan.md"
+
+
+# --- one project directory, and it is not the stylesheets ------------------
+
+
+def test_a_stylesheet_folder_never_becomes_the_project(repo_root: Path) -> None:
+    """Measured on run-7b11cb67: the UI specialist wrote `css/style.css` before
+    anything else, the pin took `css`, and every later stage would have built
+    the application inside a directory named after its stylesheets."""
+    from app.tools.repository import pinned_project_directory
+
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+    write_approved_artifact(repo_root, "todo-app/css/style.css", "body{}")
+
+    assert pinned_project_directory(repo_root) == "todo-app"
+
+
+@pytest.mark.parametrize(
+    "folder", ["css", "js", "assets", "static", "public", "img", "styles", "scripts"]
+)
+def test_conventional_asset_folders_are_not_projects(folder: str) -> None:
+    from app.tools.repository import _is_project_directory
+
+    assert not _is_project_directory(folder)
+
+
+def test_a_source_file_at_the_workspace_root_is_refused(repo_root: Path) -> None:
+    """Every prompt says to build inside one top-level directory; until now
+    nothing enforced it, and the product ended up scattered."""
+    with pytest.raises(RepositoryToolError, match="one top-level"):
+        write_approved_artifact(repo_root, "index.html", "<html>")
+
+
+def test_the_refusal_shows_the_shape_of_the_fix(repo_root: Path) -> None:
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(repo_root, "app.js", "// app")
+
+    message = str(caught.value)
+    assert "lowercase-with-hyphens" in message
+    assert "my-app/app.js" in message
+
+
+def test_a_source_file_in_an_asset_folder_at_the_root_is_refused(repo_root: Path) -> None:
+    with pytest.raises(RepositoryToolError, match="one top-level"):
+        write_approved_artifact(repo_root, "css/style.css", "body{}")
+
+
+def test_documents_are_unaffected(repo_root: Path) -> None:
+    """`docs/` has its own rule and its own reason."""
+    assert write_approved_artifact(repo_root, "docs/plan.md", "# Plan")["path"] == "docs/plan.md"
+
+
+def test_a_project_directory_is_exactly_what_is_wanted(repo_root: Path) -> None:
+    from app.tools.repository import pinned_project_directory
+
+    result = write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+
+    assert result["path"] == "todo-app/index.html"
+    assert pinned_project_directory(repo_root) == "todo-app"
+
+
+def test_once_pinned_the_rule_never_contradicts_the_pin(repo_root: Path) -> None:
+    """A run that already has a project must not be told it has none."""
+    write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
+
+    assert write_approved_artifact(repo_root, "todo-app/css/a.css", "body{}")["path"]

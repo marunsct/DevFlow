@@ -82,10 +82,24 @@ class TechnologyStack(BaseModel):
                 f"'{text}' cannot be carried out in this environment: there is no "
                 "browser, no display, and no person watching the workspace, so "
                 "nothing can perform a manual or visual check. Choose something "
-                "that runs headless and reports a pass or fail - a plain Node or "
-                "Python script asserting against the code is enough for a small "
-                "product, and 'none' is valid only if the product genuinely needs "
-                "no verification."
+                "that runs headless and reports a pass or fail. `node --test` and "
+                "Python's `unittest` are built into their runtimes: they install "
+                "nothing, add no dependency, and cost no lines of product code."
+            )
+        # "None" is the same answer wearing a shorter word, and the previous
+        # version of this message licensed it outright: it ended "'none' is
+        # valid only if the product genuinely needs no verification". On
+        # run-2f252e4e the selector answered "None", citing the size guidance
+        # that warns against *installed* runners, and shipped a human checklist
+        # instead of a test suite. A built-in runner costs nothing, so there is
+        # no product here that needs no verification.
+        if not text or lowered in ("none", "n/a", "na", "no testing", "nothing", "-"):
+            raise ValueError(
+                "A testing framework is required. `node --test` and Python's "
+                "`unittest` are part of their runtimes - nothing to install, no "
+                "dependency, no lines of product code - so choosing none only "
+                "means nothing will ever answer 'did this work?'. Name the "
+                "runner the project will actually use."
             )
         return text
 

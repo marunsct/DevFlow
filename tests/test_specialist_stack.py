@@ -19,6 +19,8 @@ specialist was told a database and a test framework had already been chosen.
 
 from __future__ import annotations
 
+import pytest
+
 from app.agents.specialists import build_specialist_task_request, describe_stack
 from app.agents.tools_models import TechnologyStack
 
@@ -90,9 +92,12 @@ def test_an_empty_stack_adds_no_section():
 
 
 def test_a_client_only_stack_omits_the_frontend_line():
+    # `node --test` rather than "none": a testing framework is now required,
+    # because "none" was how run-2f252e4e shipped a human checklist instead of
+    # a suite. This test is about the frontend line, not the runner.
     stack = TechnologyStack(
         language="JavaScript", framework="none", database="localStorage",
-        testing_framework="none",
+        testing_framework="node --test",
     )
 
     described = describe_stack(stack)
@@ -167,3 +172,72 @@ def test_both_builders_work_without_a_stack():
     assert "broken" in build_defect_fix_request(
         "broken", "r", "e", "a", [], False, "/ws"
     )["messages"][0]["content"]
+
+
+def _stack(**overrides):
+    """A complete TechnologyStack payload, so a test can vary one field."""
+    from app.agents.tools_models import TechnologyStack
+
+    base = {}
+    for name, field in TechnologyStack.model_fields.items():
+        annotation = str(field.annotation)
+        if "list" in annotation:
+            base[name] = []
+        else:
+            base[name] = "x"
+    base["testing_framework"] = "pytest"
+    base.update(overrides)
+    return base
+
+
+# --- "None" is the same answer as "manual" --------------------------------
+
+
+@pytest.mark.parametrize("value", ["None", "none", "n/a", "na", "", "nothing", "-"])
+def test_no_testing_framework_is_refused(value: str) -> None:
+    """The previous message licensed it outright - it ended "'none' is valid
+    only if the product genuinely needs no verification".
+
+    Measured on run-2f252e4e: the selector answered "None", citing the size
+    guidance that warns against *installed* runners, and shipped a checklist
+    for a human who does not exist. A built-in runner costs nothing, so no
+    product here needs no verification.
+    """
+    import pydantic
+
+    from app.agents.tools_models import TechnologyStack
+
+    with pytest.raises(pydantic.ValidationError, match="A testing framework is required"):
+        TechnologyStack.model_validate(_stack(testing_framework=value))
+
+
+@pytest.mark.parametrize("value", ["node --test", "pytest", "unittest", "vitest"])
+def test_a_real_runner_is_accepted(value: str) -> None:
+    from app.agents.tools_models import TechnologyStack
+
+    assert TechnologyStack.model_validate(_stack(testing_framework=value))
+
+
+def test_the_refusal_names_the_free_option() -> None:
+    """A refusal a model cannot act on just moves the failure one step later."""
+    import pydantic
+
+    from app.agents.tools_models import TechnologyStack
+
+    with pytest.raises(pydantic.ValidationError) as caught:
+        TechnologyStack.model_validate(_stack(testing_framework="None"))
+
+    message = str(caught.value)
+    assert "node --test" in message
+    assert "nothing to install" in message
+
+
+def test_the_selector_is_told_the_size_argument_does_not_rule_out_testing() -> None:
+    """It read "prefer a built-in runner over an installed one" and concluded
+    "prefer no runner at all", quoting the dependency evidence back."""
+    from app.agents.stack_selector import EXECUTION_ENVIRONMENT
+
+    flat = " ".join(EXECUTION_ENVIRONMENT.split())
+
+    assert "ARGUMENT FOR THE BUILT-IN RUNNER, NOT AGAINST TESTING" in flat
+    assert "no size or dependency limit can rule it out" in flat

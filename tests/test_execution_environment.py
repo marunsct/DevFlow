@@ -119,9 +119,22 @@ def test_an_unperformable_testing_approach_is_refused(impossible):
     assert "cannot be carried out in this environment" in str(exc.value)
 
 
-@pytest.mark.parametrize("runnable", ["node:test", "pytest", "jest", "vitest", "none"])
+@pytest.mark.parametrize("runnable", ["node:test", "pytest", "jest", "vitest"])
 def test_a_runnable_approach_is_accepted(runnable):
     assert _stack(runnable).testing_framework == runnable
+
+
+@pytest.mark.parametrize("absent", ["none", "None", "n/a", "", "nothing"])
+def test_choosing_no_runner_is_refused(absent):
+    """"None" is "manual testing" in a shorter word.
+
+    Measured on run-2f252e4e: the selector answered "None", reasoning that
+    "installing a test runner would consume the entire code budget", and
+    shipped a checklist for a human who does not exist. `node --test` installs
+    nothing and costs no lines, so there was no budget to consume.
+    """
+    with pytest.raises(ValidationError, match="A testing framework is required"):
+        _stack(absent)
 
 
 def test_the_refusal_says_what_to_choose_instead():
@@ -132,8 +145,10 @@ def test_the_refusal_says_what_to_choose_instead():
     message = str(exc.value)
 
     assert "runs headless and reports a pass or fail" in message
-    assert "plain Node or Python script" in message
-    assert "'none' is valid" in message
+    # The message used to end "'none' is valid only if the product genuinely
+    # needs no verification", which is the sentence the selector took up.
+    assert "'none' is valid" not in message
+    assert "install nothing" in message
 
 
 def test_the_validator_explains_why_the_prompt_was_not_enough():

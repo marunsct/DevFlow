@@ -38,7 +38,8 @@ def test_a_client_only_product_needs_no_frontend_framework():
         language="JavaScript",
         framework="none",
         database="localStorage",
-        testing_framework="none",
+        # A runner is required now; this test is about the frontend field.
+        testing_framework="node --test",
     )
 
     assert stack.frontend_framework == ""

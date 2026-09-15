@@ -108,6 +108,17 @@ def describe_execution_environment() -> str:
         "  over `node --test` for a to-do list took the workspace from 46 MB to\n"
         "  221 MB, against a brief reading \"no external dependencies\". Reach for\n"
         "  an installed framework when the product's size or risk earns it.\n"
+        "- THAT IS AN ARGUMENT FOR THE BUILT-IN RUNNER, NOT AGAINST TESTING. A\n"
+        "  built-in runner installs nothing, adds no dependency and costs no\n"
+        "  lines of product code, so no size or dependency limit can rule it out.\n"
+        "  'None' and 'manual testing' are the same answer and both are refused:\n"
+        "  they mean nothing will ever answer 'did this work?', and every later\n"
+        "  stage has to.\n"
+        "  Measured on run-2f252e4e, which read the paragraph above and chose\n"
+        "  'Testing Framework: None - manual browser testing via DevTools is\n"
+        "  adequate for a 500-line app; installing a test runner would consume the\n"
+        "  entire code budget'. There was nothing to install and no budget to\n"
+        "  consume; the run shipped a checklist for a human who does not exist.\n"
         ""
     )
 

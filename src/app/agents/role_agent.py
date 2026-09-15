@@ -27,6 +27,10 @@ from deepagents.backends import FilesystemBackend
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.workspace_backend import WorkspaceBackend
 from app.agents.settled_answer import build_settled_answer_middleware
+
+#: Mirrors `app.graph.workflow.INNER_AGENT_RECURSION_LIMIT`, imported lazily
+#: there to avoid a cycle. A stage is warned as it approaches this.
+INNER_AGENT_STEP_LIMIT = 60
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
@@ -553,7 +557,7 @@ def create_role_agent(
         # no response format has nothing to be finished with, so there is
         # nothing for this to decide. See `app.agents.settled_answer`.
         *(
-            [build_settled_answer_middleware(response_format, name)]
+            [build_settled_answer_middleware(response_format, name, INNER_AGENT_STEP_LIMIT)]
             if response_format is not None
             else []
         ),

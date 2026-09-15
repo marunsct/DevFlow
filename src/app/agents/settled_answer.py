@@ -126,6 +126,10 @@ def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[An
     return all(_call_signature(c) in seen_since_last_change for c in pending)
 
 
+#: Warn a stage once it has used this share of its step budget. Below it the
+#: warning is noise; above it the stage is about to lose everything it has.
+BUDGET_WARNING_FRACTION = 0.7
+
 #: How far back to look for an answer the stage already wrote. Bounded so an
 #: answer from the very start of a long stage, superseded by the work since,
 #: does not stop it.
@@ -242,7 +246,41 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
     return None
 
 
-def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
+def _running_out_of_room(messages: list[Any], limit: int) -> str:
+    """Tell a stage it is close to its step ceiling, or "" when it is not.
+
+    A stage that reaches the ceiling is stopped and, if nothing can be
+    salvaged, restarted from an empty conversation - losing every file it
+    reasoned about and every result it has seen.
+
+    Measured on run-37476645: `specialist_testing_2` spent all three of its
+    attempts in an edit-run-edit-run loop on a failing suite, using 170 tool
+    calls, and never returned its answer. `specialist_ui_ux_0` used 175 and
+    needed a restart of its own. The limit's own docstring says "60 is roughly
+    twice the longest healthy stage observed across fourteen runs, so a working
+    stage never meets it" - which was measured against a different model and is
+    no longer true. On this one the median stage takes 3 to 12 tool calls and
+    the tail reaches 175.
+
+    Raising the ceiling would let a genuine runaway burn the larger number
+    before anything stopped it. Telling the stage instead costs nothing and
+    asks for the one thing that actually helps: return what you have.
+    """
+    used = sum(1 for m in messages if getattr(m, "type", None) == "ai")
+    if limit <= 0 or used < int(limit * BUDGET_WARNING_FRACTION):
+        return ""
+    return (
+        f"You have used about {used} of the {limit} steps this stage is allowed. "
+        "When they run out the stage is stopped and started again from an empty "
+        "conversation, losing everything you have read and worked out. Stop "
+        "exploring and return your structured response now, with what you have. "
+        "An answer that is complete but imperfect is worth far more than none."
+    )
+
+
+def build_settled_answer_middleware(
+    schema: Any, stage_name: str = "", step_limit: int = 0
+) -> Any:
     """Middleware that stops a stage circling once its answer is written."""
     from langchain.agents.middleware import AgentMiddleware
     from langchain.agents.middleware.types import hook_config
@@ -268,6 +306,8 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
                 if last_ai is None:
                     return handler(request)
                 correction = _why_it_was_not_accepted(last_ai, schema)
+                if not correction:
+                    correction = _running_out_of_room(messages, step_limit)
                 if not correction:
                     return handler(request)
                 logger.info(
@@ -338,6 +378,7 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
 
 __all__ = [
     "ANSWER_LOOKBACK_MESSAGES",
+    "BUDGET_WARNING_FRACTION",
     "MAX_REPORTED_ERRORS",
     "MUTATING_TOOLS",
     "build_settled_answer_middleware",

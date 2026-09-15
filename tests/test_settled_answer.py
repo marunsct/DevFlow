@@ -542,3 +542,63 @@ def test_an_answer_older_than_the_lookback_is_not_used() -> None:
     }
 
     assert _after(state) is None
+
+
+# --- running out of steps -------------------------------------------------
+
+
+def test_a_stage_nearing_its_ceiling_is_told_to_finish() -> None:
+    """Measured on run-37476645: `specialist_testing_2` spent all three of its
+    attempts in an edit-run-edit-run loop on a failing suite, using 170 tool
+    calls, and never returned its answer. `specialist_ui_ux_0` used 175.
+
+    The limit's own docstring says "60 is roughly twice the longest healthy
+    stage observed across fourteen runs, so a working stage never meets it".
+    That was measured against a different model and is no longer true.
+    """
+    from app.agents.settled_answer import _running_out_of_room
+
+    nearly = [AIMessage(content=f"step {i}", id=f"m{i}") for i in range(45)]
+
+    warning = _running_out_of_room(nearly, 60)
+
+    assert "of the 60 steps" in warning
+    assert "return your structured response now" in warning
+    # It must say what is lost, or "hurry up" is just noise.
+    assert "losing everything you have read" in warning
+
+
+def test_a_stage_with_room_is_not_nagged() -> None:
+    from app.agents.settled_answer import _running_out_of_room
+
+    assert _running_out_of_room([AIMessage(content="x", id="m")], 60) == ""
+    assert _running_out_of_room([AIMessage(content=f"{i}", id=f"m{i}") for i in range(20)], 60) == ""
+
+
+def test_no_limit_means_no_warning() -> None:
+    """The middleware is built without a limit in some call sites."""
+    from app.agents.settled_answer import _running_out_of_room
+
+    assert _running_out_of_room([AIMessage(content=f"{i}", id=f"m{i}") for i in range(90)], 0) == ""
+
+
+def test_a_schema_failure_still_takes_priority() -> None:
+    """A near miss is the more useful thing to say: fixing it ends the stage."""
+    captured = {}
+
+    class _Request:
+        def __init__(self, messages):
+            self.messages = messages
+
+        def override(self, **changes):
+            captured["messages"] = changes.get("messages", self.messages)
+            return _Request(captured["messages"])
+
+    messages = [AIMessage(content=f"step {i}", id=f"m{i}") for i in range(50)]
+    messages.append(AIMessage(content='{"status": {"bad": 1}, "reason": "r"}', id="last"))
+
+    build_settled_answer_middleware(Verdict, "specialist_testing_2", 60).wrap_model_call(
+        _Request(messages), lambda r: "handled"
+    )
+
+    assert "not a valid response" in str(captured["messages"][-1])

@@ -24,6 +24,13 @@ reviews accepted it. The specialists were not careless - they were building to
 a specification that had already ruled testing out, to honour a "no external
 dependencies" constraint that native modules never breached.
 
+run-2f252e4e reached the same dead end from the other direction, one run
+later, with the structural half of this rule already in force: its
+specification correctly described pure functions, a storage adapter and an
+`init()`, and then put all of it inside a `<script>` tag in a single
+`index.html` - "No external files, no build step, no module system". Getting
+the shape right does not help if nothing can open the file.
+
 run-2b5def74 also shows why the second half matters as much as the first. With this
 rule in force the application came back correctly shaped - pure functions
 taking their arguments, a storage adapter, every DOM reference inside `init()`.
@@ -54,6 +61,12 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   instead, and a copy passes whatever your code does. If you find yourself
   writing "this test defines the same logic inline", stop: that test proves
   nothing, and it will be rejected.
+- THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN. JavaScript inside a
+  `<script>` tag in your HTML is unreachable: no runner can import it, so the
+  only way to test it is to copy it, and a copy passes whatever your code does.
+  One `app.js` beside `index.html` costs nothing - it is still a single-page
+  application, still no build step, still no dependency - and it is the whole
+  difference between a suite that tests the product and one that tests itself.
 - A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and
   `<script type="module">` are part of the browser and part of Node; they
   install nothing and add no package. A brief that forbids external

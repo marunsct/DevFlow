@@ -173,6 +173,51 @@ _TOP_LEVEL_CONST_FN = re.compile(
 )
 
 
+_INLINE_SCRIPT = re.compile(r"<script(?![^>]*\bsrc\s*=)[^>]*>(.*?)</script>", re.S | re.I)
+
+#: Below this an inline script is a bootstrap line or an analytics snippet, not
+#: the application. Above it, it is the product and nothing can test it.
+_EMBEDDED_APPLICATION_LINES = 30
+
+
+def _application_embedded_in_html(files: list[Path], root: Path) -> list[str]:
+    """An application inside a `<script>` tag, which no runner can open.
+
+    A test can only import a file. Logic embedded in HTML can only be tested by
+    copying it, and a copy passes whatever the real code does - so this produces
+    exactly the green-but-meaningless suite that `_redefined_instead_of_imported`
+    reports, one step earlier and for a reason nobody can fix afterwards.
+
+    Measured on run-2f252e4e, whose specification described pure functions, a
+    storage adapter and an `init()` - correctly - and then placed all of it in a
+    single `index.html`: "No external files, no build step, no module system."
+
+    Only fires when the page loads no script of its own, so a page that embeds a
+    little bootstrap alongside a real `app.js` is left alone.
+    """
+    problems = []
+    for path in files:
+        if path.suffix.lower() not in {".html", ".htm"}:
+            continue
+        text = _read(path)
+        if _SCRIPT_SRC.search(text):
+            continue  # it loads a file; that file is what tests will import
+        for body in _INLINE_SCRIPT.findall(text):
+            lines = len([line for line in body.splitlines() if line.strip()])
+            if lines < _EMBEDDED_APPLICATION_LINES:
+                continue
+            relative = str(path.relative_to(root))
+            problems.append(
+                f"{relative} holds {lines} lines of JavaScript inside a <script> "
+                "tag and loads no script file. No test runner can import it, so "
+                "the only way to test this code is to copy it - and a copy passes "
+                "whatever the real code does. Move it to its own file beside the "
+                "page and load it with <script src>."
+            )
+            break
+    return problems
+
+
 def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
     """Test files that define the application's own functions rather than import them.
 
@@ -639,6 +684,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _broken_local_references(files, root)
             + _unreferenced_scripts(files, root)
             + _redefined_instead_of_imported(files, root)
+            + _application_embedded_in_html(files, root)
             + _module_system_mismatch(files, root)
         )
     except Exception:  # noqa: BLE001

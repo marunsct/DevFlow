@@ -685,3 +685,55 @@ def test_an_empty_file_has_no_code():
 
     assert _code_lines("") == 0
     assert _code_lines("\n\n   \n") == 0
+
+
+# --- an application no runner can open ------------------------------------
+
+
+def test_an_application_embedded_in_html_is_reported(tmp_path):
+    """A test can only import a file. Logic inside a `<script>` tag can only be
+    tested by copying it, which produces exactly the green-but-meaningless
+    suite reported elsewhere - one step earlier, and for a reason nobody can
+    fix after the fact.
+
+    Measured on run-2f252e4e: a specification describing pure functions, a
+    storage adapter and an `init()` - correctly - with all of it placed in a
+    single `index.html`, "No external files, no build step, no module system".
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    body = "\n".join(f"  const x{i} = {i};" for i in range(40))
+    (tmp_path / "index.html").write_text(
+        f"<!doctype html><html><body><script>\n{body}\n</script></body></html>",
+        encoding="utf-8",
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "No test runner can import it" in summary
+    assert "<script src>" in summary
+
+
+def test_a_page_that_loads_a_script_file_is_left_alone(tmp_path):
+    """The file it loads is what tests will import; a bootstrap line beside it
+    is not the application."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script><script>init();</script>',
+        encoding="utf-8",
+    )
+    (tmp_path / "app.js").write_text("export function init(){}\n", encoding="utf-8")
+
+    assert "No test runner can import it" not in summarise_integration(str(tmp_path))
+
+
+def test_a_small_inline_script_is_not_an_application(tmp_path):
+    """A bootstrap or an analytics snippet must not be reported as the product."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        "<!doctype html><script>\nconsole.log('hi');\n</script>", encoding="utf-8"
+    )
+
+    assert "No test runner can import it" not in summarise_integration(str(tmp_path))

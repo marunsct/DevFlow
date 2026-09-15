@@ -98,3 +98,14 @@ def test_the_rule_explains_what_the_choice_costs() -> None:
     flat = _flat(TESTABILITY_RULE)
 
     assert "a test runner can only test what it can import" in flat
+
+
+def test_the_rule_requires_the_logic_to_be_in_its_own_file() -> None:
+    """run-2f252e4e specified pure functions, an adapter and an `init()` - the
+    structural half of this rule, correctly - and then put all of it inside a
+    `<script>` tag in a single `index.html`. Getting the shape right does not
+    help if nothing can open the file."""
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN" in flat
+    assert "no runner can import it" in flat

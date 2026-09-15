@@ -281,3 +281,49 @@ def test_a_writing_agent_still_gets_the_directory_rules():
 
     assert "CRITICAL DIRECTORY RULES" in _WRITING_RULES
     assert "ONE top-level project folder" in _WRITING_RULES
+
+
+def test_no_agent_writes_a_document_the_workflow_also_renders():
+    """The instance-versus-class mistake, caught a fourth time.
+
+    `test_no_agent_is_told_not_to_write_while_holding_a_write_tool` only finds
+    an agent whose prompt says "Do not write a". The stack selector's did not
+    say it, so the test passed while the stage held a write tool and wrote
+    `docs/technology_stack.md` itself. On run-0b18e403 it printed its selection
+    into the conversation, wrote the document, printed it again, wrote again -
+    five identical writes, and the repeat guard ended the run at stage three.
+
+    The class is: if the workflow renders a document, the agent that produced
+    its content must not be able to write one too. That is checkable from the
+    two sides together.
+    """
+    import inspect
+    import re
+    from pathlib import Path
+
+    from app.graph import workflow
+
+    rendered = set(re.findall(r'"(docs/[a-z0-9_]+\.md)"', inspect.getsource(workflow)))
+    assert rendered, "expected the workflow to render some documents"
+
+    directory = Path(__file__).resolve().parent.parent / "src/app/agents"
+    offenders = []
+    for path in sorted(directory.glob("*.py")):
+        source = path.read_text()
+        if "create_role_agent(" not in source or path.stem == "role_agent":
+            continue
+        if "can_write=False" in source:
+            continue
+        # Which rendered document, if any, belongs to this agent's stage?
+        stage = re.search(r'_STAGE\s*=\s*"([^"]+)"', source)
+        if not stage:
+            continue
+        for document in rendered:
+            stem = Path(document).stem
+            if stem in source and "specialist" not in path.stem:
+                offenders.append(f"{path.stem} still writes {document}")
+
+    assert not offenders, (
+        "the workflow renders these documents, so the agent must not hold a "
+        f"write tool: {offenders}"
+    )

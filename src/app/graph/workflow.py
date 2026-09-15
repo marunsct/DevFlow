@@ -1519,7 +1519,7 @@ def build_workflow_graph(
     def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_stack_selector_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = {"messages": [{"role": "user", "content": f"Product Intake: {state['product_intake']}\nTools: {state.get('tools_models')}"}]}
-        return _run_gated_agent(
+        update = _run_gated_agent(
             state,
             config,
             stage_name="stack_selector",
@@ -1528,6 +1528,22 @@ def build_workflow_graph(
             output_key="stack_selection",
             next_stage="principal_architect",
         )
+        if _hand_back(update, "stack_selection"):
+            return update
+
+        # Rendered from the decision, like every other document the workflow
+        # keeps. On run-0b18e403 this stage still wrote its own: it printed the
+        # selection into the conversation, wrote `docs/technology_stack.md`,
+        # printed it again, wrote again - five identical writes, and the repeat
+        # guard ended the run at stage three. The same shape that cost
+        # run-78804673 its technical lead and run-c826ae90 its architecture
+        # reviewer, in the one stage that had not been converted.
+        _record_document(
+            state,
+            "docs/technology_stack.md",
+            render_artifact(update["stack_selection"], title="Technology Stack"),
+        )
+        return update
 
     def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "product_intake", "tools_models")

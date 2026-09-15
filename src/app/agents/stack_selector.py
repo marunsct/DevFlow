@@ -139,6 +139,9 @@ Responsibilities:
   only when the product genuinely has no separate frontend.
 - The choices must be cohesive and compatible with each other.
 - Output the selection as a structured TechnologyStack.
+- Do not write a document. The workflow renders `docs/technology_stack.md`
+  from the selection you return, so a document you write is a second copy
+  that can disagree with the one the run acts on.
 
 A constraint in the intake is a boundary, not a preference:
 - If the intake limits the technology - "only HTML/CSS/JavaScript", "no
@@ -193,6 +196,13 @@ def create_stack_selector_agent(
         checkpointer=checkpointer,
         repo_root=repo_root,
         allow_subdirectories=allow_subdirectories,
+        # The workflow renders `docs/technology_stack.md` from the selection.
+        # Holding a write tool as well is what ended run-0b18e403 at stage
+        # three: the stage printed its answer into the conversation, wrote the
+        # document, printed it again, wrote again - five identical writes
+        # before the repeat guard stopped it. Taking the tool away settles it;
+        # arguing with the model in the prompt did not, twice before.
+        can_write=False,
     )
 
 

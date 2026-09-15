@@ -19,7 +19,9 @@ not mean a command cannot write to it.
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
 from deepagents.backends.filesystem import FilesystemBackend
@@ -27,6 +29,59 @@ from deepagents.backends.filesystem import FilesystemBackend
 #: Directory names hidden from an agent's view of the workspace. Sourced from
 #: the repository tools so the two listings cannot drift apart.
 from app.tools.repository import IGNORED_DIRECTORIES
+
+
+
+#: Beyond this, a suggestion is a list rather than an answer.
+MAX_SUGGESTIONS = 3
+
+
+def _basename(path: str) -> str:
+    return os.path.basename(str(path).rstrip("/")) or str(path)
+
+
+class _Suggesting:
+    """Turn "not found" into "not found, and here is where it is".
+
+    An agent that guesses a path prefix gets an error naming the path it
+    invented and nothing else, so it guesses again. Measured across the stored
+    runs, the guesses are `/home/user/...`, `/workspace/...`, the project
+    directory at the root, and the host path; and the file it wants almost
+    always exists. On run-3f8e387d - the run that died of gate exhaustion -
+    72 reads failed and 56 of them (77%) named a file that was in the
+    workspace under a different path.
+
+    The lookup is by basename, which is the part an agent gets right. It costs
+    one directory walk on a path that has already failed, and nothing at all
+    on the normal path.
+    """
+
+    def _where_it_actually_is(self, wanted: str) -> str:
+        root = getattr(self, "cwd", None)
+        name = _basename(wanted)
+        if not root or not name:
+            return ""
+        # A name with no extension is a directory name, which is what `ls`
+        # misses: run-2eb3aa24 asked for `/simple-to-do-list-app` four times.
+        want_file = "." in name
+        try:
+            found = [
+                str(candidate.relative_to(root))
+                for candidate in Path(root).rglob(name)
+                if (candidate.is_file() if want_file else candidate.is_dir())
+                and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+            ]
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        if not found:
+            return ""
+        kind = "a file" if want_file else "a directory"
+        shown = ", ".join(f"/{path}" for path in sorted(found)[:MAX_SUGGESTIONS])
+        more = "" if len(found) <= MAX_SUGGESTIONS else f" and {len(found) - MAX_SUGGESTIONS} more"
+        return (
+            f" There is {kind} of that name at {shown}{more}. "
+            "Every path is relative to the workspace root, which is '/'."
+        )
 
 
 def _path_of(entry: Any) -> str:
@@ -48,7 +103,7 @@ def _is_hidden(entry: Any) -> bool:
     return any(part in IGNORED_DIRECTORIES for part in parts)
 
 
-class WorkspaceBackend(FilesystemBackend):
+class WorkspaceBackend(_Suggesting, FilesystemBackend):
     """A `FilesystemBackend` that omits the run's own machinery from listings.
 
     Only the three tools that enumerate are filtered. `read` is deliberately
@@ -57,8 +112,20 @@ class WorkspaceBackend(FilesystemBackend):
     listing that is quiet about the cache.
     """
 
+    def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        result = super().read(file_path, *args, **kwargs)
+        error = getattr(result, "error", None)
+        if not error or "not found" not in error:
+            return result
+        hint = self._where_it_actually_is(file_path)
+        return replace(result, error=error + hint) if hint else result
+
     def ls(self, path: str) -> Any:
         result = super().ls(path)
+        error = getattr(result, "error", None)
+        if error and "path_not_found" in error:
+            hint = self._where_it_actually_is(path)
+            return replace(result, error=error + hint) if hint else result
         entries = getattr(result, "entries", None)
         if not entries:
             return result

@@ -109,3 +109,83 @@ def test_role_agents_use_it() -> None:
 
     assert "WorkspaceBackend(" in source
     assert "FilesystemBackend(" not in source
+
+
+# --- "not found" that says where it actually is --------------------------
+
+
+import tempfile
+from pathlib import Path as _Path
+
+import pytest
+
+from app.agents.workspace_backend import WorkspaceBackend
+
+
+@pytest.fixture
+def backend(tmp_path):
+    (tmp_path / "todo-app").mkdir()
+    (tmp_path / "todo-app/app.js").write_text("export function a(){}\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/plan.md").write_text("# plan\n", encoding="utf-8")
+    return WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+
+def test_an_invented_prefix_is_told_where_the_file_is(backend) -> None:
+    """The guesses agents actually make, from the stored runs.
+
+    On run-3f8e387d - the run that died of gate exhaustion - 72 reads failed
+    and 56 of them (77%) named a file that was in the workspace under a
+    different path. The error named only the path the agent had invented, so
+    it invented another.
+    """
+    for invented in (
+        "/home/user/docs/plan.md",
+        "/workspace/docs/plan.md",
+        "/app/data/workspaces/t1/docs/plan.md",
+    ):
+        error = backend.read(invented).error
+        assert "/docs/plan.md" in error
+        assert "relative to the workspace root" in error
+
+
+def test_a_project_file_named_at_the_root_is_located(backend) -> None:
+    """`/app.js` when the file is `todo-app/app.js` - run-2f252e4e made this
+    call 21 times and run-3f8e387d 87 times."""
+    assert "/todo-app/app.js" in backend.read("/app.js").error
+
+
+def test_a_missing_directory_is_located_too(tmp_path) -> None:
+    """`ls` misses directory names, which have no extension to match on:
+    run-2eb3aa24 asked for `/simple-to-do-list-app` four times."""
+    (tmp_path / "nested/todo-app").mkdir(parents=True)
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    assert "/nested/todo-app" in backend.ls("/todo-app").error
+
+
+def test_a_file_that_is_nowhere_gets_no_suggestion(backend) -> None:
+    """A genuine typo must not be answered with a guess."""
+    error = backend.read("/nope.js").error
+
+    assert "not found" in error
+    assert "There is a file" not in error
+
+
+def test_a_successful_read_is_untouched(backend) -> None:
+    result = backend.read("/todo-app/app.js")
+
+    assert not getattr(result, "error", None)
+
+
+def test_the_agent_s_own_cache_is_never_suggested(tmp_path) -> None:
+    """`.agent-home` is hidden from listings; suggesting a path inside it would
+    put it back."""
+    cache = tmp_path / ".agent-home/.npm/_cacache"
+    cache.mkdir(parents=True)
+    (cache / "plan.md").write_text("junk\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    error = backend.read("/docs/plan.md").error
+
+    assert "agent-home" not in error

@@ -25,6 +25,11 @@ conditions have to hold: an answer nobody can use yet is not a reason to stop,
 and a repeated read by a model that has not answered is the ordinary cost of
 re-reading a file.
 
+Repetition is counted from the last change, not from the start of the thread.
+A specialist that writes a file and reads it back issues a byte-identical
+request and gets different content; that is the ordinary shape of work, and
+cutting it off would be a worse failure than the spin this fixes.
+
 The pending calls are dropped from the message before the jump. Without that
 the thread ends holding a tool call with no result, which is invalid history
 for any caller that re-invokes it - and `_nudge_for_the_structured_response`
@@ -85,13 +90,40 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
         return None
 
 
-def _asks_only_for_what_it_has_already_seen(pending: list[Any], history: list[Any]) -> bool:
-    """Whether every pending call repeats one this thread has already made."""
-    already: set[str] = set()
+#: Tools that change what a later read would return. A repeat that follows one
+#: of these is not a repeat in any sense that matters - the same request can
+#: legitimately come back with different bytes.
+MUTATING_TOOLS = frozenset(
+    {
+        "write_artifact",
+        "edit_artifact",
+        "delete_artifact",
+        "move_artifact",
+        "run_terminal_command",
+    }
+)
+
+
+def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[Any]) -> bool:
+    """Whether every pending call repeats one made since the last change.
+
+    Two conditions, not one. A call this thread has issued before is only a
+    circle if nothing has happened since that could alter the answer: a
+    specialist that writes a file and reads it back issues a byte-identical
+    request and gets different content, which is the ordinary shape of work and
+    must not be mistaken for a spin.
+    """
+    if not pending:
+        return False
+    seen_since_last_change: set[str] = set()
     for message in history:
         for call in getattr(message, "tool_calls", None) or []:
-            already.add(_call_signature(call))
-    return bool(pending) and all(_call_signature(c) in already for c in pending)
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+            if name in MUTATING_TOOLS:
+                # Everything read before this could now read differently.
+                seen_since_last_change.clear()
+            seen_since_last_change.add(_call_signature(call))
+    return all(_call_signature(c) in seen_since_last_change for c in pending)
 
 
 def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
@@ -116,7 +148,7 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
             answer = _answer_in(last, schema)
             if answer is None:
                 return None
-            if not _asks_only_for_what_it_has_already_seen(pending, messages[:-1]):
+            if not _asks_only_for_what_cannot_have_changed(pending, messages[:-1]):
                 return None
 
             logger.info(
@@ -135,4 +167,4 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
     return SettledAnswerMiddleware()
 
 
-__all__ = ["build_settled_answer_middleware"]
+__all__ = ["MUTATING_TOOLS", "build_settled_answer_middleware"]

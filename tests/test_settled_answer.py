@@ -12,7 +12,7 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from pydantic import BaseModel
 
 from app.agents.settled_answer import (
-    _asks_only_for_what_it_has_already_seen,
+    _asks_only_for_what_cannot_have_changed,
     _call_signature,
     build_settled_answer_middleware,
 )
@@ -151,7 +151,7 @@ def test_one_new_call_among_repeats_counts_as_progress() -> None:
     seen = AIMessage(content="", tool_calls=[_call("read_file", {"p": 1}, "c0")], id="a")
     pending = [_call("read_file", {"p": 1}, "c1"), _call("read_file", {"p": 2}, "c2")]
 
-    assert not _asks_only_for_what_it_has_already_seen(pending, [seen])
+    assert not _asks_only_for_what_cannot_have_changed(pending, [seen])
 
 
 # --- the graph has to honour the jump -------------------------------------
@@ -286,3 +286,51 @@ def test_the_deep_agent_graph_also_stops() -> None:
 
     assert ran == ["/a/script.test.mjs"], f"expected one tool run, got {ran}"
     assert not getattr(result["messages"][-1], "tool_calls", None)
+
+
+def test_a_read_after_a_write_is_progress_not_a_circle() -> None:
+    """The false positive that would be worse than the spin.
+
+    A specialist that writes a file and reads it back issues a byte-identical
+    request and gets different content. Counting that as a repeat would cut a
+    working stage off mid-task the moment it had written a report object, which
+    is a worse failure than the sixty turns this middleware exists to save.
+    """
+    read = _call("read_file", {"file_path": "/a/script.js"})
+    state = {
+        "messages": [
+            AIMessage(content="", tool_calls=[dict(read, id="c0")], id="m0"),
+            ToolMessage(content="old contents", tool_call_id="c0"),
+            AIMessage(
+                content="",
+                tool_calls=[_call("write_artifact", {"relative_path": "a/script.js"}, "c1")],
+                id="m1",
+            ),
+            ToolMessage(content="written", tool_call_id="c1"),
+            _ai(ANSWER, [read]),
+        ]
+    }
+
+    assert _after(state) is None
+
+
+def test_a_repeat_after_the_write_is_still_a_circle() -> None:
+    """The write only clears what came before it."""
+    read = _call("read_file", {"file_path": "/a/script.js"})
+    state = {
+        "messages": [
+            AIMessage(
+                content="",
+                tool_calls=[_call("write_artifact", {"relative_path": "a/script.js"}, "c0")],
+                id="m0",
+            ),
+            ToolMessage(content="written", tool_call_id="c0"),
+            AIMessage(content="", tool_calls=[dict(read, id="c1")], id="m1"),
+            ToolMessage(content="new contents", tool_call_id="c1"),
+            _ai(ANSWER, [read]),
+        ]
+    }
+
+    update = _after(state)
+
+    assert update is not None and update["jump_to"] == "end"

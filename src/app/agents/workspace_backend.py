@@ -115,6 +115,67 @@ class _NoticingRepeats:
     while the same guidance in a brief changed nothing.
     """
 
+    def _file_identity(self, file_path: str) -> str:
+        """Size and mtime, which change when the file does.
+
+        Cheap, and unlike a digest of the returned slice it is the same for
+        every range of one unchanged file - which is the whole point.
+        """
+        try:
+            stat = self._resolve_path(file_path).stat()
+        except Exception:  # noqa: BLE001 - an unreadable stat is not a change
+            return ""
+        return f"{stat.st_size}:{stat.st_mtime_ns}"
+
+    def _note_if_already_seen(self, path: str, digest: str, first: int, last: int) -> str:
+        """Whether this stage has already been served these exact lines.
+
+        Finding 59 caught a byte-identical call. This catches the same waste
+        wearing different arguments. Measured on run-6412366b's
+        `specialist_ui_ux_0`, reading a 984-line `index.html` that had not
+        changed since it was written:
+
+            offset=  0 limit=100   100 new lines
+            offset=310 limit= 80    80 new
+            offset=320 limit=100    30 new,  70 already read
+            offset=320 limit= 50     0 new,  50 already read
+            offset=320 limit=100     0 new, 100 already read   <- 20 min later
+
+        Five reads, 220 line-reads of already-seen content against 210 distinct
+        lines: more than half the reading was re-reading, and two reads returned
+        nothing new at all. On this model a turn costs minutes.
+
+        Keyed on the FILE's identity (size and mtime), never on the returned
+        slice. Digesting the slice was the first version and it could never
+        work: two different ranges of one unchanged file produce two different
+        digests, so the file never looked unchanged and the check never fired -
+        on exactly the overlapping reads it was written for. Caught by running
+        it against the recorded sequence above.
+
+        A write changes size or mtime, so a specialist that edits and reads
+        back is never told anything.
+        """
+        seen = getattr(self, "_read_spans", None)
+        if seen is None:
+            seen = {}
+            self._read_spans = seen  # noqa: SLF001 - own attribute
+        previous_digest, covered = seen.get(path, (None, set()))
+        if previous_digest != digest:
+            seen[path] = (digest, set(range(first, last + 1)))
+            return ""
+        wanted = set(range(first, last + 1))
+        fresh = wanted - covered
+        covered |= wanted
+        # Bounded: a file large enough for this to matter is already paged.
+        seen[path] = (digest, covered if len(covered) < 100_000 else set())
+        if fresh:
+            return ""
+        return (
+            f"\n\n[You have already read lines {first}-{last} of this file in "
+            "this stage, and it has not changed since. This returned nothing "
+            "you did not already have.]"
+        )
+
     def _note_if_repeated(self, key: str, text: str) -> str:
         seen = getattr(self, "_read_digests", None)
         if seen is None:
@@ -182,6 +243,15 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         if not isinstance(content, str):
             return result
         note = self._note_if_repeated(f"{file_path}|{args}|{sorted(kwargs.items())}", content)
+        if not note:
+            # Same waste, different arguments: a range this stage has already
+            # been served of a file that has not changed since.
+            first = getattr(result, "start_line", None)
+            last = getattr(result, "end_line", None)
+            if isinstance(first, int) and isinstance(last, int) and last >= first:
+                note = self._note_if_already_seen(
+                    str(file_path), self._file_identity(file_path), first, last
+                )
         if not note:
             return result
         return replace(result, file_data={**data, "content": content + note})

@@ -254,3 +254,77 @@ def test_different_ranges_of_one_file_are_counted_apart(tmp_path) -> None:
     for offset in (0, 100, 200, 300):
         result = backend.read("/big.js", offset=offset, limit=100)
         assert "byte-identical" not in result.file_data["content"]
+
+
+# --- the same lines again, under different arguments ---------------------
+
+
+def test_a_range_already_served_is_told_so(tmp_path) -> None:
+    """The exact sequence from run-6412366b's `specialist_ui_ux_0`, reading a
+    984-line index.html that had not changed since it was written:
+
+        offset=  0 limit=100   100 new lines
+        offset=310 limit= 80    80 new
+        offset=320 limit=100    30 new,  70 already read
+        offset=320 limit= 50     0 new,  50 already read
+        offset=320 limit=100     0 new, 100 already read   <- 20 minutes later
+
+    Five reads, 220 line-reads of already-seen content against 210 distinct
+    lines. Finding 59 cannot catch it: the arguments differ every time.
+    """
+    (tmp_path / "index.html").write_text(
+        "\n".join(f"line {i}" for i in range(1, 985)), encoding="utf-8"
+    )
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    def seen(offset: int, limit: int) -> bool:
+        result = backend.read("/index.html", offset=offset, limit=limit)
+        return "already read lines" in result.file_data["content"]
+
+    assert not seen(0, 100)
+    assert not seen(310, 80)
+    assert not seen(320, 100)   # 30 lines were still new
+    assert seen(320, 50)        # nothing new
+    assert seen(320, 100)       # nothing new
+
+
+def test_a_write_clears_what_was_seen(tmp_path) -> None:
+    """Keyed on the file's size and mtime, so an edit resets the record and a
+    specialist that edits and reads back is never told anything."""
+    import time
+
+    page = tmp_path / "index.html"
+    page.write_text("\n".join(f"line {i}" for i in range(1, 200)), encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    backend.read("/index.html", offset=0, limit=100)
+    assert "already read lines" in backend.read(
+        "/index.html", offset=0, limit=100
+    ).file_data["content"]
+
+    time.sleep(0.01)
+    page.write_text("\n".join(f"CHANGED {i}" for i in range(1, 250)), encoding="utf-8")
+
+    assert "already read lines" not in backend.read(
+        "/index.html", offset=0, limit=100
+    ).file_data["content"]
+
+
+def test_the_check_keys_on_the_file_not_the_returned_slice(tmp_path) -> None:
+    """The first version digested the slice that came back.
+
+    Two different ranges of one unchanged file produce two different digests,
+    so the file never looked unchanged and the check never fired - on exactly
+    the overlapping reads it was written for. It passed every "did it error?"
+    test while doing nothing.
+    """
+    (tmp_path / "a.txt").write_text(
+        "\n".join(f"line {i}" for i in range(1, 500)), encoding="utf-8"
+    )
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    backend.read("/a.txt", offset=0, limit=200)
+    # A strictly narrower range of the same unchanged file.
+    result = backend.read("/a.txt", offset=50, limit=50)
+
+    assert "already read lines" in result.file_data["content"]

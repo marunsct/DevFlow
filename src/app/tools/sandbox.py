@@ -659,8 +659,11 @@ def strip_a_doubled_working_directory(
     genuinely contains a directory of its own name still resolves as written,
     because then the original exists and nothing is touched.
     """
-    if not working_directory:
-        return list(command), None
+    # A string, not a list, is refused downstream with a message that says so.
+    # `list()` on it would split it into characters and the refusal would name
+    # a one-letter executable instead - which is exactly what it did.
+    if isinstance(command, (str, bytes)) or not working_directory:
+        return command if isinstance(command, (str, bytes)) else list(command), None
     prefix = str(working_directory).strip("/")
     if not prefix:
         return list(command), None

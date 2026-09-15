@@ -158,3 +158,41 @@ def test_narration_comes_only_from_a_stage_change():
     ]
 
     assert _derive_stages(events, None)[0]["meaning"] == "Auto-approving: test_round_0"
+
+
+def test_a_stage_with_no_narration_yet_is_still_valid():
+    """`RunStage.meaning` is a string. Returning None for a stage whose first
+    event is a tool call failed validation for every such stage and took the
+    run-detail endpoint down with a 500."""
+    from app.server.models import RunStage
+
+    stages = _derive_stages([_event("product_manager", "tool_call", _at(0))], None)
+
+    assert stages[0]["meaning"] == ""
+    RunStage(**stages[0])  # must not raise
+
+
+def test_narration_arriving_later_is_kept():
+    events = [
+        _event("test_round_0", "tool_call", _at(0)),
+        _event("awaiting_approval:test_round_0", "stage_change", _at(1),
+               message="Auto-approving: test_round_0"),
+        _event("test_round_0", "tool_call", _at(2)),
+    ]
+
+    assert _derive_stages(events, None)[0]["meaning"] == "Auto-approving: test_round_0"
+
+
+def test_every_derived_stage_validates():
+    """The endpoint builds RunStage from each of these; one bad row is a 500."""
+    from app.server.models import RunStage
+
+    events = [
+        _event("product_manager", "tool_call", _at(0)),
+        _event("technical_lead", "agent_message", _at(10)),
+        _event("awaiting_approval:test_round_0", "approval_auto", _at(20)),
+        _event("test_round_0", "tool_result", _at(30)),
+    ]
+
+    for row in _derive_stages(events, None):
+        RunStage(**row)

@@ -116,7 +116,15 @@ class RunStage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(description="Name of the stage.")
-    meaning: str = Field(description="Human-readable description of what this stage does.")
+    meaning: str = Field(
+        default="",
+        description=(
+            "Human-readable description of what this stage does. Empty until the "
+            "stage publishes one: a stage whose first event is a tool call has no "
+            "narration yet, and requiring one here took the whole run-detail "
+            "endpoint down with a 500."
+        ),
+    )
     started_at: datetime | None = Field(default=None, description="When the stage started.")
     ended_at: datetime | None = Field(default=None, description="When the stage ended.")
     status: str = Field(description="Current status of the stage.")

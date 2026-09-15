@@ -1164,3 +1164,65 @@ def test_code_elsewhere_is_unaffected(tmp_path):
     from app.tools.repository import write_approved_artifact
 
     assert write_approved_artifact(str(tmp_path), "app/test_suite.js", "// t")["status"]
+
+
+# --- a test belongs with the code it tests --------------------------------
+
+
+def test_a_test_at_the_workspace_root_is_refused_once_a_project_exists(repo_root: Path) -> None:
+    """The runner is invoked inside the project, so a suite outside it is one
+    the project's own `npm test` will never collect.
+
+    Measured on run-2b5def74, which completed with two test directories -
+    `tests/` and `simple-to-do-list-app/tests/` - holding three files of the
+    same names, reconciled by nothing and counted twice by the reviewer.
+    """
+    from app.tools.repository import PROJECT_MARKER
+
+    (repo_root / "todo-app").mkdir()
+    (repo_root / PROJECT_MARKER).write_text("todo-app", encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError, match="its test runner only collects"):
+        write_approved_artifact(repo_root, "tests/logic.test.js", "// suite")
+
+
+def test_the_refusal_names_where_it_should_go(repo_root: Path) -> None:
+    from app.tools.repository import PROJECT_MARKER
+
+    (repo_root / "todo-app").mkdir()
+    (repo_root / PROJECT_MARKER).write_text("todo-app", encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(repo_root, "tests/logic.test.js", "// suite")
+
+    assert "todo-app/tests/logic.test.js" in str(caught.value)
+
+
+def test_a_test_inside_the_project_is_allowed(repo_root: Path) -> None:
+    from app.tools.repository import PROJECT_MARKER
+
+    (repo_root / "todo-app").mkdir()
+    (repo_root / PROJECT_MARKER).write_text("todo-app", encoding="utf-8")
+
+    result = write_approved_artifact(repo_root, "todo-app/tests/logic.test.js", "// suite")
+
+    assert result["path"] == "todo-app/tests/logic.test.js"
+
+
+def test_before_a_project_is_pinned_a_test_has_nowhere_better_to_go(repo_root: Path) -> None:
+    """The first stage to write one cannot be told to put it somewhere that
+    does not exist yet."""
+    result = write_approved_artifact(repo_root, "tests/logic.test.js", "// suite")
+
+    assert result["path"] == "tests/logic.test.js"
+
+
+def test_a_document_is_not_a_test(repo_root: Path) -> None:
+    from app.tools.repository import PROJECT_MARKER
+
+    (repo_root / "todo-app").mkdir()
+    (repo_root / PROJECT_MARKER).write_text("todo-app", encoding="utf-8")
+
+    result = write_approved_artifact(repo_root, "docs/plan.md", "# Plan")
+
+    assert result["path"] == "docs/plan.md"

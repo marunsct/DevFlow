@@ -836,8 +836,8 @@ def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[st
                 # re-enters the same stage on a fresh conversation and the stage
                 # name never changes; the runner's log is authoritative for those.
                 existing["retry_count"] += 1
-            if event.event_type == "stage_change":
-                existing["meaning"] = event.message or existing["meaning"]
+            if event.event_type == "stage_change" and event.message:
+                existing["meaning"] = event.message
             existing["ended_at"] = None
             previous = name
             continue
@@ -845,7 +845,11 @@ def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[st
         entry = {
             "name": name,
             "sprint": sprint,
-            "meaning": event.message if event.event_type == "stage_change" else None,
+            # Empty, not None: `RunStage.meaning` is a string, and a stage
+            # whose first event is a tool call rather than a `stage_change` has
+            # no narration yet. Returning None here failed validation for every
+            # such stage and took the whole run-detail endpoint down with a 500.
+            "meaning": event.message if event.event_type == "stage_change" else "",
             "started_at": event.timestamp,
             "ended_at": None,
             "status": str((event.metadata or {}).get("status") or "running"),

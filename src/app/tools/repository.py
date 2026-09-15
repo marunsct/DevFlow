@@ -776,6 +776,38 @@ _CODE_SUFFIXES = frozenset({
 })
 
 
+def _tests_outside_the_project(root: Path, relative_parts: tuple[str, ...]) -> str | None:
+    """Why this test does not belong at the workspace root, or None if it does.
+
+    The project pin decides where code lives, and a test is code: the runner is
+    invoked inside the project, so a suite at the workspace root is one the
+    project's own `npm test` will never collect.
+
+    Measured on run-2b5def74, which completed with two test directories -
+    `tests/` at the workspace root and `simple-to-do-list-app/tests/` - holding
+    three files of the same names. Nothing reconciled them, both were run by
+    hand in different stages, and the milestone reviewer counted them twice.
+    That is the two-sources-of-truth pattern that has cost this workflow a
+    sprint every time it has appeared.
+
+    Only refuses once a project directory exists. The first stage to write a
+    test, before any project is pinned, has nowhere better to put it.
+    """
+    if not relative_parts or not looks_like_a_test("/".join(relative_parts)):
+        return None
+    project = pinned_project_directory(root)
+    if not project or relative_parts[0] == project:
+        return None
+
+    destination = f"{project}/{'/'.join(relative_parts)}"
+    return (
+        f"Refusing to write '{'/'.join(relative_parts)}': the project is "
+        f"'{project}', and its test runner only collects what is inside it. A "
+        f"suite here would be run by whoever remembers it exists and by nothing "
+        f"else. Write '{destination}' instead."
+    )
+
+
 def _code_in_the_documents_directory(relative_parts: tuple[str, ...]) -> str | None:
     """Why this file does not belong in `docs/`, or None if it does.
 
@@ -1018,6 +1050,9 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     misplaced = _code_in_the_documents_directory(relative_parts)
     if misplaced is not None:
         raise RepositoryToolError(misplaced)
+    stranded = _tests_outside_the_project(artifact_root, relative_parts)
+    if stranded is not None:
+        raise RepositoryToolError(stranded)
     if len(relative_parts) == 1 and _is_project_manifest(relative_parts[0]):
         pinned_here = pinned_project_directory(artifact_root)
         if pinned_here:

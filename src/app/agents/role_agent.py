@@ -26,6 +26,7 @@ from deepagents.backends import FilesystemBackend
 
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.workspace_backend import WorkspaceBackend
+from app.agents.settled_answer import build_settled_answer_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
@@ -496,6 +497,14 @@ def create_role_agent(
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),
         _workspace_filesystem_middleware(resolved_repo_root),
+        # Only where there is a schema to recognise an answer by. A stage with
+        # no response format has nothing to be finished with, so there is
+        # nothing for this to decide. See `app.agents.settled_answer`.
+        *(
+            [build_settled_answer_middleware(response_format, name)]
+            if response_format is not None
+            else []
+        ),
     ]
 
     agent = create_deep_agent(

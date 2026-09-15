@@ -196,3 +196,52 @@ def test_every_derived_stage_validates():
 
     for row in _derive_stages(events, None):
         RunStage(**row)
+
+
+# --- what the run is doing now --------------------------------------------
+
+
+def _record(status="running", stage=""):
+    return SimpleNamespace(status=status, current_stage=stage, run_id="run-x")
+
+
+def test_a_running_run_reports_the_stage_it_is_actually_in():
+    """`current_stage` is written by the runner's gate loop, and that loop only
+    turns when the graph pauses. Measured on run-7b11cb67: ten minutes of steady
+    work, a model call every thirty seconds, and a blank stage on screen."""
+    from app.server.runs import _stage_in_flight
+
+    stages = _derive_stages([
+        _event("product_manager", at=_at(0)),
+        _event("principal_architect", at=_at(30)),
+    ], None)
+
+    assert _stage_in_flight(_record(stage=""), stages) == "principal_architect"
+
+
+def test_a_stale_record_does_not_win_over_the_events():
+    from app.server.runs import _stage_in_flight
+
+    stages = _derive_stages([
+        _event("product_manager", at=_at(0)),
+        _event("technical_lead", at=_at(30)),
+    ], None)
+
+    assert _stage_in_flight(_record(stage="product_manager"), stages) == "technical_lead"
+
+
+def test_a_finished_run_reports_what_the_record_says():
+    """Its last event is the ending; the record is the authority on how it ended."""
+    from app.server.runs import _stage_in_flight
+
+    stages = _derive_stages([_event("milestone_review", at=_at(0))], None)
+
+    assert _stage_in_flight(_record("completed", "complete"), stages) == "complete"
+    assert _stage_in_flight(_record("failed", "failed"), stages) == "failed"
+
+
+def test_a_run_with_no_events_yet_falls_back_to_the_record():
+    from app.server.runs import _stage_in_flight
+
+    assert _stage_in_flight(_record(stage="product_manager"), []) == "product_manager"
+    assert _stage_in_flight(_record(stage=""), []) == ""

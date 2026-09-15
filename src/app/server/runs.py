@@ -873,6 +873,26 @@ def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[st
     return ordered
 
 
+def _stage_in_flight(record: RunRecord, stages: list[dict[str, Any]]) -> str:
+    """What this run is actually doing, not what it last paused on.
+
+    `current_stage` is written by the runner's gate loop, and that loop only
+    turns when the graph pauses for an approval. A run between gates - which is
+    most of a run - carries whatever it last paused on, or, for one that has
+    not reached its first gate, nothing at all. Measured on run-7b11cb67: ten
+    minutes of steady work, a model call every thirty seconds, and a blank
+    stage on the screen the whole time.
+
+    The event history knows: the last event carries the stage that produced it.
+    The record still wins for a terminal run, whose last event is the ending.
+    """
+    if record.status in ("completed", "failed", "cancelled"):
+        return record.current_stage or ""
+    if stages:
+        return stages[-1]["name"]
+    return record.current_stage or ""
+
+
 async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStatusResponse:
     """Assemble the full status payload for one run."""
     # Derived from the event history rather than stored: the history is already
@@ -882,6 +902,8 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         stages = _derive_stages(history, record.current_stage)
     except Exception:  # noqa: BLE001 - a timeline is never worth failing a status call for
         stages = []
+
+    in_flight = _stage_in_flight(record, stages)
 
     state = record.graph_state(runner.checkpointer)
 
@@ -916,7 +938,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
             kind=item["kind"],
             revision=1,
             created_by="workflow",
-            stage=record.current_stage or "",
+            stage=in_flight,
         )
         for item in _collect_artifacts(record, runner)
     ]
@@ -925,8 +947,8 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         run_id=record.run_id,
         thread_id=record.thread_id,
         status=record.status,
-        current_stage=record.current_stage,
-        stage_meaning=record.stage_meaning or _stage_meaning(record.current_stage),
+        current_stage=in_flight,
+        stage_meaning=record.stage_meaning or _stage_meaning(in_flight),
         created_at=record.created_at,
         updated_at=record.updated_at,
         stages=stages,

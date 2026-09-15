@@ -191,9 +191,23 @@ def create_progress_router(runner: WorkflowRunner, event_bus: EventBus) -> APIRo
         if record is None:
             raise HTTPException(status_code=404, detail=f"Run {run_id} not found.")
 
+        # The spinner shows what the run is doing now. `current_stage` is
+        # written only when the gate loop turns, so a run between gates reports
+        # what it last paused on - or nothing, before its first gate.
+        stage = record.current_stage or ""
+        if record.status not in ("completed", "failed", "cancelled"):
+            try:
+                history = await event_bus.get_history(run_id)
+                for event in reversed(history):
+                    if event.stage:
+                        stage = event.stage
+                        break
+            except Exception:  # noqa: BLE001 - a spinner is not worth failing
+                pass
+
         return {
-            "stage": record.current_stage,
-            "stage_meaning": record.stage_meaning or _stage_meaning(record.current_stage),
+            "stage": stage,
+            "stage_meaning": record.stage_meaning or _stage_meaning(stage),
             "last_updated": record.updated_at,
             "is_terminal": record.status in ("completed", "failed", "cancelled"),
             "status": record.status,

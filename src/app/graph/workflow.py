@@ -758,6 +758,37 @@ step, so it forbids the two things such a model does next: starting over, and
 explaining itself in more prose."""
 
 
+def _answer_left_in_a_spinning_stage(
+    agent: Any, inner_thread_id: str, schema: Any
+) -> Any | None:
+    """The structured response a looping stage kept writing into its messages.
+
+    A structured-output agent runs until the model calls the response tool. A
+    model that writes its answer as text instead never satisfies that, so the
+    loop continues: it re-reads its inputs, writes the same answer again, and
+    only the superstep ceiling ends it.
+
+    The answer is in the conversation the whole time. `_run_gated_agent`'s
+    recovery cannot reach it, because that runs on the agent's return and this
+    agent does not return - it raises. So read the messages back off the
+    checkpoint and try the same recovery there.
+
+    Measured on run-2192f23b: forty minutes and 266 events, every cycle
+    containing a complete specification object printed as a chat message.
+    """
+    if schema is None:
+        return None
+    try:
+        snapshot = agent.get_state({"configurable": {"thread_id": inner_thread_id}})
+    except Exception:  # noqa: BLE001 - a failed read is not worse than no read
+        logger.debug("Could not read %s back after it spun", inner_thread_id, exc_info=True)
+        return None
+    values = getattr(snapshot, "values", None)
+    if not isinstance(values, dict):
+        return None
+    return _answer_written_into_the_conversation(values, schema)
+
+
 def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     """Explain a stage that hit its superstep ceiling, or None if it did not.
 
@@ -932,6 +963,28 @@ def _run_gated_agent(
                 return _context_overflow_update(stage_name, exc)
             spun = _spun_without_finishing(stage_name, exc)
             if spun is not None:
+                # It spent the whole loop writing the answer into its messages.
+                # Read it back rather than discard a stage's work over the
+                # channel it arrived on.
+                salvaged = _answer_left_in_a_spinning_stage(
+                    agent, inner_thread_id, getattr(agent, "workflow_response_format", None)
+                )
+                if salvaged is not None:
+                    logger.info(
+                        "Stage %s spun without returning, but had written its "
+                        "structured response into the conversation; recovered it",
+                        stage_name,
+                    )
+                    return {
+                        output_key: salvaged,
+                        "stage": next_stage,
+                        "pending_approval": None,
+                        "pending_inner_thread_id": None,
+                        "pending_decision": None,
+                        "inner_thread_ids": [
+                            *state.get("inner_thread_ids", []), inner_thread_id
+                        ],
+                    }
                 return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
@@ -971,6 +1024,28 @@ def _run_gated_agent(
                 return _context_overflow_update(stage_name, exc)
             spun = _spun_without_finishing(stage_name, exc)
             if spun is not None:
+                # It spent the whole loop writing the answer into its messages.
+                # Read it back rather than discard a stage's work over the
+                # channel it arrived on.
+                salvaged = _answer_left_in_a_spinning_stage(
+                    agent, inner_thread_id, getattr(agent, "workflow_response_format", None)
+                )
+                if salvaged is not None:
+                    logger.info(
+                        "Stage %s spun without returning, but had written its "
+                        "structured response into the conversation; recovered it",
+                        stage_name,
+                    )
+                    return {
+                        output_key: salvaged,
+                        "stage": next_stage,
+                        "pending_approval": None,
+                        "pending_inner_thread_id": None,
+                        "pending_decision": None,
+                        "inner_thread_ids": [
+                            *state.get("inner_thread_ids", []), inner_thread_id
+                        ],
+                    }
                 return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:

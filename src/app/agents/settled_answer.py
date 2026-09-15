@@ -130,6 +130,13 @@ def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[An
 #: field wrong needs the first few and a fresh look, not a wall of text.
 MAX_REPORTED_ERRORS = 6
 
+#: The field paths from the most recent diagnosis, for the log line only.
+#: Without them the log says a stage "sent an answer that does not satisfy its
+#: schema" and nothing about which part - which on run-44e9fc83 meant watching
+#: `product_scope` get fixed and the stage keep failing, with no way to see
+#: what else was wrong. Diagnosing what you cannot see is finding 47 again.
+_LAST_FAILING_FIELDS: list[str] = []
+
 
 def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     """Why the JSON in this message is not a valid answer, or "" if it is.
@@ -166,8 +173,23 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     try:
         schema.model_validate(payload)
     except Exception as exc:  # noqa: BLE001 - any validation failure is the point
+        _LAST_FAILING_FIELDS[:] = failing_fields(exc)
         return _render_errors(exc)
     return ""
+
+
+def failing_fields(exc: Exception) -> list[str]:
+    """Just the field paths, for a log line that has to be read by a person."""
+    errors = getattr(exc, "errors", None)
+    if not callable(errors):
+        return []
+    try:
+        return [
+            ".".join(str(part) for part in error.get("loc", ())) or "(root)"
+            for error in errors()
+        ]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _render_errors(exc: Exception) -> str:
@@ -223,9 +245,10 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
                 if not correction:
                     return handler(request)
                 logger.info(
-                    "Stage %s sent an answer that does not satisfy its schema; "
-                    "returning the validation errors",
+                    "Stage %s sent an answer that does not satisfy its schema "
+                    "(%s); returning the validation errors",
                     stage_name or "?",
+                    ", ".join(_LAST_FAILING_FIELDS[:MAX_REPORTED_ERRORS]) or "unknown",
                 )
                 request = request.override(
                     messages=[*messages, {"role": "user", "content": correction}]

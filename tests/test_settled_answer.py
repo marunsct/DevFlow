@@ -451,3 +451,50 @@ def test_the_real_shape_from_run_5c7d7d8d_is_diagnosed() -> None:
 
     assert "product_scope" in why
     assert "valid string" in why
+
+
+def test_the_failing_field_names_are_available_for_the_log() -> None:
+    """Diagnosing what you cannot see is finding 47 again.
+
+    On run-44e9fc83 the log said `principal_architect` "sent an answer that
+    does not satisfy its schema" four times and nothing about which part. The
+    event stream showed `product_scope` being corrected from an object to a
+    string and the stage failing anyway, with no way to see what else was
+    wrong.
+    """
+    from app.agents.settled_answer import _LAST_FAILING_FIELDS, _why_it_was_not_accepted
+
+    class Spec(BaseModel):
+        product_scope: str
+        component_boundaries: list[str]
+
+    wrong = AIMessage(
+        content='{"product_scope": "fine", "component_boundaries": "not a list"}', id="m"
+    )
+
+    _why_it_was_not_accepted(wrong, Spec)
+
+    assert _LAST_FAILING_FIELDS == ["component_boundaries"]
+
+
+def test_failing_fields_reads_a_pydantic_error() -> None:
+    from pydantic import ValidationError
+
+    from app.agents.settled_answer import failing_fields
+
+    class Spec(BaseModel):
+        a: str
+        b: int
+
+    try:
+        Spec.model_validate({"a": [], "b": "x"})
+    except ValidationError as exc:
+        assert failing_fields(exc) == ["a", "b"]
+    else:  # pragma: no cover
+        raise AssertionError("expected a validation error")
+
+
+def test_failing_fields_survives_a_non_pydantic_exception() -> None:
+    from app.agents.settled_answer import failing_fields
+
+    assert failing_fields(RuntimeError("boom")) == []

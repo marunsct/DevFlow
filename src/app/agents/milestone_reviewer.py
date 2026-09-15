@@ -8,6 +8,8 @@ the next milestone without having to parse prose.
 
 from __future__ import annotations
 
+from app.agents.project_layout import WORKSPACE_ROOT_NOTE
+
 from pathlib import Path
 from typing import Any, Literal
 
@@ -110,8 +112,8 @@ def build_milestone_review_request(
     """Build the Deep Agent input from the milestone artifacts awaiting review."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
     brief = (
-        f"Repository root: {repository_root}\n\n"
-        f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
+        WORKSPACE_ROOT_NOTE
+        + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"
         f"--- Defect report ---\n{defect_report}\n\n"

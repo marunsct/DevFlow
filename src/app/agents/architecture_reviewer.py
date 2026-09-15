@@ -11,6 +11,8 @@ bypass the review gate."
 
 from __future__ import annotations
 
+from app.agents.project_layout import WORKSPACE_ROOT_NOTE
+
 from pathlib import Path
 from typing import Any, Literal
 
@@ -83,8 +85,8 @@ def build_architecture_review_request(
         what="technical specification",
     )
     brief = (
-        f"Repository root: {repository_root}\n\n"
-        f"--- Technical specification and ADRs under review ---\n{specification}\n"
+        WORKSPACE_ROOT_NOTE
+        + f"--- Technical specification and ADRs under review ---\n{specification}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

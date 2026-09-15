@@ -6,6 +6,8 @@ issues. It can be invoked by the milestone reviewer or used standalone.
 
 from __future__ import annotations
 
+from app.agents.project_layout import WORKSPACE_ROOT_NOTE
+
 from pathlib import Path
 from typing import Any, Literal
 
@@ -73,8 +75,8 @@ def build_security_review_request(
     """Build the Deep Agent input for a security review."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
     brief = (
-        f"Repository root: {repository_root}\n\n"
-        f"--- Changed files under review ---\n{files_text}\n\n"
+        WORKSPACE_ROOT_NOTE
+        + f"--- Changed files under review ---\n{files_text}\n\n"
         f"--- Tool permissions context ---\n{tool_permissions}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

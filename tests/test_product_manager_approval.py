@@ -292,3 +292,41 @@ def test_the_approval_shown_to_a_reviewer_lists_every_pending_change(tmp_path: P
     assert "2 changes in one step" in approval.notes
     assert "alpha" in approval.notes and "ALPHA" in approval.notes
     assert "bravo" in approval.notes and "BRAVO" in approval.notes
+
+
+def test_the_brief_names_the_document_and_never_its_host_path() -> None:
+    """A path the agent cannot read, and must not write.
+
+    `source_path` is where the upload landed on the HOST
+    (`/app/data/uploads/brief_low_752e3b83.md`). Inside the agent every path
+    resolves against a workspace rooted at "/", so reading it answers "not
+    found" and writing it would build a mirror of the host layout inside the
+    workspace - which is what run-2f252e4e actually did.
+
+    Measured across run-2b5def74, run-da6c5e19 and run-5d83e946: the product
+    manager opens by trying to read that exact string and gets an error for its
+    first tool call of the run. The rule was already stated one line below, for
+    the repository's path; the document's was left as it was.
+    """
+    from app.agents.product_manager import build_intake_request
+
+    class Document:
+        source_path = "/app/data/uploads/brief_low_752e3b83.md"
+        source_type = "markdown"
+        text = "Build a to-do list."
+        truncated = False
+        truncation_note = None
+
+    class Repository:
+        branch = "master"
+        commit = "abc1234"
+        root_path = "/app/data/workspaces/t18-run-1"
+        files = []
+
+    request = build_intake_request(Document(), Repository())
+    rendered = str(request)
+
+    assert "brief_low_752e3b83.md" in rendered
+    assert "/app/data/uploads" not in rendered
+    # The repository's host path was already withheld; keep it that way.
+    assert "/app/data/workspaces" not in rendered

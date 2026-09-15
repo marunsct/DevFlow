@@ -48,4 +48,20 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
   workspace root is one the project's runner never collects.
 - Documents go in the workspace's `docs/`, never inside the project."""
 
-__all__ = ["PROJECT_LAYOUT"]
+#: What to tell an agent about where it is, instead of where the workspace is
+#: on the host. `product_manager` has carried this reasoning in a comment since
+#: run-0b55ad49 and was the only caller that acted on it; five other briefs
+#: opened with `Repository root: /app/data/workspaces/<label>-<run-id>` and the
+#: agents used it. Measured across the stored run histories: 15 of 24 runs
+#: carry that string into tool calls, and the calls fail - run-cbb1a5fc, which
+#: completed cleanly, still spent six calls on it and five came back
+#: `not found` or `path_not_found`; run-3f8e387d spent 432 and 254 approval
+#: gates before dying of gate exhaustion.
+#:
+#: Telling an agent the path and then telling it not to use the path does not
+#: work. The reliable fix is not to show it.
+WORKSPACE_ROOT_NOTE = (
+    "The workspace is rooted at '/'; every path you use is relative to it.\n\n"
+)
+
+__all__ = ["PROJECT_LAYOUT", "WORKSPACE_ROOT_NOTE"]

@@ -99,7 +99,18 @@ def build_intake_request(
     Callers should pass this function's return value straight to `agent.invoke`.
     """
     brief = (
-        f"Product document source: {document.source_path} ({document.source_type})\n"
+        # The NAME, never the path. `source_path` is where the upload landed on
+        # the HOST - `/app/data/uploads/brief_low_752e3b83.md` - and inside the
+        # agent every path is resolved against a workspace rooted at "/", so
+        # reading it answers "not found" and writing it would build a mirror of
+        # the host layout inside the workspace. Measured across runs 2b5def74,
+        # da6c5e19 and 5d83e946: `product_manager` opens by trying to read that
+        # exact string, every time, and gets an error for its first tool call.
+        # This is the rule the comment below already states, applied to the
+        # other path on the same line - it was written for the repository and
+        # the document was left as it was.
+        f"Product document: {Path(document.source_path).name} "
+        f"({document.source_type}), quoted in full below\n"
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on

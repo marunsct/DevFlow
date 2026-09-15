@@ -9,6 +9,8 @@ returned `status == "approved"`.
 
 from __future__ import annotations
 
+from app.agents.project_layout import WORKSPACE_ROOT_NOTE
+
 from pathlib import Path
 from typing import Any
 
@@ -68,8 +70,8 @@ def build_sprint_planning_request(
         what="approved technical specification",
     )
     brief = (
-        f"Repository root: {repository_root}\n\n"
-        f"--- Approved technical specification ---\n{specification}\n\n"
+        WORKSPACE_ROOT_NOTE
+        + f"--- Approved technical specification ---\n{specification}\n\n"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

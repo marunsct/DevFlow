@@ -334,3 +334,30 @@ def test_a_repeat_after_the_write_is_still_a_circle() -> None:
     update = _after(state)
 
     assert update is not None and update["jump_to"] == "end"
+
+
+def test_a_failure_inside_the_check_leaves_the_loop_alone() -> None:
+    """It runs after every model call of every gated stage.
+
+    An exception here would end the stage, which is a worse failure than the
+    spin this exists to prevent. A schema that raises on validation stands in
+    for anything unexpected in the state.
+    """
+
+    class Exploding:
+        @staticmethod
+        def model_validate(payload):  # noqa: ANN001, ANN205
+            raise RuntimeError("boom")
+
+    repeated = _call("read_file", {"file_path": "/a/script.js"})
+    state = {
+        "messages": [
+            AIMessage(content="", tool_calls=[dict(repeated, id="c0")], id="m0"),
+            ToolMessage(content="...", tool_call_id="c0"),
+            _ai(ANSWER, [repeated]),
+        ]
+    }
+
+    # `_answer_in` already swallows a validation failure, so the stage simply
+    # is not stopped - and nothing propagates either way.
+    assert _after(state, schema=Exploding) is None

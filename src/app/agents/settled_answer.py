@@ -135,6 +135,20 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
     class SettledAnswerMiddleware(AgentMiddleware):
         @hook_config(can_jump_to=["end"])
         def after_model(self, state: Any, runtime: Any = None) -> dict[str, Any] | None:
+            # This runs after every model call of every gated stage. An
+            # exception here would end the stage, which is worse than the spin
+            # it exists to prevent, so a failure means "decide nothing" and the
+            # loop behaves exactly as it did before this middleware existed.
+            try:
+                return self._decide(state)
+            except Exception:  # noqa: BLE001 - never fail the stage it guards
+                logger.exception(
+                    "Settled-answer check failed in stage %s; leaving the loop alone",
+                    stage_name or "?",
+                )
+                return None
+
+        def _decide(self, state: Any) -> dict[str, Any] | None:
             messages = list((state or {}).get("messages") or [])
             if not messages:
                 return None

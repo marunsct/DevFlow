@@ -856,8 +856,48 @@ def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     )
 
 
+def _nudge_text(result: dict[str, Any] | None, schema: Any) -> str:
+    """What to say to a model that has not returned its structured response.
+
+    Two different failures wear the same face here. A model that wrote a
+    correct answer as prose needs only to be told the channel - that is
+    `_STRUCTURED_RESPONSE_NUDGE`. A model whose answer is nearly right needs to
+    know which field is wrong, and telling it "return it through the schema"
+    produces the same near miss again.
+
+    Measured on run-2c523383's `principal_architect`. The correction that rides
+    on the model request fixed it mid-conversation: the turn after it fired,
+    `product_scope` came back as the string the schema asks for. But that turn
+    made no tool call, so the stage ended, the generic nudge ran, the restart
+    threw the conversation away, and the fresh one opened with the same object
+    shape as before. The diagnosis existed and was not used at the one moment
+    it would have settled the stage.
+    """
+    if schema is None or not result:
+        return _STRUCTURED_RESPONSE_NUDGE
+    try:
+        from app.agents.settled_answer import _why_it_was_not_accepted
+
+        for message in reversed(result.get("messages") or []):
+            if getattr(message, "type", None) != "ai":
+                continue
+            why = _why_it_was_not_accepted(message, schema)
+            if why:
+                return why
+            # The most recent AI message decides; an older near miss has
+            # already been superseded.
+            break
+    except Exception:  # noqa: BLE001 - a nudge must not fail the stage
+        return _STRUCTURED_RESPONSE_NUDGE
+    return _STRUCTURED_RESPONSE_NUDGE
+
+
 def _nudge_for_the_structured_response(
-    agent: Any, inner_thread_id: str, callbacks: Any
+    agent: Any,
+    inner_thread_id: str,
+    callbacks: Any,
+    previous: dict[str, Any] | None = None,
+    schema: Any = None,
 ) -> dict[str, Any] | None:
     """Ask the same conversation for the answer it already worked out.
 
@@ -878,7 +918,7 @@ def _nudge_for_the_structured_response(
     """
     try:
         result = agent.invoke(
-            {"messages": [{"role": "user", "content": _STRUCTURED_RESPONSE_NUDGE}]},
+            {"messages": [{"role": "user", "content": _nudge_text(previous, schema)}]},
             config={"configurable": {"thread_id": inner_thread_id}, "callbacks": callbacks},
         )
     except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
@@ -902,6 +942,18 @@ def _nudge_for_the_structured_response(
         return result
     if result.get("__interrupt__"):
         return result
+
+    # A model that answered in prose once often does it again, and the answer
+    # it wrote the second time is just as usable as the first. Reading it here
+    # costs nothing and saves the restart, which is the expensive path this
+    # whole function exists to avoid.
+    recovered = _answer_written_into_the_conversation(result, schema)
+    if recovered is not None:
+        logger.info(
+            "Thread %s answered in the conversation again after the reminder; "
+            "recovered it without a restart", inner_thread_id,
+        )
+        return {**result, "structured_response": recovered}
     return None
 
 
@@ -1121,7 +1173,13 @@ def _run_gated_agent(
     if structured_response is None:
         # Then ask the conversation for it. Once per node execution, so this
         # cannot loop.
-        nudged = _nudge_for_the_structured_response(agent, inner_thread_id, activity)
+        nudged = _nudge_for_the_structured_response(
+            agent,
+            inner_thread_id,
+            activity,
+            result,
+            getattr(agent, "workflow_response_format", None),
+        )
         if nudged is not None:
             if nudged.get("__interrupt__"):
                 approval = extract_pending_approval(

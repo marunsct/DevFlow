@@ -243,3 +243,61 @@ def test_the_schema_travels_with_the_agent():
     assert "agent.workflow_response_format = response_format" in inspect.getsource(
         create_role_agent
     )
+
+
+# --- the nudge that says what was wrong ----------------------------------
+
+
+def test_the_nudge_names_the_fields_when_the_answer_is_a_near_miss() -> None:
+    """Two different failures wear the same face.
+
+    A model that wrote a CORRECT answer as prose needs only to be told the
+    channel. A model whose answer is nearly right needs to know which field is
+    wrong, and "return it through the schema" produces the same near miss
+    again.
+
+    Measured on run-2c523383's `principal_architect`: the request-side
+    correction fixed it mid-conversation - the turn after it fired,
+    `product_scope` came back as the string the schema asks for. That turn made
+    no tool call, so the stage ended, the generic nudge ran, and the restart
+    threw the conversation away; the fresh one opened with the same object
+    shape as before.
+    """
+    from langchain_core.messages import AIMessage
+    from pydantic import BaseModel
+
+    from app.graph.workflow import _nudge_text
+
+    class Spec(BaseModel):
+        product_scope: str
+
+    near_miss = {
+        "messages": [AIMessage(content='{"product_scope": {"covers": ["a"]}}')]
+    }
+
+    text = _nudge_text(near_miss, Spec)
+
+    assert "product_scope" in text
+    assert "valid string" in text
+
+
+def test_a_prose_answer_still_gets_the_plain_reminder() -> None:
+    """Nothing to diagnose: the model simply used the wrong channel."""
+    from langchain_core.messages import AIMessage
+    from pydantic import BaseModel
+
+    from app.graph.workflow import _STRUCTURED_RESPONSE_NUDGE, _nudge_text
+
+    class Spec(BaseModel):
+        product_scope: str
+
+    prose = {"messages": [AIMessage(content="I have finished the specification.")]}
+
+    assert _nudge_text(prose, Spec) == _STRUCTURED_RESPONSE_NUDGE
+
+
+def test_no_schema_or_no_result_falls_back_to_the_plain_reminder() -> None:
+    from app.graph.workflow import _STRUCTURED_RESPONSE_NUDGE, _nudge_text
+
+    assert _nudge_text(None, None) == _STRUCTURED_RESPONSE_NUDGE
+    assert _nudge_text({"messages": []}, None) == _STRUCTURED_RESPONSE_NUDGE

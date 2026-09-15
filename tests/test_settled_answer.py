@@ -498,3 +498,47 @@ def test_failing_fields_survives_a_non_pydantic_exception() -> None:
     from app.agents.settled_answer import failing_fields
 
     assert failing_fields(RuntimeError("boom")) == []
+
+
+def test_an_answer_written_several_turns_ago_still_counts() -> None:
+    """run-d6369866's `scrum_master` wrote a valid sprint plan at 15:23:30 and
+    then spent eleven and a half minutes writing prose about creating files it
+    has no tools to create. By the time it was circling, the last message held
+    no answer, and reading only the last message made this check blind to it.
+    """
+    repeated = _call("glob", {"pattern": "**/*"})
+    state = {
+        "messages": [
+            HumanMessage(content="plan the sprints"),
+            AIMessage(content=ANSWER, id="answered"),
+            AIMessage(content="", tool_calls=[dict(repeated, id="c0")], id="m1"),
+            ToolMessage(content="a listing", tool_call_id="c0"),
+            AIMessage(content="Let me try creating the directory.", id="m2"),
+            _ai("I'll use the write approach:", [repeated]),
+        ]
+    }
+
+    update = _after(state)
+
+    assert update is not None
+    assert update["jump_to"] == "end"
+
+
+def test_an_answer_older_than_the_lookback_is_not_used() -> None:
+    """A stage that answered at the very start and has worked since has moved
+    on; stopping on that answer would discard the work."""
+    from app.agents.settled_answer import ANSWER_LOOKBACK_MESSAGES
+
+    repeated = _call("glob", {"pattern": "**/*"})
+    filler = [AIMessage(content="working", id=f"f{i}") for i in range(ANSWER_LOOKBACK_MESSAGES + 5)]
+    state = {
+        "messages": [
+            AIMessage(content=ANSWER, id="answered"),
+            *filler,
+            AIMessage(content="", tool_calls=[dict(repeated, id="c0")], id="m1"),
+            ToolMessage(content="a listing", tool_call_id="c0"),
+            _ai("still going", [repeated]),
+        ]
+    }
+
+    assert _after(state) is None

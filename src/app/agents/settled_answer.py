@@ -126,6 +126,11 @@ def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[An
     return all(_call_signature(c) in seen_since_last_change for c in pending)
 
 
+#: How far back to look for an answer the stage already wrote. Bounded so an
+#: answer from the very start of a long stage, superseded by the work since,
+#: does not stop it.
+ANSWER_LOOKBACK_MESSAGES = 30
+
 #: At most this many field errors in one correction. A model that got every
 #: field wrong needs the first few and a fresh look, not a wall of text.
 MAX_REPORTED_ERRORS = 6
@@ -216,6 +221,27 @@ def _render_errors(exc: Exception) -> str:
     )
 
 
+def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
+    """The newest assistant message that holds a valid answer, if any.
+
+    Reading only the last message was the first version. It misses a stage that
+    answered and then kept talking - which is the shape that cost run-d6369866
+    eleven and a half minutes, because the answer was several turns back by the
+    time the repetition began.
+
+    Bounded to the recent tail: an answer from the very start of a long stage
+    has usually been superseded by the work since, and stopping on it would
+    discard that work.
+    """
+    for message in reversed(messages[-ANSWER_LOOKBACK_MESSAGES:]):
+        if getattr(message, "type", None) != "ai":
+            continue
+        found = _answer_in(message, schema)
+        if found is not None:
+            return found
+    return None
+
+
 def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
     """Middleware that stops a stage circling once its answer is written."""
     from langchain.agents.middleware import AgentMiddleware
@@ -283,7 +309,12 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
             if not pending:
                 # A turn with no pending call ends on its own.
                 return None
-            answer = _answer_in(last, schema)
+            # The answer need not be in the LAST message. run-d6369866's
+            # `scrum_master` wrote a valid sprint plan at 15:23:30 and then
+            # spent eleven minutes writing prose about creating files it has
+            # no tools to create, so by the time it was circling, the last
+            # message held no answer and this check was blind to it.
+            answer = _most_recent_answer(messages, schema)
             if answer is None:
                 return None
             if not _asks_only_for_what_cannot_have_changed(pending, messages[:-1]):
@@ -306,6 +337,7 @@ def build_settled_answer_middleware(schema: Any, stage_name: str = "") -> Any:
 
 
 __all__ = [
+    "ANSWER_LOOKBACK_MESSAGES",
     "MAX_REPORTED_ERRORS",
     "MUTATING_TOOLS",
     "build_settled_answer_middleware",

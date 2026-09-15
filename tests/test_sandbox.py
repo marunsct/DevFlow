@@ -471,3 +471,59 @@ def test_the_refusal_reaches_the_agent_as_a_tool_result(tmp_path):
 
     assert "error" in result
     assert "todo-app" in result["error"]
+
+
+# --- commands that never exit -------------------------------------------
+
+
+def test_a_static_file_server_is_refused_rather_than_timed_out() -> None:
+    """Half of every command timeout on record.
+
+    An agent wants to "open the page", there is no browser here to open it
+    with, and the server then serves nobody until the 120-second timeout kills
+    it. Every one of these is a real call from a stored run that returned
+    nothing after two minutes:
+
+        run-cbd22a34  npx serve . -p 8000       (and retried without the dot)
+        run-cbb1a5fc  npx http-server -p 8765 --silent
+        run-2eb3aa24  npx --yes serve -p 3000   (retried)
+
+    A refusal costs nothing and says what to do instead. This is the shape of
+    the `node -e` refusal, which works: run-5d83e946 hit it twice and the agent
+    put the code in a file both times.
+    """
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    for argv in (
+        ["npx", "serve", ".", "-p", "8000"],
+        ["npx", "--yes", "serve", "-p", "3000"],
+        ["npx", "http-server", "-p", "8765", "--silent"],
+    ):
+        with pytest.raises(CommandNotAllowed) as refusal:
+            validate_command(argv, "ui_ux_specialist")
+        assert "runs until it is stopped" in str(refusal.value)
+        # It must say what to do instead, or it only moves the behaviour.
+        assert "import it and call it" in str(refusal.value)
+
+    # `python3 -m http.server` is the same idea from the other language, and
+    # the module allowlist already refuses it - with its own wording. Asserted
+    # as "refused", not "refused by this guard", so whichever catches it first
+    # keeps the behaviour.
+    with pytest.raises(CommandNotAllowed):
+        validate_command(["python3", "-m", "http.server"], "ui_ux_specialist")
+
+
+def test_the_commands_the_workflow_depends_on_are_not_refused() -> None:
+    """A guard that catches the test runner would cost far more than it saves."""
+    from app.tools.sandbox import _starts_a_server
+
+    for argv in (
+        ["node", "--test", "app.test.mjs"],
+        ["npm", "test"],
+        ["npx", "jest", "--verbose"],
+        ["node", "--check", "app.js"],
+        ["npx", "vite", "build"],
+    ):
+        assert _starts_a_server(argv) is None, argv

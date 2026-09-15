@@ -556,7 +556,68 @@ def validate_command(command: Sequence[str], role_name: str) -> list[str]:
                     f"'{executable} -m {module}' is not permitted: it can execute arbitrary code. "
                     f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."
                 )
+
+    server = _starts_a_server(argv)
+    if server:
+        raise CommandNotAllowed(
+            f"'{server}' is not permitted: it runs until it is stopped, and "
+            "nothing here will stop it, so this call would sit until the "
+            "timeout and return nothing. There is also no browser to open the "
+            "page with. To check the page, read the files and assert on them "
+            "from a test; to check the logic, import it and call it."
+        )
     return argv
+
+
+#: Commands whose whole purpose is to keep running. A static file server is
+#: the one agents reach for: they want to "open the page", and there is no
+#: browser here to open it with, so the server serves nobody until the timeout
+#: kills it. Measured across the stored runs - every one of these is a 120s
+#: wait that returned nothing:
+#:
+#:   run-cbd22a34  npx serve . -p 8000        specialist_testing_1
+#:   run-cbd22a34  npx serve -p 8000          specialist_testing_1 (retried)
+#:   run-cbb1a5fc  npx http-server -p 8765    specialist_ui_ux_0
+#:   run-2eb3aa24  npx --yes serve -p 3000    specialist_ui_ux_0 (retried)
+#:
+#: Half of all command timeouts on record. A refusal costs nothing and says
+#: what to do instead; a timeout costs two minutes and says nothing. This is
+#: the shape of the `node -e` refusal above, which works.
+_SERVER_COMMANDS = frozenset(
+    {
+        "serve",
+        "http-server",
+        "live-server",
+        "browser-sync",
+        "webpack-dev-server",
+        "vite",
+        "nodemon",
+    }
+)
+
+#: `python3 -m http.server`, the same idea from the other language.
+_SERVER_MODULES = frozenset({"http.server", "SimpleHTTPServer"})
+
+
+def _starts_a_server(argv: Sequence[str]) -> str | None:
+    """The name of the server this command would start, or None.
+
+    Matched on the argument rather than the executable because these arrive as
+    `npx serve` and `npx --yes serve`, never as `serve` alone.
+    """
+    parts = [os.path.basename(str(part)) for part in argv]
+    for index, part in enumerate(parts):
+        if part in _SERVER_MODULES:
+            return part
+        if part not in _SERVER_COMMANDS:
+            continue
+        # `vite build` and `webpack-dev-server --help` terminate; only the bare
+        # invocation and an explicit `dev`/`start`/`serve` keep running.
+        following = parts[index + 1 :]
+        if any(f in {"build", "--help", "-h", "--version", "-v"} for f in following):
+            return None
+        return part
+    return None
 
 
 def _docker_binary() -> str:

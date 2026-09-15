@@ -176,6 +176,27 @@ MAX_REMEDIATION_ATTEMPTS = 3
 """Bound one test-fix-retest passes one milestone gets; see `app.sprint`."""
 
 DEFAULT_RECURSION_LIMIT = 100
+
+INNER_AGENT_RECURSION_LIMIT = 60
+"""Superstep ceiling for one role agent's own graph.
+
+The outer workflow has had a ceiling since it was written; the agent invoked
+inside a stage had none, so it ran on LangGraph's default. A stage that loops
+internally - model emits text, tools run, model emits the same text - never
+returns, so no workflow guard applies to it: not the structured-response retry,
+not the repeat guard, not the approval ceiling. All of those are checked when a
+stage *ends*.
+
+Measured on run-2192f23b, whose principal architect spent twenty-two minutes
+and 184 events printing the same specification into the conversation and
+re-reading the same three documents, with zero restarts recorded because the
+stage never finished one. The only ceiling it would have met is the Celery task
+timeout, six hours away.
+
+60 is roughly twice the longest healthy stage observed across fourteen runs and
+well under the outer limit, so a working stage never meets it and a spinning one
+surfaces as an error the workflow can report.
+"""
 """Raise LangGraph's superstep ceiling above its default of 25.
 
 This graph legitimately takes many supersteps in one `invoke`: the specialist
@@ -737,6 +758,34 @@ step, so it forbids the two things such a model does next: starting over, and
 explaining itself in more prose."""
 
 
+def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
+    """Explain a stage that hit its superstep ceiling, or None if it did not.
+
+    A `GraphRecursionError` from an inner agent reads as a LangGraph internal,
+    and the operator is left with a stack trace for a condition that has a plain
+    description: the stage went round in a circle and never produced an answer.
+
+    Measured on run-2192f23b: the principal architect spent twenty-two minutes
+    printing the same specification into the conversation and re-reading the
+    same three documents, with no restart recorded, because every workflow guard
+    is checked when a stage ends and this one never ended.
+    """
+    text = f"{type(exc).__name__}: {exc}"
+    if "recursion" not in text.lower() and "GraphRecursionError" not in text:
+        return None
+    return (
+        f"The '{stage_name}' stage ran {INNER_AGENT_RECURSION_LIMIT} steps without "
+        "finishing, so it was stopped. That is a loop inside the stage itself - "
+        "typically the model writing its answer into the conversation, re-reading "
+        "the same files, and writing it again - rather than work that was taking "
+        "a long time.\n"
+        "The usual cause is a model that will not return its structured response. "
+        "The artifacts the stage wrote are on disk and a resume re-runs it on a "
+        "fresh conversation; if it spins again, the stage's response schema is "
+        "likely too large for this model to produce in one turn."
+    )
+
+
 def _nudge_for_the_structured_response(
     agent: Any, inner_thread_id: str, callbacks: Any
 ) -> dict[str, Any] | None:
@@ -872,11 +921,18 @@ def _run_gated_agent(
             inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
         try:
             result = resume_with_decision(
-                agent, inner_thread_id, pending_decision, callbacks=activity
+                agent,
+                inner_thread_id,
+                pending_decision,
+                callbacks=activity,
+                recursion_limit=INNER_AGENT_RECURSION_LIMIT,
             )
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             if _is_context_overflow(exc):
                 return _context_overflow_update(stage_name, exc)
+            spun = _spun_without_finishing(stage_name, exc)
+            if spun is not None:
+                return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
                 return retry
@@ -904,11 +960,18 @@ def _run_gated_agent(
         try:
             result = agent.invoke(
                 initial_request,
-                config={"configurable": {"thread_id": inner_thread_id}, "callbacks": activity},
+                config={
+                    "configurable": {"thread_id": inner_thread_id},
+                    "callbacks": activity,
+                    "recursion_limit": INNER_AGENT_RECURSION_LIMIT,
+                },
             )
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             if _is_context_overflow(exc):
                 return _context_overflow_update(stage_name, exc)
+            spun = _spun_without_finishing(stage_name, exc)
+            if spun is not None:
+                return _handing_on(stage="failed", error=spun)
             retry = _transient_retry_update(state, stage_name, exc)
             if retry is not None:
                 return retry

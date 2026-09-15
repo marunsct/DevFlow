@@ -114,6 +114,7 @@ def resume_with_decision(
     decision: dict[str, Any],
     *,
     callbacks: list[Any] | None = None,
+    recursion_limit: int | None = None,
 ) -> dict[str, Any]:
     """Resume a paused run with a human decision for every pending gated call.
 
@@ -126,11 +127,17 @@ def resume_with_decision(
 
     `callbacks` is keyword-only and optional so the positional signature every
     existing caller uses keeps working. It carries the agent-activity stream,
-    which observes the turn without changing it.
+    which observes the turn without changing it. `recursion_limit` is optional
+    for the same reason; omitted, the agent runs on LangGraph's own default.
     """
     config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
     if callbacks:
         config["callbacks"] = callbacks
+    # The same ceiling the first invoke gets. A stage that loops internally
+    # after an approval is as unreachable to the workflow's guards as one that
+    # loops before it, and every guard is checked when a stage *ends*.
+    if recursion_limit:
+        config["recursion_limit"] = recursion_limit
     pending = pending_action_requests(agent, thread_id)
     decisions = decisions_for(decision, len(pending))
     return agent.invoke(Command(resume={"decisions": decisions}), config=config)

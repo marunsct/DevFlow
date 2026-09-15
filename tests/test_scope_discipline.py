@@ -65,3 +65,34 @@ def test_the_rule_names_the_run_it_came_from():
 
     assert "run-c4f17841" in SCOPE_DISCIPLINE
     assert "Helm" in SCOPE_DISCIPLINE
+
+
+def test_missing_impossible_evidence_is_not_a_blocking_finding():
+    """The architecture reviewer on a medium brief raised three *blocking*
+    findings for absent Helm charts, a /metrics endpoint and pgcrypto
+    migrations - artefacts nothing in this environment could have produced or
+    verified. A task dashboard could not proceed until it shipped Kubernetes
+    deployment artefacts.
+
+    `brief_medium` asks for Docker containerization and PostgreSQL migrations,
+    and neither can be built or applied here. The files are the deliverable;
+    the build is not available.
+    """
+    from app.agents.scope_discipline import SCOPE_DISCIPLINE
+
+    flat = " ".join(SCOPE_DISCIPLINE.split())
+
+    assert "Evidence that cannot exist here is not a missing deliverable" in flat
+    assert "the image was not built" in flat
+    assert "never block a sprint for the absence of the rest" in flat
+
+
+def test_every_scope_bearing_stage_gets_that_rule():
+    """The reviewers are the stages that block, so reaching the planners only
+    would leave the blocking behaviour unchanged."""
+    from app.agents.architecture_reviewer import _SYSTEM_PROMPT as arch
+    from app.agents.milestone_reviewer import _SYSTEM_PROMPT as milestone
+    from app.agents.security_reviewer import _SYSTEM_PROMPT as security
+
+    for name, prompt in (("architecture", arch), ("milestone", milestone), ("security", security)):
+        assert "Evidence that cannot exist here" in prompt, name

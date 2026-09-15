@@ -43,7 +43,13 @@ Scope discipline - the brief is the boundary:
   those words. Each step that got there was reasonable given the step before
   it, and the result was a task dashboard that could not proceed without
   Kubernetes deployment artefacts.
-""".strip()
+
+- Evidence that cannot exist here is not a missing deliverable. There is no
+  browser, no database server and no container runtime, so "no screenshot",
+  "migrations were not applied" and "the image was not built" describe this
+  environment, not a fault in the work. Ask for what can be produced - the
+  file, the migration, the test that runs - and never block a sprint for the
+  absence of the rest.""".strip()
 
 
 __all__ = ["SCOPE_DISCIPLINE"]

@@ -1,4 +1,9 @@
-"""Make the first attempt more likely to be right, not just the recovery cheap.
+"""The withdrawn reminder. These tests pin what it did, and that nothing uses it.
+
+See `app.agents.response_reminder` for why it was removed.
+
+Original rationale:
+Make the first attempt more likely to be right, not just the recovery cheap.
 
 Run-61c5a5b6 lost two stages of about twenty-five to a prose answer, and both
 were among its longest: `test_round_0` after 38 file reads, `specialist_ui_ux_1`
@@ -93,11 +98,16 @@ def test_a_broken_request_never_fails_the_call():
     assert len(messages) == 40
 
 
-def test_every_role_agent_gets_it():
-    """The prose failure is not specific to one role - it hit a test round and
-    a UI specialist in the same run."""
+def test_no_agent_is_given_it():
+    """Withdrawn. See `app.agents.response_reminder` for why.
+
+    It could not be timed - `wrap_model_call` runs before a model call, so it
+    cannot know the model is about to finish - and firing mid-work plausibly
+    produces the very failure it was meant to prevent: a model told to answer
+    now, while still working, announcing an answer it has not formed.
+    """
     import inspect
 
     from app.agents.role_agent import create_role_agent
 
-    assert "build_response_reminder_middleware()" in inspect.getsource(create_role_agent)
+    assert "build_response_reminder_middleware" not in inspect.getsource(create_role_agent)

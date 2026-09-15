@@ -24,7 +24,6 @@ from typing import Any
 from deepagents import create_deep_agent
 from deepagents.backends import FilesystemBackend
 
-from app.agents.response_reminder import build_response_reminder_middleware
 from app.agents.workspace_backend import WorkspaceBackend
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
@@ -493,7 +492,6 @@ def create_role_agent(
         build_workspace_path_middleware(resolved_repo_root),
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),
-        build_response_reminder_middleware(),
         _workspace_filesystem_middleware(resolved_repo_root),
     ]
 

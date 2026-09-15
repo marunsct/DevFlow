@@ -1,4 +1,37 @@
-"""Keep the response schema in view in a conversation that has grown long.
+"""Withdrawn. Kept for the record of why it did not work.
+
+NOT WIRED INTO ANY AGENT. `create_role_agent` no longer installs this.
+
+The idea was that a stage answering in prose had simply lost sight of the
+requirement, hundreds of messages back, so restating it near the end would
+help. Two things were wrong with that.
+
+It cannot be timed. `wrap_model_call` runs *before* a model call, so it has no
+way to know the model is about to finish; it fired on every call once the
+conversation passed a threshold and hoped one of them was the last.
+
+And firing mid-work has a plausible cost that matches what was actually
+observed. A model repeatedly told "return your answer now" while it is still
+working may announce an answer it has not formed - which is exactly the failure
+shape in the logs: "Here is my structured response:" followed by nothing.
+
+Measured, as far as it can be: run-61c5a5b6 ran without this and retried twice
+in 17 stage entries (12%). run-2b5def74 ran with it and retried five times in
+26 (19%). That is not proof - different work, small numbers - but there is no
+evidence of benefit on either side of it, and a change carries the burden of
+justifying itself.
+
+What replaced it is correctly timed by construction:
+`_nudge_for_the_structured_response` fires only after a stage has ended without
+a structured response, and `_answer_written_into_the_conversation` recovers an
+answer the model already produced. Both act on a fact rather than a guess.
+
+Removing it also makes the next run a cleaner experiment: one uncontrolled
+variable fewer when measuring whether the salvage works.
+
+Original docstring follows.
+
+Keep the response schema in view in a conversation that has grown long.
 
 Measured on run-61c5a5b6: two stages of about twenty-five produced no
 structured response, and both were among the longest in the run -

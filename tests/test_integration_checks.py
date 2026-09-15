@@ -861,3 +861,105 @@ def test_the_check_is_conservative_about_common_words(tmp_path):
     (tmp_path / "style.css").write_text("button.active { color: blue; }\n", encoding="utf-8")
 
     assert "no page or script ever puts" not in summarise_integration(str(tmp_path))
+
+
+# --- instructions and manifests that do not match the project --------------
+
+
+def test_a_document_naming_a_file_that_does_not_exist_is_reported(tmp_path):
+    """A document is the one artefact nobody executes, so a wrong instruction
+    survives every test round and reaches whoever tries to use the product.
+
+    Measured on run-cbb1a5fc: `docs/deployment.md` said "Run with
+    `node server.js`" for a project containing app.js, app.test.mjs,
+    index.html, package.json and style.css. Four milestone reviews read that
+    document and none tried the command.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/deployment.md").write_text(
+        "Run with `node server.js`, then open http://localhost:3000.\n", encoding="utf-8"
+    )
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "tells a reader to run `server.js`" in summary
+
+
+def test_a_document_naming_a_file_that_exists_is_not_reported(tmp_path):
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/readme.md").write_text("Run `node app.js` to start.\n", encoding="utf-8")
+
+    assert "tells a reader to run" not in summarise_integration(str(tmp_path))
+
+
+def test_prose_about_a_command_is_not_a_command(tmp_path):
+    """Only a bare filename inside a code span counts, so discussion of a
+    hypothetical server is left alone."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/notes.md").write_text(
+        "A future version might ship a server.js and be run with node.\n", encoding="utf-8"
+    )
+
+    assert "tells a reader to run" not in summarise_integration(str(tmp_path))
+
+
+def test_tests_with_no_way_to_run_them_are_reported(tmp_path):
+    """153 passing tests and `npm test` answering "missing script: test"."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+    (tmp_path / "app.test.mjs").write_text("import {a} from './app.js';\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"type": "module"}\n', encoding="utf-8")
+
+    summary = summarise_integration(str(tmp_path))
+
+    assert "declares no `test` script" in summary
+
+
+def test_a_manifest_with_a_test_script_is_not_reported(tmp_path):
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+    (tmp_path / "app.test.mjs").write_text("import {a} from './app.js';\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text(
+        '{"type": "module", "scripts": {"test": "node --test"}}\n', encoding="utf-8"
+    )
+
+    assert "declares no `test` script" not in summarise_integration(str(tmp_path))
+
+
+def test_a_project_with_no_tests_is_not_asked_for_a_test_script(tmp_path):
+    """Absent tests are a different finding with a different remedy."""
+    from app.analysis.integration_checks import summarise_integration
+
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><script src="app.js"></script>', encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
+    (tmp_path / "package.json").write_text('{"type": "module"}\n', encoding="utf-8")
+
+    assert "declares no `test` script" not in summarise_integration(str(tmp_path))

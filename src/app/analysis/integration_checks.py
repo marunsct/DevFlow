@@ -133,6 +133,50 @@ _CLASS_SELECTOR = re.compile(r"\.([A-Za-z_][\w-]*)")
 _HTML_CLASS = re.compile(r"""\bclass\s*=\s*["']([^"']+)["']""")
 
 
+_DOC_COMMAND = re.compile(
+    r"`(?:node|python3?|bash|sh)\s+([\w./-]+\.(?:js|mjs|cjs|py|sh))`"
+)
+
+
+def _documented_commands_that_cannot_run(files: list[Path], root: Path, docs: Path) -> list[str]:
+    """Documentation telling a reader to run a file the project does not have.
+
+    A document is the one artefact nobody executes, so a wrong instruction in it
+    survives every test round and reaches whoever tries to use the product.
+
+    Measured on run-cbb1a5fc, whose `docs/deployment.md` said "Run with
+    `node server.js`, then open http://localhost:3000" for a product whose
+    files are `app.js`, `app.test.mjs`, `index.html`, `package.json` and
+    `style.css`. Four milestone reviews read that document and none tried the
+    command. run-3da8dd91 shipped the same shape - a README citing
+    `npm run build-static`, which did not exist.
+
+    Only a bare filename in a code span, so prose about a hypothetical server
+    and a command with a real path elsewhere are both left alone.
+    """
+    if not docs.is_dir():
+        return []
+    present = {p.name for p in files} | {str(p.relative_to(root)) for p in files}
+
+    problems = []
+    for document in sorted(docs.glob("*.md")):
+        text = _read(document)
+        missing = sorted({
+            name for name in _DOC_COMMAND.findall(text)
+            if Path(name).name not in present and name not in present
+        })
+        if not missing:
+            continue
+        listed = ", ".join(f"`{name}`" for name in missing[:3])
+        problems.append(
+            f"docs/{document.name} tells a reader to run {listed}, and no such "
+            "file exists in this project. A document is the one artefact nobody "
+            "executes, so the instruction survives every test round and reaches "
+            "whoever tries to use the product."
+        )
+    return problems
+
+
 def _dangling_class_selectors(files: list[Path], root: Path) -> list[str]:
     """Stylesheet rules for a class nothing ever puts on an element.
 
@@ -762,6 +806,25 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
                 "runs `npm test` here gets a failure that says nothing about the "
                 "product."
             )
+        elif not test_script:
+            # A suite nobody can reach by the obvious command. Measured on
+            # run-cbb1a5fc: 153 passing tests in `app.test.mjs`, a manifest with
+            # no `scripts` at all, and `npm test` answering "missing script:
+            # test". The placeholder case above has been covered since
+            # run-95ca3f72; having no script is the same outcome with less to
+            # see - and it reads as "this project has no tests".
+            suites = sorted(
+                str(p.relative_to(root)) for p in files
+                if p.parent == path.parent and _NOT_APPLICATION.search(str(p.relative_to(root)))
+            )
+            if suites:
+                named = ", ".join(suites[:3])
+                problems.append(
+                    f"{relative} declares no `test` script, and this project has "
+                    f"tests ({named}). `npm test` answers \"missing script: test\", "
+                    "so the suite is reachable only by someone who already knows "
+                    "the command. Add the one that runs them."
+                )
 
         main = str(manifest.get("main", "") or "")
         if main and not (path.parent / main).exists():
@@ -817,6 +880,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _manifest_defects(files, root, stack)
             + _dangling_id_selectors(files, root)
             + _dangling_class_selectors(files, root)
+            + _documented_commands_that_cannot_run(files, root, root / "docs")
             + _broken_local_references(files, root)
             + _unreferenced_scripts(files, root)
             + _redefined_instead_of_imported(files, root)

@@ -175,3 +175,22 @@ def test_the_rule_rejects_an_assertion_that_only_checks_it_did_not_throw() -> No
     # The rule must give a test the specialist can apply itself, not just a
     # prohibition.
     assert "would any test fail" in flat
+
+
+def test_the_rule_separates_where_it_ships_from_where_it_is_tested() -> None:
+    """The third variant of "specify the testing away".
+
+    run-37476645's ADR-04 decided against a test framework because
+    "static-only deployment" implies no Node runtime - three steps of correct
+    reasoning ending somewhere false - and cost two architecture revisions.
+    run-cbb1a5fc argued the same and was caught in review.
+
+    The rule already answers "no external dependencies" and "no module
+    system"; this is the deployment-target form of the same move.
+    """
+    flat = _flat(TESTABILITY_RULE)
+
+    assert "WHERE THE PRODUCT RUNS IS NOT WHERE THE TESTS RUN" in flat
+    assert "the runtime the tests need is the developer's" in flat
+    # It must name the false conclusion, not just assert the rule.
+    assert "Static-only deployment" in flat

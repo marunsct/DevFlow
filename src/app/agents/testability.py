@@ -129,6 +129,16 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   already knows the command - and to anyone else the project reads as having no
   tests. Measured across the delivered workspaces: five of the nine that ship a
   manifest alongside tests have no way to run them by the obvious command.
+- WHERE THE PRODUCT RUNS IS NOT WHERE THE TESTS RUN. A page that ships as
+  static files and runs in a browser is still tested with `node --test` on the
+  machine that builds it. "Static-only deployment, so no Node runtime, so no
+  automated tests" is three steps of correct reasoning ending somewhere false:
+  the runtime the tests need is the developer's, and it is already here.
+  Measured on run-37476645, whose ADR-04 decided against a test framework on
+  exactly that ground and cost two architecture revisions; and on
+  run-cbb1a5fc, which argued the same and was caught in review. Deployment
+  constrains what you SHIP. It does not constrain what you can RUN while
+  building it.
 - A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and
   `<script type="module">` are part of the browser and part of Node; they
   install nothing and add no package. A brief that forbids external

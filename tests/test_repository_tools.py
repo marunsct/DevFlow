@@ -577,12 +577,20 @@ def test_writing_into_the_existing_directory_is_allowed(tmp_path: Path) -> None:
 
 
 def test_a_genuinely_different_component_is_allowed(tmp_path: Path) -> None:
-    """`frontend` and `backend` share no slug; refusing them would block real work."""
-    (tmp_path / "frontend").mkdir()
+    """Two directories that share no slug are not a fork of one another, and
+    refusing the second would block real work.
 
-    result = write_approved_artifact(tmp_path, "backend/server.js", "code")
+    The example used to be `frontend` beside `backend`. Those are now refused
+    one level up, as tiers of a product rather than products - whichever was
+    written first was pinned as the whole project and the other could never be
+    written at all. The fork check itself is unchanged, so this tests it with
+    two directories inside a project, which is where components actually live.
+    """
+    write_approved_artifact(tmp_path, "task-dashboard/frontend/App.jsx", "// ui")
 
-    assert result["path"] == "backend/server.js"
+    result = write_approved_artifact(tmp_path, "task-dashboard/backend/server.js", "code")
+
+    assert result["path"] == "task-dashboard/backend/server.js"
 
 
 def test_a_file_at_the_workspace_root_forks_nothing(tmp_path: Path) -> None:
@@ -1381,3 +1389,44 @@ def test_the_host_path_does_not_become_a_project_directory(repo_root: Path) -> N
 
     assert pinned_project_directory(repo_root) == "todo-app"
     assert (repo_root / "todo-app/app.js").exists()
+
+
+# --- a product with more than one tier ------------------------------------
+
+
+def test_a_backend_folder_at_the_root_cannot_be_the_project(repo_root: Path) -> None:
+    """`brief_medium` asks for a backend and a frontend. Whichever was written
+    first was pinned as the whole project, and the other was then refused as a
+    second one - so the run could never write both."""
+    with pytest.raises(RepositoryToolError, match="one top-level"):
+        write_approved_artifact(repo_root, "backend/main.py", "# api")
+
+
+def test_one_project_can_hold_both_tiers(repo_root: Path) -> None:
+    from app.tools.repository import pinned_project_directory
+
+    write_approved_artifact(repo_root, "task-dashboard/backend/main.py", "# api")
+    write_approved_artifact(repo_root, "task-dashboard/frontend/App.jsx", "// ui")
+    write_approved_artifact(repo_root, "task-dashboard/api/routes.py", "# routes")
+
+    assert pinned_project_directory(repo_root) == "task-dashboard"
+    assert (repo_root / "task-dashboard/frontend/App.jsx").exists()
+
+
+@pytest.mark.parametrize(
+    "folder",
+    ["backend", "frontend", "client", "server", "api", "web", "ui", "services",
+     "apps", "packages"],
+)
+def test_a_tier_is_not_a_project(folder: str) -> None:
+    """Each is a part of a product, never the product."""
+    from app.tools.repository import _is_project_directory
+
+    assert not _is_project_directory(folder)
+
+
+def test_a_real_product_name_still_is_one() -> None:
+    from app.tools.repository import _is_project_directory
+
+    for name in ("task-dashboard", "todo-app", "task-manager", "simple-to-do-list-app"):
+        assert _is_project_directory(name), name

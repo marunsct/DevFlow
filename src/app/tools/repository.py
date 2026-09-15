@@ -941,6 +941,15 @@ _NON_PROJECT_DIRECTORIES = frozenset({
     # `src` is where a project keeps its source, not the name of one. Left out
     # of this list it pinned as readily as `css` did.
     "src", "source", "app_src",
+    # The tiers of a product are parts of it, not the product. A brief asking
+    # for a backend and a frontend - which `brief_medium` does - writes one of
+    # them first, and whichever it is would be pinned as the whole project:
+    # `backend/main.py` pins `backend`, and `frontend/App.jsx` is then refused
+    # as a second project. Neither can be the project, so the agent has to
+    # create one and put both inside it, which is the layout every prompt
+    # already asks for.
+    "backend", "frontend", "client", "server", "api", "web", "ui",
+    "services", "apps", "packages",
 })
 
 

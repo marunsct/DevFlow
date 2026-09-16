@@ -176,18 +176,50 @@ def test_every_role_agent_gets_it() -> None:
 
 
 def test_an_empty_workspace_says_so_rather_than_saying_nothing(tmp_path: Path) -> None:
-    """Silence reads as "go and find out", and the stage spends a call doing it.
-
-    `product_manager` runs before anything exists, and its prompt tells it to
-    ground its conclusions in repository evidence. Across the transcripts, four
-    runs opened with a `read_repository_file` for `README.md` and got "File
-    does not exist within the repository" - the only costly failure in run
-    d6297b2f up to the first specialist.
-    """
+    """Silence reads as "go and find out", and the stage spends a call doing it."""
     digest = render_workspace_digest(tmp_path)
 
     assert "empty" in digest.lower()
     assert "readme" in digest.lower()
+
+
+def test_a_workspace_holding_only_its_seed_files_says_nothing_is_built_yet(
+    tmp_path: Path,
+) -> None:
+    """The case that actually happens - a run's workspace is never truly empty.
+
+    It is created with a `.gitignore`, so the empty branch above is not the one
+    `product_manager` reaches. It is handed a listing of one dotfile, which is
+    a listing and not an answer, and its prompt tells it to ground every
+    conclusion in repository evidence.
+
+    Run d6297b2f is the proof. Its first model call carried the digest
+
+        The workspace as it stands. This is what is there ...
+          .gitignore (9 lines)
+
+    and its first tool call was `read_repository_file('README.md')`. Across the
+    transcripts: four runs, four such calls, all for README.md.
+    """
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+
+    digest = render_workspace_digest(tmp_path)
+
+    assert "Nothing has been built yet" in digest
+    assert "no README" in digest
+    # The listing is still there; the sentence is what was missing.
+    assert ".gitignore" in digest
+
+
+def test_the_sentence_goes_away_once_something_is_built(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+    (tmp_path / "todo").mkdir()
+    (tmp_path / "todo" / "app.js").write_text("export function a() {}\n", encoding="utf-8")
+
+    digest = render_workspace_digest(tmp_path)
+
+    assert "Nothing has been built yet" not in digest
+    assert "todo/app.js" in digest
 
 
 def test_an_unreadable_workspace_still_says_nothing_at_all() -> None:

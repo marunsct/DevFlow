@@ -90,6 +90,36 @@ def _in_reading_order(root: Path, names: list[str]) -> list[str]:
     return sorted(names, key=rank)
 
 
+#: Names that are workspace plumbing rather than anything a stage can learn
+#: from. A run's workspace is created with these already in it.
+_NOT_EVIDENCE = {".gitignore", ".project-directory", ".gitkeep", ".gitattributes"}
+
+
+def _nothing_here_is_evidence(names: list[str]) -> bool:
+    """Whether the workspace holds only the plumbing it was created with.
+
+    The measured case, and the one the empty-workspace branch does not reach.
+    `product_manager` runs before anything is built, and its prompt tells it to
+    ground every conclusion in repository evidence. It is handed a listing of
+    one `.gitignore`, which is a listing and not an answer, and the opening
+    move is a guess at a file a repository would usually have: measured across
+    the transcripts, four runs and four `read_repository_file` calls, all of
+    them `README.md`, all answered "File does not exist within the repository".
+
+    Run d6297b2f is the proof this needs saying rather than listing. Its first
+    model call carried the digest
+
+        The workspace as it stands. This is what is there ...
+          .gitignore (9 lines)
+
+    and its first tool call was `read_repository_file('README.md')`.
+    """
+    return bool(names) and all(
+        Path(name).name in _NOT_EVIDENCE or Path(name).name.startswith(".")
+        for name in names
+    )
+
+
 def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -> str:
     """One compact listing of what is in the workspace, or "" if nothing is.
 
@@ -108,12 +138,12 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
 
     if not names:
         # An empty workspace is a fact, and saying nothing is not the same as
-        # saying it. `product_manager` runs before anything exists and its
-        # prompt tells it to ground its conclusions in repository evidence; with
-        # no listing at all, every run's opening move is a guess at a file that
-        # a repository would usually have. Measured across the transcripts: four
-        # runs, four `read_repository_file` calls, all of them `README.md`, all
-        # answered "File does not exist within the repository".
+        # saying it.
+        #
+        # This branch is the rarer one: a run's workspace is seeded with a
+        # `.gitignore`, so `names` is almost never empty and the listing below
+        # is what `product_manager` actually sees. `_nothing_here_is_evidence`
+        # carries the same sentence into that case, which is the one measured.
         #
         # The unreadable case above still produces nothing, because that one
         # genuinely is unknown - `list_repository_files` raises for a root that
@@ -147,6 +177,15 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
         return ""
 
     more = f"\n  ... and {len(names) - max_files} more" if len(names) > max_files else ""
+    if _nothing_here_is_evidence(names):
+        return (
+            "The workspace holds nothing but the files it was created with:\n"
+            + "\n".join(lines)
+            + "\nNothing has been built yet - there is no README, no manifest "
+            "and no existing implementation to consult. The brief you were "
+            "given is the whole of the evidence available to you. Do not spend "
+            "a call looking for a file a repository would usually have."
+        )
     return (
         "The workspace as it stands. This is what is there - you do not need to "
         "list the directories to find out:\n" + "\n".join(lines) + more + "\n"

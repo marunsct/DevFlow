@@ -10,6 +10,8 @@ build its tools from here instead of redefining its own wrappers.
 
 from __future__ import annotations
 
+import json
+
 from typing import Any
 
 from langchain_core.tools import BaseTool, tool
@@ -133,12 +135,53 @@ def build_sprint_history_tool(repo_root: str) -> BaseTool:
     return changed_since_sprint
 
 
-def build_artifact_write_tool(repo_root: str) -> BaseTool:
+def _is_the_stages_own_answer(content: str, answer_fields: frozenset[str]) -> bool:
+    """Whether this content is the structured response, saved as a file.
+
+    An agent asked for a structured response and given a write tool sometimes
+    does both: it writes the answer to disk and then returns it. The file is
+    not a product artifact, nothing reads it, and the stage has usually
+    finished its real work by then - so the write is followed by nothing, and
+    the repeat guard ends the run.
+
+    Measured on run-2bcdc19b: `defect_fix_2_1` wrote `final_output.json`
+    containing `{"changed_files": [], "decisions": [...]}` - its own schema -
+    five times in twenty seconds. The second and later writes were answered
+    "This file already contained exactly this content ... Do not write it
+    again; continue with your response", and it wrote it three more times. The
+    prompts say the same thing in words; both lost.
+
+    Matched on the schema's own field names, which is the one signal that
+    separates an answer from a data file. Two keys must match and every key
+    must be a field, so a `package.json` or a fixture cannot trip it.
+    """
+    if not answer_fields:
+        return False
+    text = (content or "").strip()
+    if not text.startswith("{"):
+        return False
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return False
+    if not isinstance(payload, dict) or len(payload) < 2:
+        return False
+    keys = set(payload)
+    return keys <= answer_fields
+
+
+def build_artifact_write_tool(
+    repo_root: str, answer_fields: frozenset[str] = frozenset()
+) -> BaseTool:
     """Return the single controlled artifact-write tool bound to a repository root.
 
     This is the only mutation path role agents get: writes are restricted to
     the repository root and its subfolders by `write_approved_artifact`
     itself, regardless of what path the model requests.
+
+    `answer_fields` are the field names of this stage's response schema, used
+    to recognise the stage's own answer being saved as a file - see
+    `_is_the_stages_own_answer`.
     """
 
     @tool
@@ -149,6 +192,16 @@ def build_artifact_write_tool(repo_root: str) -> BaseTool:
         escapes the repository root, so the model can retry with a valid
         path instead of crashing the whole agent run.
         """
+        if _is_the_stages_own_answer(content, answer_fields):
+            return {
+                "error": (
+                    f"Refusing to write '{relative_path}': this content is your "
+                    "structured response, not an artifact. It reaches the workflow "
+                    "through the response schema, which is the only way it is read - "
+                    "a copy on disk is read by nothing and changes nothing. Nothing "
+                    "was written. Return your structured response now instead."
+                )
+            }
         try:
             return write_approved_artifact(repo_root, relative_path, content)
         except RepositoryToolError as exc:

@@ -157,7 +157,22 @@ def describe_tool_call(repo_root: str, agent_name: str, stage: str, tool_name: s
     return describe
 
 
-def writing_tools(repo_root: str) -> list[BaseTool]:
+def _answer_fields(response_format: Any) -> frozenset[str]:
+    """Field names of a stage's response schema, for the write tool.
+
+    Used to recognise the stage's own answer being written to disk instead of
+    returned - see `agent_toolkit._is_the_stages_own_answer`. Returns an empty
+    set for a stage with no schema, which switches the check off.
+    """
+    fields = getattr(response_format, "model_fields", None)
+    if not isinstance(fields, dict):
+        return frozenset()
+    return frozenset(fields)
+
+
+def writing_tools(
+    repo_root: str, answer_fields: frozenset[str] = frozenset()
+) -> list[BaseTool]:
     """The mutation tools a writing role gets - always as a set.
 
     Create, change and remove belong together. Handed the first two and told
@@ -168,7 +183,7 @@ def writing_tools(repo_root: str) -> list[BaseTool]:
     to test rather than one call site to remember.
     """
     return [
-        build_artifact_write_tool(repo_root),
+        build_artifact_write_tool(repo_root, answer_fields),
         build_artifact_edit_tool(repo_root),
         build_artifact_delete_tool(repo_root),
         build_artifact_move_tool(repo_root),
@@ -528,7 +543,7 @@ def create_role_agent(
         # Read-only, and the cheap answer to a question every stage otherwise
         # works out by re-reading the workspace.
         build_sprint_history_tool(resolved_repo_root),
-        *(writing_tools(resolved_repo_root) if can_write else []),
+        *(writing_tools(resolved_repo_root, _answer_fields(response_format)) if can_write else []),
         *(extra_tools or []),
     ]
 

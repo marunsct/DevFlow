@@ -10,6 +10,8 @@ that ends the regress and the instructions that point at it.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from pathlib import Path
@@ -143,7 +145,10 @@ def test_a_role_agent_assembles_its_mutation_tools_from_that_one_list() -> None:
 
     source = inspect.getsource(create_role_agent)
 
-    assert "writing_tools(resolved_repo_root) if can_write else []" in source
+    # Matched loosely on the call, not on its argument list: the point is that
+    # one list is the only source of mutation tools, which adding a parameter
+    # does not change.
+    assert re.search(r"writing_tools\(.*\) if can_write else \[\]", source)
 
 
 def test_every_mutation_tool_is_gated() -> None:

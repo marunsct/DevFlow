@@ -735,6 +735,9 @@ def edit_approved_artifact(
             "write_artifact to replace the whole file."
         )
     _refuse_control_tokens(relative_path, replace)
+    owned = _a_workflow_document(tuple(_repo_relative_path(root, relative_path).parts))
+    if owned is not None:
+        raise RepositoryToolError(owned)
 
     # Read, replace and write as one step. Parallel tool calls in the same turn
     # would otherwise each replace a passage in their own copy of the file and
@@ -1078,8 +1081,20 @@ WORKFLOW_DOCUMENTS = frozenset({
 })
 
 
-def _a_workflow_document_somewhere_else(relative_parts: tuple[str, ...]) -> str | None:
-    """Refuse a copy of a workflow document outside `docs/`, or None.
+def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
+    """Refuse an agent's write to a document the workflow owns, or None.
+
+    Two shapes, one rule. A copy somewhere else drifts; a change at the
+    canonical path is overwritten the next time the stage that produces it
+    runs, so neither is worth a model call.
+
+    run-84e05d4b's `specialist_documentation_2` spent six consecutive calls
+    and ninety seconds failing to edit `docs/tools_and_models.md` - a document
+    rendered from the `tools_models` stage's structured response. Succeeding
+    would have been no better than failing.
+
+    The workflow's own `_record_document` passes `by_the_workflow=True` and is
+    unaffected; that is the only writer of these paths that should exist.
 
     Measured on run-84e05d4b: a specialist wrote
     `simple-to-do-list-app/docs/architecture_review.md`, a copy of the review
@@ -1097,10 +1112,17 @@ def _a_workflow_document_somewhere_else(relative_parts: tuple[str, ...]) -> str 
     name = relative_parts[-1].lower()
     if name not in WORKFLOW_DOCUMENTS:
         return None
+    where = "/".join(relative_parts)
     if relative_parts[:-1] == ("docs",):
-        return None
+        return (
+            f"Refusing to change '{where}': the workflow writes this file from "
+            "the structured response of the stage that produces it, and rewrites "
+            "it whole every time that stage runs. Any change you make here is "
+            "discarded then, so this call cannot achieve anything. Read it if you "
+            "need what it says; put your own work in a file of its own."
+        )
     return (
-        f"Refusing to write '{'/'.join(relative_parts)}': '{name}' is written by "
+        f"Refusing to write '{where}': '{name}' is written by "
         f"the workflow itself, at 'docs/{name}', from the structured response of "
         "the stage that produced it. A second copy is read by nothing and is "
         f"stale as soon as that stage runs again. Read 'docs/{name}' instead of "
@@ -1704,8 +1726,19 @@ def _refuse_control_tokens(relative_path: str, content: str) -> None:
 
 
 
-def write_approved_artifact(repo_root: str | Path, relative_path: str, content: str) -> dict[str, str]:
+def write_approved_artifact(
+    repo_root: str | Path,
+    relative_path: str,
+    content: str,
+    *,
+    by_the_workflow: bool = False,
+) -> dict[str, str]:
     """Write a generated artifact only inside the repository root or its subfolders.
+
+    `by_the_workflow` is for `app.graph.workflow._record_document`, the one
+    caller that is allowed to write the documents in `WORKFLOW_DOCUMENTS` -
+    it renders them from a stage's structured response. Every agent-facing
+    path leaves it false. See `_a_workflow_document`.
 
     Purpose:
         Save a reviewable artifact from an agent without allowing arbitrary writes.
@@ -1750,9 +1783,10 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     stranded = _tests_outside_the_project(artifact_root, relative_parts)
     if stranded is not None:
         raise RepositoryToolError(stranded)
-    duplicated = _a_workflow_document_somewhere_else(relative_parts)
-    if duplicated is not None:
-        raise RepositoryToolError(duplicated)
+    if not by_the_workflow:
+        owned = _a_workflow_document(relative_parts)
+        if owned is not None:
+            raise RepositoryToolError(owned)
     scattered = _scaffolding_at_the_workspace_root(artifact_root, relative_parts)
     if scattered is not None:
         raise RepositoryToolError(scattered)

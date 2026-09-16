@@ -15,6 +15,7 @@ import pytest
 from app.tools.repository import (
     WORKFLOW_DOCUMENTS,
     RepositoryToolError,
+    edit_approved_artifact,
     write_approved_artifact,
 )
 
@@ -22,7 +23,29 @@ from app.tools.repository import (
 @pytest.mark.parametrize("name", sorted(WORKFLOW_DOCUMENTS))
 def test_the_workflow_still_writes_its_own_document(tmp_path, name: str) -> None:
     """`_record_document` writes exactly here; nothing may block that."""
-    assert write_approved_artifact(tmp_path, f"docs/{name}", "# Generated\n")["status"]
+    assert write_approved_artifact(
+        tmp_path, f"docs/{name}", "# Generated\n", by_the_workflow=True
+    )["status"]
+
+
+@pytest.mark.parametrize("name", sorted(WORKFLOW_DOCUMENTS))
+def test_an_agent_cannot_change_one_at_the_canonical_path(tmp_path, name: str) -> None:
+    """Succeeding would be no better than failing: the next run of the stage
+    that produces it rewrites the file whole.
+
+    run-84e05d4b's `specialist_documentation_2` spent six consecutive model
+    calls and ninety seconds failing to edit `docs/tools_and_models.md`.
+    """
+    write_approved_artifact(tmp_path, f"docs/{name}", "# Generated\n", by_the_workflow=True)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, f"docs/{name}", "# mine\n")
+    assert "rewrites it whole every time" in str(caught.value)
+
+    with pytest.raises(RepositoryToolError):
+        edit_approved_artifact(tmp_path, f"docs/{name}", "Generated", "Mine")
+
+    assert (tmp_path / "docs" / name).read_text() == "# Generated\n"
 
 
 @pytest.mark.parametrize(

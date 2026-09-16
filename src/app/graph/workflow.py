@@ -1469,7 +1469,14 @@ def _record_document(state: WorkflowGraphState, relative_path: str, content: str
     from app.tools.repository import write_approved_artifact
 
     try:
-        write_approved_artifact(state["repository"].root_path, relative_path, content)
+        write_approved_artifact(
+            state["repository"].root_path,
+            relative_path,
+            content,
+            # The one writer allowed to touch the documents in
+            # `WORKFLOW_DOCUMENTS`; it is the thing that renders them.
+            by_the_workflow=True,
+        )
     except Exception:  # noqa: BLE001 - the decision matters more than the record
         logger.warning("Could not write %s", relative_path, exc_info=True)
 

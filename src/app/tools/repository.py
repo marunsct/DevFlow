@@ -663,13 +663,7 @@ def edit_approved_artifact(
                     original[:start] + replace + original[end:],
                     relative_path,
                 )
-                summary = replace[:80] + ("..." if len(replace) > 80 else "")
-                return {
-                    "path": str(target.relative_to(root)),
-                    "status": "edited",
-                    "summary": summary or "(passage removed)",
-                    "detail": explanation,
-                }
+                return _edited(target, root, relative_path, replace, explanation)
 
             if len(find.strip()) < 10:
                 raise RepositoryToolError(
@@ -717,18 +711,45 @@ def edit_approved_artifact(
         _write_unless_it_changes_nothing(
             target, original, original.replace(find, replace, 1), relative_path
         )
+    return _edited(target, root, relative_path, replace)
+
+
+def _edited(
+    target: Path, root: Path, relative_path: str, replace: str, detail: str | None = None
+) -> dict[str, str]:
+    """The result of a successful edit, with every note that applies.
+
+    One exit for both matching paths. `edit_approved_artifact` succeeds in two
+    places - the exact match, and the forgiving match that tolerates line
+    numbers, JSON escaping or a different indent - and the notes were attached
+    to the first only.
+
+    That cost run-3ddd443f. At 12:52:03 `test_round_0` removed a passage
+    through the forgiving path and got no structural note; the edit left a
+    brace unclosed, and `node --test` then failed four times with
+    "Unexpected end of input" before the next edit - through the exact path -
+    finally reported it.
+
+    Two success returns and a check on one of them is the "reached twelve of
+    thirteen" mistake this codebase names in its own tests, and building the
+    result in one place is what stops a third path from reopening it.
+    """
     summary = replace[:80] + ("..." if len(replace) > 80 else "")
-    result = {
+    result: dict[str, str] = {
         "path": str(target.relative_to(root)),
         "status": "edited",
         "summary": summary or "(passage removed)",
     }
+    if detail:
+        result["detail"] = detail
     notes = [
         _structural_note(relative_path, target.read_text(encoding="utf-8")),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)
-    return {**result, "note": joined} if joined else result
+    if joined:
+        result["note"] = joined
+    return result
 
 
 def _where_each_match_starts(text: str, find: str) -> str:

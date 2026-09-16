@@ -93,3 +93,40 @@ def test_the_write_tools_use_it() -> None:
     source = inspect.getsource(repository)
     assert "_structural_note(relative_path, content)" in source
     assert source.count("_structural_note(") >= 3  # helper, write, edit
+
+
+def test_the_forgiving_match_path_also_gets_the_note(tmp_path) -> None:
+    """Two success returns, and the checks were on one of them.
+
+    `edit_approved_artifact` succeeds in two places: the exact match, and the
+    forgiving match that tolerates line numbers, JSON escaping or a different
+    indent. The notes were attached to the exact path only.
+
+    That cost run-3ddd443f. At 12:52:03 `test_round_0` removed a passage
+    through the forgiving path and got no structural note; the edit left a
+    brace unclosed, and `node --test` failed four times with "Unexpected end of
+    input" before the next edit - through the exact path - finally reported it.
+    """
+    from app.tools.repository import edit_approved_artifact, write_approved_artifact
+
+    write_approved_artifact(tmp_path, "p/app.js", "export function init() {\n  const f = 1;\n}\n")
+
+    # An indent that does not match the file forces the forgiving path.
+    result = edit_approved_artifact(tmp_path, "p/app.js", "    const f = 1;\n", "  if (x) {\n")
+
+    assert "note" in result, "the forgiving path must carry the checks too"
+    assert "do not balance" in result["note"]
+    # And it must still explain why the match was forgiven.
+    assert "detail" in result
+
+
+def test_both_edit_paths_build_their_result_in_one_place() -> None:
+    """A third success path must not be able to reopen this."""
+    import inspect
+
+    from app.tools import repository
+
+    source = inspect.getsource(repository.edit_approved_artifact)
+
+    assert source.count("_edited(") == 2
+    assert '"status": "edited"' not in source, "the result shape belongs in _edited"

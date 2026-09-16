@@ -33,9 +33,14 @@ def test_the_inner_agent_has_a_ceiling():
 
 
 def test_the_first_invoke_carries_it():
+    """The spelling moved into `_inner_agent_config`; the requirement did not.
+
+    The config is built by a helper now, so the limit arrives as a keyword
+    rather than a dict key - the assertion follows the value, not the syntax.
+    """
     source = inspect.getsource(_run_gated_agent)
 
-    assert '"recursion_limit": INNER_AGENT_RECURSION_LIMIT' in source
+    assert "recursion_limit=INNER_AGENT_RECURSION_LIMIT" in source
 
 
 def test_the_resume_carries_it_too():

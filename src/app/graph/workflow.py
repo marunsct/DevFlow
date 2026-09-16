@@ -898,6 +898,27 @@ def _restart_on_a_fresh_conversation(
     }
 
 
+def _inner_agent_config(
+    inner_thread_id: str, run_id: str | None, callbacks: Any, **extra: Any
+) -> dict[str, Any]:
+    """The config for one role agent's own invocation.
+
+    The run id travels with it. Middleware inside the agent has no other way to
+    learn which run it is part of - `get_config()` is all it can see - and the
+    transcript middleware found nothing at all until this was added: the
+    callbacks carry the run id because they are constructed with it, and the
+    middleware is constructed once per agent and cannot be.
+
+    Built here rather than inline at each call site, because there are two of
+    them and a third would otherwise be written without it, which is how the
+    transcript came to record half a run.
+    """
+    configurable: dict[str, Any] = {"thread_id": inner_thread_id}
+    if run_id:
+        configurable[APP_RUN_ID_KEY] = run_id
+    return {"configurable": configurable, "callbacks": callbacks, **extra}
+
+
 def _nudge_text(result: dict[str, Any] | None, schema: Any) -> str:
     """What to say to a model that has not returned its structured response.
 
@@ -940,6 +961,7 @@ def _nudge_for_the_structured_response(
     callbacks: Any,
     previous: dict[str, Any] | None = None,
     schema: Any = None,
+    run_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Ask the same conversation for the answer it already worked out.
 
@@ -961,7 +983,7 @@ def _nudge_for_the_structured_response(
     try:
         result = agent.invoke(
             {"messages": [{"role": "user", "content": _nudge_text(previous, schema)}]},
-            config={"configurable": {"thread_id": inner_thread_id}, "callbacks": callbacks},
+            config=_inner_agent_config(inner_thread_id, run_id, callbacks),
         )
     except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
         # Whatever went wrong here, the restart below is still available and is
@@ -1151,11 +1173,12 @@ def _run_gated_agent(
         try:
             result = agent.invoke(
                 initial_request,
-                config={
-                    "configurable": {"thread_id": inner_thread_id},
-                    "callbacks": activity,
-                    "recursion_limit": INNER_AGENT_RECURSION_LIMIT,
-                },
+                config=_inner_agent_config(
+                    inner_thread_id,
+                    config["configurable"].get(APP_RUN_ID_KEY),
+                    activity,
+                    recursion_limit=INNER_AGENT_RECURSION_LIMIT,
+                ),
             )
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             if _is_context_overflow(exc):
@@ -1231,6 +1254,7 @@ def _run_gated_agent(
             activity,
             result,
             getattr(agent, "workflow_response_format", None),
+            config["configurable"].get(APP_RUN_ID_KEY),
         )
         if nudged is not None:
             if nudged.get("__interrupt__"):

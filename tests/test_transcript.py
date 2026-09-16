@@ -150,3 +150,47 @@ def test_both_halves_of_the_record_are_wired() -> None:
 
     assert "build_transcript_callback" in inspect.getsource(agent_stream.build_activity_callbacks)
     assert "build_transcript_middleware(stage)" in inspect.getsource(role_agent.create_role_agent)
+
+
+def test_the_run_id_reaches_the_inner_agent() -> None:
+    """Middleware inside a role agent can only see `get_config()`.
+
+    The callbacks carry the run id because they are constructed with it. A
+    middleware is constructed once per agent and cannot be, so the id has to
+    travel in the config - and until it did, the transcript recorded every
+    prompt and reply and not one tool call, which is half a run.
+    """
+    from app.graph.workflow import _inner_agent_config
+    from app.tracing import APP_RUN_ID_KEY
+
+    config = _inner_agent_config("thread-1", "run-7", [], recursion_limit=60)
+
+    assert config["configurable"][APP_RUN_ID_KEY] == "run-7"
+    assert config["configurable"]["thread_id"] == "thread-1"
+    assert config["recursion_limit"] == 60
+
+
+def test_a_run_with_no_id_still_produces_a_usable_config() -> None:
+    from app.graph.workflow import _inner_agent_config
+    from app.tracing import APP_RUN_ID_KEY
+
+    config = _inner_agent_config("thread-1", None, [])
+
+    assert APP_RUN_ID_KEY not in config["configurable"]
+    assert config["configurable"]["thread_id"] == "thread-1"
+
+
+def test_every_inner_invocation_builds_its_config_the_same_way() -> None:
+    """Two call sites, and a third would otherwise be written without the id -
+    which is how the transcript came to record half a run."""
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+
+    # Both invocations go through the builder. `agent.get_state` may still take
+    # a bare thread id: it reads a checkpoint and runs no middleware.
+    invokes = [ln for ln in source.splitlines() if "agent.invoke(" in ln]
+    assert len(invokes) == 2
+    assert source.count("_inner_agent_config(") == 3  # the definition and both sites

@@ -91,6 +91,57 @@ class SpecialistTask(BaseModel):
             )
         return value
 
+    @model_validator(mode="after")
+    def _a_task_is_more_than_a_document_the_workflow_owns(self) -> "SpecialistTask":
+        """Refuse a task whose whole deliverable is a document nobody may write.
+
+        The sibling of `_a_task_is_work`, and the same lesson: an agent handed
+        a task it cannot complete does not stop, it finds something to do.
+
+        Measured on run f81808a4. The lead delegated
+
+            Update docs/sprint_plan.md to include a new section detailing the
+            filtering feature implementation.
+            - docs/sprint_plan.md contains updated content with filtering details
+
+        The brief carried the note that already exists for this, which says
+        plainly that the tool refuses and that the content belongs in the
+        structured response. `specialist_documentation_3` read it and wrote
+        `docs/placeholder_for_sprint_plan_content.md` instead;
+        `specialist_ui_ux_3` later wrote the same invented file, twice more
+        and empty. Seven model calls across two stages, for a file nothing
+        reads.
+
+        The note is right and cannot be enough here, because it says "do the
+        part of this task that is real work" and there is no such part. The
+        task has to not be delegated.
+
+        Only when the task is ENTIRELY that document: a description naming one
+        with criteria that name nothing else. "Implement filtering and update
+        docs/sprint_plan.md" has real work in it, keeps the note, and is left
+        alone.
+        """
+        from app.tools.repository import WORKFLOW_DOCUMENTS
+
+        def names_one(text: str) -> bool:
+            low = (text or "").lower()
+            return any(name.lower() in low for name in WORKFLOW_DOCUMENTS)
+
+        if not names_one(self.task_description):
+            return self
+        if self.acceptance_criteria and not all(
+            names_one(criterion) for criterion in self.acceptance_criteria
+        ):
+            return self
+        raise ValueError(
+            f"'{self.task_description}' asks only for a document the workflow "
+            "writes itself and no agent can change - the tool refuses it. There "
+            "is no part of this task a specialist could do. Delegate the real "
+            "work instead, and leave the document to the stage that produces "
+            "it: what belongs in it reaches the workflow through that stage's "
+            "structured response, not through a file."
+        )
+
     @field_validator("specialist_role", mode="before")
     @classmethod
     def _role_slug(cls, value: Any) -> Any:

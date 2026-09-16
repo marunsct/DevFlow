@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -154,6 +155,98 @@ def read_transcript(run_id: str, kinds: set[str] | None = None) -> list[dict]:
     except OSError:
         return []
     return entries
+
+
+#: Lines of command output to carry into a defect-fix brief. A test runner's
+#: last forty lines hold the failure and the summary; the rest is the passing
+#: tests above it.
+OBSERVED_OUTPUT_LINES = 40
+
+
+def last_failing_command(run_id: str | None) -> dict[str, str] | None:
+    """The most recent command that failed in this run, with what it printed.
+
+    Written for `build_defect_fix_request`, which had a real problem: the
+    defect handed to a fixer is the *reporting* specialist's prose reading of a
+    failure, and prose drifts.
+
+    Measured on run-d3965815. `defect_fix_2_1` was briefed with "Syntax error
+    in createElementFallback causing renderTasks failure ... Observe stderr
+    showing Unexpected token '}'". By then the suite was failing with
+    `ReferenceError: mockList is not defined` at `app.test.mjs:50:20`, and
+    there was no syntax error anywhere in the file. The fixer spent its stage
+    looking for one, and the run went through three remediation rounds without
+    the defect moving.
+
+    The machine's own words were on disk the whole time - the transcript
+    records every `run_terminal_command` result verbatim. This hands them back.
+    The prose stays: it carries the specialist's judgement about *which*
+    failure matters, which the raw output does not.
+    """
+    if not run_id:
+        return None
+    calls: dict[str, dict] = {}
+    found: dict[str, str] | None = None
+    for entry in read_transcript(run_id, {"tool_call", "tool_result"}):
+        call_id = str(entry.get("call_id") or "")
+        if not call_id:
+            continue
+        if entry.get("kind") == "tool_call":
+            calls[call_id] = entry
+            continue
+        call = calls.get(call_id)
+        if call is None or call.get("tool") != "run_terminal_command":
+            continue
+        content = str(entry.get("content") or "")
+        if not _reports_a_failure(content):
+            continue
+        argv = (call.get("args") or {}).get("command")
+        found = {
+            "command": (
+                " ".join(str(part) for part in argv)
+                if isinstance(argv, list)
+                else str(argv or "")
+            ),
+            "output": _last_lines(content, OBSERVED_OUTPUT_LINES),
+            "at": str(entry.get("at") or ""),
+            "stage": str(call.get("stage") or entry.get("stage") or ""),
+        }
+    return found
+
+
+def _reports_a_failure(content: str) -> bool:
+    """Whether this `run_terminal_command` result is a failure.
+
+    The tool returns a JSON object carrying `returncode`. A refused command has
+    an `error` and no exit code; that is the harness declining, not the project
+    failing, and briefing a fixer with it would send it after the wrong thing.
+
+    The quotes around the number are optional because the tool really does send
+    it both ways - `{"returncode": "0"}` in the transcripts on disk. Matching
+    the bare-integer form alone found nothing at all, silently.
+    """
+    match = re.search(r'"returncode"\s*:\s*"?(-?\d+)"?', content)
+    return bool(match) and match.group(1) != "0"
+
+
+def _last_lines(content: str, limit: int) -> str:
+    """The tail of a command result, with the JSON envelope's escapes undone."""
+    try:
+        payload = json.loads(content)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict):
+        text = "\n".join(
+            str(payload.get(stream) or "").rstrip()
+            for stream in ("stdout", "stderr")
+            if payload.get(stream)
+        )
+    else:
+        text = content
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) <= limit:
+        return "\n".join(lines)
+    return "... (earlier output omitted)\n" + "\n".join(lines[-limit:])
 
 
 def _messages_of(payload: Any) -> list[dict[str, Any]]:

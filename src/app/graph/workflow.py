@@ -789,6 +789,22 @@ def _answer_left_in_a_spinning_stage(
     return _answer_written_into_the_conversation(values, schema)
 
 
+def _what_the_last_failure_printed(run_id: str | None) -> dict[str, str] | None:
+    """The last failing command's own output, or None. Never raises.
+
+    Imported here rather than at module scope: the transcript module is
+    observability, and a defect fix must not fail because a record could not be
+    read.
+    """
+    try:
+        from app.observability.transcript import last_failing_command
+
+        return last_failing_command(run_id)
+    except Exception:  # noqa: BLE001 - a brief is better without it than absent
+        logger.debug("Could not read the last failing command for %s", run_id)
+        return None
+
+
 def _outcome_summary(structured_response: Any) -> str:
     """One line saying what a stage decided, or "" when it decided nothing.
 
@@ -2420,6 +2436,9 @@ def build_workflow_graph(
             defect.regression_test_required,
             state["repository"].root_path,
             getattr(state.get("stack_selection"), "technology_stack", None),
+            # What the failing command actually printed, alongside the prose
+            # description of it. See `build_defect_fix_request`.
+            _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
         )
         update = _run_gated_agent(
             state,

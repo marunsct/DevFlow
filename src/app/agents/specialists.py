@@ -341,6 +341,21 @@ def build_test_run_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+def _observed_output(observed: dict[str, str] | None) -> str:
+    """The last failing command and what it printed, or "" if there is none."""
+    if not observed or not observed.get("output"):
+        return ""
+    return (
+        "--- What the last failing command actually printed ---\n"
+        f"$ {observed.get('command', '')}\n"
+        f"{observed['output']}\n\n"
+        "The description above is another specialist's reading of a failure and "
+        "may be out of date or wrong about the cause; this is the machine's own "
+        "output. Where the two disagree, believe this, and reproduce it yourself "
+        "before changing anything.\n\n"
+    )
+
+
 def build_defect_fix_request(
     description: str,
     reproduction_steps: str,
@@ -350,6 +365,7 @@ def build_defect_fix_request(
     regression_test_required: bool,
     repository_root: str,
     stack: Any = None,
+    observed: dict[str, str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that routes one tracked defect to the specialist who owns it.
 
@@ -358,6 +374,15 @@ def build_defect_fix_request(
     test is not optional politeness - the plan's gate refuses to accept a sprint
     with missing regression coverage, so the request states that requirement
     explicitly and the specialist must name the test in its `tests` field.
+
+    `observed` is what the last failing command actually printed, from
+    `app.observability.transcript.last_failing_command`. Everything above it in
+    this brief is the *reporting* specialist's prose reading of a failure, and
+    prose drifts: on run-d3965815 `defect_fix_2_1` was briefed to find a
+    "Syntax error in createElementFallback ... Unexpected token '}'" in a file
+    that had no syntax error, while the suite was failing on a different line
+    for a different reason. Both belong in the brief - the prose carries the
+    judgement about which failure matters, the output carries the facts.
     """
     files_text = "\n".join(f"- {name}" for name in affected_files) or "- (none identified)"
     regression_clause = (
@@ -376,6 +401,7 @@ def build_defect_fix_request(
         f"--- Expected behavior ---\n{expected_behavior}\n\n"
         f"--- Actual behavior ---\n{actual_behavior}\n\n"
         f"--- Affected files ---\n{files_text}\n\n"
+        f"{_observed_output(observed)}"
         f"{regression_clause}\n\n"
         "Fix only this defect. If you cannot fix it, say why in `blockers` rather than "
         "claiming it is resolved."

@@ -95,6 +95,43 @@ def returned_to_an_earlier_state(relative_path: str, content: str) -> bool:
     return _digest(content) in states[:-1]
 
 
+_REPLACEMENTS = "passages this stage has already replaced"
+
+#: Replacements remembered per file. A stage makes a few dozen edits at most.
+MAX_REPLACEMENTS_PER_FILE = 64
+
+
+def record_replacement(relative_path: str, find: str, replace: str) -> None:
+    """Remember that this stage replaced `find` with `replace` in this file."""
+    if not find:
+        return
+    applied = store(_REPLACEMENTS, _FALLBACK_REPLACEMENTS)
+    pairs = applied.setdefault(str(relative_path), [])
+    pairs.append((find, replace))
+    del pairs[:-MAX_REPLACEMENTS_PER_FILE]
+
+
+def what_replaced_it(relative_path: str, find: str) -> str | None:
+    """What this stage put in place of `find` here, or None if it never did.
+
+    An edit that misses because the stage already made it is not the same
+    mistake as one that misses because the text was wrong, and the diff it
+    would otherwise get compares its `find` against the replacement it wrote
+    itself.
+
+    `_already_applied` in `repository` catches the narrower case where the
+    whole edit is re-sent - same `find`, same `replace`. Measured on run
+    f81808a4, `specialist_testing_3` sent one `find` six times with the
+    replacement varying each time, so that check stayed silent and the stage
+    was answered with a character diff six times over.
+    """
+    applied = store(_REPLACEMENTS, _FALLBACK_REPLACEMENTS)
+    for previous, replacement in reversed(applied.get(str(relative_path)) or []):
+        if previous == find:
+            return replacement
+    return None
+
+
 def changed_since_seen(relative_path: str, content: str) -> bool:
     """True when this stage has seen the file and it no longer matches.
 
@@ -117,11 +154,15 @@ _FALLBACK: dict[str, str] = {}
 #: The history's counterpart to `_FALLBACK`, shared for the same reason.
 _FALLBACK_HISTORY: dict[str, list[str]] = {}
 
+#: And the replacement log's.
+_FALLBACK_REPLACEMENTS: dict[str, list[tuple[str, str]]] = {}
+
 
 def forget_everything() -> None:
     """Drop the no-stage fallbacks. For tests, which must not leak into each other."""
     _FALLBACK.clear()
     _FALLBACK_HISTORY.clear()
+    _FALLBACK_REPLACEMENTS.clear()
 
 
 __all__ = [
@@ -129,7 +170,10 @@ __all__ = [
     "MAX_STATES_PER_FILE",
     "changed_since_seen",
     "forget_everything",
+    "MAX_REPLACEMENTS_PER_FILE",
+    "record_replacement",
     "record_state",
     "remember",
+    "what_replaced_it",
     "returned_to_an_earlier_state",
 ]

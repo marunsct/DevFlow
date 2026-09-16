@@ -712,6 +712,20 @@ def _an_edit_that_undoes_an_earlier_one(relative_path: str, content: str) -> str
     )
 
 
+def _what_this_stage_replaced_it_with(relative_path: str, find: str) -> str | None:
+    """What this stage put in place of `find`, or None if it never replaced it.
+
+    Bookkeeping only; a failure falls through to the messages below.
+    """
+    try:
+        from app.tools.seen_content import what_replaced_it
+
+        return what_replaced_it(relative_path, find)
+    except Exception:  # noqa: BLE001 - fall through to the diff
+        logger.debug("Could not check replacements in %s", relative_path, exc_info=True)
+        return None
+
+
 def _changed_underneath(relative_path: str, original: str) -> bool:
     """True when this stage read the file and it no longer holds what it read.
 
@@ -990,7 +1004,7 @@ def edit_approved_artifact(
                     original[:start] + replace + original[end:],
                     relative_path,
                 )
-                return _edited(target, root, relative_path, replace, explanation)
+                return _edited(target, root, relative_path, replace, explanation, find)
 
             # Before anything else: the model may be re-sending an edit it
             # already made, in which case every other message here is a
@@ -1007,6 +1021,21 @@ def edit_approved_artifact(
                     f"only {len(find)} characters, which rarely identifies one passage. "
                     "Give the whole line you want changed, copied from a read, and put the "
                     "change in `replace`."
+                )
+
+            # A `find` this stage has already replaced is not a near miss to
+            # be diffed against the replacement it wrote itself.
+            replaced = _what_this_stage_replaced_it_with(relative_path, find)
+            if replaced is not None:
+                shown = replaced.strip()[:200] + ("..." if len(replaced.strip()) > 200 else "")
+                raise RepositoryToolError(
+                    f"Could not find that text in '{relative_path}' because you "
+                    "already replaced it earlier in this stage. That passage is no "
+                    "longer in the file; what you put there reads:\n\n"
+                    f"{shown}\n\n"
+                    "If this edit is a second change to the same place, send the "
+                    "text above as `find`. If you meant the change you have already "
+                    "made, it is made - move on."
                 )
 
             # Before the diff: a `find` that was correct when it was copied
@@ -1070,7 +1099,7 @@ def edit_approved_artifact(
         _write_unless_it_changes_nothing(
             target, original, original.replace(find, replace, 1), relative_path
         )
-    return _edited(target, root, relative_path, replace)
+    return _edited(target, root, relative_path, replace, find=find)
 
 
 #: Lines of context to quote either side of an edit, so the result answers
@@ -1110,7 +1139,12 @@ def _where_it_landed(written: str, replace: str) -> str:
 
 
 def _edited(
-    target: Path, root: Path, relative_path: str, replace: str, detail: str | None = None
+    target: Path,
+    root: Path,
+    relative_path: str,
+    replace: str,
+    detail: str | None = None,
+    find: str | None = None,
 ) -> dict[str, str]:
     """The result of a successful edit, with every note that applies.
 
@@ -1152,6 +1186,16 @@ def _edited(
         _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
+    if find is not None:
+        # Both success paths reach here, which is why the record is taken here
+        # and not at either of them. See `app.tools.seen_content`.
+        try:
+            from app.tools.seen_content import record_replacement
+
+            record_replacement(relative_path, find, replace)
+        except Exception:  # noqa: BLE001 - bookkeeping must not fail an edit
+            logger.debug("Could not record the replacement in %s", relative_path, exc_info=True)
+
     landed = ""
     try:
         landed = target.read_text(encoding="utf-8")

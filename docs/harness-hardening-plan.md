@@ -349,7 +349,7 @@ under `DATA_DIR/transcripts`, read with the audit script in the session scratchp
 | fact | value | why it matters |
 |---|---|---|
 | tool failures that cost a run | 20% (run 55) → 3% (run 65) | the baseline items 1-16 are measured against |
-| byte-identical repeats inside one stage | 32% (run 60) → 13% (run 65) | most of the remaining waste |
+| byte-identical repeats inside one stage | 27% (run 60) → 6% (run 65) | measure this *excluding* repeats the harness refused - counting those made the figure look like 13% when part of it was `node --check` refusing an illegal return four times before the model fixed it and the fifth write succeeded |
 | model calls that are reads | 46% | reads are the cost; they almost never fail (1 in 139) |
 | tool calls per model response | **always exactly 1**, 0 of 2,040 | no batching; see §3.1 |
 | wall clock spent inside model calls | 99% | tool execution totals ~1.3s per run; optimise calls, not tools |

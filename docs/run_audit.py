@@ -1,0 +1,85 @@
+"""Audit one run's transcript: cost, waste, and what the harness prevented."""
+import json, sys, collections, re
+
+SAVED = (
+    "Node cannot parse", "Refusing to write", "Refusing to change",
+    "already been applied", "exactly as it is", "already contained exactly",
+    "is a test, and tests are part of what", "already holds this module",
+    "you have already been told that twice",
+)
+
+def load(path):
+    rows = []
+    for line in open(path, encoding="utf-8", errors="replace"):
+        line = line.strip()
+        if line.startswith("{"):
+            try: rows.append(json.loads(line))
+            except Exception: pass
+    return rows
+
+def main(path):
+    rows = load(path)
+    res = {r.get("call_id"): r for r in rows if r["kind"] == "tool_result"}
+    calls = [r for r in rows if r["kind"] == "tool_call"]
+    mc = sum(1 for r in rows if r["kind"] == "model_request")
+
+    saved = cost = 0
+    shapes = collections.Counter()
+    for r in calls:
+        c = (res.get(r.get("call_id")) or {}).get("content") or ""
+        if '"error"' not in c[:400] and not c.lstrip().startswith("Error:"):
+            continue
+        if any(mark in c for mark in SAVED):
+            saved += 1
+        else:
+            cost += 1
+            shapes[(r.get("tool"), re.sub(r"\d+", "N", c[:110]))] += 1
+
+    segs = []
+    for i, r in enumerate(rows):
+        if r["kind"] != "model_request": continue
+        st = r.get("stage")
+        if segs and segs[-1][0] == st: segs[-1][1] += 1; segs[-1][3] = i
+        else: segs.append([st, 1, i, i])
+    bounds = [(s[0], s[2], (segs[k+1][2] if k+1 < len(segs) else len(rows)))
+              for k, s in enumerate(segs)]
+    # A repeat whose result was a refusal that prevented damage is not waste of
+    # the same kind: the harness stopped something, and it is already counted
+    # above. Counting it twice made "repeats" look like pure loss when part of
+    # it was `node --check` refusing an illegal return four times before the
+    # model fixed it and the fifth write succeeded.
+    waste = collections.Counter()
+    for st, a, b in bounds:
+        c = collections.Counter()
+        for r in rows[a:b]:
+            if r["kind"] != "tool_call": continue
+            got = (res.get(r.get("call_id")) or {}).get("content") or ""
+            if any(mark in got for mark in SAVED): continue
+            c[(r.get("tool"), json.dumps(r.get("args"), sort_keys=True)[:250])] += 1
+        for (tool, _), v in c.items():
+            if v > 1: waste[tool] += v - 1
+
+    print(f"model calls {mc} | tool calls {len(calls)}")
+    print(f"  refusals that prevented damage: {saved} ({100*saved/max(len(calls),1):.1f}%)")
+    print(f"  failures that cost the run:     {cost} ({100*cost/max(len(calls),1):.1f}%)")
+    print(f"  identical repeats in a stage:   {sum(waste.values())} "
+          f"({100*sum(waste.values())/max(mc,1):.1f}% of model calls) {dict(waste)}")
+    print("\nstages:", " -> ".join(f"{s[0]}({s[1]})" for s in segs))
+    if shapes:
+        print("\ncostly failures:")
+        for (t, m), n in shapes.most_common(10):
+            print(f"  {n:3d} {t}: {m}")
+    notices = [
+        ("returned exactly what it returned", "query repeat"),
+        ("same bytes this file gave you", "read repeat"),
+        ("you already have it", "read withheld"),
+        ("already contained exactly this content", "write unchanged"),
+        ("you have already been told that twice", "no-op refusal"),
+        ("already failed", "ledger command"),
+    ]
+    print("\nnotices:")
+    for phrase, label in notices:
+        n = sum(1 for r in rows if r["kind"] == "tool_result" and phrase in (r.get("content") or ""))
+        print(f"  {n:4d} {label}")
+
+main(sys.argv[1])

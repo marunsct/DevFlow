@@ -399,6 +399,12 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         project = manifest.parent
         named = _paths_named_after_the_test_flag(command)
         searched, listed_files = _what_the_command_searches(named, project)
+        # A named file that imports the suites runs them. Run f81808a4's
+        # `run-tests.mjs` sets up a localStorage mock and then imports four
+        # files from `tests/`; without following that, this reported all four
+        # as never executed - four wrong findings out of ten, for tests that
+        # run on every `npm test`.
+        imported = _what_those_files_import(listed_files, project)
         tests = [
             path
             for path in files
@@ -410,6 +416,7 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
             path
             for path in tests
             if not _node_runs(path, project, searched, listed_files)
+            and path.resolve() not in imported
         ]
         if not stranded:
             continue
@@ -466,6 +473,40 @@ def _what_the_command_searches(
         else:
             listed_files.append(argument.strip())
     return searched, listed_files
+
+
+def _what_those_files_import(listed_files: list[str], project: Path) -> set[Path]:
+    """Every local file the named entry points reach, at any depth.
+
+    An aggregator is a normal and correct way to run a suite: run f81808a4's
+    `run-tests.mjs` installs a localStorage stub the individual files need and
+    then imports them. Its tests run; they are not stranded.
+    """
+    from app.analysis.local_imports import _RELATIVE, _resolve
+
+    reached: set[Path] = set()
+    queue = [
+        (project / name.strip("./")).resolve()
+        for name in listed_files
+        if (project / name.strip("./")).is_file()
+    ]
+    while queue:
+        current = queue.pop()
+        if current in reached:
+            continue
+        reached.add(current)
+        try:
+            text = current.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _RELATIVE.finditer(text):
+            specifier = next((g for g in match.groups() if g), None)
+            if not specifier:
+                continue
+            target = _resolve(current, specifier)
+            if target is not None and target not in reached:
+                queue.append(target)
+    return reached
 
 
 def _node_runs(

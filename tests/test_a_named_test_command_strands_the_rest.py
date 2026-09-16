@@ -113,3 +113,97 @@ def test_a_badly_named_test_is_still_caught_under_a_bare_command(tmp_path):
     assert len(found) == 1
     assert "test_add_task.mjs" in found[0]
     assert "the prefix form takes a hyphen" in found[0]
+
+
+def test_an_aggregator_that_imports_the_suites_strands_nothing(tmp_path):
+    """A named entry point that imports the tests runs them.
+
+    Run f81808a4's `run-tests.mjs` installs a localStorage stub the individual
+    files need and then imports them:
+
+        global.localStorage = { ... };
+        import './tests/add.test.js';
+        import './tests/filter.test.js';
+
+    Without following that, this check reported all four imported suites as
+    never executed - four wrong findings out of ten, for tests that run on
+    every `npm test`. A wrong finding sends the run chasing a problem that is
+    not there, which is worse than the silence it replaced.
+    """
+    app = tmp_path / "app"
+    (app / "tests").mkdir(parents=True)
+    (app / "tests" / "add.test.js").write_text(
+        "import {test} from 'node:test';\ntest('a',()=>{});\n"
+    )
+    (app / "tests" / "filter.test.js").write_text(
+        "import {test} from 'node:test';\ntest('b',()=>{});\n"
+    )
+    (app / "tests" / "orphan.test.js").write_text(
+        "import {test} from 'node:test';\ntest('c',()=>{});\n"
+    )
+    (app / "run-tests.mjs").write_text(
+        "global.localStorage = {};\n"
+        "import './tests/add.test.js';\n"
+        "import './tests/filter.test.js';\n"
+    )
+    (app / "package.json").write_text(
+        json.dumps({"scripts": {"test": "node --test run-tests.mjs"}})
+    )
+
+    found = _tests_the_project_never_runs(
+        [
+            app / "package.json",
+            app / "run-tests.mjs",
+            app / "tests" / "add.test.js",
+            app / "tests" / "filter.test.js",
+            app / "tests" / "orphan.test.js",
+        ],
+        tmp_path,
+    )
+
+    stranded = found[0].split("Stranded: ")[-1] if found else ""
+    assert "tests/add.test.js" not in stranded
+    assert "tests/filter.test.js" not in stranded
+    assert "tests/orphan.test.js" in stranded
+
+
+def test_an_aggregator_chain_is_followed_to_the_end(tmp_path):
+    """The import graph, not just its first level."""
+    app = tmp_path / "app"
+    (app / "tests").mkdir(parents=True)
+    (app / "tests" / "deep.test.js").write_text(
+        "import {test} from 'node:test';\ntest('d',()=>{});\n"
+    )
+    (app / "tests" / "index.js").write_text("import './deep.test.js';\n")
+    (app / "run-tests.mjs").write_text("import './tests/index.js';\n")
+    (app / "package.json").write_text(
+        json.dumps({"scripts": {"test": "node --test run-tests.mjs"}})
+    )
+
+    found = _tests_the_project_never_runs(
+        [
+            app / "package.json",
+            app / "run-tests.mjs",
+            app / "tests" / "index.js",
+            app / "tests" / "deep.test.js",
+        ],
+        tmp_path,
+    )
+
+    assert found == []
+
+
+def test_a_cycle_between_aggregators_terminates(tmp_path):
+    """Two files importing each other must not hang the check."""
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "a.mjs").write_text("import './b.mjs';\n")
+    (app / "b.mjs").write_text("import './a.mjs';\n")
+    (app / "lonely.test.js").write_text("import {test} from 'node:test';\ntest('x',()=>{});\n")
+    (app / "package.json").write_text(json.dumps({"scripts": {"test": "node --test a.mjs"}}))
+
+    found = _tests_the_project_never_runs(
+        [app / "package.json", app / "a.mjs", app / "b.mjs", app / "lonely.test.js"], tmp_path
+    )
+
+    assert "lonely.test.js" in found[0]

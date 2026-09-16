@@ -681,11 +681,10 @@ def test_a_stage_nearing_its_ceiling_is_told_to_finish() -> None:
     warning = _running_out_of_room(nearly, 60)
 
     assert "of the 60 model calls" in warning
-    assert "Stop exploring and return it now" in warning
-    # It must say what is lost, or "hurry up" is just noise - and what it says
-    # must be true, which is why it no longer promises a restart that does not
-    # happen. See `test_the_warning_describes_what_actually_happens`.
-    assert "anything you have not put into your structured response is lost" in warning
+    # It must say what is lost, or "hurry up" is just noise, and what it says
+    # must be true of the stage reading it. See
+    # `test_the_warning_describes_what_actually_happens`.
+    assert "Return your structured response now" in warning
 
 
 def test_a_stage_with_room_is_not_nagged() -> None:
@@ -1038,9 +1037,42 @@ def test_a_stage_with_no_budget_is_never_ended_this_way() -> None:
 
 
 def test_the_warning_describes_what_actually_happens() -> None:
+    """Two outcomes, and the warning has to name the one this stage is facing.
+
+    `_decide` ends a stage at its limit *only if* an answer is already written.
+    With none, nothing stops it there: it runs on to the graph's step ceiling,
+    is stopped, and - with nothing to salvage - `_restart_on_a_fresh_
+    conversation` starts it again from an empty conversation.
+
+    An earlier version of this test asserted the graceful ending in both cases
+    and that the restart was never mentioned. That was too broad: the restart
+    does not happen for a stage that has an answer, and does happen for one
+    that has not. Measured across runs 60-67, eleven stages reached the warning
+    and made 61 further model calls between them, one running to 57 against a
+    limit of 40 - having been told that 40 was where it ended.
+    """
     from app.agents.settled_answer import _running_out_of_room
 
-    warning = _running_out_of_room([AIMessage(content=f"{i}", id=f"m{i}") for i in range(45)], 60)
+    spinning = [AIMessage(content=f"{i}", id=f"m{i}") for i in range(45)]
 
-    assert "this stage ends with whatever answer you have already written" in warning
+    # A schema to recognise an answer by, and no answer among the messages.
+    warning = _running_out_of_room(spinning, 60, Verdict)
+
+    assert "have NOT written a structured response" in warning
+    assert "started again from an empty conversation" in warning
+    assert "this stage ends with whatever answer you have already written" not in warning
+
+
+def test_a_stage_that_has_an_answer_is_told_the_gentler_truth() -> None:
+    """It really does end with that answer, so saying it would be restarted lies."""
+    from app.agents.settled_answer import _running_out_of_room
+
+    written = [
+        *[AIMessage(content=f"{i}", id=f"m{i}") for i in range(45)],
+        AIMessage(content=ANSWER, id="m-answer"),
+    ]
+
+    warning = _running_out_of_room(written, 60, Verdict)
+
+    assert "already written an answer" in warning
     assert "started again from an empty conversation" not in warning

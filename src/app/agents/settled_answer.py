@@ -427,7 +427,7 @@ def _model_calls_used(messages: list[Any]) -> int:
     return sum(1 for message in messages if getattr(message, "type", None) == "ai")
 
 
-def _running_out_of_room(messages: list[Any], limit: int) -> str:
+def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) -> str:
     """Tell a stage it is close to its step ceiling, or "" when it is not.
 
     A stage that reaches the ceiling is stopped and, if nothing can be
@@ -446,16 +446,43 @@ def _running_out_of_room(messages: list[Any], limit: int) -> str:
     Raising the ceiling would let a genuine runaway burn the larger number
     before anything stopped it. Telling the stage instead costs nothing and
     asks for the one thing that actually helps: return what you have.
+
+    What it says depends on whether an answer exists, because what happens
+    next does. At the limit `_decide` ends the stage *only if* it finds an
+    answer already written; with none, nothing stops the stage there and it
+    runs on to the graph's step ceiling, is stopped, and - when there is
+    nothing to salvage - is restarted from an empty conversation by
+    `_restart_on_a_fresh_conversation`.
+
+    The single message this replaced asserted the graceful ending in both
+    cases: "At {limit} this stage ends with whatever answer you have already
+    written". For a stage with no answer that is not true, and it is the case
+    that matters - the stage reading it has nothing written, and is being told
+    its position is safer than it is. Measured across runs 60-67, eleven stages
+    reached the warning and made 61 further model calls between them; one ran
+    to 57 against a limit of 40, having been told twice over that 40 was where
+    it ended.
     """
     used = _model_calls_used(messages)
     if limit <= 0 or used < int(limit * BUDGET_WARNING_FRACTION):
         return ""
-    return (
-        f"You have made about {used} of the {limit} model calls this stage is "
-        f"allowed. At {limit} this stage ends with whatever answer you have "
-        "already written, and anything you have not put into your structured "
-        "response is lost. Stop exploring and return it now. An answer that is "
-        "complete but imperfect is worth far more than none."
+    opening = (
+        f"You have made about {used} of the {limit} model calls this stage is allowed. "
+    )
+    if schema is not None and _most_recent_answer(messages, schema) is not None:
+        return opening + (
+            f"You have already written an answer, so at {limit} this stage ends with "
+            "that one and anything you have learned since is lost. Return it now, "
+            "with whatever you have added, rather than letting the older version "
+            "stand."
+        )
+    return opening + (
+        "You have NOT written a structured response yet. Nothing ends this stage "
+        "gracefully without one: it runs on until the step ceiling stops it, and "
+        "then it is started again from an empty conversation - every file you have "
+        "read, every command you have run and every result you have seen is gone, "
+        "and the work begins from nothing. Return your structured response now. An "
+        "answer that is complete but imperfect is worth far more than none."
     )
 
 
@@ -507,7 +534,7 @@ def build_settled_answer_middleware(
                     # could not be answered from the record at all, and the
                     # schema-failure count silently absorbed every warning.
                     # Diagnosing what you cannot see is finding 47 again.
-                    correction = _running_out_of_room(messages, step_limit)
+                    correction = _running_out_of_room(messages, step_limit, schema)
                     if correction:
                         logger.info(
                             "Stage %s is close to its model-call budget; telling "

@@ -45,8 +45,37 @@ def test_the_file_from_run_d3965815_is_caught() -> None:
     ],
 )
 def test_a_name_node_collects_is_left_alone(path: str) -> None:
-    """Node's documented default patterns, each one."""
+    """Node's default patterns, each one - verified by running Node, not by
+    reading the documentation. See `test_the_prefix_form_takes_a_hyphen_only`."""
     assert undiscoverable_test(path, NODE_TEST) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "test_add_task.mjs",
+        "test_delete_task.mjs",
+        "test_persistence.mjs",
+        "test_toggle_task.cjs",
+    ],
+)
+def test_the_prefix_form_takes_a_hyphen_only(name: str) -> None:
+    """`test-*` is collected; `test_*` is not, and this check said it was.
+
+    Verified by running Node over six names in one directory:
+
+        ok  add-task-test.mjs   ok  add.test.mjs   ok  add_task_test.mjs
+        ok  test-add-task.mjs   ok  test.mjs       --  test_add_task.mjs
+
+    Five of six. run-04576307 wrote six suites in the underscore-prefix form -
+    `test_add_task.mjs`, `test_delete_task.mjs`, `test_edit_task.mjs`,
+    `test_filter_tasks.mjs`, `test_persistence.mjs`, `test_toggle_task.mjs` -
+    none of which Node runs, and this check called every one of them fine.
+    """
+    note = undiscoverable_test(f"todo-app/{name}", NODE_TEST)
+
+    assert note is not None
+    assert "will not collect it" in note
 
 
 @pytest.mark.parametrize(

@@ -23,10 +23,23 @@ from __future__ import annotations
 
 import re
 
-#: Node's documented default patterns, as globs reduced to what they mean for a
-#: basename. https://nodejs.org/api/test.html#running-tests-from-the-command-line
+#: Node's default patterns, as globs reduced to what they mean for a basename:
+#: `*.test.?js`, `*-test.?js`, `*_test.?js`, `test-*.?js`, `test.?js`.
+#: https://nodejs.org/api/test.html#running-tests-from-the-command-line
+#:
+#: The prefix form takes a HYPHEN only. This first read it as `test[-_]`, which
+#: is the natural symmetry to draw from the suffix form and is wrong - verified
+#: by running Node over six names in a directory:
+#:
+#:     ok  add-task-test.mjs   ok  add.test.mjs   ok  add_task_test.mjs
+#:     ok  test-add-task.mjs   ok  test.mjs       --  test_add_task.mjs
+#:
+#: Five of six collected. run-04576307 wrote `test_add_task.mjs`,
+#: `test_delete_task.mjs`, `test_edit_task.mjs`, `test_filter_tasks.mjs`,
+#: `test_persistence.mjs` and `test_toggle_task.mjs` - six suites, none of
+#: which Node runs, and this check called every one of them fine.
 _NODE_TEST_NAME = re.compile(
-    r"^(?:.+[.\-_]test|test|test[-_].+)\.[cm]?js$",
+    r"^(?:.+[.\-_]test|test|test-.+)\.[cm]?js$",
     re.IGNORECASE,
 )
 

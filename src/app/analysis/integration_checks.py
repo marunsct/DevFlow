@@ -363,6 +363,22 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     coverage, every stage after it reads a passing suite as evidence the
     product works.
 
+    A command that NAMES files strands everything it does not name, whatever
+    those files are called. Run f81808a4 reached its sixth milestone with
+    `scripts.test` of `node --test main.test.js` and a second suite at
+    `tests/filter.test.js` - a correct Node test name, in a directory bare
+    `node --test` would recurse into, and never run once, because the command
+    names one file. Every gate read "# tests 4  # pass 4" and none of the
+    filter tests were among them.
+
+    Verified rather than assumed, in the run image:
+
+        node --test a.test.js  ->  # tests 1   (tests/b.test.js not run)
+        node --test            ->  # tests 2   (tests/b.test.js run)
+
+    so a bare command recurses through subdirectories and an explicit one does
+    not, and both halves of this check follow from that.
+
     Only `node --test`. Jest, Vitest and Mocha decide discovery in their own
     configuration, which this cannot read, and a wrong claim about a suite that
     runs perfectly well would be worse than no claim.
@@ -381,25 +397,113 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         if any(runner in command for runner in _RUNNERS_WITH_THEIR_OWN_CONFIG):
             continue
         project = manifest.parent
-        stranded = [
+        named = _paths_named_after_the_test_flag(command)
+        searched, listed_files = _what_the_command_searches(named, project)
+        tests = [
             path
             for path in files
-            if path.parent == project
-            and path.suffix.lower() in {".js", ".mjs", ".cjs"}
+            if path.suffix.lower() in {".js", ".mjs", ".cjs"}
             and is_test(str(path.relative_to(root)))
-            and not _NODE_COLLECTS.match(path.name)
+            and _is_within(path, project)
+        ]
+        stranded = [
+            path
+            for path in tests
+            if not _node_runs(path, project, searched, listed_files)
         ]
         if not stranded:
             continue
-        listed = ", ".join(sorted(path.name for path in stranded))
+        if listed_files:
+            why = (
+                f"which names {', '.join(sorted(listed_files))}. A file given to "
+                "`node --test` is run directly and nothing else is searched. "
+                "Those files have never executed, and a passing suite is being "
+                "read as evidence they did. Name them too, or give a directory "
+                "instead - "
+                "`node --test` with no arguments searches the whole project."
+            )
+        else:
+            why = (
+                "which does not collect them. Those files have never executed, "
+                "and a passing suite is being read as evidence they did. Node's "
+                "patterns are *.test.js, *-test.js, *_test.js, test-*.js, "
+                "test.js, or anything under a test/ directory - note the prefix "
+                "form takes a hyphen."
+            )
+        where = ", ".join(sorted(str(path.relative_to(project)) for path in stranded))
         problems.append(
-            f"{manifest.relative_to(root)} runs `{command}`, which does not "
-            f"collect {listed}. Those files have never executed, and a passing "
-            "suite is being read as evidence they did. Node's patterns are "
-            "*.test.js, *-test.js, *_test.js, test-*.js, test.js, or anything "
-            "under a test/ directory - note the prefix form takes a hyphen."
+            f"{manifest.relative_to(root)} runs `{command}`, {why} Stranded: {where}."
         )
     return problems
+
+
+def _what_the_command_searches(
+    named: list[str], project: Path
+) -> tuple[list[Path], list[str]]:
+    """The directories `node --test` searches, and the files it runs outright.
+
+    Verified in the run image, with `badname.mjs` beside `a.test.js` and the
+    same pair under `sub/`:
+
+        node --test ./          -> 2   (both name matches, recursively)
+        node --test sub/        -> 1   (the name match under sub only)
+        node --test badname.mjs -> 1   (the file, name notwithstanding)
+        node --test             -> 2   (as `./`)
+
+    So a DIRECTORY argument recurses and applies Node's name patterns inside
+    it, and a FILE argument runs that file whatever it is called. An earlier
+    version of this check read every argument as a file, which made
+    `node --test ./` look like it ran one path and stranded the suite.
+    """
+    if not named:
+        return [project], []
+    searched: list[Path] = []
+    listed_files: list[str] = []
+    for argument in named:
+        target = (project / argument.strip()).resolve()
+        if argument.strip().endswith("/") or target.is_dir():
+            searched.append(target)
+        else:
+            listed_files.append(argument.strip())
+    return searched, listed_files
+
+
+def _node_runs(
+    path: Path, project: Path, searched: list[Path], listed_files: list[str]
+) -> bool:
+    """Whether `node --test` reaches this test file."""
+    relative = path.relative_to(project).as_posix()
+    if any(relative == name.strip("./") for name in listed_files):
+        return True
+    return any(_is_within(path, directory) for directory in searched) and bool(
+        _NODE_COLLECTS.match(path.name)
+    )
+
+
+def _is_within(path: Path, directory: Path) -> bool:
+    """Whether `path` sits under `directory` at any depth."""
+    try:
+        path.relative_to(directory)
+    except ValueError:
+        return False
+    return True
+
+
+def _paths_named_after_the_test_flag(command: str) -> list[str]:
+    """Path arguments the `node --test` command names, ignoring its flags."""
+    words = command.split()
+    try:
+        after = words[words.index("--test") + 1 :]
+    except ValueError:
+        return []
+    return [
+        word
+        for word in after
+        if not word.startswith("-") and word not in {"node", "&&", "||", ";"}
+    ]
+
+
+
 
 
 #: `<script ... src="app.js" ...>` with everything the tag declared, so the

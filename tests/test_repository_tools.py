@@ -1430,3 +1430,84 @@ def test_a_real_product_name_still_is_one() -> None:
 
     for name in ("task-dashboard", "todo-app", "task-manager", "simple-to-do-list-app"):
         assert _is_project_directory(name), name
+
+
+def test_an_edit_that_would_change_nothing_is_refused(repo_root: Path) -> None:
+    """The failure that killed run-b61df271.
+
+    Its `specialist_backend_3` sent three edits to `to-do-app/app.js` whose
+    `find` and `replace` were the same 848 characters. Each was answered with
+    `"status": "edited"`. The agent re-read the file between them, saw the same
+    73 lines every time, concluded the edit had failed, and sent it again - the
+    fifth identical request tripped the run-level loop guard and the run failed.
+
+    Reporting "edited" for a no-op is a lie the agent cannot see through, and
+    re-reading is exactly the right thing for it to do about a suspect write.
+    """
+    write_approved_artifact(repo_root, "docs/spec.md", "status: OPEN\n")
+
+    with pytest.raises(RepositoryToolError, match="would leave"):
+        edit_approved_artifact(repo_root, "docs/spec.md", "status: OPEN", "status: OPEN")
+
+    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: OPEN\n"
+
+
+def test_the_refusal_says_the_file_is_not_broken(repo_root: Path) -> None:
+    """The agent's next move is the whole point of the message.
+
+    It had been looping because it believed the file still needed changing.
+    Naming both ways out - make `replace` differ, or stop editing and move on -
+    is what the loop needs to hear.
+    """
+    write_approved_artifact(repo_root, "docs/spec.md", "a\nb\nc\n")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(repo_root, "docs/spec.md", "b\n", "b\n")
+
+    message = str(caught.value)
+    assert "still has 3 lines" in message
+    assert "Nothing is wrong with the file or the tool" in message
+    assert "stop editing it and move on" in message
+
+
+def test_a_no_op_arriving_through_a_forgiving_match_is_also_refused(repo_root: Path) -> None:
+    """The reason the check sits on the content, not on the arguments.
+
+    The fallbacks that forgive line numbers, JSON escaping and indentation each
+    replace a *candidate* rather than `find`, so comparing the two arguments
+    would let a no-op through any of them.
+    """
+    write_approved_artifact(repo_root, "docs/spec.md", "alpha\nbeta\ngamma\n")
+
+    # `find` carries the line-number prefix that `read_file` prints; the text
+    # it actually matches is "beta", and `replace` is that same text.
+    with pytest.raises(RepositoryToolError, match="would leave"):
+        edit_approved_artifact(repo_root, "docs/spec.md", "2\tbeta", "beta")
+
+    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
+
+
+def test_a_no_op_edit_does_not_touch_the_file(repo_root: Path) -> None:
+    """A rewrite with identical bytes still moves mtime.
+
+    The repeat-read notice keys on size and mtime, so a no-op that rewrote the
+    file would clear the very notice that tells the agent it is going in
+    circles - which is how the loop stayed invisible for five rounds.
+    """
+    write_approved_artifact(repo_root, "docs/spec.md", "keep\n")
+    target = repo_root / "docs" / "spec.md"
+    before = target.stat().st_mtime_ns
+
+    with pytest.raises(RepositoryToolError):
+        edit_approved_artifact(repo_root, "docs/spec.md", "keep\n", "keep\n")
+
+    assert target.stat().st_mtime_ns == before
+
+
+def test_a_real_edit_still_succeeds(repo_root: Path) -> None:
+    write_approved_artifact(repo_root, "docs/spec.md", "status: OPEN\n")
+
+    result = edit_approved_artifact(repo_root, "docs/spec.md", "status: OPEN", "status: CLOSED")
+
+    assert result["status"] == "edited"
+    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: CLOSED\n"

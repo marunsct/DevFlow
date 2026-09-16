@@ -619,7 +619,12 @@ def edit_approved_artifact(
                 if span is None:
                     continue
                 start, end = span
-                target.write_text(original[:start] + replace + original[end:], encoding="utf-8")
+                _write_unless_it_changes_nothing(
+                    target,
+                    original,
+                    original[:start] + replace + original[end:],
+                    relative_path,
+                )
                 summary = replace[:80] + ("..." if len(replace) > 80 else "")
                 return {
                     "path": str(target.relative_to(root)),
@@ -654,13 +659,53 @@ def edit_approved_artifact(
                 "the passage unique."
             )
 
-        target.write_text(original.replace(find, replace, 1), encoding="utf-8")
+        _write_unless_it_changes_nothing(
+            target, original, original.replace(find, replace, 1), relative_path
+        )
     summary = replace[:80] + ("..." if len(replace) > 80 else "")
     return {
         "path": str(target.relative_to(root)),
         "status": "edited",
         "summary": summary or "(passage removed)",
     }
+
+
+def _write_unless_it_changes_nothing(
+    target: Path, original: str, updated: str, relative_path: str
+) -> None:
+    """Write the edit, or refuse an edit that would leave the file as it is.
+
+    An edit whose `replace` is byte-identical to the text it replaces is a
+    no-op, and reporting "edited" for it is a lie the agent cannot see through:
+    it reads the file back, finds its change absent, concludes the edit failed,
+    and sends the identical call again.
+
+    That is what killed run-b61df271. Its `specialist_backend_3` made three
+    edits to `to-do-app/app.js` whose `find` and `replace` were the same 848
+    characters, each answered with `"status": "edited"`, re-reading the file
+    between them and seeing the same 73 lines every time. The fifth identical
+    request tripped the run-level loop guard and the run failed at
+    `awaiting_approval:specialist_backend_3`.
+
+    Checked here, on the content about to be written, rather than by comparing
+    `find` to `replace` at the top: the fallbacks that forgive line numbers,
+    JSON escaping and indentation all replace a *candidate* rather than `find`,
+    so a comparison of the arguments would miss a no-op arriving through any of
+    them.
+    """
+    if updated != original:
+        target.write_text(updated, encoding="utf-8")
+        return
+    lines = original.count("\n") + (0 if original.endswith("\n") else 1)
+    raise RepositoryToolError(
+        f"That edit would leave '{relative_path}' exactly as it is: the replacement "
+        f"text is identical to the text it replaces, so nothing was written and the "
+        f"file still has {lines} lines. Nothing is wrong with the file or the tool - "
+        "this call simply asked for no change. If you meant to change what the code "
+        "does, `replace` has to differ from `find`. If the file already contains what "
+        "you need, this edit is not required: stop editing it and move on to the rest "
+        "of your task."
+    )
 
 
 def search_text(repo_root: str | Path, query: str, *, max_matches: int = 25) -> list[dict[str, str]]:

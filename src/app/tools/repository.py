@@ -1206,7 +1206,7 @@ def _where_each_match_starts(text: str, find: str) -> str:
     return f"lines {listed} and {lines[-1]}"
 
 
-def _structural_note(relative_path: str, content: str) -> str:
+def _structural_note(relative_path: str, content: str, *, editing: bool = False) -> str:
     """Warn about a file that was just written broken, or refuse it.
 
     Python is parsed with `ast` and JSON with `json.loads`, which are the real
@@ -1228,7 +1228,7 @@ def _structural_note(relative_path: str, content: str) -> str:
     if not problem:
         return ""
     if _refuses_a_broken_file(relative_path):
-        raise RepositoryToolError(_refusal_for(relative_path, problem))
+        raise RepositoryToolError(_refusal_for(relative_path, problem, editing=editing))
     return problem
 
 
@@ -1258,7 +1258,9 @@ def _javascript_parse_error(target: Path, relative_path: str, content: str) -> s
         return ""
 
 
-def _refuse_if_node_cannot_parse(target: Path, relative_path: str, content: str) -> None:
+def _refuse_if_node_cannot_parse(
+    target: Path, relative_path: str, content: str, *, editing: bool = False
+) -> None:
     """Refuse a JavaScript file the parser that loads it cannot read.
 
     run-454adf22 wrote `app.js` with a stray `try` and spent the whole of
@@ -1268,28 +1270,43 @@ def _refuse_if_node_cannot_parse(target: Path, relative_path: str, content: str)
     """
     problem = _javascript_parse_error(target, relative_path, content)
     if problem:
-        raise RepositoryToolError(_refusal_for(relative_path, problem))
+        raise RepositoryToolError(_refusal_for(relative_path, problem, editing=editing))
 
 
-def _refusal_for(relative_path: str, problem: str) -> str:
-    """The refusal text for `problem`, without repeating its own instruction.
+def _refusal_for(relative_path: str, problem: str, *, editing: bool = False) -> str:
+    """The refusal text for `problem`, in terms of the call that was made.
 
-    Some checks end with the remedy already ("Send the file again as complete,
-    valid JSON.") because they are also used as notes, where nothing else
-    supplies one. Appending the generic sentence there produced a refusal that
-    said it twice, on run 8d28ee3f:
+    Two things went wrong here, both measured on run 8d28ee3f.
 
-        ... Send the file again as complete, valid JSON. Nothing was written.
-        Send the file again with that fixed.
+    The instruction was said twice. Some checks end with the remedy already
+    ("Send the file again as complete, valid JSON.") because they are also used
+    as notes, where nothing else supplies one, and appending the generic
+    sentence produced "... Send the file again as complete, valid JSON. Nothing
+    was written. Send the file again with that fixed."
+
+    And an `edit_artifact` was answered in `write_artifact`'s words. Six edits
+    to package.json were refused with "Refusing to write ... Send the file
+    again as complete, valid JSON" - a verb naming a tool the model had not
+    called, and an instruction it could not follow through the one it had. It
+    eventually switched to `write_artifact`, which is what the message had been
+    describing all along, after six calls.
     """
-    said_already = problem.rstrip().endswith(".") and "Send the file again" in problem
-    tail = "Nothing was written." if said_already else (
-        "Nothing was written. Send the file again with that fixed."
-    )
-    return f"Refusing to write '{relative_path}': {problem} {tail}"
+    verb = "change" if editing else "write"
+    if editing:
+        # The check's own remedy is written for `write_artifact` ("Send the
+        # file again as complete, valid JSON"), which is not available through
+        # this tool. Drop it and give the one that is.
+        problem = re.sub(r"\s*Send the file again[^.]*\.", "", problem).strip()
+        # `find`/`replace` is what the model can act on; the whole file is not.
+        tail = "Nothing was changed. Fix `replace` and send the edit again."
+    elif problem.rstrip().endswith(".") and "Send the file again" in problem:
+        tail = "Nothing was written."
+    else:
+        tail = "Nothing was written. Send the file again with that fixed."
+    return f"Refusing to {verb} '{relative_path}': {problem} {tail}"
 
 
-def _refuse_if_broken(relative_path: str, content: str) -> None:
+def _refuse_if_broken(relative_path: str, content: str, *, editing: bool = False) -> None:
     """Raise before anything is written, for the file types that are certain.
 
     Run *before* the write, not after it. The check used to sit beside the
@@ -1299,7 +1316,7 @@ def _refuse_if_broken(relative_path: str, content: str) -> None:
     time removing from other tools.
     """
     if _refuses_a_broken_file(relative_path):
-        _structural_note(relative_path, content)
+        _structural_note(relative_path, content, editing=editing)
 
 
 #: Scripts the sandbox has no interpreter for. `make`, `npm`, `node`, `python`
@@ -1546,6 +1563,44 @@ def _with_one_trailing_newline(content: str) -> str:
     return content.rstrip("\n") + "\n"
 
 
+def _with_escaped_newlines_resolved(original: str, updated: str) -> str | None:
+    r"""`updated` with `\n` and `\t` resolved in the span the edit changed.
+
+    None when the changed span holds no such escape, so the caller can tell
+    "nothing to try" from "tried and it is still broken".
+
+    Models send `replace` with newlines escaped as the two characters `\` and
+    `n`. The forgiving matcher already resolves that on the `find` side - it is
+    one of the four spellings it accepts - but the replacement was written
+    through literally, which lands `\n` in the file and breaks it. Run
+    8d28ee3f, `specialist_ui_ux_0`, sent this twice:
+
+        "replace": "\"type\":\"module\",\\n\"scripts\": {\\n ... }"
+
+    and got "not valid JSON at line 6" both times, for a file whose line 6 it
+    had never seen.
+
+    Only the changed span is touched. Resolving escapes across the whole file
+    would rewrite `console.log("a\nb")` in code the edit never mentioned.
+    """
+    prefix = 0
+    limit = min(len(original), len(updated))
+    while prefix < limit and original[prefix] == updated[prefix]:
+        prefix += 1
+    suffix = 0
+    while (
+        suffix < limit - prefix
+        and original[len(original) - 1 - suffix] == updated[len(updated) - 1 - suffix]
+    ):
+        suffix += 1
+
+    middle = updated[prefix : len(updated) - suffix]
+    resolved = middle.replace("\\n", "\n").replace("\\t", "\t")
+    if resolved == middle:
+        return None
+    return updated[:prefix] + resolved + updated[len(updated) - suffix :]
+
+
 def _write_unless_it_changes_nothing(
     target: Path, original: str, updated: str, relative_path: str
 ) -> None:
@@ -1570,8 +1625,21 @@ def _write_unless_it_changes_nothing(
     them.
     """
     if updated != original:
-        _refuse_if_broken(relative_path, updated)
-        _refuse_if_node_cannot_parse(target, relative_path, updated)
+        try:
+            _refuse_if_broken(relative_path, updated, editing=True)
+            _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
+        except RepositoryToolError:
+            # The replacement may have arrived with its newlines escaped. Try
+            # the same edit with them resolved, and take it only if that turns
+            # a file the parser rejects into one it accepts - which is the
+            # evidence that the escaping, not the edit, was the mistake.
+            rescued = _with_escaped_newlines_resolved(original, updated)
+            if rescued is None or rescued == original:
+                raise
+            _refuse_if_broken(relative_path, rescued, editing=True)
+            _refuse_if_node_cannot_parse(target, relative_path, rescued, editing=True)
+            target.write_text(rescued, encoding="utf-8")
+            return
         target.write_text(updated, encoding="utf-8")
         return
     lines = original.count("\n") + (0 if original.endswith("\n") else 1)

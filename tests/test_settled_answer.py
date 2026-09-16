@@ -681,9 +681,11 @@ def test_a_stage_nearing_its_ceiling_is_told_to_finish() -> None:
     warning = _running_out_of_room(nearly, 60)
 
     assert "of the 60 model calls" in warning
-    assert "return your structured response now" in warning
-    # It must say what is lost, or "hurry up" is just noise.
-    assert "losing everything you have read" in warning
+    assert "Stop exploring and return it now" in warning
+    # It must say what is lost, or "hurry up" is just noise - and what it says
+    # must be true, which is why it no longer promises a restart that does not
+    # happen. See `test_the_warning_describes_what_actually_happens`.
+    assert "anything you have not put into your structured response is lost" in warning
 
 
 def test_a_stage_with_room_is_not_nagged() -> None:
@@ -973,3 +975,72 @@ def test_a_stage_with_no_schema_is_unaffected() -> None:
     state = {"messages": [_ai("", [write])]}
 
     assert build_settled_answer_middleware(None, "s").after_model(state, None) is None
+
+
+# --- the budget, which used to threaten something that did not happen -----
+
+
+def _long_state(calls: int, answered: bool = True):
+    """A stage `calls` model calls deep, with a pending non-repeating call."""
+    pending = _call("run_terminal_command", {"command": ["node", "--test"]})
+    messages = [HumanMessage(content="build it")]
+    for index in range(calls - 1):
+        messages.append(
+            AIMessage(content=(ANSWER if answered and index == calls - 3 else ""), id=f"m{index}")
+        )
+    messages.append(_ai("", [pending]))
+    return {"messages": messages}
+
+
+def test_a_stage_at_its_budget_with_an_answer_is_ended() -> None:
+    """run-08acb1ee's `specialist_ui_ux_0` was warned on twelve consecutive
+    calls - 28, 29, 30 ... 39 - ignored every one, and ended on a
+    `run_terminal_command` at 40.
+
+    Until this, `MODEL_CALLS_PER_STAGE` was read only to decide when to nag.
+    Nothing stopped a stage at it, so "when they run out the stage is stopped"
+    was a sentence the model was asked to act on and that was not true.
+    """
+    from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
+
+    middleware = build_settled_answer_middleware(Verdict, "s", MODEL_CALLS_PER_STAGE)
+
+    update = middleware.after_model(_long_state(MODEL_CALLS_PER_STAGE + 1), None)
+
+    assert update is not None and update["jump_to"] == "end"
+
+
+def test_a_stage_at_its_budget_with_no_answer_is_left_alone() -> None:
+    """Ending is safe only because a valid answer exists. Without one there is
+    nothing better to do than let it carry on."""
+    from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
+
+    middleware = build_settled_answer_middleware(Verdict, "s", MODEL_CALLS_PER_STAGE)
+
+    assert middleware.after_model(
+        _long_state(MODEL_CALLS_PER_STAGE + 1, answered=False), None
+    ) is None
+
+
+def test_under_the_budget_repetition_is_still_required() -> None:
+    """A stage that answered early and is still working must not be cut off."""
+    from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
+
+    middleware = build_settled_answer_middleware(Verdict, "s", MODEL_CALLS_PER_STAGE)
+
+    assert middleware.after_model(_long_state(MODEL_CALLS_PER_STAGE - 10), None) is None
+
+
+def test_a_stage_with_no_budget_is_never_ended_this_way() -> None:
+    middleware = build_settled_answer_middleware(Verdict, "s", 0)
+
+    assert middleware.after_model(_long_state(200), None) is None
+
+
+def test_the_warning_describes_what_actually_happens() -> None:
+    from app.agents.settled_answer import _running_out_of_room
+
+    warning = _running_out_of_room([AIMessage(content=f"{i}", id=f"m{i}") for i in range(45)], 60)
+
+    assert "this stage ends with whatever answer you have already written" in warning
+    assert "started again from an empty conversation" not in warning

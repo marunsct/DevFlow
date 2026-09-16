@@ -452,11 +452,10 @@ def _running_out_of_room(messages: list[Any], limit: int) -> str:
         return ""
     return (
         f"You have made about {used} of the {limit} model calls this stage is "
-        "allowed. When they run out the stage is stopped and started again from "
-        "an empty conversation, losing everything you have read and worked out. "
-        "Stop exploring and return your structured response now, with what you "
-        "have. An answer that is complete but imperfect is worth far more than "
-        "none."
+        f"allowed. At {limit} this stage ends with whatever answer you have "
+        "already written, and anything you have not put into your structured "
+        "response is lost. Stop exploring and return it now. An answer that is "
+        "complete but imperfect is worth far more than none."
     )
 
 
@@ -555,6 +554,41 @@ def build_settled_answer_middleware(
             # spent eleven minutes writing prose about creating files it has
             # no tools to create, so by the time it was circling, the last
             # message held no answer and this check was blind to it.
+            # Past the budget, with an answer already written: end. The
+            # warning has said so from 70% onward, and on run-08acb1ee's
+            # `specialist_ui_ux_0` it said so on twelve consecutive calls -
+            # 28, 29, 30 ... 39 - and the stage ignored every one and ended on
+            # a `run_terminal_command` at 40.
+            #
+            # Until now that warning threatened something that does not
+            # happen. `MODEL_CALLS_PER_STAGE` was read only to decide when to
+            # nag; nothing stopped a stage at it, so "when they run out the
+            # stage is stopped" was untrue - the same fault as an allowlist
+            # naming programs that are not installed, in a sentence the model
+            # is being asked to act on.
+            #
+            # Ending here is safe in the one way that matters: it only happens
+            # when a valid answer exists, and ending with a valid answer is
+            # never worse than continuing without one. Under the budget,
+            # repetition is still required.
+            if step_limit and _model_calls_used(messages) >= step_limit:
+                spent = _most_recent_answer(messages, schema)
+                if spent is not None:
+                    logger.info(
+                        "Stage %s reached its model-call budget with an answer "
+                        "written; ending it rather than nagging again",
+                        stage_name or "?",
+                    )
+                    return {
+                        "messages": [
+                            AIMessage(
+                                content=getattr(last, "content", "") or "",
+                                id=getattr(last, "id", None),
+                            )
+                        ],
+                        "jump_to": "end",
+                    }
+
             # An answer the model put in a file rather than in the response
             # channel is still an answer, and this turn is about to be refused
             # for it. See `_answer_in_a_pending_write`.

@@ -271,7 +271,14 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
             f"Requested path is not a file: {relative_path}"
             + _what_that_directory_holds(target)
         )
-    return target.read_text(encoding="utf-8")
+    from app.tools.seen_content import remember
+
+    content = target.read_text(encoding="utf-8")
+    # So a later edit whose `find` no longer matches can say the file changed
+    # underneath it, rather than leaving the model to infer that from a diff.
+    # See `app.tools.seen_content`.
+    remember(relative_path, content)
+    return content
 
 
 #: Paths to name when a read misses. Enough to place the file, short of a list.
@@ -677,6 +684,21 @@ def _clip(line: str) -> str:
     return line if len(line) <= _MAX_DIFF_LINE else line[:_MAX_DIFF_LINE] + " ..."
 
 
+def _changed_underneath(relative_path: str, original: str) -> bool:
+    """True when this stage read the file and it no longer holds what it read.
+
+    Bookkeeping only, so a failure here falls back to the diff rather than
+    costing the edit its error message.
+    """
+    try:
+        from app.tools.seen_content import changed_since_seen
+
+        return changed_since_seen(relative_path, original)
+    except Exception:  # noqa: BLE001 - fall through to the messages below
+        logger.debug("Could not check whether %s changed", relative_path, exc_info=True)
+        return False
+
+
 def _how_it_differs(content: str, wanted: str) -> str:
     """Name the differences between the sent passage and the file's, or "".
 
@@ -959,6 +981,19 @@ def edit_approved_artifact(
                     "change in `replace`."
                 )
 
+            # Before the diff: a `find` that was correct when it was copied
+            # and is wrong now needs the reason, not a character comparison.
+            # `npm install` rewriting package.json is the common case; see
+            # `app.tools.seen_content`.
+            if _changed_underneath(relative_path, original):
+                raise RepositoryToolError(
+                    f"Could not find that text in '{relative_path}' because the file "
+                    "changed after you last read it - a command you ran (an installer, "
+                    "a formatter, a generator) rewrote it. The passage you sent was "
+                    "correct for the version you had. Read the file again and copy the "
+                    "passage from what you read."
+                )
+
             # What differs, before what is nearby: a model that is three
             # characters out needs the three characters, not the paragraph.
             differences = _how_it_differs(original, find)
@@ -1092,6 +1127,14 @@ def _edited(
     joined = " ".join(n for n in notes if n)
     if joined:
         result["note"] = joined
+    # The stage has now seen the file it just changed, so a following edit is
+    # judged against this and not against the read before it.
+    try:
+        from app.tools.seen_content import remember
+
+        remember(relative_path, target.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - a bookkeeping miss must not fail an edit
+        logger.debug("Could not record the edited content of %s", relative_path, exc_info=True)
     return result
 
 
@@ -1185,10 +1228,7 @@ def _structural_note(relative_path: str, content: str) -> str:
     if not problem:
         return ""
     if _refuses_a_broken_file(relative_path):
-        raise RepositoryToolError(
-            f"Refusing to write '{relative_path}': {problem} Nothing was "
-            "written. Send the file again with that fixed."
-        )
+        raise RepositoryToolError(_refusal_for(relative_path, problem))
     return problem
 
 
@@ -1228,10 +1268,25 @@ def _refuse_if_node_cannot_parse(target: Path, relative_path: str, content: str)
     """
     problem = _javascript_parse_error(target, relative_path, content)
     if problem:
-        raise RepositoryToolError(
-            f"Refusing to write '{relative_path}': {problem} Nothing was "
-            "written. Send the file again with that fixed."
-        )
+        raise RepositoryToolError(_refusal_for(relative_path, problem))
+
+
+def _refusal_for(relative_path: str, problem: str) -> str:
+    """The refusal text for `problem`, without repeating its own instruction.
+
+    Some checks end with the remedy already ("Send the file again as complete,
+    valid JSON.") because they are also used as notes, where nothing else
+    supplies one. Appending the generic sentence there produced a refusal that
+    said it twice, on run 8d28ee3f:
+
+        ... Send the file again as complete, valid JSON. Nothing was written.
+        Send the file again with that fixed.
+    """
+    said_already = problem.rstrip().endswith(".") and "Send the file again" in problem
+    tail = "Nothing was written." if said_already else (
+        "Nothing was written. Send the file again with that fixed."
+    )
+    return f"Refusing to write '{relative_path}': {problem} {tail}"
 
 
 def _refuse_if_broken(relative_path: str, content: str) -> None:
@@ -2298,6 +2353,18 @@ def write_approved_artifact(
         # The write landed, so this directory is real and is the project.
         if pin_after_writing is not None:
             _pin_project_directory(artifact_root, pin_after_writing)
+
+    # What the stage has seen of this file is now what it wrote. Recorded for
+    # writes and not only reads because the stale-edit case measured on run
+    # 8d28ee3f began with a write: the stage wrote package.json, npm rewrote
+    # it, and the stage then edited against its own text. See
+    # `app.tools.seen_content`.
+    try:
+        from app.tools.seen_content import remember
+
+        remember(relative_path, content)
+    except Exception:  # noqa: BLE001 - a bookkeeping miss must not fail a write
+        logger.debug("Could not record the written content of %s", relative_path, exc_info=True)
 
     result = {
         "path": str(target.relative_to(root)),

@@ -169,3 +169,23 @@ def client(authed_app):
 
     with TestClient(authed_app) as test_client:
         yield test_client
+
+
+@pytest.fixture(autouse=True)
+def _forget_what_stages_have_seen():
+    """Per-stage memory must not carry from one test into the next.
+
+    Both stores fall back to a module-level dict when there is no graph run to
+    key on, which is every test. Without this, a test that reads "app.js" in
+    its own tmp_path leaves a digest behind that the next test's "app.js"
+    is compared against, and the stale-edit message fires on a file nothing
+    changed.
+    """
+    from app.agents import stage_memory
+    from app.tools import seen_content
+
+    stage_memory.forget_everything()
+    seen_content.forget_everything()
+    yield
+    stage_memory.forget_everything()
+    seen_content.forget_everything()

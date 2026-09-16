@@ -1010,6 +1010,42 @@ def edit_approved_artifact(
     return _edited(target, root, relative_path, replace)
 
 
+#: Lines of context to quote either side of an edit, so the result answers
+#: "did it land, and what does it look like now" without a read.
+_EDIT_CONTEXT_LINES = 3
+
+
+def _where_it_landed(written: str, replace: str) -> str:
+    """The edited passage in place, with line numbers, or "".
+
+    A model that has just edited a file reads the whole file back to see what
+    it now says. Measured on run-a7150a6c's `specialist_testing_1`: five full
+    reads of a 96-line `app.test.mjs`, one after each single-line edit, in a
+    stage of twenty-six calls. None of them is a repeat the notices can catch -
+    the file genuinely changed each time, because the model had just changed
+    it.
+
+    The re-read is asking a reasonable question that the result did not answer:
+    `summary` was the first eighty characters of the replacement, with no line
+    number and nothing around it. This answers it.
+    """
+    if not replace.strip():
+        return ""
+    at = written.find(replace)
+    if at < 0:
+        return ""
+    lines = written.splitlines()
+    first = written.count("\n", 0, at)
+    last = first + replace.rstrip("\n").count("\n")
+    start = max(0, first - _EDIT_CONTEXT_LINES)
+    end = min(len(lines), last + _EDIT_CONTEXT_LINES + 1)
+    quoted = "\n".join(
+        f"{'>' if first <= index <= last else ' '} {index + 1:>4} | {lines[index]}"
+        for index in range(start, end)
+    )
+    return f"Now reads (> marks what you changed):\n{quoted}"
+
+
 def _edited(
     target: Path, root: Path, relative_path: str, replace: str, detail: str | None = None
 ) -> dict[str, str]:
@@ -1039,6 +1075,10 @@ def _edited(
     if detail:
         result["detail"] = detail
     written = target.read_text(encoding="utf-8")
+    # So the next call is not a read of the whole file. See `_where_it_landed`.
+    landed = _where_it_landed(written, replace)
+    if landed:
+        result["context"] = landed
     notes = [
         _structural_note(relative_path, written),
         _discovery_note(relative_path, written),

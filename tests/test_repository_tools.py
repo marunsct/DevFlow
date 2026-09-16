@@ -679,6 +679,44 @@ def test_the_surroundings_do_not_run_off_the_ends_of_the_file(tmp_path: Path) ->
     assert "(end of file)" in message
 
 
+def test_an_edit_says_where_it_landed(tmp_path: Path) -> None:
+    """A model that has just edited a file reads the whole file back.
+
+    Measured on run-a7150a6c's `specialist_testing_1`: five full reads of a
+    96-line `app.test.mjs`, one after each single-line edit, in a stage of
+    twenty-six calls. None is a repeat the notices can catch - the file
+    genuinely changed each time, because the model had just changed it. The
+    re-read asks a reasonable question the result did not answer.
+    """
+    body = "".join(f"const line{index} = {index};\n" for index in range(12))
+    (tmp_path / "a.js").write_text(body)
+
+    result = edit_approved_artifact(tmp_path, "a.js", "const line5 = 5;", "const line5 = 500;")
+
+    context = result.get("context") or ""
+    assert "Now reads" in context
+    assert ">    6 | const line5 = 500;" in context, "the changed line, marked and numbered"
+    assert "const line3 = 3;" in context, "with context above"
+    assert "const line8 = 8;" in context, "and below"
+
+
+def test_a_deletion_has_no_passage_to_show(tmp_path: Path) -> None:
+    (tmp_path / "a.js").write_text("const a = 1;\nconst b = 2;\n")
+
+    result = edit_approved_artifact(tmp_path, "a.js", "const a = 1;\n", "")
+
+    assert "context" not in result
+    assert result["status"] == "edited"
+
+
+def test_the_context_does_not_run_off_the_file(tmp_path: Path) -> None:
+    (tmp_path / "a.js").write_text("const a = 1;\nconst b = 2;\n")
+
+    result = edit_approved_artifact(tmp_path, "a.js", "const a = 1;", "const a = 11;")
+
+    assert ">    1 | const a = 11;" in (result.get("context") or "")
+
+
 def test_an_edit_sent_twice_is_told_it_already_landed(tmp_path: Path) -> None:
     """run-0deeb8bf's `defect_fix_2_0`, four model calls and a failed stage.
 

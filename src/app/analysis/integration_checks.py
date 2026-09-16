@@ -1552,6 +1552,7 @@ _BREAKS_BEHAVIOUR = (
     "relative to whatever directory",    # a path that depends on the cwd
     "declares no `test` script",         # `npm test` cannot run
     "placeholder test script",           # `npm test` fails by default
+    "as the testing framework",          # a runner installed over the chosen one
 )
 
 
@@ -1615,6 +1616,80 @@ def _a_server_in_a_browser_only_product(files: list[Path], root: Path, stack: An
     return problems
 
 
+#: Test runners that arrive as a package, with the names a stack would use for
+#: each. A stack naming one of these has chosen it; a project that installs one
+#: the stack did not name has overruled the choice.
+_TEST_RUNNERS: dict[str, tuple[str, ...]] = {
+    "jest": ("jest",),
+    "mocha": ("mocha",),
+    "vitest": ("vitest", "vite test"),
+    "jasmine": ("jasmine",),
+    "ava": ("ava",),
+    "tape": ("tape",),
+    "qunit": ("qunit",),
+    "karma": ("karma",),
+    "cypress": ("cypress",),
+    "playwright": ("playwright",),
+    "@playwright/test": ("playwright",),
+    "uvu": ("uvu",),
+}
+
+
+def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack: Any) -> list[str]:
+    """A test framework installed over the one the stack selected.
+
+    Measured on run 8d28ee3f. `stack_selector` chose
+    `testing_framework: "Custom JS assert tests"` and wrote its reason: "A
+    custom JS assertion suite is sufficient for headless testing in the current
+    environment (no node test runners available), avoiding large dependencies."
+
+    `specialist_ui_ux_0` then ran `npm install --save-dev jest`, wrote
+    `app.test.js` against jest, and spent four `npm test` calls on
+    `TextEncoder is not defined` and `TextEncoder is not a constructor` -
+    jsdom failures that belong to the runner it had just installed and that
+    the chosen approach could not have hit.
+
+    Only fires when the stack named a runner and the project installed a
+    *different* one. A stack that says "jest" and a project with jest is the
+    normal case and must stay silent, as must a project with no manifest.
+    """
+    if stack is None:
+        return []
+    declared = str(getattr(stack, "testing_framework", "") or "").strip().lower()
+    if not declared:
+        return []
+
+    problems: list[str] = []
+    for path in files:
+        if path.name != "package.json":
+            continue
+        try:
+            manifest = json.loads(_read(path) or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(manifest, dict):
+            continue
+        installed = {
+            *(manifest.get("dependencies") or {}),
+            *(manifest.get("devDependencies") or {}),
+        }
+        for package in sorted(installed):
+            aliases = _TEST_RUNNERS.get(package.lower())
+            if not aliases:
+                continue
+            if any(alias in declared for alias in aliases):
+                continue
+            chosen = getattr(stack, "testing_framework", "")
+            problems.append(
+                f"{path.relative_to(root)} installs '{package}', but this run's "
+                f"stack chose '{chosen}' as the testing framework. Tests written "
+                "for a runner the stack did not choose fail on that runner's own "
+                "setup, not on the product. Either use the chosen approach or "
+                "change the stack."
+            )
+    return problems
+
+
 #: Every cross-file check, with the phrase that describes it to a reviewer.
 #:
 #: One list so the two cannot drift. The sentence naming what was checked was
@@ -1625,6 +1700,8 @@ def _a_server_in_a_browser_only_product(files: list[Path], root: Path, stack: An
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("the chosen stack against what is on disk",
      lambda files, root, stack: _stack_conflicts(files, root, stack)),
+    ("the installed test runner against the one the stack chose",
+     lambda files, root, stack: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
     ("a server against a stack that says the product runs in the browser",
      lambda files, root, stack: _a_server_in_a_browser_only_product(files, root, stack)),
     ("manifests against the project they describe",

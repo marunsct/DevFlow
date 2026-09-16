@@ -349,7 +349,7 @@ under `DATA_DIR/transcripts`, read with the audit script in the session scratchp
 | fact | value | why it matters |
 |---|---|---|
 | tool failures that cost a run | 20% (run 55) → 3% (run 65) | the baseline items 1-16 are measured against |
-| byte-identical repeats inside one stage | 27% (run 60) → 6% (run 65) | measure this *excluding* repeats the harness refused - counting those made the figure look like 13% when part of it was `node --check` refusing an illegal return four times before the model fixed it and the fifth write succeeded |
+| byte-identical repeats inside one stage | 27% (run 60) → **0-2%** (runs 61-67) | two corrections to this metric, both of which had inflated it. Exclude repeats the harness *refused* - counting those read 13% when part of it was `node --check` refusing an illegal return four times before the model fixed it and the fifth write succeeded. Then exclude repeats whose **result differed**: run 67's `specialist_ui_ux_0` ran `npm test` four times, edited the code between every pair, and got four different failures - a working fix loop, counted as three repeats. Recounted: run 61 0%, 63 2.0%, 65 1.0%, 66 5.6%, 67 0%. Repeat suppression is done; the remaining figure is noise |
 | model calls that are reads | 46% | reads are the cost; they almost never fail (1 in 139) |
 | tool calls per model response | **always exactly 1**, 0 of 2,040 | no batching; see §3.1 |
 | wall clock spent inside model calls | 99% | tool execution totals ~1.3s per run; optimise calls, not tools |

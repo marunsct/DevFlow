@@ -71,6 +71,14 @@ def main(path):
     # above. Counting it twice made "repeats" look like pure loss when part of
     # it was `node --check` refusing an illegal return four times before the
     # model fixed it and the fifth write succeeded.
+    #
+    # A second mistake this tool shipped with, found on run 8d28ee3f: the same
+    # command run twice is only waste when it *answered* the same twice. That
+    # run's `specialist_ui_ux_0` ran `npm test` four times and was counted as
+    # three repeats, but it edited the code between every pair and got four
+    # different failures back - a working fix loop, which is the behaviour the
+    # harness wants. Keying on the result as well as the call drops those and
+    # keeps the real thing: a stage re-asking a question already answered.
     waste = collections.Counter()
     for st, a, b in bounds:
         c = collections.Counter()
@@ -78,8 +86,8 @@ def main(path):
             if r["kind"] != "tool_call": continue
             got = (res.get(r.get("call_id")) or {}).get("content") or ""
             if any(mark in got for mark in SAVED): continue
-            c[(r.get("tool"), json.dumps(r.get("args"), sort_keys=True)[:250])] += 1
-        for (tool, _), v in c.items():
+            c[(r.get("tool"), json.dumps(r.get("args"), sort_keys=True)[:250], got)] += 1
+        for (tool, _, _), v in c.items():
             if v > 1: waste[tool] += v - 1
 
     print(f"model calls {mc} | tool calls {len(calls)}")

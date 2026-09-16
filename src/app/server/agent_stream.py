@@ -141,10 +141,29 @@ def activity_stream_enabled() -> bool:
 
 
 def build_activity_callbacks(run_id: str | None, stage: str) -> list[BaseCallbackHandler]:
-    """The callbacks to attach to one agent invocation; empty when unavailable."""
-    if not run_id or not activity_stream_enabled():
+    """The callbacks to attach to one agent invocation; empty when unavailable.
+
+    Two handlers with different jobs. `AgentActivityStream` feeds the dashboard
+    and clips at 2,000 characters; the transcript keeps the full prompt and the
+    full reply for debugging a run long after it ended. They are built together
+    so a run cannot end up with one and not the other.
+    """
+    if not run_id:
         return []
-    return [AgentActivityStream(run_id, stage)]
+    handlers: list[BaseCallbackHandler] = []
+    if activity_stream_enabled():
+        handlers.append(AgentActivityStream(run_id, stage))
+    try:
+        from app.observability.transcript import (
+            build_transcript_callback,
+            transcripts_enabled,
+        )
+
+        if transcripts_enabled():
+            handlers.append(build_transcript_callback(run_id, stage))
+    except Exception:  # noqa: BLE001 - a record must never cost the run its agent
+        logger.debug("Could not build the transcript callback", exc_info=True)
+    return handlers
 
 
 def publish_stage_outcome(

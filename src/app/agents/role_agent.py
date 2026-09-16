@@ -33,6 +33,7 @@ from app.agents.settled_answer import build_settled_answer_middleware
 INNER_AGENT_STEP_LIMIT = 60
 from app.agents.repeated_queries import build_repeated_query_middleware
 from app.agents.text_tool_calls import build_text_tool_call_middleware
+from app.observability.transcript import build_transcript_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
@@ -566,6 +567,11 @@ def create_role_agent(
         *middleware,
         # Ahead of the filesystem middleware so the path is already
         # root-relative by the time its tools resolve it.
+        # First, so it wraps every other middleware and records the result the
+        # model is actually given - notices, refusals and rewrites included.
+        # `on_tool_end` fires before any of that and sees only what the tool
+        # returned. See `app.observability.transcript`.
+        build_transcript_middleware(stage),
         # Outermost of the model-call wrappers, so a call the server failed to
         # parse becomes a real tool call before anything downstream looks for
         # one. See `app.agents.text_tool_calls`.

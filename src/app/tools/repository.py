@@ -1923,6 +1923,42 @@ def looks_like_a_test(relative_path: str) -> bool:
     return is_test(relative_path)
 
 
+def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
+    """A path for the same file that `looks_like_a_test` will not protect.
+
+    The escape offered by the delete refusal has to actually work. It used to
+    be built by taking `.test.` out of the filename, which is right for
+    `debug.test.mjs` and useless for anything inside a `tests/` directory -
+    `looks_like_a_test` matches the directory too, so the renamed file was
+    protected exactly as before.
+
+    run-84e05d4b walked straight into it: `specialist_ui_ux_0` wrote
+    `simple-to-do-list-app/tests/ui_test.js` as a probe, was refused the
+    delete, followed the instructions, moved it to
+    `simple-to-do-list-app/tests/ui_test.js.probe` - and stopped there, leaving
+    a renamed corpse in the project. Had it tried the second step it would have
+    been refused again, by the same rule, for the same reason.
+
+    So the destination is checked against the rule that will judge it, and
+    climbs out of the test directory when the rename alone is not enough.
+    """
+    candidate = shown.replace(".test.", ".").replace(".spec.", ".")
+    if candidate == shown:
+        candidate = f"{shown}.probe"
+    if not looks_like_a_test(candidate):
+        return candidate
+    # The directory is what protects it. Put the file beside that directory,
+    # keeping it inside the project.
+    parts = candidate.split("/")
+    kept = [
+        part
+        for part in parts[:-1]
+        if part.lower() not in {"test", "tests", "__tests__", "e2e", "spec", "cypress"}
+    ]
+    name = parts[-1] if parts[-1].endswith(".probe") else f"{parts[-1]}.probe"
+    return "/".join([*kept, name])
+
+
 def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:
     """Delete one file the agent created inside the workspace.
 
@@ -1988,9 +2024,7 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         #
         # The two steps below are verified: `move_artifact` accepts a test name
         # as its source, and `delete_artifact` accepts the renamed file.
-        suggestion = shown.replace(".test.", ".").replace(".spec.", ".")
-        if suggestion == shown:
-            suggestion = f"{shown}.probe"
+        suggestion = _somewhere_this_rule_will_let_go_of(shown)
         raise RepositoryToolError(
             f"'{shown}' is a test, and tests are part of what this run delivers - "
             "the reviewer reads them as the evidence the product works. Leave it. "

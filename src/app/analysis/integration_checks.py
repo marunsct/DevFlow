@@ -1540,6 +1540,7 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
 #: untidy, and one that matches too much makes a reviewer block on dead CSS.
 _BREAKS_BEHAVIOUR = (
     "have never executed, and a passing suite",  # a false green suite
+    "starts an HTTP server, and this run's",  # a server a browser-only stack forbids
     "does not exist from",               # a manifest script naming a bad path
     "parses it as a classic script",     # ESM behind a plain <script> tag
     "looks for the element id",          # a script hook no page provides
@@ -1558,6 +1559,62 @@ def _severity_of(problem: str) -> str:
     return "BREAKS" if any(mark in problem for mark in _BREAKS_BEHAVIOUR) else "untidy"
 
 
+#: Storage that lives in the browser and nowhere else. A product whose data
+#: layer is one of these has no server by definition.
+_BROWSER_ONLY_STORAGE = ("localstorage", "sessionstorage", "indexeddb", "web storage")
+
+#: Starting an HTTP listener, in the forms this harness's products use.
+_STARTS_A_SERVER = re.compile(
+    r"""(?<![\w.$])createServer\s*\("""
+    r"""|(?<![\w.$])listen\s*\(\s*(?:\d|process\.env|PORT|port)"""
+    r"""|(?<![\w.$])express\s*\(\s*\)"""
+    r"""|Deno\.serve\s*\(|Bun\.serve\s*\("""
+)
+
+
+def _a_server_in_a_browser_only_product(files: list[Path], root: Path, stack: Any) -> list[str]:
+    """A server in a product whose own stack says there is none.
+
+    run-bb1ee9bb chose "Vanilla JavaScript" with "Web LocalStorage", and wrote
+    its own rationale: "Web LocalStorage meets this requirement without any
+    server or additional libraries ... the application runs entirely in the
+    browser". A specialist then wrote a 3,696-byte `server.js` -
+    `createServer` from `node:http`, persisting to `data.json`, with its own
+    test file - and a second data layer the page never talks to.
+
+    `describe_stack` tells every specialist not to introduce a different
+    language, framework, database or test runner. A server is none of those
+    four, so nothing said no.
+
+    Only when the declared storage is browser-only: a product with a real
+    database is expected to have a server, and this must not say a word about
+    it.
+    """
+    if stack is None:
+        return []
+    database = str(getattr(stack, "database", "") or "").lower()
+    if not any(marker in database for marker in _BROWSER_ONLY_STORAGE):
+        return []
+
+    problems: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts"}:
+            continue
+        if is_test(str(path.relative_to(root))):
+            continue
+        text = _read(path)
+        if not _STARTS_A_SERVER.search(text):
+            continue
+        problems.append(
+            f"{path.relative_to(root)} starts an HTTP server, and this run's "
+            f"stack declares its storage as '{getattr(stack, 'database', '')}' - "
+            "which lives in the browser, so the product it describes has no "
+            "server and no server-side data. Either the stack is wrong or this "
+            "file is a second data layer the page never talks to."
+        )
+    return problems
+
+
 #: Every cross-file check, with the phrase that describes it to a reviewer.
 #:
 #: One list so the two cannot drift. The sentence naming what was checked was
@@ -1568,6 +1625,8 @@ def _severity_of(problem: str) -> str:
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("the chosen stack against what is on disk",
      lambda files, root, stack: _stack_conflicts(files, root, stack)),
+    ("a server against a stack that says the product runs in the browser",
+     lambda files, root, stack: _a_server_in_a_browser_only_product(files, root, stack)),
     ("manifests against the project they describe",
      lambda files, root, stack: _manifest_defects(files, root, stack)),
     ("stylesheet id selectors against declared element ids",

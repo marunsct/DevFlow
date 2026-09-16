@@ -962,3 +962,99 @@ def test_every_specialist_can_run_the_code_it_may_be_asked_to_write():
 
     assert not without_javascript, f"cannot run JavaScript: {without_javascript}"
     assert not without_python, f"cannot run Python: {without_python}"
+
+
+def test_a_search_that_found_nothing_is_not_called_a_failure(tmp_path) -> None:
+    """`grep` exits 1 when it matches nothing, which is an answer.
+
+    Counting it as a failure told run-1c522244's `specialist_ui_ux_1` that a
+    working command "had already failed" and to "change the command, or change
+    the file it runs". It ran the identical grep twelve times and the run died
+    on the repeat guard at 1,132 events.
+    """
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    command = ["grep", "-n", r"\.delete-btn", "todo-app/style.css"]
+    _record_execution(str(tmp_path), "ui_ux_specialist", command, {"returncode": 1})
+    _record_execution(str(tmp_path), "ui_ux_specialist", command, {"returncode": 1})
+
+    assert failed_this_way_before(str(tmp_path), command) == 0
+
+
+def test_a_repeated_fruitless_search_is_still_worth_mentioning(tmp_path) -> None:
+    """Not a failure, but not new information either."""
+    from app.tools.sandbox import _note_about_running_this_again, _record_execution
+
+    command = ["grep", "-n", "nothing-here", "style.css"]
+    root = str(tmp_path)
+    found_nothing = {"returncode": 1, "stdout": "", "stderr": ""}
+
+    assert _note_about_running_this_again(root, command, found_nothing, "r") == ""
+
+    _record_execution(root, "r", command, found_nothing)
+    note = _note_about_running_this_again(root, command, found_nothing, "r")
+
+    assert "found no matches" in note
+    assert "the command worked" in note
+    assert "failed" not in note
+    assert "change the file it runs" not in note
+
+
+def test_a_grep_that_genuinely_broke_is_still_a_failure(tmp_path) -> None:
+    """Exit 2 is grep's "I could not do that" - a real failure."""
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    command = ["grep", "-n", "[", "style.css"]
+    _record_execution(str(tmp_path), "r", command, {"returncode": 2})
+
+    assert failed_this_way_before(str(tmp_path), command) == 1
+
+
+def test_only_commands_that_answer_that_way_are_excused(tmp_path) -> None:
+    """A test suite exiting 1 has failed, and must keep saying so."""
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    command = ["node", "--test", "app.test.mjs"]
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1})
+
+    assert failed_this_way_before(str(tmp_path), command) == 1
+
+
+def test_a_command_line_packed_into_one_argument_says_so() -> None:
+    """The refusal used to list the program it was refusing.
+
+    Measured on run-1c522244: `["wc -l", "todo-app/style.css"]` was answered
+    with "'wc -l' is not permitted for role 'ui_ux_specialist'. Allowed: ...,
+    wc, ..." - true, and useless. The problem is not a permission, and an agent
+    told it is will go looking for the wrong fix. Three calls went that way
+    across two roles.
+    """
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["wc -l", "todo-app/style.css"], "ui_ux_specialist")
+
+    message = str(caught.value)
+    assert "is not permitted" not in message
+    assert "no shell here" in message
+    assert "'wc', '-l', 'todo-app/style.css'" in message
+
+
+def test_a_genuinely_forbidden_program_still_says_it_is_not_permitted() -> None:
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed, match="is not permitted for role"):
+        validate_command(["curl -s", "http://example.com"], "ui_ux_specialist")
+
+
+def test_the_ordinary_refusal_is_unchanged() -> None:
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed, match="is not permitted for role"):
+        validate_command(["curl", "http://example.com"], "ui_ux_specialist")

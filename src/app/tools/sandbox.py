@@ -558,6 +558,23 @@ def validate_command(command: Sequence[str], role_name: str) -> list[str]:
     executable = os.path.basename(argv[0])
     permitted = allowed_executables(role_name)
     if executable not in permitted:
+        # A whole command line packed into the first element is not a missing
+        # permission, and saying so sends the agent looking for the wrong fix.
+        # Measured on run-1c522244: `["wc -l", "todo-app/style.css"]` was
+        # answered with "'wc -l' is not permitted ... Allowed: ..., wc, ..." -
+        # a refusal that lists the very program it is refusing. Three calls
+        # went that way across two roles.
+        first_word = os.path.basename(argv[0].split()[0]) if argv[0].split() else ""
+        if len(argv[0].split()) > 1 and first_word in permitted:
+            rest = argv[0].split()[1:]
+            corrected = [first_word, *rest, *argv[1:]]
+            raise CommandNotAllowed(
+                f"'{argv[0]}' is one string holding a program and its arguments. "
+                "There is no shell here, so nothing splits it: the first item of "
+                "`command` must be the program name on its own, with every "
+                "argument as its own item. "
+                f"'{first_word}' is permitted - send {corrected!r}."
+            )
         raise CommandNotAllowed(
             f"'{executable}' is not permitted for role '{role_name}'. "
             f"Allowed: {', '.join(sorted(permitted))}."
@@ -874,6 +891,23 @@ def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
     return entries
 
 
+_ANSWERS_WITH_EXIT_ONE = frozenset({"grep", "diff", "cmp"})
+"""Commands whose exit 1 is an answer, not a breakage.
+
+`grep` exits 1 when it matches nothing. That is a complete and correct reply
+to the question asked - "this text is not in that file" - and the only one of
+these currently on any allowlist. `diff` and `cmp` are here because their exit
+1 means the same kind of thing, so adding either later cannot reintroduce this.
+"""
+
+
+def _ran_and_answered(command: Sequence[str], exit_code: int | None) -> bool:
+    """Whether a non-zero exit is this command saying "no" rather than "broken"."""
+    if exit_code != 1 or not command:
+        return False
+    return os.path.basename(str(command[0])) in _ANSWERS_WITH_EXIT_ONE
+
+
 def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
     """How many times this exact command has already failed in this run.
 
@@ -900,7 +934,13 @@ def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
     failures = [
         entry
         for entry in entries
-        if entry.get("command") == argv and _as_exit_code(entry.get("returncode")) not in (0, None)
+        if entry.get("command") == argv
+        and _as_exit_code(entry.get("returncode")) not in (0, None)
+        # A `grep` that matched nothing exited 1 and is not a failure. Counting
+        # it here told `specialist_ui_ux_1` on run-1c522244 that a working
+        # command had "failed" and to "change the file it runs"; it ran the
+        # same grep twelve times and the run died on the repeat guard.
+        and not _ran_and_answered(argv, _as_exit_code(entry.get("returncode")))
     ]
     if not failures:
         return 0
@@ -980,7 +1020,13 @@ def succeeded_this_way_before(repo_root: str, command: Sequence[str]) -> int:
     passes = [
         entry
         for entry in entries
-        if entry.get("command") == argv and _as_exit_code(entry.get("returncode")) == 0
+        if entry.get("command") == argv
+        and (
+            _as_exit_code(entry.get("returncode")) == 0
+            # A search that found nothing ran perfectly well, and repeating it
+            # is the same waste as repeating one that found something.
+            or _ran_and_answered(argv, _as_exit_code(entry.get("returncode")))
+        )
     ]
     if not passes:
         return 0
@@ -1061,6 +1107,18 @@ def _note_about_running_this_again(
             "run, and it will be refused every time: it is not allowed for what it "
             "is, so no edit to any file will change the answer. Use the alternative "
             "the refusal names, or a different command."
+        )
+    if _ran_and_answered(command, exit_code):
+        already = succeeded_this_way_before(repo_root, command)
+        if not already:
+            return ""
+        return (
+            f"This exact search has already run {already} time(s) in this run and "
+            "nothing has been written since. It exited 1 because it found no "
+            "matches - the command worked, the text simply is not there, and "
+            "running it again will find nothing again. Search a different file or "
+            "a different pattern, or take "
+            "\"it is not there\" for the answer and move on."
         )
     if exit_code != 0:
         already = failed_this_way_before(repo_root, command)

@@ -254,3 +254,36 @@ def test_an_ordinary_json_file_is_checked_too() -> None:
     """The reason is the same wherever it is: JSON either parses or it does not."""
     assert structural_problem("p/fixture.json", '{"a": }') is not None
     assert structural_problem("p/fixture.json", '{"a": 1}') is None
+
+
+# --- the wrong assertion library ------------------------------------------
+
+
+@pytest.mark.parametrize("name", ["expect", "beforeAll", "afterAll", "vi"])
+def test_a_jest_api_imported_from_node_test_names_the_replacement(name: str) -> None:
+    """Listing what `node:test` exports does not tell a model it has the wrong
+    library. run-a7150a6c wrote `import { test, expect } from "node:test"` and
+    then spent three greps hunting `expect(` through its own test files.
+    """
+    problem = structural_problem("a.test.mjs", f"import {{ test, {name} }} from 'node:test';\n")
+
+    assert problem is not None
+    assert "Jest's and Vitest's API" in problem
+    assert "assert.strictEqual(actual, expected)" in problem
+
+
+def test_the_suggested_import_is_valid_javascript() -> None:
+    """It printed `import {{ strictEqual }}` - doubled braces leaking from an
+    f-string, in a message whose whole job is to show the fix."""
+    problem = structural_problem("a.test.mjs", "import { assert } from 'node:assert';\n")
+
+    assert problem is not None
+    assert "{{" not in problem and "}}" not in problem
+    assert "import { strictEqual, deepStrictEqual, ok }" in problem
+
+
+def test_the_right_imports_are_still_silent() -> None:
+    assert structural_problem(
+        "a.test.mjs",
+        "import { test } from 'node:test';\nimport assert from 'node:assert';\n",
+    ) is None

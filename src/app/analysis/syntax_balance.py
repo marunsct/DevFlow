@@ -186,6 +186,14 @@ _NODE_NAMED_EXPORTS: dict[str, frozenset[str]] = {
 _NODE_NAMED_EXPORTS["assert"] = _NODE_NAMED_EXPORTS["node:assert"]
 _NODE_NAMED_EXPORTS["node:assert/strict"] = _NODE_NAMED_EXPORTS["node:assert"]
 
+#: Assertion names that belong to Jest and Vitest, not to Node's runner. A
+#: model reaching for these has the right idea and the wrong library, and the
+#: list of what `node:test` does export does not tell it that.
+#:
+#: run-a7150a6c wrote `import { test, expect } from "node:test"` and then spent
+#: three `grep`s hunting `expect(` through its own test files.
+_JEST_ONLY = frozenset({"expect", "jest", "vi", "vitest", "beforeAll", "afterAll"})
+
 #: `import { a, b as c } from 'module'`
 _NAMED_IMPORT = re.compile(r"import\s*\{([^}]*)\}\s*from\s*['\"]([^'\"]+)['\"]")
 
@@ -210,12 +218,24 @@ def _unknown_named_imports(content: str) -> str | None:
             name = raw.strip().split(" as ")[0].strip()
             if not name or name in known:
                 continue
+            if name in _JEST_ONLY and module.startswith(("node:test", "node:assert")):
+                return (
+                    f"`{module}` does not export `{name}`: that is Jest's and "
+                    "Vitest's API, and this project's runner is Node's own. "
+                    "Import `assert` from 'node:assert' and write "
+                    "`assert.strictEqual(actual, expected)`, "
+                    "`assert.deepStrictEqual(...)` or `assert.ok(...)` instead of "
+                    f"`{name}(actual).toBe(expected)`."
+                )
             if name == "assert" and module in ("node:assert", "assert"):
                 return (
                     f"`import {{ assert }} from '{module}'` will fail at runtime: "
                     "`assert` is that module's *default* export, not a named one. "
                     f"Use `import assert from '{module}'`, or import the checks by "
-                    "name - `import {{ strictEqual, deepStrictEqual, ok }} from "
+                    # Not an f-string, so the braces are literal: doubling them
+                    # here printed `import {{ strictEqual }}`, which is not
+                    # JavaScript - a suggested fix the model could not have used.
+                    "name - `import { strictEqual, deepStrictEqual, ok } from "
                     f"'{module}'`."
                 )
             return (

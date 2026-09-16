@@ -32,6 +32,7 @@ from app.agents.settled_answer import build_settled_answer_middleware
 #: there to avoid a cycle. A stage is warned as it approaches this.
 INNER_AGENT_STEP_LIMIT = 60
 from app.agents.repeated_queries import build_repeated_query_middleware
+from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
@@ -550,6 +551,10 @@ def create_role_agent(
         *middleware,
         # Ahead of the filesystem middleware so the path is already
         # root-relative by the time its tools resolve it.
+        # Outermost of the model-call wrappers, so a call the server failed to
+        # parse becomes a real tool call before anything downstream looks for
+        # one. See `app.agents.text_tool_calls`.
+        build_text_tool_call_middleware(),
         build_workspace_path_middleware(resolved_repo_root),
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),

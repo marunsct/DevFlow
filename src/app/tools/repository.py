@@ -784,19 +784,44 @@ def _how_it_differs(content: str, wanted: str) -> str:
     if ratio < _WORTH_DIFFING:
         return ""
 
+    # Aligned, not zipped. Comparing line 1 to line 1, line 2 to line 2 and so
+    # on is only true while the two texts stay in step: one inserted line makes
+    # every line after it look different. Measured on run d6297b2f,
+    # `specialist_testing_1` sent a 31-line passage against a 29-line file that
+    # had gained two import lines at the top and was told 21 lines differed. Two
+    # of them did. It sent the same passage twice more.
     differences: list[str] = []
-    for offset, (sent, actual) in enumerate(zip(wanted_lines, window)):
-        if sent == actual:
+    reported = 0
+    for tag, sent_from, sent_to, file_from, file_to in difflib.SequenceMatcher(
+        None, wanted_lines, window
+    ).get_opcodes():
+        if tag == "equal":
             continue
-        if len(differences) >= _MAX_REPORTED_DIFFERENCES * 2:
+        if reported >= _MAX_REPORTED_DIFFERENCES:
             differences.append("  ... and more")
             break
-        differences.append(f"  you sent:  {_clip(sent)}")
-        differences.append(f"  file has:  {_clip(actual)}   (line {start + offset + 1})")
-    if len(wanted_lines) != len(window):
-        differences.append(
-            f"  you sent {len(wanted_lines)} lines; that passage is {len(window)} long"
-        )
+        reported += 1
+        if tag == "replace":
+            for sent, actual, offset in zip(
+                wanted_lines[sent_from:sent_to],
+                window[file_from:file_to],
+                range(file_from, file_to),
+            ):
+                differences.append(f"  you sent:  {_clip(sent)}")
+                differences.append(
+                    f"  file has:  {_clip(actual)}   (line {start + offset + 1})"
+                )
+        elif tag == "delete":
+            for sent in wanted_lines[sent_from:sent_to]:
+                differences.append(f"  you sent:  {_clip(sent)}")
+                differences.append(
+                    f"  file has:  nothing there - that line is not in the file"
+                )
+        elif tag == "insert":
+            for actual, offset in zip(window[file_from:file_to], range(file_from, file_to)):
+                differences.append(
+                    f"  you left out:  {_clip(actual)}   (line {start + offset + 1})"
+                )
     if not differences:
         return ""
 

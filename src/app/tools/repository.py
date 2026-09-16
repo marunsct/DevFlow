@@ -932,6 +932,13 @@ def edit_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
         )
+    # Before the existence check: otherwise a stage looping on its own response
+    # is told to use `write_artifact`, and pays another call to be refused there.
+    returning = _the_response_it_should_be_returning(
+        tuple(_repo_relative_path(root, relative_path).parts)
+    )
+    if returning is not None:
+        raise RepositoryToolError(returning)
     if not target.is_file():
         # When the missing file is a forked version of one that does exist, say
         # so here. The generic "use write_artifact to create it" sends the agent
@@ -1488,6 +1495,45 @@ WORKFLOW_DOCUMENTS = frozenset({
     "technology_stack.md",
     "tools_and_models.md",
 })
+
+
+#: The stem an agent reaches for when it mistakes "return your structured
+#: response" for "write it down". Any extension: `.md` and `.json` have both
+#: been tried.
+_THE_RESPONSE_ITSELF = "structured_response"
+
+
+def _the_response_it_should_be_returning(relative_parts: tuple[str, ...]) -> str | None:
+    """Refuse a write of the agent's own structured response, or None.
+
+    This is not a document the workflow renders; it is a stage trying to
+    deliver its answer by writing a file instead of returning it. The write
+    succeeds or is auto-approved, the workflow still has no structured
+    response, the stage is asked again, and it writes the same file again.
+
+    Run d6297b2f died of exactly this: `defect_fix_1_0` requested
+    `docs/structured_response.md` five times in a row, carrying
+    `{"role":"Testing and Quality Engineering Specialist","output":{...}}` as
+    its content, and the loop guard stopped the run. Twenty model calls in that
+    run went into writing that file; run a7150a6c spent eight more on
+    `structured_response.json`.
+
+    Nothing refused it before, because nothing renders a file of that name -
+    it fell through every guard precisely by not being one of the workflow's
+    own documents.
+    """
+    if not relative_parts:
+        return None
+    stem = relative_parts[-1].lower().split(".", 1)[0]
+    if stem != _THE_RESPONSE_ITSELF:
+        return None
+    return (
+        f"Refusing to write '{'/'.join(relative_parts)}': your structured "
+        "response is returned, not written. The workflow reads it from the "
+        "response itself - writing it to a file leaves the workflow with "
+        "nothing, and you will be asked for it again. Stop calling tools and "
+        "return the structured response now, in the required schema."
+    )
 
 
 def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
@@ -2402,6 +2448,9 @@ def write_approved_artifact(
     if stranded is not None:
         raise RepositoryToolError(stranded)
     if not by_the_workflow:
+        returning = _the_response_it_should_be_returning(relative_parts)
+        if returning is not None:
+            raise RepositoryToolError(returning)
         owned = _a_workflow_document(relative_parts)
         if owned is not None:
             raise RepositoryToolError(owned)

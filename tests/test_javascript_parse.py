@@ -111,3 +111,58 @@ def test_a_missing_node_is_not_a_failure(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(module, "_node", lambda: None)
 
     assert parse_error(tmp_path / "a.mjs", BROKEN) is None
+
+
+# --- the fact the parser's own message is missing --------------------------
+
+
+@needs_node
+def test_a_duplicate_identifier_is_shown_both_declarations(tmp_path: Path) -> None:
+    """Node names the second one. The agent needs the first.
+
+    run-04576307's `specialist_backend_2` had five consecutive edits refused,
+    one of them `Identifier 'newTitle' has already been declared`, and still
+    could not place the fault from a line number alone.
+    """
+    body = (
+        "const newTitle = prompt('a');\n"
+        "function go() {\n  return 1;\n}\n"
+        "const newTitle = prompt('b');\n"
+    )
+
+    problem = parse_error(tmp_path / "a.mjs", body)
+
+    assert problem is not None
+    assert "declared on lines 1 and 5" in problem
+
+
+@needs_node
+def test_an_unexpected_brace_is_shown_where_the_block_is(tmp_path: Path) -> None:
+    """A parser reports where it gave up, not where the mistake is."""
+    body = "function a() {\n  if (x) {\n    run();\n  }\n}\n}\n"
+
+    problem = parse_error(tmp_path / "b.mjs", body)
+
+    assert problem is not None
+    assert "brackets do not balance" in problem
+
+
+@needs_node
+def test_an_error_with_no_second_half_says_only_what_it_knows(tmp_path: Path) -> None:
+    body = "const a = ;\n"
+
+    problem = parse_error(tmp_path / "c.mjs", body)
+
+    assert problem is not None
+    assert "declared on lines" not in problem
+
+
+@needs_node
+def test_a_shadowed_name_in_an_inner_scope_is_not_a_duplicate(tmp_path: Path) -> None:
+    """`const` inside a block is a new binding, and the file parses."""
+    body = (
+        "const newTitle = 'a';\n"
+        "function go() {\n  const newTitle = 'b';\n  return newTitle;\n}\n"
+    )
+
+    assert parse_error(tmp_path / "d.mjs", body) is None

@@ -98,7 +98,59 @@ def parse_error(path: Path, content: str) -> str | None:
         f"Node cannot parse this file{where}: {detail}. "
         "This is `node --check`, the same parser that loads the file, so the "
         "error is certain - it is not a guess about style."
+        + _the_other_half(detail, content)
     )
+
+
+#: `SyntaxError: Identifier 'newTitle' has already been declared`
+_DUPLICATE = re.compile(r"Identifier '([^']+)' has already been declared")
+
+#: Where a name is bound: `const x`, `let x`, `var x`, `function x`, `class x`.
+def _declarations_of(name: str, content: str) -> list[int]:
+    pattern = re.compile(
+        rf"^\s*(?:export\s+)?(?:async\s+)?(?:const|let|var|function|class)\s+{re.escape(name)}\b",
+        re.M,
+    )
+    return [content.count("\n", 0, m.start()) + 1 for m in pattern.finditer(content)]
+
+
+def _the_other_half(detail: str, content: str) -> str:
+    """The fact the parser's own message is missing, or "".
+
+    Node names one end of the problem. For the two errors this harness
+    actually produces, the other end is what the agent needs and is cheap to
+    find.
+
+    Measured on run-04576307's `specialist_backend_2`: five consecutive edits
+    refused, three of them `Unexpected token '}'` and one `Identifier
+    'newTitle' has already been declared`. It had the line number each time
+    and still could not place the fault, because the line a parser stops on is
+    not the line that is wrong.
+    """
+    duplicate = _DUPLICATE.search(detail)
+    if duplicate:
+        lines = _declarations_of(duplicate.group(1), content)
+        if len(lines) > 1:
+            listed = " and ".join(str(number) for number in lines[:4])
+            return (
+                f" `{duplicate.group(1)}` is declared on lines {listed}; remove "
+                "or rename one of them."
+            )
+        return ""
+    if "Unexpected token" in detail or "Unexpected end of input" in detail:
+        try:
+            from app.analysis.syntax_balance import _confidently_unbalanced
+
+            found = _confidently_unbalanced(content)
+        except Exception:  # noqa: BLE001 - a hint on a hint must not fail
+            return ""
+        if found is not None:
+            return (
+                f" The brackets do not balance either: {found.detail}. The block "
+                f"that should contain line {found.line} is where to look - a "
+                "parser reports where it gave up, not where the mistake is."
+            )
+    return ""
 
 
 __all__ = ["PARSEABLE", "parse_error"]

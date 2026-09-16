@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -112,11 +112,45 @@ class VerificationRun(BaseModel):
     invented.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    # `ignore`, not `forbid`, and aliases on `exit_code` - because the shape the
+    # model sends here is the shape this harness handed it. `run_terminal_command`
+    # returns {"stdout", "stderr", "returncode"}, so a model asked for
+    # "the command you ran with its exit code" pastes that record back, and
+    # `forbid` then rejected every key of it.
+    #
+    # run-3ddd443f died of exactly that. `specialist_testing_5` was refused
+    # three times over `verification.0.exit_code`, `.exitCode`, `.returncode`,
+    # `.stdout`, `.category` and `.working_directory`, could not produce a
+    # valid answer, and so `settled_answer` could not recognise one and end the
+    # stage - the model wrote the same answer five times and the run-level
+    # repeat guard stopped the run at 758 events.
+    #
+    # What `forbid` was protecting is still protected: a claim here is checked
+    # against `read_execution_ledger`, which is what makes it evidence rather
+    # than assertion. Rejecting the answer outright never caught an invented
+    # command; it only cost the stage its ability to finish.
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     command: list[str] = Field(description='The argv you ran, e.g. ["pytest", "-q"].')
-    exit_code: int = Field(description="The `returncode` the tool returned. 0 means success.")
+    exit_code: int = Field(
+        validation_alias=AliasChoices("exit_code", "returncode", "exitCode", "return_code"),
+        description="The `returncode` the tool returned. 0 means success.",
+    )
     summary: str = Field(default="", description="One line on what it proved, or how it failed.")
+
+    @field_validator("command", mode="before")
+    @classmethod
+    def _as_argv(cls, value: Any) -> Any:
+        """Accept the command as a string as well as a list.
+
+        The tool takes argv and the prompt asks for argv, but a model that just
+        ran `node --test app.mjs` writes it back the way a person would. Turning
+        that into a list is unambiguous and keeps the record, where refusing it
+        loses the whole answer.
+        """
+        if isinstance(value, str):
+            return value.split()
+        return value
 
 
 class SpecialistOutput(BaseModel):

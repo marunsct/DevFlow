@@ -663,11 +663,23 @@ def edit_approved_artifact(
             target, original, original.replace(find, replace, 1), relative_path
         )
     summary = replace[:80] + ("..." if len(replace) > 80 else "")
-    return {
+    result = {
         "path": str(target.relative_to(root)),
         "status": "edited",
         "summary": summary or "(passage removed)",
     }
+    note = _budget_note(root, str(target.relative_to(root)))
+    return {**result, "note": note.strip()} if note else result
+
+
+def _budget_note(root: Path, relative_path: str) -> str:
+    """The line-budget note for a write, or "" - see `budget_note_for_a_write`."""
+    try:
+        from app.analysis.integration_checks import budget_note_for_a_write
+
+        return budget_note_for_a_write(root, relative_path)
+    except Exception:  # noqa: BLE001 - a hint must never fail a write
+        return ""
 
 
 def _write_unless_it_changes_nothing(
@@ -1335,6 +1347,9 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
         )
     else:
         result["status"] = "written"
+    note = _budget_note(root, str(target.relative_to(root)))
+    if note:
+        result["note"] = note.strip()
     return result
 
 

@@ -7,6 +7,7 @@ searches, and writes stay inside the repository or approved artifact directory.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -1511,3 +1512,84 @@ def test_a_real_edit_still_succeeds(repo_root: Path) -> None:
 
     assert result["status"] == "edited"
     assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: CLOSED\n"
+
+
+def _project_with_a_budget(root: Path, app_lines: int) -> None:
+    (root / "docs").mkdir(exist_ok=True)
+    (root / "docs/product_intake.md").write_text(
+        "Total source code stays within the 500-line limit.\n" * 3, encoding="utf-8"
+    )
+    write_approved_artifact(
+        root, "app/index.html", '<html><script src="app.js"></script></html>\n'
+    )
+    return write_approved_artifact(root, "app/app.js", "const x = 1;\n" * app_lines)
+
+
+def test_a_write_that_goes_over_the_declared_budget_says_so(repo_root: Path) -> None:
+    """The budget was only ever checked at review time, which costs a cycle.
+
+    run-fa7b7286 spent three milestone cycles on it and went the wrong way: the
+    review that first raised it counted 671 lines against a stated 500, and the
+    next cycle produced 859. The cap is in the brief, the intake and the
+    specification, and was exceeded anyway - the corrections that work on this
+    model arrive in the result of the call that caused the problem.
+    """
+    result = _project_with_a_budget(repo_root, 600)
+
+    assert result["status"] == "written"
+    assert "limit of 500 lines" in result["note"]
+    assert re.search(r"holds \d+ - \d+ over", result["note"])
+    # It must name where the weight is, or "you are over" is not actionable.
+    assert "app/app.js" in result["note"]
+
+
+def test_a_project_inside_its_budget_is_not_nagged(repo_root: Path) -> None:
+    result = _project_with_a_budget(repo_root, 50)
+
+    assert "note" not in result
+
+
+def test_a_project_that_declares_no_budget_is_not_judged(repo_root: Path) -> None:
+    """The number comes from the project's own documents or not at all."""
+    write_approved_artifact(
+        repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
+    )
+    result = write_approved_artifact(repo_root, "app/app.js", "const x = 1;\n" * 900)
+
+    assert "note" not in result
+
+
+def test_writing_a_document_is_not_told_about_the_code_budget(repo_root: Path) -> None:
+    """Writing prose does not move the number, and a note there reads as a
+    complaint about the wrong file."""
+    _project_with_a_budget(repo_root, 600)
+
+    result = write_approved_artifact(repo_root, "docs/notes.md", "# Notes\n")
+
+    assert "note" not in result
+
+
+def test_the_write_still_succeeds_when_over_budget(repo_root: Path) -> None:
+    """It never refuses. A write that fails leaves the agent nowhere to put its
+    work, and the cap is the project's stated preference, not a sandbox rule."""
+    _project_with_a_budget(repo_root, 600)
+
+    assert (repo_root / "app/app.js").read_text(encoding="utf-8").count("\n") == 600
+
+
+def test_an_edit_that_goes_over_the_budget_says_so_too(repo_root: Path) -> None:
+    (repo_root / "docs").mkdir(exist_ok=True)
+    (repo_root / "docs/product_intake.md").write_text(
+        "Total source code stays within the 500-line limit.\n" * 3, encoding="utf-8"
+    )
+    write_approved_artifact(
+        repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
+    )
+    write_approved_artifact(repo_root, "app/app.js", "const only = 'here';\n")
+
+    result = edit_approved_artifact(
+        repo_root, "app/app.js", "const only = 'here';\n", "const y = 2;\n" * 600
+    )
+
+    assert result["status"] == "edited"
+    assert "limit of 500 lines" in result["note"]

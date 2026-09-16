@@ -908,6 +908,59 @@ def _over_the_declared_budget(
     ]
 
 
+
+def budget_note_for_a_write(repo_root, relative_path: str) -> str:
+    """What to tell the agent that just wrote a file, about the line budget.
+
+    The budget check has only ever run at review time, and by then the cost is
+    a whole cycle: the reviewer blocks, the Technical Lead re-plans, a
+    specialist is re-delegated, and the code is rewritten. run-fa7b7286 spent
+    three milestone cycles on it and went the wrong way - the review that first
+    raised it counted 671 lines against a stated 500, and the next cycle
+    produced 859.
+
+    Every correction that has actually changed this model's behaviour arrived
+    in the result of the call that caused the problem; the same words in a
+    brief did not. The 500-line cap is stated in the brief, the intake and the
+    specification, and was exceeded anyway.
+
+    So this says the number at the moment the file lands, while the agent still
+    has the file in mind and no other stage has been involved. It never
+    refuses: a write that fails leaves the agent with nowhere to put its work,
+    and the cap is the project's own stated preference, not a rule of the
+    sandbox.
+
+    Returns "" whenever it cannot be sure - no declared budget, an unreadable
+    workspace, or a project still inside its cap.
+    """
+    try:
+        # Only when the file just written is itself counted code. Writing a
+        # document does not move this number, and a note about it there reads
+        # as a complaint about the wrong file.
+        if Path(relative_path).suffix.lower() not in _COUNTED_SUFFIXES:
+            return ""
+        root = Path(repo_root).resolve()
+        budget = _declared_line_budget(root)
+        if not budget:
+            return ""
+        files = _source_files(root)
+        orphans = _orphans_quietly(files, root)
+        _, _, _, counted_code = _measure_sizes(files, root, orphans)
+        total = sum(counted_code.values())
+        if total <= budget:
+            return ""
+        biggest = sorted(counted_code.items(), key=lambda kv: -kv[1])[:3]
+        largest = ", ".join(f"{name} ({lines})" for name, lines in biggest)
+        return (
+            f"\n\nNote: this project's own documents state a limit of {budget} lines "
+            f"of application code, and it now holds {total} - {total - budget} over. "
+            f"The largest files are {largest}. A milestone review will block on "
+            "this, so trimming now costs less than a review cycle: remove what is "
+            "duplicated or unused rather than adding another file."
+        )
+    except Exception:  # noqa: BLE001 - a hint must never fail a write
+        return ""
+
 def _measure_sizes(
     files: list[Path], root: Path, orphans: set[str] | None = None
 ) -> tuple[list[tuple[int, str]], list[tuple[int, str]], list[tuple[int, str]], dict[str, int]]:

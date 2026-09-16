@@ -1307,7 +1307,9 @@ def test_a_command_with_no_obvious_substitute_still_lists_what_is_allowed() -> N
     with pytest.raises(CommandNotAllowed) as caught:
         validate_command(["ruby", "x.rb"], "backend_specialist")
 
-    assert "Allowed:" in str(caught.value)
+    # "Allowed:" or "Allowed and installed:" depending on what is on PATH
+    # where the suite runs, which is not the same image as the worker.
+    assert "Allowed" in str(caught.value)
 
 
 # --- the doubled project directory, however the path is spelled -------------
@@ -1370,3 +1372,66 @@ def test_a_path_that_is_already_right_is_untouched(tmp_path) -> None:
 
     assert command[-1] == "app.test.mjs"
     assert not note
+
+
+# --- the allowlist told specialists about programs that are not installed ---
+
+
+def test_the_refusal_separates_what_runs_from_what_must_be_installed(monkeypatch) -> None:
+    """Of 34 allowlisted names across all roles, sixteen were absent from the
+    deployed worker image - `alembic cargo go jasmine jest karma make mocha
+    pnpm prisma psql pytest tsc uv vitest yarn`.
+
+    `make` is the one this harness itself recommends, in the refusal that
+    explains there is no shell. A specialist told "Allowed: ... make ..." tries
+    it, is told "not found", and has been handed an environment fault it cannot
+    fix - the shape that turned run-130deeef into five identical `sh` attempts
+    and then a blocker loop.
+    """
+    import app.tools.sandbox as sandbox
+
+    monkeypatch.setattr(
+        sandbox.shutil, "which", lambda name: "/usr/bin/" + name if name == "node" else None
+    )
+
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["ruby", "x.rb"], "backend_specialist")
+
+    message = str(caught.value)
+    assert "Allowed and installed: node" in message
+    assert "NOT installed" in message
+    assert "make" in message.split("NOT installed")[1], "make is on the absent side"
+    assert "npx <tool>" in message, "say how to get one"
+
+
+def test_nothing_missing_means_the_plain_sentence(monkeypatch) -> None:
+    import app.tools.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: "/usr/bin/" + name)
+
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["ruby", "x.rb"], "backend_specialist")
+
+    message = str(caught.value)
+    assert "Allowed: " in message
+    assert "NOT installed" not in message
+
+
+def test_the_allowlist_itself_is_unchanged(monkeypatch) -> None:
+    """This narrows what is advertised, never what is permitted: `pip install
+    pytest` must still leave `pytest` runnable."""
+    import app.tools.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox.shutil, "which", lambda name: None)
+
+    assert validate_command(["pytest", "-q"], "testing_specialist") == ["pytest", "-q"]
+
+
+def test_the_no_shell_advice_does_not_name_an_absent_program() -> None:
+    """It used to say "a Makefile target"; `make` is not in the image."""
+    from app.tools.sandbox import _what_to_do_instead
+
+    advice = _what_to_do_instead("sh")
+
+    assert "Makefile" not in advice
+    assert "npm run" in advice

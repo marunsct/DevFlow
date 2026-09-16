@@ -636,15 +636,18 @@ _INSTEAD_OF: dict[str, str] = {
     "cp": "To copy a file, read it with `read_file` and write the copy with `write_artifact`.",
     "sh": (
         "There is no shell here, so a script cannot be executed. Run the "
-        "commands inside it directly, one `run_terminal_command` per command."
+        "commands inside it directly, one `run_terminal_command` per command, "
+        "or put them in a package.json script and run `npm run <name>`."
     ),
     "bash": (
         "There is no shell here, so a script cannot be executed. Run the "
-        "commands inside it directly, one `run_terminal_command` per command."
+        "commands inside it directly, one `run_terminal_command` per command, "
+        "or put them in a package.json script and run `npm run <name>`."
     ),
     "zsh": (
         "There is no shell here, so a script cannot be executed. Run the "
-        "commands inside it directly, one `run_terminal_command` per command."
+        "commands inside it directly, one `run_terminal_command` per command, "
+        "or put them in a package.json script and run `npm run <name>`."
     ),
     "sed": "To change a file, use `edit_artifact`, which matches an exact passage.",
     "awk": "To read a file, use `read_file`; to change one, use `edit_artifact`.",
@@ -672,6 +675,46 @@ def _what_to_do_instead(executable: str) -> str:
     """The tool that does what this refused command was trying to do, or ""."""
     suggestion = _INSTEAD_OF.get(executable)
     return f" {suggestion}" if suggestion else ""
+
+
+def _installed(names: frozenset[str] | set[str]) -> tuple[list[str], list[str]]:
+    """Split allowed executables into those on PATH now, and the rest.
+
+    The allowlist is the security boundary and is not narrowed by this - a
+    command is refused or permitted exactly as before. What changes is the
+    sentence the refusal prints, which used to name sixteen programs the
+    execution image does not have.
+
+    Measured against the deployed worker image: of 34 names across all roles,
+    `alembic cargo go jasmine jest karma make mocha pnpm prisma psql pytest
+    tsc uv vitest yarn` were absent. `make` is the one this harness itself
+    recommends, in the refusal that explains there is no shell. A specialist
+    told "Allowed: ... make ..." tries it, is told "not found", and has been
+    handed an environment fault it cannot fix - which is the shape that turned
+    run-130deeef into five identical `sh` attempts and then a blocker loop.
+
+    Re-evaluated on every refusal rather than cached, because `pip install
+    pytest` and `npm install -D vitest` genuinely move a name from the second
+    list to the first mid-run.
+    """
+    present, absent = [], []
+    for name in sorted(names):
+        (present if shutil.which(name) else absent).append(name)
+    return present, absent
+
+
+def _what_can_actually_run(permitted: frozenset[str] | set[str]) -> str:
+    """The "Allowed:" sentence, telling apart what runs from what must be installed."""
+    present, absent = _installed(permitted)
+    if not absent:
+        return f"Allowed: {', '.join(present)}."
+    return (
+        f"Allowed and installed: {', '.join(present) or '(none)'}. "
+        f"Also allowed but NOT installed, so they fail until something puts "
+        f"them on PATH - `npx <tool>` runs a node package without installing "
+        f"it, `npm install -D <tool>` or `pip install <tool>` installs one: "
+        f"{', '.join(absent)}."
+    )
 
 
 def allowed_executables(
@@ -735,7 +778,7 @@ def validate_command(
         raise CommandNotAllowed(
             f"'{executable}' is not permitted for role '{role_name}'."
             f"{_what_to_do_instead(executable)} "
-            f"Allowed: {', '.join(sorted(permitted))}."
+            f"{_what_can_actually_run(permitted)}"
         )
 
     forbidden = _FORBIDDEN_ARGS.get(executable, frozenset())

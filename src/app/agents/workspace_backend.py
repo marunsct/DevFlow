@@ -216,25 +216,68 @@ class _NoticingRepeats:
             "rather than guessing another name."
         )
 
-    def _note_if_repeated(self, key: str, text: str) -> str:
+    def _note_if_repeated(self, file_path: str, text: str) -> str:
+        """Whether this stage has already been handed these exact bytes.
+
+        Keyed on what came back and which file it came from, not on the call
+        that asked for it. The first version keyed on
+        `file_path|args|kwargs`, which makes two requests that return the same
+        bytes look unrelated, and the model does not repeat itself that
+        tidily.
+
+        Measured on run-f0630b10's `specialist_ui_ux_0`, 54 reads of one
+        `index.html`:
+
+        - It alternated between `task-manager/index.html` (36 reads) and
+          `/task-manager/index.html` (17). Same file, two keys, two
+          independent counts, so each had to reach the threshold on its own.
+        - It varied `offset` and `limit` around a file smaller than the
+          window, so several different ranges returned byte-identical text
+          under different keys. Five consecutive reads returned the same bytes
+          and none of them was noticed.
+
+        Across that run: 31 reads returned bytes the stage had already been
+        given for an unchanged file, and the old key caught 12 of them.
+
+        Two keys do the work. The file's identity - size and mtime, through
+        the resolved path, so spelling cannot split it - decides whether this
+        is still the same file, and a write moves it, which is what keeps a
+        specialist that edits and reads back from ever being told anything.
+        The content digest decides whether these particular bytes are new.
+
+        The threshold is unchanged: one repeat is ordinary, the second is the
+        one worth mentioning.
+        """
         seen = getattr(self, "_read_digests", None)
         if seen is None:
             seen = {}
             self._read_digests = seen  # noqa: SLF001 - own attribute
-        digest = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
-        previous, count = seen.get(key, (None, 0))
-        if previous == digest:
-            count += 1
-            seen[key] = (digest, count)
-            if count >= REPEATS_BEFORE_SAYING_SO:
-                return (
-                    f"\n\n[This file is byte-identical to the {count} previous "
-                    "times you read it in this stage. Nothing has changed it. "
-                    "Reading it again will return exactly this. Use what you "
-                    "have and move on.]"
-                )
+
+        identity = self._file_identity(file_path)
+        try:
+            where = str(self._resolve_path(file_path))
+        except Exception:  # noqa: BLE001 - fall back to what the model typed
+            where = file_path
+        if not identity:
+            # Nothing to tell us whether the file changed, so treat every read
+            # as a fresh one rather than risk saying "nothing has changed it"
+            # about a file that just did.
             return ""
-        seen[key] = (digest, 0)
+
+        digest = hashlib.sha1(text.encode("utf-8", "replace")).hexdigest()
+        previous_identity, counts = seen.get(where, (None, {}))
+        if previous_identity != identity:
+            counts = {}
+        count = counts.get(digest, 0)
+        counts[digest] = count + 1
+        seen[where] = (identity, counts)
+        if count >= REPEATS_BEFORE_SAYING_SO:
+            return (
+                f"\n\n[These are the same bytes this file gave you {count} "
+                "previous times in this stage, and it has not changed since. "
+                "Asking for a different range of it will not help - this is "
+                "the whole file. Use what you have and move on.]"
+            )
         return ""
 
 
@@ -282,7 +325,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         content = data.get("content") if isinstance(data, dict) else None
         if not isinstance(content, str):
             return result
-        note = self._note_if_repeated(f"{file_path}|{args}|{sorted(kwargs.items())}", content)
+        note = self._note_if_repeated(file_path, content)
         if not note:
             # Same waste, different arguments: a range this stage has already
             # been served of a file that has not changed since.

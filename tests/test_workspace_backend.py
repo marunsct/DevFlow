@@ -202,9 +202,9 @@ def test_an_unchanged_repeat_read_is_told_so(backend) -> None:
     second = backend.read("/todo-app/app.js")
     third = backend.read("/todo-app/app.js")
 
-    assert "byte-identical" not in first.file_data["content"]
-    assert "byte-identical" not in second.file_data["content"]
-    assert "byte-identical" in third.file_data["content"]
+    assert "same bytes" not in first.file_data["content"]
+    assert "same bytes" not in second.file_data["content"]
+    assert "same bytes" in third.file_data["content"]
 
 
 def test_the_content_is_always_returned(backend) -> None:
@@ -223,13 +223,13 @@ def test_an_edit_clears_the_count(tmp_path) -> None:
 
     backend.read("/app.js")
     backend.read("/app.js")
-    assert "byte-identical" in backend.read("/app.js").file_data["content"]
+    assert "same bytes" in backend.read("/app.js").file_data["content"]
 
     (tmp_path / "app.js").write_text("export function a(){}\nexport function b(){}\n", encoding="utf-8")
 
-    assert "byte-identical" not in backend.read("/app.js").file_data["content"]
-    assert "byte-identical" not in backend.read("/app.js").file_data["content"]
-    assert "byte-identical" in backend.read("/app.js").file_data["content"]
+    assert "same bytes" not in backend.read("/app.js").file_data["content"]
+    assert "same bytes" not in backend.read("/app.js").file_data["content"]
+    assert "same bytes" in backend.read("/app.js").file_data["content"]
 
 
 def test_the_text_is_read_from_the_field_that_holds_it(backend) -> None:
@@ -253,7 +253,7 @@ def test_different_ranges_of_one_file_are_counted_apart(tmp_path) -> None:
 
     for offset in (0, 100, 200, 300):
         result = backend.read("/big.js", offset=offset, limit=100)
-        assert "byte-identical" not in result.file_data["content"]
+        assert "same bytes" not in result.file_data["content"]
 
 
 # --- the same lines again, under different arguments ---------------------
@@ -383,3 +383,53 @@ def test_the_real_name_is_never_hinted_at_itself(tmp_path) -> None:
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
     assert not getattr(backend.ls("task-manager"), "error", None)
+
+
+def test_the_same_file_under_two_spellings_shares_one_count(tmp_path) -> None:
+    """Measured on run-f0630b10's `specialist_ui_ux_0`.
+
+    It read one `index.html` 54 times, alternating between
+    `task-manager/index.html` (36 reads) and `/task-manager/index.html` (17).
+    Keyed on the text the model typed, those were two files with two
+    independent counts, and each had to reach the threshold on its own.
+    """
+    (tmp_path / "app.js").write_text("export function a(){}\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    backend.read("/app.js")
+    backend.read("app.js")
+
+    assert "same bytes" in backend.read("/app.js").file_data["content"]
+
+
+def test_a_different_range_returning_the_same_bytes_is_still_a_repeat(tmp_path) -> None:
+    """The other half of the same run.
+
+    It varied `offset` and `limit` around a file smaller than the window, so
+    several different ranges came back byte-identical. Five consecutive reads
+    returned the same bytes and the old key noticed none of them, because each
+    arrived under a different `file_path|args|kwargs`.
+    """
+    (tmp_path / "app.js").write_text("a\nb\nc\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    backend.read("/app.js", limit=400)
+    backend.read("/app.js", limit=500)
+    third = backend.read("/app.js", limit=600)
+
+    assert "same bytes" in third.file_data["content"]
+
+
+def test_a_file_it_cannot_stat_is_never_called_unchanged(tmp_path) -> None:
+    """Without an identity there is no evidence the file stayed put.
+
+    Saying "it has not changed since" about a file that just did is the one
+    way this note can actively mislead, so absence of evidence returns no note
+    rather than a confident one.
+    """
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    assert backend._file_identity("/nowhere.js") == ""
+    assert backend._note_if_repeated("/nowhere.js", "text") == ""
+    assert backend._note_if_repeated("/nowhere.js", "text") == ""
+    assert backend._note_if_repeated("/nowhere.js", "text") == ""

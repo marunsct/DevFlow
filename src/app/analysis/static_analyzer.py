@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional
-from app.tools.sandbox import SandboxExecutor
+from typing import List, Optional, Sequence
+from app.tools.sandbox import SandboxExecutor, _as_exit_code
 import re
 
 class AnalysisIssue(BaseModel):
@@ -20,7 +20,7 @@ class StaticAnalyzer:
     def __init__(self, repo_root: str):
         self.repo_root = repo_root
 
-    def analyze(self, command: str, role_name: str = "general") -> AnalysisResult:
+    def analyze(self, command: Sequence[str], role_name: str = "general") -> AnalysisResult:
         result = SandboxExecutor.execute(command, repo_root=self.repo_root, role_name=role_name, category="build")
         
         if "error" in result:
@@ -31,7 +31,13 @@ class StaticAnalyzer:
                 issues=[AnalysisIssue(file="Unknown", severity="error", message=result["error"])]
             )
 
-        success = result["returncode"] == "0"
+        # `_as_exit_code` rather than `== "0"`. `SandboxExecutor.execute`
+        # stringifies the exit code today, so the literal comparison happens to
+        # work; nothing says it must, and an executor that returned an int
+        # would flip every result here to "failed" in silence. This class is
+        # not wired into the workflow, which is exactly why that would go
+        # unnoticed.
+        success = _as_exit_code(result.get("returncode")) == 0
         stdout = result["stdout"]
         stderr = result["stderr"]
 
@@ -44,7 +50,7 @@ class StaticAnalyzer:
             stderr=stderr
         )
 
-    def _parse_issues(self, command: str, stdout: str, stderr: str) -> List[AnalysisIssue]:
+    def _parse_issues(self, command: Sequence[str], stdout: str, stderr: str) -> List[AnalysisIssue]:
         issues = []
         combined = stdout + "\n" + stderr
         

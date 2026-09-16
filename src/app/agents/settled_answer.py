@@ -88,8 +88,10 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
         return None
     if not isinstance(payload, dict):
         return None
+    from app.agents.wrapped_answer import unwrapped
+
     try:
-        return schema.model_validate(payload)
+        return schema.model_validate(unwrapped(payload, schema))
     except Exception:  # noqa: BLE001 - a near-miss is not the answer
         return None
 
@@ -248,8 +250,10 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
         return ""
     if not isinstance(payload, dict):
         return ""
+    from app.agents.wrapped_answer import unwrapped
+
     try:
-        schema.model_validate(payload)
+        schema.model_validate(unwrapped(payload, schema))
     except Exception as exc:  # noqa: BLE001 - any validation failure is the point
         _LAST_FAILING_FIELDS[:] = failing_fields(exc)
         return _render_errors(exc)

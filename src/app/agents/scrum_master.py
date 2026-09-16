@@ -85,6 +85,15 @@ plan made of independently verifiable sprints.
 Responsibilities:
 - Break the approved specification into sprints that each deliver real user
   value on their own, rather than one sprint per technical layer.
+- Never make setup a sprint of its own. The workspace, its project directory
+  and the `docs/` folder already exist and the workflow maintains them, so
+  "create the project directory", "copy the documentation" and "initialise the
+  manifest" deliver nothing a user could use. Measured on run-84e05d4b, whose
+  first sprint was "Create project directory and basic documentation": the run
+  spent a full milestone, a test round, a security review, a milestone review
+  and two remediation rounds on it, and the product had no application code at
+  the end. The first sprint must ship working behaviour; any manifest or
+  directory it needs is part of that sprint, not instead of it.
 - For every sprint, define goal, user value, in-scope and out-of-scope work,
   dependencies on other sprints, acceptance criteria, test strategy, security
   checks, documentation work, risks, and rollback or recovery notes.

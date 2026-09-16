@@ -39,8 +39,10 @@ FileKind = Literal["test", "config", "vendored", "document", "application"]
 _TEST = re.compile(
     # A directory of tests, whatever is in it.
     r"(^|/)(__tests__|tests?|e2e|spec|cypress)/"
-    # JavaScript and TypeScript: foo.test.ts, foo.spec.jsx, test-helpers.mjs.
+    # JavaScript and TypeScript: foo.test.ts, foo.spec.jsx, test-helpers.mjs,
+    # and the underscore form Node's own runner collects, foo_test.mjs.
     r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
+    r"|[-_](test|spec)\.([cm]?[jt]s|[jt]sx)$"
     r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
     # Python: pytest and unittest both look for these.
     r"|(^|/)test_[^/]*\.py$"

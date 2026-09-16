@@ -888,8 +888,10 @@ def _edited(
     }
     if detail:
         result["detail"] = detail
+    written = target.read_text(encoding="utf-8")
     notes = [
-        _structural_note(relative_path, target.read_text(encoding="utf-8")),
+        _structural_note(relative_path, written),
+        _discovery_note(relative_path, written),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)
@@ -976,6 +978,22 @@ def _refuse_if_broken(relative_path: str, content: str) -> None:
     """
     if _refuses_a_broken_file(relative_path):
         _structural_note(relative_path, content)
+
+
+def _discovery_note(relative_path: str, content: str) -> str:
+    """Warn about a test file the project's runner will not collect, or "".
+
+    A note rather than a refusal: the name is legal and the content is fine.
+    What is wrong is invisible - an uncollected test does not error, it is
+    simply absent, and every later stage reads a green run that never
+    executed it. See `app.analysis.test_discovery`.
+    """
+    from app.analysis.test_discovery import undiscoverable_test
+
+    try:
+        return undiscoverable_test(relative_path, content) or ""
+    except Exception:  # noqa: BLE001 - never fail a write over a hint
+        return ""
 
 
 def _budget_note(root: Path, relative_path: str) -> str:
@@ -1711,6 +1729,7 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
         result["status"] = "written"
     notes = [
         _structural_note(relative_path, content),
+        _discovery_note(relative_path, content),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)

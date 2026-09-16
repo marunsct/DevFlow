@@ -144,6 +144,14 @@ The architecture reviewer rejected a *specification* six times for lacking "clas
 `repository.py` `_LOOKS_LIKE_A_TEST` and `integration_checks.py` `_NOT_APPLICATION` are separate regexes. Finding 92 was a third definition. The codebase's own comment names this pattern: "the two halves never spoke."
 **Fix:** one `classify_file(path) -> {application, test, config, document, stray}` in a shared module; every consumer imports it.
 
+### B19 — The stack pin is one language; the stack is two  *(verified)*
+`TechnologyStack` carries `language` **and** `frontend_framework`, and the stack selector's prompt requires both filled for a product with a separate frontend. Only one reaches the sandbox: `workflow.py:1921` reads `stack.language` and calls `pin_project_stack(root, language)`, which writes a single key to `.project-stack`; `allowed_executables` then does `TOOLCHAINS.get(key)` — one lookup, one toolchain. `frontend_framework` is read in exactly two places, `specialists.describe_stack` (prose shown to the model) and `integration_checks.py:753`, and reaches no allowlist, no timeout and no analyser.
+
+A Go-backend/TypeScript-frontend product therefore pins `go`, and every code-writing role gets Go's toolchain and no `tsc`. It has not bitten yet only because `ROLE_EXECUTABLES["ui_ux_specialist"]` happens to hard-code the JavaScript set — which is the same accident that hid B2 through four one-role fixes, and it disappears the moment a frontend is not JavaScript.
+
+This is §1-B exactly: a lookup defined over one member of a set that has two.
+**Fix:** `pin_project_stack` takes the whole stack and writes every distinct language it names, one per line; `project_stack` returns a `frozenset[str]`; `allowed_executables` unions the toolchains. A `FRAMEWORK_LANGUAGES` table maps a framework name to its language (`react`/`svelte`/`vue` → typescript, `rails` → ruby, `laravel` → php) for the case where `frontend_framework` names a framework and no language. One test asserts that for every two-language stack, both toolchains reach every code-writing role.
+
 ### B18 — Validators sniff strings in model answers  *(verified, low)*
 `tools_models.py` `_must_be_runnable` rejects any value containing "browser testing" — including "headless browser testing with Playwright", which is runnable. Same shape as finding 83 (grep exit 1 called a failure).
 **Fix:** the validator checks for a *runner the sandbox can execute* (a name in the allowlist) rather than for forbidden words.
@@ -610,6 +618,50 @@ class Answer:
 ```
 
 `near_misses` matters more than it looks. "`findOneAndUpdate` does not exist" sends a model guessing; "`findOneAndUpdate` does not exist; the installed `mongodb@6.3.0` has `findOneAndReplace`, `findOneAndDelete`, `updateOne`" ends the question. This is the same reasoning as `workspace_backend._Suggesting`, which turned "not found" into "not found, and here is where it is" and changed behaviour on the very next call.
+
+### 9.5 What belongs in graph state, and what must not
+
+`WorkflowGraphState` is checkpointed to Postgres on **every superstep**. Anything in it is serialised, written and read back on each step of a run that lasts hours. That makes the choice of fields a cost decision, not a modelling one.
+
+**Documentation text must not go in state.** A fetched reference is 2–6 KB; carried in state through a fifty-superstep sprint it is written and read fifty times, for content one model call needed once. It also survives into checkpoints long after it is stale. Documentation reaches the model the way the workspace digest does — injected into the request that needs it, never written to stored history — and lives on disk in the cache. This is the same reasoning `workspace_digest` and `response_reminder` already record for themselves.
+
+**A compact record of lookups does belong in state**, because the milestone reviewer reads state and §14 requires the evidence block to say which layers ran. Add one field and one small model:
+
+```python
+class KnowledgeLookup(BaseModel):
+    """One resolved question, without its answer. Small on purpose.
+
+    The body is deliberately absent: it is in the cache and in the
+    transcript, and state is checkpointed on every superstep. What a
+    reviewer needs is provenance - was this claim checked, against what,
+    at which version - and that fits in about forty bytes.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    stage: str
+    package: str
+    symbol: str = ""
+    layer: str                  # parse | project | installed | documentation | diagnostics
+    version: str = ""
+    found: bool
+    cached: bool = False
+
+
+# in WorkflowGraphState:
+    knowledge_lookups: list[KnowledgeLookup]
+    syntax_errors: list[dict[str, Any]]   # from L0/L4, cleared at sprint start
+```
+
+`syntax_errors` is worth a field for the same reason: the triage stage produces diagnostics that the remediation stage must route, and routing through state is what this graph already does for defects.
+
+**What is already there and must not be duplicated.** A second state schema alongside `WorkflowGraphState` would be a second source of truth for the same run. The fields a knowledge layer might reach for mostly exist:
+
+| tempting new field | already in state |
+|---|---|
+| `target_language` | `stack_selection.technology_stack.language` — and see B19, it should be a set |
+| `workspace_path` | `repository.root_path` |
+| `messages` | belongs to the inner Deep Agent, not the outer graph; the outer graph holds structured outputs |
+| `fetched_docs` | must not exist — see above |
 
 ---
 
@@ -1215,6 +1267,8 @@ The last one is the one that protects the release. This feature touches the writ
 | 23 | DevDocs mirror + `llms.txt` + reader fallback (§11.3) | 9 | M | med | a question answers with the network blocked |
 | 24 | probes for Go, Rust, Java, .NET, Ruby, PHP (§11.2) | 8 | L | med | each language answers in a workspace of that language |
 | 25 | LSP diagnostics in triage (§11.4) | 10 | L | med | a TypeScript type error becomes a defect before tests run |
+| 26 | multi-language stack pin (B19) | 2 | S | **high** | a Go+TypeScript stack gives every code-writing role both toolchains |
+| 27 | `knowledge_lookups` + `syntax_errors` in state (§9.5) | 7 | S | med | the reviewer's evidence block names the layers that ran |
 
 Effort as in §4: S ≤ half a day, M 1–3 days, L a week.
 
@@ -1232,3 +1286,79 @@ Effort as in §4: S ≤ half a day, M 1–3 days, L a week.
 - **No automatic dependency upgrades.** Knowing that the installed version is old is useful; acting on it is a product decision with a human in it.
 - **No vector index.** A short, version-pinned, cached answer to a specific question is what a stage needs. Embedding a documentation corpus adds a model, a store and a retrieval-quality problem to solve a lookup this design answers exactly.
 - **No new execution path.** Every probe goes through `SandboxExecutor`. The history of this codebase includes a second, unsandboxed execution path that sat beside the safe one as a silent fallback; there will not be a third.
+
+---
+
+## 19. Appendix A — a graph-native variant, assessed
+
+A second design was proposed: put the knowledge layer in the graph itself, as a `DevelopmentState` schema, a documentation-fetch node, a verification node, and a cycle back to the coder when errors appear, with `Send()` fan-out for polyglot products.
+
+Three of its four ideas are sound and two are already in this plan under different names. One is a real architectural gap in this harness that nothing here or in Part I addresses. And its central cycle would reintroduce a failure Part I measured.
+
+**A note on its sources.** Both citations resolve to `mail.google.com/mail/?extsrc=sync&client=h&plid=…`, a mail client. Nothing in the proposal is actually sourced, so every claim in it was checked against this repository and against the LangGraph documentation before being accepted or rejected below.
+
+### 19.1 The state schema — partly adopted, see §9.5
+
+A separate `DevelopmentState` would be a second source of truth beside `WorkflowGraphState`. Three of its five fields already exist under other names, one belongs to the inner agent rather than the outer graph, and `fetched_docs: str` would put a multi-kilobyte body through a Postgres checkpoint on every superstep.
+
+**Adopted:** the instinct that this layer needs state at all. §9.5 adds `knowledge_lookups` and `syntax_errors` to the existing schema — provenance and diagnostics, not bodies.
+
+### 19.2 Documentation fetch as a node — a real insight, not needed here
+
+The proposal places the MCP client in a graph node rather than in a tool. **That is the one placement where MCP would actually work in this harness.** §8.1 established that an MCP tool cannot be called, because `create_deep_agent`'s loop invokes tools synchronously and the adapter builds them coroutine-only. A graph node has no such constraint: it is a plain `def node(state, config)` and can wrap `asyncio.run(...)` freely. That is exactly the bridge §11.4 specifies for the optional LSP layer.
+
+So the insight is correct and worth recording. It is still not the right place for documentation:
+
+- **A node costs a superstep per lookup.** `DEFAULT_RECURSION_LIMIT = 100` for the whole outer graph, and its own docstring notes a six-task milestone with two remediation passes already exceeds LangGraph's default. Spending supersteps on lookups competes directly with the work.
+- **A node cannot fire at the moment of the mistake.** The lookup that matters happens between "the model is about to write `client.findOneAndUpdate`" and "the file is on disk". That is inside a stage, not between stages.
+- **Plain HTTP removes the reason to be a node.** §8.1 already avoids the async problem entirely, so nothing is bought by paying a superstep for it.
+
+### 19.3 The verification node and the error cycle — half adopted, half rejected
+
+The proposal runs verification after the coder and loops back on error. Two halves, with opposite verdicts.
+
+**Rejected: a graph cycle for syntax errors.** This harness already has that cycle, and it is the expensive one. `test_and_triage` → `defect_remediation` → back, bounded by `MAX_REMEDIATION_ATTEMPTS = 3`, with `MAX_MILESTONE_REVISIONS = 3` above it; every node routes through `_route_from_stage` and `add_conditional_edges`, so the graph has been cyclic since it was written. Routing a syntax error through it is precisely root-cause class F, *feedback at the wrong time*: §1-F records that a specialist told at the moment the file lands fixes it for free, while one told from a later stage costs a re-plan, a re-delegation and a rewrite. B13 adds the second cost — a stage restart discards everything the stage learned, measured at 170 tool calls across three attempts of one stage.
+
+The write-time gate in §12.1 catches the same error one model call after it is made, with no re-plan and no state transition. That is the same correction, two orders of magnitude cheaper.
+
+**Adopted, and already present:** a verification node is right for the errors a write-time gate structurally *cannot* see. Whole-project type checking is cross-file; no per-file check finds it. That is §11.4, placed at the triage stage, where its findings become tracked defects with a real `check_reference` and satisfy B12. The two are complementary: per-file at the write, whole-project once per sprint.
+
+### 19.4 `Send()` fan-out — a real gap, and three verified blockers
+
+This is the part of the proposal that identifies something genuinely missing. **The harness has no parallelism at all.** `specialist_dispatch_node` is a self-loop over `specialist_task_index`, one delegated task per superstep, strictly sequential; `Send` appears nowhere in the graph. On a product with a Go backend, a TypeScript frontend and a Python service, that is three times the wall clock it needs, and on a local model a stage is minutes.
+
+LangGraph supports exactly what the proposal describes: a conditional edge returning a list of `Send` objects fans out into parallel nodes in the next superstep. The feature is real and current.
+
+It cannot be switched on here, for three reasons measured against this codebase:
+
+1. **Every fan-in field would raise.** `specialist_outputs: dict[str, SpecialistOutput]` has no reducer. Running the proposal's shape against a state field of exactly that declaration:
+
+   ```
+   InvalidUpdateError | At key 'specialist_outputs': Can receive only one value per step.
+   Use an Annotated key to handle multiple values.
+   ```
+
+   Fixable — `Annotated[dict, operator.or_]` — but it must be done for every field a parallel branch touches, and getting one wrong fails at runtime on a real run rather than in a test.
+
+2. **The approval bridge holds exactly one decision.** `pending_approval`, `pending_inner_thread_id` and `pending_decision` are scalar fields, cleared as a triple in five places, and `resume_pending_approval(graph, thread_id, decision)` carries a single decision for the whole graph. Three specialists interrupting on three writes in one superstep have one slot between them. This is not a reducer away; it is a queue, a per-branch correlation id, and a UI that can show more than one pending approval. That is the real cost of parallelism here.
+
+3. **There is one workspace and it is pinned.** `write_approved_artifact` pins the project directory on first write and refuses every later path that disagrees; the execution ledger is one append-only file; `.agent-home` is one cache shared by every command. Concurrent specialists race all three. Partitioning the workspace per branch conflicts with the single-project-directory invariant that Part I's evidence says is load-bearing — run-0b55ad49 built the same product in three directories and finished none.
+
+**Verdict.** Worth doing, and it belongs in Part I as a concurrency item rather than here: it is orthogonal to knowing what an API looks like. The order is forced by the blockers — reducers, then the approval queue, then workspace partitioning, then `Send`. Anyone attempting it before the approval queue exists will get a run that pauses and can never be resumed.
+
+One cheaper approximation is available now and is worth measuring first: the tasks in a milestone that touch **disjoint file sets** could be dispatched in one superstep while everything else stays sequential. Most of the wall-clock win, none of the workspace race, and the approval blocker remains.
+
+### 19.5 What changed in this plan as a result
+
+| from the proposal | verdict | where it landed |
+|---|---|---|
+| state needs fields for this layer | adopted, narrowed | §9.5 — `knowledge_lookups`, `syntax_errors`; no bodies in state |
+| `fetched_docs` in state | rejected | §9.5 — checkpointed on every superstep |
+| a separate `DevelopmentState` | rejected | §9.5 — three of five fields already exist |
+| MCP in a node rather than a tool | correct, and recorded | §19.2; it is what §11.4 does for LSP |
+| verification node | already present | §11.4, at triage, producing tracked defects |
+| cycle back to the coder on syntax error | rejected | §12.1 — class F and B13; the write-time gate is the same fix, far cheaper |
+| `Send()` polyglot fan-out | real gap, blocked | §19.4 — three verified blockers, ordered |
+| polyglot stacks generally | **found a live bug** | B19 and item 26 — the pin is one language, the schema is two |
+
+The last row is the proposal's most useful contribution. Asking "what about a Go backend and a TypeScript frontend" surfaced that `frontend_framework` is filled by the stack selector, shown to the model in prose, and then reaches no allowlist, no timeout and no analyser — a two-member set with a one-member lookup, which is the mistake §1-B says this codebase keeps making.

@@ -240,3 +240,60 @@ def test_every_place_an_agent_is_driven_carries_the_id() -> None:
     workflow_source = inspect.getsource(workflow)
     assert workflow_source.count("_inner_agent_config(") == 3  # definition + two sites
     assert "APP_RUN_ID_KEY" in inspect.getsource(approval.resume_with_decision)
+
+
+# --- which tools the call actually offered ---------------------------------
+
+
+def test_the_tools_a_call_offered_are_recorded(tmp_path, monkeypatch) -> None:
+    """Part of the prompt in every sense that matters, and it was not recorded.
+
+    "Why did this stage never call `run_validation`?" cannot be answered from a
+    transcript that does not say whether `run_validation` was on the table.
+    """
+    from app.observability import transcript
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    callback = transcript.build_transcript_callback("run-tools-1", "specialist_backend_0")
+    callback.on_chat_model_start(
+        {"name": "ChatOpenAI"},
+        [[]],
+        invocation_params={
+            "tools": [
+                {"type": "function", "function": {"name": "read_file"}},
+                {"type": "function", "function": {"name": "write_artifact"}},
+            ]
+        },
+    )
+
+    (entry,) = transcript.read_transcript("run-tools-1", {"model_request"})
+
+    assert entry["tools"] == ["read_file", "write_artifact"]
+
+
+def test_a_call_with_no_tools_records_an_empty_list(tmp_path, monkeypatch) -> None:
+    from app.observability import transcript
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    callback = transcript.build_transcript_callback("run-tools-2", "product_manager")
+    callback.on_chat_model_start({"name": "ChatOpenAI"}, [[]])
+
+    (entry,) = transcript.read_transcript("run-tools-2", {"model_request"})
+
+    assert entry["tools"] == []
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {"invocation_params": {}},
+        {"invocation_params": {"tools": None}},
+        {"invocation_params": {"tools": ["not a dict"]}},
+        {"invocation_params": {"tools": [{"function": None}]}},
+    ],
+)
+def test_an_unexpected_shape_never_fails_the_call(kwargs) -> None:
+    from app.observability.transcript import _tool_names
+
+    assert _tool_names(kwargs) == []

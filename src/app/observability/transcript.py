@@ -275,6 +275,31 @@ def _messages_of(payload: Any) -> list[dict[str, Any]]:
     return rendered
 
 
+def _tool_names(kwargs: dict[str, Any]) -> list[str]:
+    """The tools this call offered the model, by name.
+
+    Part of the prompt in every sense that matters, and it was not recorded.
+    "Why did this stage never call `run_validation`?" cannot be answered from a
+    transcript that does not say whether `run_validation` was on the table -
+    which is the question this record exists to answer.
+
+    Names rather than schemas: the schemas are large, identical across every
+    call of a stage, and the name is what a reader is checking.
+    """
+    try:
+        tools = ((kwargs or {}).get("invocation_params") or {}).get("tools") or []
+        names = []
+        for entry in tools:
+            if isinstance(entry, dict):
+                function = entry.get("function")
+                name = (function or {}).get("name") if isinstance(function, dict) else entry.get("name")
+                if name:
+                    names.append(str(name))
+        return names
+    except Exception:  # noqa: BLE001 - a record must not fail a call
+        return []
+
+
 def build_transcript_callback(run_id: str | None, stage: str) -> Any:
     """A callback that records every prompt and every reply, in full."""
     from langchain_core.callbacks import BaseCallbackHandler
@@ -286,6 +311,7 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
             self, serialized: dict[str, Any], messages: Any, **kwargs: Any
         ) -> None:  # noqa: ARG002
             try:
+                offered = _tool_names(kwargs)
                 for conversation in messages or []:
                     record(
                         run_id,
@@ -293,6 +319,7 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                         "model_request",
                         messages=_messages_of(conversation),
                         model=(serialized or {}).get("name"),
+                        tools=offered,
                     )
             except Exception:  # noqa: BLE001 - a record must not fail a call
                 logger.debug("Could not record a model request", exc_info=True)

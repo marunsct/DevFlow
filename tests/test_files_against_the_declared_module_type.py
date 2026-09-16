@@ -127,3 +127,38 @@ def test_the_reviewer_reports_it(tmp_path: Path):
     (project / "app.js").write_text(EXPORTS, encoding="utf-8")
 
     assert "ES module scope" in summarise_integration(str(tmp_path))
+
+
+def test_a_file_that_feature_detects_commonjs_is_left_alone(workspace):
+    """`typeof module !== 'undefined'` is the safe way to touch it, and works.
+
+    Run 9ff00d's `todo-app/app.js` ends with
+
+        if (typeof module !== 'undefined' && module.exports) {
+            module.exports = { Task, AppState, render };
+        }
+
+    under a manifest declaring `"type": "module"`. Verified in the worker image
+    on Node 20.20.2: the file loads and runs, because `typeof` on an undeclared
+    identifier does not throw and the branch is simply not taken. This check
+    reported it as broken until the guard was recognised.
+    """
+    guarded = (
+        "export const Task = 1;\n"
+        "if (typeof module !== 'undefined' && module.exports) {\n"
+        "  module.exports = { Task };\n"
+        "}\n"
+    )
+    files, root = workspace({"package.json": ESM_MANIFEST, "app.js": guarded})
+
+    assert contradictions(files, root) == []
+
+
+def test_an_unguarded_require_beside_a_guarded_one_is_still_reported(workspace):
+    """The exemption is per file, and only for files that really do detect."""
+    files, root = workspace({
+        "package.json": ESM_MANIFEST,
+        "helper.js": "const fs = require('fs');\n",
+    })
+
+    assert len(contradictions(files, root)) == 1

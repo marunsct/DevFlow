@@ -611,6 +611,25 @@ _COMMONJS = re.compile(
     re.M,
 )
 
+#: `typeof module !== 'undefined'` and friends. `typeof` on an undeclared
+#: identifier is the one way to touch `module` or `require` without throwing,
+#: so a file that tests for them is written to load under either module system
+#: on purpose and must not be reported as contradicting one.
+#:
+#: Run 9ff00d's `todo-app/app.js` ends with
+#:
+#:     if (typeof module !== 'undefined' && module.exports) {
+#:         module.exports = { Task, AppState, render };
+#:     }
+#:
+#: under a manifest declaring `"type": "module"`. Verified in the worker image
+#: on Node 20.20.2: that file loads and prints, because the branch is simply
+#: not taken. Both checks below reported it as broken until this was added.
+_FEATURE_DETECTS_COMMONJS = re.compile(
+    r"""typeof\s+(?:module|require|exports)\s*[!=]==?\s*['"]undefined['"]"""
+    r"""|['"]undefined['"]\s*[!=]==?\s*typeof\s+(?:module|require|exports)""",
+)
+
 
 def _commonjs_loaded_as_a_module(files: list[Path], root: Path) -> list[str]:
     """CommonJS behind `<script type="module">`, which the browser cannot run.
@@ -655,6 +674,8 @@ def _commonjs_loaded_as_a_module(files: list[Path], root: Path) -> list[str]:
             except Exception:  # noqa: BLE001
                 continue
             if not _COMMONJS.search(body) or _ESM.search(body):
+                continue
+            if _FEATURE_DETECTS_COMMONJS.search(body):
                 continue
             problems.append(
                 f"{page.relative_to(root)} loads {src.group(1)} as "
@@ -1221,7 +1242,8 @@ def _files_that_contradict_the_declared_module_type(
             nearer = [m for m in manifests if m != manifest and _is_within(path, m.parent)]
             if any(_is_within(m.parent, package) and m.parent != package for m in nearer):
                 continue
-            if _COMMONJS.search(_read(path)):
+            body = _read(path)
+            if _COMMONJS.search(body) and not _FEATURE_DETECTS_COMMONJS.search(body):
                 offenders.append(str(path.relative_to(root)))
         if not offenders:
             continue
@@ -1257,6 +1279,17 @@ _CALLS_A_SUITE_GLOBAL = re.compile(
 _IMPORTS_FROM_NODE_TEST = re.compile(
     r"""from\s+['"]node:test['"]|require\(\s*['"]node:test['"]\s*\)"""
     r"""|from\s+['"]test['"]""",
+)
+
+#: The file declaring `test`, `it` or `describe` itself. Run 44653b's
+#: `Task.test.mjs` opens with its own four-line harness -
+#: `function test(name, fn) { try { fn(); ... } }` - and calls it; nothing is
+#: missing and nothing throws. A check that reported it would be telling a
+#: working file to import a name it already has.
+_DEFINES_ITS_OWN = re.compile(
+    r"""^\s*(?:async\s+)?function\s+(test|it|describe)\b"""
+    r"""|^\s*(?:const|let|var)\s+(test|it|describe)\s*=""",
+    re.M,
 )
 
 
@@ -1305,6 +1338,8 @@ def _suites_calling_a_global_node_does_not_define(
         content = _read(path)
         called = _CALLS_A_SUITE_GLOBAL.search(content)
         if not called or _IMPORTS_FROM_NODE_TEST.search(content):
+            continue
+        if _DEFINES_ITS_OWN.search(content):
             continue
         name = called.group(1)
         problems.append(

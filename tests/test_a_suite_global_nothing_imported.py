@@ -126,3 +126,34 @@ def test_describe_is_recognised_as_well_as_test(build):
 
     assert len(problems) == 1
     assert "describe is not defined" in problems[0]
+
+
+def test_a_file_that_defines_its_own_test_function_is_left_alone(build):
+    """Run 44653b's `Task.test.mjs` brings its own four-line harness.
+
+        function test(name, fn) {
+          try { fn(); ... }
+        }
+
+    Nothing is missing and nothing throws. Reporting it would be telling a
+    working file to import a name it already has.
+    """
+    own_harness = (
+        "import { InMemoryTaskRepository } from './TaskRepository.js';\n"
+        "function test(name, fn) {\n"
+        "  try { fn(); } catch (e) { console.error(name, e); }\n"
+        "}\n"
+        "test('it works', () => {});\n"
+    )
+    files, root = build({"package.json": '{"name":"p"}', "app.test.mjs": own_harness})
+
+    assert missing_import(files, root) == []
+
+
+def test_an_arrow_assigned_harness_counts_as_defining_it(build):
+    files, root = build({
+        "package.json": '{"name":"p"}',
+        "app.test.mjs": "const test = (n, f) => f();\ntest('x', () => {});\n",
+    })
+
+    assert missing_import(files, root) == []

@@ -35,6 +35,28 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: well as the bytes, and two notices on one result would just be noise.
 QUERY_TOOLS = frozenset({"ls", "grep", "glob"})
 
+#: Mutating tools, watched only for repeated *failures*. A repeated successful
+#: write is already answered by `write_artifact`'s "unchanged" status and by the
+#: no-op edit refusal; a repeated failing edit had nothing at all.
+#:
+#: run-36eb1260 died on it: `specialist_backend_2` sent the same failing
+#: `edit_artifact` over and over against a five-line file and was stopped as a
+#: loop at 1,137 events. The command notices cover `run_terminal_command` and
+#: the query notice covers listings and searches; mutations were the member of
+#: the set nobody had added, which is the mistake this codebase has made five
+#: times now.
+MUTATING_TOOLS = frozenset({"edit_artifact", "write_artifact", "delete_artifact", "move_artifact"})
+
+
+def _looks_like_a_failure(content: str) -> bool:
+    """Whether a tool result is reporting an error.
+
+    Two shapes reach here: the filesystem tools return `Error: ...` as text,
+    the repository tools return a JSON object with an `error` key.
+    """
+    head = content.lstrip()[:400]
+    return head.startswith("Error:") or '"error"' in head
+
 
 def build_repeated_query_middleware() -> Any:
     """Middleware that tells a stage when a query answered exactly as before."""
@@ -68,10 +90,16 @@ def build_repeated_query_middleware() -> Any:
         def _note_for(self, request: Any, result: Any) -> str:
             call = getattr(request, "tool_call", None) or {}
             name = call.get("name", "")
-            if name not in QUERY_TOOLS:
-                return ""
             content = getattr(result, "content", None)
             if not isinstance(content, str) or not content:
+                return ""
+            if name in MUTATING_TOOLS:
+                # Only a repeated failure. A repeated successful write is
+                # already answered elsewhere, and saying "you got this result
+                # before" about a write that worked would be noise.
+                if not _looks_like_a_failure(content):
+                    return ""
+            elif name not in QUERY_TOOLS:
                 return ""
 
             key = (name, repr(sorted((call.get("args") or {}).items())))
@@ -81,7 +109,7 @@ def build_repeated_query_middleware() -> Any:
             counts[digest] = count + 1
             if count < REPEATS_BEFORE_SAYING_SO:
                 return ""
-            if content.lstrip().startswith("Error:"):
+            if _looks_like_a_failure(content):
                 # The repeated case is usually this one. Measured on
                 # run-9506d3ab's `specialist_ui_ux_0`: three identical
                 # `ls {'path': 'task-manager'}` in four seconds, every one

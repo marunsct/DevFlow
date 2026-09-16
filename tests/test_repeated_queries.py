@@ -155,3 +155,57 @@ def test_the_query_notice_also_comes_first() -> None:
 
     assert third.index("returned exactly what it returned") < 200
     assert "file299.js" in third
+
+
+def _failing_edit(middleware, args, error):
+    return _call(middleware, "edit_artifact", args, error)
+
+
+def test_a_repeated_failing_edit_is_told_so() -> None:
+    """The member of the set nobody had added.
+
+    Command repeats are answered by the sandbox notices, listing and search
+    repeats by this middleware, and mutations by nothing. run-36eb1260 died on
+    it: `specialist_backend_2` sent the same failing `edit_artifact` over and
+    over against a five-line file and was stopped as a loop at 1,137 events.
+    """
+    middleware = build_repeated_query_middleware()
+    error = '{"error": "That text appears 2 times in app.test.mjs"}'
+    args = {"relative_path": "app.test.mjs", "find": "import x"}
+
+    assert "failed the same way" not in _failing_edit(middleware, args, error)
+    assert "failed the same way" not in _failing_edit(middleware, args, error)
+    assert "failed the same way" in _failing_edit(middleware, args, error)
+
+
+def test_a_successful_write_is_not_nagged() -> None:
+    """A repeated successful write is already answered by "unchanged" and by
+    the no-op edit refusal. A third notice on it would be noise."""
+    middleware = build_repeated_query_middleware()
+    ok = '{"path": "a.mjs", "status": "written"}'
+
+    for _ in range(4):
+        content = _call(middleware, "write_artifact", {"relative_path": "a.mjs"}, ok)
+        assert "failed the same way" not in content
+        assert "returned exactly what it returned" not in content
+
+
+def test_a_different_edit_failure_starts_the_count_again() -> None:
+    middleware = build_repeated_query_middleware()
+    args = {"relative_path": "a.mjs", "find": "x"}
+
+    _failing_edit(middleware, args, '{"error": "appears 2 times"}')
+    _failing_edit(middleware, args, '{"error": "appears 2 times"}')
+    changed = _failing_edit(middleware, args, '{"error": "Could not find that text"}')
+
+    assert "failed the same way" not in changed
+
+
+def test_both_error_shapes_are_recognised() -> None:
+    """Filesystem tools return `Error: ...`; repository tools return JSON."""
+    from app.agents.repeated_queries import _looks_like_a_failure
+
+    assert _looks_like_a_failure("Error: Path '/x': path_not_found")
+    assert _looks_like_a_failure('{"error": "Could not find that text"}')
+    assert not _looks_like_a_failure('{"path": "a.mjs", "status": "written"}')
+    assert not _looks_like_a_failure("app.js\nindex.html")

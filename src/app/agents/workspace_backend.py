@@ -57,6 +57,46 @@ class _Suggesting:
     on the normal path.
     """
 
+    def _what_is_in_it(self, wanted: str) -> str:
+        """The entries of `wanted`, when `wanted` is a directory that exists.
+
+        A model that reads a directory is asking what is in it. Answering "that
+        is a directory" is true and is not the answer - measured on
+        run-130deeef, where `specialist_backend_3` read
+        `/simple-to-do-list-app/tests` four times and was told four times that
+        a directory of that name existed there. Listing it costs one `iterdir`
+        on a call that has already failed.
+        """
+        root = getattr(self, "cwd", None)
+        if not root:
+            return ""
+        try:
+            target = Path(root) / str(wanted).lstrip("/")
+            if not target.is_dir():
+                return ""
+            entries = sorted(
+                (f"{child.name}/" if child.is_dir() else child.name)
+                for child in target.iterdir()
+                if child.name not in IGNORED_DIRECTORIES
+            )
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        if not entries:
+            return (
+                f" '{wanted}' is a directory, and it is empty. Reading a "
+                "directory is not possible; read one of the files in it."
+            )
+        shown = ", ".join(entries[:MAX_DIRECTORY_ENTRIES])
+        more = (
+            ""
+            if len(entries) <= MAX_DIRECTORY_ENTRIES
+            else f" and {len(entries) - MAX_DIRECTORY_ENTRIES} more"
+        )
+        return (
+            f" '{wanted}' is a directory, not a file. It contains: {shown}{more}. "
+            "Read one of those instead."
+        )
+
     def _where_it_actually_is(self, wanted: str) -> str:
         root = getattr(self, "cwd", None)
         name = _basename(wanted)
@@ -84,6 +124,10 @@ class _Suggesting:
             "Every path is relative to the workspace root, which is '/'."
         )
 
+
+#: Entries to name when a read lands on a directory. Enough to answer "what is
+#: in here", short of reprinting a `node_modules`.
+MAX_DIRECTORY_ENTRIES = 30
 
 #: After this many identical reads of unchanged bytes, say so. The second read
 #: of a file is ordinary - a model checks its work. The sixth is a loop.
@@ -315,7 +359,10 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         if error:
             if "not found" not in error:
                 return result
-            hint = self._where_it_actually_is(file_path)
+            # What is in it, before where else it might be: a model that read
+            # a directory asked what is in it, and "there is a directory of
+            # that name at the path you gave" answers nothing.
+            hint = self._what_is_in_it(file_path) or self._where_it_actually_is(file_path)
             return replace(result, error=error + hint) if hint else result
 
         # The text lives in `file_data["content"]`, not on the result itself.

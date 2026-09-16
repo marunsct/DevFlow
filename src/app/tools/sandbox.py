@@ -619,6 +619,50 @@ def project_stack(repo_root: str | Path | None) -> str | None:
         return None
 
 
+#: What to do instead, for the commands a model reaches for that this
+#: environment will never allow. The allowlist tells it what it may run; that
+#: is not the same as telling it how to do the thing it was trying to do, and a
+#: model handed a list of twenty-six programs reads it as "pick another one"
+#: rather than "use a different tool".
+#:
+#: Measured on run-130deeef: `sh ./simple-to-do-list-app/build.sh` refused five
+#: times, `rm -rf simple-to-do-list-app/tests` once. Both had an obvious answer
+#: the refusal did not mention - `delete_artifact` exists, and a build script's
+#: commands can simply be run.
+_INSTEAD_OF: dict[str, str] = {
+    "rm": "To remove a file, use the `delete_artifact` tool, which records what it removed.",
+    "rmdir": "To remove a file, use the `delete_artifact` tool, which records what it removed.",
+    "mv": "To move or rename a file, use the `move_artifact` tool.",
+    "cp": "To copy a file, read it with `read_file` and write the copy with `write_artifact`.",
+    "sh": (
+        "There is no shell here, so a script cannot be executed. Run the "
+        "commands inside it directly, one `run_terminal_command` per command."
+    ),
+    "bash": (
+        "There is no shell here, so a script cannot be executed. Run the "
+        "commands inside it directly, one `run_terminal_command` per command."
+    ),
+    "zsh": (
+        "There is no shell here, so a script cannot be executed. Run the "
+        "commands inside it directly, one `run_terminal_command` per command."
+    ),
+    "sed": "To change a file, use `edit_artifact`, which matches an exact passage.",
+    "awk": "To read a file, use `read_file`; to change one, use `edit_artifact`.",
+    "cd": (
+        "`cd` is not a program. Pass `working_directory` to "
+        "`run_terminal_command` to run somewhere else."
+    ),
+    "curl": "There is no network in this sandbox; nothing can be downloaded.",
+    "wget": "There is no network in this sandbox; nothing can be downloaded.",
+}
+
+
+def _what_to_do_instead(executable: str) -> str:
+    """The tool that does what this refused command was trying to do, or ""."""
+    suggestion = _INSTEAD_OF.get(executable)
+    return f" {suggestion}" if suggestion else ""
+
+
 def allowed_executables(
     role_name: str, repo_root: str | Path | None = None
 ) -> frozenset[str]:
@@ -678,7 +722,8 @@ def validate_command(
                 f"'{first_word}' is permitted - send {corrected!r}."
             )
         raise CommandNotAllowed(
-            f"'{executable}' is not permitted for role '{role_name}'. "
+            f"'{executable}' is not permitted for role '{role_name}'."
+            f"{_what_to_do_instead(executable)} "
             f"Allowed: {', '.join(sorted(permitted))}."
         )
 

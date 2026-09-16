@@ -1276,3 +1276,35 @@ def test_the_executable_itself_is_never_read_as_an_operator() -> None:
     from app.tools.sandbox import validate_command
 
     assert validate_command(["echo", "a", "b"], "backend_specialist")
+
+
+# --- what to do instead of a command that will never be allowed ------------
+
+
+def test_a_refused_rm_names_the_tool_that_does_it() -> None:
+    """The allowlist says what may be run; it does not say how to do the job.
+
+    run-130deeef's backend specialist sent `rm -rf simple-to-do-list-app/tests`
+    and was handed twenty-six program names. `delete_artifact` exists.
+    """
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["rm", "-rf", "x"], "backend_specialist")
+
+    assert "delete_artifact" in str(caught.value)
+
+
+def test_a_refused_shell_script_says_there_is_no_shell() -> None:
+    """`sh ./build.sh` five times in one stage, each answered with a list."""
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["sh", "./build.sh"], "backend_specialist")
+
+    message = str(caught.value)
+    assert "no shell here" in message
+    assert "one `run_terminal_command` per command" in message
+
+
+def test_a_command_with_no_obvious_substitute_still_lists_what_is_allowed() -> None:
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["ruby", "x.rb"], "backend_specialist")
+
+    assert "Allowed:" in str(caught.value)

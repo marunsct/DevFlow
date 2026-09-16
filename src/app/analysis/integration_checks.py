@@ -1897,6 +1897,9 @@ _BREAKS_BEHAVIOUR = (
     "so the suite cannot fail",          # a test that makes no claim at all
     "throws `TypeError` the moment",     # assertions called on `node:test`
     "does not export it",                # the named form of the same import
+    "none of the cases execute",         # a suite the runner never calls
+    "and nothing on it works",           # CommonJS behind a module script tag
+    "so the suite cannot run",           # files against a declared module type
 )
 
 

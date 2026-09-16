@@ -333,6 +333,75 @@ def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: Node's own default patterns, as a basename test. Verified by running Node
+#: over six names rather than read off the documentation: the prefix form takes
+#: a hyphen, so `test-add.mjs` is collected and `test_add.mjs` is not.
+_NODE_COLLECTS = re.compile(r"^(?:.+[.\-_]test|test|test-.+)\.[cm]?js$", re.IGNORECASE)
+
+#: Runners whose discovery is decided by their own configuration file, which
+#: this cannot read. Saying anything about those would be a guess.
+_RUNNERS_WITH_THEIR_OWN_CONFIG = ("jest", "vitest", "mocha", "ava", "tap", "playwright")
+
+
+def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
+    """Test files the project's own `npm test` will not execute.
+
+    Decided by the manifest, not by a convention: `scripts.test` says what runs,
+    and everything `classify_file` calls a test and that command does not reach
+    has never executed once.
+
+    run-04576307 reached its third milestone round with seven test files -
+    `app.test.mjs` and six standalone assertion scripts named `test_add_task.mjs`,
+    `test_delete_task.mjs`, `test_edit_task.mjs`, `test_filter_tasks.mjs`,
+    `test_persistence.mjs` and `test_toggle_task.mjs`, 3,845 bytes of real
+    assertions. Its `scripts.test` is `node --test`, whose prefix pattern is
+    `test-*`, so `node --test .` reported `# tests 1`. The cross-file checks
+    reported no problems and the size report described "tests: 207 lines across
+    7 file(s)".
+
+    A false green is worse than a red: the run does not merely lack the
+    coverage, every stage after it reads a passing suite as evidence the
+    product works.
+
+    Only `node --test`. Jest, Vitest and Mocha decide discovery in their own
+    configuration, which this cannot read, and a wrong claim about a suite that
+    runs perfectly well would be worse than no claim.
+    """
+    problems: list[str] = []
+    for manifest in files:
+        if manifest.name != "package.json":
+            continue
+        try:
+            scripts = (json.loads(_read(manifest)) or {}).get("scripts") or {}
+        except Exception:  # noqa: BLE001 - a broken manifest is reported elsewhere
+            continue
+        command = str(scripts.get("test") or "")
+        if "node --test" not in command:
+            continue
+        if any(runner in command for runner in _RUNNERS_WITH_THEIR_OWN_CONFIG):
+            continue
+        project = manifest.parent
+        stranded = [
+            path
+            for path in files
+            if path.parent == project
+            and path.suffix.lower() in {".js", ".mjs", ".cjs"}
+            and is_test(str(path.relative_to(root)))
+            and not _NODE_COLLECTS.match(path.name)
+        ]
+        if not stranded:
+            continue
+        listed = ", ".join(sorted(path.name for path in stranded))
+        problems.append(
+            f"{manifest.relative_to(root)} runs `{command}`, which does not "
+            f"collect {listed}. Those files have never executed, and a passing "
+            "suite is being read as evidence they did. Node's patterns are "
+            "*.test.js, *-test.js, *_test.js, test-*.js, test.js, or anything "
+            "under a test/ directory - note the prefix form takes a hyphen."
+        )
+    return problems
+
+
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     """Application scripts that nothing loads or imports, as relative paths."""
     referenced: set[str] = set()
@@ -1290,6 +1359,7 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
 #: at: a marker that matches nothing silently classifies every finding as
 #: untidy, and one that matches too much makes a reviewer block on dead CSS.
 _BREAKS_BEHAVIOUR = (
+    "have never executed, and a passing suite",  # a false green suite
     "looks for the element id",          # a script hook no page provides
     "reads the attribute",               # a data-* attribute nothing sets
     "which does not exist in the workspace",  # a src/import pointing at nothing
@@ -1325,6 +1395,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _manifest_defects(files, root, stack)
             + _dangling_id_selectors(files, root)
             + _hooks_javascript_reaches_for(files, root)
+            + _tests_the_project_never_runs(files, root)
             + _dangling_class_selectors(files, root)
             + _documented_commands_that_cannot_run(files, root, root / "docs")
             + _broken_local_references(files, root)

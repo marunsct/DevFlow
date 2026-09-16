@@ -466,6 +466,9 @@ def _indentation_insensitive_span(content: str, wanted: str) -> tuple[int, int] 
     return matches[0] if matches else None
 
 
+_SMALL_FILE_LINES = 40
+"""At or under this, a failed edit is shown the whole file rather than a guess."""
+
 _NEAR_MATCH_LINES = 3
 """Lines of context to quote back around the closest match."""
 
@@ -486,31 +489,65 @@ def _closest_passage(content: str, wanted: str) -> str | None:
     """
     import difflib
 
-    first = next((line for line in wanted.splitlines() if line.strip()), "")
-    if not first:
-        return None
-
     lines = content.splitlines()
     if not lines:
         return None
 
-    scores = [
-        (difflib.SequenceMatcher(None, first.strip(), line.strip()).ratio(), index)
-        for index, line in enumerate(lines)
-    ]
-    ratio, best = max(scores)
-    # Below this the "closest" line shares a keyword and nothing else, and
-    # quoting it would send the agent somewhere unrelated.
-    if ratio < 0.6:
+    # A short file is quoted whole. The fuzzy match below refuses to guess when
+    # nothing scores above 0.6, which is right for a large file - a "closest"
+    # line sharing one keyword sends the agent somewhere unrelated - but for a
+    # file this size there is nowhere unrelated to send it, and the whole text
+    # costs a few lines.
+    #
+    # Measured on run-36eb1260: `specialist_backend_2` edited a five-line
+    # `test-json.cjs`, missed, and was told only "Read the section first and
+    # copy the passage from what you read". It read the file twice more and
+    # missed twice more, and the run was stopped as a loop at 1,137 events. The
+    # five lines it needed were available every time.
+    first = next((line for line in wanted.splitlines() if line.strip()), "")
+
+    if len(lines) <= _SMALL_FILE_LINES:
+        # Marked if anything resembles the find, unmarked otherwise - either way
+        # the whole file is there, which is the part the agent could not get.
+        best = _best_matching_line(first, lines)
+        return _quote(lines, 0, len(lines), best)
+
+    if not first:
         return None
 
-    start = max(0, best - _NEAR_MATCH_LINES)
-    end = min(len(lines), best + _NEAR_MATCH_LINES + 1)
-    quoted = []
-    for index in range(start, end):
-        marker = ">" if index == best else " "
-        quoted.append(f"{marker} {index + 1:>4} | {lines[index]}")
-    return "\n".join(quoted)
+    best = _best_matching_line(first, lines)
+    # Below the threshold the "closest" line shares a keyword and nothing else,
+    # and quoting it would send the agent somewhere unrelated.
+    if best is None:
+        return None
+
+    return _quote(
+        lines,
+        max(0, best - _NEAR_MATCH_LINES),
+        min(len(lines), best + _NEAR_MATCH_LINES + 1),
+        best,
+    )
+
+
+def _best_matching_line(first: str, lines: list[str]) -> int | None:
+    """Index of the line most like `first`, or None if nothing is close."""
+    import difflib
+
+    if not first or not lines:
+        return None
+    ratio, best = max(
+        (difflib.SequenceMatcher(None, first.strip(), line.strip()).ratio(), index)
+        for index, line in enumerate(lines)
+    )
+    return best if ratio >= 0.6 else None
+
+
+def _quote(lines: list[str], start: int, end: int, marked: int | None) -> str:
+    """Numbered lines `start`..`end`, with `marked` flagged in column zero."""
+    return "\n".join(
+        f"{'>' if index == marked else ' '} {index + 1:>4} | {lines[index]}"
+        for index in range(start, end)
+    )
 
 
 def edit_approved_artifact(
@@ -643,12 +680,27 @@ def edit_approved_artifact(
                 )
 
             nearest = _closest_passage(original, find)
-            detail = (
-                f"\n\nThe closest text in the file is (> marks the nearest line):\n{nearest}\n\n"
-                "Copy the passage from there exactly, including its indentation."
-                if nearest
-                else " Read the section first and copy the passage from what you read."
-            )
+            if not nearest:
+                detail = " Read the section first and copy the passage from what you read."
+            elif any(line.startswith(">") for line in nearest.splitlines()):
+                # The marker sits in column zero. Testing for ">" anywhere in
+                # the block reads the file's own content - `btn => {...}` is
+                # enough - and mislabels a whole-file quote as a near match.
+                detail = (
+                    f"\n\nThe closest text in the file is (> marks the nearest line):"
+                    f"\n{nearest}\n\nCopy the passage from there exactly, including "
+                    "its indentation."
+                )
+            else:
+                # The whole file, because it is short enough to quote. Saying
+                # "closest text" and "> marks the nearest line" here would both
+                # be untrue, and an agent that goes looking for a marker that is
+                # not there has been sent on an errand instead of given an
+                # answer.
+                detail = (
+                    f"\n\nThis is the entire file:\n{nearest}\n\nCopy the passage "
+                    "you want to change from there exactly, including its indentation."
+                )
             raise RepositoryToolError(
                 f"Could not find that text in '{relative_path}'. It must match exactly, "
                 f"including whitespace and punctuation.{detail}"

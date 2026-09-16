@@ -505,11 +505,34 @@ def test_a_near_miss_quotes_the_real_text(tmp_path: Path) -> None:
 
 
 def test_an_unrelated_find_is_not_given_a_misleading_hint(tmp_path: Path) -> None:
-    """Quoting the 'closest' line when nothing is close sends the agent astray."""
+    """Quoting the 'closest' line when nothing is close sends the agent astray.
+
+    That protection still holds, and a short file now does better than silence:
+    it is quoted whole, which cannot mislead because there is nothing else in
+    it. Run-36eb1260 was stopped as a loop after a five-line file answered three
+    failed edits with "Read the section first" and nothing more.
+    """
     (tmp_path / "script.js").write_text(SCRIPT)
 
     with pytest.raises(RepositoryToolError) as excinfo:
         edit_approved_artifact(tmp_path, "script.js", "SELECT * FROM invoices", "X")
+
+    message = str(excinfo.value)
+    # No false claim that any line here resembles the find.
+    assert "closest text in the file" not in message
+    assert "marks the nearest line" not in message
+    # The file is short, so it is simply shown.
+    assert "This is the entire file:" in message
+    assert "const tasks = [];" in message
+
+
+def test_an_unrelated_find_in_a_long_file_still_says_nothing(tmp_path: Path) -> None:
+    """Above the short-file threshold the original protection is all there is."""
+    body = "\n".join(f"const line{i} = {i};" for i in range(80)) + "\n"
+    (tmp_path / "long.js").write_text(body)
+
+    with pytest.raises(RepositoryToolError) as excinfo:
+        edit_approved_artifact(tmp_path, "long.js", "SELECT * FROM invoices", "X")
 
     message = str(excinfo.value)
     assert "closest text in the file" not in message
@@ -1731,3 +1754,49 @@ def test_three_copies_are_all_listed(repo_root: Path) -> None:
 
     with pytest.raises(RepositoryToolError, match=r"lines 1, 3 and 5"):
         edit_approved_artifact(repo_root, "p/b.mjs", "x();\n", "w();\n")
+
+
+def test_a_failed_edit_on_a_short_file_is_shown_the_whole_file(repo_root: Path) -> None:
+    """The fuzzy match refuses to guess below 0.6, which strands a small file.
+
+    Measured on run-36eb1260: `specialist_backend_2` edited a five-line
+    `test-json.cjs`, missed, and was told only "Read the section first and copy
+    the passage from what you read". It read the file twice more and missed
+    twice more, and the run was stopped as a loop at 1,137 events. The five
+    lines it needed were available every time.
+
+    Refusing to guess is right for a large file - a "closest" line sharing one
+    keyword sends the agent somewhere unrelated - but a five-line file has
+    nowhere unrelated to send it.
+    """
+    write_approved_artifact(
+        repo_root, "p/test-json.cjs",
+        "const fs = require('fs');\ntry {\n  const d = JSON.parse(x);\n} catch (e) {}\n",
+    )
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(
+            repo_root, "p/test-json.cjs", "const totally = 'different thing';\n", "x"
+        )
+
+    message = str(caught.value)
+    assert "This is the entire file:" in message
+    for line in ("const fs = require('fs');", "} catch (e) {}"):
+        assert line in message
+    # It must not claim a marker it did not print.
+    assert "marks the nearest line" not in message
+    assert "Read the section first" not in message
+
+
+def test_a_large_file_still_gets_the_nearest_passage(repo_root: Path) -> None:
+    """Quoting a 900-line file at an agent is not help, it is a wall of text."""
+    body = "\n".join(f"const line{i} = {i};" for i in range(80)) + "\n"
+    write_approved_artifact(repo_root, "p/big.cjs", body)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(repo_root, "p/big.cjs", "const line40 = 99;\n", "x")
+
+    message = str(caught.value)
+    assert "marks the nearest line" in message
+    assert "This is the entire file" not in message
+    assert "const line0 = 0;" not in message

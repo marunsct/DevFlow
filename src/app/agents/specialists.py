@@ -308,6 +308,44 @@ def describe_stack(stack: Any) -> str:
     )
 
 
+def _task_names_a_workflow_document(task_description: str, criteria: list[str]) -> str:
+    """Warn a specialist whose task asks it to change a file it cannot, or "".
+
+    `PROJECT_LAYOUT` tells the Technical Lead these documents are the
+    workflow's and must not be written. run-01f03ed9 shows a prompt is not
+    enough: the lead delegated "update `docs/milestone_review.md` with the test
+    results", and `specialist_documentation_1` spent twelve model calls on it -
+    writing a `# Task Status` note four times, byte-identical, explaining that
+    the task requires updating a file the tool refuses, and rewriting the
+    technical specification three times.
+
+    Refusing the whole milestone plan over one task would cost the other five.
+    Telling the specialist, in the brief it actually reads, costs nothing and
+    reaches the stage that is about to waste itself.
+    """
+    from app.tools.repository import WORKFLOW_DOCUMENTS
+
+    haystack = " ".join([task_description, *criteria]).lower()
+    named = sorted(
+        name for name in WORKFLOW_DOCUMENTS if name.lower() in haystack
+    )
+    if not named:
+        return ""
+    listed = ", ".join(f"docs/{name}" for name in named)
+    return (
+        f"--- About {listed} ---\n"
+        "This task names a document the workflow writes itself, from the "
+        "structured response of the stage that produces it, and rewrites whole "
+        "every time that stage runs. You cannot change it - the tool refuses - "
+        "and a copy beside it is read by nobody. Do the part of this task that "
+        "is real work, and put anything that belongs in that document into your "
+        "structured response instead: `decisions` for what you did, `risks` and "
+        "`blockers` for what is wrong. Those reach the workflow. A note saying "
+        "the task could not be done adds nothing - this paragraph is already "
+        "that note.\n\n"
+    )
+
+
 def build_specialist_task_request(
     task_description: str,
     acceptance_criteria: list[str],
@@ -324,6 +362,7 @@ def build_specialist_task_request(
         f"{describe_stack(stack)}"
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
+        f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. All documentation goes in the `docs/` directory.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

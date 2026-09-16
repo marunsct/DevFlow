@@ -669,8 +669,41 @@ def edit_approved_artifact(
         "status": "edited",
         "summary": summary or "(passage removed)",
     }
-    note = _budget_note(root, str(target.relative_to(root)))
-    return {**result, "note": note.strip()} if note else result
+    notes = [
+        _structural_note(relative_path, target.read_text(encoding="utf-8")),
+        _budget_note(root, str(target.relative_to(root))).strip(),
+    ]
+    joined = " ".join(n for n in notes if n)
+    return {**result, "note": joined} if joined else result
+
+
+def _structural_note(relative_path: str, content: str) -> str:
+    """Warn about a file that was just written broken, or refuse it.
+
+    Python is parsed with `ast`, which is the real grammar, so a failure is
+    certain and worth refusing over. Brace-counting for the C family is a
+    structure check rather than a parse - it cannot see a missing semicolon -
+    so it warns and lets the write stand.
+
+    Either way the agent hears it while it is still looking at the edit it just
+    made. run-e37a2bd8 heard it two stages later, as "Syntax error in app.mjs
+    at line 206", and spent three remediation attempts editing line 206 - which
+    was where the parser gave up, not where the mistake was.
+    """
+    try:
+        from app.analysis.syntax_balance import structural_problem
+
+        problem = structural_problem(relative_path, content)
+    except Exception:  # noqa: BLE001 - a check must never fail a write
+        return ""
+    if not problem:
+        return ""
+    if relative_path.lower().endswith(".py"):
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': {problem} Nothing was "
+            "written. Send the file again with that fixed."
+        )
+    return problem
 
 
 def _budget_note(root: Path, relative_path: str) -> str:
@@ -1402,9 +1435,13 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
         )
     else:
         result["status"] = "written"
-    note = _budget_note(root, str(target.relative_to(root)))
-    if note:
-        result["note"] = note.strip()
+    notes = [
+        _structural_note(relative_path, content),
+        _budget_note(root, str(target.relative_to(root))).strip(),
+    ]
+    joined = " ".join(n for n in notes if n)
+    if joined:
+        result["note"] = joined
     return result
 
 

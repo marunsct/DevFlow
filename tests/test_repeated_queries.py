@@ -295,3 +295,65 @@ def test_a_status_that_is_not_unchanged_is_not_matched() -> None:
     assert not _changed_nothing('{"status":"written"}')
     assert not _changed_nothing('{"status":"edited"}')
     assert not _changed_nothing('{"detail":"unchanged since yesterday"}')
+
+
+# --- the second way to read a file, which had none of this ----------------
+
+
+def test_a_repeated_repository_read_is_told_so() -> None:
+    """`read_repository_file` is a parallel read path with no machinery of its
+    own - no repeat notice, no span tracking. A model that used it paid for
+    every re-read in silence.
+
+    Measured on run-84e05d4b: `specialist_testing_6` read
+    `simple-to-do-list-app/app.test.js` through it five times with identical
+    arguments, and `specialist_backend_1` read `docs/architecture_review.md`
+    through it four times while reading the same file through `read_file`
+    eleven more.
+    """
+    middleware = build_repeated_query_middleware()
+    args = {"relative_path": "app/app.test.js", "start_line": 1, "line_count": 100}
+
+    for _ in range(2):
+        assert "returned exactly what it returned" not in _call(
+            middleware, "read_repository_file", args, "const a = 1;"
+        )
+
+    assert "returned exactly what it returned" in _call(
+        middleware, "read_repository_file", args, "const a = 1;"
+    )
+
+
+def test_a_repository_read_that_changed_starts_again() -> None:
+    middleware = build_repeated_query_middleware()
+    args = {"relative_path": "app/app.js"}
+
+    _call(middleware, "read_repository_file", args, "one")
+    _call(middleware, "read_repository_file", args, "one")
+    changed = _call(middleware, "read_repository_file", args, "one\ntwo")
+
+    assert "returned exactly what it returned" not in changed
+
+
+def test_a_repeated_inspection_is_told_so() -> None:
+    """`inspect_repository` takes no arguments, so a repeat is always a repeat.
+    run-0deeb8bf called it seven times in one stage."""
+    middleware = build_repeated_query_middleware()
+
+    for _ in range(2):
+        _call(middleware, "inspect_repository", {}, "app.js\nindex.html")
+
+    assert "returned exactly what it returned" in _call(
+        middleware, "inspect_repository", {}, "app.js\nindex.html"
+    )
+
+
+def test_read_file_is_still_left_to_the_backend() -> None:
+    """It has a better notice, keyed on the file's identity as well as the
+    bytes; two notices on one result would be noise."""
+    middleware = build_repeated_query_middleware()
+
+    for _ in range(4):
+        content = _call(middleware, "read_file", {"file_path": "/a.js"}, "const a = 1;")
+
+    assert "returned exactly what it returned" not in content

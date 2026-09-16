@@ -34,7 +34,23 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: Read-only queries with no note of their own. `read_file` is excluded because
 #: the backend already gives it a better one, keyed on the file's identity as
 #: well as the bytes, and two notices on one result would just be noise.
-QUERY_TOOLS = frozenset({"ls", "grep", "glob"})
+#:
+#: `read_repository_file` is a second, parallel way to read a file and had none
+#: of that machinery - no repeat notice, no span tracking, nothing. So a model
+#: that used it paid for every re-read in silence, and a model that alternated
+#: between the two escaped even `read_file`'s counter. Measured on
+#: run-84e05d4b: `specialist_testing_6` read
+#: `simple-to-do-list-app/app.test.js` through this tool five times with
+#: identical arguments, and `specialist_backend_1` read
+#: `docs/architecture_review.md` through it four times while reading the same
+#: file through `read_file` eleven more.
+#:
+#: `inspect_repository` takes no arguments at all and returns a listing, so a
+#: repeat of it is always a repeat. run-0deeb8bf called it seven times in one
+#: stage.
+QUERY_TOOLS = frozenset({
+    "ls", "grep", "glob", "read_repository_file", "inspect_repository"
+})
 
 #: Mutating tools, watched only for repeated *failures*. A repeated successful
 #: write is already answered by `write_artifact`'s "unchanged" status and by the
@@ -169,9 +185,10 @@ def build_repeated_query_middleware() -> Any:
             return (
                 f"\n\n[This `{name}` returned exactly what it returned the {count} "
                 "previous times you ran it in this stage. A listing reports each "
-                "entry's size and modification time and a search reports the lines "
-                "it matched, so an identical result means nothing you asked about "
-                "has changed. Running it again will return this again.]"
+                "entry's size and modification time, a search reports the lines it "
+                "matched, and a read returns the file's bytes - so an identical "
+                "result means nothing you asked about has changed. Running it again "
+                "will return this again.]"
             )
 
     return RepeatedQueryMiddleware()

@@ -12,6 +12,8 @@ dependencies itself.
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 from typing import Any
 
@@ -76,8 +78,27 @@ class TechnologyStack(BaseModel):
         """
         text = (value or "").strip()
         lowered = text.lower()
+        # A named runner the sandbox can actually execute settles it, whatever
+        # words surround the name. Matching on words alone rejected "headless
+        # browser testing with Playwright" - which runs headless and reports a
+        # pass or fail - for containing "browser testing". That is the shape of
+        # finding 83, where `grep` exiting 1 because it matched nothing was
+        # reported as a failed command.
+        from app.tools.sandbox import COMMON_EXECUTABLES, ROLE_EXECUTABLES
+
+        runners = {
+            name
+            for names in ROLE_EXECUTABLES.values()
+            for name in names
+            if name not in COMMON_EXECUTABLES
+        }
+        names_a_runner = any(
+            re.search(rf"(?<![\w-]){re.escape(runner)}(?![\w-])", lowered)
+            for runner in runners
+        )
+
         impossible = ("manual", "by hand", "devtools", "browser testing", "visual inspection")
-        if any(marker in lowered for marker in impossible):
+        if any(marker in lowered for marker in impossible) and not names_a_runner:
             raise ValueError(
                 f"'{text}' cannot be carried out in this environment: there is no "
                 "browser, no display, and no person watching the workspace, so "

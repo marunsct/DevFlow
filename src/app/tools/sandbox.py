@@ -892,7 +892,42 @@ def _as_exit_code(value: Any) -> int | None:
         return None
 
 
-def _record_execution(repo_root: str, role_name: str, command: Sequence[str], result: dict) -> None:
+def _same_invocation(
+    entry: dict, argv: list[str], working_directory: str | None
+) -> bool:
+    """Whether a ledger entry is this same command, run in the same place.
+
+    Entries written before the working directory was recorded have no such
+    key; they match on argv alone, so an upgrade mid-run degrades to the old
+    behaviour rather than silently reporting "never run before".
+    """
+    if entry.get("command") != argv:
+        return False
+    recorded = entry.get("working_directory")
+    if recorded is None:
+        return True
+    return recorded == _where_it_ran(working_directory)
+
+
+def _where_it_ran(working_directory: str | None) -> str:
+    """One spelling for the directory a command ran in.
+
+    The model writes `/proj` and `proj` for the same place, and an unset
+    working directory means the workspace root. Normalising here is what lets
+    two entries be compared at all.
+    """
+    text = (working_directory or "").strip().strip("/")
+    return text or "."
+
+
+def _record_execution(
+    repo_root: str,
+    role_name: str,
+    command: Sequence[str],
+    result: dict,
+    working_directory: str | None = None,
+    category: str = "default",
+) -> None:
     """Append one command's outcome to the run's ledger. Never raises.
 
     Verification is otherwise self-reported: a specialist writes
@@ -903,6 +938,12 @@ def _record_execution(repo_root: str, role_name: str, command: Sequence[str], re
     Refusals are recorded too. A specialist that tried to run a test and was
     refused is materially different from one that never tried, and only this
     can tell them apart.
+
+    `working_directory` is part of the record because it is part of the
+    command. Without it, run-44653bd2's `node --test` under
+    `/simple-to-do-list-app` and under `simple-to-do-list-app` were one entry,
+    so "you already ran this" was answered from the wrong history. Keying on
+    argv alone is the mistake finding 68 already made once.
     """
     path = _ledger_path(repo_root)
     if path is None:
@@ -912,6 +953,8 @@ def _record_execution(repo_root: str, role_name: str, command: Sequence[str], re
             "at": datetime.now(timezone.utc).isoformat(),
             "role": role_name,
             "command": [str(part) for part in command],
+            "working_directory": _where_it_ran(working_directory),
+            "category": category,
             "returncode": _as_exit_code(result.get("returncode")),
             "error": result.get("error"),
         }
@@ -955,7 +998,9 @@ def _ran_and_answered(command: Sequence[str], exit_code: int | None) -> bool:
     return os.path.basename(str(command[0])) in _ANSWERS_WITH_EXIT_ONE
 
 
-def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
+def failed_this_way_before(
+    repo_root: str, command: Sequence[str], working_directory: str | None = None
+) -> int:
     """How many times this exact command has already failed in this run.
 
     Measured twice on run-9ff00d5b's `specialist_backend_2`: the agent wrote a
@@ -978,6 +1023,7 @@ def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
         entries = read_execution_ledger(repo_root)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
+    entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
     failures = [
         entry
         for entry in entries
@@ -1034,7 +1080,9 @@ def _written_since(repo_root: str, when: str | None) -> bool:
     return False
 
 
-def succeeded_this_way_before(repo_root: str, command: Sequence[str]) -> int:
+def succeeded_this_way_before(
+    repo_root: str, command: Sequence[str], working_directory: str | None = None
+) -> int:
     """How many times this exact command has already succeeded, unchanged.
 
     The counterpart to `failed_this_way_before`, and by volume the larger of
@@ -1064,10 +1112,11 @@ def succeeded_this_way_before(repo_root: str, command: Sequence[str]) -> int:
         entries = read_execution_ledger(repo_root)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
+    entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
     passes = [
         entry
         for entry in entries
-        if entry.get("command") == argv
+        if True
         and (
             _as_exit_code(entry.get("returncode")) == 0
             # A search that found nothing ran perfectly well, and repeating it
@@ -1081,7 +1130,9 @@ def succeeded_this_way_before(repo_root: str, command: Sequence[str]) -> int:
 
 
 
-def refused_this_way_before(repo_root: str, command: Sequence[str]) -> int:
+def refused_this_way_before(
+    repo_root: str, command: Sequence[str], working_directory: str | None = None
+) -> int:
     """How many times this exact command has already been refused this run.
 
     No `_written_since` gate, and that is the whole point. A failing test can
@@ -1104,7 +1155,7 @@ def refused_this_way_before(repo_root: str, command: Sequence[str]) -> int:
     return sum(
         1
         for entry in entries
-        if entry.get("command") == argv
+        if _same_invocation(entry, argv, working_directory)
         and entry.get("error")
         and _as_exit_code(entry.get("returncode")) is None
     )
@@ -1133,7 +1184,11 @@ def _is_a_standing_refusal(command: Sequence[str], role_name: str) -> bool:
 
 
 def _note_about_running_this_again(
-    repo_root: str, command: Sequence[str], outcome: Dict[str, Any], role_name: str
+    repo_root: str,
+    command: Sequence[str],
+    outcome: Dict[str, Any],
+    role_name: str,
+    working_directory: str | None = None,
 ) -> str:
     """What to tell an agent that has just re-run a command unchanged.
 
@@ -1146,7 +1201,7 @@ def _note_about_running_this_again(
     if exit_code is None:
         if not outcome.get("error") or not _is_a_standing_refusal(command, role_name):
             return ""
-        already = refused_this_way_before(repo_root, command)
+        already = refused_this_way_before(repo_root, command, working_directory)
         if not already:
             return ""
         return (
@@ -1156,7 +1211,7 @@ def _note_about_running_this_again(
             "the refusal names, or a different command."
         )
     if _ran_and_answered(command, exit_code):
-        already = succeeded_this_way_before(repo_root, command)
+        already = succeeded_this_way_before(repo_root, command, working_directory)
         if not already:
             return ""
         return (
@@ -1168,7 +1223,7 @@ def _note_about_running_this_again(
             "\"it is not there\" for the answer and move on."
         )
     if exit_code != 0:
-        already = failed_this_way_before(repo_root, command)
+        already = failed_this_way_before(repo_root, command, working_directory)
         if not already:
             return ""
         return (
@@ -1176,7 +1231,7 @@ def _note_about_running_this_again(
             "Running it again unchanged will fail again - change the command, or "
             "change the file it runs, before retrying."
         )
-    already = succeeded_this_way_before(repo_root, command)
+    already = succeeded_this_way_before(repo_root, command, working_directory)
     if not already:
         return ""
     return (
@@ -1344,14 +1399,16 @@ class SandboxExecutor:
             if doubled:
                 outcome = {**outcome, "note": doubled}
             note = _note_about_running_this_again(
-                repo_root, command, outcome, role_name
+                repo_root, command, outcome, role_name, working_directory
             )
             if note:
                 outcome = {
                     **outcome,
                     "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
                 }
-        _record_execution(repo_root, role_name, command, outcome)
+        _record_execution(
+            repo_root, role_name, command, outcome, working_directory, category
+        )
         return outcome
 
     @classmethod

@@ -1096,3 +1096,40 @@ def test_only_check_is_affected() -> None:
 
     assert validate_command(["node", "--test", "a.test.mjs"], "testing_specialist")
     assert validate_command(["node", "app.js"], "backend_specialist")
+
+
+def test_the_ledger_separates_the_same_command_in_different_places(tmp_path) -> None:
+    """Keying on argv alone answered "you already ran this" from the wrong history.
+
+    run-44653bd2 ran `node --test` under `/simple-to-do-list-app` and under
+    `simple-to-do-list-app`. The ledger recorded argv only, so the two were one
+    entry. Keying on argv alone is the mistake finding 68 already made once.
+    """
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    command = ["node", "--test"]
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1}, "/proj", "test")
+
+    # The same place, spelled the other way.
+    assert failed_this_way_before(str(tmp_path), command, "proj") == 1
+    # A different place is a different command.
+    assert failed_this_way_before(str(tmp_path), command, "elsewhere") == 0
+    # The workspace root is not the project directory.
+    assert failed_this_way_before(str(tmp_path), command, None) == 0
+
+
+def test_an_entry_written_before_the_directory_was_recorded_still_matches(tmp_path) -> None:
+    """An upgrade mid-run degrades to the old behaviour, not to "never run"."""
+    import json
+
+    from app.tools.sandbox import _ledger_path, failed_this_way_before
+
+    path = _ledger_path(str(tmp_path))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"at": "2026-01-01T00:00:00+00:00", "role": "r",
+                    "command": ["node", "--test"], "returncode": 1}) + "\n",
+        encoding="utf-8",
+    )
+
+    assert failed_this_way_before(str(tmp_path), ["node", "--test"], "anywhere") == 1

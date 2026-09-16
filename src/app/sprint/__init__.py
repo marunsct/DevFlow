@@ -70,7 +70,9 @@ class TestRunRecord(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    command: list[str] = Field(..., description="The validation command that was run, e.g. ['pytest', '-q'].")
+    command: list[str] = Field(
+        ..., description="The validation command that was run, e.g. ['npm', 'test']."
+    )
     passed: bool = Field(..., description="Whether the command exited successfully.")
     summary: str = Field(default="", description="Short human-readable result summary.")
 

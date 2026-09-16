@@ -37,7 +37,7 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "ui_ux": (
         "You are the UI and UX specialist. You MUST write complete, production-ready frontend code. "
         "Do NOT just 'design' or output snippets. You MUST use `run_terminal_command` to install NPM dependencies, "
-        "compile the code (e.g., `npm run build` or `tsc`), and resolve any compilation or linter errors iteratively "
+        "compile the code (e.g., `npm run build` or `npx tsc`), and resolve any compilation or linter errors iteratively "
         "before returning your final output."
     ),
     "database": (
@@ -177,7 +177,12 @@ class VerificationRun(BaseModel):
     # command; it only cost the stage its ability to finish.
     model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    command: list[str] = Field(description='The argv you ran, e.g. ["pytest", "-q"].')
+    command: list[str] = Field(
+        # `["pytest", "-q"]` was the example, and `pytest` is not in the
+        # execution image - an example is strong guidance, and this one pointed
+        # at a program that is not there.
+        description='The argv you ran, e.g. ["npm", "test"] or ["node", "--test"].'
+    )
     exit_code: int = Field(
         validation_alias=AliasChoices("exit_code", "returncode", "exitCode", "return_code"),
         description="The `returncode` the tool returned. 0 means success.",

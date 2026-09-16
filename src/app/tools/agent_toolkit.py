@@ -372,7 +372,12 @@ def build_validation_tool(repo_root: str) -> BaseTool:
     def run_validation(
         command: list[str], working_directory: str | None = None
     ) -> dict[str, object]:
-        """Run one allowlisted validation command, e.g. ["pytest", "tests/", "-q"].
+        """Run one allowlisted validation command, e.g. ["npm", "test"].
+
+        Examples that work in this image: `["npm", "test"]`,
+        `["node", "--test"]`, `["npx", "vitest", "run"]`. A Python project
+        needs `["pip", "install", "pytest"]` with category "install" first -
+        `pytest` is allowed but is not installed.
 
         Runs in this run's project directory by default, so `["npm", "test"]`
         finds the project's own manifest. Pass `working_directory` (relative to

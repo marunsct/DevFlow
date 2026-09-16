@@ -1277,8 +1277,9 @@ def _unrunnable_script_note(relative_path: str) -> str:
         "This environment has no shell, so this script cannot be run here - "
         "`sh` and `bash` are not available and never will be. If anything in "
         "this project needs to execute these steps, put them in a package.json "
-        "script, a Makefile target, or a program run directly (node, python), "
-        "which all work."
+        "script and run `npm run <name>`, or run a program directly (`node`, "
+        "`python3`). `make` is not installed here, so a Makefile is not an "
+        "option either."
     )
 
 

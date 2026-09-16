@@ -133,6 +133,21 @@ MAX_DIRECTORY_ENTRIES = 30
 #: of a file is ordinary - a model checks its work. The sixth is a loop.
 REPEATS_BEFORE_SAYING_SO = 2
 
+#: After this many, stop returning the bytes and say where they already are.
+#:
+#: The note above is the right first response and it is not always the last
+#: one. Measured on run-84e05d4b's `specialist_backend_1`: eleven reads of
+#: `/docs/architecture_review.md`, byte-identical, in one stage, each answered
+#: with a note saying so and each followed by another. run-44e9fc83 did
+#: seventeen of `app.js`.
+#:
+#: This codebase's escalation everywhere else is hint, note, refuse, and the
+#: refusal is safe here for a reason particular to reads: it applies only to a
+#: request for *the same bytes* of an *unchanged* file. Any other range still
+#: returns content, so a model that has genuinely lost the text has a way back
+#: that a loop does not take.
+READS_BEFORE_WITHHOLDING = 5
+
 
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
@@ -315,6 +330,16 @@ class _NoticingRepeats:
         count = counts.get(digest, 0)
         counts[digest] = count + 1
         seen[where] = (identity, counts)
+        if count >= READS_BEFORE_WITHHOLDING:
+            self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
+            return (
+                f"[This file has given you these same bytes {count} times in "
+                "this stage and has not changed once. The content is not "
+                "repeated here, because you already have it - scroll back to "
+                "any of those results. If you need a part of it you have not "
+                "seen, ask for a different line range. Otherwise use what you "
+                "have and move on.]"
+            )
         if count >= REPEATS_BEFORE_SAYING_SO:
             return (
                 f"\n\n[These are the same bytes this file gave you {count} "
@@ -372,7 +397,12 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         content = data.get("content") if isinstance(data, dict) else None
         if not isinstance(content, str):
             return result
+        self._withheld = False  # noqa: SLF001 - own attribute
         note = self._note_if_repeated(file_path, content)
+        if self._withheld:
+            # The bytes are replaced, not prefixed. Repeating them is the whole
+            # cost this is here to stop.
+            return replace(result, file_data={**data, "content": note})
         if not note:
             # Same waste, different arguments: a range this stage has already
             # been served of a file that has not changed since.

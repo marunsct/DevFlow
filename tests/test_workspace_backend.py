@@ -207,12 +207,54 @@ def test_an_unchanged_repeat_read_is_told_so(backend) -> None:
     assert "same bytes" in third.file_data["content"]
 
 
-def test_the_content_is_always_returned(backend) -> None:
-    """A note that withheld the text would strand a model that had genuinely
-    lost it. The note is an addition, never a replacement."""
-    for _ in range(5):
+def test_the_content_comes_back_while_the_note_is_only_a_note(backend) -> None:
+    """Up to the escalation threshold the note is an addition, never a
+    replacement: a model that had genuinely lost the text must get it back."""
+    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
+
+    for _ in range(READS_BEFORE_WITHHOLDING):
         result = backend.read("/todo-app/app.js")
         assert "export function a" in result.file_data["content"]
+
+
+def test_the_bytes_are_withheld_once_the_note_has_been_ignored(backend) -> None:
+    """Hint, note, refuse - the escalation this codebase arrives at everywhere.
+
+    Measured on run-84e05d4b's `specialist_backend_1`: eleven byte-identical
+    reads of `/docs/architecture_review.md` in one stage, each answered with a
+    note saying so and each followed by another. run-44e9fc83 did seventeen of
+    `app.js`.
+    """
+    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
+
+    for _ in range(READS_BEFORE_WITHHOLDING):
+        backend.read("/todo-app/app.js")
+
+    content = backend.read("/todo-app/app.js").file_data["content"]
+
+    assert "export function a" not in content, "repeating the bytes is the cost"
+    assert "you already have it" in content
+    assert "different line range" in content, "a model that truly lost it needs a way back"
+
+
+def test_a_range_it_has_not_seen_still_returns_content(tmp_path) -> None:
+    """The escape that a loop does not take.
+
+    Withholding applies only to a request for the same bytes of an unchanged
+    file, so asking for a part it has not been served still works.
+    """
+    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
+
+    lines = "".join(f"const line{i} = {i};\n" for i in range(200))
+    (tmp_path / "big.js").write_text(lines, encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    for _ in range(READS_BEFORE_WITHHOLDING + 1):
+        backend.read("/big.js", offset=0, limit=20)
+
+    other = backend.read("/big.js", offset=100, limit=20)
+
+    assert "const line100" in other.file_data["content"]
 
 
 def test_an_edit_clears_the_count(tmp_path) -> None:

@@ -1087,9 +1087,41 @@ def _refuses_a_broken_file(relative_path: str) -> bool:
 
     Python and JSON have real grammars, so `ast.parse` and `json.loads` are
     proof. Brace counting for the C family is a structure check and warns
-    instead.
+    instead - but `node --check` is a parse, so JavaScript is refused on that
+    and warned on the rest. See `_javascript_parse_error`.
     """
     return relative_path.lower().endswith((".py", ".json"))
+
+
+def _javascript_parse_error(target: Path, relative_path: str, content: str) -> str:
+    """Node's own syntax error for this content, or "". Never raises.
+
+    Separate from `_structural_note` because it needs a real path: `.js` is
+    ESM or CommonJS depending on the nearest `package.json`, so the check has
+    to happen where the file will live.
+    """
+    from app.analysis.javascript_parse import parse_error
+
+    try:
+        return parse_error(target, content) or ""
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        return ""
+
+
+def _refuse_if_node_cannot_parse(target: Path, relative_path: str, content: str) -> None:
+    """Refuse a JavaScript file the parser that loads it cannot read.
+
+    run-454adf22 wrote `app.js` with a stray `try` and spent the whole of
+    `test_round_0` discovering `SyntaxError: Unexpected token 'try'` at line
+    83, then a triage and a defect-fix stage routing it back - for something
+    the parser names in seventeen milliseconds at the moment of the write.
+    """
+    problem = _javascript_parse_error(target, relative_path, content)
+    if problem:
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': {problem} Nothing was "
+            "written. Send the file again with that fixed."
+        )
 
 
 def _refuse_if_broken(relative_path: str, content: str) -> None:
@@ -1287,6 +1319,7 @@ def _write_unless_it_changes_nothing(
     """
     if updated != original:
         _refuse_if_broken(relative_path, updated)
+        _refuse_if_node_cannot_parse(target, relative_path, updated)
         target.write_text(updated, encoding="utf-8")
         return
     lines = original.count("\n") + (0 if original.endswith("\n") else 1)
@@ -1925,6 +1958,7 @@ def write_approved_artifact(
     # transcript that escaped.
     _refuse_control_tokens(relative_path, content)
     _refuse_if_broken(relative_path, content)
+    _refuse_if_node_cannot_parse(target, relative_path, content)
 
     if _is_json_document(content) and target.suffix.lower() in _PROSE_SUFFIXES:
         # Agents conflate "write the artifact" with "return the structured

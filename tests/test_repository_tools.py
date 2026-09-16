@@ -569,7 +569,7 @@ def test_an_empty_file_stays_empty(tmp_path: Path) -> None:
     assert (tmp_path / "docs" / "empty.md").read_text() == ""
 
 
-BLANK_LINE_FILE = """test('CRUD operations persist in localStorage', () => {
+BLANK_LINE_FILE = """test('CRUD operations persist in localStorage', async () => {
   // Reset storage
   mockLocalStorage._data = {};
 
@@ -1832,6 +1832,16 @@ def test_a_real_edit_still_succeeds(repo_root: Path) -> None:
     assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: CLOSED\n"
 
 
+def _js_lines(count: int) -> str:
+    """`count` lines of valid JavaScript.
+
+    `"const x = 1;\\n" * 900` was the old filler and is a real syntax error -
+    `Identifier 'x' has already been declared` - which `node --check` now
+    refuses, correctly. Line budgets need lines, not a broken file.
+    """
+    return "".join(f"const x{index} = {index};\n" for index in range(count))
+
+
 def _project_with_a_budget(root: Path, app_lines: int) -> None:
     (root / "docs").mkdir(exist_ok=True)
     (root / "docs/product_intake.md").write_text(
@@ -1840,7 +1850,7 @@ def _project_with_a_budget(root: Path, app_lines: int) -> None:
     write_approved_artifact(
         root, "app/index.html", '<html><script src="app.js"></script></html>\n'
     )
-    return write_approved_artifact(root, "app/app.js", "const x = 1;\n" * app_lines)
+    return write_approved_artifact(root, "app/app.js", _js_lines(app_lines))
 
 
 def test_a_write_that_goes_over_the_declared_budget_says_so(repo_root: Path) -> None:
@@ -1872,7 +1882,7 @@ def test_a_project_that_declares_no_budget_is_not_judged(repo_root: Path) -> Non
     write_approved_artifact(
         repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
     )
-    result = write_approved_artifact(repo_root, "app/app.js", "const x = 1;\n" * 900)
+    result = write_approved_artifact(repo_root, "app/app.js", _js_lines(900))
 
     assert "note" not in result
 
@@ -1906,7 +1916,7 @@ def test_an_edit_that_goes_over_the_budget_says_so_too(repo_root: Path) -> None:
     write_approved_artifact(repo_root, "app/app.js", "const only = 'here';\n")
 
     result = edit_approved_artifact(
-        repo_root, "app/app.js", "const only = 'here';\n", "const y = 2;\n" * 600
+        repo_root, "app/app.js", "const only = 'here';\n", _js_lines(600)
     )
 
     assert result["status"] == "edited"
@@ -1932,7 +1942,7 @@ def test_the_budget_note_does_not_count_the_test_suite(repo_root: Path) -> None:
     write_approved_artifact(
         repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
     )
-    write_approved_artifact(repo_root, "app/app.js", "const x = 1;\n" * 300)
+    write_approved_artifact(repo_root, "app/app.js", _js_lines(300))
 
     result = write_approved_artifact(repo_root, "app/app.test.mjs", "test(1);\n" * 900)
 
@@ -1955,7 +1965,7 @@ def test_the_note_and_the_reviewer_report_the_same_number(repo_root: Path) -> No
     write_approved_artifact(
         repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
     )
-    write_approved_artifact(repo_root, "app/app.js", "const x = 1;\n" * 700)
+    write_approved_artifact(repo_root, "app/app.js", _js_lines(700))
     write_approved_artifact(repo_root, "app/app.test.mjs", "test(1);\n" * 900)
 
     note = budget_note_for_a_write(repo_root, "app/app.js")
@@ -1996,8 +2006,14 @@ def test_every_family_of_control_token_is_caught(repo_root: Path) -> None:
 
 def test_ordinary_code_that_merely_looks_similar_is_written(repo_root: Path) -> None:
     """The pattern has to be the full `<|name|>` spelling, or a comparison
-    operator beside a pipe would be refused as a control token."""
-    write_approved_artifact(repo_root, "app/b.js", "if (a <| b) {}\nconst c = x || y;\n")
+    operator beside a pipe would be refused as a control token.
+
+    Valid JavaScript, because `node --check` refuses the rest - and a fixture
+    that is not the language it claims to be tests nothing about this rule.
+    """
+    write_approved_artifact(
+        repo_root, "app/b.js", "const c = a < b | 1;\nconst d = x || y;\n"
+    )
 
     assert (repo_root / "app/b.js").is_file()
 
@@ -2033,18 +2049,19 @@ def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path) -> None:
     """
     write_approved_artifact(
         repo_root, "p/a.mjs",
-        "const r = loadTasks();\nassert(ok);\n});\nconst r = loadTasks();\nassert(ok);\n});\n",
+        "run(() => {\n  loadTasks();\n  assert(ok);\n});\n"
+        "run(() => {\n  loadTasks();\n  assert(ok);\n});\n",
     )
 
     with pytest.raises(RepositoryToolError) as caught:
-        edit_approved_artifact(repo_root, "p/a.mjs", "assert(ok);\n", "assert(better);\n")
+        edit_approved_artifact(repo_root, "p/a.mjs", "  assert(ok);\n", "  assert(better);\n")
 
     message = str(caught.value)
-    assert "lines 2 and 5" in message
+    assert "lines 3 and 7" in message
     assert "Add whichever of these surrounding lines differs" in message
     # And the surroundings themselves, which is what makes it actable.
-    assert "the copy at line 2:" in message
-    assert "const r = loadTasks();" in message
+    assert "the copy at line 3:" in message
+    assert "loadTasks();" in message
 
 
 def test_three_copies_are_all_listed(repo_root: Path) -> None:

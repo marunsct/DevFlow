@@ -1238,3 +1238,55 @@ def test_application_code_is_not_reported(tmp_path):
     assert not _tests_that_depend_on_the_working_directory(
         sorted(tmp_path.rglob("*")), tmp_path
     )
+
+
+def test_a_referenced_file_that_is_empty_is_reported(tmp_path):
+    """Present but empty is not the same as present.
+
+    A page that links an empty stylesheet renders unstyled and a page that
+    loads an empty script does nothing. Both look correct to a check that only
+    asks whether the file is there.
+
+    Measured on run-5f4cdd55: index.html linked `style.css` on line 6, the file
+    was zero bytes, the reference check passed, and the size report counted it
+    as one line of the product.
+    """
+    from app.analysis.integration_checks import _broken_local_references, _source_files
+
+    (tmp_path / "p").mkdir()
+    (tmp_path / "p/index.html").write_text(
+        '<link rel="stylesheet" href="style.css">\n<script src="app.js"></script>',
+        encoding="utf-8",
+    )
+    (tmp_path / "p/style.css").write_text("", encoding="utf-8")
+    (tmp_path / "p/app.js").write_text("const a = 1;\n", encoding="utf-8")
+
+    problems = _broken_local_references(_source_files(tmp_path), tmp_path)
+
+    assert any("exists but is empty" in p and "style.css" in p for p in problems)
+    assert not any("app.js" in p for p in problems)
+
+
+def test_whitespace_only_counts_as_empty(tmp_path):
+    from app.analysis.integration_checks import _broken_local_references, _source_files
+
+    (tmp_path / "p").mkdir()
+    (tmp_path / "p/index.html").write_text('<link href="a.css" rel="stylesheet">', encoding="utf-8")
+    (tmp_path / "p/a.css").write_text("\n\n   \n", encoding="utf-8")
+
+    problems = _broken_local_references(_source_files(tmp_path), tmp_path)
+
+    assert any("exists but is empty" in p for p in problems)
+
+
+def test_a_missing_file_is_still_reported_as_missing(tmp_path):
+    """The two are different problems and must not be merged."""
+    from app.analysis.integration_checks import _broken_local_references, _source_files
+
+    (tmp_path / "p").mkdir()
+    (tmp_path / "p/index.html").write_text('<link href="gone.css" rel="stylesheet">', encoding="utf-8")
+
+    problems = _broken_local_references(_source_files(tmp_path), tmp_path)
+
+    assert any("does not exist" in p for p in problems)
+    assert not any("exists but is empty" in p for p in problems)

@@ -579,11 +579,33 @@ def _broken_local_references(files: list[Path], root: Path) -> list[str]:
         for target in _SCRIPT_SRC.findall(text) + _LINK_HREF.findall(text):
             if "//" in target or target.startswith(("data:", "#", "mailto:")):
                 continue
-            if not (path.parent / target).exists():
+            referenced = path.parent / target
+            if not referenced.exists():
                 problems.append(
                     f"{path.relative_to(root)} references `{target}`, which does "
                     "not exist in the workspace."
                 )
+                continue
+            # Present but empty is not the same as present. A page that links
+            # an empty stylesheet renders unstyled and a page that loads an
+            # empty script does nothing, and both look correct to a check that
+            # only asks whether the file is there.
+            #
+            # Measured on run-5f4cdd55: index.html linked `style.css` on line
+            # 6, the file was zero bytes, the reference check passed, and the
+            # size report counted it as one line of the product.
+            try:
+                if referenced.is_file() and not referenced.read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip():
+                    problems.append(
+                        f"{path.relative_to(root)} references `{target}`, which "
+                        "exists but is empty. The page loads it and gets nothing - "
+                        "a stylesheet with no rules or a script with no code. "
+                        "Either write it or stop referencing it."
+                    )
+            except OSError:  # unreadable is not the same as empty
+                continue
     return problems
 
 

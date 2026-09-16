@@ -2818,6 +2818,20 @@ def move_approved_artifact(
             f"'{from_shown}' is already where you are asking to put it."
         )
     if not source.exists():
+        # The same memo the read and the edit consult. A stage renaming a set
+        # of files one at a time loses track of which it has already done, and
+        # "run `ls`" costs it a call to learn something it did itself.
+        moved_to = _where_this_stage_put_it(from_shown)
+        if moved_to is not None:
+            if moved_to == to_shown:
+                raise RepositoryToolError(
+                    f"'{from_shown}' does not exist because this stage already "
+                    f"moved it to '{to_shown}'. That move is done; nothing to do."
+                )
+            raise RepositoryToolError(
+                f"'{from_shown}' does not exist because this stage moved it to "
+                f"'{moved_to}'. Move that instead, if it still needs moving."
+            )
         raise RepositoryToolError(
             f"'{from_shown}' does not exist. Run `ls` to see what is actually there."
         )

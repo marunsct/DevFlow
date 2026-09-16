@@ -96,3 +96,35 @@ def test_the_read_hint_is_empty_for_a_file_nothing_moved():
     from app.agents.workspace_backend import _Suggesting
 
     assert _Suggesting._where_this_stage_moved_it(_Suggesting(), "/todo/other.js") == ""
+
+
+def test_moving_a_file_this_stage_already_moved_says_so(project: Path):
+    """A stage renaming a set of files loses track of which it has done.
+
+    Run d6297b2f's `test_round_0` renamed test files one at a time and spent
+    two `move_artifact` calls on sources it had already moved, each answered
+    only "does not exist. Run `ls`" - a call to learn something it did itself.
+    """
+    move_approved_artifact(project, "todo/loadTasks.test.mjs", "todo/loadTasks.test.js")
+
+    with pytest.raises(RepositoryToolError) as raised:
+        move_approved_artifact(project, "todo/loadTasks.test.mjs", "todo/loadTasks.test.js")
+
+    assert "already moved it" in str(raised.value)
+    assert "nothing to do" in str(raised.value)
+
+
+def test_moving_it_somewhere_else_names_where_it_went(project: Path):
+    move_approved_artifact(project, "todo/loadTasks.test.mjs", "todo/loadTasks.test.js")
+
+    with pytest.raises(RepositoryToolError) as raised:
+        move_approved_artifact(project, "todo/loadTasks.test.mjs", "todo/other.test.js")
+
+    assert "moved it to 'todo/loadTasks.test.js'" in str(raised.value)
+
+
+def test_a_source_that_never_existed_still_says_to_look(project: Path):
+    with pytest.raises(RepositoryToolError) as raised:
+        move_approved_artifact(project, "todo/never.test.js", "todo/other.test.js")
+
+    assert "Run `ls`" in str(raised.value)

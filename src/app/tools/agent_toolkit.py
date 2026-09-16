@@ -135,6 +135,53 @@ def build_sprint_history_tool(repo_root: str) -> BaseTool:
     return changed_since_sprint
 
 
+def _top_level_keys(text: str) -> list[str]:
+    """Keys at the outermost level of a JSON object, parsed or not.
+
+    Written as a scan rather than `json.loads` because the case that matters
+    most is the one that does not parse. run-9f617c73 wrote a 3,344-byte answer
+    that ended `...}] }` - truncated, almost certainly against the output
+    ceiling - so `json.loads` raised, the check returned "not the answer", and
+    the write went through. A model that ran out of room mid-answer is exactly
+    the one about to write it again.
+
+    Depth-aware, so `verification: [{"command": ...}]` does not contribute
+    `command`. String-aware, so a brace inside a value does not shift the
+    depth.
+    """
+    keys: list[str] = []
+    depth = 0
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if char == '"':
+            start = index + 1
+            index += 1
+            while index < length:
+                if text[index] == "\\":
+                    index += 2
+                    continue
+                if text[index] == '"':
+                    break
+                index += 1
+            word = text[start:index]
+            index += 1
+            if depth == 1:
+                probe = index
+                while probe < length and text[probe] in " \t\r\n":
+                    probe += 1
+                if probe < length and text[probe] == ":":
+                    keys.append(word)
+            continue
+        if char in "{[":
+            depth += 1
+        elif char in "}]":
+            depth -= 1
+        index += 1
+    return keys
+
+
 def _is_the_stages_own_answer(content: str, answer_fields: frozenset[str]) -> bool:
     """Whether this content is the structured response, saved as a file.
 
@@ -160,14 +207,10 @@ def _is_the_stages_own_answer(content: str, answer_fields: frozenset[str]) -> bo
     text = (content or "").strip()
     if not text.startswith("{"):
         return False
-    try:
-        payload = json.loads(text)
-    except ValueError:
+    keys = _top_level_keys(text)
+    if len(keys) < 2:
         return False
-    if not isinstance(payload, dict) or len(payload) < 2:
-        return False
-    keys = set(payload)
-    return keys <= answer_fields
+    return set(keys) <= answer_fields
 
 
 def build_artifact_write_tool(

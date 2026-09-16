@@ -22,7 +22,12 @@ import pytest
 
 from app.tools.agent_toolkit import build_artifact_write_tool
 
-FIELDS = frozenset({"changed_files", "decisions", "tests", "blockers"})
+# The real specialist schema, so the fixture cannot pass a case the
+# production one would fail.
+FIELDS = frozenset(
+    {"changed_files", "decisions", "tests", "blockers", "verification",
+     "defects", "documentation", "risks"}
+)
 
 
 @pytest.fixture
@@ -110,3 +115,57 @@ def test_every_writing_role_gets_the_check() -> None:
     assert "writing_tools(resolved_repo_root, _answer_fields(response_format))" in (
         inspect.getsource(create_role_agent)
     )
+
+
+def test_a_truncated_answer_is_still_recognised(write) -> None:
+    """The case that matters most is the one that does not parse.
+
+    run-9f617c73 wrote a 3,344-byte answer that ended `...}] }` - truncated,
+    almost certainly against the output ceiling. `json.loads` raised, the check
+    read that as "not the answer", and the write went through. It was then
+    written four more times and the run died at 627 events.
+
+    A model that ran out of room mid-answer is exactly the one about to write
+    it again.
+    """
+    truncated = (
+        '{"changed_files":["app.js"],"decisions":["did a thing"],'
+        '"tests":[],"verification":[{"command":["node","--test"],'
+        '"returncode":1,"stdout":"TAP version 13'
+    )
+
+    result = write.invoke({"relative_path": "docs/structured_response.json", "content": truncated})
+
+    assert "structured response" in result["error"]
+
+
+def test_nested_keys_do_not_count(write) -> None:
+    """`verification: [{"command": ...}]` must not contribute `command`.
+
+    Without depth-awareness the scan reads every quoted key in the file, and a
+    data file with one schema word nested anywhere would be refused.
+    """
+    from app.tools.agent_toolkit import _top_level_keys
+
+    text = '{"data":[{"tests":1,"decisions":2}],"other":{"blockers":3}}'
+
+    assert _top_level_keys(text) == ["data", "other"]
+
+    result = write.invoke({"relative_path": "p/data.json", "content": text})
+    assert "error" not in result
+
+
+def test_a_brace_inside_a_string_does_not_shift_the_depth() -> None:
+    from app.tools.agent_toolkit import _top_level_keys
+
+    text = '{"decisions":["it printed { and } oddly"],"tests":[]}'
+
+    assert _top_level_keys(text) == ["decisions", "tests"]
+
+
+def test_an_escaped_quote_inside_a_value_is_survived() -> None:
+    from app.tools.agent_toolkit import _top_level_keys
+
+    text = '{"decisions":["he said \\\\"no\\\\" twice"],"tests":[]}'
+
+    assert _top_level_keys(text) == ["decisions", "tests"]

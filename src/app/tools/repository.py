@@ -271,13 +271,17 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
             f"Requested path is not a file: {relative_path}"
             + _what_that_directory_holds(target)
         )
-    from app.tools.seen_content import remember
+    from app.tools.seen_content import record_state, remember
 
     content = target.read_text(encoding="utf-8")
     # So a later edit whose `find` no longer matches can say the file changed
     # underneath it, rather than leaving the model to infer that from a diff.
     # See `app.tools.seen_content`.
     remember(relative_path, content)
+    # And so an edit that returns the file to how it was found is recognised.
+    # Without this the starting state is absent from the history and the first
+    # thing a stage undoes is the one thing it is not told about.
+    record_state(relative_path, content)
     return content
 
 
@@ -682,6 +686,30 @@ _MAX_DIFF_LINE = 160
 
 def _clip(line: str) -> str:
     return line if len(line) <= _MAX_DIFF_LINE else line[:_MAX_DIFF_LINE] + " ..."
+
+
+def _an_edit_that_undoes_an_earlier_one(relative_path: str, content: str) -> str:
+    """Note that this edit put the file back where it already was, or "".
+
+    Bookkeeping only: a failure here must not cost a successful edit its
+    result. See `app.tools.seen_content.returned_to_an_earlier_state`.
+    """
+    try:
+        from app.tools.seen_content import returned_to_an_earlier_state
+
+        if not returned_to_an_earlier_state(relative_path, content):
+            return ""
+    except Exception:  # noqa: BLE001 - no note is better than a failed edit
+        logger.debug("Could not check the edit history of %s", relative_path, exc_info=True)
+        return ""
+    return (
+        f"This edit put '{relative_path}' back into a state it already had earlier "
+        "in this stage - it undoes a change made here rather than moving past it. "
+        "Two edits that swap one passage back and forth make no progress and cost "
+        "a model call each. Read the file, decide which of the two versions is "
+        "right, and if the problem is not in this passage stop editing it and look "
+        "somewhere else."
+    )
 
 
 def _changed_underneath(relative_path: str, original: str) -> bool:
@@ -1124,17 +1152,30 @@ def _edited(
         _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
+    landed = ""
+    try:
+        landed = target.read_text(encoding="utf-8")
+    except OSError:  # noqa: PERF203 - the file was just written; this is paranoia
+        logger.debug("Could not read back %s after editing it", relative_path)
+    # Checked before the new state is recorded, or every edit looks like a
+    # return to the state it just created.
+    notes.append(_an_edit_that_undoes_an_earlier_one(relative_path, landed) if landed else "")
+
     joined = " ".join(n for n in notes if n)
     if joined:
         result["note"] = joined
     # The stage has now seen the file it just changed, so a following edit is
     # judged against this and not against the read before it.
-    try:
-        from app.tools.seen_content import remember
+    if landed:
+        try:
+            from app.tools.seen_content import record_state, remember
 
-        remember(relative_path, target.read_text(encoding="utf-8"))
-    except Exception:  # noqa: BLE001 - a bookkeeping miss must not fail an edit
-        logger.debug("Could not record the edited content of %s", relative_path, exc_info=True)
+            remember(relative_path, landed)
+            record_state(relative_path, landed)
+        except Exception:  # noqa: BLE001 - a bookkeeping miss must not fail an edit
+            logger.debug(
+                "Could not record the edited content of %s", relative_path, exc_info=True
+            )
     return result
 
 
@@ -2428,9 +2469,10 @@ def write_approved_artifact(
     # it, and the stage then edited against its own text. See
     # `app.tools.seen_content`.
     try:
-        from app.tools.seen_content import remember
+        from app.tools.seen_content import record_state, remember
 
         remember(relative_path, content)
+        record_state(relative_path, content)
     except Exception:  # noqa: BLE001 - a bookkeeping miss must not fail a write
         logger.debug("Could not record the written content of %s", relative_path, exc_info=True)
 

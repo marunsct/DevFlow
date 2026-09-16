@@ -42,6 +42,11 @@ from app.agents.stage_memory import store
 MAX_FILES_REMEMBERED = 128
 
 _PURPOSE = "content last seen by this stage"
+_HISTORY = "every state this stage has left a file in"
+
+#: States remembered per file before the oldest is dropped. An oscillation
+#: shows up within two or three, so this is a ceiling, not a working limit.
+MAX_STATES_PER_FILE = 12
 
 
 def _digest(content: str) -> str:
@@ -54,6 +59,40 @@ def remember(relative_path: str, content: str) -> None:
     seen[str(relative_path)] = _digest(content)
     while len(seen) > MAX_FILES_REMEMBERED:
         seen.pop(next(iter(seen)))
+
+
+def record_state(relative_path: str, content: str) -> None:
+    """Remember that this stage has left `relative_path` holding `content`."""
+    history = store(_HISTORY, _FALLBACK_HISTORY)
+    states = history.setdefault(str(relative_path), [])
+    digest = _digest(content)
+    if digest in states:
+        states.remove(digest)
+    states.append(digest)
+    del states[:-MAX_STATES_PER_FILE]
+
+
+def returned_to_an_earlier_state(relative_path: str, content: str) -> bool:
+    """True when this stage has put the file back into a state it already had.
+
+    An edit that undoes an earlier edit is not caught by anything else here.
+    The repeat guard wants byte-identical consecutive calls; the no-op refusal
+    wants `replace` to equal what it replaces; both see a *successful* edit
+    with new arguments and let it through. The file oscillates and the stage
+    spends its budget.
+
+    Measured on run 8d28ee3f, `defect_fix_1_0`, which made 67 tool calls
+    against a 40-call budget - 23 edits and 16 reads of one file. Its edits to
+    `app.js` ran: `console.log(...)` -> `global.console.log(...)` ->
+    `console.log(...)` -> `console.log(...)`, each reported "edited", toggling
+    one line while the run paid for every turn.
+
+    The most recent state is excluded: writing a file the content it already
+    has is a no-op, which `_write_unless_it_changes_nothing` answers better.
+    """
+    history = store(_HISTORY, _FALLBACK_HISTORY)
+    states = history.get(str(relative_path)) or []
+    return _digest(content) in states[:-1]
 
 
 def changed_since_seen(relative_path: str, content: str) -> bool:
@@ -75,14 +114,22 @@ def changed_since_seen(relative_path: str, content: str) -> bool:
 _FALLBACK: dict[str, str] = {}
 
 
+#: The history's counterpart to `_FALLBACK`, shared for the same reason.
+_FALLBACK_HISTORY: dict[str, list[str]] = {}
+
+
 def forget_everything() -> None:
-    """Drop the no-stage fallback. For tests, which must not leak into each other."""
+    """Drop the no-stage fallbacks. For tests, which must not leak into each other."""
     _FALLBACK.clear()
+    _FALLBACK_HISTORY.clear()
 
 
 __all__ = [
     "MAX_FILES_REMEMBERED",
+    "MAX_STATES_PER_FILE",
     "changed_since_seen",
     "forget_everything",
+    "record_state",
     "remember",
+    "returned_to_an_earlier_state",
 ]

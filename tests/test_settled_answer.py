@@ -698,3 +698,57 @@ def test_a_schema_failure_is_still_logged_as_one(caplog) -> None:
 
     assert "does not satisfy its schema" in caplog.text
     assert "close to its step ceiling" not in caplog.text
+
+
+def test_the_warning_arrives_with_room_left_to_act() -> None:
+    """The unit mismatch that made the fraction meaningless.
+
+    The ceiling is `recursion_limit`, which counts supersteps; the warning
+    counted AI messages against it. LangGraph runs the model node and the tools
+    node separately, so a turn costs two supersteps, and `int(60 * 0.7)` = 42
+    *messages* is 84 supersteps - past a ceiling of 60, so the warning could
+    only fire at the very end or not at all.
+
+    Measured on run-05c46508's `specialist_testing_2`: 51 tool calls across 42
+    AI messages, dead at the 60-step ceiling, and `close to its step ceiling`
+    appears zero times in that run's log.
+    """
+    from app.agents.settled_answer import _running_out_of_room
+
+    # Twenty-one model calls is 42 supersteps of 60: seventy per cent gone,
+    # with nine calls still in hand.
+    at_seventy_percent = [AIMessage(content=f"s{i}", id=f"m{i}") for i in range(21)]
+
+    assert _running_out_of_room(at_seventy_percent, 60) != ""
+
+
+def test_the_warning_uses_the_real_step_counter_when_there_is_one(monkeypatch) -> None:
+    """LangGraph publishes the number; converting from messages is the fallback.
+
+    Verified against a live two-call agent, which reported `langgraph_step` 1
+    then 3 - the measured two-per-turn relationship the fallback encodes.
+    """
+    import langgraph.config
+
+    from app.agents.settled_answer import _supersteps_used
+
+    monkeypatch.setattr(
+        langgraph.config, "get_config", lambda: {"metadata": {"langgraph_step": 55}}
+    )
+
+    # One message, but the graph says fifty-five supersteps are gone.
+    assert _supersteps_used([AIMessage(content="x", id="m")]) == 55
+
+
+def test_it_falls_back_to_messages_outside_a_graph_run(monkeypatch) -> None:
+    import langgraph.config
+
+    from app.agents.settled_answer import SUPERSTEPS_PER_MODEL_CALL, _supersteps_used
+
+    def unavailable():
+        raise RuntimeError("not inside a graph run")
+
+    monkeypatch.setattr(langgraph.config, "get_config", unavailable)
+    messages = [AIMessage(content=f"{i}", id=f"m{i}") for i in range(7)]
+
+    assert _supersteps_used(messages) == 7 * SUPERSTEPS_PER_MODEL_CALL

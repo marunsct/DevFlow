@@ -246,6 +246,45 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
     return None
 
 
+#: Supersteps one model call consumes. LangGraph counts the model node and the
+#: tools node separately, so a ReAct turn advances the step counter by two -
+#: measured directly, not assumed: a two-call agent reported `langgraph_step`
+#: 1 then 3.
+SUPERSTEPS_PER_MODEL_CALL = 2
+
+
+def _supersteps_used(messages: list[Any]) -> int:
+    """How much of the stage's ceiling is gone, in the unit the ceiling counts.
+
+    The ceiling is `recursion_limit`, which counts *supersteps*. This warning
+    counted AI messages against it, and the two are not the same unit - so the
+    fraction meant nothing and the warning fired at the wrong time or never.
+
+    Measured on run-05c46508's `specialist_testing_2`: 51 tool calls in 42 AI
+    messages (some turns call several tools at once), and the stage died at the
+    60-step ceiling. The threshold was `int(60 * 0.7)` = 42 *messages*, which
+    that stage reached on its very last call - so a warning meant to arrive
+    with room to act arrived with none, and the run's log recorded it firing
+    zero times while a stage died of exactly what it warns about.
+
+    LangGraph publishes the real number as `langgraph_step` in the running
+    config, so ask for it rather than converting. The fallback matters only
+    outside a graph run - in tests, and in any call site that builds the
+    middleware without one - where two supersteps per AI message is the
+    measured relationship.
+    """
+    try:
+        from langgraph.config import get_config
+
+        step = (get_config() or {}).get("metadata", {}).get("langgraph_step")
+        if isinstance(step, int) and step > 0:
+            return step
+    except Exception:  # noqa: BLE001 - outside a graph run, fall back
+        pass
+    ai_messages = sum(1 for m in messages if getattr(m, "type", None) == "ai")
+    return ai_messages * SUPERSTEPS_PER_MODEL_CALL
+
+
 def _running_out_of_room(messages: list[Any], limit: int) -> str:
     """Tell a stage it is close to its step ceiling, or "" when it is not.
 
@@ -266,7 +305,7 @@ def _running_out_of_room(messages: list[Any], limit: int) -> str:
     before anything stopped it. Telling the stage instead costs nothing and
     asks for the one thing that actually helps: return what you have.
     """
-    used = sum(1 for m in messages if getattr(m, "type", None) == "ai")
+    used = _supersteps_used(messages)
     if limit <= 0 or used < int(limit * BUDGET_WARNING_FRACTION):
         return ""
     return (

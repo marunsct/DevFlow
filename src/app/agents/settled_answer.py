@@ -315,43 +315,44 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
     return None
 
 
-#: Supersteps one model call consumes. LangGraph counts the model node and the
-#: tools node separately, so a ReAct turn advances the step counter by two -
-#: measured directly, not assumed: a two-call agent reported `langgraph_step`
-#: 1 then 3.
-SUPERSTEPS_PER_MODEL_CALL = 2
+#: Model calls a stage may make before the workflow's own guards would stop it.
+#: Measured across run-0deeb8bf and run-d3965815: the median stage costs 3 to 8
+#: calls, the ninetieth percentile 16 to 27, and the worst healthy stage seen is
+#: 37. A stage past forty is not working, it is circling.
+MODEL_CALLS_PER_STAGE = 40
 
 
-def _supersteps_used(messages: list[Any]) -> int:
-    """How much of the stage's ceiling is gone, in the unit the ceiling counts.
+def _model_calls_used(messages: list[Any]) -> int:
+    """How many model calls this stage has cost, counted from its own thread.
 
-    The ceiling is `recursion_limit`, which counts *supersteps*. This warning
-    counted AI messages against it, and the two are not the same unit - so the
-    fraction meant nothing and the warning fired at the wrong time or never.
+    This used to read `langgraph_step` from the running config and compare it
+    to `recursion_limit`, on the reasoning that LangGraph publishes the real
+    number so there is no need to convert. Both halves of that were wrong in
+    the same direction, and the error is visible in run-d3965815.
 
-    Measured on run-05c46508's `specialist_testing_2`: 51 tool calls in 42 AI
-    messages (some turns call several tools at once), and the stage died at the
-    60-step ceiling. The threshold was `int(60 * 0.7)` = 42 *messages*, which
-    that stage reached on its very last call - so a warning meant to arrive
-    with room to act arrived with none, and the run's log recorded it firing
-    zero times while a stage died of exactly what it warns about.
+    `recursion_limit` bounds supersteps *per invoke*, and with `auto_approve`
+    every gated tool interrupts and resumes through a fresh
+    `agent.invoke(Command(resume=...))`. So the ceiling is re-armed on each
+    resume while `langgraph_step` keeps climbing from the checkpoint. The two
+    numbers stopped describing the same thing the moment a stage wrote a file.
 
-    LangGraph publishes the real number as `langgraph_step` in the running
-    config, so ask for it rather than converting. The fallback matters only
-    outside a graph run - in tests, and in any call site that builds the
-    middleware without one - where two supersteps per AI message is the
-    measured relationship.
+    Measured directly: `specialist_ui_ux_0` was warned at 42, 46, 50, 54, 58
+    and 62 "of the 60 steps this stage is allowed", sailed past the ceiling it
+    was being warned about, and finished normally. `specialist_backend_2`
+    reached 66. Neither raised `GraphRecursionError`, because neither single
+    invoke came close to sixty supersteps.
+
+    The cost of that was not a wrong number in a log. The warning says "stop
+    exploring and return your structured response now", and it was reaching
+    healthy stages from their eleventh call onward - six of `specialist_ui_ux_0`'s
+    seventeen calls carried it. A guard against circling was pushing working
+    stages to cut their work short.
+
+    Model calls are the unit the warning's own text is about, they survive an
+    approval resume because the messages do, and they need no agreement with
+    LangGraph's internals.
     """
-    try:
-        from langgraph.config import get_config
-
-        step = (get_config() or {}).get("metadata", {}).get("langgraph_step")
-        if isinstance(step, int) and step > 0:
-            return step
-    except Exception:  # noqa: BLE001 - outside a graph run, fall back
-        pass
-    ai_messages = sum(1 for m in messages if getattr(m, "type", None) == "ai")
-    return ai_messages * SUPERSTEPS_PER_MODEL_CALL
+    return sum(1 for message in messages if getattr(message, "type", None) == "ai")
 
 
 def _running_out_of_room(messages: list[Any], limit: int) -> str:
@@ -374,15 +375,16 @@ def _running_out_of_room(messages: list[Any], limit: int) -> str:
     before anything stopped it. Telling the stage instead costs nothing and
     asks for the one thing that actually helps: return what you have.
     """
-    used = _supersteps_used(messages)
+    used = _model_calls_used(messages)
     if limit <= 0 or used < int(limit * BUDGET_WARNING_FRACTION):
         return ""
     return (
-        f"You have used about {used} of the {limit} steps this stage is allowed. "
-        "When they run out the stage is stopped and started again from an empty "
-        "conversation, losing everything you have read and worked out. Stop "
-        "exploring and return your structured response now, with what you have. "
-        "An answer that is complete but imperfect is worth far more than none."
+        f"You have made about {used} of the {limit} model calls this stage is "
+        "allowed. When they run out the stage is stopped and started again from "
+        "an empty conversation, losing everything you have read and worked out. "
+        "Stop exploring and return your structured response now, with what you "
+        "have. An answer that is complete but imperfect is worth far more than "
+        "none."
     )
 
 
@@ -437,8 +439,8 @@ def build_settled_answer_middleware(
                     correction = _running_out_of_room(messages, step_limit)
                     if correction:
                         logger.info(
-                            "Stage %s is close to its step ceiling; telling it to "
-                            "return what it has",
+                            "Stage %s is close to its model-call budget; telling "
+                            "it to return what it has",
                             stage_name or "?",
                         )
                 if not correction:
@@ -506,6 +508,7 @@ def build_settled_answer_middleware(
 __all__ = [
     "ANSWER_LOOKBACK_MESSAGES",
     "BUDGET_WARNING_FRACTION",
+    "MODEL_CALLS_PER_STAGE",
     "MAX_REPORTED_ERRORS",
     "MUTATING_TOOLS",
     "build_settled_answer_middleware",

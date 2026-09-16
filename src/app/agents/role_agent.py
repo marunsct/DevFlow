@@ -28,9 +28,13 @@ from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.workspace_backend import WorkspaceBackend
 from app.agents.settled_answer import build_settled_answer_middleware
 
-#: Mirrors `app.graph.workflow.INNER_AGENT_RECURSION_LIMIT`, imported lazily
-#: there to avoid a cycle. A stage is warned as it approaches this.
-INNER_AGENT_STEP_LIMIT = 60
+#: `app.graph.workflow.INNER_AGENT_RECURSION_LIMIT` is the hard ceiling, in
+#: supersteps, on a single `invoke`. It is not what a stage should be warned
+#: about: with `auto_approve` every gated tool interrupts and resumes through a
+#: fresh invoke, so that ceiling is re-armed each time and a stage crosses it
+#: without ever meeting it. The budget worth warning about is the one that
+#: actually accumulates - see `app.agents.settled_answer._model_calls_used`.
+from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
 from app.agents.repeated_queries import build_repeated_query_middleware
 from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
@@ -588,7 +592,7 @@ def create_role_agent(
         # no response format has nothing to be finished with, so there is
         # nothing for this to decide. See `app.agents.settled_answer`.
         *(
-            [build_settled_answer_middleware(response_format, name, INNER_AGENT_STEP_LIMIT)]
+            [build_settled_answer_middleware(response_format, name, MODEL_CALLS_PER_STAGE)]
             if response_format is not None
             else []
         ),

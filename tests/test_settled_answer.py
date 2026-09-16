@@ -680,7 +680,7 @@ def test_a_stage_nearing_its_ceiling_is_told_to_finish() -> None:
 
     warning = _running_out_of_room(nearly, 60)
 
-    assert "of the 60 steps" in warning
+    assert "of the 60 model calls" in warning
     assert "return your structured response now" in warning
     # It must say what is lost, or "hurry up" is just noise.
     assert "losing everything you have read" in warning
@@ -781,10 +781,10 @@ def test_a_budget_warning_is_not_logged_as_a_schema_failure(caplog) -> None:
     with caplog.at_level(logging.INFO):
         messages = _run(middleware, _budget_request(50))
 
-    assert "steps this stage is allowed" in str(messages[-1])
+    assert "model calls this stage is allowed" in str(messages[-1])
     assert "does not satisfy its schema" not in caplog.text
     assert "something.unrelated" not in caplog.text
-    assert "close to its step ceiling" in caplog.text
+    assert "close to its model-call budget" in caplog.text
 
 
 def test_a_schema_failure_is_still_logged_as_one(caplog) -> None:
@@ -815,58 +815,84 @@ def test_a_schema_failure_is_still_logged_as_one(caplog) -> None:
         _run(middleware, request)
 
     assert "does not satisfy its schema" in caplog.text
-    assert "close to its step ceiling" not in caplog.text
+    assert "close to its model-call budget" not in caplog.text
 
 
 def test_the_warning_arrives_with_room_left_to_act() -> None:
-    """The unit mismatch that made the fraction meaningless.
+    """Early enough to be actable, late enough not to be noise.
 
-    The ceiling is `recursion_limit`, which counts supersteps; the warning
-    counted AI messages against it. LangGraph runs the model node and the tools
-    node separately, so a turn costs two supersteps, and `int(60 * 0.7)` = 42
-    *messages* is 84 supersteps - past a ceiling of 60, so the warning could
-    only fire at the very end or not at all.
+    This has been got wrong twice in opposite directions. First the warning
+    counted AI messages against a superstep ceiling, so seventy per cent of the
+    budget was already past it and the warning fired at the very end or never -
+    run-05c46508's `specialist_testing_2` died at the ceiling with `close to
+    its step ceiling` appearing zero times in the log. Then it read
+    `langgraph_step`, which keeps climbing across approval resumes while the
+    ceiling is re-armed, so it fired from a healthy stage's eleventh call
+    onward.
 
-    Measured on run-05c46508's `specialist_testing_2`: 51 tool calls across 42
-    AI messages, dead at the 60-step ceiling, and `close to its step ceiling`
-    appears zero times in that run's log.
+    Both are the same mistake: measuring the stage in a unit that is not the
+    one running out.
     """
-    from app.agents.settled_answer import _running_out_of_room
+    from app.agents.settled_answer import BUDGET_WARNING_FRACTION, _running_out_of_room
 
-    # Twenty-one model calls is 42 supersteps of 60: seventy per cent gone,
-    # with nine calls still in hand.
-    at_seventy_percent = [AIMessage(content=f"s{i}", id=f"m{i}") for i in range(21)]
+    budget = 40
+    at_threshold = int(budget * BUDGET_WARNING_FRACTION)
 
-    assert _running_out_of_room(at_seventy_percent, 60) != ""
+    assert _running_out_of_room(
+        [AIMessage(content=f"s{i}", id=f"m{i}") for i in range(at_threshold - 1)], budget
+    ) == ""
+    warning = _running_out_of_room(
+        [AIMessage(content=f"s{i}", id=f"m{i}") for i in range(at_threshold)], budget
+    )
+    assert warning != ""
+    # Room left to act on it, which is the whole point of warning rather than
+    # stopping.
+    assert budget - at_threshold >= 10
 
 
-def test_the_warning_uses_the_real_step_counter_when_there_is_one(monkeypatch) -> None:
-    """LangGraph publishes the number; converting from messages is the fallback.
+def test_the_budget_is_counted_in_model_calls(monkeypatch) -> None:
+    """Not in supersteps, and not from `langgraph_step`.
 
-    Verified against a live two-call agent, which reported `langgraph_step` 1
-    then 3 - the measured two-per-turn relationship the fallback encodes.
+    `recursion_limit` bounds supersteps per *invoke*, and with auto-approve
+    every gated tool interrupts and resumes through a fresh invoke - so that
+    ceiling is re-armed each time while `langgraph_step` keeps climbing from
+    the checkpoint. Reading it made the warning describe a ceiling the stage
+    was not approaching.
     """
     import langgraph.config
 
-    from app.agents.settled_answer import _supersteps_used
+    from app.agents.settled_answer import _model_calls_used
 
     monkeypatch.setattr(
         langgraph.config, "get_config", lambda: {"metadata": {"langgraph_step": 55}}
     )
-
-    # One message, but the graph says fifty-five supersteps are gone.
-    assert _supersteps_used([AIMessage(content="x", id="m")]) == 55
-
-
-def test_it_falls_back_to_messages_outside_a_graph_run(monkeypatch) -> None:
-    import langgraph.config
-
-    from app.agents.settled_answer import SUPERSTEPS_PER_MODEL_CALL, _supersteps_used
-
-    def unavailable():
-        raise RuntimeError("not inside a graph run")
-
-    monkeypatch.setattr(langgraph.config, "get_config", unavailable)
     messages = [AIMessage(content=f"{i}", id=f"m{i}") for i in range(7)]
+    messages.append(HumanMessage(content="not a model call"))
 
-    assert _supersteps_used(messages) == 7 * SUPERSTEPS_PER_MODEL_CALL
+    assert _model_calls_used(messages) == 7
+
+
+def test_a_healthy_stage_is_never_nagged(monkeypatch) -> None:
+    """The cost of the old unit, measured on run-d3965815.
+
+    `specialist_ui_ux_0` was warned at 42, 46, 50, 54, 58 and 62 "of the 60
+    steps this stage is allowed", passed the ceiling it was being warned
+    about, and finished normally. Six of its seventeen calls carried a message
+    telling it to stop exploring and answer with what it had. The measured
+    ninetieth percentile across two runs is 16 to 27 calls.
+    """
+    from app.agents.settled_answer import MODEL_CALLS_PER_STAGE, _running_out_of_room
+
+    for calls in (11, 17, 27):
+        messages = [AIMessage(content=f"{i}", id=f"m{i}") for i in range(calls)]
+        assert _running_out_of_room(messages, MODEL_CALLS_PER_STAGE) == "", calls
+
+
+def test_a_stage_that_is_circling_still_hears_about_it() -> None:
+    from app.agents.settled_answer import MODEL_CALLS_PER_STAGE, _running_out_of_room
+
+    messages = [AIMessage(content=f"{i}", id=f"m{i}") for i in range(31)]
+
+    warning = _running_out_of_room(messages, MODEL_CALLS_PER_STAGE)
+
+    assert "31 of the 40 model calls" in warning

@@ -142,3 +142,16 @@ def test_a_successful_repeat_still_says_returned() -> None:
 
     assert "returned exactly what it returned" in third
     assert "failed the same way" not in third
+
+
+def test_the_query_notice_also_comes_first() -> None:
+    """Same reason as the read notice: it must be seen to change the next call."""
+    middleware = build_repeated_query_middleware()
+    listing = "\n".join(f"file{i}.js" for i in range(300))
+
+    for _ in range(2):
+        _call(middleware, "ls", {"path": "/p"}, listing)
+    third = _call(middleware, "ls", {"path": "/p"}, listing)
+
+    assert third.index("returned exactly what it returned") < 200
+    assert "file299.js" in third

@@ -433,3 +433,38 @@ def test_a_file_it_cannot_stat_is_never_called_unchanged(tmp_path) -> None:
     assert backend._note_if_repeated("/nowhere.js", "text") == ""
     assert backend._note_if_repeated("/nowhere.js", "text") == ""
     assert backend._note_if_repeated("/nowhere.js", "text") == ""
+
+
+def test_the_notice_comes_before_the_content(tmp_path) -> None:
+    """A notice after the payload is read last or not at all.
+
+    Measured on run-3c0c31d2: `technical_lead` read one 3,847-character
+    `milestone_plan.md` seven times, and the notice fired from the second read
+    onward - appended after all 3,847 characters. Six of those seven calls were
+    made having already been told.
+
+    The notice exists to change the *next* call, so it belongs where the model
+    starts rather than where it stops.
+    """
+    body = "\n".join(f"- criterion {i}" for i in range(200))
+    (tmp_path / "plan.md").write_text(body, encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    backend.read("/plan.md")
+    backend.read("/plan.md")
+    content = backend.read("/plan.md").file_data["content"]
+
+    assert "same bytes" in content
+    assert content.index("same bytes") < 200, "the notice must be at the top"
+    # And the file is still all there.
+    assert "- criterion 199" in content
+
+
+def test_the_content_is_still_complete_when_a_notice_is_added(tmp_path) -> None:
+    (tmp_path / "a.js").write_text("line one\nline two\nline three\n", encoding="utf-8")
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    for _ in range(4):
+        content = backend.read("/a.js").file_data["content"]
+        for line in ("line one", "line two", "line three"):
+            assert line in content

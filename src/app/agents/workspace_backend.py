@@ -337,7 +337,14 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 )
         if not note:
             return result
-        return replace(result, file_data={**data, "content": content + note})
+        # Ahead of the content, not after it. A file of any size puts an
+        # appended note thousands of characters into the payload, and
+        # run-3c0c31d2's `technical_lead` read one 3,847-character
+        # `milestone_plan.md` seven times with the notice firing from the
+        # second read onward. Being told at the end of what you are reading is
+        # not being told: the notice exists to change the *next* call, so it
+        # belongs where the model starts.
+        return replace(result, file_data={**data, "content": note.strip() + "\n\n" + content})
 
     def ls(self, path: str) -> Any:
         result = super().ls(path)

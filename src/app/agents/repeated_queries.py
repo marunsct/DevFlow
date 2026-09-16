@@ -56,7 +56,12 @@ def build_repeated_query_middleware() -> Any:
             if not note:
                 return result
             try:
-                return result.model_copy(update={"content": result.content + note})
+                # Ahead of the result, for the reason in
+                # `workspace_backend.read`: a notice after the payload is read
+                # last or not at all, and it exists to change the next call.
+                return result.model_copy(
+                    update={"content": note.strip() + "\n\n" + result.content}
+                )
             except Exception:  # noqa: BLE001 - a Command, or some other shape
                 return result
 

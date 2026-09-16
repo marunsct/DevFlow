@@ -1116,10 +1116,17 @@ def _discovery_note(relative_path: str, content: str) -> str:
     simply absent, and every later stage reads a green run that never
     executed it. See `app.analysis.test_discovery`.
     """
-    from app.analysis.test_discovery import undiscoverable_test
+    from app.analysis.test_discovery import (
+        tests_nothing_of_the_project,
+        undiscoverable_test,
+    )
 
     try:
-        return undiscoverable_test(relative_path, content) or ""
+        notes = [
+            undiscoverable_test(relative_path, content),
+            tests_nothing_of_the_project(relative_path, content),
+        ]
+        return " ".join(note for note in notes if note)
     except Exception:  # noqa: BLE001 - never fail a write over a hint
         return ""
 

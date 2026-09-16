@@ -93,4 +93,53 @@ def undiscoverable_test(relative_path: str, content: str) -> str | None:
     )
 
 
-__all__ = ["undiscoverable_test"]
+#: A relative import - `./app.js`, `../src/store.mjs`. The one thing a test of
+#: this project's code always has and a test of its documentation never does.
+_RELATIVE_IMPORT = re.compile(
+    r"""(?:from|import)\s*\(?\s*['"](\.[^'"]*)['"]"""
+    r"""|require\(\s*['"](\.[^'"]*)['"]"""
+)
+
+
+def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None:
+    """Why this test file tests no project code, or None if it does.
+
+    run-84e05d4b wrote `simple-to-do-list-app/app.test.js` with four passing
+    tests:
+
+        package.json has correct name
+        README.md exists and contains title
+        docs folder contains required markdown files
+        README contains Features section
+
+    Four green assertions, none of which touched a line of application code -
+    there was none in the project to touch. The test round passed, the security
+    review passed, and the milestone review raised two minor issues about
+    paths. A run can reach its end this way having built nothing, with every
+    gate reporting success, because every gate asks whether the tests pass and
+    none asks what they test.
+
+    The signal is exact: a test of this project's code imports this project's
+    code. `node:test`, `assert`, `fs` and `path` are the standard library; a
+    file that imports only those and reads files by name is asserting about
+    the repository, not exercising it.
+
+    A note, not a refusal. A smoke test that boots a built artifact and pokes
+    it over HTTP legitimately imports nothing relative, and refusing that would
+    be worse than letting a documentation test through.
+    """
+    if not _DECLARES_TESTS.search(content or ""):
+        return None
+    if _RELATIVE_IMPORT.search(content):
+        return None
+    return (
+        "This file declares tests and imports nothing from the project, so it "
+        "cannot be exercising any of its code - `node:test`, `assert`, `fs` and "
+        "`path` are the standard library. Tests that only read files by name "
+        "assert that the repository looks a certain way, which passes whether "
+        "or not the product works. Import the module under test "
+        "(`import { addTask } from './app.js'`) and assert on what it does."
+    )
+
+
+__all__ = ["tests_nothing_of_the_project", "undiscoverable_test"]

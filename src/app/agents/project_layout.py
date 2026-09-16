@@ -46,7 +46,14 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
   its own directory, with its own manifest and its own tests.
 - Tests live beside the code they test, inside the project. A suite at the
   workspace root is one the project's runner never collects.
-- Documents go in the workspace's `docs/`, never inside the project."""
+- Documents go in the workspace's `docs/`, never inside the project.
+- `docs/` already exists and the workflow maintains it. `product_intake.md`,
+  `technology_stack.md`, `technical_specification.md`, `sprint_plan.md`,
+  `milestone_plan.md`, `architecture_review.md`, `security_review.md`,
+  `milestone_review.md` and `tools_and_models.md` are each rendered from a
+  stage's structured response. Read them; never write, copy, move or recreate
+  them, and never copy `docs/` into the project. A second copy is stale the
+  moment that stage runs again, and writing one is refused."""
 
 #: What to tell an agent about where it is, instead of where the workspace is
 #: on the host. `product_manager` has carried this reasoning in a comment since

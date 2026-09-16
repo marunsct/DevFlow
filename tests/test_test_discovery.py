@@ -85,3 +85,72 @@ def test_the_note_reaches_the_write(tmp_path) -> None:
     result = write_approved_artifact(tmp_path, "todo-app/app.test_xss.mjs", NODE_TEST)
 
     assert "will not collect it" in (result.get("note") or "")
+
+
+# --- a test that tests nothing ---------------------------------------------
+
+
+DOCUMENTATION_TEST = """import { test } from 'node:test';
+import assert from 'assert';
+import fs from 'fs';
+import path from 'path';
+
+const __dirname = path.dirname(new URL(import.meta.url).pathname);
+
+test('package.json has correct name', () => {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8'));
+  assert.strictEqual(data.name, 'simple-to-do-list-app');
+});
+
+test('README.md exists and contains title', () => {
+  const content = fs.readFileSync(path.join(__dirname, 'README.md'), 'utf8');
+  assert.ok(content.includes('# Simple To-Do List App'));
+});
+"""
+
+
+def test_the_four_green_tests_from_run_84e05d4b_are_flagged() -> None:
+    """Four passing assertions, none touching a line of application code.
+
+    There was none in the project to touch. The test round passed, the security
+    review passed, and the milestone review raised two minor issues about
+    paths. Every gate asks whether the tests pass; none asked what they test.
+    """
+    from app.analysis.test_discovery import tests_nothing_of_the_project
+
+    note = tests_nothing_of_the_project("app.test.js", DOCUMENTATION_TEST)
+
+    assert note is not None
+    assert "imports nothing from the project" in note
+    assert "Import the module under test" in note
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "import test from 'node:test';\nimport { addTask } from './app.js';\n",
+        "import test from 'node:test';\nimport store from '../src/store.mjs';\n",
+        "const test = require('node:test');\nconst { addTask } = require('./app.js');\n",
+        "import test from 'node:test';\nconst mod = await import('./app.js');\n",
+    ],
+)
+def test_a_test_that_imports_the_code_is_left_alone(content: str) -> None:
+    from app.analysis.test_discovery import tests_nothing_of_the_project
+
+    assert tests_nothing_of_the_project("app.test.js", content) is None
+
+
+def test_a_file_that_is_not_a_test_is_left_alone() -> None:
+    from app.analysis.test_discovery import tests_nothing_of_the_project
+
+    assert tests_nothing_of_the_project("app.js", "export const a = 1;\n") is None
+
+
+def test_the_note_reaches_the_write_too(tmp_path) -> None:
+    from app.tools.repository import write_approved_artifact
+
+    write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
+
+    result = write_approved_artifact(tmp_path, "proj/app.test.js", DOCUMENTATION_TEST)
+
+    assert "imports nothing from the project" in (result.get("note") or "")

@@ -187,6 +187,17 @@ Responsibilities:
 - Give each delegated task a highly granular, scoped description and explicit acceptance
   criteria a Milestone Reviewer can check. You MUST instruct specialists to write complete,
   executable code and explicitly mandate that they compile/verify their code using terminal commands.
+- Every milestone must change what the product DOES. At least one delegated
+  task must add or change application code that a user or a caller would
+  notice. Creating directories, copying files and writing documentation are
+  not deliverable work: the workspace and its project directory already exist,
+  `docs/` is written by the workflow, and a milestone spent on them ships
+  nothing. Measured on run-84e05d4b, where an entire milestone was "create the
+  project directory", "copy the docs folder into it" and "initialise
+  package.json" - 163 model calls, a test round, a security review and a
+  milestone review, and the product had no application file at the end of it.
+  The tests written for that milestone asserted that README.md contained a
+  heading.
 - Record blockers explicitly instead of silently assuming they are resolved.
 
 {SCOPE_DISCIPLINE}

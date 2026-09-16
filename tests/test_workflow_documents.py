@@ -155,3 +155,66 @@ def test_the_refusal_names_the_channel_that_works(tmp_path) -> None:
     message = str(caught.value)
     assert "`blockers`" in message and "`risks`" in message and "`decisions`" in message
     assert "reaches nobody" in message
+
+
+# --- the way round the write refusal --------------------------------------
+
+
+def test_a_workflow_document_cannot_be_moved_out_of_the_way(tmp_path) -> None:
+    """How run-01f03ed9 got round the refusal.
+
+    It moved `docs/architecture_review.md` to `docs/old_architecture_review.md`,
+    which left the canonical path vacant, then wrote
+    `docs/architecture_review_new.md` - allowed, because the file it would have
+    superseded was no longer there. The workflow's own document was gone, and
+    every stage that read it in between found nothing.
+    """
+    from app.tools.repository import move_approved_artifact
+
+    write_approved_artifact(
+        tmp_path, "docs/architecture_review.md", "# review\n", by_the_workflow=True
+    )
+
+    with pytest.raises(RepositoryToolError) as caught:
+        move_approved_artifact(
+            tmp_path, "docs/architecture_review.md", "docs/old_architecture_review.md"
+        )
+
+    assert "written by the workflow" in str(caught.value)
+    assert "`blockers`" in str(caught.value)
+    assert (tmp_path / "docs" / "architecture_review.md").is_file()
+
+
+def test_nothing_can_be_moved_onto_a_workflow_document(tmp_path) -> None:
+    """The other direction overwrites it just as thoroughly."""
+    from app.tools.repository import move_approved_artifact
+
+    write_approved_artifact(tmp_path, "docs/sprint_plan.md", "# plan\n", by_the_workflow=True)
+    write_approved_artifact(tmp_path, "docs/notes.md", "# mine\n")
+
+    with pytest.raises(RepositoryToolError):
+        move_approved_artifact(tmp_path, "docs/notes.md", "docs/sprint_plan.md")
+
+    assert (tmp_path / "docs" / "sprint_plan.md").read_text() == "# plan\n"
+
+
+@pytest.mark.parametrize("name", sorted(WORKFLOW_DOCUMENTS))
+def test_a_workflow_document_cannot_be_deleted(tmp_path, name: str) -> None:
+    from app.tools.repository import delete_approved_artifact
+
+    write_approved_artifact(tmp_path, f"docs/{name}", "# generated\n", by_the_workflow=True)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        delete_approved_artifact(tmp_path, f"docs/{name}")
+
+    assert "rewrites it whole" in str(caught.value)
+    assert (tmp_path / "docs" / name).is_file()
+
+
+def test_an_ordinary_file_still_moves_and_deletes(tmp_path) -> None:
+    from app.tools.repository import delete_approved_artifact, move_approved_artifact
+
+    write_approved_artifact(tmp_path, "proj/a.js", "export const a = 1;\n")
+
+    assert move_approved_artifact(tmp_path, "proj/a.js", "proj/b.js")["status"] == "moved"
+    assert delete_approved_artifact(tmp_path, "proj/b.js")["status"]

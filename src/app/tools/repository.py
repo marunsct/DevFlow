@@ -2369,6 +2369,15 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
     # scripts", leaving only the one suite that tested a copy of the code.
     # The delete tool was added to end a cleanup loop; without this it also
     # hands an agent a way to throw away the only proof the product works.
+    owned = _a_workflow_document(tuple(target.relative_to(root).parts))
+    if owned is not None:
+        raise RepositoryToolError(
+            f"Refusing to delete '{shown}': the workflow writes this file and "
+            "rewrites it whole every time the stage that produces it runs. "
+            "Removing it only makes it missing until then, and every stage that "
+            "reads it in between finds nothing."
+        )
+
     if looks_like_a_test(shown):
         # The refusal has to name the way out, or an agent that genuinely wrote
         # a throwaway probe has nowhere to go. run-9ff00d5b's
@@ -2438,6 +2447,25 @@ def move_approved_artifact(
     target = _assert_within_repo(root, root / _repo_relative_path(root, destination))
     from_shown = source.relative_to(root).as_posix()
     to_shown = target.relative_to(root).as_posix()
+
+    # A move is how an agent gets round the write refusal: run-01f03ed9 moved
+    # `docs/architecture_review.md` to `docs/old_architecture_review.md`, which
+    # left the canonical path vacant, and then wrote
+    # `docs/architecture_review_new.md` - which `_supersedes_existing` allowed,
+    # because the file it would have superseded was no longer there. The
+    # workflow's own document was simply gone, and every stage that read it in
+    # between found nothing.
+    for path, shown in ((source, from_shown), (target, to_shown)):
+        owned = _a_workflow_document(tuple(path.relative_to(root).parts))
+        if owned is not None:
+            raise RepositoryToolError(
+                f"Refusing to move '{from_shown}' to '{to_shown}': "
+                f"'{shown}' is written by the workflow, from the structured "
+                "response of the stage that produces it. Moving it leaves that "
+                "document missing until the stage runs again, and a renamed copy "
+                "beside it is read by nobody. If what it says is wrong, put that "
+                "in `blockers`, `risks` or `decisions` - those reach the workflow."
+            )
 
     for path, shown in ((source, from_shown), (target, to_shown)):
         if is_secret_path(path):

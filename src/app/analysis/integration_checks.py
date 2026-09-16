@@ -520,6 +520,71 @@ def _manifest_scripts_that_cannot_resolve(files: list[Path], root: Path) -> list
     return problems
 
 
+#: `export function a`, `export const b =`, `export class C`, `export { d, e }`
+_EXPORTED_DECLARED = re.compile(
+    r"^\s*export\s+(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)",
+    re.M,
+)
+_EXPORTED_LIST = re.compile(r"^\s*export\s*\{([^}]*)\}", re.M)
+
+
+def _exports_of(text: str) -> set[str]:
+    names = set(_EXPORTED_DECLARED.findall(text))
+    for clause in _EXPORTED_LIST.findall(text):
+        for part in clause.split(","):
+            name = part.strip().split(" as ")[-1].strip()
+            if name and name != "default":
+                names.add(name)
+    return names
+
+
+def _exports_no_test_mentions(files: list[Path], root: Path) -> list[str]:
+    """Exported functions that no test file names.
+
+    The runs keep shipping a suite thinner than the product. run-740edb6b's
+    `npm test` reported `# tests 1` for an application exporting five
+    functions; run-01f03ed9 reported three; run-04576307 had seven test files
+    of which one ran. None of that is visible in a passing suite, and a
+    reviewer reading "all tests passed" has no way to tell a thorough one from
+    a token one.
+
+    Named rather than counted, because the names are what makes it actionable,
+    and reported as evidence rather than as a fault: an export used only by
+    other application code is legitimately exercised through it, and this
+    cannot tell the difference. What it can say exactly is which names appear
+    in no test at all.
+    """
+    tests = [
+        path for path in files
+        if path.suffix.lower() in {".js", ".mjs", ".cjs", ".ts"}
+        and is_test(str(path.relative_to(root)))
+    ]
+    if not tests:
+        return []
+    mentioned: set[str] = set()
+    for path in tests:
+        mentioned.update(re.findall(r"[A-Za-z_$][\w$]*", _read(path)))
+
+    problems: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+            continue
+        if is_test(str(path.relative_to(root))) or not is_application(str(path.relative_to(root))):
+            continue
+        exported = _exports_of(_read(path))
+        if not exported:
+            continue
+        untested = sorted(exported - mentioned)
+        if not untested:
+            continue
+        problems.append(
+            f"{path.relative_to(root)} exports {len(exported)} name(s) and no "
+            f"test mentions {', '.join(untested)}. A passing suite says nothing "
+            "about those."
+        )
+    return problems
+
+
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     """Application scripts that nothing loads or imports, as relative paths."""
     referenced: set[str] = set()
@@ -1515,6 +1580,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _tests_the_project_never_runs(files, root)
             + _modules_loaded_as_plain_scripts(files, root)
             + _manifest_scripts_that_cannot_resolve(files, root)
+            + _exports_no_test_mentions(files, root)
             + _dangling_class_selectors(files, root)
             + _documented_commands_that_cannot_run(files, root, root / "docs")
             + _broken_local_references(files, root)

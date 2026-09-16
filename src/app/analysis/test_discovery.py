@@ -174,6 +174,12 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
     jsdom` genuinely works here - measured on run-84e05d4b, "added 39
     packages". A real DOM is available and costs one command.
 
+    `--save-dev`, because `tests/brief_low.md` says "No external dependencies
+    beyond basic HTML/CSS/JS" and means the product's. A test tool left in
+    `dependencies` is a runtime dependency the product does not have, which
+    `integration_checks._manifest_defects` reports as a defect of its own - so
+    advice that put it there would trade one finding for another.
+
     A note, not a refusal. A tiny stub for one function is a reasonable thing
     to write, and this cannot tell that from a mock that is about to collapse.
     """
@@ -188,8 +194,11 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
         "holds only until the code under test touches something the mock does "
         "not have, and the failure then looks like an application bug inside "
         "application code - three runs of this harness have lost whole sprints "
-        "to it. `npm install jsdom` works here (dependency installs are the one "
-        "thing with network access); use a real DOM instead."
+        "to it. `npm install --save-dev jsdom` works here - dependency installs "
+        "are the one thing with network access - so use a real DOM instead. "
+        "`--save-dev` matters: a brief that says \"no external dependencies\" "
+        "means the product's, and a test tool left in `dependencies` is "
+        "reported as a runtime dependency the product does not have."
     )
 
 

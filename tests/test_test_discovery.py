@@ -183,7 +183,8 @@ def test_a_hand_built_dom_is_flagged() -> None:
     note = a_dom_built_by_hand("app.test.mjs", RUN_D3965815)
 
     assert note is not None
-    assert "npm install jsdom" in note
+    assert "npm install --save-dev jsdom" in note
+    assert "runtime dependency" in note, "a brief that forbids dependencies means the product's"
 
 
 @pytest.mark.parametrize(
@@ -217,4 +218,4 @@ def test_the_note_reaches_the_write_as_well(tmp_path) -> None:
 
     result = write_approved_artifact(tmp_path, "proj/app.test.mjs", RUN_D3965815)
 
-    assert "npm install jsdom" in (result.get("note") or "")
+    assert "npm install --save-dev jsdom" in (result.get("note") or "")

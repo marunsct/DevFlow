@@ -137,11 +137,25 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
     file that imports only those and reads files by name is asserting about
     the repository, not exercising it.
 
+    A framework import is not required - run-a7150a6c wrote `app.test.mjs`
+    importing only `fs`, reading `index.html`, and throwing if a `<link>` tag
+    was missing. A file the project calls a test and that imports none of the
+    project is the same finding whether or not it uses `node:test`.
+
     A note, not a refusal. A smoke test that boots a built artifact and pokes
     it over HTTP legitimately imports nothing relative, and refusing that would
     be worse than letting a documentation test through.
     """
-    if not _DECLARES_TESTS.search(content or ""):
+    # A framework import, or a name that says "test". Requiring the import
+    # missed the shape run-a7150a6c produced: `app.test.mjs` importing only
+    # `fs`, reading `index.html`, and throwing if a `<link>` tag is absent.
+    # No `node:test`, so the first version of this check said nothing - about a
+    # file called `app.test.mjs` that tests no application code at all.
+    from app.analysis.file_kinds import is_test
+
+    if not _DECLARES_TESTS.search(content or "") and not is_test(relative_path):
+        return None
+    if not (content or "").strip():
         return None
     if _RELATIVE_IMPORT.search(content):
         return None

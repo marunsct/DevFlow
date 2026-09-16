@@ -1946,7 +1946,11 @@ def test_the_budget_note_does_not_count_the_test_suite(repo_root: Path) -> None:
 
     result = write_approved_artifact(repo_root, "app/app.test.mjs", "test(1);\n" * 900)
 
-    assert "note" not in result
+    # This test is about the *budget* note specifically. The file also earns
+    # the "imports nothing from the project" note, which is correct - it is
+    # 900 bare `test(1);` calls - and is a different check.
+    assert "limit of 500 lines" not in (result.get("note") or "")
+    assert "over" not in (result.get("note") or "")
 
 
 def test_the_note_and_the_reviewer_report_the_same_number(repo_root: Path) -> None:

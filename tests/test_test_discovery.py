@@ -248,3 +248,44 @@ def test_the_note_reaches_the_write_as_well(tmp_path) -> None:
     result = write_approved_artifact(tmp_path, "proj/app.test.mjs", RUN_D3965815)
 
     assert "npm install --save-dev jsdom" in (result.get("note") or "")
+
+
+RUN_A7150A6C = """// Test to ensure style.css is linked in index.html
+import fs from 'fs';
+const html = fs.readFileSync('simple-to-do-list-app/index.html', 'utf8');
+if (!html.includes('<link rel="stylesheet" href="style.css">')) {
+  throw new Error('style.css link missing');
+}
+console.log('Style link found');
+"""
+
+
+def test_a_test_by_name_with_no_framework_import_is_still_judged() -> None:
+    """Requiring a `node:test` import missed the shape run-a7150a6c produced.
+
+    `app.test.mjs`, importing only `fs`, reading `index.html`, throwing if a
+    `<link>` tag was absent. No framework import, so the first version of this
+    check said nothing - about a file the project calls a test and that
+    exercises no application code at all.
+    """
+    from app.analysis.test_discovery import tests_nothing_of_the_project
+
+    note = tests_nothing_of_the_project("proj/app.test.mjs", RUN_A7150A6C)
+
+    assert note is not None
+    assert "imports nothing from the project" in note
+
+
+def test_an_application_file_is_still_not_a_test() -> None:
+    from app.analysis.test_discovery import tests_nothing_of_the_project
+
+    assert tests_nothing_of_the_project(
+        "proj/app.js", "import fs from 'fs';\nexport const a = 1;\n"
+    ) is None
+
+
+def test_an_empty_test_file_says_nothing() -> None:
+    from app.analysis.test_discovery import tests_nothing_of_the_project
+
+    assert tests_nothing_of_the_project("proj/app.test.mjs", "") is None
+    assert tests_nothing_of_the_project("proj/app.test.mjs", "\n\n") is None

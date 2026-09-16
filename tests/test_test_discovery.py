@@ -289,3 +289,96 @@ def test_an_empty_test_file_says_nothing() -> None:
 
     assert tests_nothing_of_the_project("proj/app.test.mjs", "") is None
     assert tests_nothing_of_the_project("proj/app.test.mjs", "\n\n") is None
+
+
+# --- a test that needs a DOM and has none ----------------------------------
+
+
+DOM_MODULE = """export function addTask(title) { render(); }
+function render() { const list = document.getElementById('task-list'); }
+if (typeof document !== "undefined") { render(); }
+"""
+
+RUN_740EDB6B = """import { addTask } from './app.js';
+import { test } from 'node:test';
+import assert from 'assert';
+
+let storage = {};
+global.localStorage = {
+  getItem: (key) => storage[key] || null,
+  setItem: (key, value) => { storage[key] = value; }
+};
+
+test('addTask persists a new task', () => { addTask('x'); });
+"""
+
+
+@pytest.fixture()
+def project(tmp_path):
+    (tmp_path / "app.js").write_text(DOM_MODULE, encoding="utf-8")
+    (tmp_path / "pure.js").write_text("export const add = (a, b) => a + b;\n", encoding="utf-8")
+    return tmp_path
+
+
+def test_the_run_740edb6b_test_is_warned(project) -> None:
+    """Four runs have ended a stage on `document is not defined`.
+
+    run-740edb6b's `addTask.test.mjs` imported `addTask` from a module whose
+    render path calls `document.getElementById`, mocked `localStorage` and
+    nothing else, and reported that ReferenceError for every test in the file.
+    The module guards its top level, so the import succeeds and the failure
+    arrives only when a function is called - which is why no syntax or import
+    check sees it.
+    """
+    from app.analysis.test_discovery import a_test_that_needs_a_dom
+
+    note = a_test_that_needs_a_dom("addTask.test.mjs", RUN_740EDB6B, project)
+
+    assert note is not None
+    assert "document is not defined" in note
+    assert "jsdom" in note
+
+
+@pytest.mark.parametrize(
+    "prelude",
+    [
+        "import { JSDOM } from 'jsdom';\nglobal.document = new JSDOM().window.document;\n",
+        "import 'global-jsdom/register';\n",
+        "global.document = { getElementById: () => ({}) };\n",
+    ],
+)
+def test_a_test_that_provides_a_dom_is_silent(project, prelude: str) -> None:
+    from app.analysis.test_discovery import a_test_that_needs_a_dom
+
+    assert a_test_that_needs_a_dom("a.test.mjs", prelude + RUN_740EDB6B, project) is None
+
+
+def test_a_dom_free_module_is_silent(project) -> None:
+    from app.analysis.test_discovery import a_test_that_needs_a_dom
+
+    content = "import { add } from './pure.js';\nimport { test } from 'node:test';\n"
+
+    assert a_test_that_needs_a_dom("a.test.mjs", content, project) is None
+
+
+def test_a_localstorage_mock_is_not_a_hand_built_dom() -> None:
+    """It is a string-keyed map with four methods and does not collapse the way
+    a `document` stub does.
+
+    Including it meant run-740edb6b's test - which mocks `localStorage`, sets
+    up no DOM, and fails with `document is not defined` - was told its
+    localStorage mock was the problem, and the right note could not fire.
+    """
+    from app.analysis.test_discovery import a_dom_built_by_hand
+
+    content = "import test from 'node:test';\nglobal.localStorage = { getItem: () => null };\n"
+
+    assert a_dom_built_by_hand("a.test.mjs", content) is None
+
+
+def test_a_document_stub_is_still_a_hand_built_dom() -> None:
+    from app.analysis.test_discovery import a_dom_built_by_hand
+
+    content = "import test from 'node:test';\nglobal.document = { getElementById: () => ({}) };\n"
+
+    assert a_dom_built_by_hand("a.test.mjs", content) is not None

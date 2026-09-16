@@ -1081,7 +1081,7 @@ def _edited(
         result["context"] = landed
     notes = [
         _structural_note(relative_path, written),
-        _discovery_note(relative_path, written),
+        _discovery_note(relative_path, written, target),
         _import_note(root, target, written),
         # From the path, not from a caller's variable: this is the edit path,
         # and it has no `relative_parts` of its own.
@@ -1433,7 +1433,7 @@ def _import_note(root: Path, target: Path, content: str) -> str:
     return "This file's imports: " + " ".join(problems)
 
 
-def _discovery_note(relative_path: str, content: str) -> str:
+def _discovery_note(relative_path: str, content: str, target: Path | None = None) -> str:
     """Warn about a test file the project's runner will not collect, or "".
 
     A note rather than a refusal: the name is legal and the content is fine.
@@ -1443,6 +1443,7 @@ def _discovery_note(relative_path: str, content: str) -> str:
     """
     from app.analysis.test_discovery import (
         a_dom_built_by_hand,
+        a_test_that_needs_a_dom,
         tests_nothing_of_the_project,
         undiscoverable_test,
     )
@@ -1452,6 +1453,7 @@ def _discovery_note(relative_path: str, content: str) -> str:
             undiscoverable_test(relative_path, content),
             tests_nothing_of_the_project(relative_path, content),
             a_dom_built_by_hand(relative_path, content),
+            a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
         ]
         return " ".join(note for note in notes if note)
     except Exception:  # noqa: BLE001 - never fail a write over a hint
@@ -2312,7 +2314,7 @@ def write_approved_artifact(
         result["status"] = "written"
     notes = [
         _structural_note(relative_path, content),
-        _discovery_note(relative_path, content),
+        _discovery_note(relative_path, content, target),
         _import_note(root, target, content),
         _nearly_a_workflow_document(relative_parts),
         _unrunnable_script_note(relative_path),

@@ -170,8 +170,16 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
 
 
 #: A browser API being built by hand in a test file.
+#:
+#: `localStorage` and `sessionStorage` are deliberately NOT here. They are a
+#: string-keyed map with four methods, a mock of one is complete in five lines,
+#: and it does not collapse the way a `document` stub does. Including them
+#: meant run-740edb6b's `addTask.test.mjs` - which mocks `localStorage`, sets
+#: up no DOM, and fails with `document is not defined` - was told its
+#: localStorage mock was the problem. The note was wrong about the file it
+#: fired on, and the right note for that file could not fire.
 _HAND_ROLLED_DOM = re.compile(
-    r"""\bglobal(?:This)?\.(document|window|localStorage|sessionStorage|navigator)\s*="""
+    r"""\bglobal(?:This)?\.(document|window|navigator)\s*="""
 )
 
 #: A real DOM already in use. The optional path suffix matters:
@@ -229,4 +237,86 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
     )
 
 
-__all__ = ["a_dom_built_by_hand", "tests_nothing_of_the_project", "undiscoverable_test"]
+#: A browser global used outside a `typeof x !== "undefined"` guard.
+_UNGUARDED_DOM = re.compile(
+    r"""(?<![\w.$])(document|window)\s*\.""" 
+)
+_DOM_GUARD = re.compile(r"""typeof\s+(document|window)\s*!==?\s*['"]undefined['"]""")
+
+#: Something in the test that provides a DOM: a real one, or a stub.
+_PROVIDES_A_DOM = re.compile(
+    r"""(?:global(?:This)?\.(?:document|window)\s*=)"""
+    r"""|['"](?:jsdom|happy-dom|linkedom|global-jsdom)(?:/[\w./-]*)?['"]"""
+)
+
+
+def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | None" = None) -> str | None:
+    """Why this test will throw `document is not defined`, or None.
+
+    Four runs have ended a stage on it - run-0deeb8bf, run-d3965815,
+    run-84e05d4b and run-740edb6b, whose `addTask.test.mjs` imported `addTask`
+    from a module whose render path calls `document.getElementById`, mocked
+    `localStorage` and nothing else, and reported
+
+        not ok 1 - addTask persists a new task
+          error: 'document is not defined'
+          name: 'ReferenceError'
+
+    for every test in the file. The module guards its top level with `typeof
+    document !== "undefined"`, so the import succeeds and the failure arrives
+    only when a function is called - which is why no syntax or import check
+    sees it.
+
+    A note, and deliberately a soft one: a test may call only the DOM-free
+    exports of a module that has DOM code elsewhere, and that works. What can
+    be said without guessing is that the module reaches for `document`, the
+    test provides none, and this is the error that follows if the path taken
+    touches it.
+    """
+    from pathlib import Path
+
+    if not _DECLARES_TESTS.search(content or "") and not _is_test_name(relative_path):
+        return None
+    if _PROVIDES_A_DOM.search(content or ""):
+        return None
+    here = Path(relative_path).parent
+    base = project or here
+    for match in _RELATIVE_IMPORT.finditer(content or ""):
+        specifier = next((g for g in match.groups() if g), "")
+        if not specifier:
+            continue
+        for suffix in ("", ".js", ".mjs", ".cjs"):
+            candidate = (base / (specifier + suffix)).resolve()
+            if not candidate.is_file():
+                continue
+            try:
+                module = candidate.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                break
+            if not _UNGUARDED_DOM.search(module):
+                break
+            return (
+                f"`{specifier}` uses `document` or `window`, and this test sets up "
+                "neither. Node has no DOM, so any test that reaches that code "
+                "fails with `ReferenceError: document is not defined` - not at "
+                "import, which is why no other check sees it, but when the "
+                "function is called. Either call only the parts that do not "
+                "touch the page, or `npm install --save-dev jsdom` and assign "
+                "`global.document` from it."
+            )
+        break
+    return None
+
+
+def _is_test_name(relative_path: str) -> bool:
+    from app.analysis.file_kinds import is_test
+
+    return is_test(relative_path)
+
+
+__all__ = [
+    "a_dom_built_by_hand",
+    "a_test_that_needs_a_dom",
+    "tests_nothing_of_the_project",
+    "undiscoverable_test",
+]

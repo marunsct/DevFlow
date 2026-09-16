@@ -1175,8 +1175,9 @@ def _is_json_document(content: str) -> bool:
         return False
 
 
-_CONTROL_TOKEN = re.compile(r"<\|[A-Za-z0-9_\-]{1,40}\|>")
-"""A model's own special tokens, in the `<|name|>` spelling every family uses.
+from app.agents.model_output import find_leaked_marker
+
+_CONTROL_TOKEN_DOC = """A model's own special tokens, in the `<|name|>` spelling every family uses.
 
 `<|END_THINKING|>`, `<|START_ACTION|>`, `<|im_start|>`, `<|eot_id|>` and the
 rest are the delimiters a chat template wraps around a turn. They are not
@@ -1205,12 +1206,12 @@ corrupted artifact nobody can see is corrupted.
 
 def _refuse_control_tokens(relative_path: str, content: str) -> None:
     """Refuse content carrying the model's own turn delimiters."""
-    found = _CONTROL_TOKEN.search(content or "")
+    found = find_leaked_marker(content or "")
     if found is None:
         return
     raise RepositoryToolError(
         f"Refusing to write '{relative_path}': the content contains "
-        f"'{found.group(0)}', which is one of your own special tokens and not "
+        f"'{found}', which is one of your own special tokens and not "
         "part of the file. Content that carries these is a turn that was cut "
         "off mid-way, so what would be saved is a truncated transcript rather "
         "than the file you meant. Nothing was written. Send the file again, "

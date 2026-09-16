@@ -73,9 +73,13 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
     text = str(getattr(message, "content", "") or "")
     if "{" not in text:
         return None
+    from app.agents.model_output import strip_reasoning
     from app.graph.workflow import _first_json_object
 
-    candidate = _first_json_object(text)
+    # Reasoning first: a model that thinks about the schema before emitting it
+    # leaves an example object inside `<think>`, and the first JSON object in
+    # the raw text is then the example rather than the answer.
+    candidate = _first_json_object(strip_reasoning(text))
     if not candidate:
         return None
     try:
@@ -168,9 +172,13 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     text = str(getattr(message, "content", "") or "")
     if "{" not in text:
         return ""
+    from app.agents.model_output import strip_reasoning
     from app.graph.workflow import _first_json_object
 
-    candidate = _first_json_object(text)
+    # Reasoning first: a model that thinks about the schema before emitting it
+    # leaves an example object inside `<think>`, and the first JSON object in
+    # the raw text is then the example rather than the answer.
+    candidate = _first_json_object(strip_reasoning(text))
     if not candidate:
         return ""
     try:

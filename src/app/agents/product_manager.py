@@ -36,6 +36,7 @@ from app.agents.approval import (
 from app.agents.approval import (
     resume_with_decision as resume_with_decision,
 )
+from app.agents.brief_constraints import constraint_lines
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.documents import DocumentContent
@@ -65,6 +66,47 @@ class ProductManagerOutput(BaseModel):
     evidence_vs_assumptions: list[str] = Field(default_factory=list)
     success_measures: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+
+
+def with_the_constraints_the_brief_states(
+    output: ProductManagerOutput, document_text: str
+) -> ProductManagerOutput:
+    """`output`, plus any constraint the brief states that it left out.
+
+    `constraints` is an optional list field on a ten-field schema, and a local
+    model fills it or does not. On run 0c5aabdb it did not: the brief carries a
+    `## Technical Constraints` heading with four lines under it, and
+    `docs/product_intake.md` rendered
+
+        ## Constraints
+        _Not specified._
+
+    Nothing downstream reads the brief - the principal architect writes the
+    specification from the intake, and it wrote "Backend: Express server" into
+    a product whose brief says "No external dependencies beyond basic
+    HTML/CSS/JS". Both stages did their work correctly on what they were given.
+    The constraints were simply no longer in it.
+
+    So they are put back from the document. The model's own list is kept and
+    comes first, because it may have found a constraint stated as prose that
+    no heading covers; the brief's lines are appended when they are not already
+    there. Nothing is removed, and a brief that states no constraints leaves
+    the output exactly as the model returned it.
+
+    Matching is exact and case-insensitive. A model that paraphrased a
+    constraint will see both its paraphrase and the brief's wording, which is
+    the right way round: dropping either would lose the one that mattered.
+    """
+    stated = constraint_lines(document_text)
+    if not stated:
+        return output
+    already = {line.strip().lower() for line in output.constraints}
+    missing = [line for line in stated if line.strip().lower() not in already]
+    if not missing:
+        return output
+    return output.model_copy(
+        update={"constraints": [*output.constraints, *missing]}
+    )
 
 
 def _truncate(text: str, max_chars: int | None = None) -> str:

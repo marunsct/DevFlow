@@ -79,7 +79,12 @@ from app.agents.principal_architect import (
     build_architecture_revision_request,
     create_principal_architect_agent,
 )
-from app.agents.product_manager import ProductManagerOutput, build_intake_request, create_product_manager_agent
+from app.agents.product_manager import (
+    ProductManagerOutput,
+    build_intake_request,
+    create_product_manager_agent,
+    with_the_constraints_the_brief_states,
+)
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import SprintPlanOutput, build_sprint_planning_request, create_scrum_master_agent
 from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
@@ -1890,6 +1895,12 @@ def build_workflow_graph(
         )
         if _hand_back(update, "product_intake"):
             return update
+
+        # The brief's own constraints, put back before anything is rendered
+        # from this. Every later stage reads the intake; none reads the brief.
+        update["product_intake"] = with_the_constraints_the_brief_states(
+            update["product_intake"], getattr(state.get("document"), "text", "") or ""
+        )
 
         _record_document(
             state,

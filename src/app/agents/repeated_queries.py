@@ -48,6 +48,27 @@ QUERY_TOOLS = frozenset({"ls", "grep", "glob"})
 MUTATING_TOOLS = frozenset({"edit_artifact", "write_artifact", "delete_artifact", "move_artifact"})
 
 
+#: How many identical no-op writes to tolerate before refusing one. The write
+#: tool already answers the second with "This file already contained exactly
+#: this content ... Do not write it again; continue with your response".
+#:
+#: run-5f4cdd55 shows what that is worth on its own: `specialist_backend_1`
+#: wrote docs/technical_specification.md, was told "unchanged" with that
+#: sentence, and wrote it three more times until the run-level guard ended the
+#: run at 728 events. run-2bcdc19b did the same with final_output.json.
+#:
+#: A note the model has ignored twice is not a note that needs rewording. The
+#: escalation this codebase keeps arriving at is hint, note, rewrite, refuse -
+#: and refusing a write that would change nothing costs nothing, because by
+#: definition the file already holds exactly that content.
+NO_OP_WRITES_BEFORE_REFUSING = 2
+
+
+def _changed_nothing(content: str) -> bool:
+    """Whether a write reported that the file already held this content."""
+    return '"status": "unchanged"' in content[:400]
+
+
 def _looks_like_a_failure(content: str) -> bool:
     """Whether a tool result is reporting an error.
 
@@ -78,6 +99,20 @@ def build_repeated_query_middleware() -> Any:
             if not note:
                 return result
             try:
+                if _refuses_instead(request, result):
+                    return result.model_copy(
+                        update={
+                            "content": (
+                                "{\"error\": \"Refusing this write: the file already "
+                                "contains exactly this content, and you have already "
+                                "been told that twice. Nothing was written and nothing "
+                                "would change if it were. The artifact is saved. Move on to "
+                                "the rest of your task, or return your structured "
+                                "response.\"}"
+                            ),
+                            "status": "error",
+                        }
+                    )
                 # Ahead of the result, for the reason in
                 # `workspace_backend.read`: a notice after the payload is read
                 # last or not at all, and it exists to change the next call.
@@ -94,10 +129,9 @@ def build_repeated_query_middleware() -> Any:
             if not isinstance(content, str) or not content:
                 return ""
             if name in MUTATING_TOOLS:
-                # Only a repeated failure. A repeated successful write is
-                # already answered elsewhere, and saying "you got this result
-                # before" about a write that worked would be noise.
-                if not _looks_like_a_failure(content):
+                # A repeated failure, or a repeated write that changed nothing.
+                # A write that actually changed the file is left alone.
+                if not _looks_like_a_failure(content) and not _changed_nothing(content):
                     return ""
             elif name not in QUERY_TOOLS:
                 return ""
@@ -132,6 +166,13 @@ def build_repeated_query_middleware() -> Any:
             )
 
     return RepeatedQueryMiddleware()
+
+
+def _refuses_instead(request: Any, result: Any) -> bool:
+    """Whether this repeat has earned a refusal rather than another note."""
+    name = (getattr(request, "tool_call", None) or {}).get("name", "")
+    content = getattr(result, "content", "") or ""
+    return name in MUTATING_TOOLS and _changed_nothing(content)
 
 
 __all__ = ["QUERY_TOOLS", "REPEATS_BEFORE_SAYING_SO", "build_repeated_query_middleware"]

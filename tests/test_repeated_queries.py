@@ -209,3 +209,63 @@ def test_both_error_shapes_are_recognised() -> None:
     assert _looks_like_a_failure('{"error": "Could not find that text"}')
     assert not _looks_like_a_failure('{"path": "a.mjs", "status": "written"}')
     assert not _looks_like_a_failure("app.js\nindex.html")
+
+
+def _write(middleware, args, content):
+    return _call(middleware, "write_artifact", args, content)
+
+
+UNCHANGED = '{"path": "docs/spec.md", "status": "unchanged", "detail": "already contained"}'
+WRITTEN = '{"path": "docs/spec.md", "status": "written"}'
+
+
+def test_a_third_no_op_write_is_refused_not_noted() -> None:
+    """A note the model has ignored twice does not need rewording.
+
+    run-5f4cdd55: `specialist_backend_1` wrote docs/technical_specification.md,
+    was told "unchanged ... Do not write it again; continue with your
+    response", and wrote it three more times until the run-level guard ended
+    the run at 728 events. run-2bcdc19b did the same with final_output.json.
+
+    Refusing a write that would change nothing costs nothing: by definition the
+    file already holds exactly that content.
+    """
+    middleware = build_repeated_query_middleware()
+
+    _write(middleware, {"p": "spec"}, WRITTEN)
+    second = _write(middleware, {"p": "spec"}, UNCHANGED)
+    third = _write(middleware, {"p": "spec"}, UNCHANGED)
+    fourth = _write(middleware, {"p": "spec"}, UNCHANGED)
+
+    assert "error" not in second
+    assert "error" not in third
+    assert '"error"' in fourth
+    assert "already been told that twice" in fourth
+    # It must say what to do instead.
+    assert "Move on" in fourth
+
+
+def test_a_write_that_changes_the_file_is_never_touched() -> None:
+    """Only a write that changed nothing is refused. A real one always lands."""
+    middleware = build_repeated_query_middleware()
+
+    for _ in range(5):
+        assert _write(middleware, {"p": "real"}, WRITTEN) == WRITTEN
+
+
+def test_a_no_op_write_to_a_different_file_keeps_its_own_count() -> None:
+    middleware = build_repeated_query_middleware()
+
+    for _ in range(3):
+        _write(middleware, {"p": "one"}, UNCHANGED)
+    other = _write(middleware, {"p": "two"}, UNCHANGED)
+
+    assert '"error"' not in other
+
+
+def test_the_unchanged_status_is_what_is_matched() -> None:
+    from app.agents.repeated_queries import _changed_nothing
+
+    assert _changed_nothing(UNCHANGED)
+    assert not _changed_nothing(WRITTEN)
+    assert not _changed_nothing('{"path": "a", "status": "edited"}')

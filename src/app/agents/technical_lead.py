@@ -27,6 +27,12 @@ from app.agents.role_agent import create_role_agent
 _STAGE = "implementation"
 _NAME = "technical_lead"
 
+#: Descriptions that mean "this role has nothing to do".
+_NOT_A_TASK = frozenset({
+    "n/a", "na", "none", "nothing", "no work", "not applicable", "not required",
+    "skip", "skipped", "-", "--", "tbd", "n/a - no work required",
+})
+
 SpecialistRole = Literal[
     "ui_ux",
     "database",
@@ -51,6 +57,39 @@ class SpecialistTask(BaseModel):
     specialist_role: SpecialistRole = Field(..., description="Which specialist should perform this task.")
     task_description: str = Field(..., description="The specific, scoped piece of work being delegated.")
     acceptance_criteria: list[str] = Field(default_factory=list)
+
+    @field_validator("task_description", mode="after")
+    @classmethod
+    def _a_task_is_work(cls, value: str) -> str:
+        """Refuse a task that says there is nothing to do.
+
+        A specialist with no work should not be on the list. Measured on
+        run-bb1ee9bb, whose milestone plan read
+
+            #### backend — N/A
+            #### database — N/A
+            #### documentation — N/A
+
+        The lead was right that those roles had nothing to do - the technical
+        specification says "no server-side infrastructure", "no server-side
+        storage or transmission" and "No server side needed". But a task was
+        delegated anyway, so `specialist_backend_1` was dispatched with the
+        description "N/A", spent thirty model calls, and wrote a 3,696-byte
+        `server.js` that contradicts all of it.
+
+        An agent handed an empty task does not stop; it finds something to do.
+        `delegated_tasks` is a list, and the way to say a role is not needed is
+        to leave it out.
+        """
+        stripped = (value or "").strip()
+        if stripped.lower().strip(".") in _NOT_A_TASK or len(stripped) < 4:
+            raise ValueError(
+                f"'{value}' is not a task. If this specialist has nothing to do "
+                "in this milestone, leave it out of `delegated_tasks` - a task "
+                "that says there is no work still dispatches the specialist, "
+                "and an agent handed an empty task invents one."
+            )
+        return value
 
     @field_validator("specialist_role", mode="before")
     @classmethod

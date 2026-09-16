@@ -402,6 +402,62 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: `<script ... src="app.js" ...>` with everything the tag declared, so the
+#: `type` can be read off it.
+_SCRIPT_TAG = re.compile(r"<script\b([^>]*)>", re.I)
+_TAG_SRC = re.compile(r"""\bsrc\s*=\s*["']([^"']+)["']""", re.I)
+_TAG_TYPE = re.compile(r"""\btype\s*=\s*["']([^"']+)["']""", re.I)
+
+
+def _modules_loaded_as_plain_scripts(files: list[Path], root: Path) -> list[str]:
+    """ES modules a page loads without `type="module"`.
+
+    The browser parses the file as a classic script, hits `export` or `import`
+    on the first line, and throws `Uncaught SyntaxError: Unexpected token
+    'export'`. Nothing on the page works, and nothing in the test suite notices
+    - `node --test` imports the module directly and never goes near the HTML.
+
+    Found by run-01f03ed9's milestone reviewer, which read both files and
+    called it blocking. It is decidable from those two files, so it should not
+    have needed a model: `index.html` line 33 was `<script src="app.js">` and
+    `app.js` opens with `export { addTask, ... }`.
+
+    `_module_system_mismatch` checks module syntax against the *test*
+    configuration. This is the same question asked of the page, which is where
+    the user meets it.
+    """
+    problems: list[str] = []
+    for page in files:
+        if page.suffix.lower() not in {".html", ".htm"}:
+            continue
+        text = _read(page)
+        for attributes in _SCRIPT_TAG.findall(text):
+            src = _TAG_SRC.search(attributes)
+            if not src:
+                continue
+            kind = _TAG_TYPE.search(attributes)
+            if kind and kind.group(1).strip().lower() == "module":
+                continue
+            target = (page.parent / src.group(1).lstrip("/")).resolve()
+            if not target.is_file() or target.suffix.lower() not in {".js", ".mjs"}:
+                continue
+            try:
+                if not _ESM.search(_read(target)):
+                    continue
+            except Exception:  # noqa: BLE001
+                continue
+            problems.append(
+                f"{page.relative_to(root)} loads {src.group(1)} with a plain "
+                '<script> tag, and that file uses `import`/`export`. The browser '
+                "parses it as a classic script and throws `Uncaught SyntaxError: "
+                "Unexpected token 'export'` on the first line, so nothing on the "
+                'page runs. Add type="module" to the tag. The test suite cannot '
+                "catch this - it imports the module directly and never loads the "
+                "page."
+            )
+    return problems
+
+
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     """Application scripts that nothing loads or imports, as relative paths."""
     referenced: set[str] = set()
@@ -1357,6 +1413,7 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
 #: untidy, and one that matches too much makes a reviewer block on dead CSS.
 _BREAKS_BEHAVIOUR = (
     "have never executed, and a passing suite",  # a false green suite
+    "parses it as a classic script",     # ESM behind a plain <script> tag
     "looks for the element id",          # a script hook no page provides
     "reads the attribute",               # a data-* attribute nothing sets
     "which does not exist in the workspace",  # a src/import pointing at nothing
@@ -1393,6 +1450,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _dangling_id_selectors(files, root)
             + _hooks_javascript_reaches_for(files, root)
             + _tests_the_project_never_runs(files, root)
+            + _modules_loaded_as_plain_scripts(files, root)
             + _dangling_class_selectors(files, root)
             + _documented_commands_that_cannot_run(files, root, root / "docs")
             + _broken_local_references(files, root)

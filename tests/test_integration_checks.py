@@ -129,11 +129,12 @@ def test_esm_source_under_a_commonjs_test_config_is_reported(tmp_path):
     report = summarise_integration(root)
 
     assert "ES module syntax" in report
-    # The message used to name only Jest, which let every project that does not
-    # use Jest dismiss it - and most here do not. It now leads with the
-    # consequence any runner hits and mentions Jest's extra requirement after.
-    assert "does not provide an export named" in report
-    assert "Jest additionally needs a `transform`" in report
+    # Jest is the one runner here that really cannot read ESM without being
+    # configured for it, and this workspace declares a `jest.config.js` with no
+    # `transform`. Measured in the worker image on Node 20.20.2, `node --test`
+    # reparses the same sources and passes, so the finding is Jest's alone.
+    assert "Cannot use import statement outside a module" in report
+    assert "transform" in report
 
 
 @pytest.mark.parametrize(
@@ -768,14 +769,24 @@ def test_a_small_inline_script_is_not_an_application(tmp_path):
     assert "No test runner can import it" not in summarise_integration(str(tmp_path))
 
 
-def test_the_module_mismatch_names_the_real_consequence(tmp_path):
-    """Naming only Jest made this dismissible by every project that does not
-    use Jest - which is most of them here.
+def test_an_undeclared_module_type_is_not_a_finding_on_this_runtime(tmp_path):
+    """Node reparses a typeless `.js` that uses module syntax, and always did here.
 
-    Measured on run-da6c5e19: `app.js` exported three objects, nothing declared
-    the module type, `node --test` loaded it as CommonJS, and the test file
-    reported "we can't directly import app.js", wrote its own copy of the
-    logic, and passed.
+    This check used to fire on any ESM source with no declared module type and
+    tell the stage its exports were "invisible". Measured directly in the
+    worker image on Node 20.20.2 - a `{"name":"p"}` manifest, `app.js` with
+    `export function addTask(...)`, and a test importing it by name - the suite
+    reports `# tests 1 # pass 1 # fail 0`. Node has detected module syntax in a
+    typeless `.js` since 20.19.
+
+    The original evidence from run-da6c5e19 was the *agent's* note in its own
+    test file, "we can't directly import app.js", recorded here as Node's
+    behaviour. It was the agent's misdiagnosis, and the check enshrined it.
+
+    A check that is wrong costs more than one that is missing: this one raised
+    a blocking finding against a working project. What is genuinely broken in
+    this workspace - `export` behind a classic `<script>` tag - is
+    `_modules_loaded_as_plain_scripts`, which is still reported.
     """
     from app.analysis.integration_checks import summarise_integration
 
@@ -788,8 +799,10 @@ def test_the_module_mismatch_names_the_real_consequence(tmp_path):
 
     summary = summarise_integration(str(tmp_path))
 
-    assert "does not provide an export named" in summary
-    assert "loads them as CommonJS" in summary
+    assert "Cannot use import statement outside a module" not in summary
+    assert "loads them as CommonJS" not in summary
+    # The real defect in these two files is still named.
+    assert "plain <script> tag" in summary
 
 
 def test_a_declared_module_type_clears_it(tmp_path):

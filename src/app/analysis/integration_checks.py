@@ -1166,8 +1166,45 @@ def _broken_local_references(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: `jest` as a whole word. `"jest" in text` also matches "pytest", which is how
+#: a Python stack once silently satisfied a JavaScript check.
+_USES_JEST = re.compile(r"(?<![\w-])jest(?![\w-])", re.I)
+
+
 def _module_system_mismatch(files: list[Path], root: Path) -> list[str]:
-    """ES module source under a test configuration that cannot parse it."""
+    """ES module source under a test runner that genuinely cannot parse it.
+
+    This check used to fire on any ESM source with no declared module type, and
+    told the stage:
+
+        A test that imports them gets "does not provide an export named ..." -
+        the runner loads them as CommonJS and the exports are invisible.
+
+    That is not true of the runtime this harness runs on. Measured directly in
+    the worker image on Node 20.20.2: a project with `{"name":"p"}` for a
+    manifest, `app.js` containing `export function addTask(...)`, and a test
+    doing `import { addTask } from "./app.js"` reports
+
+        # tests 1   # pass 1   # fail 0
+
+    Node has detected module syntax in a typeless `.js` since 20.19 and simply
+    reparses the file, printing a MODULE_TYPELESS_PACKAGE_JSON performance
+    warning and working correctly. The original observation came from run
+    da6c5e19, where the note "we can't directly import app.js" was written by
+    the agent in its own test file - the agent's diagnosis, recorded here as
+    Node's behaviour, and wrong.
+
+    A check that is wrong is worse than a check that is missing: this one
+    raised a blocking finding against a working project and sent a stage to fix
+    it. So it now fires only for Jest, which really does need a `transform` to
+    read ESM and really does fail with `SyntaxError: Cannot use import
+    statement outside a module`.
+
+    The browser half of this question is not affected and never was:
+    `_modules_loaded_as_plain_scripts` catches `export` behind a classic
+    `<script>` tag, which no browser reparses, and `_commonjs_loaded_as_a_module`
+    catches the reverse.
+    """
     esm_sources = [
         path
         for path in files
@@ -1178,25 +1215,32 @@ def _module_system_mismatch(files: list[Path], root: Path) -> list[str]:
     if not esm_sources:
         return []
 
+    uses_jest = False
     for path in files:
         name = path.name.lower()
-        if name == "package.json" and '"type"' in _read(path) and '"module"' in _read(path):
-            return []
-        if name.startswith("jest.config") and "transform" in _read(path):
-            return []
+        if name == "package.json":
+            manifest = _read(path)
+            if '"type"' in manifest and '"module"' in manifest:
+                return []
+            if _USES_JEST.search(manifest):
+                uses_jest = True
+        elif name.startswith("jest.config"):
+            if "transform" in _read(path):
+                return []
+            uses_jest = True
+
+    # Anything else - `node --test`, vitest, a browser-only product - either
+    # handles this or is covered by a check that is right about it.
+    if not uses_jest:
+        return []
 
     listed = ", ".join(sorted(str(p.relative_to(root)) for p in esm_sources)[:4])
-    # Naming only Jest made this dismissible by every project that does not use
-    # Jest - which is most of them here. Measured on run-da6c5e19: `app.js`
-    # exported three objects, nothing declared the module type, and `node --test`
-    # loaded it as CommonJS. The test file then reported "we can't directly
-    # import app.js", wrote its own copy of the logic, and passed.
     return [
-        f'{listed} use ES module syntax, but nothing declares it: no '
-        '`package.json` sets `"type": "module"` and the files are not named '
-        "`.mjs`. A test that imports them gets \"does not provide an export "
-        "named ...\" - the runner loads them as CommonJS and the exports are "
-        "invisible. Jest additionally needs a `transform`."
+        f"{listed} use ES module syntax, and this project runs Jest with no "
+        "`transform` configured. Jest reads them as CommonJS and throws "
+        "`SyntaxError: Cannot use import statement outside a module`, so the "
+        'suite cannot run at all. Set `"type": "module"` in `package.json`, '
+        "configure a `transform`, or write the sources as CommonJS."
     ]
 
 
@@ -1990,7 +2034,7 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _application_embedded_in_html(files, root)),
     ("languages against the directory they share",
      lambda files, root, stack: _languages_sharing_a_directory(files, root)),
-    ("module syntax against the test configuration",
+    ("module syntax against a test runner that cannot parse it",
      lambda files, root, stack: _module_system_mismatch(files, root)),
     ("tests against the directory they are run from",
      lambda files, root, stack: _tests_that_depend_on_the_working_directory(files, root)),

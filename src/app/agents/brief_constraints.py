@@ -146,4 +146,84 @@ def constraints_note(document_text: str, reader: str = "choosing") -> str:
     )
 
 
-__all__ = ["MAX_CONSTRAINT_LINES", "constraint_lines", "constraints_note"]
+
+
+#: Phrases that mean the product is meant to be opened in a browser. Narrow
+#: deliberately: this drives a blocking finding, and a brief that never says
+#: any of these must produce none.
+_WANTS_A_PAGE = (
+    "html",
+    "web-based interface",
+    "web interface",
+    "single-page",
+    "single page application",
+    "in the browser",
+    "modern browsers",
+    "web page",
+    "webpage",
+    "front-end",
+    "frontend",
+)
+
+#: And that it is meant to be styled.
+_WANTS_STYLING = ("css", "responsive", "styling", "stylesheet")
+
+
+def what_the_brief_asked_for_that_is_missing(
+    document_text: str, project_files: list[str]
+) -> list[str]:
+    """Requirements the brief states plainly that the product does not have.
+
+    Run 0c5aabdb completed. Its architecture review returned "approved" with no
+    findings, both security reviews "passed", and the milestone review raised
+    one blocking finding - a missing npm test script - then "accepted". What it
+    delivered was:
+
+        simple-to-do-list-app/index.js            616 bytes, an Express server
+        simple-to-do-list-app/app.test.js
+        simple-to-do-list-app/index.test.js
+        simple-to-do-list-app/package-lock.json   32,693 bytes
+
+    No HTML. No CSS. No front-end JavaScript. The brief's first requirement is
+    "Simple web-based interface with HTML/CSS/JavaScript" and its constraints
+    are "Single-page application" and "No external dependencies beyond basic
+    HTML/CSS/JS".
+
+    Every gate passed because every gate reviews the artifacts against each
+    other and against the milestone's own goal. The brief enters at the product
+    manager and is never read again, so nothing in the run was in a position to
+    notice that the product it accepted has no user interface.
+
+    Only the two requirements that can be checked without judgement: a brief
+    that asks for a page, and a product with no page in it; a brief that asks
+    for styling, and nothing that styles. Everything else about "does this meet
+    the brief" is a reading, and belongs to the reviewer that now gets the text.
+    """
+    low = (document_text or "").lower()
+    names = [name.lower() for name in project_files]
+    missing: list[str] = []
+
+    if any(phrase in low for phrase in _WANTS_A_PAGE):
+        if not any(name.endswith((".html", ".htm")) for name in names):
+            missing.append(
+                "The brief asks for a web interface, and the product contains no "
+                "HTML file. There is nothing for a user to open. Whatever else "
+                "works, the product described has not been built."
+            )
+        elif any(phrase in low for phrase in _WANTS_STYLING) and not any(
+            name.endswith(".css") for name in names
+        ):
+            missing.append(
+                "The brief asks for styling, and the product contains no "
+                "stylesheet. Check that the page carries its own `<style>`; if "
+                "it does not, the interface is unstyled."
+            )
+    return missing
+
+
+__all__ = [
+    "MAX_CONSTRAINT_LINES",
+    "constraint_lines",
+    "constraints_note",
+    "what_the_brief_asked_for_that_is_missing",
+]

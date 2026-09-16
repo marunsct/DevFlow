@@ -2619,6 +2619,7 @@ def build_workflow_graph(
             defect_report,
             state["repository"].root_path,
             getattr(state.get("stack_selection"), "technology_stack", None),
+            getattr(state.get("document"), "text", "") or "",
         )
         update = _run_gated_agent(
             state,

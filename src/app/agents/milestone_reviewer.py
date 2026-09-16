@@ -109,6 +109,62 @@ def _integration_evidence(repository_root: str, stack: Any = None) -> str:
         return "The cross-file checks could not be run for this workspace."
 
 
+def _against_the_brief(document_text: str, repository_root: str) -> str:
+    """What the brief asks for and the product does not have, or "".
+
+    Run 0c5aabdb was accepted here. Its architecture review returned "approved"
+    with no findings, both security reviews "passed", and this stage raised one
+    blocking finding - a missing npm test script - then accepted a product with
+    no HTML, no CSS and no front-end JavaScript, for a brief whose first
+    requirement is "Simple web-based interface with HTML/CSS/JavaScript".
+
+    Every gate reviews the artifacts against each other and against the
+    milestone's own goal. The brief enters at the product manager and is never
+    read again, so nothing in the run was in a position to notice.
+    """
+    if not document_text:
+        return ""
+    from app.agents.brief_constraints import (
+        constraint_lines,
+        what_the_brief_asked_for_that_is_missing,
+    )
+    from pathlib import Path
+
+    from app.analysis.integration_checks import _source_files
+
+    try:
+        root = Path(repository_root).resolve()
+        names = [str(path.relative_to(root)) for path in _source_files(root)]
+    except Exception:  # noqa: BLE001 - a check must never fail the review
+        names = []
+    missing = what_the_brief_asked_for_that_is_missing(document_text, names)
+    lines = constraint_lines(document_text)
+    if not missing and not lines:
+        return ""
+
+    parts = ["--- The brief this product is measured against ---\n"]
+    if lines:
+        parts.append(
+            "Constraints, quoted from the brief:\n"
+            + "\n".join(f"- {line}" for line in lines)
+            + "\n\n"
+        )
+    if missing:
+        parts.append(
+            "Checked deterministically against what was built:\n"
+            + "\n".join(f"- {item}" for item in missing)
+            + "\n\nThat is not a reading of the brief; it is what is on disk. "
+            "A milestone whose product does not have what the brief asks for is "
+            "not complete, whatever its tests do.\n\n"
+        )
+    else:
+        parts.append(
+            "A product that contradicts one of those is not complete, whatever "
+            "its tests do.\n\n"
+        )
+    return "".join(parts)
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
@@ -116,11 +172,13 @@ def build_milestone_review_request(
     defect_report: str,
     repository_root: str,
     stack: Any = None,
+    document_text: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the milestone artifacts awaiting review."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
     brief = (
         WORKSPACE_ROOT_NOTE
+        + _against_the_brief(document_text, repository_root)
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"

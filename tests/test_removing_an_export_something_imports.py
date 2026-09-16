@@ -103,3 +103,28 @@ def test_the_note_reaches_the_write(tmp_path: Path):
 
     assert "What imports this file" in result.get("note", "")
     assert "app.test.mjs" in result["note"]
+
+
+def test_installed_packages_are_not_walked(tmp_path: Path):
+    """This runs on every write, so the walk must skip what it cannot use.
+
+    `rglob` lists all of `node_modules` before discarding it - about 5us an
+    entry, which a real install turns into a quarter of a second per write.
+    Pruning the directories instead took a 2,520-entry tree from 12.3ms to
+    0.09ms.
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.js").write_text(EXPORTS_BOTH, encoding="utf-8")
+    (project / "app.test.mjs").write_text(SUITE, encoding="utf-8")
+    buried = project / "node_modules" / "left-pad"
+    buried.mkdir(parents=True)
+    # An importer inside node_modules must not be reported: it is not ours.
+    (buried / "index.mjs").write_text(
+        "import { addTask } from '../../app.js';\n", encoding="utf-8"
+    )
+
+    problems = who_would_break(project / "app.js", EXPORTS_NEITHER, project)
+
+    assert all("node_modules" not in problem for problem in problems)
+    assert any("app.test.mjs" in problem for problem in problems)

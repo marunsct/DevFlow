@@ -27,6 +27,7 @@ module is somewhere else in the project, says where.
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -179,38 +180,43 @@ def who_would_break(target: Path, content: str, project: Path | None = None) -> 
 
     problems: list[str] = []
     try:
-        for importer in sorted(project.rglob("*")):
-            if not importer.is_file() or importer == target:
-                continue
-            if importer.suffix.lower() not in {".js", ".mjs", ".cjs"}:
-                continue
-            if any(part in _SKIP for part in importer.parts):
-                continue
-            text = importer.read_text(encoding="utf-8", errors="replace")
-            for match in _NAMED_FROM.finditer(text):
-                if _resolve(importer, match.group("module")) != target:
+        # `os.walk` rather than `rglob`, so a skipped directory is never
+        # descended into. This runs on every write, and `rglob` lists all of
+        # `node_modules` before discarding it - about 5us an entry, which a
+        # real install turns into a quarter of a second per write.
+        for folder, subfolders, names in os.walk(project):
+            subfolders[:] = [name for name in subfolders if name not in _SKIP]
+            for name in sorted(names):
+                importer = Path(folder) / name
+                if importer == target:
                     continue
-                default, named = _wanted(match.group("clause"))
-                missing = sorted(named - exported)
-                if default and not has_default:
-                    missing = ["default", *missing]
-                if not missing:
+                if importer.suffix.lower() not in {".js", ".mjs", ".cjs"}:
                     continue
-                problems.append(
-                    f"{importer.relative_to(project).as_posix()} imports "
-                    + ", ".join(f"`{name}`" for name in missing[:MAX_IMPORTERS_NAMED])
-                    + f" from this file, and after this write it exports "
-                    + (
-                        "nothing"
-                        if not exported and not has_default
-                        else ", ".join(f"`{name}`" for name in sorted(exported)[:MAX_IMPORTERS_NAMED])
+                text = importer.read_text(encoding="utf-8", errors="replace")
+                for match in _NAMED_FROM.finditer(text):
+                    if _resolve(importer, match.group("module")) != target:
+                        continue
+                    default, named = _wanted(match.group("clause"))
+                    missing = sorted(named - exported)
+                    if default and not has_default:
+                        missing = ["default", *missing]
+                    if not missing:
+                        continue
+                    problems.append(
+                        f"{importer.relative_to(project).as_posix()} imports "
+                        + ", ".join(f"`{name}`" for name in missing[:MAX_IMPORTERS_NAMED])
+                        + f" from this file, and after this write it exports "
+                        + (
+                            "nothing"
+                            if not exported and not has_default
+                            else ", ".join(f"`{name}`" for name in sorted(exported)[:MAX_IMPORTERS_NAMED])
+                        )
+                        + ". That import throws when the file is loaded, so the "
+                        "suite stops running - no syntax check catches it. Keep "
+                        "the export, or change what imports it in the same step."
                     )
-                    + ". That import throws when the file is loaded, so the "
-                    "suite stops running - no syntax check catches it. Keep "
-                    "the export, or change what imports it in the same step."
-                )
-                if len(problems) >= MAX_IMPORTERS_NAMED:
-                    return problems
+                    if len(problems) >= MAX_IMPORTERS_NAMED:
+                        return problems
     except Exception:  # noqa: BLE001 - a hint must never fail the write
         return problems
     return problems

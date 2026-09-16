@@ -142,4 +142,55 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
     )
 
 
-__all__ = ["tests_nothing_of_the_project", "undiscoverable_test"]
+#: A browser API being built by hand in a test file.
+_HAND_ROLLED_DOM = re.compile(
+    r"""\bglobal(?:This)?\.(document|window|localStorage|sessionStorage|navigator)\s*="""
+)
+
+#: A real DOM already in use. The optional path suffix matters:
+#: `global-jsdom/register` is the ordinary way to load one.
+_HAS_A_REAL_DOM = re.compile(
+    r"""['"](?:jsdom|happy-dom|linkedom|global-jsdom)(?:/[\w./-]*)?['"]"""
+)
+
+
+def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
+    """Why this test's hand-built browser API will not hold, or None.
+
+    Three runs have lost remediation rounds to the same thing. A browser
+    product is tested with `node --test`, which has no DOM, so the specialist
+    writes one:
+
+        global.document = { getElementById: (id) => ({ innerHTML: '', ... }) }
+
+    It works until the code under test touches something the mock does not
+    have, and then the failure is `TypeError: Cannot read properties of
+    undefined (reading 'children')` inside application code - which reads as an
+    application bug and is not one. run-d3965815 spent three remediation
+    rounds and its whole sprint on exactly that; run-0deeb8bf and run-84e05d4b
+    lost stages to the same shape.
+
+    The sandbox grants a network to the `install` category, so `npm install
+    jsdom` genuinely works here - measured on run-84e05d4b, "added 39
+    packages". A real DOM is available and costs one command.
+
+    A note, not a refusal. A tiny stub for one function is a reasonable thing
+    to write, and this cannot tell that from a mock that is about to collapse.
+    """
+    if not _DECLARES_TESTS.search(content or ""):
+        return None
+    if not _HAND_ROLLED_DOM.search(content):
+        return None
+    if _HAS_A_REAL_DOM.search(content):
+        return None
+    return (
+        "This test builds a browser API by hand (`global.document = ...`). That "
+        "holds only until the code under test touches something the mock does "
+        "not have, and the failure then looks like an application bug inside "
+        "application code - three runs of this harness have lost whole sprints "
+        "to it. `npm install jsdom` works here (dependency installs are the one "
+        "thing with network access); use a real DOM instead."
+    )
+
+
+__all__ = ["a_dom_built_by_hand", "tests_nothing_of_the_project", "undiscoverable_test"]

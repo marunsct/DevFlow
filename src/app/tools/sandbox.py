@@ -652,8 +652,19 @@ _INSTEAD_OF: dict[str, str] = {
         "`cd` is not a program. Pass `working_directory` to "
         "`run_terminal_command` to run somewhere else."
     ),
-    "curl": "There is no network in this sandbox; nothing can be downloaded.",
-    "wget": "There is no network in this sandbox; nothing can be downloaded.",
+    # Accurate rather than absolute: `NETWORK_CATEGORIES` grants a network to
+    # the `install` category, which is how `npm install jsdom` succeeds. What is
+    # unavailable is fetching something by hand.
+    "curl": (
+        "Only dependency installs reach the network, and only through the "
+        "package manager: run `npm install <package>` or `pip install "
+        "<package>` with category 'install'. Nothing else can fetch a URL."
+    ),
+    "wget": (
+        "Only dependency installs reach the network, and only through the "
+        "package manager: run `npm install <package>` or `pip install "
+        "<package>` with category 'install'. Nothing else can fetch a URL."
+    ),
 }
 
 

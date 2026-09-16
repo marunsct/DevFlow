@@ -1215,6 +1215,7 @@ def _discovery_note(relative_path: str, content: str) -> str:
     executed it. See `app.analysis.test_discovery`.
     """
     from app.analysis.test_discovery import (
+        a_dom_built_by_hand,
         tests_nothing_of_the_project,
         undiscoverable_test,
     )
@@ -1223,6 +1224,7 @@ def _discovery_note(relative_path: str, content: str) -> str:
         notes = [
             undiscoverable_test(relative_path, content),
             tests_nothing_of_the_project(relative_path, content),
+            a_dom_built_by_hand(relative_path, content),
         ]
         return " ".join(note for note in notes if note)
     except Exception:  # noqa: BLE001 - never fail a write over a hint

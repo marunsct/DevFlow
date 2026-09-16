@@ -154,3 +154,67 @@ def test_the_note_reaches_the_write_too(tmp_path) -> None:
     result = write_approved_artifact(tmp_path, "proj/app.test.js", DOCUMENTATION_TEST)
 
     assert "imports nothing from the project" in (result.get("note") or "")
+
+
+# --- a browser API built by hand -------------------------------------------
+
+
+RUN_D3965815 = """import test from 'node:test';
+import assert from 'node:assert';
+
+global.document = {
+  getElementById: (id) => ({ innerHTML: '', children: [], appendChild() {} }),
+};
+
+test('renders', () => { assert.ok(true); });
+"""
+
+
+def test_a_hand_built_dom_is_flagged() -> None:
+    """Three runs have lost remediation rounds to this.
+
+    The mock holds until the code under test touches something it does not
+    have, and the failure then reads as an application bug inside application
+    code: `TypeError: Cannot read properties of undefined (reading
+    'children')`. run-d3965815 spent three remediation rounds on exactly that.
+    """
+    from app.analysis.test_discovery import a_dom_built_by_hand
+
+    note = a_dom_built_by_hand("app.test.mjs", RUN_D3965815)
+
+    assert note is not None
+    assert "npm install jsdom" in note
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        # A real DOM is already in use.
+        "import test from 'node:test';\nimport { JSDOM } from 'jsdom';\n"
+        "global.document = new JSDOM().window.document;\n",
+        "import test from 'node:test';\nimport 'global-jsdom/register';\n"
+        "global.window = window;\n",
+        # No browser API at all.
+        "import test from 'node:test';\nimport { addTask } from './app.js';\n",
+    ],
+)
+def test_what_this_must_not_flag(content: str) -> None:
+    from app.analysis.test_discovery import a_dom_built_by_hand
+
+    assert a_dom_built_by_hand("app.test.mjs", content) is None
+
+
+def test_application_code_is_not_a_test(tmp_path) -> None:
+    from app.analysis.test_discovery import a_dom_built_by_hand
+
+    assert a_dom_built_by_hand("app.js", "global.document = {};\n") is None
+
+
+def test_the_note_reaches_the_write_as_well(tmp_path) -> None:
+    from app.tools.repository import write_approved_artifact
+
+    write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
+
+    result = write_approved_artifact(tmp_path, "proj/app.test.mjs", RUN_D3965815)
+
+    assert "npm install jsdom" in (result.get("note") or "")

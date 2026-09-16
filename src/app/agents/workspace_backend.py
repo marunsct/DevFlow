@@ -151,6 +151,12 @@ class _Suggesting:
         )
 
 
+#: How many identical read failures to let pass before saying so. One repeat is
+#: ordinary - a stage may reasonably look twice while it works out what to
+#: build. The second is the one worth mentioning, matching the threshold the
+#: repeated-query middleware uses for every other tool.
+READ_FAILURES_BEFORE_SAYING_SO = 1
+
 #: Entries to name when a read lands on a directory. Enough to answer "what is
 #: in here", short of reprinting a `node_modules`.
 MAX_DIRECTORY_ENTRIES = 30
@@ -304,6 +310,46 @@ class _NoticingRepeats:
             "rather than guessing another name."
         )
 
+    def _note_if_it_failed_this_way_before(self, file_path: str, error: str) -> str:
+        """Whether this stage has already been told exactly this, or "".
+
+        `read_file` is deliberately outside the repeated-query middleware,
+        because the read path here keeps a better record - keyed on the file's
+        identity as well as its bytes. But that record is only kept for reads
+        that succeed. A read that fails is not counted anywhere, so a stage can
+        ask for a file that is not there as often as it likes and be told
+        "not found" each time, in silence.
+
+        Measured on run 0afef410's `specialist_backend_2`, asked to create
+        `app.js`: two identical `read_file` calls for `/task-manager/app.js`,
+        two identical `Error: File '/task-manager/app.js' not found`, no notice
+        of any kind. `edit_artifact` has had this note since run-9506d3ab -
+        "failed the same way the N previous times you ran it in this stage" -
+        and a read deserves the same.
+
+        Keyed on the path as the model spelled it and on the error text, so a
+        different failure at the same path still reads as new information.
+        """
+        from app.agents.stage_memory import store
+
+        own = getattr(self, "_failed_reads", None)
+        if own is None:
+            own = {}
+            self._failed_reads = own  # noqa: SLF001 - own attribute
+        seen = store("failed_reads", own)
+
+        key = f"{file_path}|{error}"
+        count = seen.get(key, 0)
+        seen[key] = count + 1
+        if count < READ_FAILURES_BEFORE_SAYING_SO:
+            return ""
+        return (
+            f" This read failed the same way the {count} previous "
+            "time(s) you ran it in this stage. Nothing has created that file "
+            "since, and running it again will fail again. Create it, or carry "
+            "on without it."
+        )
+
     def _note_if_repeated(self, file_path: str, text: str) -> str:
         """Whether this stage has already been handed these exact bytes.
 
@@ -429,6 +475,10 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 or self._where_this_stage_moved_it(file_path)
                 or self._where_it_actually_is(file_path)
             )
+            # After the hint, not instead of it: where the file really is
+            # answers the question, and this only adds that asking again will
+            # not. A hint that never arrives is what makes the repeat happen.
+            hint += self._note_if_it_failed_this_way_before(str(file_path), error)
             return replace(result, error=error + hint) if hint else result
 
         # The text lives in `file_data["content"]`, not on the result itself.

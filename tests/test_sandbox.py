@@ -543,9 +543,26 @@ def test_a_timeout_says_why_a_command_might_not_finish() -> None:
     from app.tools import sandbox
 
     source = inspect.getsource(sandbox)
-    # Both return paths carry it, which is the mistake this codebase keeps
-    # making: reaching one of two.
-    assert source.count("_TIMEOUT_ADVICE") == 3
+    # Every message that tells an agent a command timed out carries it, rather
+    # than a fixed count of uses. Reaching one of two is the mistake this
+    # codebase keeps making, but a number has to be edited whenever a third
+    # place is added - which is the moment this check should be doing its work
+    # instead of failing. A third was added: the pre-run refusal of a command
+    # that has already timed out.
+    import re
+
+    # Every "Command timed out after N seconds." the executor produces, with
+    # whatever follows it on the same line. Narrow on purpose: a looser pattern
+    # matched `"timed out" in str(...)` inside the ledger check, which is a
+    # substring test and not a message to anyone.
+    messages = re.findall(r'f"Command timed out after[^"]*"[^\n]*', source)
+    assert len(messages) >= 2, f"expected both run paths, found {len(messages)}"
+    without = [m for m in messages if "_TIMEOUT_ADVICE" not in m]
+    assert not without, f"these timeout messages do not carry the advice: {without}"
+
+    # The pre-run refusal of a command that already timed out carries it too,
+    # and is checked by calling it: see
+    # `test_the_refusal_keeps_the_advice_the_timeout_gives`.
     assert "usually one that was not meant to" in sandbox._TIMEOUT_ADVICE
     assert "import it and call it" in sandbox._TIMEOUT_ADVICE
 

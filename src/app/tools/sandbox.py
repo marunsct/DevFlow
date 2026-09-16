@@ -1345,6 +1345,36 @@ def _written_since(repo_root: str, when: str | None) -> bool:
     return False
 
 
+def timed_out_this_way_before(
+    repo_root: str, command: Sequence[str], working_directory: str | None = None
+) -> int:
+    """How many times this exact command has already timed out in this run.
+
+    Separate from `failed_this_way_before` because a timeout records no exit
+    code - the process never exited - so that function's `returncode not in
+    (0, None)` test excludes every one of them.
+
+    Worth its own check because of what a repeat costs. An ordinary repeated
+    failure costs a model call; a repeated timeout costs a model call and the
+    full timeout. Run 0c5aabdb's `specialist_backend_1` ran
+    `node simple-to-do-list-app/index.js` twice and spent four minutes of wall
+    clock on a server the sandbox has nobody to connect to - which is what the
+    refusal already says, after the second 120 seconds had been paid.
+    """
+    argv = [str(part) for part in command]
+    try:
+        entries = read_execution_ledger(repo_root)
+    except Exception:  # noqa: BLE001 - a guard must never fail the command
+        return 0
+    return sum(
+        1
+        for entry in entries
+        if _same_invocation(entry, argv, working_directory)
+        and entry.get("command") == argv
+        and "timed out" in str(entry.get("error") or "")
+    )
+
+
 def succeeded_this_way_before(
     repo_root: str, command: Sequence[str], working_directory: str | None = None
 ) -> int:
@@ -1677,9 +1707,23 @@ class SandboxExecutor:
         command, doubled = strip_a_doubled_working_directory(
             command, repo_root, working_directory
         )
-        outcome = cls._run(
-            command, repo_root, role_name, category, extra_env, working_directory
-        )
+        # Before running it: a command that timed out will time out again, and
+        # unlike every other repeated failure this one is paid for in wall
+        # clock as well as a model call. See `timed_out_this_way_before`.
+        already_timed_out = timed_out_this_way_before(repo_root, command, working_directory)
+        if already_timed_out:
+            outcome = {
+                "error": (
+                    f"Not running this again: it has already timed out "
+                    f"{already_timed_out} time(s) in this run and would time out "
+                    "again, which costs the run the whole timeout a second time."
+                    + _TIMEOUT_ADVICE
+                )
+            }
+        else:
+            outcome = cls._run(
+                command, repo_root, role_name, category, extra_env, working_directory
+            )
         notes = [n for n in (doubled, redirected) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}

@@ -1567,6 +1567,32 @@ def _review_enabled(state: WorkflowGraphState, review_point: str) -> bool:
     return bool(state.get("review_policy", {}).get(review_point, False))
 
 
+def _escalate_to_a_human(
+    state: WorkflowGraphState, error: str, **fields: Any
+) -> dict[str, Any]:
+    """Park the run for a human, or fail it if no human is watching.
+
+    `_run_review_gate` opens a review session and pauses unconditionally - it
+    never asks whether that review is switched on. Two escalations routed
+    straight to it: a milestone review that exhausted its revisions, and a
+    sprint that exhausted its remediation attempts. Both are the right place to
+    want a person, and neither checked whether there is one.
+
+    A run with the default `review_policy` of `{}` has opted out of both human
+    gates. Sending it to one leaves it `waiting_for_review` with nobody coming -
+    not failed, not progressing, and holding the worker. Measured on
+    run-36eb1260, which sat in `awaiting_user_review:sprint` with
+    `review_policy` empty.
+
+    So: park it when a reviewer was asked for, and otherwise fail with the
+    message that says what is unresolved, which is what an unattended run needs
+    and what it already produces everywhere else.
+    """
+    if _review_enabled(state, SPRINT_REVIEW):
+        return _handing_on(stage="user_review_sprint", **fields)
+    return _handing_on(stage="failed", error=error, **fields)
+
+
 def _run_review_gate(
     state: WorkflowGraphState,
     config: RunnableConfig,
@@ -2265,8 +2291,9 @@ def build_workflow_graph(
                 new_defects=new_defects,
             )
         except RemediationLimitExceeded as exc:
-            return _handing_on(
-                stage="user_review_sprint",
+            return _escalate_to_a_human(
+                state,
+                error=str(exc),
                 remediation=cycle,
                 test_round=test_round + 1,
             )
@@ -2491,8 +2518,13 @@ def build_workflow_graph(
                 )
             revision_count = state.get("milestone_revision_count", 0) + 1
             if revision_count >= MAX_MILESTONE_REVISIONS:
-                return _handing_on(
-                    stage="user_review_sprint",
+                return _escalate_to_a_human(
+                    state,
+                    error=(
+                        f"The milestone review still required changes after "
+                        f"{MAX_MILESTONE_REVISIONS} revisions, so the run stopped "
+                        f"rather than revising indefinitely.\n\n{findings_text}"
+                    ),
                     milestone_revision_count=revision_count,
                     milestone_review=review,
                 )

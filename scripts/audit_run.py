@@ -1,4 +1,27 @@
-"""Audit one run's transcript: cost, waste, and what the harness prevented."""
+"""Audit one run's transcript: cost, waste, and what the harness prevented.
+
+    python3 scripts/audit_run.py <path-to-transcript.jsonl>
+
+Transcripts live at `DATA_DIR/transcripts/<run-id>.jsonl`; from a deployment,
+`docker compose exec -T worker cat /app/data/transcripts/<run-id>.jsonl > /tmp/run.jsonl`.
+
+Every number in `docs/harness-hardening-plan.md` §4b came out of this. The
+three lines that matter, and what each is for:
+
+- **refusals that prevented damage** - a broken file the harness stopped
+  reaching disk. These are the checks working, and they are deliberately not
+  counted as failures or as waste. Counting them as waste is the mistake this
+  script shipped with: `node --check` refusing an illegal return four times
+  before the model fixed it scored as four wasted calls.
+- **failures that cost the run** - everything else that came back an error.
+  This is the number to drive down.
+- **identical repeats in a stage** - byte-identical tool calls, refusals
+  excluded. What is left after the notices have done their work.
+
+`SAVED` is the list of message fragments that mark a preventing refusal. A
+fragment that stops matching silently moves calls from the first line to the
+third, so keep it in step with the messages in `app/tools/repository.py`.
+"""
 import json, sys, collections, re
 
 SAVED = (

@@ -375,7 +375,10 @@ tests now cover the family: `test_advice_names_installed_programs`,
 
 ## 5. Method to keep
 
-The procedure that produced these findings is itself the most valuable artefact of the session, and §3.5/§4 exist to automate it:
+The procedure that produced these findings is itself the most valuable artefact of the
+session, and §3.5/§4 exist to automate it. `scripts/audit_run.py` is the part of it that
+is already automated - point it at a run's transcript and it prints the three numbers in
+§4b, with the preventing refusals kept separate from the waste:
 
 1. Watch decisions, rejections, tool calls, retries and errors on a live run.
 2. On a suspect pattern, **verify against previous run data** before acting — three of this session's instruments were wrong before they were right (a digest that included a random id; mis-paired parallel tool calls; the event stream that cannot see middleware notes).

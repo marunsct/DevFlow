@@ -1244,6 +1244,80 @@ def _files_that_contradict_the_declared_module_type(
     return problems
 
 
+#: Runners that define `test`, `it` and `describe` as globals, so a file using
+#: them without an import is correct. `node --test` is not one of them.
+_PROVIDES_TEST_GLOBALS = ("jest", "vitest", "mocha", "jasmine", "karma", "cypress")
+
+#: `test(`, `it(` or `describe(` called at the file's own top level.
+_CALLS_A_SUITE_GLOBAL = re.compile(
+    r"""^(?:await\s+)?(test|it|describe)\s*(?:\.\w+\s*)?\(""", re.M
+)
+
+#: The binding brought in from `node:test`, however it is spelled.
+_IMPORTS_FROM_NODE_TEST = re.compile(
+    r"""from\s+['"]node:test['"]|require\(\s*['"]node:test['"]\s*\)"""
+    r"""|from\s+['"]test['"]""",
+)
+
+
+def _suites_calling_a_global_node_does_not_define(
+    files: list[Path], root: Path
+) -> list[str]:
+    """`test(...)` with nothing importing `test`, under `node --test`.
+
+    Jest, Vitest and Mocha inject `test`, `it` and `describe` as globals.
+    `node --test` does not: they are exports of `node:test` and a file that
+    calls one without importing it throws on the first case. Verified in the
+    worker image on Node 20.20.2 - a file whose only content is
+    `test("x", () => assert.ok(true))` reports
+
+        ReferenceError: test is not defined
+        # tests 1   # pass 0   # fail 1
+
+    Both of the runs that carried this were already deep in a module-system
+    tangle when they hit it, and it cost each of them a round of its own. Run
+    d6297b2f's `test_round_0` got `ReferenceError: describe is not defined` and
+    "fixed" it by moving every case inside a default export, which
+    `tests_the_runner_will_never_call` now catches. Run 0afef410's
+    `specialist_backend_2` renamed `app.test.mjs` to `app.test.js` and got
+    `ReferenceError: test is not defined` for its trouble.
+
+    Silent when the project has a runner that does provide the globals, so
+    this can only fire where it is true.
+    """
+    for path in files:
+        if path.name == "package.json":
+            manifest = _read(path).lower()
+            if any(
+                re.search(rf"(?<![\w-]){runner}(?![\w-])", manifest)
+                for runner in _PROVIDES_TEST_GLOBALS
+            ):
+                return []
+        elif path.name.lower().startswith(("jest.config", "vitest.config", ".mocharc")):
+            return []
+
+    problems: list[str] = []
+    for path in files:
+        if not is_test(str(path.relative_to(root))):
+            continue
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+            continue
+        content = _read(path)
+        called = _CALLS_A_SUITE_GLOBAL.search(content)
+        if not called or _IMPORTS_FROM_NODE_TEST.search(content):
+            continue
+        name = called.group(1)
+        problems.append(
+            f"{path.relative_to(root)} calls `{name}(...)` and nothing imports "
+            f"`{name}`. Jest and Vitest inject it as a global; `node --test` "
+            f"does not - it is an export of `node:test`, so every case in this "
+            f"file throws `ReferenceError: {name} is not defined` and the suite "
+            f"cannot run. Add `import {{ {name} }} from 'node:test';` at the top "
+            "of the file."
+        )
+    return problems
+
+
 #: `jest` as a whole word. `"jest" in text` also matches "pytest", which is how
 #: a Python stack once silently satisfied a JavaScript check.
 _USES_JEST = re.compile(r"(?<![\w-])jest(?![\w-])", re.I)
@@ -1897,6 +1971,7 @@ _BREAKS_BEHAVIOUR = (
     "so the suite cannot fail",          # a test that makes no claim at all
     "throws `TypeError` the moment",     # assertions called on `node:test`
     "does not export it",                # the named form of the same import
+    "is not defined` and the suite",     # a suite global nothing imported
     "none of the cases execute",         # a suite the runner never calls
     "and nothing on it works",           # CommonJS behind a module script tag
     "so the suite cannot run",           # files against a declared module type
@@ -2115,6 +2190,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _application_embedded_in_html(files, root)),
     ("languages against the directory they share",
      lambda files, root, stack: _languages_sharing_a_directory(files, root)),
+    ("suite functions called without the import that defines them",
+     lambda files, root, stack: _suites_calling_a_global_node_does_not_define(files, root)),
     ("files that contradict the module type their manifest declares",
      lambda files, root, stack: _files_that_contradict_the_declared_module_type(files, root)),
     ("module syntax against a test runner that cannot parse it",

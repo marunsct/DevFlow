@@ -320,3 +320,172 @@ __all__ = [
     "tests_nothing_of_the_project",
     "undiscoverable_test",
 ]
+
+
+#: Calls that make a test able to fail. Deliberately broad across runners:
+#: `node:assert`, Jest/Vitest `expect`, chai's `should`/`expect`, and a bare
+#: `throw` written by hand, which is how run-a7150a6c's test asserted.
+_AN_ASSERTION = re.compile(
+    r"""(?<![\w.$])assert\s*[.(]"""
+    r"""|(?<![\w.$])expect\s*\("""
+    r"""|(?<![\w.$])should\s*[.(]"""
+    r"""|\.(?:toBe|toEqual|toMatch|toThrow|toContain|toHaveBeenCalled)\w*\s*\("""
+    r"""|(?<![\w.$])(?:strictEqual|deepStrictEqual|deepEqual|notEqual|ok|ifError|throws|rejects|match)\s*\("""
+    r"""|(?<![\w.$])throw\s+new\s+\w*Error"""
+    r"""|(?<![\w.$])process\.exit\s*\(\s*1\s*\)""",
+    re.MULTILINE,
+)
+
+#: A registered test, in the spellings the runners this harness sees accept.
+_A_TEST_CASE = re.compile(
+    r"""(?<![\w.$])(?:test|it)\s*(?:\.\w+\s*)?\(\s*['"`]([^'"`]{0,120})['"`]""",
+    re.MULTILINE,
+)
+
+
+def a_test_that_asserts_nothing(relative_path: str, content: str) -> str | None:
+    """Why this test file cannot fail, or None if it can.
+
+    Run f81808a4 wrote `simple-to-do-list-app/main.test.js` as its whole
+    suite, 164 bytes:
+
+        import assert from 'node:assert';
+        import { test } from 'node:test';
+        import './main.js';
+
+        test('main.js loads without error', () => {
+          // no assertions needed
+        });
+
+    `node --test` reports "# pass 1  # fail 0", the test round reports a
+    passing suite, and nothing in the product has been checked. `assert` is
+    imported and never called. The file imports the project, so
+    `tests_nothing_of_the_project` is satisfied by it; it runs, so
+    `undiscoverable_test` is satisfied; and it passes, so every gate that
+    asks whether the tests pass is satisfied too.
+
+    The same shape as that check's own finding, one level in: there, tests
+    that touched no project code; here, tests that make no claim at all.
+
+    Only when the file registers test cases and contains no assertion
+    anywhere. A helper module beside the suite has no test cases and is not
+    this; a file with ten assertions and one empty case is weaker than it
+    looks but is not a suite that cannot fail, and saying so would put a
+    finding on most real test files.
+    """
+    from app.analysis.file_kinds import is_test
+
+    # Both gates, not either. `is_test` alone would reach a helper module
+    # beside the suite; the case pattern alone would reach an application
+    # module that calls a function named `test`, which is the false positive
+    # `_DECLARES_TESTS` above is written to avoid.
+    if not is_test(relative_path):
+        return None
+    cases = _A_TEST_CASE.findall(content)
+    if not cases:
+        return None
+    if _AN_ASSERTION.search(content):
+        return None
+    named = ", ".join(f"'{name}'" for name in cases[:3] if name)
+    return (
+        f"{relative_path} registers {len(cases)} test case(s)"
+        + (f" ({named})" if named else "")
+        + " and contains no assertion of any kind, so the suite cannot fail. "
+        "It reports a pass whatever the application does, and every gate that "
+        "asks whether the tests pass will be satisfied by it. Give each case a "
+        "check that would fail if the behaviour it names were broken."
+    )
+
+
+#: What `node:test` actually exports. Everything else an agent reaches for on
+#: it - `strictEqual` and friends - lives on `node:assert`.
+_ASSERTIONS_NOT_ON_NODE_TEST = (
+    "strictEqual", "deepStrictEqual", "deepEqual", "notDeepStrictEqual",
+    "notStrictEqual", "notEqual", "equal", "ok", "ifError", "match",
+    "doesNotMatch", "throws", "doesNotThrow", "rejects", "doesNotReject", "fail",
+)
+
+#: `import <name> from 'node:test'` / `const <name> = require('node:test')`.
+#: Only the default binding: `import { test } from 'node:test'` is correct and
+#: names the function, not the module.
+_DEFAULT_IMPORT_OF_NODE_TEST = re.compile(
+    r"""import\s+(\w+)\s*(?:,\s*\{[^}]*\}\s*)?from\s+['"]node:test['"]"""
+    r"""|(?:const|let|var)\s+(\w+)\s*=\s*require\(\s*['"]node:test['"]\s*\)""",
+)
+
+#: The named-import form of the same confusion: `import { test, assert } from
+#: 'node:test'`. `node:test` exports no such name, so the binding is
+#: `undefined` and the first call on it throws.
+_NAMED_IMPORTS_FROM_NODE_TEST = re.compile(
+    r"""import\s*(?:\w+\s*,\s*)?\{([^}]*)\}\s*from\s+['"]node:test['"]"""
+    r"""|(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\(\s*['"]node:test['"]\s*\)""",
+)
+
+#: Names an agent reaches for on `node:test` that belong to `node:assert`.
+#: A deliberate list rather than "anything not exported": Node adds exports
+#: between versions, and a warning that is wrong about a working import is
+#: worse than no warning.
+_ASSERTION_NAMES = ("assert", "expect", "strict", *(_ASSERTIONS_NOT_ON_NODE_TEST))
+
+
+def assertions_called_on_the_test_module(relative_path: str, content: str) -> str | None:
+    """Why every test in this file throws TypeError, or None if they do not.
+
+    Run f81808a4 wrote `simple-to-do-list-app/main.test.js` with
+
+        import assert from 'node:test';
+        ...
+        assert.test('addTask creates a new task', () => {
+          assert.strictEqual(tasks.length, 1);
+
+    `assert.test(...)` registers the case, because the default export of
+    `node:test` is the test function and it carries `.test`. `strictEqual` is
+    not on it, so every case fails:
+
+        # tests 4   # pass 0   # fail 4   TypeError
+
+    Four real tests over real behaviour, none of which ran, and a defect-fix
+    round spent on a one-word import. The assertion methods live on
+    `node:assert`; `node:test` exports `test`, `describe`, `it`, the hooks,
+    `mock` and `run`.
+
+    Exact rather than heuristic: this fires only on the *default* binding of
+    `node:test` with an assertion method called on it. `import { test } from
+    'node:test'` is the correct form and names the function, not the module.
+    """
+    # The named form first: `import { test, assert } from 'node:test'` binds
+    # `assert` to undefined, and the first call on it throws. Run f81808a4
+    # wrote both forms in turn, for the same file, an hour apart.
+    for match in _NAMED_IMPORTS_FROM_NODE_TEST.finditer(content):
+        names = (match.group(1) or match.group(2) or "").replace("\n", " ")
+        for binding in (part.strip().split(" as ")[-1].strip() for part in names.split(",")):
+            if binding in _ASSERTION_NAMES:
+                return (
+                    f"{relative_path} imports `{binding}` from `node:test`, which "
+                    f"does not export it - `{binding}` is `undefined` here, and the "
+                    "first call on it throws. The assertion methods are on "
+                    "`node:assert`. Import the two separately: `import {{ test }} "
+                    f"from 'node:test'` and `import {binding} from 'node:assert'`."
+                ).replace("{{", "{").replace("}}", "}")
+
+    match = _DEFAULT_IMPORT_OF_NODE_TEST.search(content)
+    if not match:
+        return None
+    name = match.group(1) or match.group(2)
+    if not name:
+        return None
+    used = [
+        method
+        for method in _ASSERTIONS_NOT_ON_NODE_TEST
+        if re.search(rf"(?<![\w.$]){re.escape(name)}\.{method}\s*\(", content)
+    ]
+    if not used:
+        return None
+    return (
+        f"{relative_path} imports `node:test` as `{name}` and then calls "
+        f"`{name}.{used[0]}(...)`. That method is on `node:assert`, not "
+        "`node:test`, so every test here throws `TypeError` the moment it runs - "
+        "they are registered and reported as failures, not as passes. Import the "
+        "two separately: `import { test } from 'node:test'` and `import "
+        f"{name} from 'node:assert'`."
+    )

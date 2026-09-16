@@ -1561,6 +1561,9 @@ _BREAKS_BEHAVIOUR = (
     "declares no `test` script",         # `npm test` cannot run
     "placeholder test script",           # `npm test` fails by default
     "as the testing framework",          # a runner installed over the chosen one
+    "so the suite cannot fail",          # a test that makes no claim at all
+    "throws `TypeError` the moment",     # assertions called on `node:test`
+    "does not export it",                # the named form of the same import
 )
 
 
@@ -1702,6 +1705,32 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
     return problems
 
 
+def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
+    """Test files that register cases and assert nothing.
+
+    The write-time note fires when one is written; this is the reviewer's
+    copy, for a suite assembled across several stages where no single write
+    was the moment it became vacuous. See
+    `app.analysis.test_discovery.a_test_that_asserts_nothing`.
+    """
+    from app.analysis.test_discovery import (
+        a_test_that_asserts_nothing,
+        assertions_called_on_the_test_module,
+    )
+
+    problems: list[str] = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        content = _read(path)
+        for problem in (
+            assertions_called_on_the_test_module(relative, content),
+            a_test_that_asserts_nothing(relative, content),
+        ):
+            if problem:
+                problems.append(problem)
+    return problems
+
+
 #: Every cross-file check, with the phrase that describes it to a reviewer.
 #:
 #: One list so the two cannot drift. The sentence naming what was checked was
@@ -1712,6 +1741,8 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("the chosen stack against what is on disk",
      lambda files, root, stack: _stack_conflicts(files, root, stack)),
+    ("test files that cannot fail, or throw before they can",
+     lambda files, root, stack: _tests_that_cannot_fail(files, root)),
     ("the installed test runner against the one the stack chose",
      lambda files, root, stack: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
     ("a server against a stack that says the product runs in the browser",

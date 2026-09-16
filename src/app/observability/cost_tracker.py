@@ -13,18 +13,45 @@ class CostTrackingCallbackHandler(BaseCallbackHandler):
         self.successful_requests = 0
         self.estimated_cost = 0.0
 
+    @staticmethod
+    def _counts(response: LLMResult) -> tuple[int, int, int] | None:
+        """Prompt, completion and total tokens, from wherever they arrived.
+
+        A non-streamed response carries them in ``llm_output["token_usage"]``.
+        A streamed one leaves ``llm_output`` as ``None`` and puts them on the
+        aggregated message instead, so reading only the first place reports
+        zero tokens for an entire run - which is what this handler did for
+        every call once the models began streaming.
+        """
+        usage = (response.llm_output or {}).get("token_usage")
+        if usage:
+            p = usage.get("prompt_tokens", 0)
+            c = usage.get("completion_tokens", 0)
+            return p, c, usage.get("total_tokens", p + c)
+
+        p = c = t = 0
+        found = False
+        for generations in response.generations:
+            for generation in generations:
+                metadata = getattr(getattr(generation, "message", None), "usage_metadata", None)
+                if not metadata:
+                    continue
+                found = True
+                p += metadata.get("input_tokens", 0)
+                c += metadata.get("output_tokens", 0)
+                t += metadata.get("total_tokens", 0)
+        return (p, c, t or p + c) if found else None
+
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> Any:
         self.successful_requests += 1
-        
-        if response.llm_output and "token_usage" in response.llm_output:
-            token_usage = response.llm_output["token_usage"]
-            
-            p_tokens = token_usage.get("prompt_tokens", 0)
-            c_tokens = token_usage.get("completion_tokens", 0)
-            
+
+        counts = self._counts(response)
+        if counts:
+            p_tokens, c_tokens, total = counts
+
             self.prompt_tokens += p_tokens
             self.completion_tokens += c_tokens
-            self.total_tokens += token_usage.get("total_tokens", p_tokens + c_tokens)
+            self.total_tokens += total
             
             # Simple estimation (e.g. GPT-4o-mini rates approx)
             # This would ideally use a price map per model

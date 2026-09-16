@@ -167,3 +167,56 @@ def test_an_unparseable_boolean_is_rejected():
 
     with pytest.raises(ConfigurationError):
         load_settings({"WORKFLOW_REQUIRE_APPROVAL": "perhaps", "OPENAI_MODEL": "m"})
+
+
+def _llm_result(llm_output, usage_metadata):
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, LLMResult
+
+    message = AIMessage(content="hi")
+    if usage_metadata is not None:
+        message.usage_metadata = usage_metadata
+    return LLMResult(generations=[[ChatGeneration(message=message)]], llm_output=llm_output)
+
+
+def test_the_cost_tracker_counts_an_unstreamed_response() -> None:
+    from app.observability.cost_tracker import CostTrackingCallbackHandler
+
+    tracker = CostTrackingCallbackHandler()
+    tracker.on_llm_end(
+        _llm_result({"token_usage": {"prompt_tokens": 19, "completion_tokens": 10, "total_tokens": 29}}, None)
+    )
+
+    assert tracker.get_summary()["total_tokens"] == 29
+
+
+def test_the_cost_tracker_counts_a_streamed_response() -> None:
+    """A streamed response leaves `llm_output` empty and carries usage on the message.
+
+    Reading only `llm_output` reported zero tokens for every call in a run
+    once the models began streaming - verified against the local server, which
+    counted 19 prompt and 10 completion tokens unstreamed and 0 and 0 streamed.
+    """
+    from app.observability.cost_tracker import CostTrackingCallbackHandler
+
+    tracker = CostTrackingCallbackHandler()
+    tracker.on_llm_end(
+        _llm_result(None, {"input_tokens": 19, "output_tokens": 10, "total_tokens": 29})
+    )
+
+    summary = tracker.get_summary()
+    assert summary["prompt_tokens"] == 19
+    assert summary["completion_tokens"] == 10
+    assert summary["total_tokens"] == 29
+
+
+def test_a_response_with_no_usage_anywhere_is_counted_as_a_request_only() -> None:
+    """It must not invent numbers, and must not raise."""
+    from app.observability.cost_tracker import CostTrackingCallbackHandler
+
+    tracker = CostTrackingCallbackHandler()
+    tracker.on_llm_end(_llm_result(None, None))
+
+    summary = tracker.get_summary()
+    assert summary["successful_requests"] == 1
+    assert summary["total_tokens"] == 0

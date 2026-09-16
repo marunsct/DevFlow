@@ -75,3 +75,54 @@ def test_the_live_model_has_a_timeout() -> None:
 
     assert resolved is not None
     assert float(resolved) >= MIN_REQUEST_TIMEOUT_SECONDS
+
+
+def test_every_openai_model_streams() -> None:
+    """The timeout means nothing without this.
+
+    Unstreamed, httpx applies the timeout as a total, so it stops being "how
+    long may the server be silent" and becomes "how long may the answer be".
+    At this deployment's measured ~41 tokens per second a 300-second total cuts
+    off every reply beyond roughly 12,000 tokens - including the 13,000-token
+    specification this pipeline legitimately produces, and far short of the
+    32,000-token ceiling `max_tokens` advertises. Measured against the local
+    server at a 60-second timeout: the identical 4,000-token request failed at
+    exactly 60.0s unstreamed and returned in 120.9s streamed.
+
+    Asserted on the class, not on a construction site, because that is where
+    the default lives so that a new site cannot be added without it.
+    """
+    from app.models import CompatibleChatOpenAI
+
+    assert CompatibleChatOpenAI.model_fields["streaming"].default is True
+
+
+def test_streamed_requests_still_report_token_usage() -> None:
+    """Streaming returns `usage_metadata` only when it is asked for.
+
+    Without this the cost tracker reports zero tokens for an entire run.
+    """
+    from app.models import CompatibleChatOpenAI
+
+    assert CompatibleChatOpenAI.model_fields["stream_usage"].default is True
+
+
+def test_raising_the_timeout_is_not_the_alternative() -> None:
+    """Why streaming rather than a bigger number.
+
+    The timeout exists to catch a wedged server - twice observed reporting
+    `llamacpp:requests_processing 1` with both token counters frozen. A total
+    timeout long enough for a full-length 32,000-token answer would be about
+    thirteen minutes, so it would take thirteen minutes to notice a wedge.
+    Streaming lets the short timeout keep doing its job while length stops
+    being bounded by it at all.
+    """
+    from app.models import (
+        DEFAULT_MAX_OUTPUT_TOKENS,
+        DEFAULT_REQUEST_TIMEOUT_SECONDS,
+    )
+
+    measured_tokens_per_second = 41
+    seconds_for_a_full_answer = DEFAULT_MAX_OUTPUT_TOKENS / measured_tokens_per_second
+
+    assert seconds_for_a_full_answer > DEFAULT_REQUEST_TIMEOUT_SECONDS

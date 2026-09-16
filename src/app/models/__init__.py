@@ -69,6 +69,15 @@ def _request_timeout() -> float:
     the stored runs - `principal_architect` at 162s, everything else well
     under - so it bounds a wedge without touching real work. Override with
     MODEL_REQUEST_TIMEOUT_SECONDS.
+
+    This number only bounds a wedge because `CompatibleChatOpenAI` streams.
+    Unstreamed, httpx reads it as a total and it becomes a cap on how long an
+    answer may be: at this deployment's ~41 tokens per second it would cut off
+    every reply longer than about 12,000 tokens, including the 13,000-token
+    specification this pipeline legitimately produces. Streamed, it is the
+    longest silence tolerated between chunks, which is the question actually
+    being asked. Run-f0630b10 hit the unstreamed version twice in its first
+    hour, each costing 300 seconds and a retry that could only time out again.
     """
     import logging
     import os
@@ -120,6 +129,51 @@ class CompatibleChatOpenAI(ChatOpenAI):
     ``_get_request_payload`` is the single place the request dict is assembled,
     so overriding it covers invoke, stream, batch, tool calls and structured
     output alike.
+
+    It also streams every request, which is what makes the request timeout mean
+    what this module wants it to mean. See ``streaming`` below.
+    """
+
+    streaming: bool = True
+    """Stream every request, including ``invoke``.
+
+    Not for incremental display - nothing here consumes chunks. It is the only
+    way to have one timeout answer two different questions.
+
+    On a non-streaming call httpx applies the timeout as a *total*: the whole
+    answer arrives in one read, so a long generation trips it by construction.
+    `max_output_tokens` is 32,000 and this deployment generates at about 41
+    tokens per second, so a full-length answer needs roughly thirteen minutes
+    against a 300-second timeout - and even the largest *legitimate* output
+    measured here, a 51 KB specification of about 13,000 tokens, needs 318
+    seconds. Both fail, then retry three times and fail again, because a
+    request that timed out for being long times out the same way when repeated.
+
+    On a streaming call the same number is a *per-read* timeout: a response
+    delivering any chunk inside the window never trips it. Measured against
+    this server at a 60-second timeout, the identical 4,000-token request
+    failed at exactly 60.0s unstreamed and returned in 120.9s streamed.
+
+    That is why this is better than simply raising the timeout. The 300 seconds
+    exists to catch a *wedged* server - twice observed reporting
+    `llamacpp:requests_processing 1` with both token counters frozen - and a
+    timeout long enough for a thirteen-minute answer would take thirteen
+    minutes to notice a wedge. Streaming separates the two questions that one
+    number was being asked: silence still fails fast, length no longer fails at
+    all.
+
+    Declared on the class rather than at each construction site so a fourth
+    site cannot be added without it.
+    """
+
+    stream_usage: bool = True
+    """Ask for token counts in the stream.
+
+    Without it `usage_metadata` comes back `None` on every streamed response
+    and `CostTrackingCallbackHandler` silently reports zero tokens for the
+    whole run. Verified against this server: streaming without it reported
+    0 prompt and 0 completion tokens for a call the unstreamed path counted
+    at 19 and 10.
     """
 
     def _get_request_payload(self, input_, *, stop=None, **kwargs):  # type: ignore[override]

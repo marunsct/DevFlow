@@ -1329,8 +1329,49 @@ def _incomplete_specification_sections(specification: Any) -> list[str]:
     ]
 
 
-_GATING_SEVERITIES = frozenset({"blocking", "major"})
-"""Severities that force `changes_required`; see `ArchitectureReviewOutput`."""
+_GATING_SEVERITIES = frozenset({"blocking", "major", "critical", "high"})
+"""Severities that justify sending work back.
+
+Spans all four reviewer vocabularies, which differ: architecture uses
+blocking/major/minor/informational, milestone blocking/major/minor/suggestion,
+specialists blocking/major/minor, and security critical/high/medium/low/info.
+A set that covered only one of them would gate that reviewer and silently let
+the others through - or, as it did, gate none of them.
+"""
+
+
+def _findings_that_block(review: Any) -> list[Any]:
+    """The findings in a review that justify another round of work.
+
+    This constant existed and was used only to *format* the failure message at
+    the end of the revision loop. Nothing routed on it, so `status` alone
+    decided, and a reviewer that wrote `changes_required` over nothing but
+    `minor` findings sent the work back anyway.
+
+    That is what killed run-da4df814. Its six architecture reviews went:
+
+        1  8 findings, 2 blocking   - legitimate
+        2  4 findings, all minor    - sent back
+        3 15 findings, all minor    - sent back
+        4  4 findings, all minor    - sent back
+        5 10 findings, 3 major      - escalated
+        6 10 findings, the same 3   - limit reached, run failed
+
+    Rounds 2, 3 and 4 were revisions nothing had asked for. The specification
+    shrank from 205 lines to 134 across them while the reviewer asked for more
+    detail, and by round 5 the reviewer had started demanding constructors,
+    method signatures and parameter types - implementation detail a
+    specification does not carry.
+
+    A severity vocabulary the reviewer is given and the workflow ignores is not
+    a vocabulary, it is decoration. `minor` has to mean "not worth another
+    round" or there is no reason to offer the word.
+    """
+    return [
+        finding
+        for finding in (getattr(review, "findings", None) or [])
+        if str(getattr(finding, "severity", "")).strip().lower() in _GATING_SEVERITIES
+    ]
 
 
 def _format_finding(finding: Any) -> str:
@@ -1927,7 +1968,17 @@ def build_workflow_graph(
         # copy that can disagree with it. See `app.agents.review_document`.
         _record_document(state, "docs/architecture_review.md", render_architecture_review(review))
 
-        if review.status == "approved":
+        blocking = _findings_that_block(review)
+        if review.status != "approved" and review.findings and not blocking:
+            # Findings, but none of them gate. See `_findings_that_block`.
+            logger.info(
+                "Stage architecture_review asked for changes over %d finding(s), none "
+                "above %s; recording them and continuing",
+                len(review.findings),
+                "/".join(sorted(_GATING_SEVERITIES)),
+            )
+
+        if review.status == "approved" or (review.findings and not blocking):
             # The mandatory gate passed. Only now may an optional human review
             # session run; it can never substitute for this gate.
             update["stage"] = (
@@ -1940,11 +1991,7 @@ def build_workflow_graph(
                 # Name what is still wrong. The bare "reached the limit" message
                 # told a reader that the run died but not what to do about it,
                 # even though the reviewer had just written the answer down.
-                outstanding = [
-                    _format_finding(f)
-                    for f in review.findings
-                    if f.severity in _GATING_SEVERITIES
-                ]
+                outstanding = [_format_finding(f) for f in blocking]
                 detail = (
                     "\n\nStill unresolved:\n" + "\n".join(f"- {line}" for line in outstanding)
                     if outstanding
@@ -2408,7 +2455,15 @@ def build_workflow_graph(
                 error="Milestone review blocked the sprint from continuing. See findings.",
                 milestone_review=review,
             )
-        elif review.status == "changes_required":
+        elif review.status == "changes_required" and (
+            not review.findings or _findings_that_block(review)
+        ):
+            # A `changes_required` carrying nothing above the gating severities
+            # falls through to the accepted path below - the same hole that
+            # cost run-da4df814 six architecture rounds, fixed for every
+            # reviewer rather than the one that happened to fail. An empty
+            # `findings` still enters here, because the branch below has its
+            # own message for a review that asked for changes and said nothing.
             findings_text = _milestone_changes_requested(review)
             if findings_text is None:
                 return _handing_on(
@@ -2434,6 +2489,14 @@ def build_workflow_graph(
                 milestone_review=review,
             )
         
+        if review.status != "accepted" and review.findings:
+            logger.info(
+                "Stage milestone_review asked for changes over %d finding(s), none "
+                "above %s; recorded and continuing",
+                len(review.findings),
+                "/".join(sorted(_GATING_SEVERITIES)),
+            )
+
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
         has_more_sprints = sprint_index < len(sprints) - 1

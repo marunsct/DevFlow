@@ -109,3 +109,36 @@ def test_every_role_agent_gets_it() -> None:
     from app.agents.role_agent import create_role_agent
 
     assert "build_repeated_query_middleware()" in inspect.getsource(create_role_agent)
+
+
+def test_a_repeated_failure_is_told_it_failed_not_that_it_returned() -> None:
+    """The repeated case is usually an error, and the wording has to match.
+
+    Measured on run-9506d3ab's `specialist_ui_ux_0`: three identical
+    `ls {'path': 'task-manager'}` within four seconds, every one
+    `path_not_found`. The filesystem tools return their errors rather than
+    raising, so the notice already saw them - it just described a failure as
+    something that "returned", which reads as though content came back.
+    """
+    middleware = build_repeated_query_middleware()
+    error = "Error: Path '/nope': path_not_found"
+
+    for _ in range(2):
+        _call(middleware, "ls", {"path": "/nope"}, error)
+    third = _call(middleware, "ls", {"path": "/nope"}, error)
+
+    assert "failed the same way" in third
+    assert "returned exactly what it returned" not in third
+    # The error itself must survive, or the agent loses what went wrong.
+    assert "path_not_found" in third
+
+
+def test_a_successful_repeat_still_says_returned() -> None:
+    middleware = build_repeated_query_middleware()
+
+    for _ in range(2):
+        _call(middleware, "ls", {"path": "/p"}, "app.js\nindex.html")
+    third = _call(middleware, "ls", {"path": "/p"}, "app.js\nindex.html")
+
+    assert "returned exactly what it returned" in third
+    assert "failed the same way" not in third

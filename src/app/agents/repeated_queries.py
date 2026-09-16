@@ -76,6 +76,20 @@ def build_repeated_query_middleware() -> Any:
             counts[digest] = count + 1
             if count < REPEATS_BEFORE_SAYING_SO:
                 return ""
+            if content.lstrip().startswith("Error:"):
+                # The repeated case is usually this one. Measured on
+                # run-9506d3ab's `specialist_ui_ux_0`: three identical
+                # `ls {'path': 'task-manager'}` in four seconds, every one
+                # `path_not_found`. Calling that "returned exactly what it
+                # returned" is true and reads as though something came back;
+                # what the agent needs to hear is that it failed identically
+                # and that repeating it cannot help.
+                return (
+                    f"\n\n[This `{name}` failed the same way the {count} previous "
+                    "times you ran it in this stage, and nothing has changed it "
+                    "since. It will fail this way again. Change the arguments, "
+                    "create what is missing, or carry on without it.]"
+                )
             return (
                 f"\n\n[This `{name}` returned exactly what it returned the {count} "
                 "previous times you ran it in this stage. A listing reports each "

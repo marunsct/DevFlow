@@ -341,6 +341,38 @@ Items 17–25 continue this table in §17, and cover Part II. Two of them depend
 
 ---
 
+## 4b. Measured on runs 55-65, for whoever implements §4
+
+Numbers a reader of this plan should not have to rediscover. All from run transcripts
+under `DATA_DIR/transcripts`, read with the audit script in the session scratchpad.
+
+| fact | value | why it matters |
+|---|---|---|
+| tool failures that cost a run | 20% (run 55) → 3% (run 65) | the baseline items 1-16 are measured against |
+| byte-identical repeats inside one stage | 32% (run 60) → 13% (run 65) | most of the remaining waste |
+| model calls that are reads | 46% | reads are the cost; they almost never fail (1 in 139) |
+| tool calls per model response | **always exactly 1**, 0 of 2,040 | no batching; see §3.1 |
+| wall clock spent inside model calls | 99% | tool execution totals ~1.3s per run; optimise calls, not tools |
+| reads before a specialist's first action | median 1, mean 1.5 | the workspace digest already works; do not inline file contents |
+| successful edits immediately re-read | 18% | what the edit-context reply targets - worth ~2% of calls |
+| recovery after a failed edit, bare message vs. a line-by-line diff | 5/14 vs 4/15 | message quality is not the constraint; see class A |
+| executables allowed vs. installed | 34 allowed, 20 present | see B2 |
+
+Two shapes account for nearly every remaining costly failure, and neither is a harness
+fault: an `edit_artifact` whose `find` the model misremembered (it sends a line with a
+`// ` it added, or `require` where the file has `import`), and a first read of a path that
+does not exist. Both are answered precisely and repeated anyway.
+
+The fault class worth a standing check is the harness telling the model something untrue.
+Five instances this session - an allowlist naming programs that are not installed, a
+no-shell note recommending `make`, a budget warning threatening a restart that never
+happened, `["pytest", "-q"]` as the example for a runner that is absent, and four of six
+specialists told to use `run_validation` without being given it. Each cost a stage. Three
+tests now cover the family: `test_advice_names_installed_programs`,
+`test_prompts_name_real_tools` and `test_event_types_are_registered`.
+
+---
+
 ## 5. Method to keep
 
 The procedure that produced these findings is itself the most valuable artefact of the session, and §3.5/§4 exist to automate it:

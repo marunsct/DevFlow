@@ -1061,6 +1061,53 @@ def _unrunnable_script_note(relative_path: str) -> str:
     )
 
 
+#: Documents the workflow itself writes, at `docs/<name>` in the workspace
+#: root and nowhere else. Each is rendered from a stage's structured response,
+#: so a copy of one is a copy of a record - stale the moment the next stage
+#: runs, and read by nothing.
+WORKFLOW_DOCUMENTS = frozenset({
+    "architecture_review.md",
+    "milestone_plan.md",
+    "milestone_review.md",
+    "product_intake.md",
+    "security_review.md",
+    "sprint_plan.md",
+    "technical_specification.md",
+    "technology_stack.md",
+    "tools_and_models.md",
+})
+
+
+def _a_workflow_document_somewhere_else(relative_parts: tuple[str, ...]) -> str | None:
+    """Refuse a copy of a workflow document outside `docs/`, or None.
+
+    Measured on run-84e05d4b: a specialist wrote
+    `simple-to-do-list-app/docs/architecture_review.md`, a copy of the review
+    the workflow had already rendered to `docs/architecture_review.md` from the
+    reviewer's structured decision. Two files with the same name and different
+    contents, in a workspace where every later stage is told to read the
+    documents - and only one of them is ever updated again.
+
+    The one canonical location is not a matter of taste here: `_record_document`
+    writes to `docs/<name>` unconditionally, so a copy anywhere else can only
+    ever drift.
+    """
+    if not relative_parts:
+        return None
+    name = relative_parts[-1].lower()
+    if name not in WORKFLOW_DOCUMENTS:
+        return None
+    if relative_parts[:-1] == ("docs",):
+        return None
+    return (
+        f"Refusing to write '{'/'.join(relative_parts)}': '{name}' is written by "
+        f"the workflow itself, at 'docs/{name}', from the structured response of "
+        "the stage that produced it. A second copy is read by nothing and is "
+        f"stale as soon as that stage runs again. Read 'docs/{name}' instead of "
+        "copying it, and put your own work in a file of its own."
+    )
+
+
 def _discovery_note(relative_path: str, content: str) -> str:
     """Warn about a test file the project's runner will not collect, or "".
 
@@ -1696,6 +1743,9 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     stranded = _tests_outside_the_project(artifact_root, relative_parts)
     if stranded is not None:
         raise RepositoryToolError(stranded)
+    duplicated = _a_workflow_document_somewhere_else(relative_parts)
+    if duplicated is not None:
+        raise RepositoryToolError(duplicated)
     scattered = _scaffolding_at_the_workspace_root(artifact_root, relative_parts)
     if scattered is not None:
         raise RepositoryToolError(scattered)

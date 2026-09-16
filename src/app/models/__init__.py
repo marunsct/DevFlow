@@ -48,6 +48,27 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0
 MIN_REQUEST_TIMEOUT_SECONDS = 180.0
 
 
+#: The slowest sustained generation rate measured on this deployment, in
+#: tokens per second (Qwen3.5-9B on a busy RX 7900: 40.9 over a 1,200-token
+#: completion). Deliberately a floor rather than an average: it is used to
+#: decide how long to *wait*, where being pessimistic costs nothing and being
+#: optimistic cancels work that was about to succeed.
+MIN_EXPECTED_TOKENS_PER_SECOND = 40.0
+
+
+def _time_to_generate_a_full_answer() -> float:
+    """Seconds a reply of the full permitted length would take to produce.
+
+    A timeout shorter than this is not a timeout, it is a length limit wearing
+    the wrong name - and one that reports itself as a transport failure and
+    retries, rather than as the truncation it is.
+    """
+    try:
+        return _max_output_tokens() / MIN_EXPECTED_TOKENS_PER_SECOND
+    except Exception:  # noqa: BLE001 - a budget must never fail a model call
+        return DEFAULT_MAX_OUTPUT_TOKENS / MIN_EXPECTED_TOKENS_PER_SECOND
+
+
 def _request_timeout() -> float:
     """Seconds to wait for one model call before giving up on it.
 
@@ -70,21 +91,46 @@ def _request_timeout() -> float:
     under - so it bounds a wedge without touching real work. Override with
     MODEL_REQUEST_TIMEOUT_SECONDS.
 
-    This number only bounds a wedge because `CompatibleChatOpenAI` streams.
-    Unstreamed, httpx reads it as a total and it becomes a cap on how long an
-    answer may be: at this deployment's ~41 tokens per second it would cut off
-    every reply longer than about 12,000 tokens, including the 13,000-token
-    specification this pipeline legitimately produces. Streamed, it is the
-    longest silence tolerated between chunks, which is the question actually
-    being asked. Run-f0630b10 hit the unstreamed version twice in its first
-    hour, each costing 300 seconds and a retry that could only time out again.
+    300 seconds alone is not enough, because httpx applies this as a *total*:
+    the whole answer arrives in one read, so the number is also a cap on how
+    long a reply may be. This deployment generates at about 41 tokens per
+    second, so 300 seconds cuts off every reply beyond roughly 12,000 tokens -
+    including the 13,000-token specification the pipeline legitimately
+    produces, and far short of the 32,000-token ceiling `max_tokens`
+    advertises. run-f0630b10 hit exactly that twice in its first hour, each
+    costing 300 seconds and a retry that could only time out the same way.
+
+    So the floor is raised to whatever a full-length answer actually needs -
+    see `_time_to_generate_a_full_answer`. The two numbers were chosen
+    independently and never against each other; this makes one derive from the
+    other so they cannot drift apart again.
+
+    Streaming was the better answer and does not work here. On a streamed call
+    httpx applies the timeout per-read, so silence still fails fast while
+    length stops being bounded at all, and a direct test against this server
+    confirmed it: the identical 4,000-token request failed at exactly 60.0s
+    unstreamed and returned in 120.9s streamed, with structured output and
+    tool calling both intact. But setting `streaming` on the model puts
+    `stream: true` in the payload while langchain still routes through the
+    non-streaming `_generate`, which is handed an `openai.Stream` it cannot
+    read:
+
+        ValueError: Unexpected response type from OpenAI-compatible endpoint.
+        Expected a dict or openai.BaseModel, got Stream
+
+    That killed run-027f369c on its first model call. It passes when the model
+    is built and invoked directly, which is why it reached a deploy; the agent
+    invokes a bound model and takes a different path. Revisit only with a
+    reproduction through `langchain.agents`, not through a bare model.
     """
     import logging
     import os
 
+    needed = _time_to_generate_a_full_answer()
+
     raw = os.environ.get("MODEL_REQUEST_TIMEOUT_SECONDS", "").strip()
     if not raw:
-        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+        return max(DEFAULT_REQUEST_TIMEOUT_SECONDS, needed)
     try:
         value = float(raw)
     except ValueError:
@@ -92,10 +138,12 @@ def _request_timeout() -> float:
             "MODEL_REQUEST_TIMEOUT_SECONDS=%r is not a number; using %s",
             raw, DEFAULT_REQUEST_TIMEOUT_SECONDS,
         )
-        return DEFAULT_REQUEST_TIMEOUT_SECONDS
+        return max(DEFAULT_REQUEST_TIMEOUT_SECONDS, needed)
     # A timeout below the longest legitimate call measured would turn real work
-    # into retries, which is the more expensive mistake.
-    return max(value, MIN_REQUEST_TIMEOUT_SECONDS)
+    # into retries, which is the more expensive mistake. An explicit setting is
+    # still honoured above the floor, but never below what a full-length answer
+    # needs: that is not a preference, it is a guarantee of failure.
+    return max(value, MIN_REQUEST_TIMEOUT_SECONDS, needed)
 
 
 def _max_output_tokens() -> int:
@@ -129,51 +177,6 @@ class CompatibleChatOpenAI(ChatOpenAI):
     ``_get_request_payload`` is the single place the request dict is assembled,
     so overriding it covers invoke, stream, batch, tool calls and structured
     output alike.
-
-    It also streams every request, which is what makes the request timeout mean
-    what this module wants it to mean. See ``streaming`` below.
-    """
-
-    streaming: bool = True
-    """Stream every request, including ``invoke``.
-
-    Not for incremental display - nothing here consumes chunks. It is the only
-    way to have one timeout answer two different questions.
-
-    On a non-streaming call httpx applies the timeout as a *total*: the whole
-    answer arrives in one read, so a long generation trips it by construction.
-    `max_output_tokens` is 32,000 and this deployment generates at about 41
-    tokens per second, so a full-length answer needs roughly thirteen minutes
-    against a 300-second timeout - and even the largest *legitimate* output
-    measured here, a 51 KB specification of about 13,000 tokens, needs 318
-    seconds. Both fail, then retry three times and fail again, because a
-    request that timed out for being long times out the same way when repeated.
-
-    On a streaming call the same number is a *per-read* timeout: a response
-    delivering any chunk inside the window never trips it. Measured against
-    this server at a 60-second timeout, the identical 4,000-token request
-    failed at exactly 60.0s unstreamed and returned in 120.9s streamed.
-
-    That is why this is better than simply raising the timeout. The 300 seconds
-    exists to catch a *wedged* server - twice observed reporting
-    `llamacpp:requests_processing 1` with both token counters frozen - and a
-    timeout long enough for a thirteen-minute answer would take thirteen
-    minutes to notice a wedge. Streaming separates the two questions that one
-    number was being asked: silence still fails fast, length no longer fails at
-    all.
-
-    Declared on the class rather than at each construction site so a fourth
-    site cannot be added without it.
-    """
-
-    stream_usage: bool = True
-    """Ask for token counts in the stream.
-
-    Without it `usage_metadata` comes back `None` on every streamed response
-    and `CostTrackingCallbackHandler` silently reports zero tokens for the
-    whole run. Verified against this server: streaming without it reported
-    0 prompt and 0 completion tokens for a call the unstreamed path counted
-    at 19 and 10.
     """
 
     def _get_request_payload(self, input_, *, stop=None, **kwargs):  # type: ignore[override]

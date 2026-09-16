@@ -28,15 +28,21 @@ from app.models import (
 
 def test_the_default_is_twice_the_longest_measured_call() -> None:
     """`principal_architect` at 162 seconds is the longest legitimate call in
-    the stored runs; everything else is well under."""
+    the stored runs; everything else is well under.
+
+    That still sets the *baseline*, but it is no longer what `_request_timeout`
+    returns: httpx applies the value as a total, so it must also be long enough
+    to generate a full-length answer, which on this deployment is the larger
+    number. See `test_the_timeout_allows_a_full_length_answer`.
+    """
     assert DEFAULT_REQUEST_TIMEOUT_SECONDS == 300.0
-    assert _request_timeout() == DEFAULT_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout() >= DEFAULT_REQUEST_TIMEOUT_SECONDS
 
 
 def test_it_can_be_raised(monkeypatch) -> None:
     monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "900")
 
-    assert _request_timeout() == 900.0
+    assert _request_timeout() == 900.0  # above the derived floor, so honoured
 
 
 def test_it_cannot_be_lowered_below_real_work(monkeypatch) -> None:
@@ -44,14 +50,14 @@ def test_it_cannot_be_lowered_below_real_work(monkeypatch) -> None:
     retries, which is the more expensive mistake."""
     monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "10")
 
-    assert _request_timeout() == MIN_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout() >= MIN_REQUEST_TIMEOUT_SECONDS
 
 
 def test_garbage_falls_back_rather_than_raising(monkeypatch) -> None:
     """This is read while building a model; raising here fails the run."""
     monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "not-a-number")
 
-    assert _request_timeout() == DEFAULT_REQUEST_TIMEOUT_SECONDS
+    assert _request_timeout() >= DEFAULT_REQUEST_TIMEOUT_SECONDS
 
 
 def test_every_model_built_here_carries_it() -> None:
@@ -77,52 +83,65 @@ def test_the_live_model_has_a_timeout() -> None:
     assert float(resolved) >= MIN_REQUEST_TIMEOUT_SECONDS
 
 
-def test_every_openai_model_streams() -> None:
-    """The timeout means nothing without this.
+def test_the_timeout_allows_a_full_length_answer() -> None:
+    """The two constants were chosen independently and contradicted each other.
 
-    Unstreamed, httpx applies the timeout as a total, so it stops being "how
-    long may the server be silent" and becomes "how long may the answer be".
-    At this deployment's measured ~41 tokens per second a 300-second total cuts
-    off every reply beyond roughly 12,000 tokens - including the 13,000-token
-    specification this pipeline legitimately produces, and far short of the
-    32,000-token ceiling `max_tokens` advertises. Measured against the local
-    server at a 60-second timeout: the identical 4,000-token request failed at
-    exactly 60.0s unstreamed and returned in 120.9s streamed.
+    DEFAULT_REQUEST_TIMEOUT_SECONDS came from the longest call observed (162s
+    x 2); DEFAULT_MAX_OUTPUT_TOKENS from the largest legitimate artifact
+    (~13,000 tokens). httpx applies the timeout as a total, so at this
+    deployment's measured ~41 tokens/second a 300-second timeout cut off every
+    reply beyond about 12,000 tokens - including that 13,000-token
+    specification. run-f0630b10 hit it twice in one hour, each costing 300
+    seconds and a retry that could only time out the same way.
 
-    Asserted on the class, not on a construction site, because that is where
-    the default lives so that a new site cannot be added without it.
+    A timeout shorter than a full-length answer is not a timeout, it is a
+    length limit wearing the wrong name.
     """
-    from app.models import CompatibleChatOpenAI
+    from app.models import _request_timeout, _time_to_generate_a_full_answer
 
-    assert CompatibleChatOpenAI.model_fields["streaming"].default is True
-
-
-def test_streamed_requests_still_report_token_usage() -> None:
-    """Streaming returns `usage_metadata` only when it is asked for.
-
-    Without this the cost tracker reports zero tokens for an entire run.
-    """
-    from app.models import CompatibleChatOpenAI
-
-    assert CompatibleChatOpenAI.model_fields["stream_usage"].default is True
+    assert _request_timeout() >= _time_to_generate_a_full_answer()
 
 
-def test_raising_the_timeout_is_not_the_alternative() -> None:
-    """Why streaming rather than a bigger number.
+def test_an_explicit_timeout_cannot_be_set_below_what_an_answer_needs(monkeypatch) -> None:
+    """An operator may raise it; below the floor is a guarantee of failure."""
+    from app.models import _request_timeout, _time_to_generate_a_full_answer
 
-    The timeout exists to catch a wedged server - twice observed reporting
-    `llamacpp:requests_processing 1` with both token counters frozen. A total
-    timeout long enough for a full-length 32,000-token answer would be about
-    thirteen minutes, so it would take thirteen minutes to notice a wedge.
-    Streaming lets the short timeout keep doing its job while length stops
-    being bounded by it at all.
-    """
+    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "30")
+
+    assert _request_timeout() >= _time_to_generate_a_full_answer()
+
+    monkeypatch.setenv("MODEL_REQUEST_TIMEOUT_SECONDS", "99999")
+    assert _request_timeout() == 99999
+
+
+def test_the_floor_moves_with_the_output_ceiling() -> None:
+    """Derived, so the two cannot drift apart again."""
     from app.models import (
-        DEFAULT_MAX_OUTPUT_TOKENS,
-        DEFAULT_REQUEST_TIMEOUT_SECONDS,
+        MIN_EXPECTED_TOKENS_PER_SECOND,
+        _max_output_tokens,
+        _time_to_generate_a_full_answer,
     )
 
-    measured_tokens_per_second = 41
-    seconds_for_a_full_answer = DEFAULT_MAX_OUTPUT_TOKENS / measured_tokens_per_second
+    expected = _max_output_tokens() / MIN_EXPECTED_TOKENS_PER_SECOND
 
-    assert seconds_for_a_full_answer > DEFAULT_REQUEST_TIMEOUT_SECONDS
+    assert _time_to_generate_a_full_answer() == expected
+
+
+def test_streaming_is_not_enabled_on_the_model() -> None:
+    """It is the better fix and it does not work through the agent.
+
+    Setting `streaming` puts `stream: true` in the payload while langchain
+    still routes through the non-streaming `_generate`, which is handed an
+    `openai.Stream` it cannot read:
+
+        ValueError: Unexpected response type from OpenAI-compatible endpoint.
+        Expected a dict or openai.BaseModel, got Stream
+
+    That killed run-027f369c on its first model call. It passes when a model
+    is built and invoked directly, which is how it reached a deploy; the agent
+    invokes a *bound* model and takes a different path. This test exists so
+    the next attempt starts from a reproduction through `langchain.agents`.
+    """
+    from app.models import CompatibleChatOpenAI
+
+    assert CompatibleChatOpenAI.model_fields["streaming"].default is False

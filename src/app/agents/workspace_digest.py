@@ -107,7 +107,23 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
         return ""
 
     if not names:
-        return ""
+        # An empty workspace is a fact, and saying nothing is not the same as
+        # saying it. `product_manager` runs before anything exists and its
+        # prompt tells it to ground its conclusions in repository evidence; with
+        # no listing at all, every run's opening move is a guess at a file that
+        # a repository would usually have. Measured across the transcripts: four
+        # runs, four `read_repository_file` calls, all of them `README.md`, all
+        # answered "File does not exist within the repository".
+        #
+        # The unreadable case above still produces nothing, because that one
+        # genuinely is unknown - `list_repository_files` raises for a root that
+        # is not there and returns `[]` only when it looked and found nothing.
+        return (
+            "The workspace is empty. Nothing has been built yet, so there is "
+            "nothing to read and nothing to list - no README, no manifest, no "
+            "existing implementation. The brief you were given is the whole of "
+            "the evidence available to you. Do not spend a call confirming this."
+        )
 
     lines: list[str] = []
     for name in _in_reading_order(root, names)[:max_files]:

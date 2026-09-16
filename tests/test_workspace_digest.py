@@ -173,3 +173,23 @@ def test_every_role_agent_gets_it() -> None:
     assert "build_workspace_digest_middleware(resolved_repo_root)" in inspect.getsource(
         create_role_agent
     )
+
+
+def test_an_empty_workspace_says_so_rather_than_saying_nothing(tmp_path: Path) -> None:
+    """Silence reads as "go and find out", and the stage spends a call doing it.
+
+    `product_manager` runs before anything exists, and its prompt tells it to
+    ground its conclusions in repository evidence. Across the transcripts, four
+    runs opened with a `read_repository_file` for `README.md` and got "File
+    does not exist within the repository" - the only costly failure in run
+    d6297b2f up to the first specialist.
+    """
+    digest = render_workspace_digest(tmp_path)
+
+    assert "empty" in digest.lower()
+    assert "readme" in digest.lower()
+
+
+def test_an_unreadable_workspace_still_says_nothing_at_all() -> None:
+    """Not there and empty are different facts; only one of them is known."""
+    assert render_workspace_digest("/definitely/not/here") == ""

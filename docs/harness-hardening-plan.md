@@ -17,6 +17,29 @@
 Ninety-three findings look like ninety-three bugs. They are eight designs, each of which fails the same way whenever a new model or stack exercises it. Fixing the design retires the whole class.
 
 ### A. Guidance loses; corrections win
+
+**Measured 2026-09-16, and it qualifies the claim: a *better* correction does not
+obviously win.** After a failed `edit_artifact`, across runs 60-64:
+
+| message | recovered | failed again | moved on |
+|---|---|---|---|
+| bare "could not find that text" | 5 | 4 | 5 |
+| with "it is nearly the passage at line N; these lines differ" | 4 | 5 | 6 |
+
+29 cases, not a controlled comparison - different runs, files and stages - so the right
+reading is not "the diff is worse" but "message quality is not the binding constraint
+here". The model fails to transcribe a passage exactly however precisely it is told what
+differs.
+
+What does work is removing the need to transcribe: the four forgiving paths
+(`read_file` line numbers, JSON escaping, indentation, and now blank lines) each turn a
+class of failure into a success outright. A fifth relaxation by *similarity* was considered
+and rejected - the first four are all "the same characters, differently transcribed", and
+uniqueness plus exactness is what makes an edit tool safe to point at a 900-line file.
+
+The lesson for item 11 (notice efficacy): measure whether a notice changed the next call
+before investing in its wording, and prefer a path that makes the mistake impossible to one
+that explains it well.
 A rule stated in a prompt does not change behaviour. A correction delivered *in the result of the call that broke the rule* does — on the very next call, repeatedly, across models.
 
 | rule, where stated | outcome |

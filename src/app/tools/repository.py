@@ -1750,6 +1750,55 @@ def _forks_existing_directory(root: Path, target: Path) -> Path | None:
     return None if canonical.name == wanted else canonical
 
 
+#: Extensions that are all the same language, so two of them side by side with
+#: one stem are two copies of one module rather than two modules.
+_SAME_LANGUAGE = ((".js", ".mjs", ".cjs"), (".ts", ".mts", ".cts"), (".jsx", ".tsx"))
+
+#: How alike two files must be before the second is called a copy of the first.
+#: Well below "identical", because a fork is edited after it is made, and well
+#: above "shares a few lines", because two modules in one project share imports.
+_COPY_SIMILARITY = 0.6
+
+
+def _the_same_module_already_here(target: Path, content: str) -> Path | None:
+    """The file this write forks by changing only its extension, or None.
+
+    `_supersedes_existing` catches `spec_v2.md` beside `spec.md`. This catches
+    the other spelling of the same mistake, which the extension hides.
+
+    Measured on run-454adf22: `simple-to-do-list-app/app.js` (4,887 bytes) and
+    `simple-to-do-list-app/app.mjs` (4,853 bytes), near-identical copies of one
+    application. From there every fix lands in one of them, the test file
+    imports whichever it imports, and half the remediation does nothing - which
+    is what that run's two test rounds and 57-call defect fix were spent on.
+
+    Similarity is required, not just the name. Two modules in a project can
+    legitimately share a stem across a language boundary, and refusing a file
+    that is genuinely different would be worse than allowing a fork.
+    """
+    import difflib
+
+    suffix = target.suffix.lower()
+    family = next((group for group in _SAME_LANGUAGE if suffix in group), None)
+    if family is None:
+        return None
+    for other in family:
+        if other == suffix:
+            continue
+        sibling = target.with_suffix(other)
+        if not sibling.is_file():
+            continue
+        try:
+            existing = sibling.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        if difflib.SequenceMatcher(None, existing, content).quick_ratio() < _COPY_SIMILARITY:
+            continue
+        if difflib.SequenceMatcher(None, existing, content).ratio() >= _COPY_SIMILARITY:
+            return sibling
+    return None
+
+
 def _supersedes_existing(target: Path) -> Path | None:
     """The canonical file this write would fork, if it is forking one.
 
@@ -1959,6 +2008,18 @@ def write_approved_artifact(
     _refuse_control_tokens(relative_path, content)
     _refuse_if_broken(relative_path, content)
     _refuse_if_node_cannot_parse(target, relative_path, content)
+
+    forked = _the_same_module_already_here(target, content)
+    if forked is not None:
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': '{forked.name}' already holds "
+            "this module, and this would be a second copy of it under another "
+            "extension. Every later fix would land in one of them and the tests "
+            "would import whichever they import, so half the work would do "
+            f"nothing. Edit '{forked.name}' instead - or, if you mean to change "
+            f"the extension, `move_artifact` from '{forked.name}' to "
+            f"'{target.name}' first."
+        )
 
     if _is_json_document(content) and target.suffix.lower() in _PROSE_SUFFIXES:
         # Agents conflate "write the artifact" with "return the structured

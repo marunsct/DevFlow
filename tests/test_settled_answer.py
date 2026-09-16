@@ -602,3 +602,99 @@ def test_a_schema_failure_still_takes_priority() -> None:
     )
 
     assert "not a valid response" in str(captured["messages"][-1])
+
+
+def _budget_request(ai_messages: int):
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    class Request:
+        def __init__(self, messages):
+            self.messages = messages
+            self.response_format = None
+
+        def override(self, **changes):
+            return Request(changes.get("messages", self.messages))
+
+    return Request(
+        [HumanMessage(content="do the work")]
+        + [AIMessage(content=f"turn {i}") for i in range(ai_messages)]
+    )
+
+
+def _run(middleware, request):
+    from types import SimpleNamespace
+
+    captured = {}
+
+    def handler(final):
+        captured["messages"] = final.messages
+        return SimpleNamespace(result=[])
+
+    middleware.wrap_model_call(request, handler)
+    return captured["messages"]
+
+
+def test_a_budget_warning_is_not_logged_as_a_schema_failure(caplog) -> None:
+    """Both corrections shared one log line, and it named the wrong thing.
+
+    A budget warning was reported as "sent an answer that does not satisfy its
+    schema", naming whatever fields `_LAST_FAILING_FIELDS` happened to hold
+    from an earlier, unrelated diagnosis - possibly from another stage, since
+    that list is module-level.
+
+    The cost was not cosmetic: the two became indistinguishable in the log, so
+    "did the budget warning fire?" could not be answered from the record, and
+    the schema-failure count silently absorbed every warning.
+    """
+    import logging
+
+    from pydantic import BaseModel, Field
+
+    from app.agents import settled_answer
+    from app.agents.settled_answer import build_settled_answer_middleware
+
+    class Out(BaseModel):
+        summary: str = Field(..., description="x")
+
+    # Left over from some earlier stage's diagnosis, as it would be in a worker.
+    settled_answer._LAST_FAILING_FIELDS[:] = ["something.unrelated"]
+
+    middleware = build_settled_answer_middleware(Out, "specialist_testing", 60)
+    with caplog.at_level(logging.INFO):
+        messages = _run(middleware, _budget_request(50))
+
+    assert "steps this stage is allowed" in str(messages[-1])
+    assert "does not satisfy its schema" not in caplog.text
+    assert "something.unrelated" not in caplog.text
+    assert "close to its step ceiling" in caplog.text
+
+
+def test_a_schema_failure_is_still_logged_as_one(caplog) -> None:
+    import logging
+
+    from langchain_core.messages import AIMessage, HumanMessage
+    from pydantic import BaseModel, Field
+
+    from app.agents.settled_answer import build_settled_answer_middleware
+
+    class Out(BaseModel):
+        summary: str = Field(..., description="x")
+
+    class Request:
+        def __init__(self, messages):
+            self.messages = messages
+            self.response_format = Out
+
+        def override(self, **changes):
+            return Request(changes.get("messages", self.messages))
+
+    request = Request(
+        [HumanMessage(content="go"), AIMessage(content='{"wrong_field": 1}')]
+    )
+
+    middleware = build_settled_answer_middleware(Out, "tools_models_architect", 60)
+    with caplog.at_level(logging.INFO):
+        _run(middleware, request)
+
+    assert "does not satisfy its schema" in caplog.text
+    assert "close to its step ceiling" not in caplog.text

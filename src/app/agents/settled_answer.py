@@ -306,16 +306,35 @@ def build_settled_answer_middleware(
                 if last_ai is None:
                     return handler(request)
                 correction = _why_it_was_not_accepted(last_ai, schema)
-                if not correction:
+                if correction:
+                    logger.info(
+                        "Stage %s sent an answer that does not satisfy its schema "
+                        "(%s); returning the validation errors",
+                        stage_name or "?",
+                        ", ".join(_LAST_FAILING_FIELDS[:MAX_REPORTED_ERRORS]) or "unknown",
+                    )
+                else:
+                    # Logged apart from the schema case, and never using
+                    # `_LAST_FAILING_FIELDS`. Both corrections shared one log
+                    # line, so a budget warning was reported as "sent an answer
+                    # that does not satisfy its schema" and named whatever
+                    # fields some earlier, unrelated diagnosis had left in that
+                    # module-level list - possibly from a different stage.
+                    #
+                    # The cost was not cosmetic. It made the two impossible to
+                    # tell apart in a log, so "did the budget warning fire?"
+                    # could not be answered from the record at all, and the
+                    # schema-failure count silently absorbed every warning.
+                    # Diagnosing what you cannot see is finding 47 again.
                     correction = _running_out_of_room(messages, step_limit)
+                    if correction:
+                        logger.info(
+                            "Stage %s is close to its step ceiling; telling it to "
+                            "return what it has",
+                            stage_name or "?",
+                        )
                 if not correction:
                     return handler(request)
-                logger.info(
-                    "Stage %s sent an answer that does not satisfy its schema "
-                    "(%s); returning the validation errors",
-                    stage_name or "?",
-                    ", ".join(_LAST_FAILING_FIELDS[:MAX_REPORTED_ERRORS]) or "unknown",
-                )
                 request = request.override(
                     messages=[*messages, {"role": "user", "content": correction}]
                 )

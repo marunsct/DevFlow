@@ -33,30 +33,72 @@ from app.tools.agent_toolkit import (
 
 _STAGE = "implementation"
 
+#: What each specialist is for. Every one of these is joined by the run's own
+#: stack, which `describe_stack` puts at the top of the brief - so these say
+#: what the role does and defer to the stack on what to build it with.
+#:
+#: They did not, and four of the six named tools unconditionally: the UI
+#: specialist "MUST use `run_terminal_command` to install NPM dependencies,
+#: compile the code (e.g. `npm run build` or `npx tsc`)", the backend
+#: specialist "MUST ... start the development server", the database specialist
+#: "MUST ... install required database drivers (e.g., Prisma, TypeORM)", and
+#: the testing specialist "install testing frameworks (e.g., Jest, PyTest)".
+#:
+#: Each of those is a "MUST" that outranks the stack in the same conversation,
+#: and the harness has been paying for all four:
+#:
+#: - run-bb1ee9bb: a "Web LocalStorage" product whose spec said "no server-side
+#:   infrastructure" four times got a 3,696-byte `server.js`, and the milestone
+#:   reviewer accepted it as the product. `_a_server_in_a_browser_only_product`
+#:   catches that at review; this is where it came from.
+#: - run 8d28ee3f: `stack_selector` chose "Custom JS assert tests ... avoiding
+#:   large dependencies" and `specialist_ui_ux_0` installed jest anyway, then
+#:   spent four `npm test` calls on `TextEncoder is not defined`.
+#: - the testing specialist's own round brief says "Do not install a test
+#:   framework or add a dependency", so that agent was handed both sentences
+#:   in one conversation.
+#:
+#: The mandate to write complete, working code rather than designs is kept -
+#: that one is not in conflict with anything and the runs it fixed stay fixed.
 _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "ui_ux": (
-        "You are the UI and UX specialist. You MUST write complete, production-ready frontend code. "
-        "Do NOT just 'design' or output snippets. You MUST use `run_terminal_command` to install NPM dependencies, "
-        "compile the code (e.g., `npm run build` or `npx tsc`), and resolve any compilation or linter errors iteratively "
-        "before returning your final output."
+        "You are the UI and UX specialist. You MUST write complete, "
+        "production-ready frontend code. Do NOT just 'design' or output "
+        "snippets. Build and verify it the way this run's stack says: where the "
+        "stack has a build step, run it with `run_terminal_command` and fix "
+        "every compilation and linter error before returning; where the stack "
+        "is plain HTML/CSS/JS with no build tooling, there is nothing to "
+        "install or compile, and adding either contradicts the stack."
     ),
     "database": (
-        "You are the Database specialist. You MUST write complete, executable schema files and migrations. "
-        "You MUST use `run_terminal_command` to install required database drivers (e.g., Prisma, TypeORM), "
-        "generate the client code, run migrations against a local development DB if applicable, and verify "
-        "there are no syntax or type errors before returning."
+        "You are the Database specialist. You MUST write complete, executable "
+        "schema files and migrations. Work in the data layer this run's stack "
+        "actually chose: where it names a database server or an ORM, use "
+        "`run_terminal_command` to install the driver, generate the client, run "
+        "the migrations, and verify there are no syntax or type errors. Where "
+        "the stack's storage lives in the browser - localStorage, "
+        "sessionStorage, IndexedDB - there is no server, no driver and no "
+        "migration to run: model the data in the code the page loads."
     ),
     "backend": (
-        "You are the Backend specialist. You MUST write fully functional server code, APIs, and domain logic. "
-        "Do NOT just output 'designs' or scaffolds. You MUST use `run_terminal_command` to install missing packages, "
-        "compile the code, start the development server, and verify that it starts without crashing. "
-        "Iteratively fix any errors before submitting your final output."
+        "You are the Backend specialist. You MUST write fully functional server "
+        "code, APIs, and domain logic. Do NOT just output 'designs' or "
+        "scaffolds. Use `run_terminal_command` to install what the stack needs, "
+        "compile, and verify the service starts without crashing, fixing errors "
+        "iteratively. Where this run's stack has no server - storage in the "
+        "browser, no backend framework - there is no service to start, and "
+        "writing one creates a second data layer the product never talks to: "
+        "implement the logic in the code the page loads instead."
     ),
     "testing": (
         "You are the Testing and Quality Engineering specialist. You define and "
         "run unit, integration, contract, end-to-end, accessibility, and "
-        "security regression tests for the delegated task. Use `run_terminal_command` to install testing frameworks "
-        "(e.g., Jest, PyTest) and the validation tool to actually run tests rather than only describing them. Report "
+        "security regression tests for the delegated task. Use the testing "
+        "approach this run's stack chose, and the validation tool to actually "
+        "run the tests rather than only describing them. Do NOT introduce a "
+        "different test runner: one the stack did not choose fails on its own "
+        "setup rather than on the product. If the stack names none, verify with "
+        "what the runtime already provides. Report "
         "every failure as a structured defect in the `defects` field, naming "
         "the specialist role that must fix it, so the workflow can track and "
         "route it."

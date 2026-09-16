@@ -214,10 +214,13 @@ class _NoticingRepeats:
         A write changes size or mtime, so a specialist that edits and reads
         back is never told anything.
         """
-        seen = getattr(self, "_read_spans", None)
-        if seen is None:
-            seen = {}
-            self._read_spans = seen  # noqa: SLF001 - own attribute
+        from app.agents.stage_memory import store
+
+        own = getattr(self, "_read_spans", None)
+        if own is None:
+            own = {}
+            self._read_spans = own  # noqa: SLF001 - own attribute
+        seen = store("read_spans", own)
         previous_digest, covered = seen.get(path, (None, set()))
         if previous_digest != digest:
             seen[path] = (digest, set(range(first, last + 1)))
@@ -307,10 +310,18 @@ class _NoticingRepeats:
         The threshold is unchanged: one repeat is ordinary, the second is the
         one worth mentioning.
         """
-        seen = getattr(self, "_read_digests", None)
-        if seen is None:
-            seen = {}
-            self._read_digests = seen  # noqa: SLF001 - own attribute
+        # Kept in `stage_memory`, not on this instance: the backend is rebuilt
+        # with the agent on every approval resume, and a stage that writes a
+        # file between two reads - which is what a working stage does - would
+        # otherwise start counting again from zero every time. See
+        # `app.agents.stage_memory`.
+        from app.agents.stage_memory import store
+
+        own = getattr(self, "_read_digests", None)
+        if own is None:
+            own = {}
+            self._read_digests = own  # noqa: SLF001 - own attribute
+        seen = store("read_digests", own)
 
         identity = self._file_identity(file_path)
         try:

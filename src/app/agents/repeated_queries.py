@@ -113,7 +113,17 @@ def build_repeated_query_middleware() -> Any:
 
         def __init__(self) -> None:
             super().__init__()
+            # Only the fallback for a call outside a graph run. The counting
+            # that matters happens in `stage_memory`, because this instance is
+            # rebuilt on every approval resume and this dict goes with it.
+            # See `app.agents.stage_memory`.
             self._seen: dict[tuple[str, str], dict[str, int]] = {}
+
+        @property
+        def _counts(self) -> dict:
+            from app.agents.stage_memory import store
+
+            return store("repeated_queries", self._seen)
 
         def wrap_tool_call(self, request: Any, handler: Any) -> Any:
             result = handler(request)
@@ -163,7 +173,7 @@ def build_repeated_query_middleware() -> Any:
 
             key = (name, repr(sorted((call.get("args") or {}).items())))
             digest = hashlib.sha1(content.encode("utf-8", "replace")).hexdigest()
-            counts = self._seen.setdefault(key, {})
+            counts = self._counts.setdefault(key, {})
             count = counts.get(digest, 0)
             counts[digest] = count + 1
             if count < REPEATS_BEFORE_SAYING_SO:

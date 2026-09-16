@@ -26,6 +26,8 @@ it could not be scanned.
 
 from __future__ import annotations
 
+from app.analysis.file_kinds import is_application, is_test
+
 import json
 import re
 from pathlib import Path
@@ -38,20 +40,6 @@ _SKIP = {
 }
 
 #: Files whose job is configuration or testing, not application source.
-_NOT_APPLICATION = re.compile(
-    r"(^|[./])(jest|vite|webpack|babel|rollup|eslint|cypress|karma|tailwind)\.config\."
-    r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
-    # `test-contract.js` and `test_helpers.py` are tests too. Without this they
-    # are read as application code, which on run-2b5def74 reported two test
-    # files as orphaned scripts "nothing runs" - they are run by `node --test`.
-    r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
-    r"|(^|/)(__tests__|tests?|cypress|e2e)/"
-    # Vendored and built output is not the project's own source. A
-    # `vendor.min.js` that nothing imports is a bundle, not an orphan, and
-    # reporting it teaches the reviewer to discount the check.
-    r"|\.min\.(js|css)$"
-    r"|(^|/)(vendor|dist|build|public/assets)/"
-)
 
 _ID_SELECTOR = re.compile(r"#([A-Za-z][\w-]*)")
 _CSS_COMMENT = re.compile(r"/\*.*?\*/", re.S)
@@ -273,7 +261,7 @@ def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
         relative = str(path.relative_to(root))
         if path.suffix.lower() not in {".js", ".mjs", ".cjs"}:
             continue
-        if _NOT_APPLICATION.search(relative):
+        if (not is_application(relative)):
             continue
         if path.name not in referenced:
             orphans.append(relative)
@@ -476,7 +464,7 @@ def _tests_that_depend_on_the_working_directory(files: list[Path], root: Path) -
     problems = []
     for path in files:
         relative = str(path.relative_to(root))
-        if not _NOT_APPLICATION.search(relative):
+        if not (not is_application(relative)):
             continue
         if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts"}:
             continue
@@ -530,7 +518,7 @@ def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
         relative = str(path.relative_to(root))
         if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts"}:
             continue
-        if _NOT_APPLICATION.search(relative):
+        if (not is_application(relative)):
             continue
         text = _read(path)
         for match in _TOP_LEVEL_FUNCTION.finditer(text):
@@ -546,7 +534,7 @@ def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
         relative = str(path.relative_to(root))
         if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts"}:
             continue
-        if not _NOT_APPLICATION.search(relative):
+        if not (not is_application(relative)):
             continue
         text = _read(path)
         # Names this file binds from the application itself. Only a RELATIVE
@@ -605,7 +593,7 @@ def _module_system_mismatch(files: list[Path], root: Path) -> list[str]:
         path
         for path in files
         if path.suffix.lower() in {".js", ".mjs"}
-        and not _NOT_APPLICATION.search(str(path.relative_to(root)))
+        and not (not is_application(str(path.relative_to(root))))
         and _ESM.search(_read(path))
     ]
     if not esm_sources:
@@ -1010,7 +998,7 @@ def _measure_sizes(
         # test suite - and reporting one number invites the reviewer to judge
         # the wrong thing. On run-18c0e34c the application was 631 lines and the
         # tests the round installed were 1,558 more.
-        (tests if _NOT_APPLICATION.search(relative) else application).append((lines, relative))
+        (tests if (not is_application(relative)) else application).append((lines, relative))
     return application, tests, stray, counted_code
 
 
@@ -1119,7 +1107,7 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
             # see - and it reads as "this project has no tests".
             suites = sorted(
                 str(p.relative_to(root)) for p in files
-                if p.parent == path.parent and _NOT_APPLICATION.search(str(p.relative_to(root)))
+                if p.parent == path.parent and (not is_application(str(p.relative_to(root))))
             )
             if suites:
                 named = ", ".join(suites[:3])

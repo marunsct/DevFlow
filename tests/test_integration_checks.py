@@ -609,12 +609,12 @@ def test_a_builtin_import_does_not_count_as_reaching_the_application(tmp_path):
 def test_a_test_named_with_a_prefix_is_still_a_test(tmp_path):
     """`test-contract.js` was read as application code and reported as an
     orphaned script "nothing runs" - it is run by `node --test`."""
-    from app.analysis.integration_checks import _NOT_APPLICATION
+    from app.analysis.file_kinds import is_application
 
-    assert _NOT_APPLICATION.search("proj/test-contract.js")
-    assert _NOT_APPLICATION.search("proj/test_helpers.js")
-    assert not _NOT_APPLICATION.search("proj/app.js")
-    assert not _NOT_APPLICATION.search("proj/latest-news.js")
+    assert not is_application("proj/test-contract.js")
+    assert not is_application("proj/test_helpers.js")
+    assert is_application("proj/app.js")
+    assert is_application("proj/latest-news.js")
 
 
 # --- "lines of code" is not "lines of file" -------------------------------
@@ -791,16 +791,16 @@ def test_an_mjs_test_is_a_test(name: str):
     Measured on run-da6c5e19: the two files that proved the copy-test fix had
     worked were the two the report told the reviewer to delete.
     """
-    from app.analysis.integration_checks import _NOT_APPLICATION
+    from app.analysis.file_kinds import is_application
 
-    assert _NOT_APPLICATION.search(name)
+    assert not is_application(name)
 
 
 @pytest.mark.parametrize("name", ["app.mjs", "app.js", "latest-news.js"])
 def test_an_mjs_application_file_is_not_a_test(name: str):
-    from app.analysis.integration_checks import _NOT_APPLICATION
+    from app.analysis.file_kinds import is_application
 
-    assert not _NOT_APPLICATION.search(name)
+    assert is_application(name)
 
 
 # --- a stylesheet rule nothing ever applies --------------------------------

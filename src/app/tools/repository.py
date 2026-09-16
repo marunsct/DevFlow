@@ -1419,7 +1419,9 @@ def looks_like_a_test(relative_path: str) -> bool:
     sits above this layer. `test_the_two_definitions_of_a_test_agree` pins them
     together so they cannot drift.
     """
-    return bool(_LOOKS_LIKE_A_TEST.search(relative_path))
+    from app.analysis.file_kinds import is_test
+
+    return is_test(relative_path)
 
 
 def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:

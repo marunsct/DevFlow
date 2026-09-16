@@ -344,20 +344,40 @@ def test_what_counts_as_a_test(path: str, is_test: bool) -> None:
     assert looks_like_a_test(path) is is_test
 
 
-def test_the_two_definitions_of_a_test_agree() -> None:
-    """`repository.looks_like_a_test` guards deletion; `_NOT_APPLICATION`
-    decides what the size report and orphan check treat as a test. They are in
-    different layers and must not drift."""
-    from app.analysis.integration_checks import _NOT_APPLICATION
+def test_there_is_only_one_definition_of_a_test() -> None:
+    """There used to be two, and they drifted.
+
+    `repository.looks_like_a_test` guarded deletion; `_NOT_APPLICATION` decided
+    what the size report and orphan check treated as a test. This test existed
+    to catch them disagreeing. They did: the first matched `test_*.py` and
+    `*_test.py`, the second matched neither, so every Python test file counted
+    as application code against the declared budget - unnoticed, because no
+    Python product had reached a size review. Finding 92 was a third answer,
+    written inline.
+
+    Both now call `classify_file`, so drift is not something to test for.
+    """
+    import inspect
+
+    from app.analysis import integration_checks
+    from app.tools import repository
+
+    assert "file_kinds" in inspect.getsource(repository.looks_like_a_test)
+    assert "from app.analysis.file_kinds import" in inspect.getsource(integration_checks)
+
+
+def test_the_one_definition_still_answers_both_callers() -> None:
+    from app.analysis.file_kinds import is_application
     from app.tools.repository import looks_like_a_test
 
-    for path in ("tests/logic.js", "project/test-contract.js", "project/a.test.js"):
+    for path in ("tests/logic.js", "project/test-contract.js", "project/a.test.js",
+                 "tests/test_helpers.py", "project/handler_test.go"):
         assert looks_like_a_test(path), path
-        assert _NOT_APPLICATION.search(path), path
+        assert not is_application(path), path
 
-    for path in ("project/app.js", "project/verify-css.js"):
+    for path in ("project/app.js", "project/verify-css.js", "project/main.go"):
         assert not looks_like_a_test(path), path
-        assert not _NOT_APPLICATION.search(path), path
+        assert is_application(path), path
 
 
 @pytest.mark.parametrize("name", ["a.test.mjs", "a.test.cjs", "test-contract.mjs"])
@@ -434,3 +454,31 @@ def test_a_real_test_is_still_protected(tmp_path):
     with pytest.raises(Exception):
         delete_approved_artifact(str(tmp_path), "todo-app/app.test.mjs")
     assert (tmp_path / "todo-app/app.test.mjs").exists()
+
+
+def test_a_python_test_is_not_counted_as_application_code() -> None:
+    """The drift the two definitions had, which nothing had caught.
+
+    `_LOOKS_LIKE_A_TEST` matched `test_*.py` and `*_test.py`. `_NOT_APPLICATION`
+    matched neither, so a Python test file counted against the declared line
+    budget as if it were the product. That is finding 92 again - a budget
+    inflated by the test suite, which an agent closes most cheaply by deleting
+    tests.
+    """
+    from app.analysis.file_kinds import is_application
+
+    for path in ("tests/test_storage.py", "app/storage_test.py", "conftest.py"):
+        assert not is_application(path), path
+
+
+def test_other_languages_are_classified_too() -> None:
+    """Adding a language means adding a pattern in one place, rather than
+    discovering one checker at a time that none of them knew."""
+    from app.analysis.file_kinds import classify_file
+
+    assert classify_file("pkg/handler_test.go") == "test"
+    assert classify_file("src/test/java/AppTest.java") == "test"
+    assert classify_file("spec/models/user_spec.rb") == "test"
+    assert classify_file("tests/Unit/AppTest.php") == "test"
+    assert classify_file("src/main.rs") == "application"
+    assert classify_file("Cargo.lock") == "vendored"

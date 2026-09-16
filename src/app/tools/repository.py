@@ -262,10 +262,76 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
             "pattern. Secrets must never be placed in a model prompt."
         )
     if not target.exists():
-        raise RepositoryToolError(f"File does not exist within the repository: {relative_path}")
+        raise RepositoryToolError(
+            f"File does not exist within the repository: {relative_path}"
+            + _where_that_name_actually_is(root, relative_path)
+        )
     if not target.is_file():
-        raise RepositoryToolError(f"Requested path is not a file: {relative_path}")
+        raise RepositoryToolError(
+            f"Requested path is not a file: {relative_path}"
+            + _what_that_directory_holds(target)
+        )
     return target.read_text(encoding="utf-8")
+
+
+#: Paths to name when a read misses. Enough to place the file, short of a list.
+_MAX_SUGGESTIONS = 4
+
+
+def _where_that_name_actually_is(root: Path, wanted: str) -> str:
+    """" There is a file of that name at ...", or "". Never raises.
+
+    `read_file` has had this since run-3f8e387d, where 56 of 72 failed reads
+    named a file that was in the workspace under a different path. This is the
+    other read tool, and it had none of it - the third piece of machinery
+    `read_repository_file` turned out to be missing, after the repeat notice
+    and the span tracking.
+
+    Measured across run-499c771a, run-454adf22 and run-04576307: each one
+    failed a `read_repository_file` of `README.md` at the workspace root while
+    the project's README sat one directory down.
+    """
+    name = wanted.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    if not name:
+        return ""
+    try:
+        found = [
+            candidate.relative_to(root).as_posix()
+            for candidate in root.rglob(name)
+            if candidate.is_file()
+            and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+        ]
+    except Exception:  # noqa: BLE001 - a hint must never replace the error
+        return ""
+    if not found:
+        return ""
+    shown = ", ".join(sorted(found)[:_MAX_SUGGESTIONS])
+    more = "" if len(found) <= _MAX_SUGGESTIONS else f" and {len(found) - _MAX_SUGGESTIONS} more"
+    return f" There is a file of that name at {shown}{more}."
+
+
+def _what_that_directory_holds(target: Path) -> str:
+    """" It is a directory containing ...", or "". Never raises.
+
+    A read that lands on a directory is asking what is in it; see
+    `app.agents.workspace_backend._what_is_in_it`, which answers the same
+    question for the other read tool.
+    """
+    try:
+        if not target.is_dir():
+            return ""
+        entries = sorted(
+            f"{child.name}/" if child.is_dir() else child.name
+            for child in target.iterdir()
+            if child.name not in IGNORED_DIRECTORIES
+        )
+    except Exception:  # noqa: BLE001
+        return ""
+    if not entries:
+        return " It is a directory, and it is empty."
+    shown = ", ".join(entries[:30])
+    more = "" if len(entries) <= 30 else f" and {len(entries) - 30} more"
+    return f" It is a directory containing: {shown}{more}. Read one of those."
 
 
 def read_text_lines(

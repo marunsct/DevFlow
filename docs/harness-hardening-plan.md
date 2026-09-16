@@ -434,6 +434,64 @@ What follows from this, and what does not:
   diff. That is 1 of the 30 - worth having, and worth stating at its true
   size rather than the size the fix felt like when it was written.
 
+## 4d. What runs 69-71 added: the module-system conflict
+
+Runs 69, 70 and 71 all reached the same state, and none of them got out of it
+cleanly. It is one failure class, not three, and it is worth naming because it
+cost more than everything in §4c put together: run 70 spent roughly 260 of its
+814 events on it and died, and run 71 spent two milestones on it.
+
+The shape. The product is one `app.js` with two consumers that want opposite
+things:
+
+- `index.html` loading it with a plain `<script>` tag needs a classic script,
+  so `export` is a syntax error in the browser;
+- `app.test.mjs` doing `import { addTask } from './app.js'` needs a module, so
+  removing the export breaks the suite.
+
+Both are satisfiable at once - `type="module"` on the tag - and the harness
+says so. Run 71's milestone reviewer quoted the fix verbatim. The technical
+lead then delegated the other resolution ("remove ES module export statements
+and expose all functions in the global window scope", and to the UI
+specialist, "ensure the script tag remains unchanged and no type attribute is
+added") and left the ESM test untouched, so the plan could not succeed as
+written.
+
+What made it expensive was not the conflict but the silence around it. Five
+separate things were invisible, and each is now a check:
+
+| what was silent | what it cost | now |
+|---|---|---|
+| removing an export something imports | the suite breaks a stage later | `who_would_break`, at the write |
+| `"type": "module"` against files still using `require` | one failing test run per file | `_files_that_contradict_the_declared_module_type`, all named at once |
+| CommonJS behind `<script type="module">` | the page is dead, tests still green | `_commonjs_loaded_as_a_module` |
+| `test(...)` with nothing importing `test` | `ReferenceError`, whole suite | `_suites_calling_a_global_node_does_not_define` |
+| cases inside a default export | `# pass 1`, nothing ran | `tests_the_runner_will_never_call` |
+
+Two lessons that generalise beyond this class:
+
+- **A green suite is not evidence the product works, and the harness has to say
+  which.** Run 69 shipped no HTML at all with every gate green; run 71 ended a
+  milestone with four passing tests and a page that throws on load. Every check
+  above is a cross-file check for exactly this reason - the suite imports the
+  module directly and never loads the page.
+- **A check that finds a broken product must be graded as one.** All three
+  checks written for run 70 landed in the "untidy rather than broken" bucket
+  the day they were written, because `_severity_of` matches a phrase and none
+  of their phrases was in the list. The reviewer was being offered a
+  never-executed test suite as a minor finding. There is now a test pinning
+  each to BREAKS and checking that every marker is a phrase some message really
+  emits.
+
+One measurement in §4c is superseded rather than wrong. "Not a better failure
+message" holds for the 21 misses where the model never read the text. It does
+not hold for a near-miss report that was *itself* misleading: `_how_it_differs`
+compared the sent passage to the file position by position, so one inserted
+line made every later line look different. Run 70 was told 21 lines differed
+when two did, and sent the same passage twice more. Aligning the comparison is
+not a forgiving matcher - the edit is still refused - it only stops the refusal
+lying about why.
+
 ## 5. Method to keep
 
 The procedure that produced these findings is itself the most valuable artefact of the

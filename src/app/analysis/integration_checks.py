@@ -458,6 +458,68 @@ def _modules_loaded_as_plain_scripts(files: list[Path], root: Path) -> list[str]
     return problems
 
 
+#: A path-looking token in a script: something with a slash or a file suffix.
+_SCRIPT_PATH = re.compile(r"(?<![\w./-])((?:\./)?[\w.-]+(?:/[\w.-]+)*\.[cm]?[jt]sx?)")
+
+
+def _manifest_scripts_that_cannot_resolve(files: list[Path], root: Path) -> list[str]:
+    """Paths in `scripts` that do not exist from the manifest's own directory.
+
+    `npm run` sets the working directory to the package directory, so a path in
+    a script is relative to the manifest beside it. A model that writes the
+    project directory into the path as well produces
+    `todo-app/todo-app/app.test.mjs`, which exists nowhere.
+
+    `strip_a_doubled_working_directory` catches that shape in a
+    `run_terminal_command` argument, and cannot reach this one: a path written
+    into `package.json` is persisted, and `npm test` fails the same way every
+    time it is run, for the rest of the project's life.
+
+    Measured on run-a7150a6c, whose manifest said
+
+        "test": "node --test simple-to-do-list-app/app.test.mjs"
+
+    inside `simple-to-do-list-app/`. `npm test` reported
+    `Could not find '.../simple-to-do-list-app/simple-to-do-list-app/app.test.mjs'`
+    while `app.test.mjs` sat beside the manifest.
+
+    Reported only when the path does not resolve and something of that name is
+    in the project, so a script naming a file that is about to be written is
+    not called a defect.
+    """
+    problems: list[str] = []
+    for manifest in files:
+        if manifest.name != "package.json":
+            continue
+        try:
+            scripts = (json.loads(_read(manifest)) or {}).get("scripts") or {}
+        except Exception:  # noqa: BLE001 - a broken manifest is reported elsewhere
+            continue
+        project = manifest.parent
+        for name, command in sorted(scripts.items()):
+            for candidate in set(_SCRIPT_PATH.findall(str(command))):
+                if (project / candidate).exists():
+                    continue
+                elsewhere = [
+                    other.relative_to(project).as_posix()
+                    for other in project.rglob(Path(candidate).name)
+                    if other.is_file()
+                    and not any(part in _SKIP for part in other.parts)
+                ]
+                if not elsewhere:
+                    continue
+                problems.append(
+                    f"{manifest.relative_to(root)} runs `npm run {name}` as "
+                    f"`{command}`, and `{candidate}` does not exist from "
+                    f"{project.relative_to(root)}/ - which is where npm runs it. "
+                    f"The file is at {', '.join(sorted(elsewhere)[:3])}. The "
+                    "script fails every time it is run, and will keep failing: "
+                    "this path is written into the manifest, not passed on a "
+                    "command line."
+                )
+    return problems
+
+
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     """Application scripts that nothing loads or imports, as relative paths."""
     referenced: set[str] = set()
@@ -1413,6 +1475,7 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
 #: untidy, and one that matches too much makes a reviewer block on dead CSS.
 _BREAKS_BEHAVIOUR = (
     "have never executed, and a passing suite",  # a false green suite
+    "does not exist from",               # a manifest script naming a bad path
     "parses it as a classic script",     # ESM behind a plain <script> tag
     "looks for the element id",          # a script hook no page provides
     "reads the attribute",               # a data-* attribute nothing sets
@@ -1451,6 +1514,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             + _hooks_javascript_reaches_for(files, root)
             + _tests_the_project_never_runs(files, root)
             + _modules_loaded_as_plain_scripts(files, root)
+            + _manifest_scripts_that_cannot_resolve(files, root)
             + _dangling_class_selectors(files, root)
             + _documented_commands_that_cannot_run(files, root, root / "docs")
             + _broken_local_references(files, root)

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import posixpath
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 #: Filesystem tools whose path argument is rooted at the workspace.
@@ -53,6 +54,48 @@ def workspace_relative(path: str, repo_root: str) -> str:
     return path
 
 
+
+def without_an_invented_root(path: str, repo_root: str) -> str:
+    """The same file with a made-up top directory removed, if that is what it is.
+
+    `workspace_relative` handles the host path the workflow itself hands out.
+    This handles the other direction: a root the model invents. The brief says
+    "The workspace is rooted at '/'" and the model writes `/workspace/docs/...`
+    anyway.
+
+    Measured on run-44653bd2: 16 `read_file` calls for
+    `/workspace/docs/technical_specification.md` and two `ls` of `/workspace`,
+    18 of that run's 33 tool failures, every one for a file that existed one
+    level down. The "there is a file of that name at ..." hint fired on every
+    one of them and the model asked again regardless - which is the case for
+    rewriting rather than explaining.
+
+    Deliberately evidence-led rather than a list of known prefixes. It rewrites
+    only when the path as given does not exist *and* the path without its first
+    segment does, so a workspace that really does contain a `workspace/`
+    directory is untouched, and a genuinely missing file still fails as a
+    missing file.
+    """
+    if not path or not repo_root:
+        return path
+    normalised = posixpath.normpath(path)
+    if not normalised.startswith("/"):
+        return path
+    segments = [part for part in normalised.split("/") if part]
+    if len(segments) < 2:
+        return path
+
+    root = Path(repo_root)
+    try:
+        if (root / "/".join(segments)).exists():
+            return path
+        without_first = "/" + "/".join(segments[1:])
+        if (root / "/".join(segments[1:])).exists():
+            return without_first
+    except OSError:  # noqa: PERF203 - an unreadable workspace rewrites nothing
+        return path
+    return path
+
 #: What `read_file` returns when the model does not say. The tool's own default
 #: is 100 lines, which is less than half of what the tool-result budget can
 #: already afford and turns reading one source file into several model turns.
@@ -81,7 +124,11 @@ def rewrite_tool_arguments(
     if key is not None:
         value = arguments.get(key)
         if isinstance(value, str):
-            changed[key] = workspace_relative(value, repo_root)
+            # Host path first - that is the spelling the workflow itself hands
+            # out - then a root the model invented, which only resolves against
+            # what is actually on disk.
+            resolved = workspace_relative(value, repo_root)
+            changed[key] = without_an_invented_root(resolved, repo_root)
 
     # Only when the model did not ask for a window. The raw arguments still
     # distinguish that from an explicit `limit`, because the schema default is

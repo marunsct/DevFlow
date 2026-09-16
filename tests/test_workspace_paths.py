@@ -138,3 +138,84 @@ def test_arguments_are_returned_unchanged_when_nothing_applies():
     original = {"path": "/already/fine"}
 
     assert rewrite_tool_arguments("ls", original, "/ws") is original
+
+
+# --- a root the model invented ------------------------------------------
+
+
+def test_an_invented_workspace_root_is_stripped(tmp_path) -> None:
+    """Measured on run-44653bd2, on North-Mini-Code-1.0.
+
+    16 `read_file` calls for `/workspace/docs/technical_specification.md` and
+    two `ls` of `/workspace` - 18 of that run's 33 tool failures, every one for
+    a file that existed one level down. The brief says "The workspace is rooted
+    at '/'" and the "there is a file of that name at ..." hint fired on every
+    one of them; the model asked again regardless.
+    """
+    from app.agents.workspace_paths import without_an_invented_root
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/spec.md").write_text("x", encoding="utf-8")
+
+    assert without_an_invented_root("/workspace/docs/spec.md", str(tmp_path)) == "/docs/spec.md"
+
+
+def test_a_real_directory_of_that_name_is_left_alone(tmp_path) -> None:
+    """The reason this resolves against the disk instead of matching a list of
+    known prefixes: a workspace may genuinely contain `workspace/`."""
+    from app.agents.workspace_paths import without_an_invented_root
+
+    (tmp_path / "workspace/docs").mkdir(parents=True)
+    (tmp_path / "workspace/docs/real.md").write_text("y", encoding="utf-8")
+
+    path = "/workspace/docs/real.md"
+    assert without_an_invented_root(path, str(tmp_path)) == path
+
+
+def test_a_genuinely_missing_file_still_fails_as_one(tmp_path) -> None:
+    """Rewriting only ever turns a failing path into a working one. A path that
+    is wrong in some other way must still be reported wrong."""
+    from app.agents.workspace_paths import without_an_invented_root
+
+    (tmp_path / "docs").mkdir()
+
+    assert without_an_invented_root("/docs/missing.md", str(tmp_path)) == "/docs/missing.md"
+    assert without_an_invented_root("/nope/deep/gone.md", str(tmp_path)) == "/nope/deep/gone.md"
+
+
+def test_a_single_segment_is_not_collapsed_to_the_root(tmp_path) -> None:
+    """`ls /nowhere` must not quietly become `ls /`.
+
+    The listing tools already answer a bad path with "there is a directory of
+    that name at ...", which is worth more than silently showing the root.
+    """
+    from app.agents.workspace_paths import without_an_invented_root
+
+    assert without_an_invented_root("/workspace", str(tmp_path)) == "/workspace"
+
+
+def test_the_rewrite_reaches_the_tool_arguments(tmp_path) -> None:
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/spec.md").write_text("x", encoding="utf-8")
+
+    rewritten = rewrite_tool_arguments(
+        "read_file", {"file_path": "/workspace/docs/spec.md", "limit": 400}, str(tmp_path)
+    )
+
+    assert rewritten["file_path"] == "/docs/spec.md"
+
+
+def test_the_host_path_rewrite_still_runs_first(tmp_path) -> None:
+    """Both rewrites apply, in the order that makes each one's input sane."""
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs/spec.md").write_text("x", encoding="utf-8")
+
+    rewritten = rewrite_tool_arguments(
+        "read_file", {"file_path": f"{tmp_path}/docs/spec.md", "limit": 400}, str(tmp_path)
+    )
+
+    assert rewritten["file_path"] == "/docs/spec.md"

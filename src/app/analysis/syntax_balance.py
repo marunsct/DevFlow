@@ -37,6 +37,7 @@ impossible for the model to diagnose afterwards, and fatal to a run.
 from __future__ import annotations
 
 import ast
+import re
 from dataclasses import dataclass
 
 #: Extensions whose brackets balance the C way.
@@ -160,6 +161,87 @@ def _confidently_unbalanced(text: str) -> Imbalance | None:
     return plain
 
 
+#: What Node's own modules actually export by name. Fixed, documented, and the
+#: thing a model guesses at most often - `assert` is the *default* export of
+#: `node:assert`, not a named one, and `node:test` does not export it at all.
+#:
+#: run-82e1dbdb wrote `import { assert } from 'node:test'` and
+#: `import { assert } from 'node:assert'` more than ten times. Each one is
+#: valid-looking, parses cleanly, and fails only when the test runs - so the
+#: sprint spent all three remediation attempts on it and the run ended with the
+#: defects still open. Nine of that run's twenty-six tool failures were this.
+_NODE_NAMED_EXPORTS: dict[str, frozenset[str]] = {
+    "node:test": frozenset({
+        "test", "describe", "it", "suite", "before", "after", "beforeEach",
+        "afterEach", "mock", "run", "snapshot", "skip", "todo", "only",
+    }),
+    "node:assert": frozenset({
+        "ok", "equal", "notEqual", "deepEqual", "notDeepEqual", "strictEqual",
+        "notStrictEqual", "deepStrictEqual", "notDeepStrictEqual", "throws",
+        "doesNotThrow", "rejects", "doesNotReject", "ifError", "match",
+        "doesNotMatch", "fail", "strict", "AssertionError", "CallTracker",
+    }),
+}
+_NODE_NAMED_EXPORTS["assert"] = _NODE_NAMED_EXPORTS["node:assert"]
+_NODE_NAMED_EXPORTS["node:assert/strict"] = _NODE_NAMED_EXPORTS["node:assert"]
+
+#: `import { a, b as c } from 'module'`
+_NAMED_IMPORT = re.compile(r"import\s*\{([^}]*)\}\s*from\s*['\"]([^'\"]+)['\"]")
+
+#: CommonJS in a file the runtime will load as ESM.
+_REQUIRE = re.compile(r"(?<![\w.])require\s*\(")
+_MODULE_EXPORTS = re.compile(r"(?<![\w.])module\.exports\b")
+
+
+def _unknown_named_imports(content: str) -> str | None:
+    """A named import Node does not provide, with the import that works.
+
+    Only for modules whose exports are known exactly. Anything else is left
+    alone: guessing at a package's exports would produce false accusations, and
+    a false accusation on a write is worth more than a missed one.
+    """
+    for match in _NAMED_IMPORT.finditer(content):
+        names, module = match.group(1), match.group(2)
+        known = _NODE_NAMED_EXPORTS.get(module)
+        if known is None:
+            continue
+        for raw in names.split(","):
+            name = raw.strip().split(" as ")[0].strip()
+            if not name or name in known:
+                continue
+            if name == "assert" and module in ("node:assert", "assert"):
+                return (
+                    f"`import {{ assert }} from '{module}'` will fail at runtime: "
+                    "`assert` is that module's *default* export, not a named one. "
+                    f"Use `import assert from '{module}'`, or import the checks by "
+                    "name - `import {{ strictEqual, deepStrictEqual, ok }} from "
+                    f"'{module}'`."
+                )
+            return (
+                f"`{module}` does not export `{name}`, so this import fails when "
+                f"the file is loaded. It exports: {', '.join(sorted(known))}."
+            )
+    return None
+
+
+def _commonjs_in_a_module(relative_path: str, content: str) -> str | None:
+    """`require` or `module.exports` in a file Node will load as ESM."""
+    if not relative_path.lower().endswith(".mjs"):
+        return None
+    if _REQUIRE.search(content):
+        return (
+            "`require(...)` in a .mjs file fails with \"require is not defined in "
+            "ES module scope\" - the extension makes this a module. Use "
+            "`import x from '...'` instead."
+        )
+    if _MODULE_EXPORTS.search(content):
+        return (
+            "`module.exports` in a .mjs file fails with \"module is not defined in "
+            "ES module scope\". Use `export` instead."
+        )
+    return None
+
+
 def structural_problem(relative_path: str, content: str) -> str | None:
     """What is structurally wrong with this file, or None if nothing is.
 
@@ -183,6 +265,16 @@ def structural_problem(relative_path: str, content: str) -> str | None:
 
     if suffix not in _BRACED:
         return None
+
+    # Cheap, exact checks first: these name the fix, where a bracket imbalance
+    # can only name a line.
+    if suffix in {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}:
+        for problem in (
+            _commonjs_in_a_module(relative_path, content),
+            _unknown_named_imports(content),
+        ):
+            if problem:
+                return problem
 
     found = _confidently_unbalanced(content)
     if found is None:

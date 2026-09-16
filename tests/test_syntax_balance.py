@@ -130,3 +130,74 @@ def test_both_edit_paths_build_their_result_in_one_place() -> None:
 
     assert source.count("_edited(") == 2
     assert '"status": "edited"' not in source, "the result shape belongs in _edited"
+
+
+# --- imports that parse cleanly and fail at runtime -----------------------
+
+
+def test_the_import_that_cost_a_sprint_is_caught() -> None:
+    """run-82e1dbdb wrote this more than ten times.
+
+    `import { assert } from 'node:test'` parses, looks right, and fails only
+    when the test runs - so the sprint spent all three remediation attempts on
+    it and ended with the defects still open. Nine of that run's twenty-six
+    tool failures were this shape.
+    """
+    problem = structural_problem("app.test.mjs", "import { test, assert } from 'node:test';\n")
+
+    assert problem and "does not export `assert`" in problem
+    # It must list what the module does export, or the next guess is another guess.
+    assert "describe" in problem and "it" in problem
+
+
+def test_assert_is_named_as_a_default_export() -> None:
+    """The specific confusion: `assert` exists, just not as a named import."""
+    problem = structural_problem("a.mjs", "import { assert } from 'node:assert';\n")
+
+    assert problem and "default* export" in problem
+    assert "import assert from 'node:assert'" in problem
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import assert from 'node:assert';\nimport { test } from 'node:test';\n",
+        "import { strictEqual, ok, deepStrictEqual } from 'node:assert';\n",
+        "import { strict as assert } from 'node:assert';\n",
+        "import { describe, it, before, afterEach } from 'node:test';\n",
+    ],
+)
+def test_correct_imports_are_silent(source: str) -> None:
+    assert structural_problem("a.mjs", source) is None
+
+
+def test_a_package_whose_exports_are_unknown_is_left_alone() -> None:
+    """Guessing at a package's exports would produce false accusations, and on
+    a write a false accusation costs more than a missed one."""
+    assert structural_problem("a.mjs", "import { somethingOdd } from 'lodash';\n") is None
+    assert structural_problem("a.mjs", "import { render } from './ui.js';\n") is None
+
+
+def test_commonjs_in_an_mjs_file_is_caught() -> None:
+    """Three of run-82e1dbdb's failures were "require is not defined in ES
+    module scope"."""
+    problem = structural_problem("a.mjs", "const x = require('./a.js');\n")
+
+    assert problem and "require is not defined" in problem
+    assert "import x from" in problem
+
+
+def test_module_exports_in_an_mjs_file_is_caught() -> None:
+    problem = structural_problem("a.mjs", "module.exports = { a: 1 };\n")
+
+    assert problem and "module is not defined" in problem
+
+
+def test_commonjs_in_a_cjs_file_is_correct() -> None:
+    """The extension is what decides, and .cjs means CommonJS."""
+    assert structural_problem("a.cjs", "const x = require('./a.js');\n") is None
+    assert structural_problem("a.cjs", "module.exports = {};\n") is None
+
+
+def test_a_word_ending_in_require_is_not_a_require_call() -> None:
+    assert structural_problem("a.mjs", "const preRequire = 1;\nobj.require(x);\n") is None

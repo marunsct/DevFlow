@@ -1558,6 +1558,53 @@ def _severity_of(problem: str) -> str:
     return "BREAKS" if any(mark in problem for mark in _BREAKS_BEHAVIOUR) else "untidy"
 
 
+#: Every cross-file check, with the phrase that describes it to a reviewer.
+#:
+#: One list so the two cannot drift. The sentence naming what was checked was
+#: hand-written and hand-maintained, and by the time four more checks had been
+#: added it described none of them - a reviewer reading "here is what was
+#: checked" got a list four items short. Deriving the sentence from the checks
+#: that actually run makes that impossible rather than unlikely.
+_CHECKS: tuple[tuple[str, Any], ...] = (
+    ("the chosen stack against what is on disk",
+     lambda files, root, stack: _stack_conflicts(files, root, stack)),
+    ("manifests against the project they describe",
+     lambda files, root, stack: _manifest_defects(files, root, stack)),
+    ("stylesheet id selectors against declared element ids",
+     lambda files, root, stack: _dangling_id_selectors(files, root)),
+    ("the ids and data attributes scripts reach for against the page",
+     lambda files, root, stack: _hooks_javascript_reaches_for(files, root)),
+    ("test files against the project's own test command",
+     lambda files, root, stack: _tests_the_project_never_runs(files, root)),
+    ("module syntax against the script tag that loads it",
+     lambda files, root, stack: _modules_loaded_as_plain_scripts(files, root)),
+    ("paths in package.json scripts against where npm runs them",
+     lambda files, root, stack: _manifest_scripts_that_cannot_resolve(files, root)),
+    ("exported names against the names any test mentions",
+     lambda files, root, stack: _exports_no_test_mentions(files, root)),
+    ("stylesheet class selectors against the elements that carry them",
+     lambda files, root, stack: _dangling_class_selectors(files, root)),
+    ("commands the documents tell a reader to run",
+     lambda files, root, stack: _documented_commands_that_cannot_run(files, root, root / "docs")),
+    ("HTML script and stylesheet references against the files they name",
+     lambda files, root, stack: _broken_local_references(files, root)),
+    ("application modules against whatever loads them",
+     lambda files, root, stack: _unreferenced_scripts(files, root)),
+    ("tests against the module they should be importing",
+     lambda files, root, stack: _redefined_instead_of_imported(files, root)),
+    ("application code against the page it is embedded in",
+     lambda files, root, stack: _application_embedded_in_html(files, root)),
+    ("languages against the directory they share",
+     lambda files, root, stack: _languages_sharing_a_directory(files, root)),
+    ("module syntax against the test configuration",
+     lambda files, root, stack: _module_system_mismatch(files, root)),
+    ("tests against the directory they are run from",
+     lambda files, root, stack: _tests_that_depend_on_the_working_directory(files, root)),
+    ("the size of the product against the budget its own documents state",
+     lambda files, root, stack: _over_the_declared_budget(files, root, _orphans_quietly(files, root))),
+)
+
+
 def summarise_integration(repository_root: str | Path, stack: Any = None) -> str:
     """What the files in this workspace say about each other. Never raises."""
     try:
@@ -1572,36 +1619,18 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
         return "No HTML, CSS or JavaScript files were found to cross-check."
 
     try:
-        problems = (
-            _stack_conflicts(files, root, stack)
-            + _manifest_defects(files, root, stack)
-            + _dangling_id_selectors(files, root)
-            + _hooks_javascript_reaches_for(files, root)
-            + _tests_the_project_never_runs(files, root)
-            + _modules_loaded_as_plain_scripts(files, root)
-            + _manifest_scripts_that_cannot_resolve(files, root)
-            + _exports_no_test_mentions(files, root)
-            + _dangling_class_selectors(files, root)
-            + _documented_commands_that_cannot_run(files, root, root / "docs")
-            + _broken_local_references(files, root)
-            + _unreferenced_scripts(files, root)
-            + _redefined_instead_of_imported(files, root)
-            + _application_embedded_in_html(files, root)
-            + _languages_sharing_a_directory(files, root)
-            + _module_system_mismatch(files, root)
-            + _tests_that_depend_on_the_working_directory(files, root)
-            + _over_the_declared_budget(files, root, _orphans_quietly(files, root))
-        )
+        problems = []
+        for describe, check in _CHECKS:  # noqa: B007 - the description is used below
+            problems.extend(check(files, root, stack))
     except Exception:  # noqa: BLE001
         return "The cross-file checks could not complete on this workspace."
 
     checked = (
-        f"Cross-file checks ran over {len(files)} files: stylesheet id selectors "
-        "and the ids and data attributes scripts reach for against declared "
-        "element ids, HTML script and stylesheet references "
-        "against the files they name, application modules against whatever "
-        "loads them, and module syntax against the test configuration."
+        f"Cross-file checks ran over {len(files)} files: "
+        + ", ".join(describe for describe, _ in _CHECKS)
+        + "."
     )
+
     # The same orphan set the checks above reported, so the size report and the
     # problem list cannot disagree about which files are part of the product.
     try:

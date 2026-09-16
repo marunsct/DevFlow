@@ -266,7 +266,10 @@ def test_a_conforming_project_reports_no_stack_conflict(tmp_path):
 
     report = summarise_integration(root, PY_STACK)
 
-    assert "chosen" not in report
+    # On the findings, not on a word: "chosen" also appears in the sentence
+    # naming what was checked, so using it as a proxy for a stack-conflict
+    # finding made this test pass or fail on the preamble's wording.
+    assert "No cross-file problems found." in report
 
 
 def test_typescript_is_not_a_second_language_in_a_javascript_project(tmp_path):
@@ -284,7 +287,7 @@ def test_no_stack_means_no_conformance_checking(tmp_path):
     """Older runs and fixtures carry no stack selection."""
     root = _workspace(tmp_path, {"package.json": '{"dependencies":{"mongoose":"^7"}}'})
 
-    assert "chosen" not in summarise_integration(root)
+    assert "No cross-file problems found." in summarise_integration(root)
 
 
 def test_a_missing_stack_component_is_not_reported(tmp_path):

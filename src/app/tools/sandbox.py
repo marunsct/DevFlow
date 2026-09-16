@@ -1542,19 +1542,63 @@ def _note_about_running_this_again(
         "something is still wrong."
     )
 
+def _outcome_of(entry: dict) -> str:
+    """How one ledger entry ended, in the words the digest uses."""
+    code = entry.get("returncode")
+    return "OK" if code == 0 else (f"exit {code}" if code is not None else "refused")
+
+
 def summarise_executions(repo_root: str) -> str:
-    """A short digest of what actually ran, for a reviewer or a model."""
+    """A short digest of what actually ran, for a reviewer or a model.
+
+    Chronological, and then where each command stands now. The second half is
+    not a convenience: without it this digest is read as a verdict on the
+    product, and it is a record of the work instead.
+
+    Run 0afef410's milestone reviewer is the case. It was handed
+
+        25 command(s) executed, 4 succeeded:
+        ... - [testing_specialist] npm test -> exit 1   (x4)
+        ... - [testing_specialist] npm test -> OK
+
+    and wrote a Major finding: "Test execution logs show multiple failures
+    (exit 1) across several commands. The test suite does not pass." At that
+    moment `npm test` in that workspace exited 0 with `# pass 4 # fail 0`. The
+    reading was a fair one of what it was given - a fixed command is
+    indistinguishable from a broken one when only the attempts are shown - and
+    it sent the milestone back for a defect that did not exist.
+
+    A command that failed and later succeeded has been fixed, and the failures
+    are the record of fixing it. That is what the tail now says.
+    """
     entries = read_execution_ledger(repo_root)
     if not entries:
         return "No commands were executed in this workspace."
     lines = []
     for entry in entries[-40:]:
         argv = " ".join(str(part) for part in entry.get("command") or [])
-        code = entry.get("returncode")
-        outcome = "OK" if code == 0 else (f"exit {code}" if code is not None else "refused")
-        lines.append(f"- [{entry.get('role', '?')}] {argv} -> {outcome}")
+        lines.append(f"- [{entry.get('role', '?')}] {argv} -> {_outcome_of(entry)}")
     passed = sum(1 for e in entries if e.get("returncode") == 0)
-    return f"{len(entries)} command(s) executed, {passed} succeeded:\n" + "\n".join(lines)
+
+    # Latest wins, insertion order kept, so the list reads in the order the
+    # commands were first tried rather than alphabetically.
+    latest: dict[str, str] = {}
+    for entry in entries:
+        argv = " ".join(str(part) for part in entry.get("command") or [])
+        if argv:
+            latest[argv] = _outcome_of(entry)
+    standing = "\n".join(f"- {argv} -> {outcome}" for argv, outcome in latest.items())
+
+    return (
+        f"{len(entries)} command(s) executed, {passed} succeeded:\n"
+        + "\n".join(lines)
+        + "\n\nWhere each distinct command stands now, by its most recent run:\n"
+        + standing
+        + "\n\nJudge the product by this list, not by the attempts above. A "
+        "command that failed earlier and succeeded later has been fixed, and "
+        "those failures are the record of fixing it, not evidence against the "
+        "product. Only a command whose most recent run failed is still failing."
+    )
 
 
 class SandboxExecutor:

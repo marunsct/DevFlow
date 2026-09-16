@@ -1647,3 +1647,59 @@ def test_the_note_and_the_reviewer_report_the_same_number(repo_root: Path) -> No
     assert note and findings
     total = re.search(r"it now holds ([\d,]+)", note).group(1).replace(",", "")
     assert f"{int(total):,} lines of code" in findings[0]
+
+
+def test_a_write_carrying_the_models_own_tokens_is_refused(repo_root: Path) -> None:
+    """The failure that killed run-44653bd2, on North-Mini-Code-1.0.
+
+    `Task.test.mjs` was written ending `");<|END_THINKING|><|START_ACTION|>[{`
+    - a syntax error on line 963 that broke the entire 963-line suite. A model
+    does not read its own control tokens as foreign text, so `defect_fix_1_0`
+    spent the rest of the run editing `TaskManager.js`, which was never the
+    broken file, and the run died on the repeat guard at 1,098 events.
+
+    Content carrying these is not a document with a formatting problem. It is a
+    turn that was cut off mid-way, so what would be saved is a truncated
+    transcript rather than the file the model meant to write.
+    """
+    with pytest.raises(RepositoryToolError, match="your own special tokens"):
+        write_approved_artifact(
+            repo_root, "app/a.test.mjs", '});\n\n");<|END_THINKING|><|START_ACTION|>[{'
+        )
+
+    assert not (repo_root / "app/a.test.mjs").exists()
+
+
+def test_every_family_of_control_token_is_caught(repo_root: Path) -> None:
+    for marker in ("<|im_start|>", "<|im_end|>", "<|eot_id|>", "<|endoftext|>", "<|START_THINKING|>"):
+        with pytest.raises(RepositoryToolError, match="your own special tokens"):
+            write_approved_artifact(repo_root, "app/x.js", f"const a = 1;\n{marker}\n")
+
+
+def test_ordinary_code_that_merely_looks_similar_is_written(repo_root: Path) -> None:
+    """The pattern has to be the full `<|name|>` spelling, or a comparison
+    operator beside a pipe would be refused as a control token."""
+    write_approved_artifact(repo_root, "app/b.js", "if (a <| b) {}\nconst c = x || y;\n")
+
+    assert (repo_root / "app/b.js").is_file()
+
+
+def test_an_edit_cannot_smuggle_one_in_either(repo_root: Path) -> None:
+    write_approved_artifact(repo_root, "app/c.js", "const only = 1;\n")
+
+    with pytest.raises(RepositoryToolError, match="your own special tokens"):
+        edit_approved_artifact(
+            repo_root, "app/c.js", "const only = 1;\n", "const only = 2;<|im_end|>\n"
+        )
+
+    assert (repo_root / "app/c.js").read_text(encoding="utf-8") == "const only = 1;\n"
+
+
+def test_the_refusal_says_nothing_was_written(repo_root: Path) -> None:
+    """An agent that thinks a partial file landed will try to patch it."""
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(repo_root, "app/d.js", "x<|eot_id|>")
+
+    message = str(caught.value)
+    assert "Nothing was written" in message
+    assert "Send the file again, complete" in message

@@ -565,6 +565,7 @@ def edit_approved_artifact(
             "The `find` text is empty. Give the exact passage to replace, or use "
             "write_artifact to replace the whole file."
         )
+    _refuse_control_tokens(relative_path, replace)
 
     # Read, replace and write as one step. Parallel tool calls in the same turn
     # would otherwise each replace a passage in their own copy of the file and
@@ -1174,6 +1175,50 @@ def _is_json_document(content: str) -> bool:
         return False
 
 
+_CONTROL_TOKEN = re.compile(r"<\|[A-Za-z0-9_\-]{1,40}\|>")
+"""A model's own special tokens, in the `<|name|>` spelling every family uses.
+
+`<|END_THINKING|>`, `<|START_ACTION|>`, `<|im_start|>`, `<|eot_id|>` and the
+rest are the delimiters a chat template wraps around a turn. They are not
+supposed to survive into content, and when they do the file is not what the
+model meant to write - it is the model's transcript, cut off mid-thought.
+
+Measured on run-44653bd2, on North-Mini-Code-1.0. `Task.test.mjs` was written
+ending:
+
+    });
+
+    ");<|END_THINKING|><|START_ACTION|>[{
+
+That is a syntax error on line 963, and it broke the entire 963-line suite.
+The agent could not diagnose it - a model does not read its own control tokens
+as foreign text - so `defect_fix_1_0` spent the rest of the run editing
+`TaskManager.js`, which was never the broken file, and the run died on the
+repeat guard at 1,098 events.
+
+The pattern is safe to refuse outright. No stylesheet, markup or program
+contains it, and prose that genuinely discusses these tokens is rare enough
+that being asked to write it a different way costs far less than shipping a
+corrupted artifact nobody can see is corrupted.
+"""
+
+
+def _refuse_control_tokens(relative_path: str, content: str) -> None:
+    """Refuse content carrying the model's own turn delimiters."""
+    found = _CONTROL_TOKEN.search(content or "")
+    if found is None:
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': the content contains "
+        f"'{found.group(0)}', which is one of your own special tokens and not "
+        "part of the file. Content that carries these is a turn that was cut "
+        "off mid-way, so what would be saved is a truncated transcript rather "
+        "than the file you meant. Nothing was written. Send the file again, "
+        "complete, with no such markers in it."
+    )
+
+
+
 def write_approved_artifact(repo_root: str | Path, relative_path: str, content: str) -> dict[str, str]:
     """Write a generated artifact only inside the repository root or its subfolders.
 
@@ -1274,6 +1319,11 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
             "Update that file in place instead. Two versions of the same document "
             "disagree with each other, and a reviewer reads both."
         )
+
+    # Before anything else about shape: content carrying the model's own turn
+    # delimiters is not a document with a formatting problem, it is a
+    # transcript that escaped.
+    _refuse_control_tokens(relative_path, content)
 
     if _is_json_document(content) and target.suffix.lower() in _PROSE_SUFFIXES:
         # Agents conflate "write the artifact" with "return the structured

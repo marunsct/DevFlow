@@ -29,6 +29,10 @@ MODULES = [
     "app.analysis.file_kinds",
     "app.agents.model_output",
     "app.agents.text_tool_calls",
+    "app.agents.severity",
+    "app.agents.specialist_roles",
+    "app.agents.specialists",
+    "app.agents.settled_answer",
     "app.models",
 ]
 

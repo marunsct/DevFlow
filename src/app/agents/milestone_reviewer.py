@@ -8,6 +8,7 @@ the next milestone without having to parse prose.
 
 from __future__ import annotations
 
+from app.agents.severity import validator_for as severity_in
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
 from pathlib import Path
@@ -15,7 +16,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -32,6 +33,13 @@ class MilestoneReviewFinding(BaseModel):
 
     severity: Literal["blocking", "major", "minor", "suggestion"] = Field(
         ..., description="How serious this finding is."
+    )
+
+    # Four schemas in this harness name severity and no two agree, so the word
+    # required of this model two stages ago is a validation error here. See
+    # `app.agents.severity`.
+    _known_severity = field_validator("severity", mode="before")(
+        severity_in("blocking", "major", "minor", "suggestion")
     )
     category: Literal[
         "correctness",

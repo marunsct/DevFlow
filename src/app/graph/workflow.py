@@ -1362,7 +1362,27 @@ blocking/major/minor/informational, milestone blocking/major/minor/suggestion,
 specialists blocking/major/minor, and security critical/high/medium/low/info.
 A set that covered only one of them would gate that reviewer and silently let
 the others through - or, as it did, gate none of them.
+
+Kept as the canonical spelling of "bad enough to send back". The check itself
+now asks `app.agents.severity` for the rank, so the same two rungs of the
+ladder gate whatever word a reviewer used to reach them - including the ones
+no vocabulary here defines but models write anyway (`severe`, `P1`, `Sev 2`).
 """
+
+#: The worst rank that does NOT gate. Ranks 0 and 1 are exactly the four words
+#: above; 2 is `medium`, which every vocabulary treats as "note it".
+_WORST_RANK_THAT_PASSES = 1
+
+
+def _severity_gates(value: Any) -> bool:
+    """Whether a finding at this severity justifies another round of work."""
+    from app.agents.severity import rank_of
+
+    word = str(value or "").strip().lower()
+    if word in _GATING_SEVERITIES:
+        return True
+    rank = rank_of(word)
+    return rank is not None and rank <= _WORST_RANK_THAT_PASSES
 
 
 def _findings_that_block(review: Any) -> list[Any]:
@@ -1395,7 +1415,7 @@ def _findings_that_block(review: Any) -> list[Any]:
     return [
         finding
         for finding in (getattr(review, "findings", None) or [])
-        if str(getattr(finding, "severity", "")).strip().lower() in _GATING_SEVERITIES
+        if _severity_gates(getattr(finding, "severity", ""))
     ]
 
 

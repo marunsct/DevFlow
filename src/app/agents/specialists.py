@@ -22,6 +22,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
+from app.agents.severity import validator_for as severity_in
+from app.agents.specialist_roles import role_slug
 from app.agents.technical_lead import SpecialistRole
 from app.tools.agent_toolkit import (
     build_journal_read_tool,
@@ -84,12 +86,38 @@ class ReportedDefect(BaseModel):
     `owner` is typed as `SpecialistRole` rather than a free string so the model
     must name one of the six real specialists. The plan's gate forbids
     accepting a sprint with unowned defects, and a defect owned by "the team"
-    or "backend service" is exactly that - unroutable.
+    or "whoever wrote it" is exactly that - unroutable. That gate is what this
+    field protects, and it still holds: `owner` stays required and stays one of
+    the six. Only the spelling is forgiven - "Testing Specialist" and "backend
+    service" name real roles and now reach them; "the team" still does not and
+    is still refused.
+
+    `ignore` rather than `forbid`, and aliases on `description` - for the
+    reason spelled out on `VerificationRun` below, measured again on
+    run-0deeb8bf's `defect_fix_2_0`. The Testing specialist wrote a real,
+    well-described defect as
+
+        {"name": "LocalStorage Integration Failure in Unit Tests",
+         "description": "addTask does not persist tasks to localStorage...",
+         "status": "Unresolved"}
+
+    `name` and `status` are not fields here, so `forbid` threw the whole answer
+    away; `settled_answer` could then not recognise it as an answer, so the
+    stage wrote it again, five times, until the repeat guard stopped the run.
+    A defect the model described correctly was lost over the two keys it added
+    around it. `status` in particular is the one field this shape deliberately
+    withholds - so refusing it also taught the model nothing, because the
+    answer it needed to send has no place to put what it was trying to say.
+    Dropping the extra keys keeps the defect and keeps the withholding.
     """
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    description: str = Field(..., description="Short summary of what is wrong.")
+    description: str = Field(
+        ...,
+        validation_alias=AliasChoices("description", "name", "title", "summary", "defect"),
+        description="Short summary of what is wrong.",
+    )
     severity: Literal["blocking", "major", "minor"] = Field(..., description="Impact level of this failure.")
     reproduction_steps: str = Field(..., description="How to reliably reproduce the failure.")
     expected_behavior: str = Field(..., description="What should have happened.")
@@ -100,6 +128,24 @@ class ReportedDefect(BaseModel):
         default=True,
         description="Whether closing this defect requires a new or updated regression test. Normally true.",
     )
+
+    # "High" is not in this vocabulary and is in two of the other three the
+    # same model is asked for elsewhere in the same run. See
+    # `app.agents.severity`.
+    _known_severity = field_validator("severity", mode="before")(
+        severity_in("blocking", "major", "minor")
+    )
+
+    @field_validator("owner", mode="before")
+    @classmethod
+    def _role_slug(cls, value: Any) -> Any:
+        """Accept the role written the way a person writes it.
+
+        The prompt names the roles as slugs and the model answers "Testing
+        Specialist", "Backend", "QA" - the same role, spelled for a reader.
+        Refusing that loses the routing information it was trying to give.
+        """
+        return role_slug(value)
 
 
 class VerificationRun(BaseModel):

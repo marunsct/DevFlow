@@ -336,6 +336,124 @@ def test_a_repeat_after_the_write_is_still_a_circle() -> None:
     assert update is not None and update["jump_to"] == "end"
 
 
+# --- the run-0deeb8bf shape: a refused write is not a change ---------------
+
+
+REFUSED = (
+    '{"error": "Refusing to write \'final_response.json\': this content is your '
+    "structured response, not an artifact. It reaches the workflow through the "
+    "response schema, which is the only way it is read - a copy on disk is read "
+    "by nothing and changes nothing. Nothing was written. Return your structured "
+    'response now instead."}'
+)
+
+
+def test_a_refused_write_repeated_is_a_circle() -> None:
+    """The shape that killed three runs.
+
+    The model writes a complete, valid answer as message content and, in the
+    same turn, tries to save that answer to a file. The tool refuses - a
+    structured response reaches the workflow through the schema and a copy on
+    disk is read by nothing - so the filesystem does not move, and the model
+    does the identical thing again. Counting the refusal as a change wiped the
+    record of what had already been asked, so the repeat never looked like one.
+    """
+    write = _call("write_artifact", {"relative_path": "final_response.json"})
+    state = {
+        "messages": [
+            AIMessage(content=ANSWER, tool_calls=[dict(write, id="c0")], id="m0"),
+            ToolMessage(content=REFUSED, tool_call_id="c0"),
+            _ai(ANSWER, [write]),
+        ]
+    }
+
+    update = _after(state)
+
+    assert update is not None and update["jump_to"] == "end"
+
+
+def test_a_write_that_changed_nothing_is_not_a_change_either() -> None:
+    """`"status": "unchanged"` means the file already held this content."""
+    write = _call("write_artifact", {"relative_path": "a/script.js"})
+    read = _call("read_file", {"file_path": "/a/script.js"})
+    state = {
+        "messages": [
+            AIMessage(content="", tool_calls=[dict(read, id="c0")], id="m0"),
+            ToolMessage(content="contents", tool_call_id="c0"),
+            AIMessage(content="", tool_calls=[dict(write, id="c1")], id="m1"),
+            ToolMessage(content='{"status": "unchanged", "path": "a/script.js"}', tool_call_id="c1"),
+            _ai(ANSWER, [read]),
+        ]
+    }
+
+    update = _after(state)
+
+    assert update is not None and update["jump_to"] == "end"
+
+
+def test_a_write_that_succeeded_still_clears_the_record() -> None:
+    """The false positive this must not acquire."""
+    read = _call("read_file", {"file_path": "/a/script.js"})
+    state = {
+        "messages": [
+            AIMessage(content="", tool_calls=[dict(read, id="c0")], id="m0"),
+            ToolMessage(content="old contents", tool_call_id="c0"),
+            AIMessage(
+                content="",
+                tool_calls=[_call("write_artifact", {"relative_path": "a/script.js"}, "c1")],
+                id="m1",
+            ),
+            ToolMessage(content='{"status": "written", "lines": 40}', tool_call_id="c1"),
+            _ai(ANSWER, [read]),
+        ]
+    }
+
+    assert _after(state) is None
+
+
+def test_a_failed_command_still_counts_as_a_change() -> None:
+    """A command that exits non-zero may still have moved the filesystem.
+
+    `npm install` can fail after writing a lockfile and half a tree. Only the
+    write tools promise that a refusal wrote nothing.
+    """
+    read = _call("read_file", {"file_path": "/a/package-lock.json"})
+    state = {
+        "messages": [
+            AIMessage(content="", tool_calls=[dict(read, id="c0")], id="m0"),
+            ToolMessage(content="path_not_found", tool_call_id="c0"),
+            AIMessage(
+                content="",
+                tool_calls=[_call("run_terminal_command", {"command": ["npm", "install"]}, "c1")],
+                id="m1",
+            ),
+            ToolMessage(content='{"error": "exit 1", "stderr": "ERESOLVE"}', tool_call_id="c1"),
+            _ai(ANSWER, [read]),
+        ]
+    }
+
+    assert _after(state) is None
+
+
+def test_a_write_whose_result_is_missing_counts_as_a_change() -> None:
+    """Unknown means "assume it did something" - the cheaper mistake."""
+    read = _call("read_file", {"file_path": "/a/script.js"})
+    state = {
+        "messages": [
+            AIMessage(content="", tool_calls=[dict(read, id="c0")], id="m0"),
+            ToolMessage(content="old contents", tool_call_id="c0"),
+            AIMessage(
+                content="",
+                tool_calls=[_call("write_artifact", {"relative_path": "a/script.js"}, "c1")],
+                id="m1",
+            ),
+            _ai(ANSWER, [read]),
+        ]
+    }
+
+    assert _after(state) is None
+
+
 def test_a_failure_inside_the_check_leaves_the_loop_alone() -> None:
     """It runs after every model call of every gated stage.
 

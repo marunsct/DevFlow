@@ -22,9 +22,22 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.agents.severity import rank_of
+
 #: Order findings are presented in, worst first. A reader scanning the table
 #: should meet the blocking ones before the suggestions.
-_SEVERITY_ORDER = {"blocking": 0, "major": 1, "minor": 2, "suggestion": 3}
+#: Worst first. This used to be a four-word table covering one reviewer's
+#: vocabulary, so every security finding - critical, high, medium, low, info -
+#: fell through to the default and the security table came out in whatever
+#: order the model happened to list them, with the critical ones as likely last
+#: as first. `app.agents.severity` ranks every vocabulary, which is the whole
+#: reason it exists.
+_UNRANKED = 9
+
+
+def _severity_rank(finding: Any) -> int:
+    rank = rank_of(getattr(finding, "severity", ""))
+    return _UNRANKED if rank is None else rank
 
 
 def _cell(text: Any) -> str:
@@ -35,7 +48,7 @@ def _cell(text: Any) -> str:
 def _findings_table(findings: list[Any], *, context_column: str, context_field: str) -> str:
     ordered = sorted(
         findings,
-        key=lambda f: _SEVERITY_ORDER.get(str(getattr(f, "severity", "")).lower(), 9),
+        key=_severity_rank,
     )
     rows = [
         f"| Severity | {context_column} | Description | Required remediation |",

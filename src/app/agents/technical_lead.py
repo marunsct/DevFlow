@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.project_layout import PROJECT_LAYOUT, WORKSPACE_ROOT_NOTE
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
@@ -51,6 +51,19 @@ class SpecialistTask(BaseModel):
     specialist_role: SpecialistRole = Field(..., description="Which specialist should perform this task.")
     task_description: str = Field(..., description="The specific, scoped piece of work being delegated.")
     acceptance_criteria: list[str] = Field(default_factory=list)
+
+    @field_validator("specialist_role", mode="before")
+    @classmethod
+    def _role_slug(cls, value: Any) -> Any:
+        """Accept the role written the way a person writes it.
+
+        A milestone plan is rejected whole, so "Backend Engineer" in one of six
+        tasks loses the other five as well. See `app.agents.specialist_roles`;
+        anything it cannot place is still refused.
+        """
+        from app.agents.specialist_roles import role_slug
+
+        return role_slug(value)
 
 
 class MilestonePlanOutput(BaseModel):

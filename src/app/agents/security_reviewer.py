@@ -6,6 +6,7 @@ issues. It can be invoked by the milestone reviewer or used standalone.
 
 from __future__ import annotations
 
+from app.agents.severity import validator_for as severity_in
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
 from pathlib import Path
@@ -13,7 +14,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -30,6 +31,13 @@ class SecurityFinding(BaseModel):
 
     severity: Literal["critical", "high", "medium", "low", "info"] = Field(
         ..., description="How serious this finding is."
+    )
+
+    # See `app.agents.severity`. This vocabulary is the CVSS one and the other
+    # three are not, so a model that reviewed a milestone first arrives here
+    # saying "blocking".
+    _known_severity = field_validator("severity", mode="before")(
+        severity_in("critical", "high", "medium", "low", "info")
     )
     category: Literal[
         "isolation",

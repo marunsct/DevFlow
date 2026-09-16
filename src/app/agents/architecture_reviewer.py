@@ -11,6 +11,7 @@ bypass the review gate."
 
 from __future__ import annotations
 
+from app.agents.severity import validator_for as severity_in
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -35,6 +36,12 @@ class ArchitectureReviewFinding(BaseModel):
 
     severity: Literal["blocking", "major", "minor", "informational"] = Field(
         ..., description="How serious this finding is for release readiness."
+    )
+
+    # See `app.agents.severity`: the same model plays every role in a run, and
+    # each role's schema asks for a different word.
+    _known_severity = field_validator("severity", mode="before")(
+        severity_in("blocking", "major", "minor", "informational")
     )
     description: str = Field(..., description="What is wrong or missing.")
     evidence: str = Field(..., description="The specific spec section, ADR, or repository fact supporting this finding.")

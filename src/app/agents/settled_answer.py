@@ -108,6 +108,63 @@ MUTATING_TOOLS = frozenset(
 )
 
 
+#: Write tools that say so plainly when they wrote nothing. A refusal from one
+#: of these means the filesystem is exactly as it was, so the call cannot have
+#: changed what a later read returns. `run_terminal_command` is deliberately
+#: absent: a command that exits non-zero may still have installed packages,
+#: created a lockfile or half-written a build, so a failure there is no promise
+#: that nothing moved.
+_TOOLS_THAT_REPORT_WRITING_NOTHING = frozenset(
+    {"write_artifact", "edit_artifact", "delete_artifact", "move_artifact"}
+)
+
+
+def _results_by_call_id(history: list[Any]) -> dict[str, str]:
+    """Each tool result in this thread, keyed by the call it answered."""
+    results: dict[str, str] = {}
+    for message in history:
+        if getattr(message, "type", None) != "tool":
+            continue
+        call_id = getattr(message, "tool_call_id", None)
+        if call_id:
+            results[str(call_id)] = str(getattr(message, "content", "") or "")
+    return results
+
+
+def _actually_changed_something(call: Any, results: dict[str, str]) -> bool:
+    """Whether this mutating call altered anything a later read would see.
+
+    Measured on run-0deeb8bf's `defect_fix_2_0`. The model wrote a complete,
+    valid answer as message content and, in the same turn, called
+    `write_artifact('final_response.json', <that same answer>)`. The tool
+    refuses that by design - a structured response reaches the workflow through
+    the response schema and a copy on disk is read by nothing - so the write
+    was rejected and the filesystem did not move. The model then did it again,
+    identically, and again, until the repeat guard stopped the stage and the
+    run failed with its answer sitting in the transcript.
+
+    Counting every `write_artifact` as a change is what kept that alive: each
+    refusal wiped the record of what had already been asked, so a byte-identical
+    repeat never looked like one and the settle never fired. Three runs died
+    this way (`final_response.json`, `final_output.json`,
+    `docs/structured_response.json`), always with the answer already written.
+
+    Unknown results stay a change. A call whose result is not in the thread
+    yet is assumed to have done something, because letting a stage run on is
+    far cheaper than ending one that was still working.
+    """
+    name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+    if name not in _TOOLS_THAT_REPORT_WRITING_NOTHING:
+        return True
+    call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", None)
+    content = results.get(str(call_id)) if call_id else None
+    if content is None:
+        return True
+    from app.agents.repeated_queries import _changed_nothing, _looks_like_a_failure
+
+    return not (_looks_like_a_failure(content) or _changed_nothing(content))
+
+
 def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[Any]) -> bool:
     """Whether every pending call repeats one made since the last change.
 
@@ -116,14 +173,18 @@ def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[An
     specialist that writes a file and reads it back issues a byte-identical
     request and gets different content, which is the ordinary shape of work and
     must not be mistaken for a spin.
+
+    A write that was refused is not a change - see
+    `_actually_changed_something`.
     """
     if not pending:
         return False
+    results = _results_by_call_id(history)
     seen_since_last_change: set[str] = set()
     for message in history:
         for call in getattr(message, "tool_calls", None) or []:
             name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
-            if name in MUTATING_TOOLS:
+            if name in MUTATING_TOOLS and _actually_changed_something(call, results):
                 # Everything read before this could now read differently.
                 seen_since_last_change.clear()
             seen_since_last_change.add(_call_signature(call))

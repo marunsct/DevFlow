@@ -15,7 +15,6 @@ re-implementing it.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -112,8 +111,22 @@ def build_intake_request(
         # "quoted below", never "in full": the text goes through `_truncate`,
         # and a brief that claims completeness it does not have tells an agent
         # not to read the real file precisely when it should.
-        f"Product document: {Path(document.source_path).name} "
-        f"({document.source_type}), quoted below\n"
+        # No filename at all. The previous version showed the upload's
+        # basename instead of its host path, on the reasoning that the name was
+        # safe where the path was not. It is not: the stored name carries an
+        # upload suffix (`brief_low_aa06a786.md`) and names nothing that exists
+        # in a workspace rooted at "/". Measured on runs 2b5def74, da6c5e19,
+        # 5d83e946 and again on run-36eb1260 - `product_manager` spends its
+        # first two calls on `read_file` and then `glob` for that exact string,
+        # and gets an error for both.
+        #
+        # A filename in a prompt is an affordance: it invites a read. The text
+        # is already here in full, so naming a file buys nothing and costs the
+        # stage its opening move. Provenance lives in the run record and in
+        # docs/product_intake.md, where an auditor can use it and an agent
+        # cannot mistake it for a path.
+        f"Product document ({document.source_type}), quoted below - this text "
+        f"is the document itself, not a file in the workspace\n"
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on

@@ -294,7 +294,7 @@ def test_the_approval_shown_to_a_reviewer_lists_every_pending_change(tmp_path: P
     assert "bravo" in approval.notes and "BRAVO" in approval.notes
 
 
-def test_the_brief_names_the_document_and_never_its_host_path() -> None:
+def test_the_brief_shows_no_filename_for_the_document() -> None:
     """A path the agent cannot read, and must not write.
 
     `source_path` is where the upload landed on the HOST
@@ -307,6 +307,14 @@ def test_the_brief_names_the_document_and_never_its_host_path() -> None:
     manager opens by trying to read that exact string and gets an error for its
     first tool call of the run. The rule was already stated one line below, for
     the repository's path; the document's was left as it was.
+
+    That fix showed the upload's *basename* instead, on the reasoning that a
+    name was safe where a path was not. run-36eb1260 shows it was not: the
+    stored basename carries an upload suffix, names nothing in a workspace
+    rooted at "/", and `product_manager` spent its first two calls on
+    `read_file` and then `glob` for that exact string. So no filename is shown
+    at all now - a filename in a prompt is an affordance, and the document's
+    text is already quoted in full.
     """
     from app.agents.product_manager import build_intake_request
 
@@ -326,7 +334,9 @@ def test_the_brief_names_the_document_and_never_its_host_path() -> None:
     request = build_intake_request(Document(), Repository())
     rendered = str(request)
 
-    assert "brief_low_752e3b83.md" in rendered
+    assert "brief_low_752e3b83" not in rendered
     assert "/app/data/uploads" not in rendered
+    # The document itself still reaches the agent; only its name is withheld.
+    assert "Build a to-do list." in rendered
     # The repository's host path was already withheld; keep it that way.
     assert "/app/data/workspaces" not in rendered

@@ -111,7 +111,9 @@ class ArchitectureReviewOutput(BaseModel):
 
 
 def build_architecture_review_request(
-    technical_specification_text: str, repository_root: str
+    technical_specification_text: str,
+    repository_root: str,
+    document_text: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the specification text awaiting review.
 
@@ -119,7 +121,16 @@ def build_architecture_review_request(
     and it arrives in the *first* user message, which is the one case
     compaction cannot rescue: with nothing older in the conversation, the
     summariser has nothing to evict and the call simply overflows.
+
+    `document_text` is the product brief, and only its constraints are carried.
+    This is the last gate before anything is built, and it could not do the one
+    job that would have saved run 0c5aabdb: the specification it approved
+    proposed Express for a brief that says "No external dependencies beyond
+    basic HTML/CSS/JS", and the reviewer had no way to know that, because it
+    was given the specification and nothing else. See
+    `app.agents.brief_constraints`.
     """
+    from app.agents.brief_constraints import constraints_note
     from app.agents.text_budget import excerpt, specification_budget
 
     specification = excerpt(
@@ -129,6 +140,7 @@ def build_architecture_review_request(
     )
     brief = (
         WORKSPACE_ROOT_NOTE
+        + constraints_note(document_text, reader="reviewing")
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

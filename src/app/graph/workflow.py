@@ -1987,7 +1987,28 @@ def build_workflow_graph(
 
     def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_stack_selector_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
-        request = {"messages": [{"role": "user", "content": f"Product Intake: {state['product_intake']}\nTools: {state.get('tools_models')}"}]}
+        # The brief's own constraints, quoted, not a model's summary of them.
+        # This stage was given `product_intake` and `tools_models` and nothing
+        # else, and on run 0c5aabdb `ProductManagerOutput.constraints` came
+        # back empty - so "No external dependencies beyond basic HTML/CSS/JS"
+        # never reached the stage that picked Express. See
+        # `app.agents.brief_constraints`.
+        from app.agents.brief_constraints import constraints_note
+
+        document = state.get("document")
+        constraints = constraints_note(getattr(document, "text", "") or "")
+        request = {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": (
+                        f"{constraints}"
+                        f"Product Intake: {state['product_intake']}\n"
+                        f"Tools: {state.get('tools_models')}"
+                    ),
+                }
+            ]
+        }
         update = _run_gated_agent(
             state,
             config,
@@ -2094,7 +2115,11 @@ def build_workflow_graph(
             return missing
         agent = create_architecture_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
-        request = build_architecture_review_request(spec_text, state["repository"].root_path)
+        request = build_architecture_review_request(
+            spec_text,
+            state["repository"].root_path,
+            getattr(state.get("document"), "text", "") or "",
+        )
         update = _run_gated_agent(
             state,
             config,

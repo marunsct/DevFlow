@@ -977,6 +977,9 @@ def _edited(
         _structural_note(relative_path, written),
         _discovery_note(relative_path, written),
         _import_note(root, target, written),
+        # From the path, not from a caller's variable: this is the edit path,
+        # and it has no `relative_parts` of its own.
+        _nearly_a_workflow_document(_repo_relative_path(root, relative_path).parts),
         _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
@@ -1236,6 +1239,57 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
         "the stage that produced it. A second copy is read by nothing and is "
         f"stale as soon as that stage runs again. Read 'docs/{name}' instead of "
         "copying it, and put your own work in a file of its own."
+    )
+
+
+#: How alike two document names must be before a reader would confuse them.
+#: Measured against the names agents have actually written beside the
+#: workflow's own: `tech_specification` scores 0.88 against
+#: `technical_specification`, `tools_and_model` 0.97 against
+#: `tools_and_models`, while `architecture_notes` (0.76), `test_plan` (0.70)
+#: and `testing_results` (0.45) stay below, which is where they belong.
+_CONFUSABLE_WITH_A_WORKFLOW_DOCUMENT = 0.8
+
+
+def _nearly_a_workflow_document(relative_parts: tuple[str, ...]) -> str:
+    """Warn about a document named almost like one the workflow writes, or "".
+
+    `_a_workflow_document` refuses the exact names and `_supersedes_existing`
+    refuses an explicit `_v2`. Between them sits the near-miss spelling, which
+    run-454adf22 produced: `docs/tech_specification.md`, 470 bytes, beside the
+    workflow's own `docs/technical_specification.md`, 5,847 bytes.
+
+    The harm is the one the architect's `technical_specification_v2.md` caused:
+    a reviewer with two specifications in front of it read the differences
+    between them as contradictions in the design, reported a blocking finding
+    that existed only because the second file did, and the run stopped
+    unresolved.
+
+    A note, because this cannot tell a careless near-duplicate from a
+    deliberate companion document - `security_review_notes.md` is a reasonable
+    thing to write and scores 0.83.
+    """
+    import difflib
+
+    if len(relative_parts) != 2 or relative_parts[0] != "docs":
+        return ""
+    name = relative_parts[-1].lower()
+    if not name.endswith(".md") or name in WORKFLOW_DOCUMENTS:
+        return ""
+    stem = name[:-3]
+    ratio, closest = max(
+        (difflib.SequenceMatcher(None, stem, other[:-3]).ratio(), other)
+        for other in WORKFLOW_DOCUMENTS
+    )
+    if ratio < _CONFUSABLE_WITH_A_WORKFLOW_DOCUMENT:
+        return ""
+    return (
+        f"This name is very close to 'docs/{closest}', which the workflow writes "
+        "from a stage's structured response. A reviewer reading both will treat "
+        "the differences between them as contradictions - that has ended a run "
+        f"before now. If you meant to change that document, you cannot: read it "
+        "instead. If this is genuinely a different document, give it a name a "
+        "reader can tell apart at a glance."
     )
 
 
@@ -2124,6 +2178,7 @@ def write_approved_artifact(
         _structural_note(relative_path, content),
         _discovery_note(relative_path, content),
         _import_note(root, target, content),
+        _nearly_a_workflow_document(relative_parts),
         _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]

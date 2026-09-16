@@ -71,3 +71,65 @@ def test_a_specialists_own_document_is_unaffected(tmp_path) -> None:
     assert write_approved_artifact(tmp_path, "proj/docs/design_notes.md", "# mine\n")["status"]
     assert write_approved_artifact(tmp_path, "docs/README.md", "# readme\n")["status"]
     assert write_approved_artifact(tmp_path, "docs/testing_results.md", "# results\n")["status"]
+
+
+# --- the near-miss spelling, between the exact name and an explicit _v2 ----
+
+
+@pytest.mark.parametrize(
+    "name", ["tech_specification.md", "technicalspecification.md", "tools_and_model.md"]
+)
+def test_a_name_a_reader_would_confuse_is_noted(tmp_path, name: str) -> None:
+    """run-454adf22 wrote `docs/tech_specification.md`, 470 bytes, beside the
+    workflow's `docs/technical_specification.md`, 5,847 bytes.
+
+    The harm is the one `technical_specification_v2.md` caused: a reviewer with
+    two specifications read the differences between them as contradictions,
+    reported a blocking finding that existed only because the second file did,
+    and the run stopped unresolved.
+    """
+    note = write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n").get("note") or ""
+
+    assert "very close to" in note
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "QA_report.md",
+        "testing_results.md",
+        "architecture_notes.md",
+        "task_manager_test_plan.md",
+        "README.md",
+        "api_reference.md",
+    ],
+)
+def test_a_document_of_its_own_is_not_nagged(tmp_path, name: str) -> None:
+    note = write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n").get("note") or ""
+
+    assert "very close to" not in note
+
+
+def test_a_note_and_not_a_refusal(tmp_path) -> None:
+    """It cannot tell a careless near-duplicate from a deliberate companion:
+    `security_review_notes.md` is a reasonable thing to write."""
+    result = write_approved_artifact(tmp_path, "docs/security_review_notes.md", "# n\n")
+
+    assert result["status"] == "written"
+    assert (tmp_path / "docs" / "security_review_notes.md").is_file()
+
+
+def test_the_note_reaches_an_edit_of_one_too(tmp_path) -> None:
+    """This is the path that had no `relative_parts` and raised NameError."""
+    write_approved_artifact(tmp_path, "docs/tech_specification.md", "# a\n# b\n")
+
+    result = edit_approved_artifact(tmp_path, "docs/tech_specification.md", "# a", "# A")
+
+    assert result["status"] == "edited"
+    assert "very close to" in (result.get("note") or "")
+
+
+def test_an_ordinary_document_edit_still_works(tmp_path) -> None:
+    write_approved_artifact(tmp_path, "docs/notes.md", "# one\n# two\n")
+
+    assert edit_approved_artifact(tmp_path, "docs/notes.md", "# one", "# ONE")["status"]

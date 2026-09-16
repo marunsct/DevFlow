@@ -101,7 +101,7 @@ def test_approve_decision_writes_the_artifact(tmp_path: Path) -> None:
     result = resume_with_decision(agent, "thread-approve", approve_write_decision())
 
     assert not result.get("__interrupt__")
-    assert _artifact(tmp_path, "brief.md").read_text() == "hello"
+    assert _artifact(tmp_path, "brief.md").read_text() == "hello\n"
 
 
 def test_reject_decision_skips_the_write(tmp_path: Path) -> None:
@@ -127,7 +127,7 @@ def test_edit_decision_changes_the_write_target(tmp_path: Path) -> None:
     agent.invoke({"messages": [{"role": "user", "content": "please save"}]}, config)
     resume_with_decision(agent, "thread-edit", edit_write_decision("final.md", "polished content"))
 
-    assert _artifact(tmp_path, "final.md").read_text() == "polished content"
+    assert _artifact(tmp_path, "final.md").read_text() == "polished content\n"
     assert not _artifact(tmp_path, "wrong.md").exists()
 
 
@@ -152,7 +152,7 @@ def test_resume_after_new_agent_instance_with_same_thread_id(tmp_path: Path) -> 
     result = second_agent.invoke(Command(resume={"decisions": [approve_write_decision()]}), config)
 
     assert not result.get("__interrupt__")
-    assert _artifact(tmp_path, "brief.md").read_text() == "hello"
+    assert _artifact(tmp_path, "brief.md").read_text() == "hello\n"
 
 
 def test_extract_pending_approval_describes_the_paused_write(tmp_path: Path) -> None:

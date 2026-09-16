@@ -936,6 +936,40 @@ def test_the_approval_records_what_the_pause_would_do() -> None:
     assert command.action_kind == "command"
 
 
+def test_a_loop_is_answered_before_the_run_is_ended() -> None:
+    """Ending the run was the harshest available response, and the only one.
+
+    run-130deeef's `specialist_backend_8` wrote `docs/blocker.md` five times - a
+    perfectly reasonable document, from a model that had correctly worked out it
+    was blocked and had no other move - and that killed a run which had already
+    completed a full sprint, a test round, a security review and a milestone
+    review. A gate is a decision point, and a decision has two answers.
+    """
+    from app.server.runner import MAX_IDENTICAL_GATES, MAX_LOOPS_ANSWERED_BY_DENIAL
+
+    assert MAX_LOOPS_ANSWERED_BY_DENIAL >= 1
+    # And the run still ends if denial does not stop it, so a loop cannot spin
+    # forever: each answered loop costs MAX_IDENTICAL_GATES + 1 gates.
+    assert MAX_LOOPS_ANSWERED_BY_DENIAL * (MAX_IDENTICAL_GATES + 1) < 40
+
+
+def test_the_denial_tells_the_agent_what_to_do_instead() -> None:
+    from app.agents.approval import reject_write_decision
+
+    decision = reject_write_decision("Denied. Return your structured response now.")
+
+    assert decision["type"] == "reject"
+    assert "structured response" in decision["message"]
+
+
+def test_what_was_asked_for_prefers_the_half_that_says_something() -> None:
+    from app.server.runner import _what_was_asked_for
+
+    assert _what_was_asked_for(("docs/blocker.md", "Write docs/...")) == "docs/blocker.md"
+    assert _what_was_asked_for(("<unknown path>", "Run npm test")) == "Run npm test"
+    assert _what_was_asked_for(("", "")) == "an artifact write"
+
+
 def test_a_repeated_command_reports_the_command_not_an_unknown_path() -> None:
     """`The repeated request was: <unknown path>` names nothing a reader can act on."""
     from app.server.runner import _approval_signature

@@ -1051,6 +1051,27 @@ def _budget_note(root: Path, relative_path: str) -> str:
         return ""
 
 
+def _with_one_trailing_newline(content: str) -> str:
+    """`content` ending in exactly one newline, or "" if it is empty.
+
+    Every text file convention and every formatter ends a file with one
+    newline, so this is what the model meant either way. The reason it is done
+    here rather than left alone is that "did this write change anything?" is a
+    byte comparison, and a trailing newline the model happened to include one
+    time and not the next makes two identical documents compare as different.
+
+    Measured on run-130deeef's `specialist_backend_8`: it wrote `docs/blocker.md`
+    with a trailing newline, then wrote the same 600 characters without one.
+    That counted as a real change, so the second write reported "written"
+    instead of "unchanged", and the "do not write it again" signal - and the
+    no-op refusal behind it - both arrived a cycle late. The stage wrote the
+    file five times and the run was stopped.
+    """
+    if not content:
+        return content
+    return content.rstrip("\n") + "\n"
+
+
 def _write_unless_it_changes_nothing(
     target: Path, original: str, updated: str, relative_path: str
 ) -> None:
@@ -1713,6 +1734,10 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
             "prose, lists, tables. Your structured response is returned through "
             "the response schema and must never be saved as an artifact."
         )
+
+    # One trailing newline, whatever the model sent, so that two writes of the
+    # same document compare equal. See `_with_one_trailing_newline`.
+    content = _with_one_trailing_newline(content)
 
     # A rewrite of byte-identical content is reported as such rather than done
     # silently. Models re-issue the same write to confirm it landed, and the old

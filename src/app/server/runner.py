@@ -291,6 +291,37 @@ suite, and fixing what broke tripped it after 26 rounds of real progress, and
 the run then reported itself as looping when it was not.
 """
 
+MAX_LOOPS_ANSWERED_BY_DENIAL = 2
+"""How many times a looping stage is answered before the run is ended.
+
+Ending the whole run was the first and only response, and it is the harshest
+available. Measured on run-130deeef: `specialist_backend_8` wrote
+`docs/blocker.md` five times - a perfectly reasonable document, written by a
+model that had correctly worked out it was blocked and had no other move - and
+that killed a run which had already completed a full sprint, a test round, a
+security review and a milestone review.
+
+The gate is a decision point, and a decision has two answers. Denying the
+request tells the agent, in the one channel it is certainly reading, that this
+write will not happen and why; the stage then either moves on or ends on its
+own guards, and the workflow's existing handling for a stage that finishes
+without an answer takes over. Only a stage that goes on looping after being
+told twice ends the run, which is what the original check was for.
+"""
+
+
+def _what_was_asked_for(signature: tuple[str, str]) -> str:
+    """The repeated request, named the way a person would name it.
+
+    An approval signature is (path, notes); a command approval has no path, so
+    the path half is a placeholder. Prefer whichever half says something.
+    """
+    path, notes = signature if signature else ("", "")
+    for part in (path, notes):
+        if part and "unknown" not in part.lower():
+            return part[:120]
+    return "an artifact write"
+
 
 def _approval_signature(approval: Any) -> tuple[str, str]:
     """Identify what an approval is asking for, so repeats can be recognised.
@@ -793,6 +824,9 @@ class WorkflowRunner:
         # only the second is worth failing fast on.
         last_signature: tuple[str, str] | None = None
         repeats = 0
+        # How many loops at the current stage have been answered with a denial
+        # rather than by ending the run. See `MAX_LOOPS_ANSWERED_BY_DENIAL`.
+        loops_answered = 0
         # Consecutive re-invokes that returned the same stage without running
         # anything. Distinct from `repeats`, which counts *gates*; this counts
         # rounds where the graph did not even reach one.
@@ -872,9 +906,44 @@ class WorkflowRunner:
                         gate_stage, repeats = stage, 0
                         gates_at_stage = 1 if costs_budget else 0
                         stage_signatures = {signature: 1}
+                        loops_answered = 0
                     last_signature = signature
 
                     looping = repeats >= MAX_IDENTICAL_GATES and _repeat_is_a_loop(approval)
+                    if looping and loops_answered < MAX_LOOPS_ANSWERED_BY_DENIAL:
+                        # Answer the request instead of ending the run. See
+                        # `MAX_LOOPS_ANSWERED_BY_DENIAL`.
+                        loops_answered += 1
+                        repeats = 0
+                        what = _what_was_asked_for(signature)
+                        await self.event_bus.publish(
+                            run_id,
+                            RunEvent(
+                                run_id=run_id,
+                                sequence=await self.event_bus.next_sequence(run_id),
+                                stage=stage,
+                                event_type="approval_denied",
+                                message=f"Denied a repeated request: {what}",
+                            ),
+                        )
+                        state = await asyncio.to_thread(
+                            resume_pending_approval,
+                            graph,
+                            record.thread_id,
+                            reject_write_decision(
+                                f"Denied. You have asked for this same thing "
+                                f"{MAX_IDENTICAL_GATES + 1} times in a row ({what}) and "
+                                "nothing has changed between the attempts, so it will be "
+                                "denied again. It is already saved if it was ever going to "
+                                "be. Stop repeating it and return your structured response "
+                                "now, with whatever you have - put anything you could not "
+                                "do in `blockers`."
+                            ),
+                            metadata=trace_meta,
+                            run_id=run_id,
+                        )
+                        continue
+
                     if looping or gates_at_stage > MAX_GATES_PER_STAGE:
                         stage_name = stage.removeprefix(APPROVAL_PAUSE_PREFIX)
                         record.status = "failed"

@@ -541,6 +541,34 @@ AMBIGUOUS = (
 )
 
 
+def test_the_same_document_twice_is_unchanged_whatever_the_final_newline(
+    tmp_path: Path,
+) -> None:
+    """run-130deeef's `specialist_backend_8`, one cycle before it was stopped.
+
+    It wrote `docs/blocker.md` with a trailing newline, then wrote the same 600
+    characters without one. That counted as a real change, so the second write
+    reported "written" instead of "unchanged", and the "do not write it again"
+    signal - and the no-op refusal behind it - both arrived a cycle late.
+    """
+    body = "# Blocker\nThe task requires a shell script."
+
+    assert write_approved_artifact(tmp_path, "docs/blocker.md", body + "\n")["status"] == "written"
+    assert write_approved_artifact(tmp_path, "docs/blocker.md", body)["status"] == "unchanged"
+    assert (
+        write_approved_artifact(tmp_path, "docs/blocker.md", body + "\n\n\n")["status"]
+        == "unchanged"
+    )
+    assert (tmp_path / "docs" / "blocker.md").read_text().endswith("script.\n")
+
+
+def test_an_empty_file_stays_empty(tmp_path: Path) -> None:
+    """A newline added to nothing is a file with a blank line in it."""
+    write_approved_artifact(tmp_path, "docs/empty.md", "")
+
+    assert (tmp_path / "docs" / "empty.md").read_text() == ""
+
+
 def test_an_ambiguous_edit_is_shown_what_differs(tmp_path: Path) -> None:
     """"Include a line from above or below" is advice, not information.
 
@@ -1208,7 +1236,7 @@ def test_an_ordinary_nested_write_still_creates_its_directories(tmp_path: Path) 
     result = write_approved_artifact(tmp_path, "app/src/lib/util.js", "code")
 
     assert result["path"] == "app/src/lib/util.js"
-    assert (tmp_path / "app" / "src" / "lib" / "util.js").read_text() == "code"
+    assert (tmp_path / "app" / "src" / "lib" / "util.js").read_text() == "code\n"
 
 
 def test_the_refusal_is_recoverable_not_a_crash(tmp_path: Path) -> None:
@@ -1327,7 +1355,7 @@ def test_the_run_can_still_choose_a_directory_after_a_rejected_write(tmp_path):
     write_approved_artifact(str(tmp_path), "med2-app/app/__init__.py", "x = 1")
 
     assert pinned_project_directory(tmp_path) == "med2-app"
-    assert (tmp_path / "med2-app/app/__init__.py").read_text() == "x = 1"
+    assert (tmp_path / "med2-app/app/__init__.py").read_text() == "x = 1\n"
 
 
 def test_a_successful_write_still_pins(tmp_path):

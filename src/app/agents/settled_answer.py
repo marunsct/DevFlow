@@ -96,6 +96,74 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
         return None
 
 
+#: Tool arguments that carry a whole file's content, which is where a model
+#: that will not use the response channel puts its answer.
+_CONTENT_ARGUMENTS = ("content", "replace")
+
+
+def _first_content(pending: list[Any]) -> str:
+    """The content argument of the first write among `pending`."""
+    for call in pending:
+        arguments = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
+        if isinstance(arguments, dict):
+            for key in _CONTENT_ARGUMENTS:
+                text = arguments.get(key)
+                if isinstance(text, str) and "{" in text:
+                    return text
+    return ""
+
+
+def _answer_in_a_pending_write(pending: list[Any], schema: Any) -> Any | None:
+    """A valid answer sitting in the arguments of a write this turn requested.
+
+    Some models never put the structured response anywhere but a file. They
+    call `write_artifact` with the complete, valid answer as `content`, the
+    tool refuses - a structured response reaches the workflow through the
+    schema, and a copy on disk is read by nothing - and they call it again.
+
+    `settled_answer` could not help, because it looks for the answer in the
+    message *content* and these turns have none: the model emits a tool call
+    and no text at all. So the answer was on the screen, valid, five times
+    over, and the stage had no way to accept it.
+
+    Three runs died exactly here - run-0deeb8bf on `final_response.json`,
+    run-130deeef on `final_output.json`, run-01f03ed9 on `docs/summary.json`,
+    each stopped by the run-level repeat guard after five identical requests.
+    run-01f03ed9 had already completed four milestones.
+
+    Safe because of what the schema is: an artifact whose entire content
+    validates as this stage's response model IS the structured response. That
+    is the same judgement `repository._is_json_document` makes when it refuses
+    the write, arrived at from the other side.
+    """
+    if schema is None:
+        return None
+    for call in pending:
+        name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+        if name not in {"write_artifact", "edit_artifact"}:
+            continue
+        arguments = call.get("args") if isinstance(call, dict) else getattr(call, "args", None)
+        if not isinstance(arguments, dict):
+            continue
+        for key in _CONTENT_ARGUMENTS:
+            text = arguments.get(key)
+            if not isinstance(text, str) or "{" not in text:
+                continue
+            found = _answer_in(AIMessageStub(text), schema)
+            if found is not None:
+                return found
+    return None
+
+
+class AIMessageStub:
+    """Just enough of a message for `_answer_in` to read one string."""
+
+    type = "ai"
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+
+
 #: Tools that change what a later read would return. A repeat that follows one
 #: of these is not a repeat in any sense that matters - the same request can
 #: legitimately come back with different bytes.
@@ -487,6 +555,26 @@ def build_settled_answer_middleware(
             # spent eleven minutes writing prose about creating files it has
             # no tools to create, so by the time it was circling, the last
             # message held no answer and this check was blind to it.
+            # An answer the model put in a file rather than in the response
+            # channel is still an answer, and this turn is about to be refused
+            # for it. See `_answer_in_a_pending_write`.
+            written = _answer_in_a_pending_write(pending, schema)
+            if written is not None:
+                logger.info(
+                    "Stage %s put its structured response in a write_artifact "
+                    "call; taking it as the answer rather than refusing it again",
+                    stage_name or "?",
+                )
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=_first_content(pending),
+                            id=getattr(last, "id", None),
+                        )
+                    ],
+                    "jump_to": "end",
+                }
+
             answer = _most_recent_answer(messages, schema)
             if answer is None:
                 return None

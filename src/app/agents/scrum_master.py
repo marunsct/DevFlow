@@ -85,7 +85,17 @@ plan made of independently verifiable sprints.
 Responsibilities:
 - Break the approved specification into sprints that each deliver real user
   value on their own, rather than one sprint per technical layer.
-- Never make setup a sprint of its own. The workspace, its project directory
+- Never make setup a sprint of its own, and never make an open question one.
+  Every sprint must end with behaviour a user can observe that they could not
+  observe before. "Address open questions", "prepare for future scalability",
+  "investigate alternatives" and "document the design" are not sprints:
+  `open_questions` is a field on your response and is where a question goes.
+  Measured on run-01f03ed9, whose second sprint was "Address open questions and
+  prepare for future scalability" - the Technical Lead turned it into a
+  milestone whose entire scope was "Update docs/architecture_review.md", a file
+  the workflow writes and the tools refuse, so the milestone could not deliver
+  anything at all.
+  The workspace, its project directory
   and the `docs/` folder already exist and the workflow maintains them, so
   "create the project directory", "copy the documentation" and "initialise the
   manifest" deliver nothing a user could use. Measured on run-84e05d4b, whose

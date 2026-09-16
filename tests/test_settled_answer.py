@@ -896,3 +896,80 @@ def test_a_stage_that_is_circling_still_hears_about_it() -> None:
     warning = _running_out_of_room(messages, MODEL_CALLS_PER_STAGE)
 
     assert "31 of the 40 model calls" in warning
+
+
+# --- the answer the model put in a file -----------------------------------
+
+
+def test_an_answer_in_a_pending_write_ends_the_stage() -> None:
+    """Some models never put the structured response anywhere but a file.
+
+    They call `write_artifact` with the complete, valid answer as `content`,
+    the tool refuses - a structured response reaches the workflow through the
+    schema, and a copy on disk is read by nothing - and they call it again.
+    `settled_answer` could not help, because it looks in the message content
+    and these turns have none: a tool call and no text at all.
+
+    Three runs died here - run-0deeb8bf on `final_response.json`, run-130deeef
+    on `final_output.json`, run-01f03ed9 on `docs/summary.json`, each stopped
+    by the run-level repeat guard after five identical requests. run-01f03ed9
+    had already completed four milestones.
+    """
+    import json as _json
+
+    from app.agents.specialists import SpecialistOutput
+
+    answer = {"changed_files": ["app.js"], "decisions": [], "tests": ["t"], "verification": []}
+    write = _call("write_artifact", {"relative_path": "docs/summary.json",
+                                     "content": _json.dumps(answer, indent=2)})
+    state = {"messages": [HumanMessage(content="run the tests"), _ai("", [write])]}
+
+    update = build_settled_answer_middleware(SpecialistOutput, "test_round_0").after_model(
+        state, None
+    )
+
+    assert update is not None and update["jump_to"] == "end"
+    assert "changed_files" in update["messages"][0].content
+    assert not update["messages"][0].tool_calls, "the pending call must be dropped"
+
+
+def test_an_edit_carrying_the_answer_counts_too() -> None:
+    import json as _json
+
+    from app.agents.specialists import SpecialistOutput
+
+    answer = {"changed_files": [], "decisions": ["d"], "tests": [], "verification": []}
+    edit = _call("edit_artifact", {"relative_path": "docs/x.json", "find": "{}",
+                                   "replace": _json.dumps(answer)})
+    state = {"messages": [_ai("", [edit])]}
+
+    update = build_settled_answer_middleware(SpecialistOutput, "s").after_model(state, None)
+
+    assert update is not None and update["jump_to"] == "end"
+
+
+def test_an_ordinary_artifact_does_not_end_the_stage() -> None:
+    """A file that is not this stage's response model is just a file."""
+    from app.agents.specialists import SpecialistOutput
+
+    write = _call("write_artifact", {"relative_path": "app/package.json",
+                                     "content": '{"name": "app", "version": "1.0.0"}'})
+    state = {"messages": [_ai("", [write])]}
+
+    assert build_settled_answer_middleware(SpecialistOutput, "s").after_model(state, None) is None
+
+
+def test_a_write_with_no_json_at_all_is_ignored() -> None:
+    from app.agents.specialists import SpecialistOutput
+
+    write = _call("write_artifact", {"relative_path": "app/README.md", "content": "# Hi\n"})
+    state = {"messages": [_ai("", [write])]}
+
+    assert build_settled_answer_middleware(SpecialistOutput, "s").after_model(state, None) is None
+
+
+def test_a_stage_with_no_schema_is_unaffected() -> None:
+    write = _call("write_artifact", {"relative_path": "docs/x.json", "content": '{"a": 1}'})
+    state = {"messages": [_ai("", [write])]}
+
+    assert build_settled_answer_middleware(None, "s").after_model(state, None) is None

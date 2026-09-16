@@ -114,15 +114,16 @@ def test_an_explicit_timeout_cannot_be_set_below_what_an_answer_needs(monkeypatc
     assert _request_timeout() == 99999
 
 
-def test_the_floor_moves_with_the_output_ceiling() -> None:
-    """Derived, so the two cannot drift apart again."""
+def test_the_floor_is_derived_not_guessed() -> None:
+    """Derived from the largest real answer and the measured generation rate,
+    so the timeout and the output it must accommodate cannot drift apart."""
     from app.models import (
+        LARGEST_LEGITIMATE_OUTPUT_TOKENS,
         MIN_EXPECTED_TOKENS_PER_SECOND,
-        _max_output_tokens,
         _time_to_generate_a_full_answer,
     )
 
-    expected = _max_output_tokens() / MIN_EXPECTED_TOKENS_PER_SECOND
+    expected = LARGEST_LEGITIMATE_OUTPUT_TOKENS / MIN_EXPECTED_TOKENS_PER_SECOND
 
     assert _time_to_generate_a_full_answer() == expected
 
@@ -145,3 +146,41 @@ def test_streaming_is_not_enabled_on_the_model() -> None:
     from app.models import CompatibleChatOpenAI
 
     assert CompatibleChatOpenAI.model_fields["streaming"].default is False
+
+
+def test_the_floor_comes_from_real_output_not_the_pathology_ceiling() -> None:
+    """The correction to an earlier version of this module.
+
+    `_max_output_tokens()` is 32,000, but that is a ceiling on pathology - it
+    exists so one confused turn cannot emit 108,000 tokens over 38 minutes, as
+    `specialist_ui_ux_0` did on run-0b55ad49. Deriving the timeout from it gave
+    800 seconds, which made the only failure mode that actually occurs take 2.7
+    times longer to detect in order to permit answers that never happen.
+
+    Measured on run-414a621f, 206 model calls: the longest legitimate call was
+    141.7 seconds and *nothing* landed between 170 and 800 seconds. The single
+    call past 800s was a wedge whose retry succeeded in 2.5 seconds.
+    """
+    from app.models import (
+        LARGEST_LEGITIMATE_OUTPUT_TOKENS,
+        _max_output_tokens,
+        _request_timeout,
+        _time_to_generate_a_full_answer,
+    )
+
+    assert LARGEST_LEGITIMATE_OUTPUT_TOKENS < _max_output_tokens()
+    assert _time_to_generate_a_full_answer() < 400
+    # Still comfortably above the longest legitimate call ever measured.
+    assert _request_timeout() > 141.7 * 2
+
+
+def test_a_wedge_is_still_caught_in_minutes_not_quarter_hours() -> None:
+    """Why the ceiling is not the right basis.
+
+    A wedged request produces nothing and its retry succeeds immediately, so
+    the whole cost of a wedge is the timeout. Every second added to accommodate
+    a hypothetical long answer is paid in full on every real wedge.
+    """
+    from app.models import _request_timeout
+
+    assert _request_timeout() <= 400

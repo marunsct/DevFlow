@@ -55,18 +55,40 @@ MIN_REQUEST_TIMEOUT_SECONDS = 180.0
 #: optimistic cancels work that was about to succeed.
 MIN_EXPECTED_TOKENS_PER_SECOND = 40.0
 
+#: The largest reply this pipeline has ever legitimately produced: a 51 KB
+#: specification written in one `write_artifact` call, about 13,000 tokens.
+#:
+#: Deliberately NOT `_max_output_tokens()`, which is 32,000. That number is a
+#: ceiling on pathology - it exists so one confused turn cannot emit 108,000
+#: tokens over 38 minutes, as `specialist_ui_ux_0` did on run-0b55ad49 - and
+#: sizing the timeout from it means waiting for a ramble nobody wants.
+#:
+#: Measured on run-414a621f, 206 model calls: 185 finished inside 10 seconds,
+#: 11 more inside 60, 8 more inside 170, and the longest legitimate call was
+#: 141.7 seconds. Nothing at all landed between 170 and 800 seconds. The one
+#: call past 800s was a wedge, and its retry succeeded in 2.5 seconds.
+#:
+#: So the distribution is bimodal and the gap between the two modes is where
+#: this timeout belongs: long enough for the largest real answer, short enough
+#: that a wedge is caught quickly.
+LARGEST_LEGITIMATE_OUTPUT_TOKENS = 13_000
+
 
 def _time_to_generate_a_full_answer() -> float:
-    """Seconds a reply of the full permitted length would take to produce.
+    """Seconds the largest *legitimate* reply would take to produce.
 
     A timeout shorter than this is not a timeout, it is a length limit wearing
     the wrong name - and one that reports itself as a transport failure and
     retries, rather than as the truncation it is.
+
+    Sized from real output rather than from the pathology ceiling, which is the
+    correction to an earlier version of this function. Deriving it from
+    `_max_output_tokens()` gave 800 seconds and made the only failure mode that
+    actually occurs - a wedged request - take 2.7 times longer to detect, in
+    order to permit long answers that the measured distribution says never
+    happen.
     """
-    try:
-        return _max_output_tokens() / MIN_EXPECTED_TOKENS_PER_SECOND
-    except Exception:  # noqa: BLE001 - a budget must never fail a model call
-        return DEFAULT_MAX_OUTPUT_TOKENS / MIN_EXPECTED_TOKENS_PER_SECOND
+    return LARGEST_LEGITIMATE_OUTPUT_TOKENS / MIN_EXPECTED_TOKENS_PER_SECOND
 
 
 def _request_timeout() -> float:

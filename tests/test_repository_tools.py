@@ -1185,11 +1185,21 @@ def test_every_code_kind_is_refused_there(tmp_path, name):
         write_approved_artifact(str(tmp_path), f"docs/{name}", "x")
 
 
-@pytest.mark.parametrize("name", ["spec.md", "notes.txt", "diagram.svg", "data.json"])
-def test_documents_are_still_welcome_there(tmp_path, name):
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        ("spec.md", "x"),
+        ("notes.txt", "x"),
+        ("diagram.svg", "x"),
+        # This case is about *where* a .json may go, so it needs content that
+        # passes the structural check - which judges JSON everywhere.
+        ("data.json", '{"x": 1}'),
+    ],
+)
+def test_documents_are_still_welcome_there(tmp_path, name, body):
     from app.tools.repository import write_approved_artifact
 
-    assert write_approved_artifact(str(tmp_path), f"docs/{name}", "x")["status"]
+    assert write_approved_artifact(str(tmp_path), f"docs/{name}", body)["status"]
 
 
 def test_code_elsewhere_is_unaffected(tmp_path):

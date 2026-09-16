@@ -37,6 +37,7 @@ impossible for the model to diagnose afterwards, and fatal to a run.
 from __future__ import annotations
 
 import ast
+import json
 import re
 from dataclasses import dataclass
 
@@ -242,6 +243,50 @@ def _commonjs_in_a_module(relative_path: str, content: str) -> str | None:
     return None
 
 
+#: JSON files that are allowed to carry comments, and so are not strict JSON.
+#: TypeScript's compiler, ESLint and devcontainers all document this, and
+#: parsing them as JSON would refuse a file that is perfectly correct.
+_TOLERATES_COMMENTS = frozenset({
+    "tsconfig.json", "jsconfig.json", "devcontainer.json", ".eslintrc.json",
+})
+
+
+def _broken_json(relative_path: str, content: str) -> str | None:
+    """A .json file that will not parse, with where it stops.
+
+    JSON has a real grammar, so this is certain in the way `ast.parse` is
+    certain for Python - which is what makes it worth refusing over rather than
+    noting.
+
+    `package.json` is the one that matters most: Node reads it to resolve every
+    module in the directory, so a broken one does not fail the file that
+    contains it, it fails everything near it. run-0deeb8bf wrote one and got
+    "Error parsing simple-to-do-list-app/package.json: Expected property name
+    or '}' in JSON at position 73" from `package_json_reader` - a stack trace
+    naming an internal Node module, two stages from the write.
+    """
+    name = relative_path.rsplit("/", 1)[-1]
+    if name in _TOLERATES_COMMENTS:
+        return None
+    try:
+        json.loads(content)
+    except ValueError as failure:
+        where = getattr(failure, "lineno", None)
+        position = f" at line {where}" if where else ""
+        return (
+            f"This is not valid JSON{position}: {failure}. "
+            + (
+                "Node reads package.json to resolve every module in that "
+                "directory, so a broken one breaks the whole project, not just "
+                "this file. "
+                if name == "package.json"
+                else ""
+            )
+            + "Send the file again as complete, valid JSON."
+        )
+    return None
+
+
 def structural_problem(relative_path: str, content: str) -> str | None:
     """What is structurally wrong with this file, or None if nothing is.
 
@@ -251,6 +296,9 @@ def structural_problem(relative_path: str, content: str) -> str | None:
     if not content or not content.strip():
         return None
     suffix = "." + relative_path.rsplit(".", 1)[-1].lower() if "." in relative_path else ""
+
+    if suffix == ".json":
+        return _broken_json(relative_path, content)
 
     if suffix == ".py":
         try:

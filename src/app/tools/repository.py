@@ -783,10 +783,10 @@ def _where_each_match_starts(text: str, find: str) -> str:
 def _structural_note(relative_path: str, content: str) -> str:
     """Warn about a file that was just written broken, or refuse it.
 
-    Python is parsed with `ast`, which is the real grammar, so a failure is
-    certain and worth refusing over. Brace-counting for the C family is a
-    structure check rather than a parse - it cannot see a missing semicolon -
-    so it warns and lets the write stand.
+    Python is parsed with `ast` and JSON with `json.loads`, which are the real
+    grammars, so a failure is certain and worth refusing over. Brace-counting
+    for the C family is a structure check rather than a parse - it cannot see a
+    missing semicolon - so it warns and lets the write stand.
 
     Either way the agent hears it while it is still looking at the edit it just
     made. run-e37a2bd8 heard it two stages later, as "Syntax error in app.mjs
@@ -801,12 +801,35 @@ def _structural_note(relative_path: str, content: str) -> str:
         return ""
     if not problem:
         return ""
-    if relative_path.lower().endswith(".py"):
+    if _refuses_a_broken_file(relative_path):
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': {problem} Nothing was "
             "written. Send the file again with that fixed."
         )
     return problem
+
+
+def _refuses_a_broken_file(relative_path: str) -> bool:
+    """Whether a failure for this file is certain enough to refuse over.
+
+    Python and JSON have real grammars, so `ast.parse` and `json.loads` are
+    proof. Brace counting for the C family is a structure check and warns
+    instead.
+    """
+    return relative_path.lower().endswith((".py", ".json"))
+
+
+def _refuse_if_broken(relative_path: str, content: str) -> None:
+    """Raise before anything is written, for the file types that are certain.
+
+    Run *before* the write, not after it. The check used to sit beside the
+    result, so a refused file had already been saved and the refusal said
+    "Nothing was written" while the broken file sat on disk - a tool lying
+    about what it did, which is the failure this codebase has spent the most
+    time removing from other tools.
+    """
+    if _refuses_a_broken_file(relative_path):
+        _structural_note(relative_path, content)
 
 
 def _budget_note(root: Path, relative_path: str) -> str:
@@ -843,6 +866,7 @@ def _write_unless_it_changes_nothing(
     them.
     """
     if updated != original:
+        _refuse_if_broken(relative_path, updated)
         target.write_text(updated, encoding="utf-8")
         return
     lines = original.count("\n") + (0 if original.endswith("\n") else 1)
@@ -1465,6 +1489,7 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     # delimiters is not a document with a formatting problem, it is a
     # transcript that escaped.
     _refuse_control_tokens(relative_path, content)
+    _refuse_if_broken(relative_path, content)
 
     if _is_json_document(content) and target.suffix.lower() in _PROSE_SUFFIXES:
         # Agents conflate "write the artifact" with "return the structured

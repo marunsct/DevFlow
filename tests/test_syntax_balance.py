@@ -76,7 +76,9 @@ def test_indentation_errors_are_caught_in_python_where_braces_would_miss_them() 
 
 
 def test_files_with_no_grammar_here_are_not_judged() -> None:
-    for name in ("notes.md", "styles.css", "data.json", "page.html"):
+    """`.json` is no longer in this list: it has a real grammar, so it moved to
+    the checked side with Python."""
+    for name in ("notes.md", "styles.css", "page.html", "config.yaml"):
         assert structural_problem(name, "see ) here { and } there") is None
 
 
@@ -201,3 +203,54 @@ def test_commonjs_in_a_cjs_file_is_correct() -> None:
 
 def test_a_word_ending_in_require_is_not_a_require_call() -> None:
     assert structural_problem("a.mjs", "const preRequire = 1;\nobj.require(x);\n") is None
+
+
+# --- JSON, which has a real grammar ---------------------------------------
+
+
+def test_a_broken_package_json_is_refused(tmp_path) -> None:
+    """Node reads package.json to resolve every module in that directory, so a
+    broken one does not fail the file that contains it - it fails everything
+    near it.
+
+    run-0deeb8bf wrote one and got "Error parsing
+    simple-to-do-list-app/package.json: Expected property name or '}' in JSON
+    at position 73" from `package_json_reader`: a stack trace naming an
+    internal Node module, two stages away from the write.
+    """
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, "p/package.json", '{"name": "a",,}')
+
+    message = str(caught.value)
+    assert "not valid JSON" in message
+    assert "breaks the whole project" in message
+    assert not (tmp_path / "p/package.json").exists()
+
+
+def test_valid_json_is_written(tmp_path) -> None:
+    from app.tools.repository import write_approved_artifact
+
+    result = write_approved_artifact(tmp_path, "p/package.json", '{"name": "a"}\n')
+
+    assert result["status"] == "written"
+
+
+@pytest.mark.parametrize("name", ["tsconfig.json", "jsconfig.json", ".eslintrc.json"])
+def test_json_that_is_allowed_comments_is_left_alone(name: str) -> None:
+    """TypeScript, ESLint and devcontainers all document comments in these.
+    Parsing them as strict JSON would refuse a perfectly correct file."""
+    assert structural_problem(f"p/{name}", '{\n  // the target\n  "target": "es2022"\n}') is None
+
+
+def test_the_error_says_where_it_stops() -> None:
+    problem = structural_problem("p/data.json", '{\n  "a": 1,\n  "b":\n}')
+
+    assert problem and "line 4" in problem
+
+
+def test_an_ordinary_json_file_is_checked_too() -> None:
+    """The reason is the same wherever it is: JSON either parses or it does not."""
+    assert structural_problem("p/fixture.json", '{"a": }') is not None
+    assert structural_problem("p/fixture.json", '{"a": 1}') is None

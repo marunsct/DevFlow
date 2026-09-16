@@ -929,3 +929,36 @@ def test_a_timed_out_command_gets_no_standing_refusal_note(tmp_path) -> None:
     _record_execution(root, "testing_specialist", command, timed_out)
 
     assert _note_about_running_this_again(root, command, timed_out, "testing_specialist") == ""
+
+
+def test_every_specialist_can_run_the_code_it_may_be_asked_to_write():
+    """The stack is chosen per run, so no role's language is known in advance.
+
+    A specialist is handed whatever the Technical Lead delegates, in whatever
+    stack the stack selector picked. A role that can write a file it cannot
+    run has only bad options, and it takes them: on run-414a621f the database
+    specialist, refused `node`, wrote a Python script to subprocess-launch node
+    (permitted), ran `python3 app.test.mjs`, and finally tried to `exec()` a
+    JavaScript module as Python.
+
+    This has been fixed one role at a time four times - `ui_ux` on
+    run-0b55ad49, `backend` on run-95ca3f72, `testing` on run-3da8dd91,
+    `database` on run-414a621f. Asserted across the whole set so there is no
+    fifth.
+    """
+    import typing
+
+    from app.agents.technical_lead import SpecialistRole
+    from app.tools.sandbox import ROLE_EXECUTABLES
+
+    without_javascript = []
+    without_python = []
+    for role in typing.get_args(SpecialistRole):
+        allowed = ROLE_EXECUTABLES[f"{role}_specialist"]
+        if not {"node", "npx"} & allowed:
+            without_javascript.append(role)
+        if not {"python", "python3"} & allowed:
+            without_python.append(role)
+
+    assert not without_javascript, f"cannot run JavaScript: {without_javascript}"
+    assert not without_python, f"cannot run Python: {without_python}"

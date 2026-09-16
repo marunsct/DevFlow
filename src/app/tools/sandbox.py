@@ -75,7 +75,27 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
         "npm", "npx", "node", "yarn", "pnpm",
     }),
     # A migration is a script, and the role that writes one has to run it.
-    "database_specialist": frozenset({"prisma", "psql", "alembic", "python", "python3", "make"}),
+    #
+    # The JavaScript runtime is here for the fourth time this mistake has been
+    # made, and this was the only code-writing role still without it - even
+    # `documentation_specialist`, which writes prose, had `node`. The stack is
+    # chosen per run, so "database" does not mean SQL: on a browser-storage
+    # brief the persistence layer *is* JavaScript, and on run-414a621f this
+    # role wrote `app.js`, `app.test.mjs` and a `package.json`, then could not
+    # run any of them.
+    #
+    # Withholding it bought nothing, exactly as it bought nothing for
+    # `testing_specialist` on run-3da8dd91. Refused `node --test`, the agent
+    # tried `python3 -c "subprocess.run(['node', ...])"` (refused), then wrote
+    # `run-tests.py` to subprocess-launch node - which was permitted and ran.
+    # What the refusal actually bought was 145 events of thrashing and
+    # attempts like `python3 app.test.mjs`, and
+    # `exec(open('app.test.mjs').read().replace('export {', '// export {'))` -
+    # running JavaScript through the Python interpreter.
+    "database_specialist": frozenset({
+        "prisma", "psql", "alembic", "python", "python3", "make",
+        "node", "npm", "npx",
+    }),
     # Test runners as well as package managers. The role whose entire job is
     # running tests could run `pytest` and no JavaScript runner at all - on a
     # brief that is explicitly HTML/CSS/JavaScript. Worse, the refusal bought

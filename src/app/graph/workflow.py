@@ -934,7 +934,12 @@ def _restart_on_a_fresh_conversation(
 
 
 def _inner_agent_config(
-    inner_thread_id: str, run_id: str | None, callbacks: Any, **extra: Any
+    inner_thread_id: str,
+    run_id: str | None,
+    callbacks: Any,
+    *,
+    stage: str | None = None,
+    **extra: Any,
 ) -> dict[str, Any]:
     """The config for one role agent's own invocation.
 
@@ -947,10 +952,19 @@ def _inner_agent_config(
     Built here rather than inline at each call site, because there are two of
     them and a third would otherwise be written without it, which is how the
     transcript came to record half a run.
+
+    `stage` travels for the same reason and was missing for the same reason:
+    one agent serves many stages, so middleware built with a stage name knows
+    only the phase. Without it the transcript filed 93% of tool calls under
+    `implementation`. See `app.tracing.APP_STAGE_KEY`.
     """
+    from app.tracing import APP_STAGE_KEY
+
     configurable: dict[str, Any] = {"thread_id": inner_thread_id}
     if run_id:
         configurable[APP_RUN_ID_KEY] = run_id
+    if stage:
+        configurable[APP_STAGE_KEY] = stage
     return {"configurable": configurable, "callbacks": callbacks, **extra}
 
 
@@ -997,6 +1011,7 @@ def _nudge_for_the_structured_response(
     previous: dict[str, Any] | None = None,
     schema: Any = None,
     run_id: str | None = None,
+    stage: str | None = None,
 ) -> dict[str, Any] | None:
     """Ask the same conversation for the answer it already worked out.
 
@@ -1018,7 +1033,7 @@ def _nudge_for_the_structured_response(
     try:
         result = agent.invoke(
             {"messages": [{"role": "user", "content": _nudge_text(previous, schema)}]},
-            config=_inner_agent_config(inner_thread_id, run_id, callbacks),
+            config=_inner_agent_config(inner_thread_id, run_id, callbacks, stage=stage),
         )
     except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
         # Whatever went wrong here, the restart below is still available and is
@@ -1148,6 +1163,7 @@ def _run_gated_agent(
                 callbacks=activity,
                 recursion_limit=INNER_AGENT_RECURSION_LIMIT,
                 run_id=config["configurable"].get(APP_RUN_ID_KEY),
+                stage=stage_name,
             )
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             if _is_context_overflow(exc):
@@ -1213,6 +1229,7 @@ def _run_gated_agent(
                     inner_thread_id,
                     config["configurable"].get(APP_RUN_ID_KEY),
                     activity,
+                    stage=stage_name,
                     recursion_limit=INNER_AGENT_RECURSION_LIMIT,
                 ),
             )
@@ -1291,6 +1308,7 @@ def _run_gated_agent(
             result,
             getattr(agent, "workflow_response_format", None),
             config["configurable"].get(APP_RUN_ID_KEY),
+            stage_name,
         )
         if nudged is not None:
             if nudged.get("__interrupt__"):

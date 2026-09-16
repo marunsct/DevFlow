@@ -116,6 +116,7 @@ def resume_with_decision(
     callbacks: list[Any] | None = None,
     recursion_limit: int | None = None,
     run_id: str | None = None,
+    stage: str | None = None,
 ) -> dict[str, Any]:
     """Resume a paused run with a human decision for every pending gated call.
 
@@ -137,12 +138,20 @@ def resume_with_decision(
     without the id makes exactly the tools that change something invisible.
     Measured on run-c150cb2e: the event stream recorded 47 tool calls and the
     transcript 7, all of them read-only.
+
+    `stage` travels beside it so the transcript files those calls under the
+    stage that made them. One agent serves many stages, so middleware built
+    with a stage name knows only the phase; see `app.tracing.APP_STAGE_KEY`.
     """
     config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
     if run_id:
         from app.tracing import APP_RUN_ID_KEY
 
         config["configurable"][APP_RUN_ID_KEY] = run_id
+    if stage:
+        from app.tracing import APP_STAGE_KEY
+
+        config["configurable"][APP_STAGE_KEY] = stage
     if callbacks:
         config["callbacks"] = callbacks
     # The same ceiling the first invoke gets. A stage that loops internally

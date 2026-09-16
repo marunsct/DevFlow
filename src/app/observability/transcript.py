@@ -370,9 +370,10 @@ def build_transcript_middleware(stage: str) -> Any:
         def wrap_tool_call(self, request: Any, handler: Any) -> Any:
             call = getattr(request, "tool_call", None) or {}
             run_id = _run_id_from_config()
+            here = _stage_from_config(stage)
             record(
                 run_id,
-                stage,
+                here,
                 "tool_call",
                 tool=call.get("name"),
                 args=call.get("args"),
@@ -383,7 +384,7 @@ def build_transcript_middleware(stage: str) -> Any:
             except Exception as failure:  # noqa: BLE001 - record, then re-raise
                 record(
                     run_id,
-                    stage,
+                    here,
                     "tool_result",
                     tool=call.get("name"),
                     call_id=call.get("id"),
@@ -392,7 +393,7 @@ def build_transcript_middleware(stage: str) -> Any:
                 raise
             record(
                 run_id,
-                stage,
+                here,
                 "tool_result",
                 tool=call.get("name"),
                 call_id=call.get("id"),
@@ -402,6 +403,24 @@ def build_transcript_middleware(stage: str) -> Any:
             return result
 
     return TranscriptMiddleware()
+
+
+def _stage_from_config(fallback: str) -> str:
+    """The stage now running, from the graph's config; `fallback` if absent.
+
+    A role agent is constructed once and invoked for many stages, so the name
+    this middleware was built with is the agent's phase (`implementation`),
+    not the stage making the call (`specialist_testing_1`). The invoke knows;
+    the constructor could not. See `app.tracing.APP_STAGE_KEY`.
+    """
+    try:
+        from langgraph.config import get_config
+
+        from app.tracing import APP_STAGE_KEY
+
+        return (get_config() or {}).get("configurable", {}).get(APP_STAGE_KEY) or fallback
+    except Exception:  # noqa: BLE001 - outside a run, or no config; use the fallback
+        return fallback
 
 
 def _run_id_from_config() -> str | None:

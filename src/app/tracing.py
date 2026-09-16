@@ -31,6 +31,23 @@ Anything in LangGraph's reserved set is unsafe here: thread_id, checkpoint_id,
 checkpoint_ns, task_id, run_id, assistant_id, graph_id.
 """
 
+APP_STAGE_KEY = "app_stage"
+"""Config key carrying the stage this invocation is running, for middleware.
+
+Same reason as the run id above, and the same failure. A role agent is built
+once and invoked for many stages - one `implementation` agent serves every
+specialist and every test round - so middleware constructed with a stage name
+records the name the agent was *built* with, not the one it is running.
+
+Measured across runs 60-66: 2,416 of 2,594 tool records (93%) were filed under
+`implementation` or `intake` while the model call that asked for them was
+filed under the specialist that made it. Any question of the form "which stage
+spent these calls" was unanswerable from the tool records alone.
+
+Safe to put in `configurable`: `stage` is not in LangGraph's reserved set, but
+this is prefixed to match the run id and to keep both out of its way.
+"""
+
 
 def is_tracing_enabled() -> bool:
     """Check if LangSmith tracing is enabled in the environment."""

@@ -177,8 +177,37 @@ def build_repeated_query_middleware() -> Any:
             elif name not in QUERY_TOOLS:
                 return ""
 
-            key = (name, repr(sorted((call.get("args") or {}).items())))
-            digest = hashlib.sha1(content.encode("utf-8", "replace")).hexdigest()
+            args = call.get("args") or {}
+            if name in MUTATING_TOOLS and _changed_nothing(content):
+                # A write that changed nothing is the same event whatever bytes
+                # were sent, so it counts per file - not per (file, content).
+                #
+                # Keying on the arguments let a single byte reset the counter.
+                # Measured on run f81808a4, `specialist_backend_0` writing
+                # `docs/README.md` ten times: two writes, two "unchanged", two
+                # refusals, then one trailing newline removed - and two more
+                # "unchanged" before it was refused again. The guard fired
+                # twice and the stage still spent ten calls on one file.
+                #
+                # `_with_one_trailing_newline` is why those 278 and 277 byte
+                # bodies are the same file: the tool normalises the ending, so
+                # the second really did change nothing.
+                # Falling back to the full arguments when there is no path
+                # keeps a tool spelled some other way counting as it did
+                # before, rather than collapsing every such call into one
+                # bucket and refusing an unrelated file's first no-op.
+                path = str(args.get("relative_path") or "")
+                key = (
+                    (name, path, "changed nothing")
+                    if path
+                    else (name, repr(sorted(args.items())))
+                )
+                digest = "changed nothing" if path else hashlib.sha1(
+                    content.encode("utf-8", "replace")
+                ).hexdigest()
+            else:
+                key = (name, repr(sorted(args.items())))
+                digest = hashlib.sha1(content.encode("utf-8", "replace")).hexdigest()
             counts = self._counts.setdefault(key, {})
             count = counts.get(digest, 0)
             counts[digest] = count + 1

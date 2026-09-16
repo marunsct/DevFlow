@@ -1166,6 +1166,84 @@ def _broken_local_references(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: `"type": "module"` in a manifest, whatever the spacing.
+_DECLARES_ESM = re.compile(r'"type"\s*:\s*"module"')
+
+#: How many offending files to name before the list stops being useful.
+MAX_CONTRADICTING_FILES = 8
+
+
+def _files_that_contradict_the_declared_module_type(
+    files: list[Path], root: Path
+) -> list[str]:
+    """CommonJS left in `.js` files after the manifest declared ESM.
+
+    `"type": "module"` reaches every `.js` file in the package at once, and
+    `require` and `module` stop existing in all of them. Verified in the worker
+    image on Node 20.20.2:
+
+        ReferenceError: require is not defined in ES module scope, you can use
+        import instead
+        ReferenceError: module is not defined in ES module scope
+
+    Run d6297b2f is what this is for. `specialist_testing_1` added
+    `"type":"module"` to the manifest while four of its five test files still
+    used `require('../app.js')`, and then converted them one at a time, each
+    discovered by a separate failing `npm test`. It also tried three times to
+    take the declaration back out with an `edit_artifact` that removed
+    `"type":"module"` from a minified manifest and left `{...,,...}` behind,
+    refused each time as invalid JSON.
+
+    The declaration is the cheap thing to get right and the expensive thing to
+    discover: one line decides how every other file is parsed. So this names
+    every file that contradicts it in one finding, rather than letting a test
+    run reveal them one by one.
+
+    `.cjs` is the escape hatch and is exempt - verified in the same image, a
+    `.cjs` file keeps `require` under `"type": "module"`.
+    """
+    manifests = [p for p in files if p.name == "package.json"]
+    declaring = [p for p in manifests if _DECLARES_ESM.search(_read(p))]
+    if not declaring:
+        return []
+
+    problems: list[str] = []
+    for manifest in declaring:
+        package = manifest.parent
+        offenders: list[str] = []
+        for path in files:
+            if path.suffix.lower() != ".js" or not _is_within(path, package):
+                continue
+            if any(part in _SKIP for part in path.parts):
+                continue
+            # The nearest manifest wins: a nested package with its own
+            # package.json is not governed by this one.
+            nearer = [m for m in manifests if m != manifest and _is_within(path, m.parent)]
+            if any(_is_within(m.parent, package) and m.parent != package for m in nearer):
+                continue
+            if _COMMONJS.search(_read(path)):
+                offenders.append(str(path.relative_to(root)))
+        if not offenders:
+            continue
+        shown = ", ".join(sorted(offenders)[:MAX_CONTRADICTING_FILES])
+        more = (
+            ""
+            if len(offenders) <= MAX_CONTRADICTING_FILES
+            else f" and {len(offenders) - MAX_CONTRADICTING_FILES} more"
+        )
+        problems.append(
+            f"{manifest.relative_to(root)} declares `\"type\": \"module\"`, "
+            f"which makes every `.js` file in it an ES module, but {shown}"
+            f"{more} still use `require` or `module.exports`. Those throw "
+            "`ReferenceError: require is not defined in ES module scope` the "
+            "moment they load, so the suite cannot run. The declaration governs "
+            "all of them at once: either convert every listed file to "
+            "`import`/`export`, rename each to `.cjs`, or drop the `\"type\"` "
+            "line. Changing them one at a time costs a failing test run per file."
+        )
+    return problems
+
+
 #: `jest` as a whole word. `"jest" in text` also matches "pytest", which is how
 #: a Python stack once silently satisfied a JavaScript check.
 _USES_JEST = re.compile(r"(?<![\w-])jest(?![\w-])", re.I)
@@ -2034,6 +2112,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _application_embedded_in_html(files, root)),
     ("languages against the directory they share",
      lambda files, root, stack: _languages_sharing_a_directory(files, root)),
+    ("files that contradict the module type their manifest declares",
+     lambda files, root, stack: _files_that_contradict_the_declared_module_type(files, root)),
     ("module syntax against a test runner that cannot parse it",
      lambda files, root, stack: _module_system_mismatch(files, root)),
     ("tests against the directory they are run from",

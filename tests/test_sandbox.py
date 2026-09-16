@@ -1308,3 +1308,65 @@ def test_a_command_with_no_obvious_substitute_still_lists_what_is_allowed() -> N
         validate_command(["ruby", "x.rb"], "backend_specialist")
 
     assert "Allowed:" in str(caught.value)
+
+
+# --- the doubled project directory, however the path is spelled -------------
+
+
+@pytest.mark.parametrize(
+    "argument",
+    ["proj/app.test.mjs", "./proj/app.test.mjs", "/proj/app.test.mjs"],
+)
+def test_a_doubled_project_directory_is_stripped_however_it_is_written(
+    tmp_path, argument: str
+) -> None:
+    """`./project/x` and `/project/x` mean the same as `project/x` to the model,
+    and it writes all three.
+
+    Comparing the raw string missed the first two. run-04576307 sent
+    `["node", "--test", "./simple-to-do-list-app/app.test.mjs"]` with
+    `working_directory` already set to the project, and the guard written for
+    exactly that shape did not fire over one `.`. The command then looked for
+    `simple-to-do-list-app/simple-to-do-list-app/app.test.mjs`.
+    """
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj" / "app.test.mjs").write_text("x", encoding="utf-8")
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "--test", argument], str(tmp_path), "proj"
+    )
+
+    assert command[-1] == "app.test.mjs"
+    assert note
+
+
+def test_a_project_that_really_nests_its_own_name_is_untouched(tmp_path) -> None:
+    """The safety property: rewritten only when the path as given does not
+    exist and the stripped one does."""
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    (tmp_path / "proj" / "proj").mkdir(parents=True)
+    (tmp_path / "proj" / "proj" / "x.mjs").write_text("y", encoding="utf-8")
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "./proj/x.mjs"], str(tmp_path), "proj"
+    )
+
+    assert command[-1] == "./proj/x.mjs"
+    assert not note
+
+
+def test_a_path_that_is_already_right_is_untouched(tmp_path) -> None:
+    from app.tools.sandbox import strip_a_doubled_working_directory
+
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj" / "app.test.mjs").write_text("x", encoding="utf-8")
+
+    command, note = strip_a_doubled_working_directory(
+        ["node", "--test", "app.test.mjs"], str(tmp_path), "proj"
+    )
+
+    assert command[-1] == "app.test.mjs"
+    assert not note

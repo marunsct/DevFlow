@@ -961,10 +961,19 @@ def strip_a_doubled_working_directory(
     changed: list[str] = []
     for part in command:
         argument = str(part)
-        if argument.startswith(f"{prefix}/"):
-            shortened = argument[len(prefix) + 1 :]
+        # `./project/app.test.mjs` and `/project/app.test.mjs` mean the same
+        # thing to the model as `project/app.test.mjs`, and it writes all
+        # three. Comparing the raw string missed the first two: run-04576307
+        # sent `["node", "--test", "./simple-to-do-list-app/app.test.mjs"]`
+        # with `working_directory` already set to the project, and the guard
+        # written for exactly that shape did not fire over one `.`.
+        bare = argument.lstrip("/")
+        while bare.startswith("./"):
+            bare = bare[2:]
+        if bare.startswith(f"{prefix}/"):
+            shortened = bare[len(prefix) + 1 :]
             try:
-                if not (base / argument).exists() and (base / shortened).exists():
+                if not (base / bare).exists() and (base / shortened).exists():
                     rewritten.append(shortened)
                     changed.append(f"{argument} -> {shortened}")
                     continue

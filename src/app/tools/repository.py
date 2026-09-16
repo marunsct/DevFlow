@@ -1274,6 +1274,13 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
     The workflow's own `_record_document` passes `by_the_workflow=True` and is
     unaffected; that is the only writer of these paths that should exist.
 
+    The message names the channel that does work, because the first version did
+    not and the model found the worst way round it: refused the specification,
+    `specialist_ui_ux_0` wrote `docs/specification_update.md` instead - in
+    run-04576307 and again in run-01f03ed9, written once each and never read by
+    anything. A specialist's `decisions`, `risks` and `blockers` are read by the
+    workflow; a sibling document is read by nobody.
+
     Measured on run-84e05d4b: a specialist wrote
     `simple-to-do-list-app/docs/architecture_review.md`, a copy of the review
     the workflow had already rendered to `docs/architecture_review.md` from the
@@ -1297,7 +1304,11 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
             "the structured response of the stage that produces it, and rewrites "
             "it whole every time that stage runs. Any change you make here is "
             "discarded then, so this call cannot achieve anything. Read it if you "
-            "need what it says; put your own work in a file of its own."
+            "need what it says. If it is wrong or out of date, say so in your "
+            "structured response - `blockers` for something that stops the work, "
+            "`risks` for something that does not, `decisions` for a change you "
+            "made and want recorded. Those reach the workflow and the next "
+            "stage; a document written beside this one reaches nobody."
         )
     return (
         f"Refusing to write '{where}': '{name}' is written by "

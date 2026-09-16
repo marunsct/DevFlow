@@ -133,3 +133,25 @@ def test_an_ordinary_document_edit_still_works(tmp_path) -> None:
     write_approved_artifact(tmp_path, "docs/notes.md", "# one\n# two\n")
 
     assert edit_approved_artifact(tmp_path, "docs/notes.md", "# one", "# ONE")["status"]
+
+
+def test_the_refusal_names_the_channel_that_works(tmp_path) -> None:
+    """The first version said "put your own work in a file of its own", and the
+    model found the worst way round it.
+
+    Refused the specification, `specialist_ui_ux_0` wrote
+    `docs/specification_update.md` instead - in run-04576307 and again in
+    run-01f03ed9, written once each and never read by anything. A specialist's
+    `decisions`, `risks` and `blockers` reach the workflow and the next stage;
+    a sibling document reaches nobody.
+    """
+    write_approved_artifact(
+        tmp_path, "docs/technical_specification.md", "# spec\n", by_the_workflow=True
+    )
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, "docs/technical_specification.md", "# mine\n")
+
+    message = str(caught.value)
+    assert "`blockers`" in message and "`risks`" in message and "`decisions`" in message
+    assert "reaches nobody" in message

@@ -92,7 +92,18 @@ Ordered by impact. Each names the file, the evidence, and the fix.
 `sandbox.py:636` `_SERVER_COMMANDS`, `_SERVER_MODULES`. `rails s`, `flask run`, `uvicorn`, `dotnet run`, `go run` of an HTTP main, `php -S` are not detected; the call sits until the timeout and returns nothing, then the agent retries it (the pattern that cost run-e9e7f48f).
 **Fix:** behavioural detection — a process still alive at 20s with a listening socket in its namespace is a server; kill it, return the port and the first stdout, and say so. Keep the word list as the fast path.
 
-### B5 — Scaffolding knows five layouts  *(verified)*
+### B5 — Scaffolding knows five layouts  *(verified)* — **and is never called**
+
+Corrected 2026-09-16 while auditing run-04576307. `app.scaffolding.executor.execute_scaffolding`
+has no caller anywhere in `src/app`: the whole `app/scaffolding/` package - registry,
+executor, dependency install - is unreachable. Every project this harness has built was
+written file by file by a specialist, which is what every run transcript shows.
+
+`tests/test_graph_routing.py` monkeypatches `execute_scaffolding`, which reads as though
+the graph called it and gives false assurance. Backlog item 15 ("scaffold unknown stacks")
+therefore starts from nothing rather than from five layouts, and that matters most for the
+medium brief, whose FastAPI/Express + PostgreSQL stack is the case hand-writing serves
+worst.
 `scaffolding/registry.py`: vite-react-ts, nest, next, and two `mkdir`-based Python layouts. Any other stack has no scaffold path and the architect improvises a layout the checks do not recognise.
 **Fix:** for an unknown stack, scaffold an empty project with the layout the architect declared in `docs/technical_specification.md` (`src/`, `tests/`, manifest) and pin it — the harness's own layout rules then apply.
 

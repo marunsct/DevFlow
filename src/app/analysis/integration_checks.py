@@ -1242,9 +1242,6 @@ def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None)
 
 #: npm's own placeholder, written by `npm init -y`. A project that keeps it has
 #: a test script that fails by design.
-_NPM_PLACEHOLDER_TEST = 'echo \\"Error: no test specified\\" && exit 1'
-
-
 def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
     """Claims a manifest makes that the project does not support.
 

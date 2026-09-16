@@ -2254,13 +2254,6 @@ def write_approved_artifact(
     return result
 
 
-_LOOKS_LIKE_A_TEST = re.compile(
-    r"(^|/)(__tests__|tests?|e2e)/"
-    r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
-    r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
-    r"|(^|/)test_[^/]*\.py$"
-    r"|_test\.py$"
-)
 
 
 def looks_like_a_test(relative_path: str) -> bool:

@@ -78,6 +78,12 @@ MUTATING_TOOLS = frozenset({"edit_artifact", "write_artifact", "delete_artifact"
 #: escalation this codebase keeps arriving at is hint, note, rewrite, refuse -
 #: and refusing a write that would change nothing costs nothing, because by
 #: definition the file already holds exactly that content.
+#:
+#: This was defined and never read: the refusal borrowed
+#: `REPEATS_BEFORE_SAYING_SO` instead, so the two policies could not be tuned
+#: apart and the constant documented something that was not happening. Same
+#: number today; the point is that changing it now changes the behaviour it
+#: describes.
 NO_OP_WRITES_BEFORE_REFUSING = 2
 
 
@@ -176,7 +182,12 @@ def build_repeated_query_middleware() -> Any:
             counts = self._counts.setdefault(key, {})
             count = counts.get(digest, 0)
             counts[digest] = count + 1
-            if count < REPEATS_BEFORE_SAYING_SO:
+            threshold = (
+                NO_OP_WRITES_BEFORE_REFUSING
+                if name in MUTATING_TOOLS and _changed_nothing(content)
+                else REPEATS_BEFORE_SAYING_SO
+            )
+            if count < threshold:
                 return ""
             if _looks_like_a_failure(content):
                 # The repeated case is usually this one. Measured on

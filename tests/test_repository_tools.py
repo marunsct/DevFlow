@@ -521,6 +521,59 @@ function saveTasks() {
 """
 
 
+DUPLICATED = """import test from 'node:test';
+// renders both tasks when the input is valid
+const validTasks = [{ id: 1 }, { id: 2 }];
+renderTasks(validTasks);
+assert.strictEqual(listEl.children.length, 2);
+
+// duplicate block left behind by an earlier edit
+const validTasks = [{ id: 1 }, { id: 2 }];
+renderTasks(validTasks);
+assert.strictEqual(listEl.children.length, 2);
+console.log('done');
+"""
+
+AMBIGUOUS = (
+    "const validTasks = [{ id: 1 }, { id: 2 }];\n"
+    "renderTasks(validTasks);\n"
+    "assert.strictEqual(listEl.children.length, 2);"
+)
+
+
+def test_an_ambiguous_edit_is_shown_what_differs(tmp_path: Path) -> None:
+    """"Include a line from above or below" is advice, not information.
+
+    run-d3965815's model wrote `app.test.mjs` with the same block at lines 52
+    and 73, hit the ambiguity, and sent the byte-identical failing call again
+    rather than guess - it does not have the file in front of it, and the two
+    copies are near-identical or it would not have collided with both. Six of
+    that run's thirteen edit failures were this.
+    """
+    (tmp_path / "app.test.mjs").write_text(DUPLICATED)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(tmp_path, "app.test.mjs", AMBIGUOUS, "X")
+
+    message = str(caught.value)
+    assert "appears 2 times" in message
+    assert "lines 3 and 8" in message
+    # The lines that actually tell the copies apart, both of them.
+    assert "// renders both tasks when the input is valid" in message
+    assert "// duplicate block left behind by an earlier edit" in message
+
+
+def test_the_surroundings_do_not_run_off_the_ends_of_the_file(tmp_path: Path) -> None:
+    (tmp_path / "x.js").write_text("const a = 1;\nconst a = 1;\n")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(tmp_path, "x.js", "const a = 1;", "const b = 2;")
+
+    message = str(caught.value)
+    assert "(start of file)" in message
+    assert "(end of file)" in message
+
+
 def test_an_edit_sent_twice_is_told_it_already_landed(tmp_path: Path) -> None:
     """run-0deeb8bf's `defect_fix_2_0`, four model calls and a failed stage.
 
@@ -1883,7 +1936,10 @@ def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path) -> None:
 
     message = str(caught.value)
     assert "lines 2 and 5" in message
-    assert "whichever line differs between the copies" in message
+    assert "Add whichever of these surrounding lines differs" in message
+    # And the surroundings themselves, which is what makes it actable.
+    assert "the copy at line 2:" in message
+    assert "const r = loadTasks();" in message
 
 
 def test_three_copies_are_all_listed(repo_root: Path) -> None:

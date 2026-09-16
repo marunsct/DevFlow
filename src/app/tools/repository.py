@@ -614,6 +614,10 @@ def _how_it_differs(content: str, wanted: str) -> str:
     )
 
 
+#: At most this many copies are shown with their surroundings. Past a handful
+#: the message is longer than the file and the passage is the wrong one.
+_MAX_AMBIGUOUS_MATCHES_SHOWN = 4
+
 #: Below this, `replace` is too small for its presence in the file to mean
 #: anything - `}` or `0` is in every file already.
 _REPLACE_LONG_ENOUGH_TO_RECOGNISE = 24
@@ -849,9 +853,10 @@ def edit_approved_artifact(
             raise RepositoryToolError(
                 f"That text appears {occurrences} times in '{relative_path}', so it is "
                 "ambiguous which one to change. It starts at "
-                f"{_where_each_match_starts(original, find)}. Include a line from above "
-                "or below one of them to tell them apart - whichever line differs "
-                "between the copies is the one to add."
+                f"{_where_each_match_starts(original, find)}. Add whichever of "
+                "these surrounding lines differs between them to your `find`, and "
+                "send it again."
+                f"{_what_sits_around_each_match(original, find)}"
             )
 
         _write_unless_it_changes_nothing(
@@ -898,6 +903,46 @@ def _edited(
     if joined:
         result["note"] = joined
     return result
+
+
+def _what_sits_around_each_match(text: str, find: str) -> str:
+    """The line before and after each copy, so the agent can tell them apart.
+
+    "Include a line from above or below one of them" is advice the agent cannot
+    act on: it does not have the file in front of it, and the two copies are
+    near-identical or it would not have collided with both. So show the lines
+    that differ.
+
+    Measured on run-d3965815, where the model wrote `app.test.mjs` with the
+    same three-line block at lines 52 and 73, tried to edit it, and sent the
+    byte-identical failing call again rather than guess. Six of that run's
+    thirteen edit failures were this.
+    """
+    lines = text.splitlines()
+    blocks: list[str] = []
+    start = 0
+    while len(blocks) < _MAX_AMBIGUOUS_MATCHES_SHOWN:
+        at = text.find(find, start)
+        if at < 0:
+            break
+        first = text.count("\n", 0, at)
+        last = first + find.rstrip("\n").count("\n")
+        before = f"{first:>5} | {_clip(lines[first - 1])}" if first > 0 else "      | (start of file)"
+        after = (
+            f"{last + 2:>5} | {_clip(lines[last + 1])}"
+            if last + 1 < len(lines)
+            else "      | (end of file)"
+        )
+        blocks.append(
+            f"  the copy at line {first + 1}:\n"
+            f"  {before}\n"
+            f"  {'':>5} | ... your passage ...\n"
+            f"  {after}"
+        )
+        start = at + 1
+    if not blocks:
+        return ""
+    return "\n\n" + "\n\n".join(blocks)
 
 
 def _where_each_match_starts(text: str, find: str) -> str:

@@ -1269,10 +1269,13 @@ The last one is the one that protects the release. This feature touches the writ
 | 25 | LSP diagnostics in triage (§11.4) | 10 | L | med | a TypeScript type error becomes a defect before tests run |
 | 26 | multi-language stack pin (B19) | 2 | S | **high** | a Go+TypeScript stack gives every code-writing role both toolchains |
 | 27 | `knowledge_lookups` + `syntax_errors` in state (§9.5) | 7 | S | med | the reviewer's evidence block names the layers that ran |
+| 28 | diagnostics gate, `jump_to: model` at stage end (§20.4) | 8 | M | **high** | a stage that broke a file is sent back before it can finish |
+| 29 | checker table + baseline snapshot (§20.2, §20.4) | 8 | M | high | Go and Rust report structured diagnostics with no extra install |
+| 30 | the six pollution budgets as tests (§21.3) | 6 | S | high | the kill switch provably restores today's behaviour |
 
 Effort as in §4: S ≤ half a day, M 1–3 days, L a week.
 
-**Order, and why.** 17 and 18 need no network, no credentials and no configuration, and they fix the failure that has cost this harness whole sprints. 19 and 20 together are the feature: certain answers, delivered at the point of failure, with no choice by the model. 22 and 23 add reach for libraries nothing has installed yet. 25 is worth doing only after the rest is measured, because L0 and L2 may well have taken its work away.
+**Order, and why.** 30 comes first in practice: the budgets and the kill switch are what make everything after it safe to merge into the write path. 17 and 18 need no network, no credentials and no configuration, and they fix the failure that has cost this harness whole sprints. 19 and 20 together are the feature: certain answers, delivered at the point of failure, with no choice by the model. 22 and 23 add reach for libraries nothing has installed yet. 25 is worth doing only after the rest is measured, because L0 and L2 may well have taken its work away.
 
 **Dependency on Part I.** Item 20 is far more useful once item 1 (post-middleware tool messages in the event stream) has landed, because without it nobody can measure whether the notes are changing the next call. Item 22's cache should move into the `PostgresStore` namespaces of §3.4 when item 10 lands; until then it is a directory under `DATA_DIR`, which is how `journal/`, `context/` and `transcripts/` already work.
 
@@ -1285,6 +1288,8 @@ Effort as in §4: S ≤ half a day, M 1–3 days, L a week.
 - **No writing based on documentation alone.** L3 informs; L2 and L0 decide. A signature from a web page is labelled as such and never refuses a write.
 - **No automatic dependency upgrades.** Knowing that the installed version is old is useful; acting on it is a product decision with a human in it.
 - **No vector index.** A short, version-pinned, cached answer to a specific question is what a stage needs. Embedding a documentation corpus adds a model, a store and a retrieval-quality problem to solve a lookup this design answers exactly.
+- **No style enforcement.** The diagnostics gate blocks on errors, never on lint warnings or formatting. A stage held up over quote style is a stage that learns to ignore the gate.
+- **No new graph nodes or edges.** §21.3 budget 4. Everything lives in middleware, the write path, the command result, or one existing node's body.
 - **No new execution path.** Every probe goes through `SandboxExecutor`. The history of this codebase includes a second, unsandboxed execution path that sat beside the safe one as a silent fallback; there will not be a third.
 
 ---
@@ -1362,3 +1367,236 @@ One cheaper approximation is available now and is worth measuring first: the tas
 | polyglot stacks generally | **found a live bug** | B19 and item 26 — the pin is one language, the schema is two |
 
 The last row is the proposal's most useful contribution. Asking "what about a Go backend and a TypeScript frontend" surfaced that `frontend_framework` is filled by the stack selector, shown to the model in prose, and then reaches no allowlist, no timeout and no analyser — a two-member set with a one-member lookup, which is the mistake §1-B says this codebase keeps making.
+
+---
+
+## 20. Diagnostics: the IDE loop
+
+The question this answers: *can the harness check code the way an IDE does after it is written, and make the agent fix what it finds?*
+
+Yes, and the mechanism already exists in this codebase. It needs one new middleware, one table of commands, and a bound.
+
+### 20.1 What an IDE actually does
+
+An IDE is not one check. It is three engines with different costs, plus one behaviour that matters more than any of them.
+
+| engine | example | scope | speed | catches |
+|---|---|---|---|---|
+| incremental parser | the editor's own grammar | one file | milliseconds | F1, broken syntax |
+| type checker | `tsc`, `pyright`, `cargo check`, `gopls` | whole project | seconds | F2 and F3, unknown symbols and wrong signatures |
+| linter | `eslint`, `ruff`, `clippy` | one file | milliseconds | style, and a real subset of bugs |
+
+The behaviour that matters: **an IDE never lets the error list go away.** You cannot mark a file done while it has red squiggles. The harness's equivalent of "done" is a stage returning its structured response, and today nothing looks at the code before that happens.
+
+Mapping onto Part II's layers: L0 is the incremental parser, L4 is the type checker reached through a language server, and §20.2 adds the type checker reached the cheaper way — through the command every one of these languages already ships.
+
+### 20.2 The checker table
+
+An IDE's diagnostics come from these engines. The harness can run them directly, in the sandbox, with no language server and no MCP. Every command and latency below was measured on 2026-09-16 unless the row says otherwise.
+
+| language | command | output | measured | ships with runtime |
+|---|---|---|---|---|
+| Python, syntax | `python3 -m py_compile <file>` | exit 1, `File "x.py", line 2` on stderr | 21 ms | yes |
+| Python, types | `pyright --outputjson` | JSON diagnostics | not installed here | no |
+| Python, lint | `ruff check --output-format json` | JSON | not installed here | no |
+| JavaScript / TypeScript, types | `tsc --noEmit --pretty false -p tsconfig.json` | `file(line,col): error TSxxxx: msg` | 1.9 s cold via npx | no |
+| Go | `go vet ./...` | `vet: ./x.go:3:27: undefined: undefinedThing` | 3.4 s cold | yes |
+| Rust | `cargo check --message-format=json` | newline-delimited JSON, `level`, `code.code`, `message`, `spans[0].file_name`, `spans[0].line_start` | works, structured | yes |
+| Java | `javac -Xlint -d /tmp` | `x.java:3: error: msg` | not measured | yes |
+| C# | `dotnet build -warnaserror-` | MSBuild diagnostics | not installed here | yes |
+| PHP | `php -l` | `Parse error: ... in x.php on line N` | not installed here | yes |
+| Ruby | `ruby -c` | `Syntax OK` or an error | not installed here | yes |
+
+Two consequences for the design. Rust and Go emit good diagnostics from a command that ships with the toolchain, so they need no extra install. TypeScript and Python need a dependency the project may already have, so the checker is discovered rather than assumed.
+
+**`tsc` implementation note.** Passing file paths on the command line makes `tsc` ignore `tsconfig.json` and fail with `error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline`. Run it in project mode with `-p`, and scope the results afterwards.
+
+### 20.3 Do not use the runtime's own syntax flag for JavaScript *(verified)*
+
+`node --check` looks like the obvious per-file syntax gate. It is not usable as one. Measured on identical bytes:
+
+```
+file contents:  export function add(a, b) { return a + b      <- no closing brace
+
+node --check t.js     exit 0        <- silently passes
+node --check t.mjs    exit 1        <- same bytes, caught
+tree-sitter           has_error = True, MISSING '}' at row 0, column 40
+```
+
+The verdict depends on the file extension, not on the content, because the extension decides whether node parses the file as a module. A gate that reports success for a broken file is the worst shape a result can have, and this codebase has already paid for that shape twice: a shell operator that made a command a silent no-op with exit 0, and an edit that returned "edited" without editing. The harness also already carries `_checks_a_file_node_cannot_parse` for a milder version of the same flaw.
+
+**Tree-sitter caught it on both extensions and named the missing brace.** L0 is the JavaScript syntax gate. `node --check` is not used.
+
+### 20.4 The diagnostics gate
+
+**Where it hooks.** `app/agents/settled_answer.py` already decides when a stage is allowed to finish, through `after_model`. The installed LangChain permits that hook to jump to `"tools"`, `"model"` or `"end"`:
+
+```python
+JumpTo = Literal["tools", "model", "end"]
+"""Destination to jump to when a middleware node returns."""
+```
+
+`jump_to: "model"` is the IDE behaviour exactly: the stage is about to declare itself done, the checker disagrees, and the stage goes back to work with the errors in front of it. No graph cycle, no re-plan, no stage restart, no lost context. This is what §19.3 rejected a graph cycle in favour of.
+
+**New file:** `app/agents/diagnostics_gate.py`.
+
+```python
+"""Do not let a stage finish while the code it just wrote is broken.
+
+An IDE does not hide the error list when you save. This harness's
+equivalent of "done" is a stage returning its structured response, and
+until now nothing looked at the code before that happened: a specialist
+could write a file that does not compile, answer with
+`verification: []`, and hand the failure to the testing stage two nodes
+later - where B13 says the fix costs a re-plan, a re-delegation and a
+rewrite.
+
+The correction is delivered at the moment the stage tries to stop, which
+is the last point at which it still has every file it wrote in its own
+context. That is one model call after the mistake, against one full
+sprint cycle for the same fix found by the test stage.
+
+Bounded at MAX_DIAGNOSTIC_ROUNDS. A stage that cannot clear its own
+diagnostics in two attempts has a problem the reviewer should see, not a
+loop this middleware should keep spinning.
+"""
+
+MAX_DIAGNOSTIC_ROUNDS = 2
+
+
+def build_diagnostics_gate_middleware(
+    repo_root: str, stage_name: str, role_name: str
+) -> Any:
+    """Middleware that sends a stage back to the model with its own errors."""
+
+    class DiagnosticsGateMiddleware(AgentMiddleware):
+        def __init__(self) -> None:
+            super().__init__()
+            self._written: set[str] = set()
+            self._rounds = 0
+            self._baseline: frozenset[tuple] | None = None
+
+        def wrap_tool_call(self, request, handler):
+            """Record what this stage actually changed.
+
+            Keyed on tool results rather than on tool arguments: a write
+            that was refused did not change anything, and checking a file
+            the stage never wrote is how a stage inherits another's debt.
+            This is the same "key on the response, not the request"
+            rule as root-cause class E.
+            """
+            result = handler(request)
+            ...  # add relative_path to self._written on a successful write/edit
+            return result
+
+        @hook_config(can_jump_to=["model"])
+        def after_model(self, state, runtime=None):
+            try:
+                return self._decide(state)
+            except Exception:       # noqa: BLE001 - never fail the stage it guards
+                logger.exception("Diagnostics gate failed in %s; leaving the loop alone", stage_name)
+                return None
+```
+
+**`_decide` fires only when every one of these holds.** Each condition exists to stop it firing when it would be noise:
+
+1. The last message is an AI message with **no pending tool calls**. The stage is finishing, not working.
+2. The stage **wrote at least one code file**. Reviewers and document stages are untouched.
+3. `self._rounds < MAX_DIAGNOSTIC_ROUNDS`.
+4. The checker produced at least one diagnostic that is **new since the stage started** and **in a file this stage wrote**.
+
+**Condition 4 is the one that makes this safe.** Take a diagnostics snapshot when the stage begins and compare at the end; only new diagnostics block. Without the baseline, a stage inherits every pre-existing error in the project and can never finish — the specialist that fixes one defect would be held responsible for the other eleven. With it, the rule is the one a good pre-merge gate uses: *you may not make it worse.*
+
+**What the stage is told.** The same voice as every other correction here: what is wrong, where, and what to do.
+
+```
+[The files you just wrote do not compile. These are new since this stage
+started; errors that were already here are not yours to fix.
+
+  todo-app/store.ts(14,22): error TS2551: Property 'findOneAndUpdate' does
+  not exist on type 'Collection<Task>'. Did you mean 'findOneAndReplace'?
+
+  todo-app/store.ts(31,9): error TS2554: Expected 2 arguments, but got 3.
+
+Fix these, then return your structured response. Do not report this task
+complete with the code in this state - the testing stage will find the
+same two errors and the fix will cost a whole remediation round.]
+```
+
+Note that the first error also demonstrates why §12.2 and §20 are complementary: `tsc` supplied `Did you mean 'findOneAndReplace'?` on its own. Where the checker does not, the L2 broker's `near_misses` fills it in.
+
+**Which checker runs** is decided by the pinned stack and the suffixes of the files written, through the table in §20.2, and it runs through `SandboxExecutor` like everything else. A checker that is not installed produces no diagnostics and no gate, logged once.
+
+### 20.5 Tests
+
+`tests/test_diagnostics_gate.py`:
+
+| test | asserts |
+|---|---|
+| `test_a_stage_that_broke_a_file_is_sent_back` | a stage writing a file with a new error gets `jump_to == "model"` and a message naming the file and line |
+| `test_a_pre_existing_error_does_not_block` | the baseline snapshot excludes errors the stage did not introduce |
+| `test_a_stage_that_wrote_nothing_is_never_gated` | reviewers and document stages are untouched |
+| `test_the_gate_gives_up_after_two_rounds` | the third attempt ends the stage and the diagnostics reach the reviewer instead |
+| `test_a_missing_checker_is_silent` | no checker installed means no gate and one debug log |
+| `test_the_gate_runs_after_the_settled_answer_check` | ordering in the middleware list is asserted, not assumed |
+| `test_a_refused_write_is_not_treated_as_a_change` | keyed on the result, not the argument |
+
+The ordering test matters. Both this and `settled_answer` hook `after_model`, and a gate that never sees a settled stage is a gate that never fires.
+
+---
+
+## 21. Where each layer runs, and what it is allowed to cost
+
+Two requirements, handled together: every layer must fire at a stage where it helps, and none of it may bloat the harness.
+
+### 21.1 The stage map
+
+Columns are the layers of §9.1. A blank cell means the layer does not run at that stage, deliberately.
+
+| stage | L0 parse | L1 symbols | L2 installed | L3 docs | L4 diagnostics | gate §20 |
+|---|---|---|---|---|---|---|
+| product intake | | | | | | |
+| tools and models | | | | registry versions only | | |
+| stack selector | | | | registry versions only | | |
+| principal architect | | digest | | on request | | |
+| architecture review | | digest | | on request | | |
+| scrum master | | digest | | | | |
+| technical lead | | digest | | | | |
+| **specialist (implementation)** | **every write** | digest | **on failure, on request** | **on request** | | **at stage end** |
+| **test and triage** | | digest | on failure | | **project-wide, once** | |
+| defect remediation | **every write** | digest | **on failure** | on request | | **at stage end** |
+| security review | | digest | | on request | | |
+| milestone review | | digest | | | reads the report | |
+
+Three rules produced that table:
+
+- **L0 runs where files are written, and nowhere else.** It costs a millisecond and it is the only thing standing between a broken file and the next stage.
+- **L3 never runs unasked.** It is the only layer that touches the network, and the only one that can be slow. Specification stages get it on request because that is where a framework choice is made; implementation gets it on request and on failure.
+- **L4 runs exactly once per sprint,** at triage. It is project-wide by nature, so running it per write would re-analyse the whole project per file.
+
+### 21.2 Where the one remaining MCP server is called
+
+Part II uses MCP in exactly one place: the optional language server in §11.4, at the **test and triage** stage, once per sprint, behind `KNOWLEDGE_LSP_ENABLED` which defaults to off. Everywhere else the same data arrives over plain HTTP or from a command, because §8.1 established that an MCP *tool* cannot be invoked from this synchronous agent loop at all.
+
+That placement is deliberate rather than incidental. A graph node and a middleware hook are plain synchronous functions and can bridge to async with `asyncio.run`; the agent's own tool loop cannot. So MCP is usable precisely where the harness calls it *between* model turns, and unusable where the model calls it. Any future MCP server must go in the same place, and §21.3 makes that a test rather than a convention.
+
+### 21.3 The pollution budget
+
+"Does not pollute the harness" has to mean something checkable. Six budgets, each with the test that enforces it.
+
+| # | what could bloat | budget | test |
+|---|---|---|---|
+| 1 | **context per model call** | ≤ 900 tokens total across all injected knowledge blocks, derived from `ContextBudget`, never a literal | `test_injected_knowledge_stays_within_budget` |
+| 2 | **the tool list** | exactly one new tool, `look_up_api`; no per-language and no per-source tools | `test_the_agent_gains_exactly_one_tool` |
+| 3 | **graph state** | two new fields, both records without bodies; no documentation text in state | `test_no_state_field_holds_a_document_body` |
+| 4 | **supersteps** | zero new graph nodes and zero new edges; the gate uses `jump_to`, inside the stage | `test_the_graph_topology_is_unchanged` |
+| 5 | **wall clock** | ≤ 5% added to a run with the network off; L3 bounded by `KNOWLEDGE_MAX_LOOKUPS_PER_RUN` | benchmark recorded in the commit, per §5.6 |
+| 6 | **failure modes** | zero. Every entry point returns a neutral value on any exception and logs at debug | `test_everything_degrades_to_silence` |
+
+Budget 4 is the structural one. Everything in Part II lives in middleware, in the write path, in the sandbox result, or in one stage's node body. **No new node, no new edge, no new cycle.** That is what keeps this feature from becoming part of the control plane, and it is the difference between this design and the one assessed in §19.
+
+### 21.4 The kill switch
+
+`KNOWLEDGE_ENABLED=false` must make the harness byte-for-byte what it is today: no digest change, no write-path check, no command note, no extra tool in any agent's list, no new state fields populated, no diagnostics gate. `test_everything_degrades_to_silence` asserts it across all four doors.
+
+This is not defensive habit. This feature touches the write path, the command path, the stage-completion decision and every model call. Those are the four busiest surfaces in the harness, and the one regression shipped in the session behind Part I passed every unit test and failed on the agent's first call. A switch that provably returns the harness to a known state is what makes the rest of it safe to merge.

@@ -529,17 +529,108 @@ def _closest_passage(content: str, wanted: str) -> str | None:
     )
 
 
+#: How alike the sent passage and the file's must be before naming the
+#: differences. Below this they are different passages, and a line-by-line
+#: comparison of two unrelated things reads as noise.
+_WORTH_DIFFING = 0.7
+
+#: At most this many differing lines in one report. A model that got every line
+#: wrong needs the first few and a fresh read, not a wall of text.
+_MAX_REPORTED_DIFFERENCES = 5
+
+#: Longer lines are cut, with a marker, so one minified line cannot fill the
+#: whole message.
+_MAX_DIFF_LINE = 160
+
+
+def _clip(line: str) -> str:
+    return line if len(line) <= _MAX_DIFF_LINE else line[:_MAX_DIFF_LINE] + " ..."
+
+
+def _how_it_differs(content: str, wanted: str) -> str:
+    """Name the differences between the sent passage and the file's, or "".
+
+    Quoting the nearest passage - which this tool already did - shows the model
+    the right text and leaves it to spot what changed. Measured on
+    run-0deeb8bf's `defect_fix_2_0`, it does not. The model sent
+
+        // function saveTasks() {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        }
+
+    against a file holding exactly that without the `// `, got the passage
+    quoted back at it, tried twice more, and finished the stage reporting
+    "Unable to locate exact saveTasks function code for editing; cannot apply
+    fix" - a real defect abandoned over three characters it could not see.
+
+    The existing fallbacks forgive the differences that are mechanical: line
+    numbers from `read_file`, doubled backslashes, JSON escaping, a different
+    left margin. They cannot forgive this one, because a comment marker
+    changes what the code means and guessing which side the model wanted would
+    be editing on its behalf. So say precisely what differs and let it decide.
+    """
+    import difflib
+
+    lines = content.splitlines()
+    wanted_lines = wanted.splitlines()
+    if not lines or not wanted_lines:
+        return ""
+    first = next((line for line in wanted_lines if line.strip()), "")
+    anchor = _best_matching_line(first, lines)
+    if anchor is None:
+        return ""
+    # The passage starts wherever its first non-blank line matched, so back up
+    # by however many blank lines the sent text opened with.
+    lead = next((i for i, line in enumerate(wanted_lines) if line.strip()), 0)
+    start = max(0, anchor - lead)
+    window = lines[start:start + len(wanted_lines)]
+    if not window:
+        return ""
+    ratio = difflib.SequenceMatcher(None, "\n".join(wanted_lines), "\n".join(window)).ratio()
+    if ratio < _WORTH_DIFFING:
+        return ""
+
+    differences: list[str] = []
+    for offset, (sent, actual) in enumerate(zip(wanted_lines, window)):
+        if sent == actual:
+            continue
+        if len(differences) >= _MAX_REPORTED_DIFFERENCES * 2:
+            differences.append("  ... and more")
+            break
+        differences.append(f"  you sent:  {_clip(sent)}")
+        differences.append(f"  file has:  {_clip(actual)}   (line {start + offset + 1})")
+    if len(wanted_lines) != len(window):
+        differences.append(
+            f"  you sent {len(wanted_lines)} lines; that passage is {len(window)} long"
+        )
+    if not differences:
+        return ""
+
+    return (
+        f"\n\nIt is nearly the passage at line {start + 1}. These lines differ:\n"
+        + "\n".join(differences)
+        + "\n\nSend `find` exactly as the file has it, and put what you want "
+        "instead in `replace`."
+    )
+
+
 def _best_matching_line(first: str, lines: list[str]) -> int | None:
     """Index of the line most like `first`, or None if nothing is close."""
     import difflib
 
     if not first or not lines:
         return None
-    ratio, best = max(
-        (difflib.SequenceMatcher(None, first.strip(), line.strip()).ratio(), index)
-        for index, line in enumerate(lines)
-    )
-    return best if ratio >= 0.6 else None
+    # Earliest on a tie, not latest. `max` over (ratio, index) tuples breaks
+    # ties toward the *highest* index, so a file of `const lineN = N;` pointed
+    # at line 50 for a near miss on line 41 - every line scores alike and the
+    # last one won. Everything else in this tool means the first occurrence
+    # when it says "the" one, and a wrong pointer is worse than none.
+    best_ratio, best_index = 0.0, None
+    for index, line in enumerate(lines):
+        ratio = difflib.SequenceMatcher(None, first.strip(), line.strip()).ratio()
+        if ratio > best_ratio:
+            best_ratio, best_index = ratio, index
+    return best_index if best_ratio >= 0.6 else None
 
 
 def _quote(lines: list[str], start: int, end: int, marked: int | None) -> str:
@@ -671,6 +762,15 @@ def edit_approved_artifact(
                     f"only {len(find)} characters, which rarely identifies one passage. "
                     "Give the whole line you want changed, copied from a read, and put the "
                     "change in `replace`."
+                )
+
+            # What differs, before what is nearby: a model that is three
+            # characters out needs the three characters, not the paragraph.
+            differences = _how_it_differs(original, find)
+            if differences:
+                raise RepositoryToolError(
+                    f"Could not find that text in '{relative_path}'. It must match "
+                    f"exactly, including whitespace and punctuation.{differences}"
                 )
 
             nearest = _closest_passage(original, find)

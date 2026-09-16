@@ -498,10 +498,85 @@ def test_a_near_miss_quotes_the_real_text(tmp_path: Path) -> None:
         )
 
     message = str(excinfo.value)
-    assert "closest text in the file" in message
     assert "setFilter(btn.id)" in message, "the real line must be quoted back"
-    assert ">" in message, "the nearest line must be marked"
-    assert "| 5 |" in message.replace("    5 |", "| 5 |"), "line numbers make it copyable"
+    # Named, not just shown. run-0deeb8bf sent a passage that differed from the
+    # file by a leading `// `, was handed the correct passage three times, and
+    # ended the stage reporting it could not locate the code.
+    assert "These lines differ" in message
+    assert "you sent:" in message and "file has:" in message
+    assert "(line 5)" in message, "line numbers make it copyable"
+
+
+APP_JS = """const STORAGE_KEY = 'todoTasks';
+let tasks = [];
+
+function loadTasks() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  tasks = raw ? JSON.parse(raw) : [];
+}
+
+function saveTasks() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+}
+"""
+
+
+def test_a_comment_marker_the_model_added_is_named(tmp_path: Path) -> None:
+    """The three characters that cost run-0deeb8bf a defect fix.
+
+    `defect_fix_2_0` sent the `saveTasks` body with `// ` on the first line -
+    it was trying to comment the function out and put the result in `find`.
+    The tool quoted the correct passage back three times; the model could not
+    see what differed, and ended the stage reporting "Unable to locate exact
+    saveTasks function code for editing; cannot apply fix."
+    """
+    (tmp_path / "app.js").write_text(APP_JS)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(
+            tmp_path,
+            "app.js",
+            "// function saveTasks() {\n"
+            "  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));\n"
+            "}",
+            "",
+        )
+
+    message = str(caught.value)
+    assert "you sent:  // function saveTasks() {" in message
+    assert "file has:  function saveTasks() {" in message
+    assert "(line 9)" in message
+
+
+def test_a_passage_that_is_merely_indented_differently_still_just_works(
+    tmp_path: Path,
+) -> None:
+    """The forgiving path runs first, so this never reaches the difference report."""
+    (tmp_path / "app.js").write_text(APP_JS)
+
+    result = edit_approved_artifact(
+        tmp_path,
+        "app.js",
+        "    function saveTasks() {\n"
+        "      localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));\n"
+        "    }",
+        "function saveTasks() {}",
+    )
+
+    assert result["status"]
+    assert "function saveTasks() {}" in (tmp_path / "app.js").read_text()
+
+
+def test_a_different_passage_is_not_diffed_line_by_line(tmp_path: Path) -> None:
+    """Two unrelated passages compared line by line read as noise."""
+    (tmp_path / "app.js").write_text(APP_JS)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(
+            tmp_path, "app.js", "def totally_other():\n    return 1\n", "x"
+        )
+
+    assert "These lines differ" not in str(caught.value)
 
 
 def test_an_unrelated_find_is_not_given_a_misleading_hint(tmp_path: Path) -> None:
@@ -1807,6 +1882,10 @@ def test_a_large_file_still_gets_the_nearest_passage(repo_root: Path) -> None:
         edit_approved_artifact(repo_root, "p/big.cjs", "const line40 = 99;\n", "x")
 
     message = str(caught.value)
-    assert "marks the nearest line" in message
     assert "This is the entire file" not in message
     assert "const line0 = 0;" not in message
+    # And it points at the line that is actually nearest. `max` over
+    # (ratio, index) broke ties toward the highest index, so every line here
+    # scored alike and the pointer landed on line 50.
+    assert "(line 41)" in message
+    assert "const line40 = 40;" in message

@@ -331,6 +331,11 @@ _AN_ASSERTION = re.compile(
     r"""|(?<![\w.$])should\s*[.(]"""
     r"""|\.(?:toBe|toEqual|toMatch|toThrow|toContain|toHaveBeenCalled)\w*\s*\("""
     r"""|(?<![\w.$])(?:strictEqual|deepStrictEqual|deepEqual|notEqual|ok|ifError|throws|rejects|match)\s*\("""
+    # `t.ok(...)` and `t.assert.ok(...)`: an assertion on some object. Wrong in
+    # the first case - `assertions_called_on_the_test_module` says so - but an
+    # attempt at one either way, so "this suite cannot fail" must not also fire
+    # and contradict it.
+    r"""|(?<![\w.$])\w+\.(?:assert\.)?(?:strictEqual|deepStrictEqual|deepEqual|notEqual|notStrictEqual|equal|ok|ifError|throws|rejects|match|fail)\s*\("""
     r"""|(?<![\w.$])throw\s+new\s+\w*Error"""
     r"""|(?<![\w.$])process\.exit\s*\(\s*1\s*\)""",
     re.MULTILINE,
@@ -421,6 +426,13 @@ _NAMED_IMPORTS_FROM_NODE_TEST = re.compile(
     r"""|(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\(\s*['"]node:test['"]\s*\)""",
 )
 
+#: `test('name', (t) => {` / `it('name', async (t) => {` - the context
+#: parameter's name, so assertion calls on it can be recognised.
+_TEST_CONTEXT_PARAMETER = re.compile(
+    r"""(?<![\w.$])(?:test|it)\s*\(\s*['"`][^'"`]*['"`]\s*,\s*"""
+    r"""(?:async\s+)?(?:\(\s*(\w+)|(\w+)\s*=>)""",
+)
+
 #: Names an agent reaches for on `node:test` that belong to `node:assert`.
 #: A deliberate list rather than "anything not exported": Node adds exports
 #: between versions, and a warning that is wrong about a working import is
@@ -453,6 +465,29 @@ def assertions_called_on_the_test_module(relative_path: str, content: str) -> st
     `node:test` with an assertion method called on it. `import { test } from
     'node:test'` is the correct form and names the function, not the module.
     """
+    # The test context is the third spelling of this confusion, and the one
+    # that cost run f81808a4 most. Verified in the run image on Node 20.20.2:
+    #
+    #     t.ok -> undefined   t.equal -> undefined   t.assert -> object
+    #
+    # so `t.ok(...)` throws and `t.assert.ok(...)` is the correct form.
+    for match in _TEST_CONTEXT_PARAMETER.finditer(content):
+        parameter = match.group(1) or match.group(2)
+        if not parameter:
+            continue
+        for method in _ASSERTIONS_NOT_ON_NODE_TEST:
+            # `t.assert.ok(` is correct and must not match: after `t.` comes
+            # `assert`, not the method name.
+            if re.search(rf"(?<![\w.$]){re.escape(parameter)}\.{method}\s*\(", content):
+                return (
+                    f"{relative_path} calls `{parameter}.{method}(...)` on a test's "
+                    f"context. Node's context object has no `{method}` - it is "
+                    "`undefined`, so the call throws `TypeError` and the test fails "
+                    "without ever checking what it claims to. Use "
+                    f"`{parameter}.assert.{method}(...)`, or import `node:assert` "
+                    "and call it there."
+                )
+
     # The named form first: `import { test, assert } from 'node:test'` binds
     # `assert` to undefined, and the first call on it throws. Run f81808a4
     # wrote both forms in turn, for the same file, an hour apart.

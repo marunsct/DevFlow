@@ -150,3 +150,54 @@ def test_the_reviewer_is_told_these_were_checked():
     from app.analysis.integration_checks import _CHECKS
 
     assert any("cannot fail" in description for description, _ in _CHECKS)
+
+
+# --- assertions called on the test context --------------------------------
+
+
+def test_the_context_form_is_reported():
+    """The third spelling, and the one that cost run f81808a4 most.
+
+    `specialist_testing_3` hit `t.ok is not a function`, then spent 35 model
+    calls sending one `find` six times while it worked the API out.
+
+    Verified in the run image on Node 20.20.2:
+
+        t.ok -> undefined   t.equal -> undefined   t.assert -> object
+    """
+    source = "import { test } from 'node:test';\ntest('a', (t) => { t.ok(x); });\n"
+
+    problem = assertions_called_on_the_test_module("main.test.js", source)
+
+    assert problem is not None
+    assert "t.assert.ok(...)" in problem
+    assert "undefined" in problem
+
+
+def test_the_correct_context_assertion_is_silent():
+    source = "import { test } from 'node:test';\ntest('a', (t) => { t.assert.ok(x); });\n"
+
+    assert assertions_called_on_the_test_module("main.test.js", source) is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "test('a', (t) => { t.diagnostic('note'); });",
+        "test('a', (t) => { t.skip(); });",
+        "test('a', (t) => { t.plan(2); });",
+        "test('a', () => { assert.ok(1); });",
+    ],
+)
+def test_real_context_methods_are_silent(line):
+    source = f"import {{ test }} from 'node:test';\nimport assert from 'node:assert';\n{line}\n"
+    assert assertions_called_on_the_test_module("main.test.js", source) is None
+
+
+def test_an_async_context_callback_is_reported():
+    source = (
+        "import { test } from 'node:test';\n"
+        "test('a', async (ctx) => { ctx.strictEqual(1, 1); });\n"
+    )
+
+    assert assertions_called_on_the_test_module("main.test.js", source) is not None

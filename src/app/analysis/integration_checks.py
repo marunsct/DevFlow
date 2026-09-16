@@ -1353,6 +1353,103 @@ def _suites_calling_a_global_node_does_not_define(
     return problems
 
 
+#: Elements a user operates. A page carrying these is a page meant to do
+#: something when they are used.
+_A_CONTROL = re.compile(
+    r"""<(?:button|input|select|textarea)\b[^>]*\bid\s*=\s*["']([^"']+)["']""",
+    re.I,
+)
+
+#: Any id on the page, so a script that addresses a container counts too.
+_ANY_ID = re.compile(r"""\bid\s*=\s*["']([^"']+)["']""", re.I)
+
+#: Reaching for the document at all: a query, a listener, a render target.
+#: Deliberately broad - the question is whether *anything* touches the page,
+#: not whether it does so in a particular style.
+_TOUCHES_THE_PAGE = re.compile(
+    r"""(?<![\w.$])document\s*\.|(?<![\w.$])window\s*\.addEventListener"""
+    r"""|\.addEventListener\s*\(|(?<![\w.$])customElements\b"""
+    r"""|\.innerHTML\s*=|\.appendChild\s*\(|(?<![\w.$])createRoot\s*\("""
+    r"""|ReactDOM|\bnew\s+Vue\b|\bmount\s*\(""",
+)
+
+#: Below this a page is a fragment or a placeholder, not a user interface.
+MIN_CONTROLS_BEFORE_REPORTING = 2
+
+
+def _a_page_no_script_ever_touches(files: list[Path], root: Path) -> list[str]:
+    """Controls on the page, and nothing anywhere that operates them.
+
+    The complement of `_page_hooks_that_do_not_exist`, which asks whether the
+    ids a script reaches for exist. This asks the other direction: the page
+    declares controls, and no script in the project addresses any of them or
+    touches the document at all.
+
+    Run 0afef410 completed on this. Its final sprint - "Finalize code,
+    documentation, test coverage, and prepare for deployment" - reduced
+    `app.js` from 6,388 bytes to 2,345 by removing every line of DOM code:
+    no `getElementById`, no listener, no render, no `init`. What was left is
+    five pure functions over `localStorage` and an `export`. `index.html`
+    still carries `add-btn`, `task-input`, `filter-select` and `task-list`,
+    each referenced zero times.
+
+    The page loads, renders its markup, and does nothing at all when used.
+    Every gate passed it: `npm test` reported `# tests 9 # pass 9 # fail 0`,
+    because the suite imports those five functions directly and never opens the
+    page, and the cross-file checks reported no problems because each file is
+    individually fine.
+
+    This is run 0c5aabdb's failure a layer down. That one shipped no HTML; this
+    one ships HTML and JavaScript that never meet.
+
+    Requires that nothing touches the document anywhere, not merely that these
+    ids are unreferenced, so a page wired by class or by tag is left alone.
+    """
+    scripts = [
+        path
+        for path in files
+        if path.suffix.lower() in {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
+        and not any(part in _SKIP for part in path.parts)
+        and not is_test(str(path.relative_to(root)))
+    ]
+
+    problems: list[str] = []
+    for page in files:
+        if page.suffix.lower() not in {".html", ".htm"}:
+            continue
+        markup = _read(page)
+        controls = _A_CONTROL.findall(markup)
+        if len(controls) < MIN_CONTROLS_BEFORE_REPORTING:
+            continue
+        ids = set(_ANY_ID.findall(markup))
+
+        # An inline script is part of the page and counts as wiring it.
+        inline = "\n".join(
+            block
+            for attributes, block in re.findall(
+                r"<script\b([^>]*)>(.*?)</script>", markup, re.I | re.S
+            )
+            if not _TAG_SRC.search(attributes)
+        )
+        bodies = [inline] + [_read(path) for path in scripts]
+        if any(_TOUCHES_THE_PAGE.search(body) for body in bodies):
+            continue
+        if any(name in body for body in bodies for name in ids):
+            continue
+
+        named = ", ".join(f"`{name}`" for name in sorted(controls)[:4])
+        problems.append(
+            f"{page.relative_to(root)} carries {len(controls)} control(s) "
+            f"({named}) and nothing in this project ever touches the page - no "
+            "script reads any of its ids, adds a listener, or reaches for "
+            "`document`. The page renders and then does nothing when a user "
+            "operates it. A passing test suite is not evidence against this: "
+            "the tests import the functions directly and never open the page. "
+            "Wire the controls to the functions that exist."
+        )
+    return problems
+
+
 #: `jest` as a whole word. `"jest" in text` also matches "pytest", which is how
 #: a Python stack once silently satisfied a JavaScript check.
 _USES_JEST = re.compile(r"(?<![\w-])jest(?![\w-])", re.I)
@@ -2007,6 +2104,7 @@ _BREAKS_BEHAVIOUR = (
     "throws `TypeError` the moment",     # assertions called on `node:test`
     "does not export it",                # the named form of the same import
     "is not defined` and the suite",     # a suite global nothing imported
+    "does nothing when a user",          # a page no script ever wires
     "none of the cases execute",         # a suite the runner never calls
     "and nothing on it works",           # CommonJS behind a module script tag
     "so the suite cannot run",           # files against a declared module type
@@ -2225,6 +2323,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _application_embedded_in_html(files, root)),
     ("languages against the directory they share",
      lambda files, root, stack: _languages_sharing_a_directory(files, root)),
+    ("a page whose controls no script anywhere operates",
+     lambda files, root, stack: _a_page_no_script_ever_touches(files, root)),
     ("suite functions called without the import that defines them",
      lambda files, root, stack: _suites_calling_a_global_node_does_not_define(files, root)),
     ("files that contradict the module type their manifest declares",

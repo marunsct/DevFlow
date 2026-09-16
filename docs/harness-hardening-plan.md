@@ -348,7 +348,8 @@ under `DATA_DIR/transcripts`, read with the audit script in the session scratchp
 
 | fact | value | why it matters |
 |---|---|---|
-| tool failures that cost a run | 20% (run 55) → 3% (run 65) | the baseline items 1-16 are measured against |
+| tool failures that cost a run | 20% (run 55) → 1.5-4% (runs 61-67) | the baseline items 1-16 are measured against |
+| what those remaining failures **are** | **81% one thing**: `edit_artifact` sent a `find` that did not match | see §4c - this is the whole of the remaining tool-failure budget |
 | byte-identical repeats inside one stage | 27% (run 60) → **0-2%** (runs 61-67) | two corrections to this metric, both of which had inflated it. Exclude repeats the harness *refused* - counting those read 13% when part of it was `node --check` refusing an illegal return four times before the model fixed it and the fifth write succeeded. Then exclude repeats whose **result differed**: run 67's `specialist_ui_ux_0` ran `npm test` four times, edited the code between every pair, and got four different failures - a working fix loop, counted as three repeats. Recounted: run 61 0%, 63 2.0%, 65 1.0%, 66 5.6%, 67 0%. Repeat suppression is done; the remaining figure is noise |
 | model calls that are reads | 46% | reads are the cost; they almost never fail (1 in 139) |
 | tool calls per model response | **always exactly 1**, 0 of 2,040 | no batching; see §3.1 |
@@ -387,6 +388,51 @@ tests now cover the family: `test_advice_names_installed_programs`,
 `test_prompts_name_real_tools` and `test_event_types_are_registered`.
 
 ---
+
+## 4c. The one failure mode left, and what does not fix it
+
+Every costly tool failure across runs 60-67, classified (37 in total, after
+excluding refusals that prevented damage - see the note on that metric above):
+
+| count | share | failure |
+|---|---|---|
+| 30 | 81% | `edit_artifact`: the `find` passage did not match the file |
+| 4 | 11% | `npm install` at the workspace root - **fixed**, it now runs in the project |
+| 2 | 5% | a read of a file that does not exist |
+| 1 | 3% | a write aimed at a directory |
+
+So the remaining budget is one tool and one mistake. Breaking the 30 down by
+what the file actually held, from the harness's own diff messages:
+
+| count | shape | can a matcher forgive it? |
+|---|---|---|
+| 21 | real character differences - `describe(` for `test(`, `loadTasks(){` for `loadTasks() {` | **no** |
+| 1 | whitespace only | yes, and it is one call |
+| 8 | no diff produced (nothing close enough to compare) | no |
+
+This kills the obvious fix. A whitespace-insensitive or similarity-based
+matcher - the natural next forgiving path after the four that exist - would
+have recovered **one call in eight runs**. The models are not mis-transcribing
+what they read; they are writing `find` from memory, and `describe` for `test`
+is not a near miss to be forgiven but a different edit.
+
+It also explains the earlier honest negative result on the "these lines differ"
+diff (5/14 recovered, against 4/15 for the bare message): a diff helps a model
+that has the text and copied it wrong, and 21 of these had never read the text
+at all.
+
+What follows from this, and what does not:
+
+- **Not** a fifth forgiving matcher. Measured payoff: one call.
+- **Not** a better failure message. The message is already accurate and
+  specific; the model cannot act on it without the file.
+- The lever is *before* the call: make the passage present when the edit is
+  written. That is items 6 and 21 (the edit-context reply and the workspace
+  digest), and it is the only intervention this measurement supports.
+- One real sub-case is fixed: a `find` that was correct when copied and went
+  stale because a command rewrote the file now says so rather than showing a
+  diff. That is 1 of the 30 - worth having, and worth stating at its true
+  size rather than the size the fix felt like when it was written.
 
 ## 5. Method to keep
 

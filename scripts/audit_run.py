@@ -29,6 +29,12 @@ SAVED = (
     "already been applied", "exactly as it is", "already contained exactly",
     "is a test, and tests are part of what", "already holds this module",
     "you have already been told that twice",
+    # Found missing by sweeping every distinct error across runs 60-67 rather
+    # than reading them one at a time, which is how the first three of these
+    # went unnoticed:
+    "so it is ambiguous which one",   # editing one of N identical passages at random
+    "it can execute arbitrary code",  # `node -e`, with a file-based alternative given
+    "Moving onto it would delete it", # a move that would silently destroy the target
 )
 
 def load(path):

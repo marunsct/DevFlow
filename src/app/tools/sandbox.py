@@ -370,21 +370,14 @@ _MANIFEST_WRITING_SUBCOMMANDS: dict[str, frozenset[str]] = {
 _PREFIX_FLAGS = ("--prefix", "--cwd", "--dir", "-C")
 
 
-def manifest_written_outside_the_project(command: Sequence[str], repo_root: str) -> str | None:
-    """Why this command would scaffold beside the project, or None if it would not.
+def the_project_this_command_belongs_in(command: Sequence[str], repo_root: str) -> str | None:
+    """The pinned project directory this manifest command should run in.
 
-    Commands always run with the workspace root as their working directory, so
-    `npm install` there creates `package.json` and `node_modules` at the root -
-    beside a project that already has its own. The two then disagree about
-    dependency versions and test configuration, which on run-0b55ad49 meant jest
-    30 at the root running the project's jest-29 tests and three remediation
-    rounds spent on "Identifier 'jest' has already been declared".
+    None when the command does not write a manifest, when no project is pinned,
+    or when the command already aims itself somewhere with `--prefix`.
 
-    `write_artifact` already refuses a root manifest once a project is pinned,
-    but a package manager reaches the same file through a different door.
-
-    Only fires when a project is actually pinned, and passing `--prefix` (or
-    equivalent) is taken as knowing where you are aiming.
+    Split out from the message below so the caller can act on the answer
+    instead of only reporting it. See `manifest_written_outside_the_project`.
     """
     if not command:
         return None
@@ -404,9 +397,30 @@ def manifest_written_outside_the_project(command: Sequence[str], repo_root: str)
         pinned = pinned_project_directory(Path(repo_root))
     except Exception:  # noqa: BLE001 - a guard must not fail the command it guards
         return None
+    return str(pinned) if pinned else None
+
+
+def manifest_written_outside_the_project(command: Sequence[str], repo_root: str) -> str | None:
+    """Why this command would scaffold beside the project, or None if it would not.
+
+    Commands always run with the workspace root as their working directory, so
+    `npm install` there creates `package.json` and `node_modules` at the root -
+    beside a project that already has its own. The two then disagree about
+    dependency versions and test configuration, which on run-0b55ad49 meant jest
+    30 at the root running the project's jest-29 tests and three remediation
+    rounds spent on "Identifier 'jest' has already been declared".
+
+    `write_artifact` already refuses a root manifest once a project is pinned,
+    but a package manager reaches the same file through a different door.
+
+    Only fires when a project is actually pinned, and passing `--prefix` (or
+    equivalent) is taken as knowing where you are aiming.
+    """
+    pinned = the_project_this_command_belongs_in(command, repo_root)
     if not pinned:
         return None
-
+    executable = Path(str(command[0])).name
+    arguments = [str(part) for part in command[1:]]
     return (
         f"'{' '.join([executable, *arguments[:2]])}' would create or rewrite a project "
         f"manifest at the workspace root, and this run's project is '{pinned}'. Two "
@@ -1636,32 +1650,47 @@ class SandboxExecutor:
         forgotten when a ninth is added, and refusals - which return early - are
         captured on the same path as successes.
         """
-        # A manifest command aimed at the project directory is the behaviour the
-        # guard asks for, so it is checked against where the command will run.
-        scaffolding = (
-            None
-            if working_directory
-            else manifest_written_outside_the_project(command, repo_root)
+        # An install with no directory given used to be refused, with a message
+        # naming the directory to use instead. Run 8d28ee3f spent two calls on
+        # that: bare `npm install`, refused, then the identical command with
+        # the directory filled in. The refusal could only ever name one
+        # directory - a project is pinned, and there is one - so run it there
+        # and say so. Doing what the refusal asked for costs the run nothing
+        # and saves it a call.
+        #
+        # A command that carries its own `working_directory` or `--prefix` is
+        # left alone either way: it has said where it means, including when
+        # that is the root.
+        belongs_in = (
+            None if working_directory else the_project_this_command_belongs_in(command, repo_root)
         )
-        if scaffolding is not None:
-            outcome: Dict[str, Any] = {"error": scaffolding}
-        else:
-            command, doubled = strip_a_doubled_working_directory(
-                command, repo_root, working_directory
+        redirected = None
+        if belongs_in:
+            working_directory = belongs_in
+            redirected = (
+                f"Ran this in '{belongs_in}' rather than the workspace root, which is "
+                "where this run's project lives. At the root it would have created a "
+                "second package.json, and the tests would then run under the wrong "
+                f"one. Pass working_directory='{belongs_in}' to say so yourself."
             )
-            outcome = cls._run(
-                command, repo_root, role_name, category, extra_env, working_directory
-            )
-            if doubled:
-                outcome = {**outcome, "note": doubled}
-            note = _note_about_running_this_again(
-                repo_root, command, outcome, role_name, working_directory
-            )
-            if note:
-                outcome = {
-                    **outcome,
-                    "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
-                }
+
+        command, doubled = strip_a_doubled_working_directory(
+            command, repo_root, working_directory
+        )
+        outcome = cls._run(
+            command, repo_root, role_name, category, extra_env, working_directory
+        )
+        notes = [n for n in (doubled, redirected) if n]
+        if notes:
+            outcome = {**outcome, "note": " ".join(notes)}
+        note = _note_about_running_this_again(
+            repo_root, command, outcome, role_name, working_directory
+        )
+        if note:
+            outcome = {
+                **outcome,
+                "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
+            }
         _record_execution(
             repo_root, role_name, command, outcome, working_directory, category
         )

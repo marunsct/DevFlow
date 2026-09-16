@@ -115,7 +115,14 @@ def test_validation_without_a_pin_runs_at_the_root(tmp_path, monkeypatch):
 
 
 def test_a_manifest_command_aimed_at_the_project_is_allowed(tmp_path, monkeypatch):
-    """The guard refuses a root manifest. Naming the project is the fix it asks for."""
+    """A root manifest is avoided by running in the project, aimed or not.
+
+    This used to refuse the un-aimed command and name the directory to use.
+    It now runs it there, because the refusal could only ever name the one
+    pinned project and the model's next call was always the same command with
+    that directory filled in - see `test_install_runs_in_the_project`. Both
+    forms must end up running in `todo-app`.
+    """
     from app.tools.sandbox import SandboxExecutor
 
     (tmp_path / "todo-app").mkdir()
@@ -123,20 +130,26 @@ def test_a_manifest_command_aimed_at_the_project_is_allowed(tmp_path, monkeypatc
 
     ran = {}
 
-    def _fake_run(cls, *args, **kwargs):
+    def _fake_run(cls, command, repo_root, role_name, category, extra_env, working_directory):
         ran["ok"] = True
+        ran["working_directory"] = working_directory
         return {"returncode": "0", "stdout": "", "stderr": ""}
 
     monkeypatch.setattr(SandboxExecutor, "_run", classmethod(_fake_run))
 
-    refused = SandboxExecutor.execute(["npm", "init", "-y"], str(tmp_path), "testing_specialist")
-    assert "workspace root" in refused.get("error", "")
+    redirected = SandboxExecutor.execute(
+        ["npm", "init", "-y"], str(tmp_path), "testing_specialist"
+    )
+    assert "error" not in redirected
+    assert ran["working_directory"] == "todo-app"
+    assert "workspace root" in redirected["note"]
 
     ran.clear()
     SandboxExecutor.execute(
         ["npm", "init", "-y"], str(tmp_path), "testing_specialist", working_directory="todo-app"
     )
     assert ran.get("ok") is True
+    assert ran["working_directory"] == "todo-app"
 
 
 def test_the_backend_specialist_can_run_node():

@@ -1654,7 +1654,7 @@ def _import_note(root: Path, target: Path, content: str) -> str:
     specialist doing the right thing in the right order, and this cannot tell
     that from a wrong path. See `app.analysis.local_imports`.
     """
-    from app.analysis.local_imports import import_problems
+    from app.analysis.local_imports import import_problems, who_would_break
 
     try:
         project = target.parent
@@ -1662,11 +1662,17 @@ def _import_note(root: Path, target: Path, content: str) -> str:
         if pinned:
             project = root / pinned
         problems = import_problems(target, content, project)
+        # And the other direction: what breaks in the files that import this
+        # one. Removing an export is otherwise silent until a test round.
+        breaks = who_would_break(target, content, project)
     except Exception:  # noqa: BLE001 - never fail a write over a hint
         return ""
-    if not problems:
-        return ""
-    return "This file's imports: " + " ".join(problems)
+    note = ""
+    if problems:
+        note = "This file's imports: " + " ".join(problems)
+    if breaks:
+        note = (note + " " if note else "") + "What imports this file: " + " ".join(breaks)
+    return note
 
 
 def _discovery_note(relative_path: str, content: str, target: Path | None = None) -> str:

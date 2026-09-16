@@ -144,6 +144,78 @@ def _wanted(clause: str) -> tuple[bool, set[str]]:
     return default, named
 
 
+#: At most this many importers named in one note. Past a handful the message
+#: is longer than the change that caused it.
+MAX_IMPORTERS_NAMED = 4
+
+
+def who_would_break(target: Path, content: str, project: Path | None = None) -> list[str]:
+    """Files importing names this module is about to stop exporting.
+
+    `import_problems` asks "does what this file imports exist?" and is checked
+    when that file is written. Nothing asked the reverse: when the *imported*
+    module is written, does what it still exports satisfy the files that import
+    it? Removing an export is silent, and the answer arrives a stage later as a
+    failing test run.
+
+    That silence is what keeps a run oscillating. Runs 0c5aabdb, d6297b2f and
+    0afef410 all reached a genuine conflict - `index.html` loading `app.js`
+    with a plain `<script>` tag needs a classic script, while `app.test.mjs`
+    doing `import { addTask } from './app.js'` needs a module - and each of
+    them alternated between satisfying one and satisfying the other. On run
+    0afef410 the milestone reviewer named the fix that satisfies both, adding
+    `type="module"` to the tag; the stage removed the exports instead, and
+    nothing said the suite had just stopped being able to import anything.
+
+    Silent for a module that uses `export *` or CommonJS, where what is
+    exported cannot be read from the source.
+    """
+    project = project or target.parent
+    if target.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+        return []
+    exported, has_default, undecidable = _exports_of(content)
+    if undecidable or _EXPORT_STAR.search(content):
+        return []
+
+    problems: list[str] = []
+    try:
+        for importer in sorted(project.rglob("*")):
+            if not importer.is_file() or importer == target:
+                continue
+            if importer.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+                continue
+            if any(part in _SKIP for part in importer.parts):
+                continue
+            text = importer.read_text(encoding="utf-8", errors="replace")
+            for match in _NAMED_FROM.finditer(text):
+                if _resolve(importer, match.group("module")) != target:
+                    continue
+                default, named = _wanted(match.group("clause"))
+                missing = sorted(named - exported)
+                if default and not has_default:
+                    missing = ["default", *missing]
+                if not missing:
+                    continue
+                problems.append(
+                    f"{importer.relative_to(project).as_posix()} imports "
+                    + ", ".join(f"`{name}`" for name in missing[:MAX_IMPORTERS_NAMED])
+                    + f" from this file, and after this write it exports "
+                    + (
+                        "nothing"
+                        if not exported and not has_default
+                        else ", ".join(f"`{name}`" for name in sorted(exported)[:MAX_IMPORTERS_NAMED])
+                    )
+                    + ". That import throws when the file is loaded, so the "
+                    "suite stops running - no syntax check catches it. Keep "
+                    "the export, or change what imports it in the same step."
+                )
+                if len(problems) >= MAX_IMPORTERS_NAMED:
+                    return problems
+    except Exception:  # noqa: BLE001 - a hint must never fail the write
+        return problems
+    return problems
+
+
 def import_problems(target: Path, content: str, project: Path | None = None) -> list[str]:
     """Everything wrong with this file's relative imports. Never raises."""
     if target.suffix.lower() not in {".js", ".mjs", ".cjs"}:
@@ -203,4 +275,4 @@ def import_problems(target: Path, content: str, project: Path | None = None) -> 
     return problems
 
 
-__all__ = ["import_problems"]
+__all__ = ["import_problems", "who_would_break"]

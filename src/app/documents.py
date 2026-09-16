@@ -168,7 +168,22 @@ def read_document(
         else:
             raise DocumentReadError(f"Unsupported document type: {source_type}")
             
-        combined_text.append(f"--- Document: {file_path.name} ---\n{_normalize_text(raw_text)}")
+        # Numbered, never named. `file_path.name` is the *stored* upload name -
+        # `brief_low_236ab395.md` - which exists nowhere an agent can read, and
+        # a filename in a prompt is an affordance: it invites a read.
+        #
+        # Measured across runs 2b5def74, da6c5e19, 5d83e946, 36eb1260 and
+        # 3ddd443f: `product_manager` opens by trying to read that exact string
+        # and gets an error for its first call of the run. A previous fix
+        # removed the name from the brief that wraps this text; the name was in
+        # the text itself, and only the run transcript showed that.
+        #
+        # A separator is still needed when several documents are combined, so
+        # it stays - as an ordinal, which tells the model what it needs (where
+        # one document ends) without naming a file it cannot open.
+        combined_text.append(
+            f"--- Document {len(combined_text) + 1} ---\n{_normalize_text(raw_text)}"
+        )
 
     normalized_text = "\n\n".join(combined_text)
     truncation_note = None

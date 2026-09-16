@@ -220,3 +220,45 @@ def test_the_brief_names_no_file_the_agent_could_try_to_read() -> None:
     assert "/app/data/uploads" not in brief
     assert not re.search(r"\b[\w-]+\.(md|markdown|txt|docx|pdf|csv)\b", brief)
     assert "Build a to-do app" in brief
+
+
+def test_the_document_text_carries_no_stored_filename(tmp_path) -> None:
+    """The leak a previous fix missed, found by the run transcript.
+
+    `build_intake_request` was changed to show no filename. The name was in the
+    document *text*: `read_document` prefixed each file with
+    `--- Document: brief_low_236ab395.md ---`, the stored upload name, which
+    exists nowhere an agent can read.
+
+    Measured across runs 2b5def74, da6c5e19, 5d83e946, 36eb1260 and 3ddd443f:
+    `product_manager` opens by trying to read that exact string and gets an
+    error for its first call of the run. Only run-189ac60e's transcript - the
+    first record of what the model was actually sent - showed where it came
+    from.
+    """
+    import re
+
+    from app.documents import read_document
+
+    (tmp_path / "brief_low_236ab395.md").write_text("# Brief\nBuild it.\n", encoding="utf-8")
+
+    document = read_document([str(tmp_path / "brief_low_236ab395.md")])
+
+    assert not re.search(r"brief_low_[0-9a-f]+", document.text)
+    assert "Build it." in document.text
+
+
+def test_several_documents_are_still_separated(tmp_path) -> None:
+    """The separator has a job when more than one file is uploaded; it just
+    does not need to name a file to do it."""
+    from app.documents import read_document
+
+    (tmp_path / "a_1111.md").write_text("# One\nfirst\n", encoding="utf-8")
+    (tmp_path / "b_2222.md").write_text("# Two\nsecond\n", encoding="utf-8")
+
+    document = read_document([str(tmp_path / "a_1111.md"), str(tmp_path / "b_2222.md")])
+
+    assert "--- Document 1 ---" in document.text
+    assert "--- Document 2 ---" in document.text
+    assert "first" in document.text and "second" in document.text
+    assert "a_1111" not in document.text and "b_2222" not in document.text

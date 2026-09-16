@@ -899,23 +899,107 @@ def failed_this_way_before(repo_root: str, command: Sequence[str]) -> int:
 
 
 def _written_since(repo_root: str, when: str | None) -> bool:
-    """Whether any project file has changed since `when`. Never raises."""
+    """Whether any project file has changed since `when`. Never raises.
+
+    Prunes the ignored directories as it descends rather than walking
+    everything and discarding afterwards. The discarding version still entered
+    every tree it was about to throw away, and one `npm install` puts tens of
+    thousands of files under `node_modules`. That cost was tolerable while only
+    a failed command paid it; `succeeded_this_way_before` asks the same
+    question after every command that works.
+    """
     if not when:
         return True
     try:
         moment = datetime.fromisoformat(when).timestamp()
-        root = Path(repo_root)
-        for path in root.rglob("*"):
-            if not path.is_file():
-                continue
-            if any(part in IGNORED_DIRECTORIES for part in path.parts):
-                continue
-            if path.stat().st_mtime > moment:
-                return True
+        for directory, subdirectories, files in os.walk(repo_root):
+            subdirectories[:] = [
+                name for name in subdirectories if name not in IGNORED_DIRECTORIES
+            ]
+            for name in files:
+                try:
+                    if os.stat(os.path.join(directory, name)).st_mtime > moment:
+                        return True
+                except OSError:  # vanished mid-walk; it is not what we are after
+                    continue
     except Exception:  # noqa: BLE001 - unknown means "assume it changed"
         return True
     return False
 
+
+def succeeded_this_way_before(repo_root: str, command: Sequence[str]) -> int:
+    """How many times this exact command has already succeeded, unchanged.
+
+    The counterpart to `failed_this_way_before`, and by volume the larger of
+    the two leaks. A command that failed at least tells the agent something is
+    wrong; a command that *passed* and is run again returns the identical
+    output, and the agent reads that as new evidence and runs it once more.
+
+    Measured on run-ae4b717e's `specialist_ui_ux_1`: `node -c
+    task-manager/app.js` run eleven times inside eight seconds, every one exit
+    0 with empty stdout and stderr, and no write between any of them - eleven
+    model round trips to learn the same nothing. The same run's
+    `specialist_backend_0` ran `node task-manager/verify_main.mjs` four times
+    for four byte-identical reports. Worse on run-9ff00d5b, whose
+    `test_round_0` ran one passing `node --test todo-app/app.test.mjs`
+    twenty-eight times; that run died in the recursion limit.
+
+    Nothing told any of them, because the only check on this path asked
+    whether the command had *failed* before. Verification that has already
+    passed is finished, and the agent's next move is to answer, not to re-run.
+
+    Counted from the run's own ledger, and - exactly as on the failure side -
+    only from runs with nothing written since, so a specialist that edits the
+    file under test and re-runs is told nothing.
+    """
+    argv = [str(part) for part in command]
+    try:
+        entries = read_execution_ledger(repo_root)
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return 0
+    passes = [
+        entry
+        for entry in entries
+        if entry.get("command") == argv and _as_exit_code(entry.get("returncode")) == 0
+    ]
+    if not passes:
+        return 0
+    return sum(1 for entry in passes if not _written_since(repo_root, entry.get("at")))
+
+
+
+def _note_about_running_this_again(
+    repo_root: str, command: Sequence[str], outcome: Dict[str, Any]
+) -> str:
+    """What to tell an agent that has just re-run a command unchanged.
+
+    Both halves say the same thing - you already have this result - but the
+    move each asks for is the opposite. A repeated failure means the agent has
+    not changed the thing that is broken; a repeated pass means it has finished
+    and has not noticed.
+    """
+    exit_code = _as_exit_code(outcome.get("returncode"))
+    if exit_code is None:
+        return ""
+    if exit_code != 0:
+        already = failed_this_way_before(repo_root, command)
+        if not already:
+            return ""
+        return (
+            f"This exact command has already failed {already} time(s) in this run. "
+            "Running it again unchanged will fail again - change the command, or "
+            "change the file it runs, before retrying."
+        )
+    already = succeeded_this_way_before(repo_root, command)
+    if not already:
+        return ""
+    return (
+        f"This exact command has already passed {already} time(s) in this run and "
+        "nothing has been written since, so this output is the one you already "
+        "have. Re-running it cannot tell you anything new. This verification is "
+        "finished: return your structured answer now, or change a file first if "
+        "something is still wrong."
+    )
 
 def summarise_executions(repo_root: str) -> str:
     """A short digest of what actually ran, for a reviewer or a model."""
@@ -1073,14 +1157,8 @@ class SandboxExecutor:
             )
             if doubled:
                 outcome = {**outcome, "note": doubled}
-            already = failed_this_way_before(repo_root, command)
-            if already and _as_exit_code(outcome.get("returncode")) not in (0, None):
-                note = (
-                    f"This exact command has already failed {already} time(s) in "
-                    "this run. Running it again unchanged will fail again - "
-                    "change the command, or change the file it runs, before "
-                    "retrying."
-                )
+            note = _note_about_running_this_again(repo_root, command, outcome)
+            if note:
                 outcome = {
                     **outcome,
                     "note": f"{outcome['note']} {note}" if outcome.get("note") else note,

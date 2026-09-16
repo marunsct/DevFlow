@@ -736,3 +736,123 @@ def test_a_failure_with_nothing_written_since_still_counts(tmp_path) -> None:
     time.sleep(0.02)
 
     assert failed_this_way_before(str(tmp_path), command) == 2
+
+
+def test_a_command_that_already_passed_unchanged_is_counted(tmp_path) -> None:
+    """The leak the failure-side check left open.
+
+    Measured on run-ae4b717e's `specialist_ui_ux_1`: eleven identical
+    `node -c task-manager/app.js`, every one exit 0 with empty output and no
+    write between any of them. Worse on run-9ff00d5b's `test_round_0`: one
+    passing `node --test todo-app/app.test.mjs` run twenty-eight times, and
+    that run died in the recursion limit.
+    """
+    from app.tools.sandbox import _record_execution, succeeded_this_way_before
+
+    command = ["node", "-c", "task-manager/app.js"]
+    assert succeeded_this_way_before(str(tmp_path), command) == 0
+
+    _record_execution(str(tmp_path), "ui_ux_specialist", command, {"returncode": 0})
+    _record_execution(str(tmp_path), "ui_ux_specialist", command, {"returncode": 0})
+
+    assert succeeded_this_way_before(str(tmp_path), command) == 2
+
+
+def test_a_command_that_failed_is_not_counted_as_a_pass(tmp_path) -> None:
+    """Retrying something broken is the behaviour the other check owns."""
+    from app.tools.sandbox import _record_execution, succeeded_this_way_before
+
+    command = ["node", "verify.js"]
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1})
+
+    assert succeeded_this_way_before(str(tmp_path), command) == 0
+
+
+def test_a_write_clears_the_previous_pass(tmp_path) -> None:
+    """The same lesson finding 73 taught the failure side.
+
+    A specialist that edits the file under test and re-runs the suite has
+    changed the situation, and "you already have this result" is then false.
+    """
+    import time
+
+    from app.tools.sandbox import _record_execution, succeeded_this_way_before
+
+    (tmp_path / "proj").mkdir()
+    suite = tmp_path / "proj/app.test.mjs"
+    suite.write_text("v1\n", encoding="utf-8")
+    command = ["node", "--test", "proj/app.test.mjs"]
+
+    _record_execution(str(tmp_path), "r", command, {"returncode": 0})
+    assert succeeded_this_way_before(str(tmp_path), command) == 1
+
+    time.sleep(0.01)
+    suite.write_text("v2\n", encoding="utf-8")
+
+    assert succeeded_this_way_before(str(tmp_path), command) == 0
+
+
+def test_the_agent_s_own_package_cache_is_not_a_change(tmp_path) -> None:
+    """The sandbox puts HOME and npm's cache inside the workspace.
+
+    If a blob landing under `node_modules` or `.agent-home` counted as a
+    change, the note would never fire in any run that had installed anything -
+    which is every run that gets far enough to matter.
+    """
+    import time
+
+    from app.tools.sandbox import _record_execution, succeeded_this_way_before
+
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj/app.js").write_text("x\n", encoding="utf-8")
+    command = ["node", "-c", "proj/app.js"]
+    _record_execution(str(tmp_path), "r", command, {"returncode": 0})
+
+    time.sleep(0.01)
+    cache = tmp_path / "node_modules/left-pad"
+    cache.mkdir(parents=True)
+    (cache / "index.js").write_text("installed\n", encoding="utf-8")
+
+    assert succeeded_this_way_before(str(tmp_path), command) == 1
+
+
+def test_an_unreadable_ledger_never_fails_the_command() -> None:
+    from app.tools.sandbox import succeeded_this_way_before
+
+    assert succeeded_this_way_before("/definitely/not/here", ["node", "a.js"]) == 0
+
+
+def test_the_note_tells_a_finished_verification_to_answer(tmp_path) -> None:
+    """The two halves say "you already have this" and then ask for opposite moves."""
+    from app.tools.sandbox import _note_about_running_this_again, _record_execution
+
+    command = ["node", "--test", "proj/app.test.mjs"]
+    root = str(tmp_path)
+    assert _note_about_running_this_again(root, command, {"returncode": 0}) == ""
+
+    _record_execution(root, "r", command, {"returncode": 0})
+    note = _note_about_running_this_again(root, command, {"returncode": 0})
+
+    assert "already passed 1 time(s)" in note
+    assert "return your structured answer" in note
+    assert "will fail again" not in note
+
+
+def test_the_note_still_tells_a_repeated_failure_to_change_something(tmp_path) -> None:
+    from app.tools.sandbox import _note_about_running_this_again, _record_execution
+
+    command = ["node", "verify.js"]
+    root = str(tmp_path)
+    _record_execution(root, "r", command, {"returncode": 1})
+
+    note = _note_about_running_this_again(root, command, {"returncode": 1})
+
+    assert "already failed 1 time(s)" in note
+    assert "will fail again" in note
+
+
+def test_a_refused_command_gets_no_note(tmp_path) -> None:
+    """A refusal has no exit code, and neither check has anything to say."""
+    from app.tools.sandbox import _note_about_running_this_again
+
+    assert _note_about_running_this_again(str(tmp_path), ["node", "a.js"], {"error": "no"}) == ""

@@ -115,6 +115,7 @@ def resume_with_decision(
     *,
     callbacks: list[Any] | None = None,
     recursion_limit: int | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     """Resume a paused run with a human decision for every pending gated call.
 
@@ -129,8 +130,19 @@ def resume_with_decision(
     existing caller uses keeps working. It carries the agent-activity stream,
     which observes the turn without changing it. `recursion_limit` is optional
     for the same reason; omitted, the agent runs on LangGraph's own default.
+
+    `run_id` travels for middleware, which can only read `get_config()`. Every
+    gated tool - write_artifact, edit_artifact, run_terminal_command - executes
+    on *this* invocation rather than the one that proposed it, so a config
+    without the id makes exactly the tools that change something invisible.
+    Measured on run-c150cb2e: the event stream recorded 47 tool calls and the
+    transcript 7, all of them read-only.
     """
     config: dict[str, Any] = {"configurable": {"thread_id": thread_id}}
+    if run_id:
+        from app.tracing import APP_RUN_ID_KEY
+
+        config["configurable"][APP_RUN_ID_KEY] = run_id
     if callbacks:
         config["callbacks"] = callbacks
     # The same ceiling the first invoke gets. A stage that loops internally

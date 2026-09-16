@@ -194,3 +194,49 @@ def test_every_inner_invocation_builds_its_config_the_same_way() -> None:
     invokes = [ln for ln in source.splitlines() if "agent.invoke(" in ln]
     assert len(invokes) == 2
     assert source.count("_inner_agent_config(") == 3  # the definition and both sites
+
+
+def test_the_resume_after_an_approval_carries_the_run_id_too() -> None:
+    """Every gated tool executes on the resume, not on the turn that proposed it.
+
+    write_artifact, edit_artifact and run_terminal_command all pause for a
+    decision and then run when the run resumes. A resume config without the run
+    id makes exactly the tools that change something invisible: on run-c150cb2e
+    the event stream recorded 47 tool calls and the transcript 7, all read-only.
+
+    The previous fix put both *inner* invocations behind one builder and a test
+    counted them. This call site is in another module, so the count was right
+    and the gap was still there.
+    """
+    import inspect
+
+    from app.agents import approval
+
+    source = inspect.getsource(approval.resume_with_decision)
+
+    assert "run_id" in inspect.signature(approval.resume_with_decision).parameters
+    assert "APP_RUN_ID_KEY" in source
+
+
+def test_the_workflow_passes_it_when_resuming() -> None:
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    call = source[source.index("resume_with_decision(") :][:400]
+
+    assert "run_id=" in call
+
+
+def test_every_place_an_agent_is_driven_carries_the_id() -> None:
+    """Three sites now: two inner invokes and the resume. Naming them here so a
+    fourth is a failing test rather than a silently half-written record."""
+    import inspect
+
+    from app.agents import approval
+    from app.graph import workflow
+
+    workflow_source = inspect.getsource(workflow)
+    assert workflow_source.count("_inner_agent_config(") == 3  # definition + two sites
+    assert "APP_RUN_ID_KEY" in inspect.getsource(approval.resume_with_decision)

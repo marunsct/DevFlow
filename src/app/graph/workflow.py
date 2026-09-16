@@ -1112,6 +1112,7 @@ def _run_gated_agent(
                 pending_decision,
                 callbacks=activity,
                 recursion_limit=INNER_AGENT_RECURSION_LIMIT,
+                run_id=config["configurable"].get(APP_RUN_ID_KEY),
             )
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             if _is_context_overflow(exc):

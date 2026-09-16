@@ -1277,6 +1277,35 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
         return set()
 
 
+#: Findings that mean a feature does nothing, as opposed to findings that mean
+#: something is untidy. A reviewer given one list weighs them the same way.
+#:
+#: run-499c771a accepted its milestone with the note "The cross-file check
+#: identified unused CSS classes; this does not affect functionality but could
+#: be cleaned up" - a fair reading of dead CSS, and the reading this list
+#: exists to stop being applied to a script hook that does not exist. Those two
+#: findings look alike in a bullet list and are not alike at all: one is paint
+#: nobody sees, the other is the submit button not working.
+#: Each phrase is taken from a message this module actually emits, not guessed
+#: at: a marker that matches nothing silently classifies every finding as
+#: untidy, and one that matches too much makes a reviewer block on dead CSS.
+_BREAKS_BEHAVIOUR = (
+    "looks for the element id",          # a script hook no page provides
+    "reads the attribute",               # a data-* attribute nothing sets
+    "which does not exist in the workspace",  # a src/import pointing at nothing
+    "The page loads it and gets nothing",     # an empty file that is loaded
+    "so no tool can read it",            # a manifest that will not parse
+    "calls its own copy rather",         # a redefinition instead of an import
+    "relative to whatever directory",    # a path that depends on the cwd
+    "declares no `test` script",         # `npm test` cannot run
+    "placeholder test script",           # `npm test` fails by default
+)
+
+
+def _severity_of(problem: str) -> str:
+    return "BREAKS" if any(mark in problem for mark in _BREAKS_BEHAVIOUR) else "untidy"
+
+
 def summarise_integration(repository_root: str | Path, stack: Any = None) -> str:
     """What the files in this workspace say about each other. Never raises."""
     try:
@@ -1326,12 +1355,30 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
     sizes = _size_report(files, root, orphans)
     if not problems:
         return checked + "\n\nNo cross-file problems found." + sizes
-    listed = "\n".join(f"- {problem}" for problem in problems)
+    breaking = [p for p in problems if _severity_of(p) == "BREAKS"]
+    untidy = [p for p in problems if _severity_of(p) != "BREAKS"]
+    sections = []
+    if breaking:
+        sections.append(
+            f"{len(breaking)} of these {'means' if len(breaking) == 1 else 'mean'} "
+            "a feature DOES NOT WORK. Nothing "
+            "throws and no test fails, because the code path is simply never "
+            "reached - so a passing suite is not evidence against them. Each is "
+            "a blocking finding unless you can show it is not:\n"
+            + "\n".join(f"- {problem}" for problem in breaking)
+        )
+    if untidy:
+        sections.append(
+            f"{len(untidy)} {'is' if len(untidy) == 1 else 'are'} untidy rather "
+            "than broken - dead rules, unused files. Worth a minor finding, not "
+            "a blocking one:\n"
+            + "\n".join(f"- {problem}" for problem in untidy)
+        )
     return (
         checked
         + f"\n\n{len(problems)} cross-file problem(s) found. Each is a real "
-        "relationship between two files, not a style preference:\n"
-        + listed
+        "relationship between two files, not a style preference.\n\n"
+        + "\n\n".join(sections)
         + sizes
     )
 

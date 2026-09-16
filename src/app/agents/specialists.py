@@ -484,9 +484,26 @@ def build_defect_fix_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+#: Only the testing role is given `run_validation` - it runs under the testing
+#: allowlist, which carries jest, vitest, mocha and tsc, so handing it to every
+#: role would widen their allowlists by the back door.
+#:
+#: The shared responsibilities used to say "use `run_terminal_command` (or
+#: `run_validation`)" to all six, so four of them were pointed at a tool they
+#: do not hold. That is the run-db3a4a0b fault - the scrum master spent a stage
+#: reporting "I don't have a `write_artifact` tool" instead of answering - and
+#: the reason `role_agent` withholds the writing rules from a read-only agent.
+_VALIDATION_NOTE = (
+    "- `run_validation` runs the project's test command inside the project "
+    "directory for you, which is the one place `npm test` resolves correctly. "
+    "Prefer it over `run_terminal_command` for running tests.\n"
+)
+
+
 def _system_prompt(role: SpecialistRole) -> str:
     """Build the full system prompt for one specialist role."""
     role_description = _ROLE_DESCRIPTIONS[role]
+    validation = _VALIDATION_NOTE if role == "testing" else ""
     return f"""{role_description}
 
 Responsibilities:
@@ -495,10 +512,10 @@ Responsibilities:
 - Report every changed file, notable decision, added or updated test, added or
   updated documentation, risk, and blocker.
 - Prove your work by running it. Write the code, then use `run_terminal_command`
-  (or `run_validation`) to build it, start it, or test it, and record every
-  command you ran in `verification` with its exit code. A task reported complete
-  with an empty `verification` list is a task nobody checked.
-- If a command's output was truncated, call `read_command_output` with the
+  to build it, start it, or test it, and record every command you ran in
+  `verification` with its exit code. A task reported complete with an empty
+  `verification` list is a task nobody checked.
+{validation}- If a command's output was truncated, call `read_command_output` with the
   reference in the truncation pointer to see the part that was cut. The real
   error is usually there.
 - If you cannot verify something (a test, a security property), say so as a

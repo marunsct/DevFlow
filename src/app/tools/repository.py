@@ -976,6 +976,7 @@ def _edited(
     notes = [
         _structural_note(relative_path, written),
         _discovery_note(relative_path, written),
+        _import_note(root, target, written),
         _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
@@ -1236,6 +1237,28 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
         f"stale as soon as that stage runs again. Read 'docs/{name}' instead of "
         "copying it, and put your own work in a file of its own."
     )
+
+
+def _import_note(root: Path, target: Path, content: str) -> str:
+    """Warn about a relative import that will fail when the file loads, or "".
+
+    A note, never a refusal: a test written before the module it imports is a
+    specialist doing the right thing in the right order, and this cannot tell
+    that from a wrong path. See `app.analysis.local_imports`.
+    """
+    from app.analysis.local_imports import import_problems
+
+    try:
+        project = target.parent
+        pinned = pinned_project_directory(root)
+        if pinned:
+            project = root / pinned
+        problems = import_problems(target, content, project)
+    except Exception:  # noqa: BLE001 - never fail a write over a hint
+        return ""
+    if not problems:
+        return ""
+    return "This file's imports: " + " ".join(problems)
 
 
 def _discovery_note(relative_path: str, content: str) -> str:
@@ -2100,6 +2123,7 @@ def write_approved_artifact(
     notes = [
         _structural_note(relative_path, content),
         _discovery_note(relative_path, content),
+        _import_note(root, target, content),
         _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]

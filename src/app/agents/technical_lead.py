@@ -303,6 +303,21 @@ Responsibilities:
   sprints in the same milestone.
 - Delegate tasks only to the specialist roles that sprint requires: ui_ux,
   database, backend, testing, documentation, security_reliability.
+- Test files are the `testing` role's work. If what a task delivers is test
+  files, delegate it to `testing`, whatever part of the product the tests
+  cover - tests for a UI component are still testing work, not ui_ux work.
+  Only the `testing` specialist is given the validation tool that runs a
+  suite; every other role has to fall back on a raw terminal command, and it
+  is the only role told which runner this run's stack chose. Measured across
+  the stored runs, 18 of 143 delegated specialist tasks were test-only work
+  given to another role - most often `backend`, including on products with no
+  backend at all. On run d6297b2f that stage ran 47 model calls, wrote its
+  tests in a different module system from the suite already in the project,
+  and the testing specialist spent the next stage undoing it.
+- A role whose part of the product does not exist has nothing to delegate. A
+  product the stack builds on vanilla JavaScript and browser storage has no
+  backend and no database: do not invent a task for those roles to justify
+  naming them.
 - Give each delegated task a highly granular, scoped description and explicit acceptance
   criteria a Milestone Reviewer can check. You MUST instruct specialists to write complete,
   executable code and explicitly mandate that they compile/verify their code using terminal commands.

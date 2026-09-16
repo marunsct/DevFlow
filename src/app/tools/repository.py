@@ -614,6 +614,43 @@ def _how_it_differs(content: str, wanted: str) -> str:
     )
 
 
+#: Below this, `replace` is too small for its presence in the file to mean
+#: anything - `}` or `0` is in every file already.
+_REPLACE_LONG_ENOUGH_TO_RECOGNISE = 24
+
+
+def _already_applied(original: str, find: str, replace: str) -> str:
+    """The message for an edit that has already been made, or "".
+
+    Measured on run-0deeb8bf's `defect_fix_2_0`. At 14:15:33 it edited
+    `saveTasks` to read `localStorage` through a `global` fallback, and the
+    tool returned `"status": "edited"`. At 14:15:51, 14:16:19, 14:16:36 and
+    14:16:46 it sent the byte-identical call again - same `find`, same
+    `replace` - and got "Could not find that text" each time, because its own
+    edit had removed the text it was looking for. Four model calls, and a stage
+    that finished reporting the fix could not be applied. It had been applied
+    in the first thirty seconds.
+
+    Nothing in the failure message could have told it: "could not find that
+    text" is true, and the quoted nearest passage was its own edit, which reads
+    like a near miss rather than like success. The file itself has the answer -
+    what the model asked to put there is already there.
+    """
+    if len(replace.strip()) < _REPLACE_LONG_ENOUGH_TO_RECOGNISE:
+        # A short `replace` proves nothing by being present, and a deletion
+        # (empty `replace`) has nothing to look for at all.
+        return ""
+    if replace not in original:
+        return ""
+    line = original[: original.index(replace)].count("\n") + 1
+    return (
+        f" The file already contains the text you asked to put there, at line "
+        f"{line} - this edit has already been applied, which is why the text it "
+        "replaced is gone. Nothing was changed just now and nothing needs to be. "
+        "Read the file if you want to confirm it, then move on."
+    )
+
+
 def _best_matching_line(first: str, lines: list[str]) -> int | None:
     """Index of the line most like `first`, or None if nothing is close."""
     import difflib
@@ -755,6 +792,15 @@ def edit_approved_artifact(
                     relative_path,
                 )
                 return _edited(target, root, relative_path, replace, explanation)
+
+            # Before anything else: the model may be re-sending an edit it
+            # already made, in which case every other message here is a
+            # distraction from the one fact that matters.
+            done = _already_applied(original, find, replace)
+            if done:
+                raise RepositoryToolError(
+                    f"Could not find that text in '{relative_path}'.{done}"
+                )
 
             if len(find.strip()) < 10:
                 raise RepositoryToolError(

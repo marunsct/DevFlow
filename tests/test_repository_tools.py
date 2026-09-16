@@ -521,6 +521,58 @@ function saveTasks() {
 """
 
 
+def test_an_edit_sent_twice_is_told_it_already_landed(tmp_path: Path) -> None:
+    """run-0deeb8bf's `defect_fix_2_0`, four model calls and a failed stage.
+
+    At 14:15:33 it made this edit and was told "edited". At 14:15:51, 14:16:19,
+    14:16:36 and 14:16:46 it sent the byte-identical call again and was told
+    "could not find that text" - true, because its own edit had removed it -
+    and the nearest passage quoted back was its own new code, which reads like
+    a near miss. The stage ended reporting the fix could not be applied.
+    """
+    (tmp_path / "app.js").write_text(APP_JS)
+    find = (
+        "function saveTasks() {\n"
+        "  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));\n"
+        "}"
+    )
+    replace = (
+        "function saveTasks() {\n"
+        "  const storage = global.localStorage || localStorage;\n"
+        "  storage.setItem(STORAGE_KEY, JSON.stringify(tasks));\n"
+        "}"
+    )
+    assert edit_approved_artifact(tmp_path, "app.js", find, replace)["status"] == "edited"
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(tmp_path, "app.js", find, replace)
+
+    message = str(caught.value)
+    assert "already been applied" in message
+    assert "at line 9" in message
+    assert "These lines differ" not in message, "the one fact that matters, alone"
+
+
+def test_a_deletion_is_not_mistaken_for_an_edit_already_made(tmp_path: Path) -> None:
+    """An empty `replace` is in every file; it proves nothing."""
+    (tmp_path / "app.js").write_text(APP_JS)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(tmp_path, "app.js", "function nosuchthing() {}", "")
+
+    assert "already been applied" not in str(caught.value)
+
+
+def test_a_short_replacement_is_not_mistaken_for_one_either(tmp_path: Path) -> None:
+    """`}` is already in the file and says nothing about what was done."""
+    (tmp_path / "app.js").write_text(APP_JS)
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(tmp_path, "app.js", "function nosuchthing() {}", "}")
+
+    assert "already been applied" not in str(caught.value)
+
+
 def test_a_comment_marker_the_model_added_is_named(tmp_path: Path) -> None:
     """The three characters that cost run-0deeb8bf a defect fix.
 

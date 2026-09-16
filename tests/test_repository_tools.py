@@ -1593,3 +1593,57 @@ def test_an_edit_that_goes_over_the_budget_says_so_too(repo_root: Path) -> None:
 
     assert result["status"] == "edited"
     assert "limit of 500 lines" in result["note"]
+
+
+def test_the_budget_note_does_not_count_the_test_suite(repo_root: Path) -> None:
+    """The bug the first version of this note shipped with.
+
+    `_measure_sizes` splits application from tests for a stated reason - a
+    brief capping "lines of code" almost never means the test suite - and
+    `_over_the_declared_budget` sums only the application half. The note summed
+    every entry instead, so on run-44653bd2 it would have said 1,533 where the
+    reviewer says 628, because one 797-line `Task.test.mjs` was in the total.
+
+    Warning an agent it is 1,033 over when it is 128 over does not merely
+    overstate. The cheapest way to close a gap that size is to delete tests.
+    """
+    (repo_root / "docs").mkdir(exist_ok=True)
+    (repo_root / "docs/product_intake.md").write_text(
+        "Total source code stays within the 500-line limit.\n" * 3, encoding="utf-8"
+    )
+    write_approved_artifact(
+        repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
+    )
+    write_approved_artifact(repo_root, "app/app.js", "const x = 1;\n" * 300)
+
+    result = write_approved_artifact(repo_root, "app/app.test.mjs", "test(1);\n" * 900)
+
+    assert "note" not in result
+
+
+def test_the_note_and_the_reviewer_report_the_same_number(repo_root: Path) -> None:
+    """They are judged on one number, so they must be warned about that one."""
+    from app.analysis.integration_checks import (
+        _orphans_quietly,
+        _over_the_declared_budget,
+        _source_files,
+        budget_note_for_a_write,
+    )
+
+    (repo_root / "docs").mkdir(exist_ok=True)
+    (repo_root / "docs/product_intake.md").write_text(
+        "Total source code stays within the 500-line limit.\n" * 3, encoding="utf-8"
+    )
+    write_approved_artifact(
+        repo_root, "app/index.html", '<html><script src="app.js"></script></html>\n'
+    )
+    write_approved_artifact(repo_root, "app/app.js", "const x = 1;\n" * 700)
+    write_approved_artifact(repo_root, "app/app.test.mjs", "test(1);\n" * 900)
+
+    note = budget_note_for_a_write(repo_root, "app/app.js")
+    files = _source_files(Path(repo_root))
+    findings = _over_the_declared_budget(files, Path(repo_root), _orphans_quietly(files, Path(repo_root)))
+
+    assert note and findings
+    total = re.search(r"it now holds ([\d,]+)", note).group(1).replace(",", "")
+    assert f"{int(total):,} lines of code" in findings[0]

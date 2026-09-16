@@ -945,11 +945,26 @@ def budget_note_for_a_write(repo_root, relative_path: str) -> str:
             return ""
         files = _source_files(root)
         orphans = _orphans_quietly(files, root)
-        _, _, _, counted_code = _measure_sizes(files, root, orphans)
-        total = sum(counted_code.values())
+        application, _, _, counted_code = _measure_sizes(files, root, orphans)
+        # Over `application`, exactly as `_over_the_declared_budget` does, not
+        # over every entry in `counted_code`. Summing all of it counts the test
+        # suite, which `_measure_sizes` splits off for the stated reason that a
+        # brief capping "lines of code" almost never means the tests.
+        #
+        # The first version of this note summed everything and said 1,533 on
+        # run-44653bd2 where the reviewer would say 628, because one 797-line
+        # `Task.test.mjs` was in the total. Warning an agent it is 1,033 over
+        # when it is 128 over does not just overstate: the cheapest way to
+        # close a gap that size is to delete tests.
+        if not application:
+            return ""
+        total = sum(counted_code.get(name, 0) for _, name in application)
         if total <= budget:
             return ""
-        biggest = sorted(counted_code.items(), key=lambda kv: -kv[1])[:3]
+        biggest = sorted(
+            ((name, counted_code.get(name, 0)) for _, name in application),
+            key=lambda kv: -kv[1],
+        )[:3]
         largest = ", ".join(f"{name} ({lines})" for name, lines in biggest)
         return (
             f"\n\nNote: this project's own documents state a limit of {budget} lines "

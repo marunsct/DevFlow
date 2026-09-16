@@ -1604,6 +1604,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
         a_test_that_needs_a_dom,
         assertions_called_on_the_test_module,
         tests_nothing_of_the_project,
+        tests_the_runner_will_never_call,
         undiscoverable_test,
     )
 
@@ -1613,6 +1614,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             tests_nothing_of_the_project(relative_path, content),
             assertions_called_on_the_test_module(relative_path, content),
             a_test_that_asserts_nothing(relative_path, content),
+            tests_the_runner_will_never_call(relative_path, content),
             a_dom_built_by_hand(relative_path, content),
             a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
         ]

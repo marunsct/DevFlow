@@ -603,6 +603,72 @@ def _modules_loaded_as_plain_scripts(files: list[Path], root: Path) -> list[str]
     return problems
 
 
+#: CommonJS, which the browser has never had. `module`, `exports` and
+#: `require` are Node's; a browser reaching any of them throws a ReferenceError.
+_COMMONJS = re.compile(
+    r"""^\s*module\.exports\s*=|^\s*exports\.\w+\s*=|"""
+    r"""(?<![\w.$])require\s*\(\s*['"]""",
+    re.M,
+)
+
+
+def _commonjs_loaded_as_a_module(files: list[Path], root: Path) -> list[str]:
+    """CommonJS behind `<script type="module">`, which the browser cannot run.
+
+    The mirror of `_modules_loaded_as_plain_scripts`, and run d6297b2f built
+    it: `index.html` carried
+
+        <script type="module" src="app.js"></script>
+
+    while `app.js` ended with
+
+        module.exports = { loadTasks, saveTasks, addTask, ... };
+
+    `module` does not exist in a browser under any script type, so the page
+    throws `Uncaught ReferenceError: module is not defined` and nothing on it
+    works. The test suite does not notice, and cannot: `node --test` loads the
+    same file as CommonJS, where those exports are exactly right, and Node's
+    interop even synthesises named ESM imports from them. Both halves pass
+    their own check while the product is dead in the only place a user opens
+    it.
+
+    Silent when the file also uses `import`/`export`. A file mixing both is a
+    different mistake, and one a bundler may legitimately be resolving.
+    """
+    problems: list[str] = []
+    for page in files:
+        if page.suffix.lower() not in {".html", ".htm"}:
+            continue
+        text = _read(page)
+        for attributes in _SCRIPT_TAG.findall(text):
+            src = _TAG_SRC.search(attributes)
+            kind = _TAG_TYPE.search(attributes)
+            if not src or not kind:
+                continue
+            if kind.group(1).strip().lower() != "module":
+                continue
+            target = (page.parent / src.group(1).lstrip("/")).resolve()
+            if not target.is_file() or target.suffix.lower() not in {".js", ".mjs"}:
+                continue
+            try:
+                body = _read(target)
+            except Exception:  # noqa: BLE001
+                continue
+            if not _COMMONJS.search(body) or _ESM.search(body):
+                continue
+            problems.append(
+                f"{page.relative_to(root)} loads {src.group(1)} as "
+                '`<script type="module">`, and that file is CommonJS - it uses '
+                "`module.exports` or `require`, neither of which exists in a "
+                "browser. The page throws `Uncaught ReferenceError: module is "
+                "not defined` and nothing on it works. The test suite cannot "
+                "catch this: `node --test` loads the same file as CommonJS, "
+                "where those exports are correct. Use `export` in the file, or "
+                "stop loading it as a module."
+            )
+    return problems
+
+
 #: A path-looking token in a script: something with a slash or a file suffix.
 _SCRIPT_PATH = re.compile(r"(?<![\w./-])((?:\./)?[\w.-]+(?:/[\w.-]+)*\.[cm]?[jt]sx?)")
 
@@ -1851,7 +1917,7 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
 
 
 def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
-    """Test files that register cases and assert nothing.
+    """Test files whose cases cannot fail, or never run at all.
 
     The write-time note fires when one is written; this is the reviewer's
     copy, for a suite assembled across several stages where no single write
@@ -1861,6 +1927,7 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
     from app.analysis.test_discovery import (
         a_test_that_asserts_nothing,
         assertions_called_on_the_test_module,
+        tests_the_runner_will_never_call,
     )
 
     problems: list[str] = []
@@ -1870,6 +1937,7 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
         for problem in (
             assertions_called_on_the_test_module(relative, content),
             a_test_that_asserts_nothing(relative, content),
+            tests_the_runner_will_never_call(relative, content),
         ):
             if problem:
                 problems.append(problem)
@@ -1886,10 +1954,12 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("the chosen stack against what is on disk",
      lambda files, root, stack: _stack_conflicts(files, root, stack)),
-    ("test files that cannot fail, or throw before they can",
+    ("test files that cannot fail, never run, or throw before they can",
      lambda files, root, stack: _tests_that_cannot_fail(files, root)),
     ("the installed test runner against the one the stack chose",
      lambda files, root, stack: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
+    ("CommonJS behind a module script tag, which no browser can run",
+     lambda files, root, stack: _commonjs_loaded_as_a_module(files, root)),
     ("a server against a stack that says the product runs in the browser",
      lambda files, root, stack: _a_server_in_a_browser_only_product(files, root, stack)),
     ("manifests against the project they describe",

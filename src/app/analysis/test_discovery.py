@@ -318,6 +318,7 @@ __all__ = [
     "a_dom_built_by_hand",
     "a_test_that_needs_a_dom",
     "tests_nothing_of_the_project",
+    "tests_the_runner_will_never_call",
     "undiscoverable_test",
 ]
 
@@ -399,6 +400,86 @@ def a_test_that_asserts_nothing(relative_path: str, content: str) -> str | None:
         "It reports a pass whatever the application does, and every gate that "
         "asks whether the tests pass will be satisfied by it. Give each case a "
         "check that would fail if the behaviour it names were broken."
+    )
+
+
+#: `export default function (t) {` / `export default (t) => {` /
+#: `module.exports = function (t) {`. The runner imports the module; it never
+#: calls what the module exports.
+_AN_EXPORTED_ENTRY_POINT = re.compile(
+    r"""^\s*(?:export\s+default\s+(?:async\s+)?(?:function\b[^(]*)?\(|"""
+    r"""export\s+default\s+(?:async\s+)?\w+\s*=>|"""
+    r"""module\.exports\s*=\s*(?:async\s+)?function\b)""",
+    re.M,
+)
+
+#: A test case registered at the module's own top level - no leading
+#: indentation. This is the shape the runner actually runs.
+_A_TEST_CASE_AT_TOP_LEVEL = re.compile(
+    r"""^(?:await\s+)?(?:test|it|describe)\s*(?:\.\w+\s*)?\(\s*['"`]""",
+    re.M,
+)
+
+#: A test case in any of its spellings, including `t.test(...)` on a context
+#: object. `_A_TEST_CASE` excludes a dotted prefix on purpose - it asks whether
+#: a suite asserts anything, and `assert.test` is not a case. Here the question
+#: is whether cases exist at all, and a case registered on the context object
+#: is still a case that will not run.
+_A_TEST_CASE_IN_ANY_FORM = re.compile(
+    r"""(?<![\w$])(?:\w+\.)?(?:test|it|describe)\s*(?:\.\w+\s*)?"""
+    r"""\(\s*['"`]([^'"`]{0,120})['"`]""",
+    re.M,
+)
+
+
+def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | None:
+    """Why this file's cases never run, or None if they do.
+
+    Run d6297b2f's test round hit `ReferenceError: describe is not defined` -
+    a Jest-shaped suite under `node --test` - and fixed it by moving every case
+    inside a default-exported function:
+
+        export default function (t) {
+          t.test('addTask adds a new task with unique id', () => {
+            assert.strictEqual(result.length, 1);
+
+    `npm test` then returned 0:
+
+        # tests 1   # suites 0   # pass 1   # fail 0
+
+    That one passing test is the *file*, not anything in it. `node --test`
+    imports a test file and runs the cases that register themselves while it
+    loads; it does not call the module's default export, so the seven cases in
+    that function - all with real assertions over real behaviour - never ran.
+    Verified on Node 24.20.0 and consistent with Node 20: a file of this shape
+    containing `assert.strictEqual(1, 2)` reports `pass 1, fail 0`.
+
+    This is worse than a suite with no assertions, which
+    `a_test_that_asserts_nothing` catches. The assertions are there, they are
+    good, and the green tick says they hold. Every gate that asks whether the
+    tests pass is satisfied by a file that ran none of them.
+
+    Requires both halves, so a file with an exported helper alongside ordinary
+    top-level cases is left alone: cases exist, and *none* of them is at the
+    top level where the runner would find it.
+    """
+    if not _AN_EXPORTED_ENTRY_POINT.search(content):
+        return None
+    cases = _A_TEST_CASE_IN_ANY_FORM.findall(content)
+    if not cases:
+        return None
+    if _A_TEST_CASE_AT_TOP_LEVEL.search(content):
+        return None
+    named = ", ".join(f"'{name}'" for name in cases[:3] if name)
+    return (
+        f"{relative_path} registers {len(cases)} test case(s)"
+        + (f" ({named})" if named else "")
+        + " inside a function it exports, and nothing at the file's top level. "
+        "`node --test` imports a test file and runs whatever registers itself "
+        "while it loads - it never calls the export. The run reports `# tests "
+        "1 # pass 1` for the file itself and none of the cases execute, so the "
+        "suite is green however broken the application is. Call `test(...)` at "
+        "the top level of the file instead, importing it from 'node:test'."
     )
 
 

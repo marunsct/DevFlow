@@ -596,6 +596,17 @@ def validate_command(command: Sequence[str], role_name: str) -> list[str]:
                     f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."
                 )
 
+    unparseable = _checks_a_file_node_cannot_parse(argv)
+    if unparseable is not None:
+        raise CommandNotAllowed(
+            f"`node --check` cannot read '{unparseable}': node decides how to parse "
+            "a file from its extension and only handles .js, .mjs and .cjs, so this "
+            "fails before it reads the file and will fail however the file is "
+            "edited. There is no syntax checker for this kind of file in this "
+            "environment - read it back with read_file if you want to confirm what "
+            "it contains."
+        )
+
     server = _starts_a_server(argv)
     if server:
         raise CommandNotAllowed(
@@ -636,6 +647,42 @@ _SERVER_COMMANDS = frozenset(
 
 #: `python3 -m http.server`, the same idea from the other language.
 _SERVER_MODULES = frozenset({"http.server", "SimpleHTTPServer"})
+
+
+#: Extensions `node` will parse as JavaScript. Anything else makes it throw
+#: ERR_UNKNOWN_FILE_EXTENSION before it reads a byte of the file.
+_JAVASCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs"})
+
+
+def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
+    """The non-JavaScript file this `node --check` would refuse, or None.
+
+    `node --check style.css` fails with ERR_UNKNOWN_FILE_EXTENSION, and it
+    fails for what the file *is*, not for what it contains - so no edit to the
+    CSS, or to anything else, will ever make it pass. That puts it in the same
+    class as a policy refusal rather than an ordinary failure, and the
+    write-gated "you already tried this" note is silent on it by design.
+
+    Measured on run-fa7b7286: `specialist_ui_ux_0` ran the identical
+    `node --check task-manager/style.css` twice, two minutes apart, editing
+    files in between - so the gate correctly saw a changed workspace and said
+    nothing, twice, about a command that could not work either time.
+
+    Checked on the extension rather than the error text, because node decides
+    on the extension too.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) != "node":
+        return None
+    if not any(p in {"--check", "-c"} for p in parts[1:]):
+        return None
+    for part in parts[1:]:
+        if part.startswith("-"):
+            continue
+        suffix = os.path.splitext(part)[1].lower()
+        if suffix and suffix not in _JAVASCRIPT_SUFFIXES:
+            return part
+    return None
 
 
 def _starts_a_server(argv: Sequence[str]) -> str | None:

@@ -1058,3 +1058,41 @@ def test_the_ordinary_refusal_is_unchanged() -> None:
 
     with pytest.raises(CommandNotAllowed, match="is not permitted for role"):
         validate_command(["curl", "http://example.com"], "ui_ux_specialist")
+
+
+def test_node_cannot_syntax_check_a_stylesheet() -> None:
+    """A failure that no edit can fix, so the write-gated note never speaks.
+
+    `node --check style.css` throws ERR_UNKNOWN_FILE_EXTENSION - it fails for
+    what the file is, not what it contains. Measured on run-fa7b7286:
+    `specialist_ui_ux_0` ran the identical command twice, two minutes apart,
+    editing files in between, so the "you already tried this" gate correctly
+    saw a changed workspace and stayed silent both times about a command that
+    could not work either time.
+    """
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["node", "--check", "task-manager/style.css"], "ui_ux_specialist")
+
+    message = str(caught.value)
+    assert "only handles .js, .mjs and .cjs" in message
+    # It must say what to do instead, or it is just another refusal.
+    assert "read_file" in message
+
+
+def test_node_can_still_check_javascript() -> None:
+    from app.tools.sandbox import validate_command
+
+    for name in ("app.js", "app.mjs", "app.cjs"):
+        assert validate_command(["node", "--check", name], "ui_ux_specialist")
+
+
+def test_only_check_is_affected() -> None:
+    """`node --test` and `node file.js` decide differently; leave them alone."""
+    from app.tools.sandbox import validate_command
+
+    assert validate_command(["node", "--test", "a.test.mjs"], "testing_specialist")
+    assert validate_command(["node", "app.js"], "backend_specialist")

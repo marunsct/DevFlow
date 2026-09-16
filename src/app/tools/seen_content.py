@@ -132,6 +132,41 @@ def what_replaced_it(relative_path: str, find: str) -> str | None:
     return None
 
 
+_MOVES = "files this stage has moved"
+
+#: Moves remembered per stage. A stage renames a handful of files at most.
+MAX_MOVES_REMEMBERED = 64
+
+
+def record_move(relative_path: str, destination: str) -> None:
+    """Remember that this stage moved `relative_path` to `destination`."""
+    if not relative_path or not destination:
+        return
+    moved = store(_MOVES, _FALLBACK_MOVES)
+    moved[str(relative_path)] = str(destination)
+    # Follow a chain: a file moved twice should answer with where it is now,
+    # not with the intermediate name that is also gone.
+    for source, target in list(moved.items()):
+        if target == str(relative_path):
+            moved[source] = str(destination)
+    for stale in list(moved)[:-MAX_MOVES_REMEMBERED]:
+        del moved[stale]
+
+
+def where_this_stage_moved_it(relative_path: str) -> str | None:
+    """Where this stage moved this file, or None if it did not move it.
+
+    A read or an edit that misses at a path the stage renamed itself is not a
+    missing file - it is a stale name, and the stage knows the new one because
+    it chose it. Measured on run d6297b2f: `specialist_backend_0` moved
+    `test/loadTasks.test.mjs` to `test/loadTasks.test.js`, then spent a
+    `read_file` and an `edit_artifact` on the old name, each answered only
+    "not found". That stage ran 47 model calls against a next-longest of 10.
+    """
+    moved = store(_MOVES, _FALLBACK_MOVES)
+    return moved.get(str(relative_path))
+
+
 def changed_since_seen(relative_path: str, content: str) -> bool:
     """True when this stage has seen the file and it no longer matches.
 
@@ -157,12 +192,16 @@ _FALLBACK_HISTORY: dict[str, list[str]] = {}
 #: And the replacement log's.
 _FALLBACK_REPLACEMENTS: dict[str, list[tuple[str, str]]] = {}
 
+#: And the move log's.
+_FALLBACK_MOVES: dict[str, str] = {}
+
 
 def forget_everything() -> None:
     """Drop the no-stage fallbacks. For tests, which must not leak into each other."""
     _FALLBACK.clear()
     _FALLBACK_HISTORY.clear()
     _FALLBACK_REPLACEMENTS.clear()
+    _FALLBACK_MOVES.clear()
 
 
 __all__ = [
@@ -170,10 +209,13 @@ __all__ = [
     "MAX_STATES_PER_FILE",
     "changed_since_seen",
     "forget_everything",
+    "MAX_MOVES_REMEMBERED",
     "MAX_REPLACEMENTS_PER_FILE",
+    "record_move",
     "record_replacement",
     "record_state",
     "remember",
     "what_replaced_it",
+    "where_this_stage_moved_it",
     "returned_to_an_earlier_state",
 ]

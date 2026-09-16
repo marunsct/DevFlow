@@ -919,6 +919,14 @@ def edit_approved_artifact(
                 f"Edit '{canonical.name}' instead - it is the current version of "
                 "this document. Do not recreate the file you just tried to edit."
             )
+        moved_to = _where_this_stage_put_it(relative_path)
+        if moved_to is not None:
+            raise RepositoryToolError(
+                f"Cannot edit '{relative_path}': it does not exist, because "
+                f"this stage moved it to '{moved_to}'. Edit that instead. "
+                "Writing this path again would put back the file you renamed "
+                "and leave two copies of the same module."
+            )
         raise RepositoryToolError(
             f"Cannot edit '{relative_path}': it does not exist yet. "
             "Use write_artifact to create it."
@@ -2210,6 +2218,20 @@ def _the_same_module_already_here(target: Path, content: str) -> Path | None:
     return None
 
 
+def _where_this_stage_put_it(relative_path: str) -> str | None:
+    """Where this stage moved this file, or None - see `seen_content`.
+
+    Wrapped so a missing or unwired memo can never turn a plain "not found"
+    into an exception: the answer is a nicety, the refusal is the point.
+    """
+    try:
+        from app.tools.seen_content import where_this_stage_moved_it
+
+        return where_this_stage_moved_it(relative_path)
+    except Exception:  # noqa: BLE001 - see docstring
+        return None
+
+
 def _supersedes_existing(target: Path) -> Path | None:
     """The canonical file this write would fork, if it is forking one.
 
@@ -2787,6 +2809,14 @@ def move_approved_artifact(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     source.rename(target)
+    # So a later read or edit at the old name can be told where it went rather
+    # than only that nothing is there - see `where_this_stage_moved_it`.
+    try:
+        from app.tools.seen_content import record_move
+
+        record_move(from_shown, to_shown)
+    except Exception:  # noqa: BLE001 - never fail a move over a memo
+        pass
     return {"moved": from_shown, "to": to_shown, "status": "moved"}
 
 

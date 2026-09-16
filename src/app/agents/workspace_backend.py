@@ -97,6 +97,32 @@ class _Suggesting:
             "Read one of those instead."
         )
 
+    def _where_this_stage_moved_it(self, wanted: str) -> str:
+        """The exact new name, when this stage renamed the file itself.
+
+        `_where_it_actually_is` searches by basename, which is the part an
+        agent usually gets right - but a rename that changes the extension
+        changes the basename too, so it finds nothing. Measured on run
+        d6297b2f: `specialist_backend_0` moved `test/loadTasks.test.mjs` to
+        `test/loadTasks.test.js`, then spent a read and an edit on the old
+        name, each answered only "not found". That stage ran 47 model calls
+        against a next-longest of 10.
+
+        This memo is exact rather than a guess, so it goes first.
+        """
+        try:
+            from app.tools.seen_content import where_this_stage_moved_it
+
+            destination = where_this_stage_moved_it(str(wanted).lstrip("/"))
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        if not destination:
+            return ""
+        return (
+            f" This stage moved that file to '/{destination}'. Read that "
+            "instead - the old name is gone because you renamed it."
+        )
+
     def _where_it_actually_is(self, wanted: str) -> str:
         root = getattr(self, "cwd", None)
         name = _basename(wanted)
@@ -398,7 +424,11 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             # What is in it, before where else it might be: a model that read
             # a directory asked what is in it, and "there is a directory of
             # that name at the path you gave" answers nothing.
-            hint = self._what_is_in_it(file_path) or self._where_it_actually_is(file_path)
+            hint = (
+                self._what_is_in_it(file_path)
+                or self._where_this_stage_moved_it(file_path)
+                or self._where_it_actually_is(file_path)
+            )
             return replace(result, error=error + hint) if hint else result
 
         # The text lives in `file_data["content"]`, not on the result itself.

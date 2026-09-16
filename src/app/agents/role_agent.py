@@ -31,6 +31,7 @@ from app.agents.settled_answer import build_settled_answer_middleware
 #: Mirrors `app.graph.workflow.INNER_AGENT_RECURSION_LIMIT`, imported lazily
 #: there to avoid a cycle. A stage is warned as it approaches this.
 INNER_AGENT_STEP_LIMIT = 60
+from app.agents.repeated_queries import build_repeated_query_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
@@ -553,6 +554,10 @@ def create_role_agent(
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),
         _workspace_filesystem_middleware(resolved_repo_root),
+        # After the filesystem middleware, so it sees the tool results the
+        # model will. `read_file` has its own, better notice in the backend;
+        # this covers the listings and searches beside it, which had none.
+        build_repeated_query_middleware(),
         # Only where there is a schema to recognise an answer by. A stage with
         # no response format has nothing to be finished with, so there is
         # nothing for this to decide. See `app.agents.settled_answer`.

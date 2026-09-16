@@ -679,6 +679,40 @@ def test_the_surroundings_do_not_run_off_the_ends_of_the_file(tmp_path: Path) ->
     assert "(end of file)" in message
 
 
+@pytest.mark.parametrize("path", ["docs", "docs/"])
+def test_writing_to_a_directory_says_what_to_do(tmp_path: Path, path: str) -> None:
+    """run-08acb1ee's `specialist_ui_ux_1` wrote to `docs/` and got
+
+        Could not write artifact to docs/: [Errno 21] Is a directory:
+        '/app/data/workspaces/t64-run-08acb1ee-.../docs'
+
+    an errno and a host path, naming neither the problem nor the fix. Every
+    other failure in this module is a sentence the agent can act on.
+    """
+    write_approved_artifact(tmp_path, "docs/notes.md", "# notes\n")
+    write_approved_artifact(tmp_path, "docs/plan.md", "# plan\n")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, path, "# oops\n")
+
+    message = str(caught.value)
+    assert "that is a directory, not a file" in message
+    assert "notes.md" in message, "say what is already in there"
+    assert "/something.md" in message, "and name the shape of a path that works"
+    assert "Errno" not in message
+
+
+def test_an_empty_directory_still_gets_a_usable_message(tmp_path: Path) -> None:
+    (tmp_path / "empty").mkdir()
+
+    with pytest.raises(RepositoryToolError, match="that is a directory, not a file"):
+        write_approved_artifact(tmp_path, "empty", "x\n")
+
+
+def test_an_ordinary_write_is_unaffected(tmp_path: Path) -> None:
+    assert write_approved_artifact(tmp_path, "docs/spec.md", "# spec\n")["status"]
+
+
 def test_an_edit_says_where_it_landed(tmp_path: Path) -> None:
     """A model that has just edited a file reads the whole file back.
 

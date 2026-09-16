@@ -2265,6 +2265,24 @@ def write_approved_artifact(
                     "file, so it cannot also be a directory. Delete or rename that file, "
                     "or write to a different path."
                 )
+            # A path that is already a directory. `write_text` raises
+            # `IsADirectoryError`, which reached the model as
+            # "[Errno 21] Is a directory: '/app/data/workspaces/...'" -
+            # an errno and a host path, naming neither the problem nor the fix.
+            # run-08acb1ee's `specialist_ui_ux_1` wrote to `docs/` and got
+            # exactly that. Every other failure in this module is a sentence
+            # the agent can act on; this one should be too.
+            if target.is_dir():
+                inside = sorted(
+                    child.name for child in target.iterdir() if child.is_file()
+                )[:6]
+                examples = f" It already holds: {', '.join(inside)}." if inside else ""
+                raise RepositoryToolError(
+                    f"Cannot write '{relative_path}': that is a directory, not a "
+                    f"file.{examples} Give the file name you want inside it - "
+                    f"'{relative_path.rstrip('/')}/something.md' - or write "
+                    "somewhere else."
+                )
             target.parent.mkdir(parents=True, exist_ok=True)
             try:
                 target.write_text(content, encoding="utf-8")

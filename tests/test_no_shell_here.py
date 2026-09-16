@@ -58,5 +58,19 @@ def test_every_specialist_is_told_before_it_writes_one() -> None:
     assert "never a .sh file" in described
 
 
+def test_the_note_only_names_programs_that_are_installed() -> None:
+    """The first version offered "an npm/pnpm/yarn script, a Makefile target".
+
+    `make`, `pnpm` and `yarn` are all three absent from the execution image -
+    measured with `shutil.which` inside the worker - so three of its four
+    suggestions were dead ends, in the one paragraph whose job is to say what
+    to do instead.
+    """
+    assert "Makefile" not in NO_SHELL_NOTE
+    assert "pnpm/yarn script" not in NO_SHELL_NOTE
+    assert "npm run" in NO_SHELL_NOTE
+    assert "node" in NO_SHELL_NOTE
+
+
 def test_a_run_with_no_recorded_stack_is_unaffected() -> None:
     assert describe_stack(None) == ""

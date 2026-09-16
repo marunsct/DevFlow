@@ -238,10 +238,17 @@ class SpecialistOutput(BaseModel):
 NO_SHELL_NOTE = (
     "There is no shell in this environment: `sh`, `bash` and shell scripts "
     "cannot be run, and nor can `cd`, pipes or `&&`. A build or test step must "
-    "therefore be an npm/pnpm/yarn script, a Makefile target, or a program run "
-    "directly - never a .sh file.\n"
+    "therefore be a `package.json` script run with `npm run <name>`, or a "
+    "program run directly (`node`, `python3`) - never a .sh file. `make`, "
+    "`pnpm` and `yarn` are not installed here either.\n"
 )
 """The constraint that is invisible until a stage has already spent itself.
+
+The first version of this offered "an npm/pnpm/yarn script, a Makefile target"
+- and `make`, `pnpm` and `yarn` are all three absent from the execution image,
+so three of its four suggestions were dead ends. Measured 2026-09-16 with
+`shutil.which` inside the worker; see B2 in `docs/harness-hardening-plan.md`
+for the full list. Advice has to name something that is there.
 
 Measured on run-130deeef. The technical specification called for a shell build
 script, so `simple-to-do-list-app/build.sh` became the most-written file of the

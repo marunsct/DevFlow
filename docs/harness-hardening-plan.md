@@ -197,6 +197,20 @@ Five phases. Each phase is independently shippable and each retires a root-cause
 
 ### 3.1 Phase 1 — Measure the model, don't assume it  *(classes C, D, G)*
 
+**Measured 2026-09-16, and it bounds the whole of §3.3: this model never batches tool
+calls.** Across twelve run transcripts and 2,040 model responses, the number that carried
+more than one tool call is **zero**. Asked directly - "call read_file once for each, in the
+same reply", with `parallel_tool_calls: true` on the request - `openai/gpt-oss-20b` still
+returns one.
+
+Two things follow. First, a `ModelProfile` must record *calls per turn*, because it changes
+what is worth optimising: on run-a7150a6c, 75 of 305 model calls sat in 42 runs of
+consecutive single-read turns, and with batching available that is 25% of the run's wall
+clock. Without it, the only way to remove a read is to make it unnecessary - which is what
+the workspace digest, the repeat withholding and the edit-context reply do, and why they
+are worth more than they look. Second, `repository._MUTATION_LOCK` guards a race this
+model cannot produce; it stays, because the next model may.
+
 **Deliverable:** `app/models/profile.py` — a `ModelProfile` produced by a startup probe and stored in Postgres keyed by `(model id, base url)`.
 
 | probed | how | replaces |

@@ -1207,3 +1207,72 @@ def test_the_workflow_pins_the_stack_it_chose() -> None:
     node = source[source.index("def tools_models_node") : source.index("def stack_selector_node")]
 
     assert "pin_project_stack(" in node
+
+
+def test_a_shell_redirect_is_refused_rather_than_silently_doing_nothing() -> None:
+    """A silent no-op reported as success is the worst shape a result can have.
+
+    `["echo", "export {};", ">", "app.js"]` runs echo with three arguments. It
+    prints them, exits 0, and writes nothing - so the agent is told its command
+    succeeded and believes the file exists.
+
+    Measured on run-fff9bf89: `specialist_backend_2` did exactly that twice,
+    for `app.js` and `simple-to-do-list-app/app.js`. Both "succeeded". Neither
+    file was written. An exit code of zero is the most convincing lie a tool
+    can tell.
+    """
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["echo", "export {};", ">", "app.js"], "backend_specialist")
+
+    message = str(caught.value)
+    assert "no shell here" in message
+    # It must name the tool that does work, or the agent tries another spelling.
+    assert "write_artifact" in message
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["cat", "a.js", "|", "grep", "x"],
+        ["node", "--test", "&&", "echo", "ok"],
+        ["echo", "x", ">>", "log.txt"],
+        ["node", "app.js", ";", "echo", "done"],
+        ["cat", "<", "input.txt"],
+    ],
+)
+def test_every_operator_that_needs_a_shell_is_refused(command) -> None:
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed, match="no shell here"):
+        validate_command(command, "backend_specialist")
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["echo", "hello"],
+        ["node", "--test", "app.test.mjs"],
+        # An operator inside an argument is text, not an operator.
+        ["grep", "-n", "a>b", "file.js"],
+        ["grep", "-n", "a||b", "file.js"],
+        ["find", ".", "-name", "*.js"],
+        ["node", "--check", "app.js"],
+    ],
+)
+def test_ordinary_commands_are_untouched(command) -> None:
+    from app.tools.sandbox import validate_command
+
+    assert validate_command(command, "backend_specialist")
+
+
+def test_the_executable_itself_is_never_read_as_an_operator() -> None:
+    """Only arguments are checked; argv[0] is handled by the allowlist."""
+    from app.tools.sandbox import validate_command
+
+    assert validate_command(["echo", "a", "b"], "backend_specialist")

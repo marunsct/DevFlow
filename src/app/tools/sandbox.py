@@ -698,6 +698,18 @@ def validate_command(
                     f"Allowed modules: {', '.join(sorted(_ALLOWED_PYTHON_MODULES))}."
                 )
 
+    operator = _uses_a_shell_operator(argv)
+    if operator is not None:
+        raise CommandNotAllowed(
+            f"'{operator}' is a shell operator and there is no shell here, so it "
+            f"would be passed to '{os.path.basename(argv[0])}' as an ordinary "
+            "argument. The command would run, exit successfully and not do what "
+            "you meant - a redirect writes no file, a pipe feeds nothing. "
+            "To create or change a file use write_artifact or edit_artifact; to "
+            "use the output of one command in another, run them separately and "
+            "read the result."
+        )
+
     unparseable = _checks_a_file_node_cannot_parse(argv)
     if unparseable is not None:
         raise CommandNotAllowed(
@@ -754,6 +766,35 @@ _SERVER_MODULES = frozenset({"http.server", "SimpleHTTPServer"})
 #: Extensions `node` will parse as JavaScript. Anything else makes it throw
 #: ERR_UNKNOWN_FILE_EXTENSION before it reads a byte of the file.
 _JAVASCRIPT_SUFFIXES = frozenset({".js", ".mjs", ".cjs"})
+
+
+#: Shell operators that arrive as ordinary arguments because there is no shell.
+#: Each one means the command does something other than what was intended, and
+#: in the redirection cases it means the command quietly does nothing at all.
+_SHELL_OPERATORS = frozenset({">", ">>", "<", "<<", "|", "||", "&&", ";", "&", "2>", "&>"})
+
+
+def _uses_a_shell_operator(argv: Sequence[str]) -> str | None:
+    """The shell operator in this argv, or None.
+
+    `["echo", "export {};", ">", "app.js"]` runs `echo` with three arguments.
+    It prints them, exits 0, and writes nothing - so the agent is told its
+    command succeeded and believes the file exists.
+
+    Measured on run-fff9bf89: `specialist_backend_2` did exactly that twice,
+    for `app.js` and `simple-to-do-list-app/app.js`. Both "succeeded". Neither
+    file was written.
+
+    A silent no-op reported as success is the worst shape a tool result can
+    have - the codebase has paid for it before, in a write that returned
+    "edited" without editing and a read that digested the wrong string. This
+    one arrives with an exit code of zero, which is the most convincing lie
+    available.
+    """
+    for part in argv[1:]:
+        if str(part).strip() in _SHELL_OPERATORS:
+            return str(part).strip()
+    return None
 
 
 def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:

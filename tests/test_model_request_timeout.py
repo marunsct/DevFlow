@@ -119,11 +119,11 @@ def test_the_floor_is_derived_not_guessed() -> None:
     so the timeout and the output it must accommodate cannot drift apart."""
     from app.models import (
         LARGEST_LEGITIMATE_OUTPUT_TOKENS,
-        MIN_EXPECTED_TOKENS_PER_SECOND,
+        _tokens_per_second,
         _time_to_generate_a_full_answer,
     )
 
-    expected = LARGEST_LEGITIMATE_OUTPUT_TOKENS / MIN_EXPECTED_TOKENS_PER_SECOND
+    expected = LARGEST_LEGITIMATE_OUTPUT_TOKENS / _tokens_per_second()
 
     assert _time_to_generate_a_full_answer() == expected
 
@@ -169,7 +169,9 @@ def test_the_floor_comes_from_real_output_not_the_pathology_ceiling() -> None:
     )
 
     assert LARGEST_LEGITIMATE_OUTPUT_TOKENS < _max_output_tokens()
-    assert _time_to_generate_a_full_answer() < 400
+    # Comfortably under the 800s the pathology ceiling produced, while still
+    # covering the slowest model measured (33 tok/s needs 394s).
+    assert 394 <= _time_to_generate_a_full_answer() < 600
     # Still comfortably above the longest legitimate call ever measured.
     assert _request_timeout() > 141.7 * 2
 
@@ -183,4 +185,51 @@ def test_a_wedge_is_still_caught_in_minutes_not_quarter_hours() -> None:
     """
     from app.models import _request_timeout
 
-    assert _request_timeout() <= 400
+    # 800s was the pathology-ceiling answer; this stays far below it.
+    assert _request_timeout() <= 600
+
+
+def test_the_rate_floor_is_below_every_model_measured() -> None:
+    """A constant measured on one model is that model's rate, not a floor.
+
+    Measured on this endpoint over 800-1,200 token completions: Qwen3.5-9B at
+    40.9 tok/s, Qwen2.5-Coder-7B-128K at 51.7, North-Mini-Code-1.0 at 33.0.
+    The constant was 40.0, taken from the first, and the third broke it - at 33
+    tok/s a full-length answer needs 394 seconds against the 325 that floor
+    derived, which is exactly the mismatch this mechanism exists to prevent.
+    """
+    from app.models import DEFAULT_MIN_TOKENS_PER_SECOND
+
+    slowest_measured = 33.0
+
+    assert DEFAULT_MIN_TOKENS_PER_SECOND <= slowest_measured
+
+
+def test_a_slower_model_can_be_declared(monkeypatch) -> None:
+    """Lowering it only lengthens the timeout, so a wrong value here costs
+    patience rather than correctness."""
+    from app.models import _request_timeout, _tokens_per_second
+
+    monkeypatch.setenv("MODEL_TOKENS_PER_SECOND", "10")
+
+    assert _tokens_per_second() == 10.0
+    assert _request_timeout() >= 1300  # 13,000 tokens at 10 tok/s
+
+
+def test_a_nonsense_rate_falls_back_rather_than_dividing_by_zero(monkeypatch) -> None:
+    """This is read while building a model; an infinite wait is worse than a
+    wrong one."""
+    from app.models import DEFAULT_MIN_TOKENS_PER_SECOND, _tokens_per_second
+
+    for bad in ("0", "-5", "not-a-number"):
+        monkeypatch.setenv("MODEL_TOKENS_PER_SECOND", bad)
+        assert _tokens_per_second() == DEFAULT_MIN_TOKENS_PER_SECOND
+
+
+def test_the_timeout_now_covers_the_slowest_model_measured() -> None:
+    from app.models import LARGEST_LEGITIMATE_OUTPUT_TOKENS, _request_timeout
+
+    slowest_measured = 33.0
+    needed = LARGEST_LEGITIMATE_OUTPUT_TOKENS / slowest_measured
+
+    assert _request_timeout() >= needed

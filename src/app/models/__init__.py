@@ -48,12 +48,49 @@ DEFAULT_REQUEST_TIMEOUT_SECONDS = 300.0
 MIN_REQUEST_TIMEOUT_SECONDS = 180.0
 
 
-#: The slowest sustained generation rate measured on this deployment, in
-#: tokens per second (Qwen3.5-9B on a busy RX 7900: 40.9 over a 1,200-token
-#: completion). Deliberately a floor rather than an average: it is used to
-#: decide how long to *wait*, where being pessimistic costs nothing and being
-#: optimistic cancels work that was about to succeed.
-MIN_EXPECTED_TOKENS_PER_SECOND = 40.0
+DEFAULT_MIN_TOKENS_PER_SECOND = 30.0
+"""The slowest sustained generation rate this deployment should plan for.
+
+A floor, not an average, because it decides how long to *wait*: too pessimistic
+costs a little extra patience on a wedge, too optimistic cancels work that was
+about to succeed and retries it into the same wall.
+
+Measured on this endpoint over 800-1,200 token completions:
+
+    Qwen3.5-9B                  40.9 tok/s
+    Qwen2.5-Coder-7B-128K       51.7 tok/s
+    North-Mini-Code-1.0         33.0 tok/s
+
+It was 40.0, taken from the first of those, and the third model broke it - at
+33 tok/s a full-length answer needs 394 seconds against the 325 the floor
+derived, which is precisely the mismatch this whole mechanism exists to
+prevent. A constant measured on one model is not a floor, it is that model's
+rate wearing a floor's name.
+
+30.0 sits below every rate observed so far. `MODEL_TOKENS_PER_SECOND` overrides
+it for a model slower still, and lowering it only ever lengthens the timeout,
+so a wrong value here degrades patience rather than correctness.
+"""
+
+
+def _tokens_per_second() -> float:
+    """The generation-rate floor, from the environment or the default."""
+    import logging
+    import os
+
+    raw = os.environ.get("MODEL_TOKENS_PER_SECOND", "").strip()
+    if not raw:
+        return DEFAULT_MIN_TOKENS_PER_SECOND
+    try:
+        value = float(raw)
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "MODEL_TOKENS_PER_SECOND=%r is not a number; using %s",
+            raw, DEFAULT_MIN_TOKENS_PER_SECOND,
+        )
+        return DEFAULT_MIN_TOKENS_PER_SECOND
+    # A rate at or below zero would divide the budget into an infinite wait.
+    return value if value > 0 else DEFAULT_MIN_TOKENS_PER_SECOND
 
 #: The largest reply this pipeline has ever legitimately produced: a 51 KB
 #: specification written in one `write_artifact` call, about 13,000 tokens.
@@ -88,7 +125,7 @@ def _time_to_generate_a_full_answer() -> float:
     order to permit long answers that the measured distribution says never
     happen.
     """
-    return LARGEST_LEGITIMATE_OUTPUT_TOKENS / MIN_EXPECTED_TOKENS_PER_SECOND
+    return LARGEST_LEGITIMATE_OUTPUT_TOKENS / _tokens_per_second()
 
 
 def _request_timeout() -> float:

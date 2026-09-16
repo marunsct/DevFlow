@@ -128,3 +128,45 @@ def test_the_note_reaches_a_write_that_is_wrong(tmp_path: Path) -> None:
     )
 
     assert "no default export" in (result.get("note") or "")
+
+
+def test_the_suggestion_does_not_name_the_importing_file(tmp_path: Path) -> None:
+    """`rglob("app.*")` matched `app.test.mjs` as well as `app.js`.
+
+    Run d6297b2f's `defect_fix_1_0` wrote `import { ... } from './app.cjs'`
+    into `app.test.mjs` and was told "There is a file of that name at app.js,
+    app.test.mjs" - a file that is not of that name, and an instruction to
+    import itself.
+    """
+    (tmp_path / "app.js").write_text("export function a() {}\n", encoding="utf-8")
+    suite = tmp_path / "app.test.mjs"
+    suite.write_text("import { a } from './app.cjs';\n", encoding="utf-8")
+
+    problems = import_problems(suite, suite.read_text(), tmp_path)
+
+    assert len(problems) == 1
+    assert "app.js" in problems[0]
+    assert "app.test.mjs" not in problems[0].split("There is a file")[1]
+
+
+def test_a_file_whose_name_merely_starts_with_the_stem_is_not_of_that_name(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "app.helpers.js").write_text("export function h() {}\n", encoding="utf-8")
+    suite = tmp_path / "suite.mjs"
+    suite.write_text("import { a } from './app.js';\n", encoding="utf-8")
+
+    problems = import_problems(suite, suite.read_text(), tmp_path)
+
+    assert len(problems) == 1
+    assert "There is a file of that name" not in problems[0]
+
+
+def test_the_real_file_is_still_found_under_another_extension(tmp_path: Path) -> None:
+    (tmp_path / "store.mjs").write_text("export function s() {}\n", encoding="utf-8")
+    suite = tmp_path / "suite.mjs"
+    suite.write_text("import { s } from './store.cjs';\n", encoding="utf-8")
+
+    problems = import_problems(suite, suite.read_text(), tmp_path)
+
+    assert "store.mjs" in problems[0]

@@ -71,18 +71,34 @@ def _resolve(source: Path, specifier: str) -> Path | None:
     return None
 
 
-def _elsewhere(project: Path, specifier: str) -> list[str]:
-    """Where a module of that name actually is, as project-relative paths."""
+def _elsewhere(project: Path, specifier: str, target: Path | None = None) -> list[str]:
+    """Where a module of that name actually is, as project-relative paths.
+
+    Exact on the stem, and never the importing file itself. `rglob("app.*")`
+    matched `app.test.mjs` as well as `app.js`, so a broken `./app.cjs` in
+    `app.test.mjs` was answered "There is a file of that name at app.js,
+    app.test.mjs" - naming a file that is not of that name, and telling the
+    file to import itself. Measured on run d6297b2f's `defect_fix_1_0`, which
+    got exactly that note.
+    """
     name = specifier.rstrip("/").rsplit("/", 1)[-1]
     stem = name.rsplit(".", 1)[0] if "." in name else name
     if not stem:
         return []
+    here = None
+    if target is not None:
+        try:
+            here = target.resolve()
+        except Exception:  # noqa: BLE001 - a hint must never fail the write
+            here = None
     found: list[str] = []
     try:
-        for candidate in project.rglob(f"{stem}.*"):
-            if not candidate.is_file():
+        for candidate in project.rglob("*"):
+            if not candidate.is_file() or candidate.stem != stem:
                 continue
             if any(part in _SKIP for part in candidate.parts):
+                continue
+            if here is not None and candidate.resolve() == here:
                 continue
             if candidate.suffix.lower() in {".js", ".mjs", ".cjs", ".json", ".ts"}:
                 found.append(candidate.relative_to(project).as_posix())
@@ -143,7 +159,7 @@ def import_problems(target: Path, content: str, project: Path | None = None) -> 
             seen.add(specifier)
             if _resolve(target, specifier) is not None:
                 continue
-            others = _elsewhere(project, specifier)
+            others = _elsewhere(project, specifier, target)
             where = (
                 f" There is a file of that name at {', '.join(others)}."
                 if others

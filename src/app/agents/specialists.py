@@ -235,6 +235,28 @@ class SpecialistOutput(BaseModel):
     )
 
 
+NO_SHELL_NOTE = (
+    "There is no shell in this environment: `sh`, `bash` and shell scripts "
+    "cannot be run, and nor can `cd`, pipes or `&&`. A build or test step must "
+    "therefore be an npm/pnpm/yarn script, a Makefile target, or a program run "
+    "directly - never a .sh file.\n"
+)
+"""The constraint that is invisible until a stage has already spent itself.
+
+Measured on run-130deeef. The technical specification called for a shell build
+script, so `simple-to-do-list-app/build.sh` became the most-written file of the
+entire run - 22 writes and edits across several stages - for a file the sandbox
+can never execute. `specialist_backend_0` then sent `sh ./build.sh` five times,
+and `specialist_backend_8` wrote `docs/blocker.md` five times because being
+blocked was all it had left to report. The run had completed a full sprint, a
+test round, a security review and a milestone review before this ended it.
+
+Nothing in any brief said a shell was unavailable. The allowlist says so, but
+only once a command has already been refused - which is after the spec is
+written, the task delegated and the script authored.
+"""
+
+
 def describe_stack(stack: Any) -> str:
     """The chosen stack, as the one specialists must build on.
 
@@ -280,7 +302,9 @@ def describe_stack(stack: Any) -> str:
         "better - other specialists are building the rest of this product on "
         "the stack above, and a second one in the same directory means neither "
         "works. If your task cannot be done on this stack, say so as a blocker "
-        "rather than switching.\n\n"
+        "rather than switching.\n"
+        + NO_SHELL_NOTE
+        + "\n"
     )
 
 

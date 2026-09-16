@@ -897,6 +897,7 @@ def _edited(
     notes = [
         _structural_note(relative_path, written),
         _discovery_note(relative_path, written),
+        _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)
@@ -1023,6 +1024,41 @@ def _refuse_if_broken(relative_path: str, content: str) -> None:
     """
     if _refuses_a_broken_file(relative_path):
         _structural_note(relative_path, content)
+
+
+#: Scripts the sandbox has no interpreter for. `make`, `npm`, `node`, `python`
+#: and the rest of the allowlist are all available; a shell is not.
+_UNRUNNABLE_SCRIPTS = (".sh", ".bash", ".zsh", ".command")
+
+
+def _unrunnable_script_note(relative_path: str) -> str:
+    """Warn about a script this environment can never execute, or "".
+
+    Measured on run-130deeef, where `simple-to-do-list-app/build.sh` was the
+    most-written file of the entire run - 22 writes and edits across several
+    stages - for a file the sandbox cannot run. `specialist_backend_0` then
+    sent `sh ./build.sh` five times, and `specialist_backend_8` wrote
+    `docs/blocker.md` five times because being blocked was all it had left to
+    report. That ended a run which had already completed a full sprint, a test
+    round, a security review and a milestone review.
+
+    The refusal exists, but only fires once the command is attempted - after
+    the spec is written, the task delegated, and the script authored. This
+    fires at the write, which is the first moment anyone could have known.
+
+    A note rather than a refusal: a project may legitimately ship a shell
+    script for a human to run elsewhere. What it may not do is depend on
+    running one here, and saying so is enough.
+    """
+    if not relative_path.lower().endswith(_UNRUNNABLE_SCRIPTS):
+        return ""
+    return (
+        "This environment has no shell, so this script cannot be run here - "
+        "`sh` and `bash` are not available and never will be. If anything in "
+        "this project needs to execute these steps, put them in a package.json "
+        "script, a Makefile target, or a program run directly (node, python), "
+        "which all work."
+    )
 
 
 def _discovery_note(relative_path: str, content: str) -> str:
@@ -1800,6 +1836,7 @@ def write_approved_artifact(repo_root: str | Path, relative_path: str, content: 
     notes = [
         _structural_note(relative_path, content),
         _discovery_note(relative_path, content),
+        _unrunnable_script_note(relative_path),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)

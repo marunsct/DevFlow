@@ -9,6 +9,7 @@ run, with `ls {'path': 'task-manager'}` run five times inside one stage.
 
 from __future__ import annotations
 
+import pytest
 from types import SimpleNamespace
 
 from langchain_core.messages import ToolMessage
@@ -269,3 +270,28 @@ def test_the_unchanged_status_is_what_is_matched() -> None:
     assert _changed_nothing(UNCHANGED)
     assert not _changed_nothing(WRITTEN)
     assert not _changed_nothing('{"path": "a", "status": "edited"}')
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        '{"path":"a","status":"unchanged"}',
+        '{"path": "a", "status": "unchanged"}',
+        '{"path": "a",  "status" :  "unchanged" }',
+        '{"status":"unchanged","path":"a"}',
+    ],
+)
+def test_unchanged_is_matched_however_it_is_spaced(payload: str) -> None:
+    """Matching the literal string with one space passed locally and failed in
+    the container, where the same dict came back without it."""
+    from app.agents.repeated_queries import _changed_nothing
+
+    assert _changed_nothing(payload)
+
+
+def test_a_status_that_is_not_unchanged_is_not_matched() -> None:
+    from app.agents.repeated_queries import _changed_nothing
+
+    assert not _changed_nothing('{"status":"written"}')
+    assert not _changed_nothing('{"status":"edited"}')
+    assert not _changed_nothing('{"detail":"unchanged since yesterday"}')

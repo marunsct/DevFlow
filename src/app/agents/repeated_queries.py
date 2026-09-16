@@ -23,6 +23,7 @@ about has moved, and no separate tracking of writes can tell it better.
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any
 
 #: One repeat is ordinary; the second is the one worth mentioning. Matches
@@ -64,9 +65,17 @@ MUTATING_TOOLS = frozenset({"edit_artifact", "write_artifact", "delete_artifact"
 NO_OP_WRITES_BEFORE_REFUSING = 2
 
 
+#: `"status": "unchanged"` however the serialiser spaced it. Matching the
+#: literal string with one space passed a local test and failed in the
+#: container, where the same dict came back without it - the kind of brittleness
+#: this codebase has been bitten by before in an "Error"-anywhere match and a
+#: ">"-anywhere match.
+_UNCHANGED = re.compile(r'"status"\s*:\s*"unchanged"')
+
+
 def _changed_nothing(content: str) -> bool:
     """Whether a write reported that the file already held this content."""
-    return '"status": "unchanged"' in content[:400]
+    return bool(_UNCHANGED.search(content[:400]))
 
 
 def _looks_like_a_failure(content: str) -> bool:

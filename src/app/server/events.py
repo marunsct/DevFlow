@@ -51,6 +51,15 @@ class RunEvent(BaseModel):
         "review_request",
         "approval_request",
         "approval_auto",
+        # A gate answered with a denial rather than an approval, because the
+        # stage asked for the same thing over and over. Added with the runner
+        # code that emits it - and not, the first time, at the same moment:
+        # run-84e05d4b reached its third sprint and then died on
+        # `ValidationError: Input should be 'stage_change', 'log', ... [type=
+        # literal_error, input_value='approval_denied']`. The whole test suite
+        # passed, because no test ran the runner's denial path against this
+        # model. See `test_event_types_are_registered`.
+        "approval_denied",
         "error",
         "complete",
         # Agent activity. One event per assistant message, tool call and tool

@@ -466,6 +466,70 @@ def _indentation_insensitive_span(content: str, wanted: str) -> tuple[int, int] 
     return matches[0] if matches else None
 
 
+def _blank_line_insensitive_span(content: str, wanted: str) -> tuple[int, int] | None:
+    """The one region matching `wanted` ignoring indentation *and* blank lines.
+
+    The same reasoning as `_indentation_insensitive_span`, one step further.
+    Blank lines are the other part of a passage an agent reconstructs rather
+    than reads: it remembers the statements and not the spacing between them.
+
+    Measured on run-499c771a's `specialist_testing_3`, four failed edits of
+    `app.test.mjs` in one stage. Two of them sent
+
+          // Reset storage
+          mockLocalStorage._data = {};
+          // Add a task
+          addTask({ title: 'Persisted', status: 'todo' });
+
+    against a file holding exactly those four lines with a blank line between
+    the second and third. Every non-blank line matched, character for
+    character, and the edit was refused.
+
+    Uniqueness is still required, and still on the non-blank lines only, so
+    this cannot hit a different statement that merely looks similar. The span
+    returned runs from the first matched line to the end of the last, which
+    means the blank lines *inside* it are replaced along with the rest - which
+    is what an agent that did not know they were there intends.
+    """
+    wanted_lines = [line.strip() for line in wanted.splitlines() if line.strip()]
+    if not wanted_lines:
+        return None
+    if len(wanted_lines) == 1 and len(wanted_lines[0]) < _ONE_LINE_IS_ENOUGH:
+        # A single short line - `}`, `});`, `return;` - is in every file
+        # several times over, and matching one of them is a guess. A long one
+        # identifies a passage on its own, and uniqueness is still required
+        # below either way.
+        #
+        # The single-line case is here because blank lines around a passage are
+        # as easy to misremember as blank lines inside it: run-499c771a sent
+        # `"\nconst { loadTasks } = await import('./app.js');\n"` against a file
+        # whose line above is a comment, so the leading blank line it invented
+        # was the only thing wrong.
+        return None
+
+    lines = content.splitlines(keepends=True)
+    significant = [
+        (index, line.strip()) for index, line in enumerate(lines) if line.strip()
+    ]
+    matches: list[tuple[int, int]] = []
+    for position in range(0, len(significant) - len(wanted_lines) + 1):
+        window = significant[position : position + len(wanted_lines)]
+        if [text for _, text in window] != wanted_lines:
+            continue
+        first_line, last_line = window[0][0], window[-1][0]
+        start = sum(len(line) for line in lines[:first_line])
+        end = start + sum(len(line) for line in lines[first_line : last_line + 1])
+        last = lines[last_line]
+        end -= len(last) - len(last.rstrip("\r\n"))
+        matches.append((start, end))
+        if len(matches) > 1:
+            return None
+    return matches[0] if matches else None
+
+
+#: A single line this long identifies a passage by itself.
+_ONE_LINE_IS_ENOUGH = 20
+
 _SMALL_FILE_LINES = 40
 """At or under this, a failed edit is shown the whole file rather than a guess."""
 
@@ -789,6 +853,18 @@ def edit_approved_artifact(
                     span = (start, start + len(candidate))
                 else:
                     span = _indentation_insensitive_span(original, candidate)
+                if span is None:
+                    # Blank lines are the other part of a passage an agent
+                    # reconstructs rather than reads. See
+                    # `_blank_line_insensitive_span`.
+                    span = _blank_line_insensitive_span(original, candidate)
+                    if span is not None:
+                        explanation = (
+                            "Matched ignoring blank lines and indentation - every line "
+                            "you gave is in the file, in that order, but the spacing "
+                            "between them differs. Copy the passage exactly from what "
+                            "you read, blank lines included."
+                        )
                 if span is None:
                     continue
                 start, end = span

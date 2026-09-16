@@ -239,6 +239,100 @@ def _dangling_id_selectors(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: `document.getElementById("x")`, and `#x` inside a querySelector string.
+_JS_BY_ID = re.compile(r"""getElementById\s*\(\s*["']([A-Za-z][\w-]*)["']""")
+_JS_QUERY = re.compile(r"""querySelector(?:All)?\s*\(\s*["']([^"']+)["']""")
+
+#: An id the script creates for itself, which no page needs to declare.
+_JS_ASSIGNS_ID = re.compile(
+    r"""\.id\s*=\s*["']([A-Za-z][\w-]*)["']"""
+    r"""|setAttribute\(\s*["']id["']\s*,\s*["']([A-Za-z][\w-]*)["']"""
+)
+
+#: `element.dataset.status` - which reads the HTML attribute `data-status`.
+_JS_DATASET = re.compile(r"""\.dataset\.([A-Za-z][\w]*)""")
+_JS_ASSIGNS_DATASET = re.compile(r"""\.dataset\.([A-Za-z][\w]*)\s*=""")
+_HTML_DATA_ATTR = re.compile(r"""\bdata-([A-Za-z][\w-]*)\s*=""")
+_JS_DATA_SELECTOR = re.compile(r"""\[\s*data-([A-Za-z][\w-]*)""")
+
+
+def _camel_to_dashed(name: str) -> str:
+    """`dataset.taskId` reads the attribute `data-task-id`. That is the rule."""
+    return re.sub(r"([A-Z])", lambda m: "-" + m.group(1).lower(), name)
+
+
+def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
+    """Element ids and data attributes the script uses that no page declares.
+
+    The counterpart to `_dangling_id_selectors`, on the side that actually
+    breaks the product. A stylesheet targeting a missing id is dead paint; a
+    script targeting a missing id is a feature that does nothing, and it throws
+    no error - `getElementById` returns null, the usual `if (!el) return;`
+    swallows it, and every test of the module's pure functions still passes.
+
+    Measured on run-499c771a, the first run of this harness to reach `complete`.
+    Its `app.js` did
+
+        document.getElementById("task-form")
+
+    while `index.html` declared `id="add-task-form"`, so the submit handler was
+    never attached and no task could be added. Its `filterCurrent()` read
+    `filterBtn.dataset.status` from buttons that carried no `data-status`, so
+    the filter was always `undefined` and the list rendered nothing. The
+    architecture review, the security review, three passing tests and the
+    milestone review all accepted it, because the tests exercised `addTask`
+    and `loadTasks` directly and nothing exercised the two files together.
+
+    Only runs when the project has an HTML file that declares at least one id.
+    A React or Vue project builds its DOM from templates this cannot read, and
+    a script-only page declares its own ids as it goes; flagging either would
+    be noise.
+    """
+    pages = [path for path in files if path.suffix.lower() in {".html", ".htm"}]
+    declared_ids: set[str] = set()
+    declared_data: set[str] = set()
+    for path in pages:
+        text = _read(path)
+        declared_ids.update(_HTML_ID.findall(text))
+        declared_data.update(_HTML_DATA_ATTR.findall(text))
+    if not declared_ids:
+        return []
+
+    problems: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs"} or is_test(str(path)):
+            continue
+        text = _read(path)
+        made_here = {
+            name for pair in _JS_ASSIGNS_ID.findall(text) for name in pair if name
+        }
+        wanted = set(_JS_BY_ID.findall(text))
+        for selector in _JS_QUERY.findall(text):
+            wanted.update(_ID_SELECTOR.findall(selector))
+        for identifier in sorted(wanted - declared_ids - made_here):
+            problems.append(
+                f"{path.relative_to(root)} looks for the element id "
+                f"`{identifier}`, which no HTML file declares. "
+                "`getElementById` returns null and the code around it does "
+                "nothing, silently."
+            )
+
+        set_here = set(_JS_ASSIGNS_DATASET.findall(text))
+        read_here = {
+            _camel_to_dashed(name)
+            for name in set(_JS_DATASET.findall(text)) - set_here
+        }
+        for selector in _JS_QUERY.findall(text):
+            read_here.update(_JS_DATA_SELECTOR.findall(selector))
+        for attribute in sorted(read_here - declared_data):
+            problems.append(
+                f"{path.relative_to(root)} reads the attribute "
+                f"`data-{attribute}`, which no HTML element sets. It is "
+                "`undefined` every time."
+            )
+    return problems
+
+
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     """Application scripts that nothing loads or imports, as relative paths."""
     referenced: set[str] = set()
@@ -1201,6 +1295,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
             _stack_conflicts(files, root, stack)
             + _manifest_defects(files, root, stack)
             + _dangling_id_selectors(files, root)
+            + _hooks_javascript_reaches_for(files, root)
             + _dangling_class_selectors(files, root)
             + _documented_commands_that_cannot_run(files, root, root / "docs")
             + _broken_local_references(files, root)
@@ -1217,7 +1312,8 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
 
     checked = (
         f"Cross-file checks ran over {len(files)} files: stylesheet id selectors "
-        "against declared element ids, HTML script and stylesheet references "
+        "and the ids and data attributes scripts reach for against declared "
+        "element ids, HTML script and stylesheet references "
         "against the files they name, application modules against whatever "
         "loads them, and module syntax against the test configuration."
     )

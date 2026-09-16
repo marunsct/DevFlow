@@ -569,6 +569,83 @@ def test_an_empty_file_stays_empty(tmp_path: Path) -> None:
     assert (tmp_path / "docs" / "empty.md").read_text() == ""
 
 
+BLANK_LINE_FILE = """test('CRUD operations persist in localStorage', () => {
+  // Reset storage
+  mockLocalStorage._data = {};
+
+  // Add a task
+  addTask({ title: 'Persisted', status: 'todo' });
+
+  // Simulate module reload by re-importing app.js
+  const { loadTasks } = await import('./app.js');
+});
+"""
+
+
+def test_a_passage_remembered_without_its_blank_lines_still_matches(
+    tmp_path: Path,
+) -> None:
+    """run-499c771a's `specialist_testing_3`, two of four failed edits.
+
+    Every line it sent is in the file, in that order, character for character.
+    The only difference is a blank line between the second and third that it
+    did not remember.
+    """
+    (tmp_path / "app.test.mjs").write_text(BLANK_LINE_FILE)
+
+    result = edit_approved_artifact(
+        tmp_path,
+        "app.test.mjs",
+        "  // Reset storage\n  mockLocalStorage._data = {};\n"
+        "  // Add a task\n  addTask({ title: 'Persisted', status: 'todo' });",
+        "  // replaced",
+    )
+
+    assert "ignoring blank lines" in (result.get("detail") or "")
+    assert "// replaced" in (tmp_path / "app.test.mjs").read_text()
+
+
+def test_a_line_remembered_with_a_blank_line_around_it_still_matches(
+    tmp_path: Path,
+) -> None:
+    """The other two. It sent one line wrapped in newlines it had invented."""
+    (tmp_path / "app.test.mjs").write_text(BLANK_LINE_FILE)
+
+    result = edit_approved_artifact(
+        tmp_path,
+        "app.test.mjs",
+        "\nconst { loadTasks } = await import('./app.js');\n",
+        "  const { loadTasks } = await import('./app.mjs');",
+    )
+
+    assert result["status"] == "edited"
+    assert "./app.mjs" in (tmp_path / "app.test.mjs").read_text()
+
+
+def test_a_short_line_is_not_matched_by_ignoring_blank_lines(tmp_path: Path) -> None:
+    """`}` is in every file several times; matching one of them is a guess."""
+    (tmp_path / "x.js").write_text("function a() {\n}\n\nfunction b() {\n}\n")
+
+    with pytest.raises(RepositoryToolError):
+        edit_approved_artifact(tmp_path, "x.js", "\n}\n", "}  // end")
+
+
+def test_blank_line_matching_still_requires_one_place(tmp_path: Path) -> None:
+    """The uniqueness guarantee is the whole safety property of this tool.
+
+    Both copies here are spaced the same way, so neither is reachable by
+    ignoring indentation alone - only by ignoring the blank lines, which finds
+    two and must therefore refuse.
+    """
+    body = "a();\nb();\n\nc();\nx();\na();\nb();\n\nc();\n"
+    (tmp_path / "x.js").write_text(body)
+
+    with pytest.raises(RepositoryToolError):
+        edit_approved_artifact(tmp_path, "x.js", "a();\nb();\nc();", "d();")
+
+    assert (tmp_path / "x.js").read_text() == body
+
+
 def test_an_ambiguous_edit_is_shown_what_differs(tmp_path: Path) -> None:
     """"Include a line from above or below" is advice, not information.
 

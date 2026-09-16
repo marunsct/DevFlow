@@ -828,10 +828,10 @@ def test_the_note_tells_a_finished_verification_to_answer(tmp_path) -> None:
 
     command = ["node", "--test", "proj/app.test.mjs"]
     root = str(tmp_path)
-    assert _note_about_running_this_again(root, command, {"returncode": 0}) == ""
+    assert _note_about_running_this_again(root, command, {"returncode": 0}, "r") == ""
 
     _record_execution(root, "r", command, {"returncode": 0})
-    note = _note_about_running_this_again(root, command, {"returncode": 0})
+    note = _note_about_running_this_again(root, command, {"returncode": 0}, "r")
 
     assert "already passed 1 time(s)" in note
     assert "return your structured answer" in note
@@ -845,7 +845,7 @@ def test_the_note_still_tells_a_repeated_failure_to_change_something(tmp_path) -
     root = str(tmp_path)
     _record_execution(root, "r", command, {"returncode": 1})
 
-    note = _note_about_running_this_again(root, command, {"returncode": 1})
+    note = _note_about_running_this_again(root, command, {"returncode": 1}, "r")
 
     assert "already failed 1 time(s)" in note
     assert "will fail again" in note
@@ -855,4 +855,77 @@ def test_a_refused_command_gets_no_note(tmp_path) -> None:
     """A refusal has no exit code, and neither check has anything to say."""
     from app.tools.sandbox import _note_about_running_this_again
 
-    assert _note_about_running_this_again(str(tmp_path), ["node", "a.js"], {"error": "no"}) == ""
+    assert _note_about_running_this_again(str(tmp_path), ["node", "a.js"], {"error": "no"}, "r") == ""
+
+
+def test_a_refusal_is_not_cleared_by_a_write(tmp_path) -> None:
+    """The asymmetry between a refusal and a failure.
+
+    Measured on run-ae4b717e's `specialist_backend_0`: `node -e "..."` refused
+    at 23:44:29 with a message naming the way round, edits and a delete in
+    between, then the identical command again at 23:44:41. A write gate would
+    have called that a fresh situation and said nothing - but the allowlist
+    refuses this command for what it is, and no edit can change that.
+    """
+    import time
+
+    from app.tools.sandbox import _record_execution, refused_this_way_before
+
+    command = ["node", "-e", "console.log(1)"]
+    _record_execution(str(tmp_path), "backend_specialist", command, {"error": "not permitted"})
+    assert refused_this_way_before(str(tmp_path), command) == 1
+
+    time.sleep(0.01)
+    (tmp_path / "changed.js").write_text("v2\n", encoding="utf-8")
+
+    assert refused_this_way_before(str(tmp_path), command) == 1
+
+
+def test_a_failure_is_not_counted_as_a_refusal(tmp_path) -> None:
+    """A command that ran and exited non-zero was allowed to run."""
+    from app.tools.sandbox import _record_execution, refused_this_way_before
+
+    command = ["node", "verify.js"]
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1})
+
+    assert refused_this_way_before(str(tmp_path), command) == 0
+
+
+def test_only_the_allowlist_makes_a_refusal_standing() -> None:
+    """A timeout is not a property of the command, so it must not qualify.
+
+    An edit can end an infinite loop and a busy machine frees up; telling an
+    agent "this will be refused every time" about either would be false.
+    """
+    from app.tools.sandbox import _is_a_standing_refusal
+
+    assert _is_a_standing_refusal(["node", "-e", "x"], "backend_specialist") is True
+    assert _is_a_standing_refusal(["node", "--test", "a.mjs"], "backend_specialist") is False
+
+
+def test_the_note_tells_a_repeated_refusal_to_use_another_command(tmp_path) -> None:
+    from app.tools.sandbox import _note_about_running_this_again, _record_execution
+
+    command = ["node", "-e", "console.log(1)"]
+    root = str(tmp_path)
+    refusal = {"error": "'node -e' is not permitted: it can execute arbitrary code."}
+
+    assert _note_about_running_this_again(root, command, refusal, "backend_specialist") == ""
+
+    _record_execution(root, "backend_specialist", command, refusal)
+    note = _note_about_running_this_again(root, command, refusal, "backend_specialist")
+
+    assert "already been refused 1 time(s)" in note
+    assert "no edit to any file will change the answer" in note
+
+
+def test_a_timed_out_command_gets_no_standing_refusal_note(tmp_path) -> None:
+    """It ran, it was allowed, and changing the file it runs may well fix it."""
+    from app.tools.sandbox import _note_about_running_this_again, _record_execution
+
+    command = ["node", "--test", "slow.mjs"]
+    root = str(tmp_path)
+    timed_out = {"error": "Command timed out after 120 seconds."}
+    _record_execution(root, "testing_specialist", command, timed_out)
+
+    assert _note_about_running_this_again(root, command, timed_out, "testing_specialist") == ""

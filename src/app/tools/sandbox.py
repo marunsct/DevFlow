@@ -968,19 +968,80 @@ def succeeded_this_way_before(repo_root: str, command: Sequence[str]) -> int:
 
 
 
+def refused_this_way_before(repo_root: str, command: Sequence[str]) -> int:
+    """How many times this exact command has already been refused this run.
+
+    No `_written_since` gate, and that is the whole point. A failing test can
+    be fixed by editing the file it runs, so a write clears what came before;
+    a command the allowlist refuses is refused for what it *is*, and no edit
+    anywhere in the workspace will change that.
+
+    Measured on run-ae4b717e's `specialist_backend_0`: `node -e "const pkg =
+    require(...)"` refused at 23:44:29 with a message naming the way round
+    (put the code in a file, run the file, remove it), and sent again
+    unchanged at 23:44:41. The agent had edited and deleted files in between,
+    which is exactly why the write gate must not apply here - it would have
+    called that a fresh situation and said nothing.
+    """
+    argv = [str(part) for part in command]
+    try:
+        entries = read_execution_ledger(repo_root)
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return 0
+    return sum(
+        1
+        for entry in entries
+        if entry.get("command") == argv
+        and entry.get("error")
+        and _as_exit_code(entry.get("returncode")) is None
+    )
+
+
+def _is_a_standing_refusal(command: Sequence[str], role_name: str) -> bool:
+    """Whether the allowlist refuses this command for what it is.
+
+    Asked of `validate_command` rather than sniffed from the error text or
+    recorded by tagging each of the eight places that can return an error -
+    the tagging version is the "reached twelve of thirteen" mistake this
+    codebase has made four times. `validate_command` is a pure function of
+    argv and role, so asking it again is deterministic and cheap.
+
+    This deliberately says no to a timeout and to a sandbox that would not
+    start. Those are not properties of the command: an edit can end an
+    infinite loop, and a busy machine frees up.
+    """
+    try:
+        validate_command(command, role_name)
+    except CommandNotAllowed:
+        return True
+    except Exception:  # noqa: BLE001 - unknown means "not a standing refusal"
+        return False
+    return False
+
+
 def _note_about_running_this_again(
-    repo_root: str, command: Sequence[str], outcome: Dict[str, Any]
+    repo_root: str, command: Sequence[str], outcome: Dict[str, Any], role_name: str
 ) -> str:
     """What to tell an agent that has just re-run a command unchanged.
 
-    Both halves say the same thing - you already have this result - but the
-    move each asks for is the opposite. A repeated failure means the agent has
-    not changed the thing that is broken; a repeated pass means it has finished
-    and has not noticed.
+    All three branches say the same thing - you already have this result - and
+    ask for three different moves. A repeated failure has not changed what is
+    broken; a repeated pass has finished and not noticed; a repeated refusal
+    will never be allowed and needs a different command entirely.
     """
     exit_code = _as_exit_code(outcome.get("returncode"))
     if exit_code is None:
-        return ""
+        if not outcome.get("error") or not _is_a_standing_refusal(command, role_name):
+            return ""
+        already = refused_this_way_before(repo_root, command)
+        if not already:
+            return ""
+        return (
+            f"This exact command has already been refused {already} time(s) in this "
+            "run, and it will be refused every time: it is not allowed for what it "
+            "is, so no edit to any file will change the answer. Use the alternative "
+            "the refusal names, or a different command."
+        )
     if exit_code != 0:
         already = failed_this_way_before(repo_root, command)
         if not already:
@@ -1157,7 +1218,9 @@ class SandboxExecutor:
             )
             if doubled:
                 outcome = {**outcome, "note": doubled}
-            note = _note_about_running_this_again(repo_root, command, outcome)
+            note = _note_about_running_this_again(
+                repo_root, command, outcome, role_name
+            )
             if note:
                 outcome = {
                     **outcome,

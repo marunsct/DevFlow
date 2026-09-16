@@ -534,17 +534,119 @@ def workspace_rooted_arguments(
     return rewritten
 
 
-def allowed_executables(role_name: str) -> frozenset[str]:
+STACK_MARKER = ".project-stack"
+"""Where a run records the toolchain it chose, beside `.project-directory`.
+
+The allowlist cannot ask the stack selector directly - the sandbox is handed a
+role name and a workspace, not the run's state - so the decision is pinned to
+the workspace the way the project directory already is.
+"""
+
+#: Executables a language needs to run its own code, by the name the stack
+#: selector uses for it. Runtime, package manager and test runner together,
+#: because a role that can write a file in a language and not run it has only
+#: bad options - and takes them.
+#:
+#: run-414a621f: the database specialist wrote app.js, app.test.mjs and a
+#: package.json, was refused `node`, wrote a Python script to subprocess-launch
+#: node (permitted), then tried `python3 app.test.mjs` and finally to `exec()` a
+#: JavaScript module as Python. That was the fourth time `node` was added to one
+#: role at a time. A table keyed by language is what stops there being a fifth.
+TOOLCHAINS: dict[str, frozenset[str]] = {
+    "javascript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc"}),
+    "typescript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "ts-node"}),
+    "python": frozenset({"python", "python3", "pip", "pip3", "pytest", "uv", "poetry", "ruff"}),
+    "go": frozenset({"go", "gofmt"}),
+    "rust": frozenset({"cargo", "rustc", "rustfmt"}),
+    "java": frozenset({"java", "javac", "mvn", "gradle"}),
+    "kotlin": frozenset({"kotlin", "kotlinc", "gradle"}),
+    "csharp": frozenset({"dotnet"}),
+    "ruby": frozenset({"ruby", "bundle", "gem", "rake", "rspec"}),
+    "php": frozenset({"php", "composer", "phpunit"}),
+    "swift": frozenset({"swift", "swiftc"}),
+    "dart": frozenset({"dart", "flutter"}),
+    "elixir": frozenset({"elixir", "mix"}),
+}
+
+#: Spellings the stack selector actually produces, mapped to a table key.
+_LANGUAGE_ALIASES = {
+    "js": "javascript", "node": "javascript", "nodejs": "javascript",
+    "node.js": "javascript", "vanilla javascript": "javascript",
+    "es6": "javascript", "ecmascript": "javascript",
+    "ts": "typescript",
+    "py": "python", "python3": "python",
+    "golang": "go",
+    "c#": "csharp", "c sharp": "csharp", "dotnet": "csharp", ".net": "csharp",
+    "rb": "ruby",
+}
+
+
+def _toolchain_key(language: str) -> str | None:
+    """The table key for a language name as a model wrote it."""
+    text = (language or "").strip().lower()
+    if not text:
+        return None
+    if text in TOOLCHAINS:
+        return text
+    if text in _LANGUAGE_ALIASES:
+        return _LANGUAGE_ALIASES[text]
+    # "JavaScript (ES6+)", "Python 3.12", "Go 1.22" - take the leading word.
+    head = re.split(r"[^a-z#.+]+", text)[0] if text else ""
+    if head in TOOLCHAINS:
+        return head
+    return _LANGUAGE_ALIASES.get(head)
+
+
+def pin_project_stack(repo_root: str | Path, language: str) -> None:
+    """Record the language this run is building in. Never raises."""
+    key = _toolchain_key(language)
+    if key is None:
+        logger.info("No toolchain known for language %r; roles keep their defaults", language)
+        return
+    try:
+        (Path(repo_root) / STACK_MARKER).write_text(key + "\n", encoding="utf-8")
+    except OSError:
+        logger.debug("Could not pin the project stack", exc_info=True)
+
+
+def project_stack(repo_root: str | Path | None) -> str | None:
+    """The language pinned for this run, or None. Never raises."""
+    if not repo_root:
+        return None
+    try:
+        return (Path(repo_root) / STACK_MARKER).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def allowed_executables(
+    role_name: str, repo_root: str | Path | None = None
+) -> frozenset[str]:
     """Executables this role may run.
 
     An unknown role gets only the common set. The previous code did the
     opposite - it *widened* the allowlist for unrecognised roles - so a typo in a
     role name granted more access, not less.
+
+    Every role that writes code also gets the toolchain of the language this
+    run chose. The static table was right for the stacks it listed and silently
+    wrong for the rest: `go` and `cargo` appeared under one role, and `dotnet`,
+    `mvn`, `ruby`, `php`, `swift` and `dart` under none, so a product in any of
+    those languages could be written and never run. Reviewers, which do not
+    write code, are unchanged.
     """
-    return ROLE_EXECUTABLES.get(role_name, frozenset()) | COMMON_EXECUTABLES
+    base = ROLE_EXECUTABLES.get(role_name, frozenset()) | COMMON_EXECUTABLES
+    if role_name not in ROLE_EXECUTABLES:
+        return base
+    key = project_stack(repo_root)
+    if key is None:
+        return base
+    return base | TOOLCHAINS.get(key, frozenset())
 
 
-def validate_command(command: Sequence[str], role_name: str) -> list[str]:
+def validate_command(
+    command: Sequence[str], role_name: str, repo_root: str | Path | None = None
+) -> list[str]:
     """Return the validated argv, or raise CommandNotAllowed."""
     if isinstance(command, str):
         raise CommandNotAllowed(
@@ -556,7 +658,7 @@ def validate_command(command: Sequence[str], role_name: str) -> list[str]:
         raise CommandNotAllowed("Command cannot be empty.")
 
     executable = os.path.basename(argv[0])
-    permitted = allowed_executables(role_name)
+    permitted = allowed_executables(role_name, repo_root)
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing
         # permission, and saying so sends the agent looking for the wrong fix.
@@ -1161,21 +1263,24 @@ def refused_this_way_before(
     )
 
 
-def _is_a_standing_refusal(command: Sequence[str], role_name: str) -> bool:
+def _is_a_standing_refusal(
+    command: Sequence[str], role_name: str, repo_root: str | Path | None = None
+) -> bool:
     """Whether the allowlist refuses this command for what it is.
 
     Asked of `validate_command` rather than sniffed from the error text or
     recorded by tagging each of the eight places that can return an error -
     the tagging version is the "reached twelve of thirteen" mistake this
     codebase has made four times. `validate_command` is a pure function of
-    argv and role, so asking it again is deterministic and cheap.
+    argv, role and the stack pinned in the workspace, none of which changes
+    while a command runs, so asking it again is deterministic and cheap.
 
     This deliberately says no to a timeout and to a sandbox that would not
     start. Those are not properties of the command: an edit can end an
     infinite loop, and a busy machine frees up.
     """
     try:
-        validate_command(command, role_name)
+        validate_command(command, role_name, repo_root)
     except CommandNotAllowed:
         return True
     except Exception:  # noqa: BLE001 - unknown means "not a standing refusal"
@@ -1199,7 +1304,9 @@ def _note_about_running_this_again(
     """
     exit_code = _as_exit_code(outcome.get("returncode"))
     if exit_code is None:
-        if not outcome.get("error") or not _is_a_standing_refusal(command, role_name):
+        if not outcome.get("error") or not _is_a_standing_refusal(
+            command, role_name, repo_root
+        ):
             return ""
         already = refused_this_way_before(repo_root, command, working_directory)
         if not already:
@@ -1425,7 +1532,7 @@ class SandboxExecutor:
             return {"error": "Command execution is disabled (ALLOW_COMMAND_EXECUTION is not enabled)."}
 
         try:
-            argv = validate_command(command, role_name)
+            argv = validate_command(command, role_name, repo_root)
         except CommandNotAllowed as exc:
             return {"error": str(exc)}
 
@@ -1529,6 +1636,9 @@ __all__ = [
     "SandboxExecutor",
     "SandboxUnavailable",
     "allowed_executables",
+    "pin_project_stack",
+    "project_stack",
+    "TOOLCHAINS",
     "workspace_rooted_arguments",
     "execution_enabled",
     "execution_mode",

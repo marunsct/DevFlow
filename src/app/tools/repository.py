@@ -1175,8 +1175,6 @@ def _is_json_document(content: str) -> bool:
         return False
 
 
-from app.agents.model_output import find_leaked_marker
-
 _CONTROL_TOKEN_DOC = """A model's own special tokens, in the `<|name|>` spelling every family uses.
 
 `<|END_THINKING|>`, `<|START_ACTION|>`, `<|im_start|>`, `<|eot_id|>` and the
@@ -1206,6 +1204,12 @@ corrupted artifact nobody can see is corrupted.
 
 def _refuse_control_tokens(relative_path: str, content: str) -> None:
     """Refuse content carrying the model's own turn delimiters."""
+    # Imported here, not at module scope: `app.agents` imports the role agent,
+    # which imports the agent toolkit, which imports this module. At module
+    # scope that cycle leaves `repository` half-built for whichever entrypoint
+    # touches the sandbox first.
+    from app.agents.model_output import find_leaked_marker
+
     found = find_leaked_marker(content or "")
     if found is None:
         return

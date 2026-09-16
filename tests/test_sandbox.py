@@ -1133,3 +1133,77 @@ def test_an_entry_written_before_the_directory_was_recorded_still_matches(tmp_pa
     )
 
     assert failed_this_way_before(str(tmp_path), ["node", "--test"], "anywhere") == 1
+
+
+def test_the_stack_a_run_chose_opens_its_toolchain(tmp_path) -> None:
+    """The static table was right for the stacks it listed and silently wrong
+    for the rest.
+
+    `go` and `cargo` appeared under one role; `dotnet`, `mvn`, `ruby`, `php`,
+    `swift` and `dart` under none. A product in any of those could be written
+    and never run - and finding 82 was already the fourth time `node` had been
+    added to one role at a time.
+    """
+    from app.tools.sandbox import allowed_executables, pin_project_stack
+
+    assert "go" not in allowed_executables("database_specialist", str(tmp_path))
+
+    pin_project_stack(tmp_path, "Go")
+
+    for role in ("database_specialist", "ui_ux_specialist", "testing_specialist"):
+        assert "go" in allowed_executables(role, str(tmp_path)), role
+
+
+def test_the_language_is_read_as_a_model_writes_it(tmp_path) -> None:
+    from app.tools.sandbox import _toolchain_key
+
+    assert _toolchain_key("JavaScript (ES6+)") == "javascript"
+    assert _toolchain_key("Python 3.12") == "python"
+    assert _toolchain_key("golang") == "go"
+    assert _toolchain_key("C#") == "csharp"
+    assert _toolchain_key("Fortran") is None
+
+
+def test_a_role_that_writes_no_code_gains_nothing(tmp_path) -> None:
+    """Reviewers read; they do not need a compiler."""
+    from app.tools.sandbox import allowed_executables, pin_project_stack
+
+    pin_project_stack(tmp_path, "Rust")
+
+    assert "cargo" not in allowed_executables("security_reviewer", str(tmp_path))
+    assert "cargo" in allowed_executables("backend_specialist", str(tmp_path))
+
+
+def test_an_unknown_role_is_still_given_the_least(tmp_path) -> None:
+    """A typo in a role name must never widen the allowlist."""
+    from app.tools.sandbox import COMMON_EXECUTABLES, allowed_executables, pin_project_stack
+
+    pin_project_stack(tmp_path, "Go")
+
+    assert allowed_executables("not_a_role", str(tmp_path)) == COMMON_EXECUTABLES
+
+
+def test_every_language_in_the_table_can_run_something(tmp_path) -> None:
+    """A key with an empty toolchain would pin a stack and grant nothing."""
+    from app.tools.sandbox import TOOLCHAINS
+
+    for language, executables in TOOLCHAINS.items():
+        assert executables, language
+
+
+def test_the_workflow_pins_the_stack_it_chose() -> None:
+    """The allowlist is only stack-aware if something records the stack.
+
+    Reaching the table and never writing the marker is the shape of a check
+    that is present and never fires - which this session found three times.
+    """
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    # Bounded by the next node, not by a character count that drifts with the
+    # body it is measuring.
+    node = source[source.index("def tools_models_node") : source.index("def stack_selector_node")]
+
+    assert "pin_project_stack(" in node

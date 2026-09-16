@@ -1838,6 +1838,20 @@ def build_workflow_graph(
                 "docs/tools_and_models.md",
                 render_artifact(update["tools_models"], title="Tools and Models"),
             )
+            # Pin the language so the sandbox can open its toolchain to every
+            # role that writes code. The allowlist cannot ask this stage
+            # directly - it is handed a role name and a workspace - so the
+            # decision is recorded in the workspace the way the project
+            # directory already is.
+            try:
+                from app.tools.sandbox import pin_project_stack
+
+                stack = getattr(update["tools_models"], "technology_stack", None)
+                language = getattr(stack, "language", None) if stack else None
+                if language:
+                    pin_project_stack(state["repository"].root_path, language)
+            except Exception:  # noqa: BLE001 - a run must not fail over a pin
+                logger.warning("Could not pin the project stack", exc_info=True)
         return update
 
     def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:

@@ -52,6 +52,14 @@ class Defect(BaseModel):
         default=None, description="The regression test added for this defect, once fixed."
     )
     status: DefectStatus = Field(default="open")
+    verified_by: str = Field(
+        default="",
+        description=(
+            "The command the execution ledger confirms ran and exited 0 for this "
+            "fix, or '' when nothing was recorded. Set by the controller, never "
+            "by a specialist."
+        ),
+    )
     accepted_risk_reason: str | None = Field(
         default=None, description="Why this defect was accepted as a risk instead of fixed, if applicable."
     )
@@ -148,11 +156,17 @@ def recurring_defect_note(cycle: RemediationCycle) -> str:
         earlier = recurrence_of(defect, cycle.defects[:index])
         if earlier is None:
             continue
+        unproven = (
+            ""
+            if earlier.verified_by
+            else " Nothing was ever recorded as running and passing for that fix, so "
+            "the first thing to establish is whether it was run at all."
+        )
         lines.append(
             f"- '{defect.description}' is the same problem as '{earlier.description}', "
             "which was already marked fixed. That fix did not work. Do not repeat it - "
             "find out why the previous change did not take effect, and say so plainly "
-            "if the cause is outside what you can change."
+            f"if the cause is outside what you can change.{unproven}"
         )
     if not lines:
         return ""
@@ -206,8 +220,22 @@ def record_test_run(
     )
 
 
-def mark_defect_fixed(cycle: RemediationCycle, defect_index: int, *, regression_test: str) -> RemediationCycle:
+def mark_defect_fixed(
+    cycle: RemediationCycle,
+    defect_index: int,
+    *,
+    regression_test: str,
+    verified_by: str = "",
+) -> RemediationCycle:
     """Mark one defect fixed, requiring a regression test if the defect needs one.
+
+    `verified_by` is the command the execution ledger confirms ran and exited 0,
+    or "" when nothing was recorded. It does not gate the transition, and that
+    is deliberate: an unproven fix still has to be *recorded* as a fix, or
+    `recurrence_of` - which looks for an earlier defect marked fixed whose
+    wording matches - goes blind, and losing "that fix did not work" would cost
+    more than the false "fixed" it was meant to stop. What changes is that the
+    report says which fixes were proven.
 
     Raises:
         ValueError: if the defect requires a regression test but none is given.
@@ -222,7 +250,11 @@ def mark_defect_fixed(cycle: RemediationCycle, defect_index: int, *, regression_
         )
     updated_defects = list(cycle.defects)
     updated_defects[defect_index] = defect.model_copy(
-        update={"status": "fixed", "regression_test": regression_test}
+        update={
+            "status": "fixed",
+            "regression_test": regression_test,
+            "verified_by": verified_by,
+        }
     )
     return cycle.model_copy(update={"defects": updated_defects})
 
@@ -280,7 +312,19 @@ def build_defect_report(cycle: RemediationCycle) -> str:
         outcome = "PASSED" if run.passed else "FAILED"
         lines.append(f"- {' '.join(run.command)}: {outcome} {run.summary}".rstrip())
     for defect in cycle.defects:
-        lines.append(f"- Defect ({defect.status}): {defect.description} [owner: {defect.owner}]")
+        # "fixed" on its own was a claim, not a finding. run-d3965815's final
+        # message reported two of three defects fixed while the same suite
+        # failed from the first test round to the last, because "fixed" meant
+        # the specialist had named a test. Say which fixes anything actually
+        # confirmed.
+        state = defect.status
+        if defect.status == "fixed":
+            state = (
+                f"fixed, verified by `{defect.verified_by}`"
+                if defect.verified_by
+                else "fixed, but nothing was recorded as running and passing"
+            )
+        lines.append(f"- Defect ({state}): {defect.description} [owner: {defect.owner}]")
     # A defect that was fixed and came back says something the list above does
     # not: that an earlier attempt was spent and achieved nothing.
     return "\n".join(lines) + recurring_defect_note(cycle)

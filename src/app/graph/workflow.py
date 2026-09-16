@@ -789,6 +789,23 @@ def _answer_left_in_a_spinning_stage(
     return _answer_written_into_the_conversation(values, schema)
 
 
+def _what_the_ledger_confirms(repo_root: str, verification: Any) -> str:
+    """A claimed command the ledger records running and passing, or "".
+
+    See `app.analysis.verification_claims`. Never raises: a ledger that cannot
+    be read proves nothing, which is the same answer as a claim that was never
+    run, and neither may break a fix.
+    """
+    try:
+        from app.analysis.verification_claims import proven_commands
+
+        proven = proven_commands(repo_root, verification)
+        return " ".join(proven[0]) if proven else ""
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not check verification claims against the ledger")
+        return ""
+
+
 def _what_the_last_failure_printed(run_id: str | None) -> dict[str, str] | None:
     """The last failing command's own output, or None. Never raises.
 
@@ -2457,13 +2474,29 @@ def build_workflow_graph(
         outputs[stage_name] = fix_result
 
         regression_test = "; ".join(fix_result.tests)
+        # What the execution ledger confirms actually ran and passed for this
+        # fix, or "". `VerificationRun` has always said a claim there is checked
+        # against the ledger; until now it never was, and "fixed" meant the
+        # specialist had named a test. It does not gate the transition - see
+        # `mark_defect_fixed` for why that would cost more than it saves.
+        verified_by = _what_the_ledger_confirms(
+            state["repository"].root_path, fix_result.verification
+        )
         if defect.regression_test_required and not regression_test:
             # No named regression test: the defect stays open on purpose. The
             # next test round will count this as another failed attempt, so the
             # bounded loop still terminates.
             update["remediation"] = cycle
         else:
-            update["remediation"] = mark_defect_fixed(cycle, defect_index, regression_test=regression_test)
+            if not verified_by:
+                logger.info(
+                    "Stage %s reported a fix for '%s' with no command the ledger "
+                    "records as having run and passed",
+                    stage_name, defect.description[:80],
+                )
+            update["remediation"] = mark_defect_fixed(
+                cycle, defect_index, regression_test=regression_test, verified_by=verified_by
+            )
 
         update["specialist_outputs"] = outputs
         # Advance past this defect whether or not it closed. A defect left open

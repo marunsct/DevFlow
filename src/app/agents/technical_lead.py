@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agents.project_layout import PROJECT_LAYOUT, WORKSPACE_ROOT_NOTE
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
@@ -95,6 +95,35 @@ class MilestonePlanOutput(BaseModel):
     blockers: list[str] = Field(
         default_factory=list, description="Anything preventing this milestone from starting or completing."
     )
+
+    @model_validator(mode="after")
+    def _a_plan_assigns_something(self) -> "MilestonePlanOutput":
+        """A milestone with scope and no tasks is not a plan.
+
+        Measured on run-a7150a6c, whose fifth plan named a full scope - "Add
+        event handlers and UI rendering for add, edit, delete, toggle in
+        app.js; unit tests; documentation; encrypt data before saving" - and
+        delegated nothing, with no blockers. The workflow accepted it, found no
+        specialists to dispatch, and ran a test round, a security review and a
+        milestone review on a milestone where nothing had been built: thirteen
+        model calls before the lead was asked again and produced three tasks.
+
+        Rejecting it here costs one model call and returns the validation error,
+        which is the same conversation thirteen calls earlier.
+
+        A milestone that genuinely cannot start is still allowed - it just has
+        to say so in `blockers`, which is what that field is for.
+        """
+        if self.delegated_tasks or self.blockers:
+            return self
+        if not self.milestone_scope:
+            return self
+        raise ValueError(
+            "This plan has a milestone scope and no delegated_tasks, so nobody "
+            "will build any of it. Every item of scope needs a task with an "
+            "owning specialist, or - if the milestone genuinely cannot start - "
+            "a reason in `blockers`."
+        )
 
 
 def build_milestone_revision_request(

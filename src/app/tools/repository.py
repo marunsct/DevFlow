@@ -2164,13 +2164,33 @@ def run_approved_validation(
         category="test",
         working_directory=run_in,
     )
-    return {
+    from app.tools.sandbox import _as_exit_code
+
+    reply = {
         "command": list(command),
         "working_directory": run_in or ".",
-        "returncode": int(result["returncode"]) if "returncode" in result else -1,
+        # `_as_exit_code` rather than `int(...)`: a refused command carries an
+        # `error` and no exit code, and a non-numeric one would raise here
+        # instead of being reported as data the agent can act on.
+        "returncode": (
+            -1 if result.get("returncode") is None else (_as_exit_code(result["returncode"]) or 0)
+        ),
         "stdout": result.get("stdout", ""),
         "stderr": result.get("stderr", "") or result.get("error", ""),
     }
+    # `SandboxExecutor.execute` attaches the notices that stop a command being
+    # re-run for nothing - "this exact command has already failed 3 times",
+    # "already passed and nothing has been written since", the doubled working
+    # directory correction. This function built a fresh dict and dropped them,
+    # so every one of them reached `run_terminal_command` and none reached
+    # `run_validation` - the tool the testing specialists are told to use.
+    #
+    # Measured on run-84e05d4b's `specialist_testing_1`: 53 model calls, `node
+    # --test` run six times through this path and three through the other. Only
+    # the three could be told anything.
+    if result.get("note"):
+        reply["note"] = result["note"]
+    return reply
 
 
 def _git_value(root: Path, args: list[str]) -> str | None:

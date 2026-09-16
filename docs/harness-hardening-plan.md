@@ -80,7 +80,29 @@ Ordered by impact. Each names the file, the evidence, and the fix.
 `src/app/analysis/integration_checks.py`: `_dangling_class_selectors`, `_dangling_id_selectors`, `_orphaned_scripts`, `_module_system_mismatch`, `_application_embedded_in_html`, `_redefined_instead_of_imported` all parse HTML/CSS/ESM. `_COUNTED_SUFFIXES` (line 772) is `{html, htm, css, js, mjs, cjs, ts, tsx, jsx, py}`. A product in any other language is invisible to the reviewer's evidence and uncounted against its budget — so the milestone review, which has blocked correctly on every JS product, would accept anything.
 **Fix:** a `LanguageAnalyser` protocol (`counts`, `references`, `entry_points`, `test_files`) with per-language implementations registered by suffix; the existing JS/HTML code becomes the first implementation. A generic analyser (line count, comment stripping by a table, "file referenced by nothing" via grep) covers every language on day one.
 
-### B2 — Per-role executable allowlists are a fixed table  *(verified)*
+### B2 — Per-role executable allowlists are a fixed table  *(verified)* — **and 16 of 34 names are not in the image**
+
+Measured 2026-09-16 inside the deployed worker, through `shutil.which` in the venv the
+celery process actually runs from (`/opt/venv/bin/python3`):
+
+- **runnable now** — node, npm, npx, python, python3, pip, pip3, git, and the coreutils
+  (cat, echo, find, grep, head, ls, mkdir, pwd, tail, touch, wc, which)
+- **obtainable at runtime** — jest, mocha, vitest, tsc, prisma via `npx`; pytest and
+  alembic via `pip install` (verified: `pip install pytest` succeeds, installs have network)
+- **not obtainable without changing the base image** — `make`, `go`, `cargo`, `psql`,
+  `pnpm`, `yarn`, `uv`, `jasmine`, `karma`
+
+`make` mattered immediately: the refusal that explains there is no shell recommended "a
+Makefile target", so a specialist that followed the harness's own advice was sent to a
+program that is not there. Fixed in `d77f9b1`, which also makes the refusal name which
+allowed programs are installed and which are not, re-evaluated per refusal so a runtime
+`pip install` moves a name across.
+
+The consequences for the backlog: item 5 ("stack descriptor → allowlist") has to gate on
+what the image actually provides, not on a table; a Go or Rust brief cannot build at all
+today; and the medium brief's PostgreSQL has no client and no server reachable from a
+sandboxed command, so either the image gains one, the stack selector must prefer SQLite
+for this environment, or the tests must run against a double.
 `sandbox.py:53` `ROLE_EXECUTABLES`. `go` and `cargo` appear only under `backend`; `dotnet`, `java`, `mvn`, `gradle`, `ruby`, `bundle`, `php`, `composer`, `swift`, `dart`, `flutter` appear nowhere. Finding 82 was the fourth one-role fix; the table guarantees a fifth.
 **Fix:** derive the allowlist from the stack the stack selector chose (`technology_stack.language`, `framework`, `testing_framework`) — runtime, package manager and test runner for *every* code-writing role — plus a small per-role extra set. Keep `_FORBIDDEN_ARGS` as the generic interpreter-escape blocklist and extend it per interpreter (`ruby -e`, `php -r`, `dotnet script`).
 

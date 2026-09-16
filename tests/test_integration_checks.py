@@ -237,9 +237,31 @@ def test_the_wrong_database_driver_is_reported(tmp_path):
 
 
 def test_the_wrong_test_runner_is_reported(tmp_path):
+    """Reported by `_a_test_runner_the_stack_did_not_choose`, which names the file.
+
+    `_stack_conflicts` used to report this too, as untidy, so a reviewer got
+    one fact twice at two severities. The dedicated check supersedes it for
+    JavaScript manifests; Python manifests still go through the generic path.
+    """
     root = _workspace(tmp_path, {"package.json": '{"devDependencies":{"jest":"^29"}}'})
 
-    assert "chosen testing framework is pytest" in summarise_integration(root, PY_STACK)
+    summary = summarise_integration(root, PY_STACK)
+
+    assert "installs 'jest'" in summary
+    assert "chose 'pytest'" in summary
+    # One finding, not two.
+    assert "chosen testing framework is pytest" not in summary
+
+
+def test_a_runner_whose_name_is_inside_the_chosen_one_is_still_wrong(tmp_path):
+    """`"jest" in "pytest"` is true, so substring matching let jest through.
+
+    The stack here chose pytest; jest is not pytest, and a suite written for
+    it fails on its own setup rather than on the product.
+    """
+    root = _workspace(tmp_path, {"package.json": '{"devDependencies":{"jest":"^29"}}'})
+
+    assert "installs 'jest'" in summarise_integration(root, PY_STACK)
 
 
 def test_the_wrong_backend_framework_is_reported(tmp_path):

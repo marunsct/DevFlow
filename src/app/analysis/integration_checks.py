@@ -1106,6 +1106,14 @@ def _stack_conflicts(files: list[Path], root: Path, stack: Any) -> list[str]:
             if not chosen:
                 continue
             chosen_lower = chosen.lower()
+            # `_a_test_runner_the_stack_did_not_choose` reports this exact
+            # fact for JavaScript, naming the manifest and what goes wrong, and
+            # as BREAKS rather than untidy - a suite written for a runner the
+            # stack did not choose fails on that runner's setup. Reporting it
+            # here too gave a reviewer the same finding twice at two different
+            # severities. Python keeps this path; that check reads package.json.
+            if field == "testing_framework" and ecosystem == "javascript":
+                continue
             for name, markers in options.items():
                 if name in chosen_lower or chosen_lower in name:
                     continue
@@ -1677,7 +1685,11 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
             aliases = _TEST_RUNNERS.get(package.lower())
             if not aliases:
                 continue
-            if any(alias in declared for alias in aliases):
+            # On word boundaries, not as a substring. `"jest" in "pytest"` is
+            # true, so a stack that chose pytest silently accepted jest - which
+            # `test_the_wrong_test_runner_is_reported` caught.
+            if any(re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", declared)
+                   for alias in aliases):
                 continue
             chosen = getattr(stack, "testing_framework", "")
             problems.append(

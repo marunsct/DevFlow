@@ -656,8 +656,10 @@ def edit_approved_artifact(
         if occurrences > 1:
             raise RepositoryToolError(
                 f"That text appears {occurrences} times in '{relative_path}', so it is "
-                "ambiguous which one to change. Include more surrounding text to make "
-                "the passage unique."
+                "ambiguous which one to change. It starts at "
+                f"{_where_each_match_starts(original, find)}. Include a line from above "
+                "or below one of them to tell them apart - whichever line differs "
+                "between the copies is the one to add."
             )
 
         _write_unless_it_changes_nothing(
@@ -675,6 +677,34 @@ def edit_approved_artifact(
     ]
     joined = " ".join(n for n in notes if n)
     return {**result, "note": joined} if joined else result
+
+
+def _where_each_match_starts(text: str, find: str) -> str:
+    """"line 7 and line 10", or "lines 7, 10 and 14".
+
+    The old message said only "include more surrounding text to make the
+    passage unique", which is advice rather than information: the agent cannot
+    see where the copies are, so it guesses at more context and often collides
+    with the other copy again.
+
+    Measured on run-e37a2bd8: 7 of 24 `edit_artifact` failures were this, on a
+    test file whose blocks the model had duplicated - exactly the case where
+    knowing which lines differ is the whole problem.
+    """
+    lines: list[int] = []
+    start = 0
+    while True:
+        at = text.find(find, start)
+        if at < 0:
+            break
+        lines.append(text.count("\n", 0, at) + 1)
+        start = at + 1
+    if not lines:
+        return "several places"
+    if len(lines) == 1:
+        return f"line {lines[0]}"
+    listed = ", ".join(str(n) for n in lines[:-1])
+    return f"lines {listed} and {lines[-1]}"
 
 
 def _structural_note(relative_path: str, content: str) -> str:

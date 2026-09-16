@@ -1703,3 +1703,31 @@ def test_the_refusal_says_nothing_was_written(repo_root: Path) -> None:
     message = str(caught.value)
     assert "Nothing was written" in message
     assert "Send the file again, complete" in message
+
+
+def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path) -> None:
+    """"Include more surrounding text" is advice; line numbers are information.
+
+    Measured on run-e37a2bd8: 7 of 24 `edit_artifact` failures were ambiguity,
+    on a test file whose blocks the model had duplicated. It cannot see where
+    the copies are, so it guesses at more context and collides with the other
+    copy again.
+    """
+    write_approved_artifact(
+        repo_root, "p/a.mjs",
+        "const r = loadTasks();\nassert(ok);\n});\nconst r = loadTasks();\nassert(ok);\n});\n",
+    )
+
+    with pytest.raises(RepositoryToolError) as caught:
+        edit_approved_artifact(repo_root, "p/a.mjs", "assert(ok);\n", "assert(better);\n")
+
+    message = str(caught.value)
+    assert "lines 2 and 5" in message
+    assert "whichever line differs between the copies" in message
+
+
+def test_three_copies_are_all_listed(repo_root: Path) -> None:
+    write_approved_artifact(repo_root, "p/b.mjs", "x();\ny();\nx();\nz();\nx();\n")
+
+    with pytest.raises(RepositoryToolError, match=r"lines 1, 3 and 5"):
+        edit_approved_artifact(repo_root, "p/b.mjs", "x();\n", "w();\n")

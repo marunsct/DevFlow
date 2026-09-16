@@ -358,6 +358,21 @@ under `DATA_DIR/transcripts`, read with the audit script in the session scratchp
 | recovery after a failed edit, bare message vs. a line-by-line diff | 5/14 vs 4/15 | message quality is not the constraint; see class A |
 | executables allowed vs. installed | 34 allowed, 20 present | see B2 |
 
+Where the calls go, across runs 62-66 (1,147 model calls, 174 stages):
+
+| | share | stages | median | max |
+|---|---|---|---|---|
+| specialists (ui_ux, testing, backend, documentation, security, database) | 68.7% | 71 | 7-9 | 41 |
+| test rounds | 11.6% | 16 | 5 | 31 |
+| every planning and review stage combined | 19.7% | 87 | 2-4 | 10 |
+
+The cost is where the work is, which is the shape it should have: the whole planning and
+review apparatus - product manager, tools, stack, architect, architecture review, scrum
+master, technical lead, milestone review, security review - costs less than a fifth of a
+run. A specialist's median stage is 7 to 9 calls and its ceiling is the 40-call budget.
+Aim optimisation at the tail of the specialist distribution, not at the planning stages;
+there is almost nothing there to win.
+
 Two shapes account for nearly every remaining costly failure, and neither is a harness
 fault: an `edit_artifact` whose `find` the model misremembered (it sends a line with a
 `// ` it added, or `require` where the file has `import`), and a first read of a path that

@@ -889,3 +889,83 @@ def a_suite_calling_a_global_node_does_not_define(
         f"`ReferenceError: {name} is not defined` and the suite cannot run at "
         f"all. Add `import {{ {name} }} from 'node:test';` at the top."
     )
+
+
+#: What `node:assert` and `node:test` actually export by name, read from the
+#: worker image on Node 20.20.2 rather than from memory. `assert` itself is
+#: the default export and is NOT among them, which is the whole point: a file
+#: writing `import { assert } from 'node:assert'` does not load at all.
+_REAL_EXPORTS: dict[str, frozenset[str]] = {
+    "node:assert": frozenset(
+        """AssertionError CallTracker deepEqual deepStrictEqual doesNotMatch
+        doesNotReject doesNotThrow equal fail ifError match notDeepEqual
+        notDeepStrictEqual notEqual notStrictEqual ok rejects strict
+        strictEqual throws""".split()
+    ),
+    "node:assert/strict": frozenset(
+        """AssertionError CallTracker deepEqual deepStrictEqual doesNotMatch
+        doesNotReject doesNotThrow equal fail ifError match notDeepEqual
+        notDeepStrictEqual notEqual notStrictEqual ok rejects strict
+        strictEqual throws""".split()
+    ),
+    "node:test": frozenset(
+        """after afterEach before beforeEach describe it mock only run skip
+        suite test todo""".split()
+    ),
+}
+
+_NAMED_FROM_A_BUILTIN = re.compile(
+    r"""import\s*\{([^}]*)\}\s*from\s*['"](node:assert(?:/strict)?|node:test)['"]"""
+)
+
+
+def a_name_the_module_does_not_export(
+    relative_path: str, content: str
+) -> str | None:
+    """Why this import stops the file loading, or None.
+
+    `assert` is `node:assert`'s *default* export, not a named one, so
+
+        import { assert } from 'node:assert';
+
+    is not a slow failure - the module never links and the file does not run
+    at all:
+
+        SyntaxError: The requested module 'node:assert' does not provide an
+        export named 'assert'
+
+    Four runs wrote it - 82e1dbdb five times, plus 499c771a, 551640d3 and
+    a7150a6c - against 351 writes of the correct `import { strict as assert }`
+    in the same corpus, so it is a near-miss on a form that is otherwise
+    everywhere.
+
+    The export lists are read from the worker image, not remembered, and
+    `default` is excluded from them deliberately: `import { default as x }` is
+    legal but nothing writes it, and listing it would let the real mistake
+    through.
+    """
+    if not relative_path.lower().endswith((".js", ".mjs", ".cjs")):
+        return None
+    for names, module in _NAMED_FROM_A_BUILTIN.findall(content):
+        real = _REAL_EXPORTS.get(module)
+        if real is None:
+            continue
+        for entry in names.split(","):
+            name = entry.strip().split(" as ")[0].strip()
+            if not name or not name.isidentifier() or name in real:
+                continue
+            if name == "default":
+                continue
+            correction = (
+                f"`import {name} from '{module}';` - it is the default export"
+                if name == module.split(":")[1].split("/")[0]
+                else f"one of its real exports ({', '.join(sorted(real)[:6])}, ...)"
+            )
+            return (
+                f"`{module}` does not export a name called `{name}`. This is "
+                "not a failing assertion - the module never links and the "
+                f"whole file stops before any case runs: `SyntaxError: The "
+                f"requested module '{module}' does not provide an export "
+                f"named '{name}'`. Use {correction}."
+            )
+    return None

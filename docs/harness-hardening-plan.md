@@ -2097,3 +2097,45 @@ returns early on any command that names no file, which is right for
 `node --test` and would have been wrong for a runner whose discovery is
 genuinely broken. That exemption is load-bearing and is why the jest
 question had to be settled rather than assumed.
+
+### 4j. What the stored products' own test suites actually do
+
+Every check in this document reasons about test suites by reading them. This
+ran them instead - `npm test` in each stored workspace, with the project
+located by finding its `package.json` rather than by guessing at the directory
+layout, which is what made the first attempt at this measurement wrong.
+
+Of the 39 workspaces that define a `test` script:
+
+| outcome | count |
+|---|---|
+| passes | 10 |
+| fails | 18 |
+| produces no test output at all | 11 |
+
+**Ten of thirty-nine.** The number matters more than any individual check in
+this file, because every gate downstream of a suite - the defect loop, the
+milestone review, the sprint's remediation budget - treats "the tests ran" as
+settled and spends its attempts on what the suite reports.
+
+The eleven that produce nothing break down as: five manifests whose script
+paths repeat their own directory (now refused at the write), two whose
+`package.json` is not valid JSON (already refused since), one jest
+configuration that cannot load, one express server that never exits, run
+9bd3a091's `"type": "commonjs"` over ES modules, and one npm invocation error.
+Every one of them reports a failure that reads like a broken product, which is
+how two runs spent a remediation round chasing a defect that was not there.
+
+The eighteen that fail are the harder half and are not one thing. Run
+f2832674, watched live, is representative: its suite resets the localStorage
+stub before each case and still asserts `5 !== 2`, because the module it
+imports caches its own copy of the data that resetting the storage does not
+clear. Eleven workspaces hold a module with top-level mutable state that a
+sibling test imports, but that pattern is not itself the defect - most of
+those eleven are fine - so it is recorded here as an observation rather than
+built into a check. Establishing which of the eighteen share a cause needs the
+failures grouped by what they assert, not by what they look like.
+
+The right next measurement is not another reading of the sources. It is this
+one repeated after the current round of write-time refusals has been through a
+few runs, to see which of the three columns moves.

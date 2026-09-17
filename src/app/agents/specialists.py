@@ -607,6 +607,7 @@ Responsibilities:
   error is usually there.
 - If you cannot verify something (a test, a security property), say so as a
   risk or blocker instead of asserting it is fine.
+- **NEVER remove or disable application logic (e.g. DOM updates or UI interactions)** merely to make a test pass in a headless environment. If a test environment lacks browser features, fix the test environment (e.g., use JSDOM correctly) rather than breaking the application code.
 
 Beginner documentation requirement:
 - Any non-obvious code or configuration you describe must explain purpose,

@@ -72,12 +72,11 @@ and wiring is the part a test does not need to load.
 """
 
 TESTABILITY_RULE = """Testability - this decides whether the tests can run at all:
-- There is no browser here. A module that reads or writes the DOM while it is
-  being loaded cannot be imported by a headless test, so testing one pure
-  function inside it means faking a whole document first.
-- Keep the two apart. Put state and rules in functions that take their input as
+- For frontend UI code, YOU MUST USE Playwright (`@playwright/test`) to verify DOM interactions and application logic end-to-end. Do NOT use jsdom or Node-based DOM mocks, as they cause false positives and break the real UI. To test DOM logic, write Playwright tests that interact with the real browser. Install it using `npm i -D @playwright/test` and `npx playwright install chromium`.
+- Configure Playwright to use the TAP reporter (e.g. `npx playwright test --reporter=tap`) so that the test runner can parse the output.
+- Keep the pure logic apart from DOM wiring. Put state and rules in functions that take their input as
   arguments and return a value - no `document`, no `window`, no `localStorage`
-  reached for directly. Export them.
+  reached for directly. Export them for unit testing.
 - Do the DOM wiring in one `init()` (or `main()`) that the page calls. Guard
   the call so importing the file does not run it:
       if (typeof document !== 'undefined') init();

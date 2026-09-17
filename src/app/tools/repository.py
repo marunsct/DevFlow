@@ -1962,6 +1962,101 @@ def _the_module_type_this_declares_breaks_files_here(target: Path, content: str)
     )
 
 
+_A_SCRIPT_TAG = re.compile(r"""<script\b([^>]*)>""", re.I)
+_A_TAG_SRC = re.compile(r"""\bsrc\s*=\s*['"]([^'"]+)['"]""", re.I)
+_A_TAG_TYPE = re.compile(r"""\btype\s*=\s*['"]([^'"]+)['"]""", re.I)
+
+
+def _uses_module_syntax(source: str) -> bool:
+    """Whether `source` is an ES module, reading only its code."""
+    try:
+        from app.analysis.integration_checks import _only_the_code
+
+        code = _only_the_code(source)
+    except Exception:  # noqa: BLE001
+        code = source
+    return bool(re.search(r"""^\s*(?:export\b|import\s+[\w{*'"])""", code, re.M))
+
+
+def _the_page_and_this_module_disagree_on_how_it_loads(
+    root: Path, target: Path, content: str
+) -> str:
+    """Why the page cannot run this script, or "".
+
+    A `<script src="app.js">` with no `type="module"` makes the browser parse
+    the file as a classic script. It reaches `export` on the first line and
+    throws `Uncaught SyntaxError: Unexpected token 'export'`, and nothing on
+    the page works at all. Nothing in the suite notices, because `node --test`
+    imports the module directly and never opens the HTML.
+
+    Nine of the fifty-eight stored workspaces ship exactly this - a page that
+    is dead on arrival, in runs whose tests pass. It is the most
+    product-destroying thing in the corpus and the cheapest to fix: one
+    attribute.
+
+    `_modules_loaded_as_plain_scripts` already finds it, at a milestone review
+    several stages after both files were written. This says it at the write of
+    either side, whichever comes second.
+    """
+    try:
+        if target.suffix.lower() in {".html", ".htm"}:
+            pages = [(target, content)]
+            scripts_written_now = None
+        elif target.suffix.lower() in {".js", ".mjs"}:
+            pages = [
+                (page, page.read_text(encoding="utf-8", errors="replace"))
+                for page in sorted(target.parent.glob("*.htm*"))
+                if page.is_file()
+            ]
+            scripts_written_now = target
+        else:
+            return ""
+        for page, page_text in pages:
+            for attributes in _A_SCRIPT_TAG.findall(page_text):
+                src = _A_TAG_SRC.search(attributes)
+                if not src:
+                    continue
+                referenced = (page.parent / src.group(1).lstrip("/")).resolve()
+                if referenced.suffix.lower() not in {".js", ".mjs"}:
+                    continue
+                if scripts_written_now is not None:
+                    if referenced != scripts_written_now.resolve():
+                        continue
+                    source = content
+                elif referenced.is_file():
+                    source = referenced.read_text(encoding="utf-8", errors="replace")
+                else:
+                    continue
+                kind = _A_TAG_TYPE.search(attributes)
+                as_module = bool(kind and kind.group(1).strip().lower() == "module")
+                modular = _uses_module_syntax(source)
+                if modular and not as_module:
+                    return (
+                        f"`{page.name}` loads `{referenced.name}` with a plain "
+                        "`<script>` tag, and that file uses `import`/`export`. "
+                        "The browser parses it as a classic script, reaches the "
+                        "first `export` and throws `Uncaught SyntaxError: "
+                        "Unexpected token 'export'` - the page does nothing at "
+                        "all. The suite will not catch it: `node --test` "
+                        "imports the module directly and never opens the page. "
+                        f'Add `type="module"` to that tag in `{page.name}`.'
+                    )
+                if as_module and not modular and re.search(
+                    r"""\b(?:require\s*\(|module\.exports\b)""", source
+                ):
+                    return (
+                        f"`{page.name}` loads `{referenced.name}` with "
+                        '`<script type="module">`, and that file uses '
+                        "`require`/`module.exports`, which no browser "
+                        "implements. The page throws `require is not defined` "
+                        "and does nothing. Write it as an ES module, or drop "
+                        f'`type="module"` from the tag in `{page.name}`.'
+                    )
+    except Exception:  # noqa: BLE001 - a hint must never fail a write
+        return ""
+    return ""
+
+
 def _budget_note(root: Path, relative_path: str) -> str:
     """The line-budget note for a write, or "" - see `budget_note_for_a_write`."""
     try:
@@ -2920,6 +3015,7 @@ def write_approved_artifact(
         _nearly_a_workflow_document(relative_parts),
         _unrunnable_script_note(relative_path),
         _the_module_type_this_declares_breaks_files_here(target, content),
+        _the_page_and_this_module_disagree_on_how_it_loads(root, target, content),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)

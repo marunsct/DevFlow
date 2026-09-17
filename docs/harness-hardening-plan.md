@@ -564,12 +564,35 @@ What generalises:
   review returned `passed` with `findings: []` on all 33 occasions it has ever
   run. It was being handed a list of filenames and asked to review security,
   while every other reviewer here is handed its material.
-- **Check a new check against the corpus before trusting it.** Of the six
-  checks written across these runs, three had false positives on the 55 stored
+- **Check a new check against the corpus before trusting it.** Of the checks
+  written across these runs, three had false positives on the 55 stored
   workspaces the day they were written - a guarded `typeof module !==
   'undefined'`, a test file with its own `test()` harness, and a regex that
   matched `assert.deepStrictEqual`. All three were found by running them over
   every stored workspace and reading the hits, which costs a minute.
+- **And then try to break it, because the corpus only contains what happened.**
+  A sweep finds nothing about a pattern no run has produced yet. Deliberately
+  feeding each new check the legitimate shapes it might mistake found four more
+  false positives that all 55 workspaces had missed:
+
+  | reported as broken | actually |
+  |---|---|
+  | `<script type="module">import {init} from './app.js'</script>` | a normal entry point |
+  | `// const x = require('y');` | a converted file, comment left behind |
+  | `// el.innerHTML = task.text;` beside real `textContent` | safe code |
+  | `// import { a } from './app.js';` | an import nothing makes |
+
+  Every one is a comment or an inline form - the two things a regex over raw
+  source gets wrong - and the first was in a workspace whose finding I had
+  reported as hand-verified. It was not; I had checked four of eight and
+  extrapolated.
+- **Stripping comments is its own trap.** Two of the fixes above broke what
+  they were meant to protect, and both were caught only by re-sweeping after
+  each step. Blanking string literals removes the quote in `require('y')` that
+  the pattern matched on, and removes the `'undefined'` that
+  `typeof module !== 'undefined'` is recognised by. A check that reads literals
+  - `innerHTML = ""` is a clearing, ``innerHTML = `<li>${t}</li>`` `` is markup
+  - needs comments gone and strings intact, which is a different function.
 - **And grade it correctly.** All three checks written for run d6297b2f landed
   in the "untidy rather than broken" bucket, because `_severity_of` matches a
   phrase and none of theirs was in the list. A never-executed test suite was

@@ -1897,6 +1897,71 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
         return ""
 
 
+def _the_module_type_this_declares_breaks_files_here(target: Path, content: str) -> str:
+    """Why this manifest's `"type"` contradicts files beside it, or "".
+
+    One line of one file decides how Node parses every `.js` in the directory,
+    and the stage that writes it is rarely the stage that wrote them. Run
+    9bd3a091's `specialist_testing_3`, reaching for jest to get away from a
+    failing assertion, rewrote `"type": "module"` to `"type": "commonjs"`
+    while all seven exports in `app.js` were still ES syntax - and the write
+    went through in silence. `node --check app.js` then gave
+    `SyntaxError: Unexpected token 'export'`, and nothing in the product
+    loaded under Node again.
+
+    Seven of the fifty-one stored workspaces end with a manifest their own
+    files contradict, all in the other direction: `"type": "module"` over a
+    file still calling `require`.
+
+    A note and not a refusal. Flipping the type is the legitimate first step
+    of a conversion, and refusing it would leave no order in which the work
+    could be done - the point is that the stage doing it should know what it
+    has just taken on, in the same response, rather than at a milestone
+    review several stages later.
+    """
+    if target.name != "package.json":
+        return ""
+    try:
+        import json as _json
+
+        from app.analysis.integration_checks import (
+            _commonjs_loaded_as_a_module,
+            _only_the_code,
+        )
+
+        declared = (_json.loads(content) or {}).get("type")
+        if declared not in ("module", "commonjs"):
+            return ""
+        contradicting: list[str] = []
+        for script in sorted(target.parent.iterdir()):
+            if script.suffix != ".js" or not script.is_file():
+                continue
+            code = _only_the_code(script.read_text(encoding="utf-8", errors="replace"))
+            commonjs = bool(re.search(r"""\b(?:require\s*\(|module\.exports\b)""", code))
+            modular = bool(
+                re.search(r"""^\s*(?:export\b|import\s+[\w{*])""", code, re.M)
+            )
+            if declared == "commonjs" and modular and not commonjs:
+                contradicting.append(script.name)
+            elif declared == "module" and commonjs and not modular:
+                contradicting.append(script.name)
+    except Exception:  # noqa: BLE001 - a hint must never fail a write
+        return ""
+    if not contradicting:
+        return ""
+    theirs = "CommonJS" if declared == "module" else "ES module"
+    return (
+        f'This declares `"type": "{declared}"`, which is how Node decides to '
+        f"parse every `.js` file in this directory, and "
+        f"{', '.join(contradicting[:4])} still "
+        f"{'uses' if len(contradicting) == 1 else 'use'} {theirs} syntax. "
+        f"Under this manifest {'that file' if len(contradicting) == 1 else 'those files'} "
+        "no longer load. Convert them in this sprint or leave the `type` as it "
+        "was - the module system is one choice for the whole directory, not a "
+        "per-file one."
+    )
+
+
 def _budget_note(root: Path, relative_path: str) -> str:
     """The line-budget note for a write, or "" - see `budget_note_for_a_write`."""
     try:
@@ -2854,6 +2919,7 @@ def write_approved_artifact(
         _import_note(root, target, content),
         _nearly_a_workflow_document(relative_parts),
         _unrunnable_script_note(relative_path),
+        _the_module_type_this_declares_breaks_files_here(target, content),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)

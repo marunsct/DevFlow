@@ -664,6 +664,41 @@ some runs is the state after later stages had already repaired things; a check
 showing clean here is not proof the run never had the fault. The four above
 were chosen because their archived state is the state they failed in.
 
+## 4h. Output that reached nobody, and the check that it was the only such output
+
+Every stage returns a structured response. Nine of the ten output models are
+rendered by `_record_document` into `docs/*.md` - product intake, technical
+specification, technology stack, tools and models, sprint plan, milestone plan,
+and the three reviews - and later stages read those files.
+
+`SpecialistOutput` is the tenth, and it is rendered nowhere.
+`specialist_outputs` was consumed for `changed_files` and nothing else, so
+`blockers`, `risks`, `decisions` and `documentation` were written into state by
+every specialist and discarded - while the workflow-document refusal told
+agents, each of the dozens of times it fired, that "those reach the workflow and
+the next stage".
+
+What was being thrown away:
+
+    blockers:  "Test suite app.test.mjs fails because it imports named exports
+                from app.js but the file no longer provides them"
+    risks:     "Potential need for jsdom to mock DOM in tests, which would
+                introduce an external dependency"
+    decisions: "Removed ES module exports and added window.todoApp global object"
+
+That is the module conflict of §4d, the forbidden dependency of §4e, and the
+change that broke run 0afef410's suite - each named by the specialist that did
+it, at the moment it happened. Deterministic checks were then written to
+rediscover from the filesystem what the builders had already said plainly.
+
+**It is the only one.** Checking every field of every output model for a
+consumer suggests forty-seven orphans, which is wrong: `render_artifact`
+reflects over a model rather than naming its fields, so a rendered model's
+fields look unused and are not. Filtering to models that are never rendered
+leaves exactly one. Worth stating so nobody re-derives it - the orphan-field
+search looks alarming and is answered entirely by which models reach
+`_record_document`.
+
 ## 5. Method to keep
 
 The procedure that produced these findings is itself the most valuable artefact of the

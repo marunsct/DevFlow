@@ -609,6 +609,31 @@ What generalises:
   phrase and none of theirs was in the list. A never-executed test suite was
   being offered to the reviewer as a minor finding.
 
+## 4f. The call ceiling is exceeded more often than not, and it does not matter much
+
+Worth measuring before anyone builds a mechanism to enforce it. Across every
+stored transcript, 35 stages received the budget warning and **19 of them ran
+past their limit anyway** - 54%, the worst at 82 model calls against a limit of
+40. Run 1ae7671d's `test_round_1` reached 66 of 40, warned throughout.
+
+The warning's own text says what is supposed to happen next: the stage runs to
+the graph's step ceiling, is stopped, and is restarted from an empty
+conversation, "every file you have read" lost. That is the threat that makes
+the warning worth heeding.
+
+It has never happened. No transcript contains a restart. Every overrunning
+stage eventually wrote its answer, and the real cost is the extra calls, not a
+reset.
+
+So the obvious enforcement - at the limit, withhold the tools so the only
+possible next move is the structured response - is not supported by this
+evidence. It would trade extra calls for a worse answer in a situation that
+resolves itself today. The lever that does work is the one the rest of this
+document is about: make the stage converge, so it answers inside its budget.
+Run 1ae7671d is a clean example, spending 22 edits on one file with 8 of them
+undoing an earlier edit, which `_refuse_an_edit_that_goes_backwards_again` now
+stops at the third.
+
 ## 5. Method to keep
 
 The procedure that produced these findings is itself the most valuable artefact of the

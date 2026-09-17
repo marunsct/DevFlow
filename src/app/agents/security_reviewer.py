@@ -130,6 +130,28 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
     )
 
 
+def _how_text_reaches_the_page(repository_root: str) -> str:
+    """What the product uses to write to the DOM, stated rather than inferred.
+
+    `how_the_page_receives_text` was built for the milestone reviewer, which
+    recorded a major XSS finding in run 1c9854c7 against a product whose only
+    text write was `textContent`. The security reviewer is the stage whose job
+    this is, and it was never given the fact: run 08acb1ee's security review
+    reported "renders task names using innerHTML without sanitization" against
+    a product with no `innerHTML` assignment of any content at all - only
+    `textContent`, three times over.
+
+    The same wrong finding, from the second of the two stages that can make
+    it, with the answer already computed and routed to the other one.
+    """
+    try:
+        from app.analysis.integration_checks import how_the_page_receives_text
+
+        return how_the_page_receives_text(repository_root)
+    except Exception:  # noqa: BLE001 - evidence that cannot be gathered says nothing
+        return ""
+
+
 def build_security_review_request(
     changed_files: list[str],
     tool_permissions: str,
@@ -141,6 +163,7 @@ def build_security_review_request(
         WORKSPACE_ROOT_NOTE
         + f"--- Changed files under review ---\n{files_text}\n\n"
         + _the_source_under_review(changed_files, repository_root)
+        + _how_text_reaches_the_page(repository_root)
         + f"\n--- Tool permissions context ---\n{tool_permissions}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

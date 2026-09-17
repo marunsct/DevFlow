@@ -120,6 +120,36 @@ def _nothing_here_is_evidence(names: list[str]) -> bool:
     )
 
 
+def _nothing_has_been_built(names: list[str]) -> bool:
+    """Whether the listing holds documents and no application code.
+
+    The state every stage before the first specialist is in, and the one that
+    reads as "the product is missing" when it is only unwritten. Measured on
+    run 1c9854c7's `architecture_review`, whose digest was
+
+        docs/product_intake.md, docs/technical_specification.md,
+        docs/technology_stack.md, docs/tools_and_models.md, .gitignore
+
+    It spent a `read_file` on `/app.test.mjs` - a file its own specification
+    plans - and then recorded a finding: "Specification references a test file
+    'app.test.mjs' but the repository does not contain it ... it is missing
+    from the current repo." At that stage nothing has been built by design, so
+    that is a design document being marked down for not being an
+    implementation.
+    """
+    from app.analysis.file_kinds import is_application
+
+    # `is_application` answers True for `.gitignore`, which is reasonable for
+    # the question it usually answers and wrong for this one: the seed files a
+    # workspace is created with are not the product.
+    return bool(names) and not any(
+        is_application(name)
+        and Path(name).name not in _NOT_EVIDENCE
+        and not Path(name).name.startswith(".")
+        for name in names
+    )
+
+
 def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -> str:
     """One compact listing of what is in the workspace, or "" if nothing is.
 
@@ -177,6 +207,15 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
         return ""
 
     more = f"\n  ... and {len(names) - max_files} more" if len(names) > max_files else ""
+    if _nothing_has_been_built(names) and not _nothing_here_is_evidence(names):
+        return (
+            "The workspace as it stands:\n"
+            + "\n".join(lines)
+            + "\nNo application code has been written yet - these are the "
+            "workflow's own documents. Anything a specification names is "
+            "planned, not present, so do not read for it or record its absence "
+            "as a defect; the stages after this one write it."
+        )
     if _nothing_here_is_evidence(names):
         return (
             "The workspace holds nothing but the files it was created with:\n"

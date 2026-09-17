@@ -225,3 +225,49 @@ def test_the_sentence_goes_away_once_something_is_built(tmp_path: Path) -> None:
 def test_an_unreadable_workspace_still_says_nothing_at_all() -> None:
     """Not there and empty are different facts; only one of them is known."""
     assert render_workspace_digest("/definitely/not/here") == ""
+
+
+def test_documents_without_code_say_nothing_is_built_yet(tmp_path: Path) -> None:
+    """The state every stage before the first specialist is in.
+
+    Run 1c9854c7's `architecture_review` was handed a digest of four `docs/`
+    files and `.gitignore`. It spent a `read_file` on `/app.test.mjs` - a file
+    its own specification plans - and then recorded a finding: "Specification
+    references a test file 'app.test.mjs' but the repository does not contain
+    it ... it is missing from the current repo." At that stage nothing has been
+    built by design, so that is a design document marked down for not being an
+    implementation.
+    """
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technical_specification.md").write_text(
+        "# Spec\n" * 10, encoding="utf-8"
+    )
+
+    digest = render_workspace_digest(tmp_path)
+
+    assert "No application code has been written yet" in digest
+    assert "planned, not present" in digest
+    assert "docs/technical_specification.md" in digest
+
+
+def test_the_sentence_goes_once_any_code_exists(tmp_path: Path) -> None:
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "spec.md").write_text("# Spec\n", encoding="utf-8")
+    (tmp_path / "todo").mkdir()
+    (tmp_path / "todo" / "app.js").write_text("export function a() {}\n", encoding="utf-8")
+
+    digest = render_workspace_digest(tmp_path)
+
+    assert "No application code has been written yet" not in digest
+
+
+def test_a_seeded_only_workspace_keeps_its_own_wording(tmp_path: Path) -> None:
+    """The two states are different and must not collapse into one message."""
+    (tmp_path / ".gitignore").write_text("node_modules\n", encoding="utf-8")
+
+    digest = render_workspace_digest(tmp_path)
+
+    assert "nothing but the files it was created with" in digest
+    assert "No application code has been written yet" not in digest

@@ -2269,3 +2269,26 @@ list the public helpers, grep the agents for each name, and look at anything
 reaching fewer than it should. The cost of the failure it finds is high and
 silent - a fact that is correct, tested, and read by no one is
 indistinguishable from a fact that was never computed.
+
+### 4o. Numbered siblings of an existing test file (declined, n=2)
+
+Run f2832674 wrote `task_regression.test.mjs`, then `task_regression2.test.mjs`,
+then `task_regression3.test.mjs`, one per remediation attempt on the same two
+defects, rather than changing the first. Nothing refuses or notices it -
+`_supersedes_existing` catches an explicit `_v2` and `_A_SCRATCH_SCRIPT`
+catches a bare `test2.mjs`, and a numbered sibling of a named file falls
+between them.
+
+Across the stored corpus exactly one workspace has one (run 454adf22's
+`app_regression_test2.mjs`). With the live run that is two. **Declined**, on
+the bar this document has applied consistently: built at four instances and
+above, declined at two and below.
+
+It is also not the same evasion as the structured response written under
+another name, which was built at five. There the content was identical and
+only the filename varied, so keying on content closed it exactly. Here each
+file holds a genuinely different test case, and a refusal would have to judge
+intent rather than read a fact.
+
+Worth re-measuring rather than forgetting: if the next runs keep producing
+these, the number moves and the case changes.

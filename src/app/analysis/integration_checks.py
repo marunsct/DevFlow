@@ -2597,6 +2597,12 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
     problems: list[str] = []
     for path in files:
         relative = str(path.relative_to(root))
+        # Only test files. These four ask whether a suite can fail, which is
+        # not a question about application code - and run 551640d3's `app.js`
+        # was reported as a suite of existence checks because its ordinary
+        # `typeof window !== 'undefined'` guards were read as assertions.
+        if not is_test(relative):
+            continue
         content = _read(path)
         for problem in (
             assertions_called_on_the_test_module(relative, content),

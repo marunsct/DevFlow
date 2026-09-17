@@ -487,7 +487,11 @@ def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | 
 #: `assert.strictEqual(typeof addTask, 'function')` and its spellings. An
 #: existence check: true the moment the export exists, whatever it does.
 _ONLY_CHECKS_IT_EXISTS = re.compile(
-    r"""typeof\s+\w+\s*(?:,\s*|===?\s*|!==?\s*)['"](?:function|object|undefined)['"]"""
+    # `'undefined'` is deliberately absent. `typeof window !== 'undefined'` is
+    # feature detection, which application code does constantly and which is
+    # not an assertion about anything; including it reported run 551640d3's
+    # `app.js` as a suite that only checks things exist.
+    r"""typeof\s+\w+\s*(?:,\s*|===?\s*)['"](?:function|object)['"]"""
     r"""|['"](?:function|object)['"]\s*===?\s*typeof\s+\w+"""
     # Bare truthiness only: `assert(value)` or `assert(value, "message")`.
     # NOT `assert.deepStrictEqual(tasks, [])` - an earlier version allowed an

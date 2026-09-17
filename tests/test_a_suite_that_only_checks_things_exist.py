@@ -115,3 +115,45 @@ def test_the_reviewer_reports_it_too(tmp_path):
 
     assert any("only checks that something exists" in p for p in problems)
     assert all(_severity_of(p) == "BREAKS" for p in problems)
+
+
+def test_feature_detection_is_not_an_existence_assertion():
+    """`typeof window !== 'undefined'` is what application code does constantly.
+
+    Run 551640d3's `app.js` guards every storage access that way, and with
+    `'undefined'` in the pattern it was reported as a suite of existence checks
+    - a blocking finding against the application itself.
+    """
+    defensive = (
+        "const s = typeof window !== 'undefined' ? window.localStorage : null;\n"
+        "const g = typeof global !== 'undefined' ? global.localStorage : null;\n"
+        "export function loadTasks() { return []; }\n"
+    )
+
+    assert only_existence("app.test.js", defensive) is None
+
+
+def test_the_tautological_suite_is_still_caught():
+    """The narrowing must not cost the case the check exists for."""
+    assert only_existence("app.test.js", TAUTOLOGICAL) is not None
+
+
+def test_application_files_are_not_asked_whether_they_can_fail(tmp_path):
+    """`_tests_that_cannot_fail` ran all four checks over every file.
+
+    "Can this suite fail" is not a question about application code, and asking
+    it of `app.js` is how run 551640d3's application became a blocking finding.
+    """
+    from app.analysis.integration_checks import _tests_that_cannot_fail
+
+    project = tmp_path / "app"
+    project.mkdir()
+    application = project / "app.js"
+    application.write_text(
+        "const s = typeof window !== 'undefined' ? window.localStorage : null;\n"
+        "const d = typeof document !== 'undefined' ? document.body : null;\n"
+        "export function loadTasks() { return []; }\n",
+        encoding="utf-8",
+    )
+
+    assert _tests_that_cannot_fail([application], tmp_path) == []

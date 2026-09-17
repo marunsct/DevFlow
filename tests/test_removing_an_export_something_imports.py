@@ -128,3 +128,39 @@ def test_installed_packages_are_not_walked(tmp_path: Path):
 
     assert all("node_modules" not in problem for problem in problems)
     assert any("app.test.mjs" in problem for problem in problems)
+
+
+def test_an_import_inside_a_comment_does_not_count(project: Path):
+    """`_RELATIVE` is anchored to a line start and ignores these already.
+
+    `_NAMED_FROM`, which this check uses, is not - it matches an import
+    wherever it appears, including inside a comment. The note would then tell
+    an agent it was breaking an import that nothing makes.
+    """
+    (project / "app.test.mjs").write_text(
+        "// import { addTask, getTasks } from './app.js';\n", encoding="utf-8"
+    )
+
+    assert who_would_break(project / "app.js", EXPORTS_NEITHER, project) == []
+
+
+def test_an_import_inside_a_block_comment_does_not_count(project: Path):
+    (project / "app.test.mjs").write_text(
+        "/* import { addTask } from './app.js'; */\n", encoding="utf-8"
+    )
+
+    assert who_would_break(project / "app.js", EXPORTS_NEITHER, project) == []
+
+
+def test_a_real_import_beside_a_commented_one_still_counts(project: Path):
+    (project / "app.test.mjs").write_text(
+        "// import { gone } from './app.js';\n"
+        "import { addTask } from './app.js';\n",
+        encoding="utf-8",
+    )
+
+    problems = who_would_break(project / "app.js", EXPORTS_NEITHER, project)
+
+    assert len(problems) == 1
+    assert "`addTask`" in problems[0]
+    assert "`gone`" not in problems[0]

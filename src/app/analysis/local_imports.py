@@ -150,6 +150,17 @@ def _wanted(clause: str) -> tuple[bool, set[str]]:
 MAX_IMPORTERS_NAMED = 4
 
 
+#: A comment. `_RELATIVE` is anchored to the start of a line and so ignores
+#: these already; `_NAMED_FROM` is not, and matches an import anywhere it
+#: appears - including inside one.
+_A_COMMENT = re.compile(r"""//[^\n]*|/\*.*?\*/""", re.S)
+
+
+def _without_comments(text: str) -> str:
+    """`text` with comments blanked, newlines kept."""
+    return _A_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
 def who_would_break(target: Path, content: str, project: Path | None = None) -> list[str]:
     """Files importing names this module is about to stop exporting.
 
@@ -192,7 +203,9 @@ def who_would_break(target: Path, content: str, project: Path | None = None) -> 
                     continue
                 if importer.suffix.lower() not in {".js", ".mjs", ".cjs"}:
                     continue
-                text = importer.read_text(encoding="utf-8", errors="replace")
+                text = _without_comments(
+                    importer.read_text(encoding="utf-8", errors="replace")
+                )
                 for match in _NAMED_FROM.finditer(text):
                     if _resolve(importer, match.group("module")) != target:
                         continue

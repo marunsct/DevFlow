@@ -603,11 +603,37 @@ def _modules_loaded_as_plain_scripts(files: list[Path], root: Path) -> list[str]
     return problems
 
 
+#: A line comment, a block comment, or a string literal - the three places a
+#: token can appear without meaning anything.
+_NOT_CODE = re.compile(
+    r"""//[^\n]*|/\*.*?\*/|'(?:\\.|[^'\\\n])*'|"(?:\\.|[^"\\\n])*"|`(?:\\.|[^`\\])*`""",
+    re.S,
+)
+
+
+def _only_the_code(text: str) -> str:
+    """`text` with comments and string literals blanked, newlines preserved.
+
+    A `require` inside a comment is not a `require`. That matters most in
+    exactly the situation these checks exist for: an agent converting a file
+    from CommonJS to ES modules comments the old call out, and a check reading
+    the raw text goes on reporting the file as broken after it has been fixed.
+
+    Blanked rather than removed, so line numbers and structure survive for
+    anything that reads them afterwards.
+    """
+    return _NOT_CODE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
 #: CommonJS, which the browser has never had. `module`, `exports` and
 #: `require` are Node's; a browser reaching any of them throws a ReferenceError.
 _COMMONJS = re.compile(
+    # No quote required after `require(`. This is matched against code whose
+    # string literals have been blanked by `_only_the_code`, so a genuine
+    # `require('y')` arrives as `require(   )` - insisting on the quote made
+    # the stripper hide every real require it was meant to preserve.
     r"""^\s*module\.exports\s*=|^\s*exports\.\w+\s*=|"""
-    r"""(?<![\w.$])require\s*\(\s*['"]""",
+    r"""(?<![\w.$])require\s*\(""",
     re.M,
 )
 
@@ -673,8 +699,12 @@ def _commonjs_loaded_as_a_module(files: list[Path], root: Path) -> list[str]:
                 body = _read(target)
             except Exception:  # noqa: BLE001
                 continue
-            if not _COMMONJS.search(body) or _ESM.search(body):
+            code = _only_the_code(body)
+            if not _COMMONJS.search(code) or _ESM.search(code):
                 continue
+            # Against the raw text, not the stripped code: the guard is
+            # `typeof module !== 'undefined'`, and blanking string literals
+            # removes the very quotes it is recognised by.
             if _FEATURE_DETECTS_COMMONJS.search(body):
                 continue
             problems.append(
@@ -1352,7 +1382,10 @@ def _files_that_contradict_the_declared_module_type(
             if any(_is_within(m.parent, package) and m.parent != package for m in nearer):
                 continue
             body = _read(path)
-            if _COMMONJS.search(body) and not _FEATURE_DETECTS_COMMONJS.search(body):
+            if _COMMONJS.search(_only_the_code(body)) and not (
+                # Raw text for the guard: see `_commonjs_loaded_as_a_module`.
+                _FEATURE_DETECTS_COMMONJS.search(body)
+            ):
                 offenders.append(str(path.relative_to(root)))
         if not offenders:
             continue

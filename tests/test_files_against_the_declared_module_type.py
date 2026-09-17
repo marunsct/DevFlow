@@ -162,3 +162,67 @@ def test_an_unguarded_require_beside_a_guarded_one_is_still_reported(workspace):
     })
 
     assert len(contradictions(files, root)) == 1
+
+
+def test_a_require_inside_a_comment_is_not_a_require(workspace):
+    """It matters most in exactly the situation this check exists for.
+
+    An agent converting a file from CommonJS to ES modules comments the old
+    call out, and a check reading the raw text goes on reporting the file as
+    broken after it has been fixed.
+    """
+    files, root = workspace({
+        "package.json": ESM_MANIFEST,
+        "app.js": "// const x = require('y');\nexport const z = 1;\n",
+    })
+
+    assert contradictions(files, root) == []
+
+
+def test_a_require_inside_a_block_comment_is_not_a_require(workspace):
+    files, root = workspace({
+        "package.json": ESM_MANIFEST,
+        "app.js": "/* module.exports = {}; */\nexport const z = 1;\n",
+    })
+
+    assert contradictions(files, root) == []
+
+
+def test_a_require_inside_a_string_is_not_a_require(workspace):
+    files, root = workspace({
+        "package.json": ESM_MANIFEST,
+        "app.js": "export const s = \"require('x')\";\n",
+    })
+
+    assert contradictions(files, root) == []
+
+
+def test_a_real_require_survives_the_stripping(workspace):
+    """Blanking string literals removes the quote `require('y')` was matched by.
+
+    The first version of the stripper insisted on that quote and so hid every
+    real require it was meant to preserve.
+    """
+    files, root = workspace({
+        "package.json": ESM_MANIFEST,
+        "app.js": "const x = require('y');\n",
+    })
+
+    assert len(contradictions(files, root)) == 1
+
+
+def test_the_feature_detect_guard_survives_the_stripping(workspace):
+    """The guard is recognised by `'undefined'`, which stripping removes.
+
+    Matching it against stripped code made every guarded file - runs 9ff00d,
+    ae4b7 and 414a6 among the stored workspaces - report as broken again.
+    """
+    guarded = (
+        "export const Task = 1;\n"
+        "if (typeof module !== 'undefined' && module.exports) {\n"
+        "  module.exports = { Task };\n"
+        "}\n"
+    )
+    files, root = workspace({"package.json": ESM_MANIFEST, "app.js": guarded})
+
+    assert contradictions(files, root) == []

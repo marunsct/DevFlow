@@ -846,6 +846,102 @@ def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     return orphans
 
 
+#: Importing Node's own builtins. A file that does this is not page code,
+#: whatever else is true of it, so "the page never loads it" is not a fault.
+_RUNS_ON_NODE = re.compile(
+    r"""from\s+['"]node:|require\(\s*['"]node:"""
+    r"""|from\s+['"](?:http|https|fs|path|os|net|child_process|crypto|url|zlib)['"]"""
+    r"""|require\(\s*['"](?:http|https|fs|path|os|net|child_process|crypto|url|zlib)['"]""",
+)
+
+
+def _reached_only_by_its_tests(files: list[Path], root: Path) -> list[str]:
+    """Application modules that nothing but a test ever loads.
+
+    `_orphaned_scripts` asks whether anything references a module at all, and a
+    test importing it counts - which is right for "is this file dead code" and
+    wrong for "does the product run". A suite can exercise every function in a
+    module the page never loads, and does: that is the shape of the failure.
+
+    Run 7e960f06's milestone review found it by reading, which is luck rather
+    than design: `index.html` carried no `<script>` tag of any kind, `app.js`
+    was imported only by `app.test.mjs`, and the deterministic checks reported
+    one untidy problem and nothing else. The suite was 5 of 5 green over a
+    product that never loaded.
+
+    Run 0afef410 is the same failure surviving to the end of a run, and this is
+    the half of it `_a_page_no_script_ever_touches` does not cover: there the
+    page loaded a script that ignored it, here the page loads nothing at all.
+
+    Silent when there is no page, since a library or a CLI is not expected to
+    be loaded by one, and silent for a module that imports Node's own builtins.
+    Run bb1ee9b's `server.js` opens `import { createServer } from "http"` and is
+    imported only by `server.test.mjs`; it is reached only by its tests, but
+    "load it from the page" is the wrong thing to tell a server. Whether a
+    browser-only product should have one at all is
+    `_a_server_in_a_browser_only_product`, and whether anything starts it is
+    `_manifest_scripts_that_cannot_resolve`.
+    """
+    pages = [p for p in files if p.suffix.lower() in {".html", ".htm"}]
+    if not pages:
+        return []
+
+    loaded: set[str] = set()
+    for page in pages:
+        text = _read(page)
+        loaded.update(Path(src).name for src in _SCRIPT_SRC.findall(text))
+
+    imported_by_product: set[str] = set()
+    for path in files:
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+            continue
+        relative = str(path.relative_to(root))
+        if is_test(relative) or any(part in _SKIP for part in path.parts):
+            continue
+        for target in _IMPORT_TARGET.findall(_read(path)):
+            if target.startswith("."):
+                imported_by_product.add(Path(target).name)
+                imported_by_product.add(Path(target).name + ".js")
+
+    stranded: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in {".js", ".mjs", ".cjs"}:
+            continue
+        relative = str(path.relative_to(root))
+        if is_test(relative) or any(part in _SKIP for part in path.parts):
+            continue
+        if not is_application(relative):
+            continue
+        if path.name in loaded or path.name in imported_by_product:
+            continue
+        if _RUNS_ON_NODE.search(_read(path)):
+            continue
+        # It is only a finding if a test does reach it - otherwise it is plain
+        # dead code, which `_unreferenced_scripts` already reports as such.
+        reached_by_a_test = any(
+            path.name in {Path(t).name, Path(t).name + ".js"}
+            for other in files
+            if other.suffix.lower() in {".js", ".mjs", ".cjs"}
+            and is_test(str(other.relative_to(root)))
+            for t in _IMPORT_TARGET.findall(_read(other))
+            if t.startswith(".")
+        )
+        if reached_by_a_test:
+            stranded.append(relative)
+
+    if not stranded:
+        return []
+    listed = ", ".join(sorted(stranded)[:4])
+    pages_named = ", ".join(sorted(str(p.relative_to(root)) for p in pages)[:2])
+    return [
+        f"{listed} is imported by the test suite and by nothing else - no "
+        f"`<script>` tag in {pages_named} loads it, and no other application "
+        "file imports it. The tests exercise it and the page never runs it, so "
+        "a green suite says nothing about whether the product works. Load it "
+        "from the page, or the functions it exports reach no user."
+    ]
+
+
 def _unreferenced_scripts(files: list[Path], root: Path) -> list[str]:
     """The orphan finding, phrased for a reviewer."""
     return [
@@ -2180,6 +2276,7 @@ _BREAKS_BEHAVIOUR = (
     "does not export it",                # the named form of the same import
     "is not defined` and the suite",     # a suite global nothing imported
     "does nothing when a user",          # a page no script ever wires
+    "the page never runs it",            # a module only its tests load
     "only checks that something exists",  # a suite of existence checks
     "none of the cases execute",         # a suite the runner never calls
     "and nothing on it works",           # CommonJS behind a module script tag
@@ -2401,6 +2498,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _application_embedded_in_html(files, root)),
     ("languages against the directory they share",
      lambda files, root, stack: _languages_sharing_a_directory(files, root)),
+    ("application modules the page never loads, only the tests",
+     lambda files, root, stack: _reached_only_by_its_tests(files, root)),
     ("a page whose controls no script anywhere operates",
      lambda files, root, stack: _a_page_no_script_ever_touches(files, root)),
     ("suite functions called without the import that defines them",

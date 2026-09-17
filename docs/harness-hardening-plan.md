@@ -109,9 +109,25 @@ the stack selector chose JavaScript every single time - 40 plainly
 "JavaScript (ES6+)"). Not one run picked Python or anything else, which is what
 `tests/brief_low.md` asks for: a browser to-do app with no dependencies. So B1
 costs nothing today, and every check added since is JavaScript-only for the
-same reason. It becomes real the moment a brief admits another language -
-`brief_medium.md` and `brief_high.md` have not been run against this harness
-yet - and should be reconsidered then rather than built now.
+same reason. It becomes real the moment a brief admits another language, and
+`tests/brief_medium.md` does, in its own Technical Constraints:
+
+    - Backend: Python/FastAPI or Node.js/Express
+    - Frontend: React or Vue.js
+    - Database migrations required
+    - Docker containerization
+
+So a Python stack is a coin toss away, and on one the reviewer loses most of
+its deterministic evidence at once: `_files_that_contradict_the_declared_module_type`,
+`_commonjs_loaded_as_a_module`, `_suites_calling_a_global_node_does_not_define`,
+`_reached_only_by_its_tests` and `how_the_page_receives_text` are all
+JavaScript-only, and `_a_page_no_script_ever_touches` only half applies to a
+React build. That is the first thing to fix before `brief_medium` is run in
+earnest - not now, while every run is JavaScript, but before the move.
+
+`app.agents.brief_constraints` itself needs nothing: checked against both
+briefs, `constraint_lines` extracts all five medium constraints and all eight
+high ones correctly.
 
 ### B2 — Per-role executable allowlists are a fixed table  *(verified)* — **and 16 of 34 names are not in the image**
 

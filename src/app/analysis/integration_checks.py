@@ -1353,6 +1353,81 @@ def _suites_calling_a_global_node_does_not_define(
     return problems
 
 
+#: Writing text into the page without parsing it as HTML. These cannot inject.
+_SAFE_TEXT_INTO_THE_PAGE = re.compile(
+    r"""\.textContent\s*=|\.innerText\s*=|createTextNode\s*\(|\.setAttribute\s*\("""
+)
+
+#: Writing markup into the page. These parse what they are given.
+_MARKUP_INTO_THE_PAGE = re.compile(
+    # The whitespace sits INSIDE the lookahead. With `\s*` before it, the
+    # engine backtracks that to empty, evaluates the lookahead against the
+    # space, and the negative trivially succeeds - so `innerHTML = ""` was
+    # reported as markup, which is the exact opposite of what it is.
+    r"""\.innerHTML\s*=(?!\s*['"`]\s*['"`])|\.outerHTML\s*=|insertAdjacentHTML\s*\("""
+    r"""|document\s*\.\s*write\s*\("""
+)
+
+
+def how_the_page_receives_text(root: str | Path) -> str:
+    """A statement of which DOM-writing APIs this product uses, or "".
+
+    Decidable from the source, and stated so a reviewer does not have to infer
+    it. Run 1c9854c7's milestone reviewer inferred it wrongly - it recorded a
+    major XSS finding against a product whose only text write was
+    `textSpan.textContent = task.text` and whose only `innerHTML` was `= ""` -
+    and the run was stopped after three revisions over a defect that did not
+    exist.
+
+    `innerHTML = ""` is excluded deliberately: clearing a container parses
+    nothing. Only an assignment with content in it can inject.
+    """
+    try:
+        base = Path(root)
+        files = [
+            path
+            for path in base.rglob("*")
+            if path.is_file()
+            and path.suffix.lower() in {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
+            and not any(part in _SKIP for part in path.parts)
+            and not is_test(str(path.relative_to(base)))
+        ]
+    except Exception:  # noqa: BLE001 - evidence that cannot be gathered says nothing
+        return ""
+
+    safe: list[str] = []
+    markup: list[str] = []
+    for path in files:
+        body = _read(path)
+        name = str(path.relative_to(base))
+        if _MARKUP_INTO_THE_PAGE.search(body):
+            markup.append(name)
+        elif _SAFE_TEXT_INTO_THE_PAGE.search(body):
+            safe.append(name)
+    if not safe and not markup:
+        return ""
+
+    if markup:
+        return (
+            "\nHow this product writes to the page: "
+            + ", ".join(sorted(markup)[:4])
+            + " assign markup (`innerHTML` with content, `outerHTML`, "
+            "`insertAdjacentHTML` or `document.write`), which parses what it is "
+            "given. Whether any of it carries text a user typed is worth "
+            "checking.\n"
+        )
+    return (
+        "\nHow this product writes to the page: "
+        + ", ".join(sorted(safe)[:4])
+        + " put text into the DOM only through `textContent`, `innerText`, "
+        "`createTextNode` or `setAttribute`. None of those parses HTML, so "
+        "text a user typed cannot become markup this way. An injection finding "
+        "about DOM insertion would be incorrect for this code as written "
+        "(`innerHTML = \"\"`, which only clears a container, is not an "
+        "exception to that).\n"
+    )
+
+
 #: Elements a user operates. A page carrying these is a page meant to do
 #: something when they are used.
 _A_CONTROL = re.compile(

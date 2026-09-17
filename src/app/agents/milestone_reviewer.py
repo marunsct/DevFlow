@@ -109,6 +109,37 @@ def _integration_evidence(repository_root: str, stack: Any = None) -> str:
         return "The cross-file checks could not be run for this workspace."
 
 
+def _how_text_reaches_the_page(repository_root: str) -> str:
+    """How this product puts text into the DOM, stated as fact, or "".
+
+    Run 1c9854c7 was killed by a finding that was not true. After three
+    revisions this stage recorded
+
+        [major] security: The addTask function inserts user-provided task text
+        directly into the DOM without sanitization, potentially allowing XSS
+        injection.
+
+    and the run stopped. The product at that moment wrote task text with
+
+        textSpan.textContent = task.text;
+
+    and its only `innerHTML` was `container.innerHTML = ""`. `textContent` does
+    not parse HTML - there was no injection to be had, the suite was 9 of 9
+    green, and a correct product was thrown away over a defect that did not
+    exist.
+
+    Which API a file uses is decidable, so it is stated here rather than left
+    to be inferred. The reviewer is told what the code does; whether that is
+    safe enough remains its judgement.
+    """
+    try:
+        from app.analysis.integration_checks import how_the_page_receives_text
+
+        return how_the_page_receives_text(repository_root)
+    except Exception:  # noqa: BLE001 - a reviewer without this still reviews
+        return ""
+
+
 def _against_the_brief(document_text: str, repository_root: str) -> str:
     """What the brief asks for and the product does not have, or "".
 
@@ -187,6 +218,7 @@ def build_milestone_review_request(
         f"{_execution_evidence(repository_root)}\n"
         f"\n--- Cross-file checks (deterministic, not a model's opinion) ---\n"
         f"{_integration_evidence(repository_root, stack)}\n"
+        f"{_how_text_reaches_the_page(repository_root)}"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

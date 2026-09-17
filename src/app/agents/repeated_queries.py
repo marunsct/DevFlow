@@ -110,6 +110,33 @@ def _looks_like_a_failure(content: str) -> bool:
     return head.startswith("Error:") or '"error"' in head
 
 
+#: The opening of a refusal, with any quoted path removed so the same refusal
+#: about the same file reads the same however the message names it.
+_WHY_REFUSED = re.compile(r"""(?:Refusing to \w+|Cannot \w+)[^:]*:\s*([^.]{0,60})""")
+
+
+def _the_same_refusal(content: str) -> str:
+    """A stable shape for a refusal, or "" when this is not one.
+
+    The no-op branch below collapses content variation for a write that
+    changed nothing, because the event is the same whatever bytes were sent. A
+    refusal is the same kind of event and had no such treatment: the guard
+    keyed on the arguments, so a stage that rewrote the body each time was
+    never counted as repeating itself.
+
+    Measured across every stored transcript, 26 combinations of stage, refusal
+    and path were refused three or more times, costing 72 model calls past the
+    second. Run 551640d3's `test_round_0` wrote `docs/technical_specification.md`
+    ten times with different content on each attempt - a document the workflow
+    renders and no agent may write - and was refused ten times without the
+    guard ever seeing a repeat.
+    """
+    if not _looks_like_a_failure(content):
+        return ""
+    found = _WHY_REFUSED.search(content[:400])
+    return found.group(1).strip() if found else ""
+
+
 def build_repeated_query_middleware() -> Any:
     """Middleware that tells a stage when a query answered exactly as before."""
     from langchain.agents.middleware import AgentMiddleware
@@ -205,6 +232,13 @@ def build_repeated_query_middleware() -> Any:
                 digest = "changed nothing" if path else hashlib.sha1(
                     content.encode("utf-8", "replace")
                 ).hexdigest()
+            elif (refusal := _the_same_refusal(content)):
+                # Same treatment as the no-op write above, for the same
+                # reason: the refusal is the event, and the body sent with it
+                # is not part of what happened.
+                path = str(args.get("relative_path") or args.get("file_path") or "")
+                key = (name, path, refusal) if path else (name, refusal)
+                digest = refusal
             else:
                 key = (name, repr(sorted(args.items())))
                 digest = hashlib.sha1(content.encode("utf-8", "replace")).hexdigest()

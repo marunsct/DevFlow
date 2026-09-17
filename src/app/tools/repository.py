@@ -688,6 +688,48 @@ def _clip(line: str) -> str:
     return line if len(line) <= _MAX_DIFF_LINE else line[:_MAX_DIFF_LINE] + " ..."
 
 
+def _refuse_an_edit_that_goes_backwards_again(relative_path: str, updated: str) -> None:
+    """Refuse an edit that undoes another, once the note has been ignored twice.
+
+    `_an_edit_that_undoes_an_earlier_one` says so and lets the edit through,
+    which is right the first time and the second. Measured across every stored
+    transcript, that is enough: of the three stages ever to receive the note,
+    two stopped after one.
+
+    The third is what this is for. Run 1ae7671d's `test_round_1` was told five
+    times and went on swapping a single line between four spellings -
+    `++nextId`, `nextId; nextId++`, `nextId++`, `current.length > 0 ? ... : 1`
+    and back - for eight edits, while the stage grew to the longest in the run.
+    A note the model has ignored twice is not a note that needs rewording; the
+    same reasoning, and the same threshold, as the no-op write refusal.
+
+    Refused before anything is written, so the file keeps the state it has
+    rather than taking one more step round the loop.
+    """
+    try:
+        from app.tools.seen_content import (
+            UNDO_WARNINGS_BEFORE_REFUSING,
+            returned_to_an_earlier_state,
+            times_warned_about_undoing,
+        )
+
+        if times_warned_about_undoing(relative_path) < UNDO_WARNINGS_BEFORE_REFUSING:
+            return
+        if not returned_to_an_earlier_state(relative_path, updated):
+            return
+    except Exception:  # noqa: BLE001 - a bookkeeping miss must not refuse an edit
+        logger.debug("Could not check the edit history of %s", relative_path, exc_info=True)
+        return
+    raise RepositoryToolError(
+        f"Refusing to change '{relative_path}': this edit puts the file back "
+        "into a state it already had, and you have been told that twice "
+        "already in this stage. Nothing was changed. The passage you keep "
+        "rewriting is not where the problem is - if it were, one of the "
+        "versions you have already tried would have worked. Read the failure "
+        "again and look at a different part of the code."
+    )
+
+
 def _an_edit_that_undoes_an_earlier_one(relative_path: str, content: str) -> str:
     """Note that this edit put the file back where it already was, or "".
 
@@ -699,6 +741,9 @@ def _an_edit_that_undoes_an_earlier_one(relative_path: str, content: str) -> str
 
         if not returned_to_an_earlier_state(relative_path, content):
             return ""
+        from app.tools.seen_content import record_undo_warning
+
+        record_undo_warning(relative_path)
     except Exception:  # noqa: BLE001 - no note is better than a failed edit
         logger.debug("Could not check the edit history of %s", relative_path, exc_info=True)
         return ""
@@ -1803,6 +1848,7 @@ def _write_unless_it_changes_nothing(
     them.
     """
     if updated != original:
+        _refuse_an_edit_that_goes_backwards_again(relative_path, updated)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
             _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)

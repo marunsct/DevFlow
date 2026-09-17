@@ -167,6 +167,26 @@ def where_this_stage_moved_it(relative_path: str) -> str | None:
     return moved.get(str(relative_path))
 
 
+_UNDO_WARNINGS = "times this stage was told an edit undid an earlier one"
+
+#: How many times to say it before refusing. The note works: of the three
+#: stages ever to receive it, two stopped after one. The third was told five
+#: times and went on swapping one line between four spellings, which is the
+#: case this threshold exists for.
+UNDO_WARNINGS_BEFORE_REFUSING = 2
+
+
+def record_undo_warning(relative_path: str) -> None:
+    """Remember that this stage has been told an edit here undid an earlier one."""
+    warned = store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS)
+    warned[str(relative_path)] = warned.get(str(relative_path), 0) + 1
+
+
+def times_warned_about_undoing(relative_path: str) -> int:
+    """How often this stage has been told its edits here are going backwards."""
+    return store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS).get(str(relative_path), 0)
+
+
 def changed_since_seen(relative_path: str, content: str) -> bool:
     """True when this stage has seen the file and it no longer matches.
 
@@ -195,6 +215,9 @@ _FALLBACK_REPLACEMENTS: dict[str, list[tuple[str, str]]] = {}
 #: And the move log's.
 _FALLBACK_MOVES: dict[str, str] = {}
 
+#: And the undo-warning counter's.
+_FALLBACK_UNDO_WARNINGS: dict[str, int] = {}
+
 
 def forget_everything() -> None:
     """Drop the no-stage fallbacks. For tests, which must not leak into each other."""
@@ -202,6 +225,7 @@ def forget_everything() -> None:
     _FALLBACK_HISTORY.clear()
     _FALLBACK_REPLACEMENTS.clear()
     _FALLBACK_MOVES.clear()
+    _FALLBACK_UNDO_WARNINGS.clear()
 
 
 __all__ = [
@@ -210,11 +234,14 @@ __all__ = [
     "changed_since_seen",
     "forget_everything",
     "MAX_MOVES_REMEMBERED",
+    "UNDO_WARNINGS_BEFORE_REFUSING",
     "MAX_REPLACEMENTS_PER_FILE",
     "record_move",
+    "record_undo_warning",
     "record_replacement",
     "record_state",
     "remember",
+    "times_warned_about_undoing",
     "what_replaced_it",
     "where_this_stage_moved_it",
     "returned_to_an_earlier_state",

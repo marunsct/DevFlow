@@ -1612,7 +1612,11 @@ def how_the_page_receives_text(root: str | Path) -> str:
 #: Names an agent gives a throwaway script while it is debugging. Narrow on
 #: purpose: a product file is not called `tmp_debug5`.
 _A_SCRATCH_SCRIPT = re.compile(
-    r"""^(?:tmp|temp|scratch|debug)[_.-]|^test[_-]debug|[_-]debug\d*\.[cm]?js$""",
+    r"""^(?:tmp|temp|scratch|debug)[_.-]|^test[_-]debug|[_-]debug\d*\.[cm]?js$"""
+    # `test2.mjs`, `test4.mjs` - a numbered throwaway, which run 551640d3 left
+    # two of. Anchored and digit-suffixed so `app.test.js` and `test.mjs` are
+    # untouched: a bare `test.mjs` is a plausible entry point, `test2` is not.
+    r"""|^test\d+\.[cm]?js$""",
     re.I,
 )
 

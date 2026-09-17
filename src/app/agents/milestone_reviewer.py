@@ -158,6 +158,7 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
     from app.agents.brief_constraints import (
         constraint_lines,
         what_the_brief_asked_for_that_is_missing,
+        what_the_brief_forbids_that_is_there,
     )
     from pathlib import Path
 
@@ -169,6 +170,12 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
     except Exception:  # noqa: BLE001 - a check must never fail the review
         names = []
     missing = what_the_brief_asked_for_that_is_missing(document_text, names)
+    # And the other direction: what the brief rules out and the product has.
+    # `missing` only ever reports an absence, so a dependency the brief forbids
+    # was invisible to it - see `what_the_brief_forbids_that_is_there`.
+    missing = missing + what_the_brief_forbids_that_is_there(
+        document_text, repository_root
+    )
     lines = constraint_lines(document_text)
     if not missing and not lines:
         return ""

@@ -30,7 +30,9 @@ against a stack; this is about the stack itself.
 
 from __future__ import annotations
 
+import json
 import re
+from pathlib import Path
 
 #: Headings whose body states what the product may and may not be built with.
 #: Matched on the heading text, so any level of `#` and any trailing colon.
@@ -167,6 +169,84 @@ _WANTS_A_PAGE = (
 
 #: And that it is meant to be styled.
 _WANTS_STYLING = ("css", "responsive", "styling", "stylesheet")
+
+
+#: A brief saying the product may not bring packages with it. Narrow: this
+#: drives a blocking finding, so a brief that merely prefers something light
+#: must produce none.
+_FORBIDS_DEPENDENCIES = (
+    "no external dependencies",
+    "no dependencies",
+    "without external dependencies",
+    "without dependencies",
+    "no third-party",
+    "no libraries",
+    "no frameworks",
+    "zero dependencies",
+)
+
+#: Packages that are the runtime itself rather than something fetched.
+_NOT_A_DEPENDENCY = frozenset({"node", "npm"})
+
+
+def what_the_brief_forbids_that_is_there(
+    document_text: str, repository_root: str | Path
+) -> list[str]:
+    """Dependencies the brief rules out and the product declares anyway.
+
+    `what_the_brief_asked_for_that_is_missing` checks one direction - the
+    brief asks for a page, the product has none. Nothing checked the other,
+    and it is the direction run 0c5aabdb failed in: a brief reading "No
+    external dependencies beyond basic HTML/CSS/JS" against a product built on
+    Express with a 32KB lockfile.
+
+    Run 551640d3 is the same thing in a quieter form. It installed `jsdom` to
+    get a DOM for its tests - a reasonable engineering instinct, and exactly
+    what the brief forbids - leaving a full `node_modules` and a 29KB
+    lockfile. Nothing reported it: the cross-file checks look at how files
+    relate, not at what the brief allows, and the missing-things check has
+    nothing to say about a thing that is present.
+
+    Across the stored workspaces 11 of 55 declare dependencies, among them
+    jsdom, jest, express and node-fetch.
+
+    Decidable, so it is stated rather than left to a reading: the constraint is
+    a quoted line of the brief and the packages are `package.json`'s own.
+    """
+    if not document_text:
+        return []
+    quoted = " ".join(constraint_lines(document_text)).lower() + " " + document_text.lower()
+    if not any(phrase in quoted for phrase in _FORBIDS_DEPENDENCIES):
+        return []
+
+    found: list[str] = []
+    try:
+        root = Path(repository_root)
+        for manifest in sorted(root.rglob("package.json")):
+            if "node_modules" in manifest.parts:
+                continue
+            try:
+                declared = json.loads(manifest.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            packages = sorted(
+                set(declared.get("dependencies") or {})
+                | set(declared.get("devDependencies") or {})
+            )
+            packages = [name for name in packages if name not in _NOT_A_DEPENDENCY]
+            if not packages:
+                continue
+            found.append(
+                f"{manifest.parent.name}/package.json declares "
+                + ", ".join(f"`{name}`" for name in packages[:6])
+                + ". The brief rules that out in its own words, quoted above. "
+                "Whatever it was needed for, the product the brief describes "
+                "does not have it, and a reviewer cannot accept the milestone "
+                "as meeting the brief while it is declared."
+            )
+    except Exception:  # noqa: BLE001 - evidence that cannot be gathered says nothing
+        return found
+    return found
 
 
 def what_the_brief_asked_for_that_is_missing(

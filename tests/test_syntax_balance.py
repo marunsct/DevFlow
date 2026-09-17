@@ -111,10 +111,23 @@ def test_the_forgiving_match_path_also_gets_the_note(tmp_path) -> None:
     """
     from app.tools.repository import edit_approved_artifact, write_approved_artifact
 
-    write_approved_artifact(tmp_path, "p/app.js", "export function init() {\n  const f = 1;\n}\n")
+    # TypeScript deliberately, and the reason is the point. This used to be
+    # written as `app.js`, where the edit left `export function init() {`
+    # unclosed and `node --check` accepted it - the script goal parses a
+    # typeless `.js`, and it was only the brace counter that noticed. That was
+    # a bug in the parse check, not a property worth testing against: Node
+    # loads such a file with the module goal and refuses it, which
+    # `_the_module_goal_also_rejects` now reproduces, so the same edit is
+    # refused rather than noted.
+    #
+    # `.ts` is not in `PARSEABLE` - Node cannot parse it and this codebase
+    # does not pretend otherwise - so the structural note is the only check in
+    # play, which is exactly what this test is about: that the *forgiving
+    # match path* carries it at all.
+    write_approved_artifact(tmp_path, "p/app.ts", "function init() {\n  const f = 1;\n}\n")
 
     # An indent that does not match the file forces the forgiving path.
-    result = edit_approved_artifact(tmp_path, "p/app.js", "    const f = 1;\n", "  if (x) {\n")
+    result = edit_approved_artifact(tmp_path, "p/app.ts", "    const f = 1;\n", "  if (x) {\n")
 
     assert "note" in result, "the forgiving path must carry the checks too"
     assert "do not balance" in result["note"]

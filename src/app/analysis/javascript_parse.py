@@ -56,6 +56,68 @@ def _node() -> str | None:
     return shutil.which("node")
 
 
+#: Top-level `export` or `import`, which makes a file an ES module.
+_ES_MODULE_SYNTAX = re.compile(r"""^\s*(?:export\b|import\s+[\w{*'"])""", re.M)
+
+
+def _the_module_goal_also_rejects(node: str, path: Path, content: str) -> str | None:
+    """Node's error when `content` is parsed as a module, or None.
+
+    `node --check foo.js` parses with the script goal, and a typeless `.js`
+    holding `export` is *loaded* as a module - detect-module has been on since
+    Node 20.19. The two goals do not agree, and the module goal is the stricter
+    one: its early errors (a duplicate export, an export of a name the module
+    does not define) have no script-goal equivalent, so `--check` passes a file
+    Node then refuses to load.
+
+    Measured over every `.js` write in the stored transcripts that uses ES
+    module syntax: 16 of 116 pass `node --check` and throw on import. Four
+    runs paid for it - d6297b2f twice on `Duplicate export of 'init'`,
+    f81808a4 on `Export 'addTask' is not defined in module`, 551640d3
+    thirteen times, and run 1cd4597b spent 177 events of a defect-fix stage
+    on `Duplicate export of 'deleteHandler'` that this would have named at
+    the write.
+
+    Verified by loading each of them rather than by reading the flags: all
+    four sampled pass `--check` and raise `SyntaxError` on a real `import()`.
+
+    Only for `.js`. `.mjs` is already parsed with the module goal by the
+    check above, and `.cjs` is never a module.
+    """
+    if path.suffix.lower() != ".js" or not _ES_MODULE_SYNTAX.search(content):
+        return None
+    if _the_manifest_says_commonjs(path):
+        # Then it is not loaded as a module, and `export` here is a different
+        # problem that `_the_module_type_this_declares_breaks_files_here`
+        # already names. Reporting a module-goal error would be misleading.
+        return None
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            [node, "--input-type=module", "--check"],
+            input=content,
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT_SECONDS,
+        )
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        return None
+    return None if result.returncode == 0 else f"{result.stderr}\n{result.stdout}"
+
+
+def _the_manifest_says_commonjs(path: Path) -> bool:
+    """Whether the nearest `package.json` pins this directory to CommonJS."""
+    import json as _json
+
+    for directory in (path.parent, *path.parent.parents[:4]):
+        manifest = directory / "package.json"
+        try:
+            if manifest.is_file():
+                return _json.loads(manifest.read_text(encoding="utf-8")).get("type") == "commonjs"
+        except (OSError, ValueError):
+            return False
+    return False
+
+
 def parse_error(path: Path, content: str) -> str | None:
     """Node's syntax error for `content` at `path`, or None. Never raises.
 
@@ -87,9 +149,15 @@ def parse_error(path: Path, content: str) -> str | None:
         except OSError:  # pragma: no cover - the file is in our own workspace
             logger.debug("Could not remove the parse probe %s", probe)
     if result.returncode == 0:
-        return None
-
-    report = f"{result.stderr}\n{result.stdout}"
+        # The script goal accepted it. A typeless `.js` using `export` is
+        # loaded as a module, whose early errors the script goal has no
+        # equivalent for - see `_the_module_goal_also_rejects`.
+        stricter = _the_module_goal_also_rejects(node, path, content)
+        if stricter is None:
+            return None
+        report = stricter
+    else:
+        report = f"{result.stderr}\n{result.stdout}"
     message = _MESSAGE.search(report)
     line = _LINE.search(report)
     where = f" on line {line.group(1)}" if line else ""

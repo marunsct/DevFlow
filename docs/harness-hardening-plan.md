@@ -2439,3 +2439,36 @@ besides f2832674 have tests that inject a storage failure. The specialists'
 own instructions already say to complete the delegated task and its stated
 acceptance criteria and not to expand scope; what is missing is any check
 that a *test* stayed inside them, and §4e is the reason not to guess at one.
+
+### 4t. Why the page-loads-no-script finding must stay at review time
+
+Run 1cd4597b wrote `index.html` with no `<script>` tag at all while
+`script.js` sat beside it exporting eight names. The page does nothing, and
+the obvious response is a note at the write: *you load no script, and one is
+right there*.
+
+The write order says otherwise. Across the stored transcripts:
+
+| | runs |
+|---|---|
+| page written **before** the script | 22 |
+| page written **after** the script | 1 |
+| only one of the two written | 3 |
+
+In twenty-two of twenty-three runs the script does not exist when the page is
+written, so the note would have nothing to compare against and would stay
+silent - not wrong, just useless. Run 1cd4597b is the single exception.
+
+The mirror placement fails for the same reason: warning at the *script's*
+write that no page loads it is premature, because the tag is usually added
+next. There is no moment during the writing at which this is decidable. The
+first moment it is decidable is when the sprint's files have stopped moving,
+which is where `_reached_only_by_its_tests` already asks it - and it fires
+correctly on run 1cd4597b, along with three other real findings.
+
+Worth recording because the instinct was wrong in an instructive way. Most of
+this session's work moved findings *earlier*, from the milestone review to the
+write, and that is usually right. This one cannot move, and the reason is a
+fact about the order agents work in rather than anything about the check.
+Before moving a finding earlier, check that the evidence it needs exists that
+early.

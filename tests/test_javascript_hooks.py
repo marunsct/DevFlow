@@ -153,3 +153,43 @@ def test_a_test_file_is_not_judged(tmp_path: Path) -> None:
     )
 
     assert findings == []
+
+
+def test_a_root_relative_script_src_is_resolved_against_the_project(tmp_path):
+    """`Path("proj") / "/src/main.jsx"` is `/src/main.jsx` - pathlib drops the left.
+
+    Every root-relative reference therefore resolved outside the workspace and
+    was reported missing. That is Vite's own convention for an entry point, so
+    a React or Vue product tripped a blocking finding on its first file -
+    which is what `tests/brief_medium.md` invites, naming React or Vue.js in
+    its constraints.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    project = tmp_path / "dashboard"
+    (project / "src").mkdir(parents=True)
+    (project / "index.html").write_text(
+        '<!DOCTYPE html><div id="root"></div>'
+        '<script type="module" src="/src/main.jsx"></script>',
+        encoding="utf-8",
+    )
+    (project / "src" / "main.jsx").write_text(
+        "import { createRoot } from 'react-dom/client';\n"
+        "createRoot(document.getElementById('root')).render(null);\n",
+        encoding="utf-8",
+    )
+
+    assert "does not exist in the workspace" not in summarise_integration(str(tmp_path))
+
+
+def test_a_root_relative_reference_to_nothing_is_still_reported(tmp_path):
+    from app.analysis.integration_checks import summarise_integration
+
+    project = tmp_path / "dashboard"
+    project.mkdir()
+    (project / "index.html").write_text(
+        '<!DOCTYPE html><script type="module" src="/src/main.jsx"></script>',
+        encoding="utf-8",
+    )
+
+    assert "does not exist in the workspace" in summarise_integration(str(tmp_path))

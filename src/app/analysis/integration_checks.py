@@ -1311,7 +1311,14 @@ def _broken_local_references(files: list[Path], root: Path) -> list[str]:
         for target in _SCRIPT_SRC.findall(text) + _LINK_HREF.findall(text):
             if "//" in target or target.startswith(("data:", "#", "mailto:")):
                 continue
-            referenced = path.parent / target
+            # A leading slash is root-relative to whatever serves the page, and
+            # `Path("proj") / "/src/main.jsx"` is `/src/main.jsx` - pathlib
+            # discards the left side, so every such reference resolved to a
+            # path outside the workspace and was reported as missing. That is
+            # Vite's own convention for an entry point, so a React or Vue
+            # product tripped this on its first file. The two sibling checks
+            # above already strip it; this one did not.
+            referenced = path.parent / target.lstrip("/")
             if not referenced.exists():
                 problems.append(
                     f"{path.relative_to(root)} references `{target}`, which does "

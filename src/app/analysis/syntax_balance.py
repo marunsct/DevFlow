@@ -229,7 +229,9 @@ def _unknown_named_imports(content: str) -> str | None:
                 )
             if name == "assert" and module in ("node:assert", "assert"):
                 return (
-                    f"`import {{ assert }} from '{module}'` will fail at runtime: "
+                    f"`import {{ assert }} from '{module}'` stops the file "
+                    "loading - the module never links, so no test in it runs "
+                    "and the failure is a `SyntaxError`, not an assertion. "
                     "`assert` is that module's *default* export, not a named one. "
                     f"Use `import assert from '{module}'`, or import the checks by "
                     # Not an f-string, so the braces are literal: doubling them

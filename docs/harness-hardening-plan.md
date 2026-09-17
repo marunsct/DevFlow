@@ -492,6 +492,63 @@ when two did, and sent the same passage twice more. Aligning the comparison is
 not a forgiving matcher - the edit is still refused - it only stops the refusal
 lying about why.
 
+## 4e. A wrong finding costs as much as a missed one
+
+Everything in §1-§4d is about the harness failing to *notice* something. Runs
+0afef410 and 1c9854c7 established the opposite class, and it is at least as
+expensive: a gate that reports something untrue. Three instances were found and
+fixed within two runs of each other, which suggests it is systematic rather
+than incidental.
+
+**A check whose premise was never true of this runtime.**
+`_module_system_mismatch` told every stage that ESM in a typeless `.js` file
+makes its exports "invisible" and that a test importing them gets "does not
+provide an export named ...". Measured directly in the worker image on Node
+20.20.2, that project reports `# tests 1 # pass 1 # fail 0`: Node has detected
+module syntax in a typeless `.js` since 20.19. The original evidence was a note
+an *agent* wrote in its own test file, recorded here as Node's behaviour.
+
+**Evidence that reads as a verdict.** `summarise_executions` gave the milestone
+reviewer a chronological list and nothing else - `25 command(s) executed, 4
+succeeded`, with every failed attempt shown. Run 0afef410's reviewer concluded
+"the test suite does not pass" at a moment when `npm test` exited 0 with
+`# pass 4 # fail 0`. A fixed command was indistinguishable from a broken one,
+because only the attempts were shown and not where each command ended up.
+
+**A judgement the reviewer had no facts for.** Run 1c9854c7 was stopped after
+three revisions by
+
+    [major] security: The addTask function inserts user-provided task text
+    directly into the DOM without sanitization, potentially allowing XSS
+    injection.
+
+against a product whose only text write was `textSpan.textContent = task.text`
+and whose only `innerHTML` was `= ""`. `textContent` does not parse HTML. The
+suite was 9 of 9 green and the page was correctly wired. That run was the
+cleanest this harness has produced by every process measure - 1.7% costly
+failures against run d6297b2f's 5.5% - and it was thrown away.
+
+What generalises:
+
+- **State the decidable thing; let the model judge the rest.** Each fix adds a
+  fact the reviewer previously had to infer - which API writes to the page,
+  where each command stands now, which runner is actually in use - and leaves
+  the judgement where it was. None of them tells a reviewer what to conclude.
+- **A gate that has never fired is not evidence of health.** The security
+  review returned `passed` with `findings: []` on all 33 occasions it has ever
+  run. It was being handed a list of filenames and asked to review security,
+  while every other reviewer here is handed its material.
+- **Check a new check against the corpus before trusting it.** Of the six
+  checks written across these runs, three had false positives on the 55 stored
+  workspaces the day they were written - a guarded `typeof module !==
+  'undefined'`, a test file with its own `test()` harness, and a regex that
+  matched `assert.deepStrictEqual`. All three were found by running them over
+  every stored workspace and reading the hits, which costs a minute.
+- **And grade it correctly.** All three checks written for run d6297b2f landed
+  in the "untidy rather than broken" bucket, because `_severity_of` matches a
+  phrase and none of theirs was in the list. A never-executed test suite was
+  being offered to the reviewer as a minor finding.
+
 ## 5. Method to keep
 
 The procedure that produced these findings is itself the most valuable artefact of the

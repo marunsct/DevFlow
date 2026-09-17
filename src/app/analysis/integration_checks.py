@@ -611,6 +611,21 @@ _NOT_CODE = re.compile(
 )
 
 
+#: Comments alone, leaving string literals where they are.
+_A_COMMENT = re.compile(r"""//[^\n]*|/\*.*?\*/""", re.S)
+
+
+def _without_comments(text: str) -> str:
+    """`text` with comments blanked and every string literal left intact.
+
+    `_only_the_code` is wrong for anything that reads the literals themselves.
+    `innerHTML = ""` is a clearing and `innerHTML = `<li>${t}</li>`` is markup,
+    and blanking both to `innerHTML = ;` loses exactly the difference the
+    caller is asking about.
+    """
+    return _A_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+
+
 def _only_the_code(text: str) -> str:
     """`text` with comments and string literals blanked, newlines preserved.
 
@@ -1540,11 +1555,17 @@ def how_the_page_receives_text(root: str | Path) -> str:
     safe: list[str] = []
     markup: list[str] = []
     for path in files:
-        body = _read(path)
+        # Comments blanked, string literals kept. A commented-out `innerHTML`
+        # read as markup withholds the one sentence this exists to provide -
+        # that an injection finding would be incorrect - which is what run
+        # 1c9854c7 was killed for the want of. But the literals have to stay:
+        # `innerHTML = ""` is a clearing and ``innerHTML = `<li>${t}</li>` `` is
+        # markup, and blanking both loses that distinction entirely.
+        code = _without_comments(_read(path))
         name = str(path.relative_to(base))
-        if _MARKUP_INTO_THE_PAGE.search(body):
+        if _MARKUP_INTO_THE_PAGE.search(code):
             markup.append(name)
-        elif _SAFE_TEXT_INTO_THE_PAGE.search(body):
+        elif _SAFE_TEXT_INTO_THE_PAGE.search(code):
             safe.append(name)
     if not safe and not markup:
         return ""

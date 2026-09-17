@@ -118,3 +118,44 @@ def test_the_milestone_reviewer_is_given_it(project: Path):
     )["messages"][0]["content"]
 
     assert "How this product writes to the page" in body
+
+
+def test_a_commented_out_innerHTML_is_not_markup(project: Path):
+    """Reading it as markup withholds the sentence this exists to provide."""
+    (project / "app" / "app.js").write_text(
+        "// el.innerHTML = task.text;\nspan.textContent = task.text;\n", encoding="utf-8"
+    )
+
+    assert "would be incorrect" in how_the_page_receives_text(project)
+
+
+def test_a_block_comment_is_not_markup_either(project: Path):
+    (project / "app" / "app.js").write_text(
+        "/* el.innerHTML = t; */\nspan.textContent = t;\n", encoding="utf-8"
+    )
+
+    assert "would be incorrect" in how_the_page_receives_text(project)
+
+
+@pytest.mark.parametrize("clearing", ["el.innerHTML = '';", 'el.innerHTML = "";'])
+def test_clearing_survives_the_comment_stripping(project: Path, clearing: str):
+    """Blanking string literals too would erase the quotes this is known by.
+
+    `innerHTML = ""` is a clearing and ``innerHTML = `<li>${t}</li>` `` is
+    markup; a stripper that blanks both leaves `innerHTML = ;` in each case and
+    loses exactly the difference being asked about. So comments go and literals
+    stay.
+    """
+    (project / "app" / "app.js").write_text(
+        f"{clearing}\nspan.textContent = t;\n", encoding="utf-8"
+    )
+
+    assert "would be incorrect" in how_the_page_receives_text(project)
+
+
+def test_an_interpolating_template_is_still_markup(project: Path):
+    (project / "app" / "app.js").write_text(
+        "el.innerHTML = `<li>${task.text}</li>`;\n", encoding="utf-8"
+    )
+
+    assert "assign markup" in how_the_page_receives_text(project)

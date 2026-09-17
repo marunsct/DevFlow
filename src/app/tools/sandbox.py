@@ -41,6 +41,91 @@ from typing import Any, Dict, Iterable, Sequence
 logger = logging.getLogger(__name__)
 
 
+_INSTALLS = frozenset({"install", "add", "i"})
+_NOT_A_PACKAGE = frozenset({"install", "add", "i", "npm", "yarn", "pnpm", "npx", "--"})
+
+
+def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
+    """The package names an install command would add, or [].
+
+    A bare `npm install` installs what the manifest already declares and adds
+    nothing, so it is not this. Only a named package is.
+    """
+    words = [str(word) for word in command]
+    if not any(manager in words[0] for manager in ("npm", "yarn", "pnpm")):
+        return []
+    if not any(word in _INSTALLS for word in words[:3]):
+        return []
+    named = [
+        word
+        for word in words[1:]
+        if not word.startswith("-") and word not in _NOT_A_PACKAGE
+    ]
+    return named
+
+
+def _the_brief_forbids_installing_anything(repo_root: str) -> str:
+    """The brief's own words ruling dependencies out, or "".
+
+    Read from the workspace rather than passed in: the sandbox is below the
+    agent layer and is handed a repository, not a brief. The intake document
+    is where the constraint lands - run 9bd3a091's `docs/product_intake.md`
+    carries "No external dependencies beyond basic HTML/CSS/JS" twice.
+    """
+    try:
+        from app.agents.brief_constraints import _FORBIDS_DEPENDENCIES
+
+        for name in ("product_intake.md", "technology_stack.md"):
+            document = Path(repo_root) / "docs" / name
+            if not document.is_file():
+                continue
+            text = document.read_text(encoding="utf-8", errors="replace")
+            for line in text.splitlines():
+                if any(phrase in line.lower() for phrase in _FORBIDS_DEPENDENCIES):
+                    return line.strip().lstrip("-*# ").strip()
+    except Exception:  # noqa: BLE001 - a constraint that cannot be read is not enforced
+        return ""
+    return ""
+
+
+def _refuse_an_install_the_brief_rules_out(
+    command: Sequence[str], repo_root: str
+) -> str:
+    """Why this install contradicts the brief, or "".
+
+    The testing role's own description already says not to introduce a runner
+    the stack did not choose, and to "verify with what the runtime already
+    provides" where the stack names none. Run 9bd3a091 read that and ran
+    `npm install jsdom`, then `npm install jest`. Six of the twenty-six
+    recorded runs install a named package this way - jsdom four times, jest,
+    and jest-environment-jsdom - against briefs that rule dependencies out.
+
+    Every check that reports the dependency reports it downstream of this
+    command: `what_the_brief_forbids_that_is_there` at a milestone review,
+    the module-system findings a sprint later. This is where it enters.
+
+    A refusal, not a note, on the escalation the codebase has settled twice:
+    the instruction is already in the prompt, in the role's own words, and is
+    being ignored.
+    """
+    packages = _a_package_this_command_would_add(command)
+    if not packages:
+        return ""
+    constraint = _the_brief_forbids_installing_anything(repo_root)
+    if not constraint:
+        return ""
+    return (
+        f"Refusing to install {', '.join(packages[:4])}: the brief rules that "
+        f'out in its own words - "{constraint}". Installing it does not make '
+        "the product the brief describes, and every later stage would have to "
+        "carry it or take it back out. Node's own `node:test` and "
+        "`node:assert` need no install, and logic written as functions that "
+        "take their inputs as arguments can be tested without a DOM at all. "
+        "If the product genuinely cannot be built within the constraint, say "
+        "so as a blocker in your report rather than installing past it."
+    )
+
+
 class SandboxUnavailable(RuntimeError):
     """The container runtime needed to isolate execution is not usable."""
 
@@ -1754,6 +1839,14 @@ class SandboxExecutor:
         # Before running it: a command that timed out will time out again, and
         # unlike every other repeated failure this one is paid for in wall
         # clock as well as a model call. See `timed_out_this_way_before`.
+        ruled_out = _refuse_an_install_the_brief_rules_out(command, repo_root)
+        if ruled_out:
+            outcome = {"error": ruled_out}
+            _record_execution(
+                repo_root, role_name, command, outcome, working_directory, category
+            )
+            return outcome
+
         already_timed_out = timed_out_this_way_before(repo_root, command, working_directory)
         if already_timed_out:
             outcome = {

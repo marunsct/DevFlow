@@ -142,7 +142,11 @@ def the_product(workspace):
         print(f"\nthe product: could not load the checks ({exc})")
         return
     report = summarise_integration(workspace)
-    blocking = "means a feature DOES NOT WORK" in report
+    # On the phrase without its verb: the summary writes "means" for one
+    # finding and "mean" for several, so matching the singular reported "no
+    # blocking problems" for every workspace that had more than one - silent
+    # in exactly the case that matters most.
+    blocking = "a feature DOES NOT WORK" in report
     print("\nthe product:")
     print("  BLOCKING problems found" if blocking else "  no blocking cross-file problems")
     for line in report.splitlines():

@@ -93,3 +93,30 @@ def test_the_cost_numbers_are_still_printed_alongside(run_audit):
 
     assert "failures that cost the run" in out
     assert "the product:" in out
+
+
+DEAD_TWO = (
+    "<!DOCTYPE html><html><body>"
+    "<input id='task-input' /><button id='add-btn'>Add</button>"
+    "<script type='module' src='app.js'></script>"
+    "<link rel='stylesheet' href='missing.css'>"
+    "</body></html>"
+)
+
+
+def test_several_blocking_problems_are_still_reported(run_audit):
+    """The summary writes "means" for one finding and "mean" for several.
+
+    Matching the singular reported "no blocking cross-file problems" for every
+    workspace that had more than one - silent in exactly the case that matters
+    most. Run 1ae7671d had nine and the audit called it clean.
+    """
+    out = run_audit({"index.html": DEAD_TWO, "app.js": PURE})
+
+    assert "BLOCKING problems found" in out
+
+
+def test_one_blocking_problem_is_reported(run_audit):
+    out = run_audit({"index.html": DEAD_PAGE, "app.js": PURE})
+
+    assert "BLOCKING problems found" in out

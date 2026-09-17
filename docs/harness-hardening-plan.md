@@ -634,6 +634,36 @@ Run 1ae7671d is a clean example, spending 22 edits on one file with 8 of them
 undoing an earlier edit, which `_refuse_an_edit_that_goes_backwards_again` now
 stops at the third.
 
+## 4g. Replayed against the runs they came from
+
+Each check in §4d-§4f came from watching one run fail. Run against the stored
+snapshots of those same runs, they catch what they were built for and stay
+quiet on the one product that worked:
+
+| run | what actually went wrong | what the checks say now |
+|---|---|---|
+| 0c5aabdb | Express, no HTML, every gate green | two brief findings: no HTML file; `express`, `node-fetch` forbidden |
+| 0afef410 | HTML and JS that never meet | blocking |
+| 7e960f06 | a working product | clean |
+| 1ae7671d | `npm test` ran 3 of 6 test files | blocking |
+
+The 0c5aabdb line is the one worth keeping. That run is where this document
+started: it completed, its architecture review returned "approved" with no
+findings, both security reviews "passed", and its milestone review raised one
+blocking finding about a missing npm script and then accepted a product with no
+user interface. It now produces, before any model reads anything:
+
+    The brief asks for a web interface, and the product contains no HTML file.
+    There is nothing for a user to open.
+
+    simple-to-do-list-app/package.json declares `express`, `node-fetch`. The
+    brief rules that out in its own words.
+
+A caveat on reading this table. These are the snapshots as archived, which for
+some runs is the state after later stages had already repaired things; a check
+showing clean here is not proof the run never had the fault. The four above
+were chosen because their archived state is the state they failed in.
+
 ## 5. Method to keep
 
 The procedure that produced these findings is itself the most valuable artefact of the

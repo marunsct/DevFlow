@@ -1720,6 +1720,60 @@ def _import_note(root: Path, target: Path, content: str) -> str:
     return note
 
 
+#: A JavaScript file named inside a command string.
+_NAMES_A_SCRIPT_FILE = re.compile(r"""[\w./-]+\.[cm]?js\b""")
+
+
+def _the_test_command_will_not_run_this(target: Path | None) -> str:
+    """Warn that the project's `test` script names files and not this one, or "".
+
+    `undiscoverable_test` asks whether Node's own patterns would collect the
+    file. This asks the other question, which a correctly-named file still
+    fails: whether the command the project actually runs will reach it.
+
+    A `test` script that names its files is the majority here - 17 of the 32
+    manifests across the stored workspaces - and every one of them excludes
+    whatever is written next. Twelve of fifty-five workspaces currently carry
+    test files `npm test` never runs, their assertions never executed while
+    every gate reads a passing suite.
+
+    Run 1ae7671d is what that costs. Its script ran three named files while the
+    project held six, `npm test` passed on the curated subset, the real
+    failures survived every green run, and the sprint exhausted all three
+    remediation attempts. Said at the write, the fix is one edit to the
+    manifest.
+    """
+    if target is None:
+        return ""
+    try:
+        import json as _json
+
+        for folder in (target.parent, *target.parents):
+            manifest = folder / "package.json"
+            if not manifest.is_file():
+                continue
+            command = str(
+                (_json.loads(manifest.read_text(encoding="utf-8")).get("scripts") or {})
+                .get("test", "")
+            )
+            if not command:
+                return ""
+            named = _NAMES_A_SCRIPT_FILE.findall(command)
+            if not named or target.name in command:
+                return ""
+            return (
+                f"`npm test` here runs `{command}`, which names "
+                + ", ".join(sorted(set(named))[:3])
+                + f" and will not reach '{target.name}'. Nothing will report "
+                "that: the suite passes on the files it does run and this one's "
+                "assertions never execute. Add it to the script, or replace the "
+                "named files with `node --test`, which searches the project."
+            )
+        return ""
+    except Exception:  # noqa: BLE001 - never fail a write over a hint
+        return ""
+
+
 def _discovery_note(relative_path: str, content: str, target: Path | None = None) -> str:
     """Warn about a test file the project's runner will not collect, or "".
 
@@ -1749,6 +1803,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             a_suite_that_only_checks_things_exist(relative_path, content),
             a_dom_built_by_hand(relative_path, content),
             a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
+            _the_test_command_will_not_run_this(target),
         ]
         return " ".join(note for note in notes if note)
     except Exception:  # noqa: BLE001 - never fail a write over a hint

@@ -128,3 +128,43 @@ def test_a_source_that_never_existed_still_says_to_look(project: Path):
         move_approved_artifact(project, "todo/never.test.js", "todo/other.test.js")
 
     assert "Run `ls`" in str(raised.value)
+
+
+def test_deleting_a_file_this_stage_already_deleted_says_so(project: Path):
+    """A stage clearing up its own debugging scripts loses track of which went.
+
+    Measured on run 551640d3: twelve failed deletes across two stages, ten of
+    them on a path that same stage had deleted successfully a moment earlier.
+    "Run `ls` to see what is actually there" sends it to look for an answer it
+    already has.
+    """
+    from app.tools.repository import delete_approved_artifact
+
+    write_approved_artifact(project, "todo/tmp_debug.mjs", "console.log('x');\n")
+    assert delete_approved_artifact(project, "todo/tmp_debug.mjs")["status"] == "deleted"
+
+    with pytest.raises(RepositoryToolError) as raised:
+        delete_approved_artifact(project, "todo/tmp_debug.mjs")
+
+    assert "this stage already deleted it" in str(raised.value)
+    assert "nothing more is needed" in str(raised.value)
+
+
+def test_a_file_that_never_existed_still_says_to_look(project: Path):
+    from app.tools.repository import delete_approved_artifact
+
+    with pytest.raises(RepositoryToolError) as raised:
+        delete_approved_artifact(project, "todo/never_existed.mjs")
+
+    assert "Run `ls`" in str(raised.value)
+    assert "already deleted" not in str(raised.value)
+
+
+def test_the_deletion_memo_is_kept_per_file(project: Path):
+    from app.tools.repository import delete_approved_artifact
+
+    write_approved_artifact(project, "todo/one.mjs", "x\n")
+    write_approved_artifact(project, "todo/two.mjs", "x\n")
+    delete_approved_artifact(project, "todo/one.mjs")
+
+    assert delete_approved_artifact(project, "todo/two.mjs")["status"] == "deleted"

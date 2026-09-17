@@ -187,6 +187,37 @@ def times_warned_about_undoing(relative_path: str) -> int:
     return store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS).get(str(relative_path), 0)
 
 
+_DELETIONS = "files this stage has deleted"
+
+#: Deletions remembered per stage. A stage clearing up after itself removes a
+#: handful of files at most.
+MAX_DELETIONS_REMEMBERED = 64
+
+
+def record_deletion(relative_path: str) -> None:
+    """Remember that this stage deleted this file."""
+    if not relative_path:
+        return
+    gone = store(_DELETIONS, _FALLBACK_DELETIONS)
+    gone[str(relative_path)] = True
+    for stale in list(gone)[:-MAX_DELETIONS_REMEMBERED]:
+        del gone[stale]
+
+
+def this_stage_deleted_it(relative_path: str) -> bool:
+    """Whether this stage is the reason the file is not there.
+
+    The counterpart to `where_this_stage_moved_it`. A stage clearing up the
+    debugging scripts it wrote loses track of which it has already removed, and
+    "there is nothing to delete, run `ls`" sends it to look for the answer it
+    already has.
+
+    Measured on run 551640d3: twelve failed deletes across two stages, ten of
+    them on a path that same stage had deleted successfully a moment earlier.
+    """
+    return bool(store(_DELETIONS, _FALLBACK_DELETIONS).get(str(relative_path)))
+
+
 def changed_since_seen(relative_path: str, content: str) -> bool:
     """True when this stage has seen the file and it no longer matches.
 
@@ -218,6 +249,9 @@ _FALLBACK_MOVES: dict[str, str] = {}
 #: And the undo-warning counter's.
 _FALLBACK_UNDO_WARNINGS: dict[str, int] = {}
 
+#: And the deletion log's.
+_FALLBACK_DELETIONS: dict[str, bool] = {}
+
 
 def forget_everything() -> None:
     """Drop the no-stage fallbacks. For tests, which must not leak into each other."""
@@ -226,6 +260,7 @@ def forget_everything() -> None:
     _FALLBACK_REPLACEMENTS.clear()
     _FALLBACK_MOVES.clear()
     _FALLBACK_UNDO_WARNINGS.clear()
+    _FALLBACK_DELETIONS.clear()
 
 
 __all__ = [
@@ -236,11 +271,14 @@ __all__ = [
     "MAX_MOVES_REMEMBERED",
     "UNDO_WARNINGS_BEFORE_REFUSING",
     "MAX_REPLACEMENTS_PER_FILE",
+    "MAX_DELETIONS_REMEMBERED",
+    "record_deletion",
     "record_move",
     "record_undo_warning",
     "record_replacement",
     "record_state",
     "remember",
+    "this_stage_deleted_it",
     "times_warned_about_undoing",
     "what_replaced_it",
     "where_this_stage_moved_it",

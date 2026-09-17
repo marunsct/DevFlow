@@ -2398,6 +2398,20 @@ def _the_same_module_already_here(target: Path, content: str) -> Path | None:
     return None
 
 
+def _this_stage_already_deleted(relative_path: str) -> bool:
+    """Whether this stage removed the file itself - see `seen_content`.
+
+    Wrapped so a missing or unwired memo can never turn a plain "not there"
+    into an exception.
+    """
+    try:
+        from app.tools.seen_content import this_stage_deleted_it
+
+        return this_stage_deleted_it(relative_path)
+    except Exception:  # noqa: BLE001 - see docstring
+        return False
+
+
 def _where_this_stage_put_it(relative_path: str) -> str | None:
     """Where this stage moved this file, or None - see `seen_content`.
 
@@ -2897,12 +2911,28 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
             "name the file you want removed."
         )
     if not target.exists():
+        # The same memo the read, the edit and the move consult. A stage
+        # clearing up the debugging scripts it wrote loses track of which it
+        # has already removed, and "run `ls`" sends it to look for an answer it
+        # already has. Measured on run 551640d3: twelve failed deletes across
+        # two stages, ten of them on a path that same stage had just deleted.
+        if _this_stage_already_deleted(shown):
+            raise RepositoryToolError(
+                f"'{shown}' is not there because this stage already deleted it. "
+                "That is done; nothing more is needed for this file."
+            )
         raise RepositoryToolError(
             f"'{shown}' does not exist - there is nothing to delete. "
             "Run `ls` to see what is actually there."
         )
 
     target.unlink()
+    try:
+        from app.tools.seen_content import record_deletion
+
+        record_deletion(shown)
+    except Exception:  # noqa: BLE001 - never fail a delete over a memo
+        logger.debug("Could not record the deletion of %s", shown, exc_info=True)
     return {"deleted": shown, "status": "deleted"}
 
 

@@ -2361,3 +2361,33 @@ The verification instrumentation around this loop is in good order and was
 checked rather than assumed: the defect brief carries reproduction steps,
 expected and actual behaviour, affected files, and what the last failing
 command actually printed, in all 110 of the run's defect-fix requests.
+
+### 4r. The character of the failures has changed
+
+Run f2832674 ran with eight of this session's checks live and **not one of
+them fired**. It was not refused an install; it never attempted one. Its
+manifest declared no dependency, its page loaded `app.js` with
+`<script type="module">`, its test command was `node --test` with nothing
+stranded, every file parsed, every id the script reached for existed on the
+page, and its own suite reported 14 passing. Then it failed, because
+`task.js` keeps its data in a module-level cache *and* in localStorage and
+reconciles them only on the error path (§4q).
+
+That is a different kind of failure from the ones this document was written
+about. The earlier runs failed on the module system, on a test command that
+ran one of three suites, on jsdom installed against a brief forbidding it, on
+a page that threw `Unexpected token 'export'` before any of the product ran.
+Those are mechanical and decidable, and they are now refused or noted at the
+write - which is why none of them fired: there was nothing to fire on.
+
+What remains is a design flaw a competent engineer would also have to think
+about, and no check can decide it. **For `brief_low.md`, check-building is at
+diminishing returns.** The evidence for that is not that no checks fired - a
+clean run would look the same - but that the run got all the way to a working
+page with a passing suite and failed on the one thing left.
+
+This does not meet the gate: the run failed and a real defect was found. It
+does say where the next round's effort belongs. The three columns of §4j are
+the measure - the eleven `AssertionError` workspaces are the population this
+run just joined, and they are product-and-test disagreements, not harness
+defects.

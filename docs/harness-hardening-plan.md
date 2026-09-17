@@ -2139,3 +2139,32 @@ failures grouped by what they assert, not by what they look like.
 The right next measurement is not another reading of the sources. It is this
 one repeated after the current round of write-time refusals has been through a
 few runs, to see which of the three columns moves.
+
+### 4k. `localStorage is not defined`, and counting occurrences instead of instances
+
+Grouping the eighteen failing suites of §4j by their error names gave 20
+`TypeError`, 19 `AssertionError` and 10 `ReferenceError`, and every one of the
+ten was `localStorage is not defined`. Node 20 has no `localStorage`, so the
+throw is certain, and the shape of the fix looked identical to
+`a_test_that_needs_a_dom`, which already does this for `document` and
+`window`.
+
+The exclusion recorded at `_HAND_ROLLED_DOM` does not forbid it. That comment
+is about a *different* check - whether a hand-rolled stub will hold - and it
+is right that a five-line `localStorage` mock is adequate where a `document`
+stub is not. Having no stub at all is a separate question.
+
+**All ten are one workspace.** Run fa7b7286's suite fails ten cases the same
+way. As a count of distinct products affected it is one, which is below the
+bar this document has already applied to the forgiving edit matcher, the
+call-ceiling enforcement and the journalled-output miss. No check.
+
+The error is worth naming on its own, because this is the third time in one
+session that a total has been mistaken for a prevalence: counting a phrase
+across every transcript record kind inflated "fixes firing" until the
+`model_request` copies were excluded; counting references rather than calls
+put "DOM function never called" at 11 of 55 instead of 1; and here, counting
+failing cases rather than failing products put a one-workspace defect at the
+top of a corpus-wide table. In each the error ran the same direction - toward
+a larger number that justified more work. **Count distinct runs or
+workspaces, then look at the occurrences within them.**

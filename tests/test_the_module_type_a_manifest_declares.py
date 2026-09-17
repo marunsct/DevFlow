@@ -113,7 +113,7 @@ def test_explicit_extensions_are_exempt_from_the_declared_type(tmp_path):
 
 def test_it_says_what_to_do_about_it(tmp_path):
     note = _note(tmp_path, {"type": "commonjs"}, app__js="export function a() {}\n")
-    assert "Convert them in this sprint or leave the `type` as it was" in note
+    assert "Convert it in this sprint or leave the `type` as it was" in note
     assert "one choice for the whole directory" in note
 
 
@@ -125,3 +125,21 @@ def test_some_other_json_file_is_not_a_manifest(tmp_path):
         tmp_path, "proj/tsconfig.json", json.dumps({"type": "commonjs"})
     )
     assert "type" not in written.get("note", "")
+
+
+def test_the_note_agrees_with_itself_on_number(tmp_path):
+    """One file reads as one file, several as several.
+
+    It said "that file ... no longer load" until a probe of both numbers
+    caught it, which is the sort of thing a reader stops trusting a note over.
+    """
+    one = _note(tmp_path, {"type": "commonjs"}, app__js="export function a() {}\n")
+    assert "that file no longer loads" in one and "Convert it" in one
+
+    two = _note(
+        tmp_path,
+        {"type": "commonjs"},
+        app__js="export function a() {}\n",
+        b__js="export function b() {}\n",
+    )
+    assert "those files no longer load" in two and "Convert them" in two

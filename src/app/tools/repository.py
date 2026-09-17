@@ -2085,15 +2085,16 @@ def _the_module_type_this_declares_breaks_files_here(target: Path, content: str)
     if not contradicting:
         return ""
     theirs = "CommonJS" if declared == "module" else "ES module"
+    one = len(contradicting) == 1
     return (
         f'This declares `"type": "{declared}"`, which is how Node decides to '
         f"parse every `.js` file in this directory, and "
         f"{', '.join(contradicting[:4])} still "
         f"{'uses' if len(contradicting) == 1 else 'use'} {theirs} syntax. "
-        f"Under this manifest {'that file' if len(contradicting) == 1 else 'those files'} "
-        "no longer load. Convert them in this sprint or leave the `type` as it "
-        "was - the module system is one choice for the whole directory, not a "
-        "per-file one."
+        f"Under this manifest {'that file no longer loads' if one else 'those files no longer load'}"
+        f". Convert {'it' if one else 'them'} in this sprint or leave the `type` "
+        "as it was - the module system is one choice for the whole directory, "
+        "not a per-file one."
     )
 
 

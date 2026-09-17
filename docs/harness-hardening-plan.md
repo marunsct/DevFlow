@@ -2168,3 +2168,39 @@ failing cases rather than failing products put a one-workspace defect at the
 top of a corpus-wide table. In each the error ran the same direction - toward
 a larger number that justified more work. **Count distinct runs or
 workspaces, then look at the occurrences within them.**
+
+### 4l. The eighteen failing suites, grouped by cause
+
+§4j asked for the failures grouped by what they assert rather than by what
+they look like. Counting **distinct workspaces** rather than occurrences, as
+§4k insists:
+
+| error | workspaces |
+|---|---|
+| `AssertionError` | 11 |
+| `TypeError` | 4 |
+| `ReferenceError` | 1 |
+
+The two non-assertion groups collapse almost entirely into single workspaces.
+All ten `ReferenceError`s are run fa7b7286 (§4k). Eighteen of the twenty
+`TypeError`s are run ae4b717e, failing `Cannot read properties of undefined
+(reading 'eval')` inside its DOM library - idiosyncratic to the dependency it
+should not have had.
+
+What is left, and it is the majority, is eleven workspaces failing on
+`AssertionError`: the product does not do what its own test says it should.
+**No static check can catch that**, and none should try - it is precisely the
+question the defect loop and the remediation rounds exist to answer, and a
+check that guessed at it would be inventing the answer the suite is there to
+provide.
+
+That is the useful shape of the result. The mechanically decidable failures -
+a command naming a path that cannot resolve, a manifest that is not JSON, a
+module system the page or the runner cannot load, a suite calling a global
+that does not exist, a call the signature does not accept - are now refused or
+noted at the write, each traced to the run that paid for it. The residue is
+genuine disagreement between a product and its tests, which is work, not a
+defect in the harness.
+
+So the measure of the next round is not how many more checks exist. It is
+whether the eleven shrink, and §4j's three columns are how to see it.

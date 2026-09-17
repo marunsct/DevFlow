@@ -2391,3 +2391,51 @@ does say where the next round's effort belongs. The three columns of §4j are
 the measure - the eleven `AssertionError` workspaces are the population this
 run just joined, and they are product-and-test disagreements, not harness
 defects.
+
+### 4s. The run's verdict and the product's state disagree
+
+Every measurement in this document so far reads the sources. This one runs the
+product: a driver that stubs `localStorage` and a minimal DOM, imports each
+non-test module in turn, and performs the flow a user would - add two tasks,
+list them, delete one, check the store.
+
+Twenty-seven of the stored workspaces have a module it can reach. Crossing
+what the driver found against the status the run ended with:
+
+| run status | product works | product broken |
+|---|---|---|
+| completed  | 4 | 1 |
+| failed     | **5** | 7 |
+| cancelled  | 1 | 2 |
+
+**Five runs marked failed delivered a working product, and one marked
+completed delivered a broken one.** Run f2832674 is the clearest: it ended
+"Sprint ... exhausted its 3 remediation attempts", and its `task.js` adds,
+lists, updates, deletes and persists correctly. What it failed on was two
+tests asserting what should happen when `localStorage.setItem` throws -
+behaviour the brief does not mention, invented by the testing specialist and
+then fatal to the run.
+
+Read carefully, because the driver is crude and the caveats are not small.
+It exercises add/list/delete/persist and never opens the page, so a product
+with a working core and a dead UI counts as working here. "Works" includes
+`PARTIAL`, which is usually "no delete export" - a limit of guessing at export
+names, not evidence about the product. Nineteen workspaces export nothing it
+recognises, mostly browser-global style, and are excluded rather than counted
+as broken; an earlier version of this measurement reported everything broken
+and a later one reported f2832674 broken, both times because the driver picked
+the wrong module. The numbers are worth what a crude driver is worth.
+
+What survives the caveats is the shape: **the terminal status is not a
+measure of whether the product works**, in either direction. Every table in
+this document that groups runs by status inherits that, §4j and §4l included.
+Where the question is product quality, run the product.
+
+The actionable half is narrower and is not a check. A test asserting
+behaviour the brief never specifies can fail a run whose product is
+correct, and whether `updateTask` should return a task when persistence
+failed is a specification question, not a decidable one. Four workspaces
+besides f2832674 have tests that inject a storage failure. The specialists'
+own instructions already say to complete the delegated task and its stated
+acceptance criteria and not to expand scope; what is missing is any check
+that a *test* stayed inside them, and §4e is the reason not to guess at one.

@@ -712,6 +712,33 @@ is already automated - point it at a run's transcript and it prints the three nu
 4. Test the integration, not the component — the one regression shipped this session passed every unit test and failed on the agent's first call.
 5. Derive constants; never type a number measured on one model.
 6. Record provenance in the commit: run id, stage, count. The next reader is deciding whether a constant still holds.
+7. **Trace the failure to the stage that decided it.** A check at the point of
+   failure is right, and it is often not the cheapest fix available. Three of
+   the strongest fixes in this session were several stages upstream of where
+   the damage showed:
+   - `jsdom` looked like a testing specialist improvising. It was written into
+     the *specification*: "Use node --test with jsdom for DOM simulation". The
+     specialists were building to spec, so the fix was to give the architect
+     the brief's constraints.
+   - Documentation specialists burning 5% of all spend looked like a weak role.
+     Every task they were given asked them to edit a document the tool refuses,
+     so the fix was in the lead's validator - which had never once fired.
+   - Module conflicts cost five separate cross-file checks and rounds in six
+     runs. Nothing decided the module system: the stack does not record it and
+     the specification is silent on it in every stored run but one. The fix was
+     to state, once, where every specialist reads it, that the page, the file
+     and the tests share one choice.
+
+   The tell for all three is a check that keeps firing on runs that are
+   otherwise healthy. A recurring finding is evidence about a decision, not
+   only about a product.
+8. **Read what the model was actually handed.** The corpus sweep catches a
+   check that misfires on shapes some run produced; trying legitimate shapes by
+   hand catches those no run has produced yet; neither catches a finding that
+   is wrong only in context. Run 551640d3's milestone review was handed a
+   blocking finding calling `app.js` a bad test suite, thirteen times, and
+   echoed it as a defect to fix - which nothing could, because `app.js` is the
+   application. That surfaced only by reading a live review's evidence.
 
 ## 6. Non-goals and risks
 

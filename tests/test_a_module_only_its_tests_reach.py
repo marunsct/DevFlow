@@ -122,3 +122,33 @@ def test_dead_code_no_test_touches_is_a_different_finding(build):
     files, root = build({"index.html": PAGE_WITHOUT, "app.js": APP})
 
     assert only_tests_reach(files, root) == []
+
+
+def test_an_inline_module_script_counts_as_loading_it(build):
+    """A `<script type="module">` that imports the file loads it.
+
+    Counting only `src` attributes reported a page as never loading its own
+    entry point, which is a normal way to write one. That shape does not occur
+    in the 55 stored workspaces, so the sweep could not have caught it - only
+    trying it could.
+    """
+    page = (
+        "<!DOCTYPE html><button id='a'>A</button><button id='b'>B</button>\n"
+        '<script type="module">\n'
+        "  import { addTask } from './app.js';\n"
+        "  addTask('x');\n"
+        "</script>"
+    )
+    files, root = build({"index.html": page, "app.js": APP, "app.test.mjs": SUITE})
+
+    assert only_tests_reach(files, root) == []
+
+
+def test_an_inline_script_that_imports_nothing_does_not_count(build):
+    page = (
+        "<!DOCTYPE html><button id='a'>A</button><button id='b'>B</button>\n"
+        "<script>console.log('hello')</script>"
+    )
+    files, root = build({"index.html": page, "app.js": APP, "app.test.mjs": SUITE})
+
+    assert len(only_tests_reach(files, root)) == 1

@@ -890,6 +890,19 @@ def _reached_only_by_its_tests(files: list[Path], root: Path) -> list[str]:
     for page in pages:
         text = _read(page)
         loaded.update(Path(src).name for src in _SCRIPT_SRC.findall(text))
+        # An inline `<script type="module">` that imports the file loads it
+        # just as surely as a `src` attribute does, and is a normal way to
+        # write an entry point. Counting only `src` reported that page as
+        # never loading its own module.
+        for attributes, block in re.findall(
+            r"<script\b([^>]*)>(.*?)</script>", text, re.I | re.S
+        ):
+            if _TAG_SRC.search(attributes):
+                continue
+            for target in _IMPORT_TARGET.findall(block):
+                if target.startswith("."):
+                    loaded.add(Path(target).name)
+                    loaded.add(Path(target).name + ".js")
 
     imported_by_product: set[str] = set()
     for path in files:

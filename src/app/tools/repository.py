@@ -1999,6 +1999,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     from app.analysis.test_discovery import (
         a_call_the_signature_does_not_accept,
         a_dom_built_by_hand,
+        a_name_this_test_defines_instead_of_importing,
         a_suite_calling_a_global_node_does_not_define,
         a_suite_that_only_checks_things_exist,
         a_test_that_asserts_nothing,
@@ -2023,6 +2024,9 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
                 relative_path, content, target.parent if target else None
             ),
             a_suite_calling_a_global_node_does_not_define(
+                relative_path, content, target.parent if target else None
+            ),
+            a_name_this_test_defines_instead_of_importing(
                 relative_path, content, target.parent if target else None
             ),
             _the_test_command_will_not_run_this(target),

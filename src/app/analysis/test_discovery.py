@@ -889,3 +889,92 @@ def a_suite_calling_a_global_node_does_not_define(
         f"`ReferenceError: {name} is not defined` and the suite cannot run at "
         f"all. Add `import {{ {name} }} from 'node:test';` at the top."
     )
+
+
+def a_name_this_test_defines_instead_of_importing(
+    relative_path: str, content: str, project: "Path | None" = None
+) -> str | None:
+    """Why this suite tests a copy rather than the product, or None.
+
+    A test that reimplements what it is testing passes whatever the
+    application does - the assertions are real, the logic is real, and none of
+    it is connected to the product. Every gate downstream reads the pass.
+
+    `_redefined_instead_of_imported` finds it at a milestone review, and run
+    1cd4597b is why that is not enough: `crud.test.mjs` and `filter.test.mjs`
+    each defined their own `loadTasks` beside an import of the module that
+    exports it, the finding was reported at the end of two consecutive
+    sprints, and both files still carried it. Five more workspaces end this
+    way, run 1ae7671d with eight files.
+
+    The evidence is all there at the write: the file names a relative module,
+    so that module is on disk, and whether it defines a name that module
+    already exports is decidable then. That is what separates this from the
+    findings 4t says cannot move earlier.
+
+    Shares its patterns with the cross-file check by import rather than by
+    copy; `test_the_two_readings_of_a_redefined_name_agree` pins the pair.
+    """
+    if not _is_test_name(relative_path):
+        return None
+    if project is None:
+        return None
+    try:
+        from app.analysis.file_kinds import is_application
+        from app.analysis.integration_checks import (
+            _TOP_LEVEL_CONST_FN,
+            _TOP_LEVEL_FUNCTION,
+            _names_bound_from_a_relative_module,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+    defined = set(_TOP_LEVEL_FUNCTION.findall(content)) | set(
+        _TOP_LEVEL_CONST_FN.findall(content)
+    )
+    if not defined:
+        return None
+    imported = _names_bound_from_a_relative_module(content)
+    # The module is not always beside the suite: `src/manual_regression.test.js`
+    # and `tests/tasks.test.js` both sit a level below the file they copy from,
+    # and looking only in the suite's own directory missed both. Bounded, so a
+    # large repository is not walked on every write.
+    try:
+        neighbours = [
+            path
+            for directory in (project, *project.parents[:2])
+            for path in sorted(directory.iterdir())
+            if path.is_file()
+            and path.suffix.lower() in {".js", ".mjs", ".cjs", ".ts"}
+            and is_application(path.name)
+        ]
+    except OSError:
+        return None
+    for path in neighbours:
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        theirs = set(_TOP_LEVEL_FUNCTION.findall(source)) | set(
+            _TOP_LEVEL_CONST_FN.findall(source)
+        )
+        shared = sorted(name for name in defined & theirs if name not in imported)
+        if not shared:
+            continue
+        named = ", ".join(shared[:4])
+        return (
+            f"This defines {named} itself, and `{path.name}` exports "
+            f"{'that name' if len(shared) == 1 else 'those names'} too. The "
+            "assertions here run against this file's copy, so they pass "
+            f"whatever `{path.name}` does - a green suite that is not evidence "
+            "about the product."
+            + (
+                " Importing the module and then defining one of its names "
+                "beside it leaves the assertions pointing at the copy."
+                if imported
+                else ""
+            )
+            + f" Import {named} from `./{path.name}` instead of defining "
+            "it here."
+        )
+    return None

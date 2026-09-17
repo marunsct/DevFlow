@@ -129,6 +129,17 @@ earnest - not now, while every run is JavaScript, but before the move.
 briefs, `constraint_lines` extracts all five medium constraints and all eight
 high ones correctly.
 
+**It goes dark rather than wrong, which is the better of the two.** Built a
+FastAPI product - `requirements.txt`, `app/main.py` with a route, `app/models.py`,
+`tests/test_api.py` - and ran every check over it: nothing reported, no false
+positives, and the size accounting still counts the Python files. So a Python
+run is not in danger of being blocked by a check that does not understand it;
+the reviewer simply loses all cross-file evidence and keeps only the budget.
+The React half of `brief_medium` is now covered - a Vite entry point
+(`src="/src/main.jsx"`) was being reported as a missing file until this was
+checked the same way, which would have blocked the first React product on its
+first file.
+
 ### B2 — Per-role executable allowlists are a fixed table  *(verified)* — **and 16 of 34 names are not in the image**
 
 Measured 2026-09-16 inside the deployed worker, through `shutil.which` in the venv the

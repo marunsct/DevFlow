@@ -1606,14 +1606,20 @@ def _the_response_written_under_another_name(
     present = _THE_RESPONSE_SCHEMA & {str(key).lower() for key in document}
     if len(present) < _FIELDS_THAT_MAKE_IT_THE_RESPONSE:
         return None
+    # The invariant sentence leads, and the field list - which varies with
+    # whatever the agent included - comes after it. `_the_same_refusal` keys on
+    # the first 60 characters after the colon, so a varying opening would reset
+    # the repeat count on every attempt, which is the exact weakness that
+    # helper exists to close. Leading this way also makes it share a key with
+    # `_the_response_it_should_be_returning`, so the two count as one event.
     return (
-        f"Refusing to write '{'/'.join(relative_parts)}': this content is your "
-        f"structured response - it carries {', '.join(sorted(present)[:4])} - "
-        "and the structured response is returned, not written. The workflow "
-        "reads it from the response itself, so writing it to a file under any "
-        "name leaves the workflow with nothing and you will be asked for it "
-        "again. Stop calling tools and return the structured response now, in "
-        "the required schema."
+        f"Refusing to write '{'/'.join(relative_parts)}': your structured "
+        "response is returned, not written. The workflow reads it from the "
+        "response itself, so writing it to a file under any name leaves the "
+        "workflow with nothing and you will be asked for it again. This "
+        f"content is that response - it carries {', '.join(sorted(present)[:4])}. "
+        "Stop calling tools and return the structured response now, in the "
+        "required schema."
     )
 
 

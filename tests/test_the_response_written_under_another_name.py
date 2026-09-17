@@ -115,3 +115,32 @@ def test_the_one_instance_in_the_corpus_is_recognised():
             }
         ),
     )
+
+
+def test_every_form_of_this_refusal_shares_one_repeat_key():
+    """The loop guard must count these as one event, not as many.
+
+    `_the_same_refusal` keys on the first 60 characters after the colon. The
+    field list varies with whatever the agent included, so it comes after the
+    invariant sentence - a varying opening would reset the repeat count on
+    every attempt, which is the exact weakness that helper exists to close.
+    Leading with the shared sentence also makes this share a key with the
+    by-name refusal, so a stage alternating between the two still counts up.
+    """
+    from app.agents.repeated_queries import _the_same_refusal
+    from app.tools.repository import _the_response_it_should_be_returning
+
+    forms = [
+        _the_response_written_under_another_name(
+            ("final_response.json",),
+            json.dumps({"changed_files": [], "decisions": [], "tests": []}),
+        ),
+        _the_response_written_under_another_name(
+            ("docs", "summary.json"),
+            json.dumps({"risks": [], "blockers": [], "documentation": [], "role": "x"}),
+        ),
+        _the_response_it_should_be_returning(("docs", "structured_response.md")),
+    ]
+    keys = {_the_same_refusal(json.dumps({"error": form})) for form in forms}
+    assert len(keys) == 1, keys
+    assert keys.pop() == "your structured response is returned, not written"

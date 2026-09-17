@@ -311,6 +311,50 @@ written, the task delegated and the script authored.
 """
 
 
+#: Languages where a module system is a choice the files must share.
+_HAS_A_MODULE_SYSTEM = ("javascript", "typescript")
+
+
+def _how_the_pieces_load(stack: Any) -> str:
+    """The one cross-cutting choice the stack does not record, or "".
+
+    The stack decides the language, the framework, the database and the test
+    runner. It does not decide how a module is loaded, and nothing else does
+    either - the specification is silent on it in every stored run but one.
+    So each specialist chooses alone: the page gets a plain `<script>` tag,
+    the application file gets `export`, the suite gets `import`, and the three
+    do not agree.
+
+    That disagreement is the most expensive recurring failure in this harness.
+    Five separate cross-file checks exist to catch its shapes, and runs
+    0c5aabdb, d6297b2f, 0afef410, 7e960f06, 1ae7671d and 551640d3 each spent
+    rounds on it.
+
+    What is stated here is not a preference. Both combinations work, and a
+    stage is free to pick either - what cannot work is picking differently in
+    three files, which is what happens when nobody says so.
+    """
+    language = str(getattr(stack, "language", "") or "").lower()
+    if not any(name in language for name in _HAS_A_MODULE_SYSTEM):
+        return ""
+    return (
+        "How the pieces load each other is one choice, not three. The page, "
+        "the application file and the tests must share it, and only two "
+        "combinations hold together:\n"
+        "- ES modules: the file uses `export`, the page loads it with "
+        '`<script type="module" src="...">`, and the tests `import` from it.\n'
+        "- CommonJS: the file assigns `module.exports` or browser globals, the "
+        "page loads it with a plain `<script src=\"...\">`, and the tests "
+        "`require` it.\n"
+        "Mixing them is the single most expensive mistake made in this "
+        "workspace: `export` behind a plain script tag throws on page load, "
+        "and `module.exports` behind `type=\"module\"` throws too - in both "
+        "cases the tests still pass, because they import the file directly and "
+        "never open the page. Read what is already there before you write, and "
+        "match it.\n"
+    )
+
+
 def describe_stack(stack: Any) -> str:
     """The chosen stack, as the one specialists must build on.
 
@@ -357,6 +401,7 @@ def describe_stack(stack: Any) -> str:
         "the stack above, and a second one in the same directory means neither "
         "works. If your task cannot be done on this stack, say so as a blocker "
         "rather than switching.\n"
+        + _how_the_pieces_load(stack)
         + NO_SHELL_NOTE
         + "\n"
     )

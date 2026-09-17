@@ -2325,3 +2325,39 @@ This is the B1 question in miniature. The dependency checks degrade
 gracefully - no false refusals on a permissive brief - but they also provide
 no coverage, and B1's point stands: a stack the checks were built around is
 not the same as a stack they can see.
+
+### 4q. One design flaw can spend the whole remediation budget
+
+Run f2832674 was assigned three defects across three remediation rounds:
+
+1. "MemoryTasks variable is undefined within loadTasks, updateTask,
+   deleteTask, getTasks causing all CRUD tests to fail."
+2. "addTask persists tasks even when localStorage.setItem fails, violating
+   expected empty list behavior."
+3. "getTasks uses in-memory cache incorrectly when localStorage is
+   unavailable, returning 0 instead of 1."
+
+These are three symptoms of one thing: `task.js` keeps the data in a
+module-level `memoryTasks` array *and* in localStorage, and the two are only
+reconciled on the error path - `persist()` falls back to the cache when
+`setItem` throws, while `loadTasks()` does not use that fallback when a
+successful read returns nothing, so a failed write silently discards what is
+in memory.
+
+`recurrence_of` is right not to match them: the descriptions share no phrasing
+and each names a different function and a different wrong value. But the
+budget is spent per symptom, and `MAX_REMEDIATION_ATTEMPTS` counts rounds, not
+causes. A single design flaw with three faces exhausts it without any round
+repeating itself.
+
+**Recorded as an observation, not a check.** Deciding that three differently
+worded defects are one cause is a judgement, which is what §4e warns against
+automating, and this is one run. What would make it decidable is narrower:
+defects whose affected-files lists name the same module *and* whose
+descriptions name the same identifier - here `memoryTasks` appears in two of
+the three. If the pattern shows up again, that is the thing to measure.
+
+The verification instrumentation around this loop is in good order and was
+checked rather than assumed: the defect brief carries reproduction steps,
+expected and actual behaviour, affected files, and what the last failing
+command actually printed, in all 110 of the run's defect-fix requests.

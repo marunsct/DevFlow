@@ -2631,6 +2631,10 @@ def build_workflow_graph(
             state["repository"].root_path,
             getattr(state.get("stack_selection"), "technology_stack", None),
             getattr(state.get("document"), "text", "") or "",
+            # The blockers, risks and decisions the specialists recorded. They
+            # were written into state and read by nothing - see
+            # `what_the_specialists_reported`.
+            outputs,
         )
         update = _run_gated_agent(
             state,

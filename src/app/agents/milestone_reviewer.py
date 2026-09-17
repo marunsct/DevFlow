@@ -203,6 +203,69 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
     return "".join(parts)
 
 
+#: How many of each kind to carry. A milestone has a handful of specialists.
+MAX_REPORTED_PER_KIND = 6
+
+
+def what_the_specialists_reported(outputs: Any) -> str:
+    """The blockers, risks and decisions the specialists recorded, or "".
+
+    They were recorded and never read. `specialist_outputs` is consumed for
+    `changed_files` and nothing else, so `blockers`, `risks`, `decisions` and
+    `documentation` were written into state and discarded - while the
+    workflow-document refusal told agents, every time it fired, that "those
+    reach the workflow and the next stage".
+
+    The content is not incidental. Across the stored transcripts the fields
+    hold, among others:
+
+        blockers:  "Test suite app.test.mjs fails because it imports named
+                    exports from app.js but the file no longer provides them"
+        risks:     "Potential need for jsdom to mock DOM in tests, which would
+                    introduce an external dependency"
+        decisions: "Removed ES module exports and added window.todoApp global
+                    object"
+
+    Those are the module conflict, the forbidden dependency and the change that
+    broke a suite - each named by the specialist that did it, at the moment it
+    happened, and read by nobody.
+    """
+    if not outputs:
+        return ""
+    gathered: dict[str, list[str]] = {"blockers": [], "risks": [], "decisions": []}
+    try:
+        for role, output in sorted(outputs.items()):
+            for kind in gathered:
+                for item in (getattr(output, kind, None) or []):
+                    text = str(item).strip()
+                    if text:
+                        gathered[kind].append(f"[{role}] {text}")
+    except Exception:  # noqa: BLE001 - a reviewer without this still reviews
+        return ""
+    if not any(gathered.values()):
+        return ""
+
+    parts = ["--- What the specialists reported while building this ---\n"]
+    for kind, label in (
+        ("blockers", "Blockers they hit"),
+        ("risks", "Risks they raised"),
+        ("decisions", "Decisions they made"),
+    ):
+        if gathered[kind]:
+            parts.append(
+                f"{label}:\n"
+                + "\n".join(f"- {line}" for line in gathered[kind][:MAX_REPORTED_PER_KIND])
+                + "\n\n"
+            )
+    parts.append(
+        "These are the builders' own words about what they ran into, not a "
+        "summary of the files. A blocker nobody resolved is still a blocker, "
+        "and a decision that contradicts the specification or the brief is "
+        "worth a finding whatever the tests do.\n\n"
+    )
+    return "".join(parts)
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
@@ -211,12 +274,14 @@ def build_milestone_review_request(
     repository_root: str,
     stack: Any = None,
     document_text: str = "",
+    specialist_outputs: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the milestone artifacts awaiting review."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
     brief = (
         WORKSPACE_ROOT_NOTE
         + _against_the_brief(document_text, repository_root)
+        + what_the_specialists_reported(specialist_outputs)
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"

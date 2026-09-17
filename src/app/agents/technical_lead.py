@@ -13,6 +13,7 @@ explicit blockers instead of silent assumptions).
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -129,10 +130,29 @@ class SpecialistTask(BaseModel):
 
         if not names_one(self.task_description):
             return self
-        if self.acceptance_criteria and not all(
-            names_one(criterion) for criterion in self.acceptance_criteria
-        ):
-            return self
+        # A task whose opening verb acts on the document is entirely about it,
+        # however its criteria are worded. The `all(...)` test below misses
+        # these because a criterion often continues the sentence rather than
+        # repeating the filename - "- contains a section titled 'Test
+        # Results'" is about `docs/milestone_review.md` and never says so.
+        #
+        # Measured across the stored transcripts: 25 documentation stages, 223
+        # model calls, two writes between them. Every task sampled read
+        # "Update docs/technical_specification.md ...", "Update
+        # docs/milestone_review.md ..." or "Edit the existing
+        # docs/architecture_review.md ...", and the tool refuses all three.
+        #
+        # "Implement filtering and update docs/sprint_plan.md" opens on the
+        # real work and is left alone, which is what the `and` boundary is for.
+        first_clause = re.split(r"\band\b", self.task_description, maxsplit=1)[0]
+        acts_on_it = bool(
+            re.match(r"\s*(update|edit|revise|amend|modify|rewrite)\b", first_clause, re.I)
+        ) and names_one(first_clause)
+        if not acts_on_it:
+            if self.acceptance_criteria and not all(
+                names_one(criterion) for criterion in self.acceptance_criteria
+            ):
+                return self
         raise ValueError(
             f"'{self.task_description}' asks only for a document the workflow "
             "writes itself and no agent can change - the tool refuses it. There "

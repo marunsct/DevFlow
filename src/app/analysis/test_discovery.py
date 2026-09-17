@@ -229,11 +229,10 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
         "holds only until the code under test touches something the mock does "
         "not have, and the failure then looks like an application bug inside "
         "application code - three runs of this harness have lost whole sprints "
-        "to it. `npm install --save-dev jsdom` works here - dependency installs "
-        "are the one thing with network access - so use a real DOM instead. "
-        "`--save-dev` matters: a brief that says \"no external dependencies\" "
-        "means the product's, and a test tool left in `dependencies` is "
-        "reported as a runtime dependency the product does not have."
+        "to it. Mocking the DOM is no longer permitted. You MUST write a browser-based "
+        "test using Playwright (`npm install -D @playwright/test`) to verify the "
+        "end-to-end functionality including UI logic with a real browser. Do NOT "
+        "remove or disable the UI logic."
     )
 
 
@@ -300,9 +299,9 @@ def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | N
                 "neither. Node has no DOM, so any test that reaches that code "
                 "fails with `ReferenceError: document is not defined` - not at "
                 "import, which is why no other check sees it, but when the "
-                "function is called. Either call only the parts that do not "
-                "touch the page, or `npm install --save-dev jsdom` and assign "
-                "`global.document` from it."
+                "function is called. You MUST write a browser-based test using "
+                "Playwright (`npm install -D @playwright/test`) to verify the UI "
+                "logic in a real browser context. Do NOT delete UI logic."
             )
         break
     return None

@@ -72,11 +72,12 @@ and wiring is the part a test does not need to load.
 """
 
 TESTABILITY_RULE = """Testability - this decides whether the tests can run at all:
-- For frontend UI code, YOU MUST USE Playwright (`@playwright/test`) to verify DOM interactions and application logic end-to-end. Do NOT use jsdom or Node-based DOM mocks, as they cause false positives and break the real UI. To test DOM logic, write Playwright tests that interact with the real browser. Install it using `npm i -D @playwright/test` and `npx playwright install chromium`.
-- Configure Playwright to use the TAP reporter (e.g. `npx playwright test --reporter=tap`) so that the test runner can parse the output.
-- Keep the pure logic apart from DOM wiring. Put state and rules in functions that take their input as
-  arguments and return a value - no `document`, no `window`, no `localStorage`
-  reached for directly. Export them for unit testing.
+- FOR FRONTEND WEB UI CODE ONLY: YOU MUST USE Playwright (`@playwright/test`) to verify DOM interactions and application logic end-to-end. Do NOT use jsdom or Node-based DOM mocks, as they cause false positives and break the real UI. To test DOM logic, write Playwright tests that interact with the real browser. Install it using `npm i -D @playwright/test` and `npx playwright install chromium`. Configure Playwright to use the TAP reporter (e.g. `npx playwright test --reporter=tap`).
+- FOR ALL OTHER LANGUAGES/STACKS (Python, Go, Java, CLI apps, backend, etc): Use the testing framework appropriate to the language (e.g., PyTest, Go test, JUnit). Ensure tests are runnable and output results clearly.
+- NEVER remove or disable core application logic (including UI logic) to satisfy a test framework's limitations (e.g., headless test errors). If a test environment cannot support a feature, fix the test environment or mock appropriately, rather than deleting the code under test.
+- ALWAYS compare the output files against requirements and logs. Ensure that no previously working features were silently dropped.
+- Keep the pure logic apart from I/O or DOM wiring. Put state and rules in functions that take their input as
+  arguments and return a value. Export them for unit testing.
 - Do the DOM wiring in one `init()` (or `main()`) that the page calls. Guard
   the call so importing the file does not run it:
       if (typeof document !== 'undefined') init();

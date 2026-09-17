@@ -2705,7 +2705,25 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _tests_that_depend_on_the_working_directory(files, root)),
     ("the size of the product against the budget its own documents state",
      lambda files, root, stack: _over_the_declared_budget(files, root, _orphans_quietly(files, root))),
+    ("presence of Playwright for UI testing",
+     lambda files, root, stack: _missing_playwright_for_ui(files, root, stack)),
 )
+
+def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> list[str]:
+    """Ensures that UI applications test end-to-end functionality using Playwright."""
+    has_html = any(f.suffix == ".html" for f in files)
+    if not has_html:
+        return []
+    
+    packages = _manifest_packages(files, "package.json")
+    if "playwright" not in packages and "@playwright/test" not in packages:
+        return [
+            "The product has an HTML UI but Playwright is not installed in package.json. "
+            "This BREAKS regression detection. You MUST install `@playwright/test` and use it "
+            "to test the UI logic end-to-end. Unit testing the data layer alone with `node --test` "
+            "is insufficient for verifying that the application works in the browser."
+        ]
+    return []
 
 
 def summarise_integration(repository_root: str | Path, stack: Any = None) -> str:

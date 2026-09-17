@@ -1705,7 +1705,8 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
             "structured response - `blockers` for something that stops the work, "
             "`risks` for something that does not, `decisions` for a change you "
             "made and want recorded. Those reach the workflow and the next "
-            "stage; a document written beside this one reaches nobody."
+            "stage; a document written beside this one reaches nobody. "
+            "CRITICAL: STOP TRYING TO EDIT THIS FILE. RETURN YOUR FINAL STRUCTURED RESPONSE NOW."
         )
     return (
         f"Refusing to write '{where}': '{name}' is written by "
@@ -3115,8 +3116,8 @@ def write_approved_artifact(
                     f"'{relative_path.rstrip('/')}/something.md' - or write "
                     "somewhere else."
                 )
-            target.parent.mkdir(parents=True, exist_ok=True)
             try:
+                target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="utf-8")
             except OSError as exc:
                 logger.error("Failed to write artifact to %s: %s", target, exc)

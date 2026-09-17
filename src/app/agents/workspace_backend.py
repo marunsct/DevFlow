@@ -515,6 +515,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         return replace(result, file_data={**data, "content": note.strip() + "\n\n" + content})
 
     def ls(self, path: str) -> Any:
+        path = path.strip()
         result = super().ls(path)
         error = getattr(result, "error", None)
         if error and "path_not_found" in error:

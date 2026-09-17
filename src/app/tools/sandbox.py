@@ -280,7 +280,7 @@ MAX_OUTPUT_SIZE = _max_output_size()
 TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120}
 
 # Resource ceilings. A fork bomb or a runaway build hits these instead of the host.
-MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "2g")
+MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "4g")
 CPU_LIMIT = os.environ.get("SANDBOX_CPU_LIMIT", "2")
 PIDS_LIMIT = os.environ.get("SANDBOX_PIDS_LIMIT", "512")
 
@@ -383,6 +383,11 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
     os.makedirs(home, exist_ok=True)
     environment["HOME"] = home
     environment["TMPDIR"] = home
+    # Playwright browsers are installed globally in the container image;
+    # point the child at them so `npx playwright test` finds Chromium.
+    _pw_cache = os.path.expanduser("~/.cache/ms-playwright")
+    if os.path.isdir(_pw_cache):
+        environment["PLAYWRIGHT_BROWSERS_PATH"] = _pw_cache
     # Before `extra_env`, so a caller can still override a specific value.
     environment.update(_concurrency_environment())
     environment.update(extra_env or {})
@@ -1270,6 +1275,95 @@ def _where_it_ran(working_directory: str | None) -> str:
     return text or "."
 
 
+#: TAP's own summary lines, as `node --test` and anything TAP-compatible
+#: print them. Not anchored: the output reaches here inside a JSON string.
+_TAP_PASS = re.compile(r"#\s*pass\s+(\d+)")
+_TAP_FAIL = re.compile(r"#\s*fail\s+(\d+)")
+_TAP_TESTS = re.compile(r"#\s*tests\s+(\d+)")
+
+
+def _the_counts_a_test_run_reported(result: dict) -> dict:
+    """`{"passed": n, "failed": n, "tests": n}` from TAP output, or `{}`.
+
+    Recorded so a later run of the same command can be compared against it.
+    Without this the ledger knows a command ran and what it exited with, and
+    nothing about whether it did more or less than last time.
+    """
+    text = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}"
+    passed, failed, tests = (
+        _TAP_PASS.search(text),
+        _TAP_FAIL.search(text),
+        _TAP_TESTS.search(text),
+    )
+    if not (passed and failed and tests):
+        return {}
+    return {
+        "passed": int(passed.group(1)),
+        "failed": int(failed.group(1)),
+        "tests": int(tests.group(1)),
+    }
+
+
+def _fewer_pass_than_last_time(
+    repo_root: str, command: Sequence[str], working_directory: str | None, result: dict
+) -> str:
+    """Why this run of the command passes less than the last one, or "".
+
+    A change that takes a suite from six passing to none is the loudest thing
+    that can happen in a sprint, and nothing said it. The stage sees a failure
+    list and reads it as the state of the product, not as something its own
+    last edit caused.
+
+    Thirteen of the twenty-three runs with two comparable results have at
+    least one: run d6297b2f's `defect_fix_1_0` went 6 passing to 0 over seven
+    tests, run 84e05d4b's `implementation` 4 to 0, run f81808a4's
+    `specialist_testing_3` 10 to 8 over twelve.
+
+    Only against the same command in the same directory, and only when the
+    suite did not shrink. Comparing across different commands, or against a
+    run that collected fewer tests, would report ordinary work as a
+    regression - a suite legitimately passes less the moment a failing test is
+    added to it, and `tests` is how this tells the two apart.
+    """
+    now = _the_counts_a_test_run_reported(result)
+    if not now:
+        return ""
+    try:
+        here = _where_it_ran(working_directory)
+        argv = [str(part) for part in command]
+        for entry in reversed(read_execution_ledger(repo_root)):
+            if entry.get("command") != argv or entry.get("working_directory") != here:
+                continue
+            if "passed" not in entry or "tests" not in entry:
+                continue
+            if now["passed"] >= entry["passed"] and now["tests"] >= entry["tests"]:
+                return ""
+            
+            if now["tests"] < entry["tests"]:
+                gone = entry["tests"] - now["tests"]
+                return (
+                    f"\n\n[WARNING: Semantic Regression Detected. The test suite has shrunk. "
+                    f"This ran the same command here before and found {entry['tests']} test(s), "
+                    f"but now only found {now['tests']} test(s). {gone} test(s) were deleted "
+                    "or skipped. DO NOT remove tests or UI features to make a suite pass. "
+                    "Restore the missing functionality and its tests.]"
+                )
+
+            gone = entry["passed"] - now["passed"]
+            return (
+                f"\n\n[This ran the same command here before and {entry['passed']} "
+                f"test(s) passed; now {now['passed']} do. {gone} test(s) that "
+                "were passing have stopped. The suite is not smaller - "
+                f"{entry['tests']} test(s) then, {now['tests']} now - so this "
+                "is something a change since then broke, not a new test "
+                "failing. Look at what changed since that run before treating "
+                "the failures as the state of the product.]"
+            )
+    except Exception:  # noqa: BLE001 - a note must never fail a command
+        return ""
+    return ""
+
+
 def _record_execution(
     repo_root: str,
     role_name: str,
@@ -1307,6 +1401,7 @@ def _record_execution(
             "category": category,
             "returncode": _as_exit_code(result.get("returncode")),
             "error": result.get("error"),
+            **_the_counts_a_test_run_reported(result),
         }
         with path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(entry) + "\n")
@@ -1864,6 +1959,14 @@ class SandboxExecutor:
         notes = [n for n in (doubled, redirected) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
+        regressed = _fewer_pass_than_last_time(
+            repo_root, command, working_directory, outcome
+        )
+        if regressed:
+            outcome = {
+                **outcome,
+                "note": f"{outcome['note']}{regressed}" if outcome.get("note") else regressed.strip(),
+            }
         note = _note_about_running_this_again(
             repo_root, command, outcome, role_name, working_directory
         )

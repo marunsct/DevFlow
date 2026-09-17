@@ -814,3 +814,78 @@ def _module_named(project: "Path", specifier: str) -> str | None:
         except OSError:
             continue
     return None
+
+
+def a_suite_calling_a_global_node_does_not_define(
+    relative_path: str, content: str, project: "Path | None" = None
+) -> str | None:
+    """Why every case in this suite throws before it runs, or None.
+
+    Jest, Vitest and Mocha inject `test`, `it` and `describe` as globals.
+    `node --test` does not - they are exports of `node:test`, and a file that
+    calls one without importing it throws on the first case. Verified in the
+    worker image on Node 20.20.2: a well-formed suite with a real assertion,
+    using `describe`/`it` and importing neither, reports
+
+        # ReferenceError: describe is not defined
+        # pass 0   # fail 1
+
+    `_suites_calling_a_global_node_does_not_define` already finds this, at a
+    milestone review. It cost run d6297b2f and run 0afef410 a round each
+    before that, and four of the fifty-eight stored workspaces still carry it.
+    This is the same question asked at the write, where one import fixes it.
+
+    The patterns are the cross-file check's own, imported rather than copied,
+    so the two cannot drift - `test_the_two_readings_of_a_suite_global_agree`
+    pins them together.
+    """
+    if not _is_test_name(relative_path):
+        return None
+    try:
+        from app.analysis.integration_checks import (
+            _CALLS_A_SUITE_GLOBAL,
+            _DEFINES_ITS_OWN,
+            _IMPORTS_FROM_NODE_TEST,
+            _PROVIDES_TEST_GLOBALS,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    if not relative_path.lower().endswith((".js", ".mjs", ".cjs")):
+        return None
+    called = _CALLS_A_SUITE_GLOBAL.search(content)
+    if not called or _IMPORTS_FROM_NODE_TEST.search(content):
+        return None
+    if _DEFINES_ITS_OWN.search(content):
+        return None
+    # A project whose runner does provide the globals is not affected, so this
+    # can only speak where it is true. The manifest is rarely beside the suite
+    # - `src/sprint2.test.js` and `tests/tasks.test.js` both sit a level below
+    # the `package.json` that declares vitest - so this walks up to find it,
+    # which is the difference between agreeing with the cross-file check and
+    # reporting three working suites as broken.
+    if project is not None:
+        try:
+            for directory in (project, *project.parents[:3]):
+                for neighbour in directory.iterdir():
+                    low = neighbour.name.lower()
+                    if low.startswith(("jest.config", "vitest.config", ".mocharc")):
+                        return None
+                    if neighbour.name == "package.json":
+                        manifest = neighbour.read_text(
+                            encoding="utf-8", errors="replace"
+                        ).lower()
+                        if any(
+                            re.search(rf"(?<![\w-]){runner}(?![\w-])", manifest)
+                            for runner in _PROVIDES_TEST_GLOBALS
+                        ):
+                            return None
+        except OSError:
+            return None
+    name = called.group(1)
+    return (
+        f"This calls `{name}(...)` and nothing imports `{name}`. Jest and "
+        f"Vitest inject it as a global; `node --test` does not - it is an "
+        f"export of `node:test`, so every case in this file throws "
+        f"`ReferenceError: {name} is not defined` and the suite cannot run at "
+        f"all. Add `import {{ {name} }} from 'node:test';` at the top."
+    )

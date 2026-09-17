@@ -1868,6 +1868,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     from app.analysis.test_discovery import (
         a_call_the_signature_does_not_accept,
         a_dom_built_by_hand,
+        a_suite_calling_a_global_node_does_not_define,
         a_suite_that_only_checks_things_exist,
         a_test_that_asserts_nothing,
         a_test_that_needs_a_dom,
@@ -1888,6 +1889,9 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             a_dom_built_by_hand(relative_path, content),
             a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
             a_call_the_signature_does_not_accept(
+                relative_path, content, target.parent if target else None
+            ),
+            a_suite_calling_a_global_node_does_not_define(
                 relative_path, content, target.parent if target else None
             ),
             _the_test_command_will_not_run_this(target),

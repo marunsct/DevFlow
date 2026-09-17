@@ -1799,6 +1799,62 @@ def _import_note(root: Path, target: Path, content: str) -> str:
 _NAMES_A_SCRIPT_FILE = re.compile(r"""[\w./-]+\.[cm]?js\b""")
 
 
+def _refuse_a_script_path_that_repeats_its_own_directory(
+    target: Path, content: str
+) -> None:
+    """Refuse a manifest script whose paths are relative to the wrong place.
+
+    npm runs a script from the directory holding the `package.json`, so a path
+    in it is already relative to that directory. Writing the directory's own
+    name into the path doubles it, and the file is never found.
+
+    Three of the stored workspaces end this way and every one of their suites
+    reports nothing at all:
+
+        t54  "test": "node --test todo-app/app.test.mjs"
+             run from todo-app/, looks for todo-app/todo-app/app.test.mjs
+        t63  "test": "node --test simple-to-do-list-app/app.test.mjs"
+        t50  "test": "node --test simple-to-do-list-app/*.test.mjs"
+
+    `Could not find '<path>'`, exit 1, and a stage that reads the failure as
+    the product being broken rather than the command being wrong.
+
+    `_manifest_scripts_that_cannot_resolve` reports this at a milestone
+    review. This refuses it at the write, where the fix is deleting one path
+    segment.
+    """
+    try:
+        import json as _json
+
+        scripts = (_json.loads(content) or {}).get("scripts") or {}
+        if not isinstance(scripts, dict):
+            return
+        here = target.parent.name
+        if not here:
+            return
+        for name, command in scripts.items():
+            if not isinstance(command, str):
+                continue
+            # The directory's own name used as a path prefix, anywhere in the
+            # command. Matched as a whole segment so a project called `app`
+            # does not collide with `app.js`.
+            if not re.search(rf"(?<![\w./-]){re.escape(here)}/", command):
+                continue
+            raise RepositoryToolError(
+                f"Refusing to write '{target.name}': its `{name}` script runs "
+                f"`{command}`, and npm runs that from '{here}/' - the "
+                "directory this manifest is in. Paths in it are already "
+                f"relative to '{here}/', so `{here}/...` resolves to "
+                f"'{here}/{here}/...', which does not exist. Every path in "
+                f"that command reports `Could not find` and nothing runs. Drop "
+                f"the leading '{here}/' from the paths."
+            )
+    except RepositoryToolError:
+        raise
+    except Exception:  # noqa: BLE001 - never fail a write over a check that cannot run
+        return
+
+
 def _refuse_a_test_script_that_strands_suites(
     target: Path, content: str
 ) -> None:
@@ -2971,6 +3027,7 @@ def write_approved_artifact(
     _refuse_if_node_cannot_parse(target, relative_path, content)
 
     if target.name == "package.json":
+        _refuse_a_script_path_that_repeats_its_own_directory(target, content)
         _refuse_a_test_script_that_strands_suites(target, content)
 
     forked = _the_same_module_already_here(target, content)

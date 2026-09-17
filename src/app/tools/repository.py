@@ -1548,6 +1548,75 @@ WORKFLOW_DOCUMENTS = frozenset({
 _THE_RESPONSE_ITSELF = "structured_response"
 
 
+#: The fields of `SpecialistOutput`. A JSON object carrying several of these
+#: IS the structured response, whatever the file it is being written into is
+#: called.
+_THE_RESPONSE_SCHEMA = frozenset(
+    {
+        "changed_files",
+        "decisions",
+        "tests",
+        "verification",
+        "documentation",
+        "risks",
+        "blockers",
+        "defects",
+        "summary",
+        "role",
+        "output",
+    }
+)
+
+#: How many of them make it certain rather than a coincidence. Three, because
+#: `summary` and `tests` alone could plausibly be some other document's keys,
+#: and every real instance in the corpus carries five or more.
+_FIELDS_THAT_MAKE_IT_THE_RESPONSE = 3
+
+
+def _the_response_written_under_another_name(
+    relative_parts: tuple[str, ...], content: str
+) -> str | None:
+    """Refuse the structured response written as a file, by its content.
+
+    `_the_response_it_should_be_returning` refuses it by name, and the name is
+    whatever the agent invents. Five runs died on this and it caught three:
+
+        d6297b2f  docs/structured_response.md    32 writes
+        1ae7671d  todo-list/structured_response.json   8
+        a7150a6c  docs/structured_response.json        4
+        0deeb8bf  final_response.json                  6   - fell through
+        01f03ed9  docs/summary.json                    5   - fell through
+
+    Fifty-five writes across the five, every one of them carrying the same
+    thing: `{"changed_files": [...], "decisions": [...], "tests": [...]}`.
+    The content is identical; only the filename varies, so the content is what
+    this reads. A stage writing its own answer to a file leaves the workflow
+    with nothing, is asked again, and writes it again until the loop guard
+    stops the run - eighteen of the fifty-five recorded failures are a stage
+    repeating one write, and this is the largest single cause among them.
+    """
+    try:
+        import json as _json
+
+        document = _json.loads(content)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(document, dict):
+        return None
+    present = _THE_RESPONSE_SCHEMA & {str(key).lower() for key in document}
+    if len(present) < _FIELDS_THAT_MAKE_IT_THE_RESPONSE:
+        return None
+    return (
+        f"Refusing to write '{'/'.join(relative_parts)}': this content is your "
+        f"structured response - it carries {', '.join(sorted(present)[:4])} - "
+        "and the structured response is returned, not written. The workflow "
+        "reads it from the response itself, so writing it to a file under any "
+        "name leaves the workflow with nothing and you will be asked for it "
+        "again. Stop calling tools and return the structured response now, in "
+        "the required schema."
+    )
+
+
 def _the_response_it_should_be_returning(relative_parts: tuple[str, ...]) -> str | None:
     """Refuse a write of the agent's own structured response, or None.
 
@@ -2823,6 +2892,11 @@ def write_approved_artifact(
         raise RepositoryToolError(stranded)
     if not by_the_workflow:
         returning = _the_response_it_should_be_returning(relative_parts)
+        if returning is not None:
+            raise RepositoryToolError(returning)
+        # By content as well as by name: the name is whatever the agent invents,
+        # and `final_response.json` and `docs/summary.json` each cost a run.
+        returning = _the_response_written_under_another_name(relative_parts, content)
         if returning is not None:
             raise RepositoryToolError(returning)
         owned = _a_workflow_document(relative_parts)

@@ -1,0 +1,117 @@
+"""The structured response written as a file, recognised by its content.
+
+`_the_response_it_should_be_returning` refuses it by name, and the name is
+whatever the agent invents. Five runs died on this loop and the name check
+caught three:
+
+    d6297b2f  docs/structured_response.md         32 writes
+    1ae7671d  todo-list/structured_response.json   8
+    a7150a6c  docs/structured_response.json        4
+    0deeb8bf  final_response.json                  6   - fell through
+    01f03ed9  docs/summary.json                    5   - fell through
+
+Fifty-five writes across the five, every one carrying the same thing:
+`{"changed_files": [...], "decisions": [...], "tests": [...]}`. Only the
+filename varies, so the content is what this reads.
+
+Eighteen of the fifty-five recorded run failures are a stage repeating one
+write until the loop guard stops it, and this is the largest single cause
+among them.
+"""
+
+from __future__ import annotations
+
+import json
+
+import pytest
+
+from app.tools.repository import (
+    RepositoryToolError,
+    _the_response_written_under_another_name,
+    write_approved_artifact,
+)
+
+A_RESPONSE = {
+    "changed_files": ["app.js"],
+    "decisions": ["Used node:test"],
+    "tests": ["app.test.mjs"],
+    "verification": [],
+    "risks": [],
+    "blockers": [],
+}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "final_response.json",
+        "final_output.json",
+        "docs/summary.json",
+        "docs/structured_response.json",
+        "some_name_nobody_has_used_yet.json",
+    ],
+)
+def test_the_response_is_refused_under_any_name(tmp_path, path):
+    (tmp_path / "docs").mkdir()
+    with pytest.raises(RepositoryToolError) as refusal:
+        write_approved_artifact(tmp_path, path, json.dumps(A_RESPONSE))
+    assert "returned, not written" in str(refusal.value)
+
+
+def test_it_names_the_fields_that_gave_it_away(tmp_path):
+    with pytest.raises(RepositoryToolError) as refusal:
+        write_approved_artifact(tmp_path, "final_response.json", json.dumps(A_RESPONSE))
+    assert "changed_files" in str(refusal.value)
+
+
+def test_it_says_to_stop_calling_tools(tmp_path):
+    """A refusal that does not say what to do instead is how the loop starts."""
+    with pytest.raises(RepositoryToolError) as refusal:
+        write_approved_artifact(tmp_path, "final_response.json", json.dumps(A_RESPONSE))
+    assert "Stop calling tools and return the structured response" in str(refusal.value)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        json.dumps({"name": "p", "version": "1.0.0", "scripts": {"test": "node --test"}}),
+        json.dumps([{"id": 1, "title": "Buy milk", "completed": False}]),
+        json.dumps({"tests": "on"}),
+        json.dumps({"tests": "on", "documentation": "yes"}),
+        "export function addTask() {}\n",
+        "# A heading\n\nSome prose.\n",
+        "not json at all",
+        "null",
+    ],
+)
+def test_ordinary_content_is_left_alone(tmp_path, content):
+    assert _the_response_written_under_another_name(("p", "thing.json"), content) is None
+
+
+def test_two_matching_fields_are_a_coincidence_and_three_are_not(tmp_path):
+    """`summary` and `tests` alone could be some other document's keys; every
+    real instance in the corpus carries five or more."""
+    assert (
+        _the_response_written_under_another_name(
+            ("x.json",), json.dumps({"tests": [], "summary": ""})
+        )
+        is None
+    )
+    assert _the_response_written_under_another_name(
+        ("x.json",), json.dumps({"tests": [], "summary": "", "risks": []})
+    )
+
+
+def test_the_one_instance_in_the_corpus_is_recognised():
+    """Run 2bcdc19b's `final_output.json`, the only file of 660 that trips it."""
+    assert _the_response_written_under_another_name(
+        ("final_output.json",),
+        json.dumps(
+            {
+                "changed_files": [],
+                "decisions": ["Unable to execute tests"],
+                "tests": ["app.test.mjs"],
+                "verification": [],
+            }
+        ),
+    )

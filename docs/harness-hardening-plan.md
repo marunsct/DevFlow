@@ -2204,3 +2204,34 @@ defect in the harness.
 
 So the measure of the next round is not how many more checks exist. It is
 whether the eleven shrink, and §4j's three columns are how to see it.
+
+### 4m. Building a check that already existed
+
+`a_name_the_module_does_not_export` was written, tested against four runs that
+wrote `import { assert } from 'node:assert'`, swept over the corpus, and
+committed - and `_unknown_named_imports` in `syntax_balance.py` had been
+catching it the whole time, more completely, with a tailored message for
+Jest's `expect` on top. It surfaced only when a deliberately bad write was
+probed and both notes came back on one result, one after the other.
+
+The cause is a method error worth naming beside the counting error of §4k.
+The corpus was searched for the *symptom* - which runs wrote the bad import -
+and the codebase was never searched for an existing *check*. Evidence of a
+real defect is not evidence that the defect is unhandled, and the sweep that
+proves prevalence says nothing about coverage.
+
+**Before building a check, write the failing input and put it through the
+write path.** If a note comes back, the check exists. That probe costs one
+call and would have replaced the whole exercise; it is also what caught the
+"that file ... no longer load" disagreement in §4d's write-time note in the
+same pass.
+
+Two notes for one fault is worse than one note, and worse than it sounds: a
+stage that reads two descriptions of one problem has reason to think there are
+two problems, and the second thing it tries to fix is not broken.
+
+What the episode was worth keeping: the message said the import "will fail at
+runtime", which points a stage at what its test asserts when the file never
+linked at all, and the table of real exports had nothing checking it against
+the runtime it describes. Both are now fixed, which is a smaller change than
+the one it replaced.

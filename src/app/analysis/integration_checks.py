@@ -437,7 +437,18 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
                 "test.js, or anything under a test/ directory - note the prefix "
                 "form takes a hyphen."
             )
-        where = ", ".join(sorted(str(path.relative_to(project)) for path in stranded))
+        # Scratch scripts are reported by `_scratch_scripts_left_behind`, which
+        # tells the stage to delete them. Listing them here under "name them
+        # too" is the opposite instruction for the same file.
+        where = ", ".join(
+            sorted(
+                str(path.relative_to(project))
+                for path in stranded
+                if not _A_SCRATCH_SCRIPT.search(path.name)
+            )
+        )
+        if not where:
+            continue
         problems.append(
             f"{manifest.relative_to(root)} runs `{command}`, {why} Stranded: {where}."
         )
@@ -1598,6 +1609,58 @@ def how_the_page_receives_text(root: str | Path) -> str:
     )
 
 
+#: Names an agent gives a throwaway script while it is debugging. Narrow on
+#: purpose: a product file is not called `tmp_debug5`.
+_A_SCRATCH_SCRIPT = re.compile(
+    r"""^(?:tmp|temp|scratch|debug)[_.-]|^test[_-]debug|[_-]debug\d*\.[cm]?js$""",
+    re.I,
+)
+
+
+def _scratch_scripts_left_behind(files: list[Path], root: Path) -> list[str]:
+    """Throwaway debugging scripts still sitting in the product.
+
+    A stage that cannot see why a test fails writes a small script, runs it,
+    and learns something. That is good practice and this does not discourage
+    it - what it reports is the ones never cleaned up.
+
+    Run 1ae7671d's `defect_fix_2_1` left twelve: `tmp_debug2.mjs` through
+    `tmp_debug6.mjs`, `tmp_full_test.mjs`, `tmp_run_test.mjs`,
+    `tmp_print_tnew.mjs` and more, beside an application of three files. Across
+    the stored workspaces five of fifty-five carry them.
+
+    They are not harmless. Four of that run's twelve end in `_test.mjs`, which
+    is one of the patterns `node --test` collects, so they became part of the
+    suite the gates read. And the stranded-tests finding listed them alongside
+    real test files under "name them too", which is the wrong instruction for a
+    file whose place is the bin.
+    """
+    scratch = [
+        str(path.relative_to(root))
+        for path in files
+        if path.suffix.lower() in {".js", ".mjs", ".cjs"}
+        and not any(part in _SKIP for part in path.parts)
+        # A file under `tools/` or `scripts/` was put there deliberately. Run
+        # cbd22a3's `tools/debug-linecount.mjs` counts the product's lines
+        # against the brief's 500-line cap - a utility the project meant to
+        # keep, not a throwaway someone forgot.
+        and not any(part in {"tools", "scripts", "bin"} for part in path.parts)
+        and _A_SCRATCH_SCRIPT.search(path.name)
+    ]
+    if not scratch:
+        return []
+    listed = ", ".join(sorted(scratch)[:6])
+    more = "" if len(scratch) <= 6 else f" and {len(scratch) - 6} more"
+    return [
+        f"{listed}{more} look like debugging scripts left behind. Writing one "
+        "to find out why a test fails is the right move; leaving it in the "
+        "product is not. They are counted against the size of what was built, "
+        "a reviewer reads them as part of it, and any whose name matches a test "
+        "pattern is collected into the suite. Delete the ones that have served "
+        "their purpose."
+    ]
+
+
 #: Elements a user operates. A page carrying these is a page meant to do
 #: something when they are used.
 _A_CONTROL = re.compile(
@@ -2574,6 +2637,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _languages_sharing_a_directory(files, root)),
     ("application modules the page never loads, only the tests",
      lambda files, root, stack: _reached_only_by_its_tests(files, root)),
+    ("debugging scripts left behind in the product",
+     lambda files, root, stack: _scratch_scripts_left_behind(files, root)),
     ("a page whose controls no script anywhere operates",
      lambda files, root, stack: _a_page_no_script_ever_touches(files, root)),
     ("suite functions called without the import that defines them",

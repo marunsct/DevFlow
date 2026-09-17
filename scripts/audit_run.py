@@ -1,6 +1,13 @@
 """Audit one run's transcript: cost, waste, and what the harness prevented.
 
-    python3 scripts/audit_run.py <path-to-transcript.jsonl>
+    python3 scripts/audit_run.py <path-to-transcript.jsonl> [workspace]
+
+With a workspace path, it also answers the question the transcript cannot: does
+the product work? Every run in this harness's history that shipped something
+broken shipped it with a green suite - run 0c5aabdb had no HTML at all, run
+0afef410 had HTML and JavaScript that never met, run 7e960f06 had a page with
+no `<script>` tag - and in each case the transcript looked fine. So the last
+section runs the cross-file checks over the workspace and prints what blocks.
 
 Transcripts live at `DATA_DIR/transcripts/<run-id>.jsonl`; from a deployment,
 `docker compose exec -T worker cat /app/data/transcripts/<run-id>.jsonl > /tmp/run.jsonl`.
@@ -119,4 +126,34 @@ def main(path):
         n = sum(1 for r in rows if r["kind"] == "tool_result" and phrase in (r.get("content") or ""))
         print(f"  {n:4d} {label}")
 
-main(sys.argv[1])
+def the_product(workspace):
+    """What the deterministic checks say about the built product.
+
+    Deliberately the last section and deliberately separate: the numbers above
+    are about how the run spent its calls, and this is about whether any of it
+    produced something that works. A run can score perfectly on both of the
+    first two and ship a page that does nothing.
+    """
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+    try:
+        from app.analysis.integration_checks import summarise_integration
+    except Exception as exc:  # noqa: BLE001 - the audit still has value without it
+        print(f"\nthe product: could not load the checks ({exc})")
+        return
+    report = summarise_integration(workspace)
+    blocking = "means a feature DOES NOT WORK" in report
+    print("\nthe product:")
+    print("  BLOCKING problems found" if blocking else "  no blocking cross-file problems")
+    for line in report.splitlines():
+        if line.startswith("- "):
+            print(f"    {line[2:][:150]}")
+        elif "problem(s) found" in line or line.startswith("  application:") or line.startswith("               "):
+            print(f"  {line.strip()[:150]}")
+
+
+if len(sys.argv) > 2:
+    main(sys.argv[1])
+    the_product(sys.argv[2])
+else:
+    main(sys.argv[1])

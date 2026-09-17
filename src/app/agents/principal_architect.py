@@ -174,6 +174,23 @@ def _document_excerpt(document: DocumentContent, budget: int) -> str:
     )
 
 
+def _the_briefs_own_constraints(document: Any) -> str:
+    """The brief's constraints as a block, or "". Never raises.
+
+    `app.agents.brief_constraints` already does this for the stage that picks
+    the stack and the one that reviews the specification. The stage that
+    *writes* the specification had the whole document and not the constraints
+    pulled out of it, and wrote a forbidden dependency into the design three
+    times across the stored runs.
+    """
+    try:
+        from app.agents.brief_constraints import constraints_note
+
+        return constraints_note(getattr(document, "text", "") or "", reader="choosing")
+    except Exception:  # noqa: BLE001 - an architect without this still writes
+        return ""
+
+
 def build_architecture_request(
     product_intake_text: str,
     tools_and_models_text: str,
@@ -191,7 +208,16 @@ def build_architecture_request(
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
+        # The brief's own constraints, quoted, before anything derived from
+        # them. The whole document appears below and that was not enough: run
+        # 0c5aabdb's specification said "Backend: Express server" with the
+        # brief in front of it, and runs d6297b2f and 551640d3 wrote "Use
+        # Node's built-in test runner with jsdom for DOM simulation" into a
+        # specification for a brief reading "No external dependencies beyond
+        # basic HTML/CSS/JS". The specialists that installed jsdom were
+        # building to spec; this is where that choice is made.
+        + _the_briefs_own_constraints(document)
+        + f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan (/docs/tools_and_models.md) ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection (/docs/technology_stack.md) ---\n{stack_selection_text}\n\n"
         f"--- Original uploaded documents ---\n"
@@ -240,7 +266,16 @@ def build_architecture_revision_request(
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
+        # The brief's own constraints, quoted, before anything derived from
+        # them. The whole document appears below and that was not enough: run
+        # 0c5aabdb's specification said "Backend: Express server" with the
+        # brief in front of it, and runs d6297b2f and 551640d3 wrote "Use
+        # Node's built-in test runner with jsdom for DOM simulation" into a
+        # specification for a brief reading "No external dependencies beyond
+        # basic HTML/CSS/JS". The specialists that installed jsdom were
+        # building to spec; this is where that choice is made.
+        + _the_briefs_own_constraints(document)
+        + f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan (/docs/tools_and_models.md) ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection (/docs/technology_stack.md) ---\n{stack_selection_text}\n\n"
         f"--- Original uploaded documents (excerpt) ---\n"

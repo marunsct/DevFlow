@@ -75,6 +75,61 @@ class SecurityReviewOutput(BaseModel):
     )
 
 
+#: Characters of source to carry into one security review. Enough for a small
+#: product's whole application, and bounded so a large one still starts.
+SOURCE_BUDGET = 24_000
+
+#: Files worth putting in front of a security reviewer. Tests and lockfiles are
+#: not where a vulnerability in the product lives.
+_WORTH_REVIEWING = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".html", ".json"}
+
+
+def _the_source_under_review(changed_files: list[str], repository_root: str) -> str:
+    """The contents of the changed files, or a note saying why there are none.
+
+    The reviewer was given a list of names and asked to review them. It has
+    read tools and could open each one, but it answers in two to four model
+    calls, so in practice it never did: across every transcript on disk, 33
+    security reviews returned `status: passed` and `findings: []`, every single
+    one. Not one finding has ever been recorded by this stage.
+
+    A reviewer that cannot see the code cannot review it, and the fix is the
+    same one every other reviewer here already has - the milestone reviewer is
+    handed test evidence, the execution ledger and the cross-file checks; the
+    architecture reviewer is handed the specification. This one was handed
+    filenames.
+    """
+    root = Path(repository_root)
+    shown: list[str] = []
+    used = 0
+    for name in changed_files:
+        path = (root / name).resolve()
+        try:
+            if not path.is_file() or root not in path.parents and path.parent != root:
+                continue
+            if path.suffix.lower() not in _WORTH_REVIEWING:
+                continue
+            body = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if used + len(body) > SOURCE_BUDGET:
+            shown.append(f"\n--- {name} (not shown: the budget for this request is full) ---")
+            break
+        used += len(body)
+        shown.append(f"\n--- {name} ---\n{body}")
+    if not shown:
+        return (
+            "None of the changed files could be read for this request. Open "
+            "them with your read tools before deciding anything.\n"
+        )
+    return (
+        "--- The source under review, in full ---"
+        + "".join(shown)
+        + "\n\nThis is the code itself, not a summary. Judge it on what is "
+        "here; use your read tools only for something this does not show.\n"
+    )
+
+
 def build_security_review_request(
     changed_files: list[str],
     tool_permissions: str,
@@ -85,7 +140,8 @@ def build_security_review_request(
     brief = (
         WORKSPACE_ROOT_NOTE
         + f"--- Changed files under review ---\n{files_text}\n\n"
-        f"--- Tool permissions context ---\n{tool_permissions}\n"
+        + _the_source_under_review(changed_files, repository_root)
+        + f"\n--- Tool permissions context ---\n{tool_permissions}\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

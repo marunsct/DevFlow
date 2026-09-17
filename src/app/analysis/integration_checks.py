@@ -2390,6 +2390,34 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
                     "rules out external dependencies means the shipped product, "
                     "which this claims it is part of."
                 )
+
+    # Nothing above runs when there is no manifest at all, and that is the
+    # worse version of the same fault: `npm test` answers ENOENT rather than
+    # "missing script", so not one suite in the project can be reached by the
+    # command every stage is told to use. Run 1cd4597b reached 699 events with
+    # two suites on disk and no `package.json`; runs 37476645, f0630b10 and
+    # c150cb2e ended that way.
+    #
+    # Reported here rather than at the write of a test file, because the write
+    # order does not settle it: across the stored transcripts the manifest
+    # comes first in 12 runs and second in 11, so a note at the write would be
+    # premature about half the time. By the end of a sprint it is decidable.
+    if not any(path.name == "package.json" for path in files):
+        suites = sorted(
+            str(path.relative_to(root))
+            for path in files
+            if is_test(str(path.relative_to(root)))
+        )
+        if suites:
+            named = ", ".join(suites[:3])
+            problems.append(
+                f"This project has tests ({named}) and no `package.json` at "
+                "all. `npm test` fails with ENOENT before reaching any of "
+                "them, so nothing that runs the project's test command has "
+                "ever executed a single assertion. Add a `package.json` whose "
+                "`test` script runs them."
+            )
+
     return problems
 
 

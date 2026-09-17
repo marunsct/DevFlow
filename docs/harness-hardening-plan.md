@@ -2058,3 +2058,42 @@ Budget 4 is the structural one. Everything in Part II lives in middleware, in th
 `KNOWLEDGE_ENABLED=false` must make the harness byte-for-byte what it is today: no digest change, no write-path check, no command note, no extra tool in any agent's list, no new state fields populated, no diagnostics gate. `test_everything_degrades_to_silence` asserts it across all four doors.
 
 This is not defensive habit. This feature touches the write path, the command path, the stage-completion decision and every model call. Those are the four busiest surfaces in the harness, and the one regression shipped in the session behind Part I passed every unit test and failed on the agent's first call. A switch that provably returns the harness to a known state is what makes the rest of it safe to merge.
+
+### 4i. Two hypotheses from run 9bd3a091 that the evidence refuted
+
+Both came from watching `specialist_testing_3` swap the test command to
+`jest` to get away from a failing assertion, and both looked like checks
+worth building until they were measured.
+
+**"A test script that invokes a runner it does not declare."** The run
+produced `"test": "jest"` against an empty `devDependencies` and
+`run_validation` returned 127, `sh: 1: jest: not found`. Across the 37
+stored manifests that define a `test` script, **zero** do this. The state
+is real but transient - the agent wrote it, hit 127, and moved on within
+the same stage - so it never reaches a stored workspace. Nothing to build:
+the 127 is already an unmistakable signal, delivered immediately, and a
+write-time refusal would only restate it.
+
+**"Jest's default `testMatch` cannot see `.mjs`."** This one is a true
+fact about jest - the default patterns are `**/__tests__/**/*.[jt]s?(x)`
+and `**/?(*.)+(spec|test).[tj]s?(x)`, and `[tj]s` excludes `mjs` - and
+run 9bd3a091's `npx jest` did report `3 files checked ... 0 matches`
+against three `.mjs` suites. Two stored workspaces run jest, and the
+hypothesis predicted both would be broken the same way. **Both refuted
+it.** Run 3c0c31d2 sets `testMatch: ["**/*.mjs"]` and run fff9bf89 sets
+`testMatch: ['**/*.test.mjs', '**/*.test.js']`, each with a `babel-jest`
+transform to match. The agents that reach for jest configure it; the only
+instance is the one that reached for jest mid-stage without a config, and
+that is the transient case above.
+
+The general form is worth keeping in mind, because it has now happened
+twice in this file: a fact that is certainly true about a tool is not
+evidence that the product gets it wrong. §4e says a wrong finding costs
+as much as a missed one, and a check built on this would have fired on
+both stored jest projects, both correct.
+
+One thing the pair did earn: `_refuse_a_test_script_that_strands_suites`
+returns early on any command that names no file, which is right for
+`node --test` and would have been wrong for a runner whose discovery is
+genuinely broken. That exemption is load-bearing and is why the jest
+question had to be settled rather than assumed.

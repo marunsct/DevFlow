@@ -1724,6 +1724,89 @@ def _import_note(root: Path, target: Path, content: str) -> str:
 _NAMES_A_SCRIPT_FILE = re.compile(r"""[\w./-]+\.[cm]?js\b""")
 
 
+def _refuse_a_test_script_that_strands_suites(
+    target: Path, content: str
+) -> None:
+    """Refuse a manifest whose `test` script leaves existing suites unrun.
+
+    `_the_test_command_will_not_run_this` says so at the write of each test
+    file, and that is the right first response. It is not enough. Run
+    9bd3a091 delivered that note 27 times across ten stages and still ended
+    with
+
+        "test": "node --test test_filter.mjs"
+
+    beside `app.test.mjs`, `filter.test.mjs` and `test_filter.mjs` - two of
+    three suites unrun, their assertions never executed, and every gate
+    downstream reading a pass.
+
+    Twelve of the fifty-five stored workspaces ship tests `npm test` never
+    runs. A note the model has ignored twenty-seven times is not a note that
+    needs rewording; the same reasoning as the no-op write and the edit that
+    goes backwards.
+
+    Only when suites already on disk would be stranded, so a manifest written
+    before the tests exist is untouched, and a command that discovers rather
+    than names is never refused.
+    """
+    try:
+        import json as _json
+        import shlex
+
+        from app.analysis.file_kinds import is_test
+        from app.analysis.integration_checks import _A_SCRATCH_SCRIPT
+
+        command = str(
+            (_json.loads(content).get("scripts") or {}).get("test", "")
+        )
+        if not command:
+            return
+        # A glob is the shell's discovery, not a list of names: `*.test.mjs`
+        # expands to whatever is there, and reading it literally reports every
+        # file it would have matched as stranded (run 5f4cdd55).
+        if any(character in command for character in "*?["):
+            return
+        # Only positional arguments name suites. `--config=jest.config.js`
+        # names a configuration file, and jest with no pattern searches the
+        # project (run fff9bf89).
+        named = {
+            token
+            for token in shlex.split(command)
+            if not token.startswith("-") and _NAMES_A_SCRIPT_FILE.fullmatch(token)
+        }
+        if not named:
+            return
+        # A runner that imports the others strands nothing.
+        already_run = set()
+        for name in named:
+            runner = target.parent / name
+            if runner.is_file():
+                already_run.update(
+                    _NAMES_A_SCRIPT_FILE.findall(runner.read_text(errors="replace"))
+                )
+        stranded = sorted(
+            path.name
+            for path in target.parent.iterdir()
+            if path.is_file()
+            and is_test(path.name)
+            and not _A_SCRATCH_SCRIPT.search(path.name)
+            and path.name not in command
+            and not any(reached.endswith(path.name) for reached in already_run)
+        )
+    except Exception:  # noqa: BLE001 - never fail a write over a check that cannot run
+        return
+    if not stranded:
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{target.name}': its `test` script runs "
+        f"`{command}`, which names {', '.join(sorted(named))} and leaves "
+        f"{', '.join(stranded)} unrun. Those suites' assertions never execute "
+        "and every stage after this reads the pass as though they did. Use "
+        "`node --test` with no file arguments, which searches the project, or "
+        "name every suite."
+    )
+
+
 def _the_test_command_will_not_run_this(target: Path | None) -> str:
     """Warn that the project's `test` script names files and not this one, or "".
 
@@ -2638,6 +2721,9 @@ def write_approved_artifact(
     _refuse_control_tokens(relative_path, content)
     _refuse_if_broken(relative_path, content)
     _refuse_if_node_cannot_parse(target, relative_path, content)
+
+    if target.name == "package.json":
+        _refuse_a_test_script_that_strands_suites(target, content)
 
     forked = _the_same_module_already_here(target, content)
     if forked is not None:

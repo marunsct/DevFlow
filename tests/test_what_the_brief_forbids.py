@@ -120,3 +120,54 @@ def test_the_milestone_reviewer_is_given_it(project):
 
     assert "`jsdom`" in body
     assert "Checked deterministically against what was built" in body
+
+
+def test_a_package_imported_but_never_declared_is_still_a_dependency(tmp_path):
+    """Run 9bd3a091 imported `jsdom` into three test files under an empty
+    `devDependencies`, with a full `node_modules` and a lockfile of thirty-nine
+    packages. Reading declarations alone, the check went dark on it.
+    """
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {}}))
+    (project / "app.test.mjs").write_text("import { JSDOM } from 'jsdom';\n")
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    assert found and "jsdom" in found[0] and "without declaring it" in found[0]
+
+
+def test_a_declared_package_and_an_undeclared_one_are_both_named(tmp_path):
+    """Run cbd22a34 declared `jsdom` and `vitest` and imported `linkedom` too."""
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(
+        json.dumps({"devDependencies": {"jsdom": "^1", "vitest": "^1"}})
+    )
+    (project / "app.test.mjs").write_text("import { parseHTML } from 'linkedom';\n")
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    assert found and "jsdom" in found[0] and "linkedom" in found[0]
+
+
+def test_node_builtins_are_not_dependencies(tmp_path):
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {}}))
+    (project / "app.test.mjs").write_text(
+        "import { test } from 'node:test';\n"
+        "import assert from 'assert';\n"
+        "import fs from 'fs';\n"
+        "const path = require('path');\n"
+    )
+    assert what_the_brief_forbids_that_is_there(FORBIDS, tmp_path) == []
+
+
+def test_relative_and_url_imports_are_not_packages(tmp_path):
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {}}))
+    (project / "app.js").write_text(
+        "import { addTask } from './app.js';\n"
+        "import x from '../lib/x.mjs';\n"
+        "import y from 'https://cdn.example.com/y.js';\n"
+        "import z from '/src/z.js';\n"
+    )
+    assert what_the_brief_forbids_that_is_there(FORBIDS, tmp_path) == []

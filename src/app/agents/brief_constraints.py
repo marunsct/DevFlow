@@ -189,6 +189,51 @@ _FORBIDS_DEPENDENCIES = (
 _NOT_A_DEPENDENCY = frozenset({"node", "npm"})
 
 
+_IMPORTS_A_PACKAGE = re.compile(
+    r"""(?:import\s[^;]*?\sfrom\s*|import\s*\(\s*|require\(\s*)['"]([^'"]+)['"]"""
+)
+_A_PACKAGE_NAME = re.compile(r"""^@?[a-z0-9][\w.-]*(?:/[\w.-]+)*$""")
+_NODE_BUILTIN = frozenset(
+    """assert async_hooks buffer child_process cluster console constants crypto
+    dgram diagnostics_channel dns domain events fs http http2 https inspector
+    module net os path perf_hooks process punycode querystring readline repl
+    stream string_decoder sys timers tls trace_events tty url util v8 vm wasi
+    worker_threads zlib test""".split()
+)
+_A_SCRIPT = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
+
+
+def _packages_the_code_imports(project: Path) -> set[str]:
+    """Every package name the scripts under `project` import.
+
+    A bare specifier that is not a Node builtin is a dependency whether or not
+    anything declared it - which is how run 9bd3a091 imported `jsdom` into
+    three test files under an empty `devDependencies`, a full `node_modules`
+    and a lockfile of thirty-nine packages.
+    """
+    imported: set[str] = set()
+    for script in project.rglob("*"):
+        if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
+            continue
+        try:
+            source = script.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for specifier in _IMPORTS_A_PACKAGE.findall(source):
+            if specifier.startswith((".", "/", "#")) or "//" in specifier:
+                continue
+            if specifier.startswith("node:") or not _A_PACKAGE_NAME.match(specifier):
+                continue
+            name = (
+                "/".join(specifier.split("/")[:2])
+                if specifier.startswith("@")
+                else specifier.split("/")[0]
+            )
+            if name not in _NODE_BUILTIN:
+                imported.add(name)
+    return imported
+
+
 def what_the_brief_forbids_that_is_there(
     document_text: str, repository_root: str | Path
 ) -> list[str]:
@@ -234,15 +279,31 @@ def what_the_brief_forbids_that_is_there(
                 | set(declared.get("devDependencies") or {})
             )
             packages = [name for name in packages if name not in _NOT_A_DEPENDENCY]
-            if not packages:
+            undeclared = sorted(
+                _packages_the_code_imports(manifest.parent)
+                - set(packages)
+                - _NOT_A_DEPENDENCY
+            )
+            if not packages and not undeclared:
                 continue
+            how = []
+            if packages:
+                how.append("declares " + ", ".join(f"`{name}`" for name in packages[:6]))
+            if undeclared:
+                # Not declaring it does not make it not a dependency. It makes
+                # it a dependency `npm ci` will not install, so the tests that
+                # import it fail for a second reason on any other machine.
+                how.append(
+                    "imports " + ", ".join(f"`{name}`" for name in undeclared[:6])
+                    + " without declaring it"
+                )
             found.append(
-                f"{manifest.parent.name}/package.json declares "
-                + ", ".join(f"`{name}`" for name in packages[:6])
+                f"{manifest.parent.name}/package.json "
+                + " and ".join(how)
                 + ". The brief rules that out in its own words, quoted above. "
                 "Whatever it was needed for, the product the brief describes "
                 "does not have it, and a reviewer cannot accept the milestone "
-                "as meeting the brief while it is declared."
+                "as meeting the brief while the product needs it."
             )
     except Exception:  # noqa: BLE001 - evidence that cannot be gathered says nothing
         return found

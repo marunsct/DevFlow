@@ -2235,3 +2235,37 @@ runtime", which points a stage at what its test asserts when the file never
 linked at all, and the table of real exports had nothing checking it against
 the runtime it describes. Both are now fixed, which is a smaller change than
 the one it replaced.
+
+### 4n. Sweeping every computed fact for its audience
+
+§4h recorded one model reaching nobody. This asked the question of all of
+them: for every public helper in `app.analysis`, which agents actually use it?
+
+Most of the "reaching no agent" list is a false alarm by construction - the
+write-time notes are delivered by `app.tools.repository`, which is a tool and
+not an agent, so they reach a model on every write. Two results survived.
+
+**A real gap.** `summarise_integration` and `how_the_page_receives_text` both
+went to the milestone reviewer alone. The second exists because run 1c9854c7's
+milestone reviewer recorded a false XSS finding, and the security reviewer -
+the stage the question definitionally belongs to - was never given it, and
+made the same mistake in run 08acb1ee against a product that assigns
+`textContent` three times and `innerHTML` never. Now wired to both.
+
+**A false alarm worth recording, so it is not "fixed" later.**
+`why_this_fix_is_not_proven` is fully implemented, tested, in `__all__`, and
+called from nowhere in `src/`. It looks exactly like the §4h failure. It is
+not: the fact it computes already reaches models by a better route, rendered
+in `app.sprint` as "fixed, but nothing was recorded as running and passing" on
+the defect itself, and again in the recurrence note when a defect comes back.
+The orphan's one advantage is that it separates "no command was claimed" from
+"the commands claimed did not run", which is a real distinction and has cost
+nothing yet. **Do not wire it without evidence that the distinction changed an
+outcome** - that would be building for a symptom nobody has reported, and the
+rendered text is the thing to extend if the evidence appears.
+
+The sweep is worth repeating whenever a check is added, and it is one command:
+list the public helpers, grep the agents for each name, and look at anything
+reaching fewer than it should. The cost of the failure it finds is high and
+silent - a fact that is correct, tested, and read by no one is
+indistinguishable from a fact that was never computed.

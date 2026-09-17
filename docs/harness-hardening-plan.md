@@ -2472,3 +2472,23 @@ write, and that is usually right. This one cannot move, and the reason is a
 fact about the order agents work in rather than anything about the check.
 Before moving a finding earlier, check that the evidence it needs exists that
 early.
+
+### 4u. Which of B1-B19 are still open (spot-checked, not exhaustive)
+
+§2 lists nineteen verified bugs. Several have been fixed since it was written
+and the list does not say so, which would cost the implementation phase a
+round of re-discovering them. Spot-checked:
+
+| item | state |
+|---|---|
+| B5 — scaffolding knows five layouts and is never called | **open**: `app/scaffolding/` is referenced from nowhere in `graph/` or `agents/` |
+| B2 — per-role executable allowlists are a fixed table | **open**: `_ALLOWED_PYTHON_MODULES` is still a four-name frozenset |
+| B11 — the event stream cannot see middleware notes | looks **done**: the transcript records `tool_result` post-middleware |
+| B16 — the ledger omits `working_directory` | **done**: it is part of the record and of the identity used to match a repeat |
+| B17 — "what is a test file" is defined twice | **done**: `repository.looks_like_a_test` delegates to `file_kinds.is_test`, pinned by a test |
+| B1 — cross-file checks are JavaScript-only | **open**, and §4p measures what that costs on the medium brief |
+
+Before implementing §2, re-verify each item the way these were: one grep for
+the thing the entry claims is broken. An entry marked *(verified)* was
+verified when written, not today. The cheapest order is to strike the done
+ones first, so the remaining list is real.

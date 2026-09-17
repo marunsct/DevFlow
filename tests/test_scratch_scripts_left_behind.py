@@ -114,3 +114,54 @@ def test_a_scratch_file_is_not_listed_as_a_stranded_test(tmp_path: Path):
     if "Stranded:" in report:
         stranded = report.split("Stranded:", 1)[1].split(".")[0]
         assert "tmp_debug_test" not in stranded
+
+
+def test_a_scratch_script_is_not_also_reported_as_an_orphan(tmp_path: Path):
+    """"Nothing runs it" is the definition of a throwaway, not a finding.
+
+    Run 551640d3's report ran to 14 findings of which 10 were about its own
+    temp files - four real problems buried in a list three times their length.
+    """
+    from app.analysis.integration_checks import summarise_integration
+
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "index.html").write_text(
+        '<!DOCTYPE html><script type="module" src="app.js"></script>', encoding="utf-8"
+    )
+    (project / "app.js").write_text(
+        "document.title = 'x';\nexport const a = 1;\n", encoding="utf-8"
+    )
+    (project / "tmp_debug.mjs").write_text("console.log('probe');\n", encoding="utf-8")
+
+    report = summarise_integration(str(tmp_path))
+
+    assert "tmp_debug.mjs is never loaded" not in report
+    assert "look like debugging scripts left behind" in report
+
+
+def test_a_real_module_nothing_loads_is_still_an_orphan(tmp_path: Path):
+    from app.analysis.integration_checks import summarise_integration
+
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "index.html").write_text("<!DOCTYPE html><p>hi</p>", encoding="utf-8")
+    (project / "helpers.js").write_text("export const a = 1;\n", encoding="utf-8")
+
+    assert "helpers.js is never loaded" in summarise_integration(str(tmp_path))
+
+
+def test_a_scratch_script_is_not_reported_against_the_module_type(tmp_path: Path):
+    """Its remedy is deletion, not conversion to ESM."""
+    from app.analysis.integration_checks import (
+        _files_that_contradict_the_declared_module_type as contradictions,
+    )
+
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text('{"name":"p","type":"module"}', encoding="utf-8")
+    (project / "tmp_debug.js").write_text("const fs = require('fs');\n", encoding="utf-8")
+
+    files = [p for p in project.rglob("*") if p.is_file()]
+
+    assert contradictions(files, tmp_path) == []

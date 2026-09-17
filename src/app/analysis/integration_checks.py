@@ -1012,11 +1012,23 @@ def _reached_only_by_its_tests(files: list[Path], root: Path) -> list[str]:
 
 
 def _unreferenced_scripts(files: list[Path], root: Path) -> list[str]:
-    """The orphan finding, phrased for a reviewer."""
+    """The orphan finding, phrased for a reviewer.
+
+    Scratch scripts are left out. "Nothing runs it" is the definition of a
+    throwaway an agent wrote to print something once, so reporting it says
+    nothing a reviewer can act on, and
+    `_scratch_scripts_left_behind` already names those files with the
+    instruction that fits them.
+
+    Measured on run 551640d3, whose report ran to 14 findings of which 10 were
+    about its own temp files - four real problems buried in a list three times
+    their length.
+    """
     return [
         f"{relative} is never loaded by a page or imported by another "
         "module. Nothing runs it."
         for relative in _orphaned_scripts(files, root)
+        if not _A_SCRATCH_SCRIPT.search(Path(relative).name)
     ]
 
 
@@ -1413,6 +1425,10 @@ def _files_that_contradict_the_declared_module_type(
             # package.json is not governed by this one.
             nearer = [m for m in manifests if m != manifest and _is_within(path, m.parent)]
             if any(_is_within(m.parent, package) and m.parent != package for m in nearer):
+                continue
+            if _A_SCRATCH_SCRIPT.search(path.name):
+                # A scratch script's remedy is deletion, not conversion; see
+                # `_scratch_scripts_left_behind`, which names it with that.
                 continue
             body = _read(path)
             if _COMMONJS.search(_only_the_code(body)) and not (

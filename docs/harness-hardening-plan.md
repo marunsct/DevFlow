@@ -103,6 +103,16 @@ Ordered by impact. Each names the file, the evidence, and the fix.
 `src/app/analysis/integration_checks.py`: `_dangling_class_selectors`, `_dangling_id_selectors`, `_orphaned_scripts`, `_module_system_mismatch`, `_application_embedded_in_html`, `_redefined_instead_of_imported` all parse HTML/CSS/ESM. `_COUNTED_SUFFIXES` (line 772) is `{html, htm, css, js, mjs, cjs, ts, tsx, jsx, py}`. A product in any other language is invisible to the reviewer's evidence and uncounted against its budget — so the milestone review, which has blocked correctly on every JS product, would accept anything.
 **Fix:** a `LanguageAnalyser` protocol (`counts`, `references`, `entry_points`, `test_files`) with per-language implementations registered by suffix; the existing JS/HTML code becomes the first implementation. A generic analyser (line count, comment stripping by a table, "file referenced by nothing" via grep) covers every language on day one.
 
+**Priority, measured:** this has never fired. Across all 51 stored workspaces
+the stack selector chose JavaScript every single time - 40 plainly
+"JavaScript", the rest spellings of the same thing ("HTML/CSS/JavaScript",
+"JavaScript (ES6+)"). Not one run picked Python or anything else, which is what
+`tests/brief_low.md` asks for: a browser to-do app with no dependencies. So B1
+costs nothing today, and every check added since is JavaScript-only for the
+same reason. It becomes real the moment a brief admits another language -
+`brief_medium.md` and `brief_high.md` have not been run against this harness
+yet - and should be reconsidered then rather than built now.
+
 ### B2 — Per-role executable allowlists are a fixed table  *(verified)* — **and 16 of 34 names are not in the image**
 
 Measured 2026-09-16 inside the deployed worker, through `shutil.which` in the venv the

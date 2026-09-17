@@ -99,6 +99,46 @@ def parse_error(path: Path, content: str) -> str | None:
         "This is `node --check`, the same parser that loads the file, so the "
         "error is certain - it is not a guess about style."
         + _the_other_half(detail, content)
+        + _around_the_failure(line.group(1) if line else None, content)
+    )
+
+
+#: Lines of context either side of the line the parser stopped on. Enough to
+#: see a block boundary without reprinting the file.
+CONTEXT_LINES = 4
+
+
+def _around_the_failure(line: str | None, content: str) -> str:
+    """The text at the line the parser named, with its neighbours, or "".
+
+    The message named a line number and never showed the line. Measured on run
+    1c9854c7's `test_round_0`: an edit refused with "Node cannot parse this
+    file on line 26: SyntaxError: Unexpected token '}'", sent again unchanged,
+    and again, and again - four attempts, the last two answered only by the
+    repeat guard. The agent had the number and not the text, and the text is
+    what it was about to rewrite.
+
+    This is the content the tool is refusing to write, not the file on disk, so
+    the numbering matches the error exactly.
+    """
+    if line is None:
+        return ""
+    try:
+        at = int(line)
+    except ValueError:
+        return ""
+    lines = content.splitlines()
+    if not 1 <= at <= len(lines):
+        return ""
+    first = max(1, at - CONTEXT_LINES)
+    last = min(len(lines), at + CONTEXT_LINES)
+    quoted = "\n".join(
+        f"{'>' if n == at else ' '} {n:>4} | {lines[n - 1]}" for n in range(first, last + 1)
+    )
+    return (
+        "\n\nThis is what you sent, around that line (> marks it):\n"
+        + quoted
+        + "\n"
     )
 
 

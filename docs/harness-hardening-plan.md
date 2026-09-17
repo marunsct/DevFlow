@@ -2292,3 +2292,36 @@ intent rather than read a fact.
 
 Worth re-measuring rather than forgetting: if the next runs keep producing
 these, the number moves and the case changes.
+
+### 4p. What the dependency checks do on the medium and high briefs
+
+The install refusal and `what_the_brief_forbids_that_is_there` both read the
+constraint out of the workspace, so before moving off `brief_low.md` it is
+worth knowing what they will do there.
+
+`brief_low.md` states "No external dependencies beyond basic HTML/CSS/JS", and
+the constraint survives into the workspace in **57 of 58** stored runs. The
+paraphrases vary - "beyond vanilla HTML/CSS/JavaScript", "(vanilla HTML/CSS/JS
+only)", "beyond HTML/CSS/JS" - and every one of them contains "no external
+dependencies", which is what the phrase list matches on.
+
+The single exception is run 0c5aabdb, whose intake recorded `## Constraints`
+as `_Not specified._` and which then chose Express and installed
+`node-fetch`. That is the most upstream loss of a constraint in the corpus,
+and it is **already fixed**: `with_the_constraints_the_brief_states` restores
+any constraint line the model dropped, and replaying `brief_low.md` through it
+against an empty `constraints` list returns all four. Run 0c5aabdb predates
+it. Nothing to do - recorded because an intake reading "Not specified" against
+a brief that specifies plenty looks exactly like a live bug.
+
+**`brief_medium.md` states no dependency constraint at all.** Both checks go
+silent there by construction, which is correct and worth knowing in advance:
+when the medium brief runs, their absence is not a regression.
+`brief_high.md` mentions "A/B testing framework" as a feature rather than a
+prohibition, and the phrase list only matches a "no ..." form, so it is
+silent there too.
+
+This is the B1 question in miniature. The dependency checks degrade
+gracefully - no false refusals on a permissive brief - but they also provide
+no coverage, and B1's point stands: a stack the checks were built around is
+not the same as a stack they can see.

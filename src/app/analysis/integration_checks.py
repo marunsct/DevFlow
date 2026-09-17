@@ -2105,6 +2105,7 @@ _BREAKS_BEHAVIOUR = (
     "does not export it",                # the named form of the same import
     "is not defined` and the suite",     # a suite global nothing imported
     "does nothing when a user",          # a page no script ever wires
+    "only checks that something exists",  # a suite of existence checks
     "none of the cases execute",         # a suite the runner never calls
     "and nothing on it works",           # CommonJS behind a module script tag
     "so the suite cannot run",           # files against a declared module type
@@ -2258,6 +2259,7 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
     `app.analysis.test_discovery.a_test_that_asserts_nothing`.
     """
     from app.analysis.test_discovery import (
+        a_suite_that_only_checks_things_exist,
         a_test_that_asserts_nothing,
         assertions_called_on_the_test_module,
         tests_the_runner_will_never_call,
@@ -2271,6 +2273,7 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
             assertions_called_on_the_test_module(relative, content),
             a_test_that_asserts_nothing(relative, content),
             tests_the_runner_will_never_call(relative, content),
+            a_suite_that_only_checks_things_exist(relative, content),
         ):
             if problem:
                 problems.append(problem)

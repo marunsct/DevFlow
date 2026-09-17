@@ -1685,6 +1685,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     """
     from app.analysis.test_discovery import (
         a_dom_built_by_hand,
+        a_suite_that_only_checks_things_exist,
         a_test_that_asserts_nothing,
         a_test_that_needs_a_dom,
         assertions_called_on_the_test_module,
@@ -1700,6 +1701,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             assertions_called_on_the_test_module(relative_path, content),
             a_test_that_asserts_nothing(relative_path, content),
             tests_the_runner_will_never_call(relative_path, content),
+            a_suite_that_only_checks_things_exist(relative_path, content),
             a_dom_built_by_hand(relative_path, content),
             a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
         ]

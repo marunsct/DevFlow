@@ -317,6 +317,7 @@ def _is_test_name(relative_path: str) -> bool:
 __all__ = [
     "a_dom_built_by_hand",
     "a_test_that_needs_a_dom",
+    "a_suite_that_only_checks_things_exist",
     "tests_nothing_of_the_project",
     "tests_the_runner_will_never_call",
     "undiscoverable_test",
@@ -480,6 +481,66 @@ def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | 
         "1 # pass 1` for the file itself and none of the cases execute, so the "
         "suite is green however broken the application is. Call `test(...)` at "
         "the top level of the file instead, importing it from 'node:test'."
+    )
+
+
+#: `assert.strictEqual(typeof addTask, 'function')` and its spellings. An
+#: existence check: true the moment the export exists, whatever it does.
+_ONLY_CHECKS_IT_EXISTS = re.compile(
+    r"""typeof\s+\w+\s*(?:,\s*|===?\s*|!==?\s*)['"](?:function|object|undefined)['"]"""
+    r"""|['"](?:function|object)['"]\s*===?\s*typeof\s+\w+"""
+    # Bare truthiness only: `assert(value)` or `assert(value, "message")`.
+    # NOT `assert.deepStrictEqual(tasks, [])` - an earlier version allowed an
+    # optional `.method` here and so matched nearly every real assertion,
+    # which the sweep across the stored workspaces caught as three false
+    # positives on suites that check behaviour perfectly well.
+    r"""|(?<![\w.$])assert\s*\(\s*\w+\s*(?:,\s*['"][^'"]*['"]\s*)?\)"""
+    r"""|\.toBeDefined\s*\(\s*\)|\.toBeTruthy\s*\(\s*\)"""
+    r"""|\.to\.exist\b""",
+)
+
+
+def a_suite_that_only_checks_things_exist(relative_path: str, content: str) -> str | None:
+    """Why this suite proves nothing, or None if it proves something.
+
+    `a_test_that_asserts_nothing` catches a suite with no assertion at all.
+    This catches the next shape along: every assertion is an existence check,
+    so the suite is green the moment the exports exist and says nothing
+    whatever about what they do.
+
+    Run 1c9854c7 wrote `app.test.js` as five cases of exactly one form:
+
+        test('loadTasks is a function', () => {
+          assert.strictEqual(typeof loadTasks, 'function');
+        });
+
+    against an `app.js` whose five exported functions were each an empty body
+    and a `// TODO` comment. `npm test` reported `# tests 5 # pass 5 # fail 0`,
+    and every gate that asks whether the tests pass was satisfied by a product
+    that does nothing at all.
+
+    Requires that *every* assertion be of this kind. A suite that checks an
+    export exists and then checks what it returns is doing the first as a
+    guard, which is reasonable and common; the failure is a suite where that
+    guard is the whole of it.
+    """
+    assertions = _AN_ASSERTION.findall(content)
+    if len(assertions) < 2:
+        return None
+    existence = _ONLY_CHECKS_IT_EXISTS.findall(content)
+    if len(existence) < len(assertions):
+        return None
+    cases = _A_TEST_CASE_IN_ANY_FORM.findall(content)
+    named = ", ".join(f"'{name}'" for name in cases[:3] if name)
+    return (
+        f"{relative_path} has {len(assertions)} assertion(s) and every one of "
+        "them only checks that something exists - `typeof x === 'function'` and "
+        "the like"
+        + (f" ({named})" if named else "")
+        + ". The suite passes the moment the exports are declared, whatever "
+        "their bodies do, so it cannot fail for a stub or an empty function "
+        "and is not evidence that anything works. Assert what each function "
+        "returns or changes, for an input you choose."
     )
 
 

@@ -670,3 +670,147 @@ def assertions_called_on_the_test_module(relative_path: str, content: str) -> st
         "two separately: `import { test } from 'node:test'` and `import "
         f"{name} from 'node:assert'`."
     )
+
+
+_NAMED_LOCAL_IMPORT = re.compile(
+    r"""import\s*\{([^}]*)\}\s*from\s*['"](\.[^'"]*)['"]"""
+    r"""|(?:const|let|var)\s*\{([^}]*)\}\s*=\s*require\(\s*['"](\.[^'"]*)['"]""",
+)
+
+
+def _declares(source: str, name: str) -> str | None:
+    """The parameter list of `name` as written in `source`, or None."""
+    for form in (
+        rf"function\s+{re.escape(name)}\s*\(",
+        rf"(?:const|let|var)\s+{re.escape(name)}\s*=\s*(?:async\s*)?\(",
+        rf"(?:const|let|var)\s+{re.escape(name)}\s*=\s*(?:async\s*)?function\s*\(",
+    ):
+        opening = re.search(form, source)
+        if opening:
+            return _balanced(source, opening.end() - 1)
+    return None
+
+
+def _balanced(source: str, opening: int) -> str | None:
+    """What sits between the bracket at `opening` and its partner, or None."""
+    depth = 0
+    for index in range(opening, len(source)):
+        character = source[index]
+        if character in "([{":
+            depth += 1
+        elif character in ")]}":
+            depth -= 1
+            if depth == 0:
+                return source[opening + 1 : index]
+    return None
+
+
+def _separate_arguments(text: str) -> list[str]:
+    """`text` split on the commas that are not inside a bracket or a string."""
+    found: list[str] = []
+    current = ""
+    depth = 0
+    quote: str | None = None
+    for character in text:
+        if quote:
+            current += character
+            if character == quote:
+                quote = None
+            continue
+        if character in "\"'`":
+            quote = character
+            current += character
+            continue
+        if character in "([{":
+            depth += 1
+        elif character in ")]}":
+            depth -= 1
+        if character == "," and depth == 0:
+            found.append(current)
+            current = ""
+        else:
+            current += character
+    if current.strip():
+        found.append(current)
+    return [argument for argument in found if argument.strip()]
+
+
+def a_call_the_signature_does_not_accept(
+    relative_path: str, content: str, project: "Path | None" = None
+) -> str | None:
+    """Why a call in this test passes more than the function takes, or None.
+
+    JavaScript drops extra arguments in silence, so the mismatch never raises
+    on its own - the test either fails somewhere unrelated or, worse, passes
+    on a premise that was never established.
+
+    Run 9bd3a091 wrote
+
+        addTask(storage, 'Active Task', '', false)
+
+    against `addTask({ title, description = '' }, storage)`. Every argument
+    landed one place left: `storage` arrived as the destructured parameter and
+    the string `'Active Task'` as the storage, and all three cases died on
+    `storage.setItem is not a function` - the run's only discoverable suite,
+    nothing of the product tested. The same call was written into two files.
+
+    Run 9506d3ab is the quieter half of the pair: `addTask('Completed Task
+    1', '', true)` against `addTask(title, description)`. The `true` meant to
+    mark the task complete was dropped, nothing threw, and the assertions
+    about completed tasks ran against tasks that were never completed.
+
+    Only when the import is local and resolvable, the definition is plain
+    enough to read, and it takes no rest parameter - a signature this cannot
+    read with certainty is one it says nothing about.
+    """
+    if not _is_test_name(relative_path):
+        return None
+    if project is None:
+        return None
+    for match in _NAMED_LOCAL_IMPORT.finditer(content):
+        names, module = match.group(1), match.group(2)
+        if names is None:
+            names, module = match.group(3), match.group(4)
+        source = _module_named(project, module)
+        if source is None:
+            continue
+        for name in (part.strip().split(" as ")[-1].strip() for part in names.split(",")):
+            if not name.isidentifier():
+                continue
+            declared = _declares(source, name)
+            if declared is None or "..." in declared:
+                continue
+            takes = len(_separate_arguments(declared))
+            for call in re.finditer(rf"(?<![.\w]){re.escape(name)}\s*\(", content):
+                arguments = _balanced(content, call.end() - 1)
+                if arguments is None:
+                    continue
+                passes = len(_separate_arguments(arguments))
+                if passes > takes:
+                    return (
+                        f"This calls `{name}` with {passes} arguments and "
+                        f"`{name}` is declared as `{name}({declared.strip()})`, "
+                        f"which takes {takes}. JavaScript discards the extra "
+                        "ones without a word, so the call does not fail here - "
+                        "it either dies further in on an argument that arrived "
+                        "in the wrong position, or passes while the thing it "
+                        "meant to set up never happened. Read the definition "
+                        "and call it the way it is written."
+                    )
+    return None
+
+
+def _module_named(project: "Path", specifier: str) -> str | None:
+    """The text of the local module `specifier` resolves to, or None."""
+    target = project / specifier
+    for candidate in (
+        target,
+        *(target.with_suffix(suffix) for suffix in (".js", ".mjs", ".cjs")),
+        *(target.parent / (target.name + suffix) for suffix in (".js", ".mjs", ".cjs")),
+    ):
+        try:
+            if candidate.is_file():
+                return candidate.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+    return None

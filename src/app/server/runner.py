@@ -580,6 +580,14 @@ class WorkflowRunner:
         ):
             raise RunConflict(f"Run {run_id} is not in the 'created' state.")
 
+        # Counted after the status transition succeeds, so a run that loses the
+        # race to start is not counted as one that ran. This is the only place a
+        # run begins; the counter is what makes `/metrics` show throughput.
+        # See plan-part3 §3.1.
+        from app.observability.metrics import MetricsTracker
+
+        MetricsTracker.record_run()
+
         self._dispatch(run_id, resume=False, decision_payload=None)
 
     UNRESUMABLE_ERROR_MARKER = "Interrupted:"
@@ -831,10 +839,24 @@ class WorkflowRunner:
         # anything. Distinct from `repeats`, which counts *gates*; this counts
         # rounds where the graph did not even reach one.
         stalled_at_stage = 0
+        # The stage currently being timed, and when it started. Stage duration
+        # is observed on transition, so this is carried across the loop's
+        # iterations rather than measured per iteration.
+        stage_timed_at: dict[str, object] = {}
 
         for _ in range(MAX_GATES):
             stage = state.get("stage", "")
             self._update_record(record, state)
+            # A stage transition is the moment the previous stage's duration is
+            # known, so the observation is made here rather than in the graph.
+            # Timing starts when a stage is first seen and ends when a different
+            # one replaces it; a stage that returns several times in a row
+            # (auto-approval loops) accumulates one observation per pass, which
+            # is what a histogram of stage cost should show. See plan-part3 §3.1.
+            if stage != stage_timed_at.get("stage"):
+                _record_stage_duration(stage_timed_at)
+                stage_timed_at = {"stage": stage, "started_at": time.monotonic()}
+
             narration, narrated_status = _stage_narration(
                 stage, auto_approve=bool(record.auto_approve)
             )

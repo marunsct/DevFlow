@@ -202,3 +202,39 @@ export const downloadArtifact = async (runId: string, path: string): Promise<voi
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 };
+
+/**
+ * Fetch the *content* of an artifact as text, for in-app display.
+ *
+ * `downloadArtifact` above hands the bytes to the browser as a download. That
+ * is the right shape for "save this file", but the wizard wants to *read* the
+ * file (e.g. the sprint plan, to show how many sprints were planned). A plain
+ * `<a href>` navigation would not work: the browser would not send the auth
+ * header, and the server would reject the request. Fetching with the client
+ * keeps the header on the request, and asking for `text` gives us the content
+ * as a string we can parse.
+ *
+ * The server resolves logical paths (e.g. `sprint-plan`) to graph-state keys
+ * (e.g. `sprint_plan`) and returns the structured content as JSON. We ask for
+ * `text` so the response is a string either way; the caller parses it.
+ *
+ * Returns `null` if the artifact has not been generated yet (the server 404s
+ * in that case) or if the request fails for any other reason.
+ */
+export const fetchArtifactContent = async (
+  runId: string,
+  path: string
+): Promise<string | null> => {
+  try {
+    const response = await api.get(`/runs/${runId}/artifacts/download`, {
+      params: { path },
+      responseType: 'text',
+    });
+    return response.data as string;
+  } catch {
+    // The artifact is not available yet (the run has not reached that stage)
+    // or the request failed. Either way the caller should show a placeholder,
+    // not an error.
+    return null;
+  }
+};

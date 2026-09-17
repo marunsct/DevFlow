@@ -250,6 +250,14 @@ def mark_defect_fixed(
         raise ValueError(
             f"Defect '{defect.description}' requires a regression test before it can be marked fixed."
         )
+    # Counted here rather than in the graph because this is the one place a
+    # defect's status changes to a terminal value. The counter is what tells an
+    # operator the remediation loop is doing something; without it `/metrics`
+    # reports `defects_resolved_total 0` on a system that has resolved defects,
+    # which reads as "nothing has ever worked". See plan-part3 §3.1.
+    from app.observability.metrics import MetricsTracker
+
+    MetricsTracker.record_defect_resolution(resolved=True)
     updated_defects = list(cycle.defects)
     updated_defects[defect_index] = defect.model_copy(
         update={
@@ -278,6 +286,12 @@ def accept_risk(cycle: RemediationCycle, defect_index: int, *, reason: str) -> R
     if not reason:
         raise ValueError("Accepting a defect as a risk requires a non-empty reason.")
     defect = cycle.defects[defect_index]
+    # An accepted risk is a resolution the loop did not fix, and the counter has
+    # a bucket for exactly that. Counting it here keeps the two outcomes from
+    # being indistinguishable on the dashboard. See plan-part3 §3.1.
+    from app.observability.metrics import MetricsTracker
+
+    MetricsTracker.record_defect_resolution(resolved=False)
     updated_defects = list(cycle.defects)
     updated_defects[defect_index] = defect.model_copy(
         update={"status": "accepted_risk", "accepted_risk_reason": reason}

@@ -25,7 +25,8 @@ import { ExecutionFlow } from '../components/ExecutionFlow';
 import { AgentActivity } from '../components/AgentActivity';
 import { ReviewPanel } from '../components/ReviewPanel';
 import { ApprovalGate } from '../components/ApprovalGate';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy } from 'lucide-react';
+import { WizardDashboard } from '../components/WizardDashboard';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy, ListChecks, LayoutGrid } from 'lucide-react';
 import { describeStage, describeStatus } from '../lib/activity';
 
 
@@ -49,6 +50,24 @@ export const RunDashboard: React.FC = () => {
   // so a short screen still has room for the panels underneath; the first lines
   // carry the summary, and the rest is one click away.
   const [errorOpen, setErrorOpen] = useState(false);
+  // The view mode: the classic dashboard (stages + log) or the guided wizard
+  // (phases + detail). Persisted so the reader's preference survives a reload.
+  const [viewMode, setViewMode] = useState<'wizard' | 'classic'>(() => {
+    try {
+      return (localStorage.getItem('runView') as 'wizard' | 'classic') || 'classic';
+    } catch {
+      return 'classic';
+    }
+  });
+  const handleViewModeChange = (mode: 'wizard' | 'classic') => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem('runView', mode);
+    } catch {
+      // localStorage can be unavailable (private mode); the preference just
+      // does not persist.
+    }
+  };
 
   // Logs are keyed by event id so history pages and live events can be merged
   // without duplicates. The previous version deduplicated by JSON.stringify
@@ -384,6 +403,19 @@ export const RunDashboard: React.FC = () => {
           All runs
         </Link>
         <div className="flex flex-wrap gap-2">
+          {/* View mode toggle: the classic dashboard or the guided wizard. */}
+          <button
+            onClick={() => handleViewModeChange(viewMode === 'wizard' ? 'classic' : 'wizard')}
+            className={`${actionButton} ${
+              viewMode === 'wizard'
+                ? 'text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5'
+                : 'text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5'
+            }`}
+            title={viewMode === 'wizard' ? 'Switch to classic dashboard' : 'Switch to guided wizard'}
+          >
+            {viewMode === 'wizard' ? <LayoutGrid className="h-3.5 w-3.5" /> : <ListChecks className="h-3.5 w-3.5" />}
+            {viewMode === 'wizard' ? 'Classic' : 'Wizard'}
+          </button>
           {run.status === 'created' && (
             <button onClick={handleStart} disabled={actionLoading}
               className={`${actionButton} text-success/90 border-success/30 hover:border-success/60 hover:bg-success/5 disabled:opacity-50`}>
@@ -504,15 +536,12 @@ export const RunDashboard: React.FC = () => {
         <ApprovalGate runId={runId!} approval={approval} onSubmit={handleApprovalSubmit} isLoading={actionLoading} />
       )}
 
-      {/* Workspace: steps on the left, output in the middle, live narration on
-          the right. Sized against the viewport so all three fill the screen and
-          scroll inside themselves, rather than the page growing and the rails
-          trailing off into whitespace. */}
-      {/* Three layouts, not two. Phones stack; tablets and small laptops get
-          the steps beside the output with the narration full width underneath,
-          which is the only arrangement that fits three panels into ~1024px
-          without making all three unreadable; from 1280px all three sit side by
-          side and share the viewport height. */}
+      {/* Workspace: the guided wizard or the classic dashboard. The wizard
+          presents the run as phases (intake, design, sprints, summary) with a
+          detail panel; the classic dashboard shows stages + log + activity. */}
+      {viewMode === 'wizard' ? (
+        <WizardDashboard run={run} logs={logs} />
+      ) : (
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] xl:flex-1 xl:min-h-[28rem]">
         <div className="min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
           <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
@@ -552,6 +581,7 @@ export const RunDashboard: React.FC = () => {
           <AgentActivity logs={logs} isRunning={!isTerminal} />
         </div>
       </div>
+      )}
     </div>
   );
 };

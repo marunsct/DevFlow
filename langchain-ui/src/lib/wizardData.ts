@@ -233,19 +233,6 @@ const durationBetween = (start: string | null, end: string | null): number | nul
   return Math.round((e - s) / 1000);
 };
 
-/**
- * The events that happened while `stage` was current.
- *
- * An event's `stage` field is the stage that was running when it was emitted.
- * Pause stages carry the prefix, so we compare on the base name. Events with an
- * empty stage (the very first ones, before any stage_change) are ignored here -
- * they belong to no step.
- */
-function eventsForStage(events: LogEntry[], stage: string): LogEntry[] {
-  const target = baseStage(stage);
-  return events.filter((e) => baseStage(e.stage) === target);
-}
-
 /* ------------------------------------------------------------------ *
  * The derivation
  * ------------------------------------------------------------------ */
@@ -496,18 +483,13 @@ export function buildWizardModel(
   /* ---- 2. Fill in section and step statuses ------------------------- */
 
   const markSectionStatus = (section: WizardSection, isLast: boolean) => {
-    const { status, label } = stepStatus(
-      { name: section.id, startedAt: section.events[0]?.timestamp ?? null },
-      isLast,
-      run.status,
-      currentStage
-    );
+    const { status, label } = stepStatus(isLast, run.status, currentStage);
     section.status = status;
     section.statusLabel = label;
   };
 
   const markStepStatus = (step: WizardStep, isLast: boolean) => {
-    const { status, label } = stepStatus(step, isLast, run.status, currentStage);
+    const { status, label } = stepStatus(isLast, run.status, currentStage);
     step.status = status;
     step.statusLabel = label;
   };

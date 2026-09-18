@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import traceback
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -36,6 +37,7 @@ from app.graph.workflow import (
     skip_decision,
     start_workflow,
 )
+from app.observability.metrics import MetricsTracker
 from app.server.events import EventBus, RunEvent, redact_metadata
 from app.state import RepositoryContext
 from app.tracing import is_tracing_enabled, trace_metadata
@@ -139,6 +141,30 @@ def _api_status(stage: str) -> str:
     if stage.startswith(REVIEW_PAUSE_PREFIX):
         return "waiting_for_review"
     return "running"
+
+
+def _record_stage_duration(timed: dict[str, object]) -> None:
+    """Observe how long the previously-timed stage ran, on the metrics histogram.
+
+    Called at the moment a *different* stage appears, because that is the first
+    moment the previous one's duration is known. `timed` is the
+    ``{"stage": ..., "started_at": time.monotonic()}`` dict carried across the
+    gate loop's iterations; an empty dict is the loop's initial state and means
+    nothing has been timed yet.
+
+    Failures here must never kill a run: a metric is not worth a run. The
+    histogram is best-effort, so anything unexpected is logged and swallowed.
+    """
+    if not timed:
+        return
+    stage = timed.get("stage")
+    started_at = timed.get("started_at")
+    if not stage or not isinstance(started_at, (int, float)):
+        return
+    try:
+        MetricsTracker.record_stage_duration(str(stage), time.monotonic() - started_at)
+    except Exception:  # noqa: BLE001 - see the docstring: metrics must not break a run
+        logger.warning("Could not record the stage-duration metric", exc_info=True)
 
 
 def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:

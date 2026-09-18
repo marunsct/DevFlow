@@ -73,6 +73,96 @@ export interface RunListResponse {
   total: number;
 }
 
+/* ------------------------------------------------------------------ *
+ * Wizard model - the guided phase view of a run, built by the server.
+ * Field names mirror `WizardModel` in `src/app/server/models.py`; the API
+ * hands the browser a finished model and the UI only renders it.
+ * ------------------------------------------------------------------ */
+
+export interface WizardNote {
+  /** Stable event id - the list key. */
+  id: string;
+  /** Event type ('log', 'tool_call', 'review_request', 'error', ...) - used to pick an icon. */
+  kind: string;
+  /** The line as written for a human to read. */
+  message: string;
+}
+
+export interface WizardReview {
+  point: string;
+  revision: number;
+  requested_at: string | null;
+  outcome: "approved" | "changes" | "skipped" | "pending";
+  comment: string | null;
+}
+
+export interface WizardStep {
+  name: string;
+  title: string;
+  blurb: string;
+  started_at: string | null;
+  /** Null while the step is still in flight. */
+  ended_at: string | null;
+  status: "done" | "active" | "waiting" | "upcoming" | "idle" | "error";
+  status_label: string;
+  duration_seconds: number | null;
+  /** Log lines that happened while this step ran, expandable in the UI. */
+  events: WizardNote[];
+}
+
+export interface SprintRevision {
+  /** 1 for the first pass; increments on each rejection. */
+  number: number;
+  steps: WizardStep[];
+  /** The end-of-sprint review, once one was requested. */
+  review: WizardReview | null;
+  /** Why this revision was rejected - present only when a later revision exists. */
+  rejection_comment: string | null;
+  saw_advance: boolean;
+}
+
+export interface WizardSection {
+  id: string;
+  kind: "intake" | "design" | "sprint" | "summary";
+  title: string;
+  blurb: string;
+  status: "done" | "active" | "waiting" | "upcoming" | "idle";
+  status_label: string;
+  sprint_number: number | null;
+  /** Present for kind='sprint' sections. */
+  revisions: SprintRevision[];
+  /** Steps that belong to the phase itself (intake/design), not a revision. */
+  steps: WizardStep[];
+}
+
+export interface WizardSummary {
+  /** From the sprint plan when it exists; null means "not yet planned". */
+  sprints_planned: number | null;
+  sprints_executed: number;
+  revisions_total: number;
+  test_runs: number;
+  defects_found: number;
+  documents_produced: number;
+  approvals_passed: number;
+  reviews_approved: number;
+  reviews_changes: number;
+  reviews_skipped: number;
+  reviews_pending: number;
+  started_at: string | null;
+  ended_at: string | null;
+  status: string;
+  status_label: string;
+  error: string | null;
+}
+
+export interface WizardModel {
+  /** In build order: intake, design, sprints 1..n, final summary. */
+  sections: WizardSection[];
+  summary: WizardSummary;
+  /** Which section the run is currently inside, if any. */
+  current_section_id: string | null;
+}
+
 /** Provider configuration as the API exposes it: credentials are masked. */
 export interface SettingsView {
   llm_provider: string;

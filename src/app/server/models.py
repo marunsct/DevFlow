@@ -210,6 +210,211 @@ class RunStatusResponse(BaseModel):
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
     error: str | None = Field(default=None, description="Error message if the run failed.")
+    auto_approve: bool = Field(
+        default=False,
+        description=(
+            "Whether the run answers its own approval gates (unattended). The UI "
+            "needs this to know whether a gate is waiting on a person or will "
+            "clear itself, and the wizard uses it to label a paused stage."
+        ),
+    )
+
+
+# ----------------------------------------------------------------------
+# Wizard model
+#
+# The phase structure of a run - which sprint each stage belongs to, which
+# revision of a sprint was rejected and why, how each review ended up - is
+# derived here, in one place, from the event history. Before this existed the
+# same derivation lived in TypeScript (the wizard view) *and* again in
+# `_derive_stages` for the classic timeline: two readers of one truth, free to
+# drift apart. The API now hands the browser a finished model and the browser
+# only renders it.
+# ----------------------------------------------------------------------
+
+
+class WizardReview(BaseModel):
+    """One review point inside a sprint revision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    point: str = Field(description="Which artifact was reviewed, e.g. 'sprint_review'.")
+    revision: int = Field(default=1, description="Revision number the review covered.")
+    requested_at: datetime | None = Field(
+        default=None, description="When the run paused waiting for a decision."
+    )
+    outcome: Literal["approved", "changes", "skipped", "pending"] = Field(
+        description=(
+            "What happened at this review. 'changes' means sent back with a "
+            "comment; 'pending' means the run is still waiting for it."
+        )
+    )
+    comment: str | None = Field(
+        default=None,
+        description="The reviewer's comment - the rejection reason when outcome is 'changes'.",
+    )
+
+
+class WizardNote(BaseModel):
+    """One log line that happened while a step was running.
+
+    The wizard shows each step's notes on demand (an expandable list under the
+    step), so they travel with the step rather than being re-fetched: the event
+    history is already in memory when this model is built, and re-reading it per
+    step would be a Redis round trip per render.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="Event id - stable key for the UI list.")
+    kind: str = Field(
+        description=(
+            "The event type ('log', 'tool_call', 'agent_message', 'error', ...). "
+            "The UI only uses it to pick an icon."
+        )
+    )
+    message: str = Field(description="The line as written for a human to read.")
+
+
+class WizardStep(BaseModel):
+    """One stage entry inside a revision or phase section."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(description="Stage name, pause prefix stripped.")
+    title: str = Field(description="Human-readable title for the stage.")
+    blurb: str = Field(default="", description="One line on what the stage does.")
+    started_at: datetime | None = Field(default=None)
+    ended_at: datetime | None = Field(
+        default=None, description="None while the step is still in flight."
+    )
+    status: Literal["done", "active", "waiting", "upcoming", "idle", "error"] = Field(
+        description=(
+            "'done' once a later step started; 'active' for the step in flight; "
+            "'waiting' when the run is paused on it; 'error' if the run stopped "
+            "there; 'idle' for a step that has not started (or was cancelled) "
+            "- rendered as 'Up next'."
+        )
+    )
+    status_label: str = Field(default="", description="Text for the badge, e.g. 'Working on it'.")
+    duration_seconds: float | None = Field(default=None)
+    events: list[WizardNote] = Field(
+        default_factory=list,
+        description=(
+            "The log lines that happened while this step ran. The UI renders "
+            "them in an expandable list - keeping them here means the wizard is "
+            "a pure renderer with nothing left to derive."
+        ),
+    )
+
+
+class SprintRevision(BaseModel):
+    """One pass through a sprint. A rejected review starts a new revision of the same sprint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    number: int = Field(description="1 for the first pass; increments on each rejection.")
+    steps: list[WizardStep] = Field(default_factory=list)
+    review: WizardReview | None = Field(
+        default=None, description="The end-of-sprint review, once one was requested."
+    )
+    rejection_comment: str | None = Field(
+        default=None,
+        description=(
+            "Why this revision was rejected - the comment that started the next "
+            "revision. Present only when a later revision exists."
+        ),
+    )
+    saw_advance: bool = Field(
+        default=False,
+        description=(
+            "The run moved on to the next sprint after this revision (the review "
+            "was approved and `sprint_advance` ran). Used to resolve the review's "
+            "outcome for runs whose history predates decision events."
+        ),
+    )
+
+
+class WizardSection(BaseModel):
+    """One phase of the build: intake, design, a sprint, or the final summary."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(description="Stable identifier, e.g. 'design' or 'sprint-2'.")
+    kind: Literal["intake", "design", "sprint", "summary"] = Field(
+        description="Which phase this is; the UI renders each kind differently."
+    )
+    title: str = Field(description="Display name, e.g. 'Sprint 1'.")
+    blurb: str = Field(default="", description="One line describing the phase.")
+    status: Literal["done", "active", "waiting", "upcoming", "idle"] = Field(
+        default="upcoming", description="Phase status in the same vocabulary as steps."
+    )
+    status_label: str = Field(default="Up next")
+    sprint_number: int | None = Field(default=None, description="Set for kind='sprint' sections.")
+    revisions: list[SprintRevision] = Field(
+        default_factory=list, description="Present for kind='sprint' sections."
+    )
+    steps: list[WizardStep] = Field(
+        default_factory=list,
+        description="Steps that belong to the phase itself (intake/design), not a revision.",
+    )
+
+
+class WizardSummary(BaseModel):
+    """The numbers the final summary panel reports.
+
+    Every field here is one the panel renders - nothing extra, so the browser
+    cannot need to compute a number itself. The counts come from two sources:
+    the event walk (reviews and their outcomes) and the graph state (test runs
+    and defects live in `remediation`, which the event stream only narrates).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    sprints_planned: int | None = Field(
+        default=None,
+        description=(
+            "From the sprint plan artifact, when it exists; None means 'not yet "
+            "planned' and the UI falls back to sprints_executed."
+        ),
+    )
+    sprints_executed: int = Field(description="Sprint sections that opened.")
+    revisions_total: int = Field(description="All revision passes across all sprints.")
+    test_runs: int = Field(
+        default=0, description="Test rounds executed - from the remediation cycle in graph state."
+    )
+    defects_found: int = Field(
+        default=0, description="Defects tracked so far - from the remediation cycle in graph state."
+    )
+    documents_produced: int = Field(default=0, description="Artifacts present for this run.")
+    approvals_passed: int = Field(
+        default=0, description="Approvals passed across all stages (progress, not retries)."
+    )
+    reviews_approved: int = Field(description="Reviews answered with approve or skip.")
+    reviews_changes: int = Field(description="Reviews answered with 'changes'.")
+    reviews_skipped: int = Field(description="Reviews the reviewer skipped.")
+    reviews_pending: int = Field(description="Reviews still waiting for an answer.")
+    started_at: datetime | None = Field(default=None, description="When the run was created.")
+    ended_at: datetime | None = Field(
+        default=None, description="When the run reached a terminal state; None while it is going."
+    )
+    status: str = Field(description="The run's status, same vocabulary as RunStatusResponse.status.")
+    status_label: str = Field(default="", description="Plain-English label for that status.")
+    error: str | None = Field(default=None, description="Error message when the run stopped.")
+
+
+class WizardModel(BaseModel):
+    """The full phase structure of one run, ready to render."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    sections: list[WizardSection] = Field(
+        description="In build order: intake, design, sprints 1..n, final summary."
+    )
+    summary: WizardSummary = Field(description="Aggregate numbers for the final panel.")
+    current_section_id: str | None = Field(
+        default=None, description="Which section the run is currently inside, if any."
+    )
 
 
 class RunSummary(BaseModel):

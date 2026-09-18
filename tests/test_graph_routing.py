@@ -945,6 +945,81 @@ def test_repeated_change_requests_stop_at_the_rerun_limit(agents: ScriptedAgents
     assert "WORKFLOW_MAX_REVIEW_RERUNS" in state["error"]
 
 
+def test_a_changes_required_with_no_findings_is_re_reviewed_not_acted_on(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
+    """A review that asks for changes but names no structured finding is sent back.
+
+    `findings` is the only field the revision loop can gate on, so a reviewer
+    that buries a blocking defect in `acceptance_evidence` hands the technical
+    lead free text: no severity, no required remediation, and nothing for
+    `_findings_that_block` to see. Observed on run-27fac2a5, where the
+    deterministic cross-file checks told the reviewer a module script tag was
+    loading a CommonJS file, the reviewer wrote that in `acceptance_evidence`
+    and left `findings` empty, and three revisions later the file was unchanged
+    because no task was ever pointed at it.
+
+    The review is re-run on a fresh conversation first. Only when the reviewer
+    still produces no findings does the free text become the revision request -
+    and that fallback is covered by the tests on
+    `_milestone_changes_requested`.
+    """
+    graph = _graph()
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("testing"))] * 4)
+    agents.script("specialist_testing", [responds_with(_specialist())] * 12)
+    # First review: changes_required, but the defect is only in the evidence.
+    # Second review: the same verdict, now with a real finding. Every review
+    # after that accepts, so the revised sprint passes and the run ends.
+    agents.script(
+        "milestone_reviewer",
+        [
+            responds_with(
+                MilestoneReviewOutput(
+                    status="changes_required",
+                    findings=[],
+                    acceptance_evidence="index.html loads app.js as a module but app.js is CommonJS.",
+                    documentation_reviewed=True,
+                    tests_reviewed=True,
+                )
+            ),
+            responds_with(
+                MilestoneReviewOutput(
+                    status="changes_required",
+                    findings=[
+                        MilestoneReviewFinding(
+                            severity="blocking",
+                            category="correctness",
+                            description="app.js is CommonJS but loaded as a module.",
+                            affected_files=["index.html", "app.js"],
+                            required_remediation="Load app.js as a classic script.",
+                        )
+                    ],
+                    acceptance_evidence="Re-checked the script tag.",
+                    documentation_reviewed=True,
+                    tests_reviewed=True,
+                )
+            ),
+        ]
+        + [responds_with(_milestone_review())] * 6,
+    )
+    agents.script("security_reviewer", [responds_with(_security_review())] * 4)
+
+    state = start_workflow(
+        graph, _document(), _repository(tmp_path), "run-no-findings",
+    )
+
+    # The reviewer was asked again rather than the lead being sent free text.
+    assert len(agents.requests["milestone_reviewer"]) >= 2
+    # The first hand-back to the lead carried the structured finding, not the
+    # evidence prose alone: without the re-review the lead's first request would
+    # contain the module/commonjs sentence from `acceptance_evidence` and no
+    # remediation instruction at all.
+    lead_requests = agents.requests["technical_lead"]
+    assert "classic script" in lead_requests[1]["messages"][0]["content"]
+
+
 def test_sprint_review_pauses_after_tests_pass_and_can_be_approved(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:

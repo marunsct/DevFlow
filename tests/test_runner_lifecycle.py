@@ -313,6 +313,27 @@ async def test_a_mid_flight_state_re_invokes_rather_than_spinning(runner):
     assert runner.run_store.load("run-1").status == "completed"
 
 
+async def test_a_stage_transition_does_not_crash_the_loop(runner):
+    """A transition between two stages is the moment the previous stage's
+    duration is recorded.
+
+    That call used to name a function that did not exist, so the very first
+    transition raised `NameError: name '_record_stage_duration' is not defined`
+    and every run died on it - silently, because the graph had already done its
+    work by then and the failure looked like a flaky model error. A graph that
+    moves through more than one stage reaches that line; a single-stage one
+    never does, which is why the other tests never caught it.
+    """
+    record = _register(runner, status="running")
+    graph = _FakeGraph([{"stage": "complete"}])
+
+    await runner._handle_state(record, graph, {"stage": "product_manager"}, {})
+
+    stored = runner.run_store.load("run-1")
+    assert stored.status == "completed"
+    assert stored.error is None
+
+
 async def test_a_cancellation_request_stops_the_loop(runner):
     record = _register(runner, status="running")
     runner.run_store.request_cancel("run-1", datetime.now(timezone.utc).isoformat())

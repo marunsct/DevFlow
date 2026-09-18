@@ -21,7 +21,7 @@ htmlcov/
 dist/
 build/
 node_modules/
-
+.playwright-mcp/
 # One-off scratch files
 fix_*.py
 patch*.py

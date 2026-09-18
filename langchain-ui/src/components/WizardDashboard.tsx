@@ -8,26 +8,29 @@
  * run that way: a clickable rail of phases on the left, and a detail panel on
  * the right that shows what happened in the phase the reader has selected.
  *
- * The model it renders comes from `buildWizardModel(run, logs)` - a pure
- * function that re-derives the phases from the same event stream the classic
- * dashboard already holds. So the wizard can never drift out of sync with the
- * log, and it re-renders on every WebSocket merge without any extra fetching.
+ * It is a pure renderer. The model it draws comes from `GET /runs/{id}/wizard`
+ * - the server walks the run's event history and graph state and returns a
+ * finished `WizardModel`. This used to be derived here in the browser (in
+ * `lib/wizardData.ts`) from the same events, which meant two readers of one
+ * truth free to drift apart; the server is now the single source and the view
+ * only fetches and paints.
  *
- * The one thing it *does* fetch is the sprint plan artifact (to show how many
- * sprints were planned, and the goals of each). That is content, not in the
- * run's stage list, so it is fetched on demand and cached.
+ * The one thing it still fetches on demand is the sprint plan *artifact* (to
+ * show how many sprints were planned and their goals). That is document
+ * content, not run structure, so it does not belong in the wizard model.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
-import type { LogEntry, RunStatusResponse } from '../types';
-import { buildWizardModel } from '../lib/wizardData';
+import React, { useEffect, useState } from 'react';
 import type {
+  RunStatusResponse,
   SprintRevision,
+  WizardModel,
+  WizardNote,
   WizardReview,
   WizardSection,
   WizardStep,
   WizardSummary,
-} from '../lib/wizardData';
+} from '../types';
 import { fetchArtifactContent } from '../api';
 import {
   Check,
@@ -53,7 +56,8 @@ import {
 
 interface WizardDashboardProps {
   run: RunStatusResponse;
-  logs: LogEntry[];
+  /** The finished wizard model, fetched by the parent page. */
+  model: WizardModel | null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -81,41 +85,36 @@ const SECTION_ICON = {
   summary: BarChart3,
 } as const;
 
+const isTerminal = (status: string) => ['completed', 'failed', 'cancelled'].includes(status);
+
 /* ------------------------------------------------------------------ *
  * The component
  * ------------------------------------------------------------------ */
 
-export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, logs }) => {
-  // The model is re-derived on every render. It is a pure function over
-  // (run, logs), and a run caps at 5000 events, so this is cheap. Re-deriving
-  // (rather than caching) means the wizard can never drift out of sync with
-  // the log the dashboard is reading.
-  const model = useMemo(() => buildWizardModel(run, logs), [run, logs]);
-
+export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) => {
   // The section the reader has selected. It starts at the section the run is
   // in right now (or the last one it reached), and the reader can click any
   // phase in the rail to look at it.
-  const [selectedId, setSelectedId] = useState<string | null>(model.currentSectionId);
+  const [selectedId, setSelectedId] = useState<string | null>(
+    model?.current_section_id ?? model?.sections[model.sections.length - 1]?.id ?? null
+  );
 
   // Keep the selection in sync with the run: if the run moves to a new section
   // and the reader has not manually selected anything else, follow it.
+  const currentSectionId = model?.current_section_id ?? null;
   useEffect(() => {
-    if (model.currentSectionId) {
-      setSelectedId((prev) => prev ?? model.currentSectionId);
+    if (currentSectionId) {
+      setSelectedId((prev) => prev ?? currentSectionId);
     }
-  }, [model.currentSectionId]);
-
-  const selected =
-    model.sections.find((s) => s.id === selectedId) ??
-    model.sections[model.sections.length - 1] ??
-    null;
+  }, [currentSectionId]);
 
   // The sprint plan, fetched on demand. It is content (the goals of each
-  // planned sprint), not in the run's stage list, so we fetch it. We cache it
-  // by run id so a re-render does not re-fetch.
+  // planned sprint), not in the wizard model, so we fetch it. We cache it by
+  // run id so a re-render does not re-fetch.
   const [sprintPlan, setSprintPlan] = useState<{ goals: string[]; count: number } | null>(null);
   useEffect(() => {
     let cancelled = false;
+    setSprintPlan(null);
     fetchArtifactContent(run.run_id, 'sprint-plan').then((content) => {
       if (cancelled || !content) return;
       try {
@@ -126,6 +125,8 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, logs }) =
           count: sprints.length,
         });
       } catch {
+        // The plan artifact is not JSON we understand; the summary falls back
+        // to the server's own `sprints_planned` number.
         setSprintPlan(null);
       }
     });
@@ -133,6 +134,19 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, logs }) =
       cancelled = true;
     };
   }, [run.run_id]);
+
+  const sections = model?.sections ?? [];
+  const selected =
+    sections.find((s) => s.id === selectedId) ?? sections[sections.length - 1] ?? null;
+
+  if (!model || sections.length === 0) {
+    return (
+      <div className="animate-fade-in flex flex-col items-center justify-center gap-2 px-6 py-16 text-center">
+        <Loader2 className="h-5 w-5 text-text-muted animate-spin" />
+        <p className="text-sm text-text-secondary">Loading the build phases…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]">
@@ -152,12 +166,12 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, logs }) =
 
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
           <ol className="flex flex-col gap-1">
-            {model.sections.map((section, index) => {
+            {sections.map((section, index) => {
               const isSelected = section.id === selected?.id;
-              const isLast = index === model.sections.length - 1;
+              const isLast = index === sections.length - 1;
               const tone = toneFor(section.status);
               const Icon = SECTION_ICON[section.kind];
-              const isCurrent = section.id === model.currentSectionId && !isTerminal(run.status);
+              const isCurrent = section.id === model.current_section_id && !isTerminal(run.status);
 
               return (
                 <li key={section.id} className="relative">
@@ -182,9 +196,9 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, logs }) =
                         <p className="text-[13px] font-semibold text-white leading-snug">
                           {section.title}
                         </p>
-                        {section.kind === 'sprint' && (section.revisions?.length ?? 0) > 1 && (
+                        {section.kind === 'sprint' && section.revisions.length > 1 && (
                           <span className="text-[10px] font-medium text-warning bg-warning/10 border border-warning/30 rounded-full px-1.5 py-0.5">
-                            {section.revisions?.length} passes
+                            {section.revisions.length} passes
                           </span>
                         )}
                       </div>
@@ -193,7 +207,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, logs }) =
                       </p>
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span className={`text-[11px] font-medium ${tone.text}`}>
-                          {section.statusLabel}
+                          {section.status_label}
                         </span>
                       </div>
                     </div>
@@ -256,7 +270,7 @@ const SectionDetail: React.FC<SectionDetailProps> = ({ section, run, summary, sp
           <h3 className="font-semibold text-white text-base leading-none">{section.title}</h3>
           <p className="text-[12px] text-text-muted mt-1 leading-none">{section.blurb}</p>
         </div>
-        <span className={`text-[12px] font-medium ${tone.text}`}>{section.statusLabel}</span>
+        <span className={`text-[12px] font-medium ${tone.text}`}>{section.status_label}</span>
       </div>
 
       {/* Body */}
@@ -275,7 +289,7 @@ const SectionDetail: React.FC<SectionDetailProps> = ({ section, run, summary, sp
  * ------------------------------------------------------------------ */
 
 const IntakeDetail: React.FC<{ section: WizardSection }> = ({ section }) => {
-  const steps = section.steps ?? [];
+  const steps = section.steps;
   return (
     <div className="flex flex-col gap-4">
       <p className="text-[13px] text-text-secondary leading-relaxed">
@@ -297,7 +311,7 @@ const IntakeDetail: React.FC<{ section: WizardSection }> = ({ section }) => {
  * ------------------------------------------------------------------ */
 
 const DesignDetail: React.FC<{ section: WizardSection; run: RunStatusResponse }> = ({ section, run }) => {
-  const steps = section.steps ?? [];
+  const steps = section.steps;
   // The key decisions are the stages that produced a document or a review:
   // the technical specification, the architecture review, and the reader's
   // review of the plan.
@@ -327,7 +341,7 @@ const DesignDetail: React.FC<{ section: WizardSection; run: RunStatusResponse }>
           review={{
             point: review.point,
             revision: review.revision,
-            requestedAt: review.updated_at,
+            requested_at: review.updated_at,
             outcome: review.status === 'approved' ? 'approved' : review.status === 'changes_requested' ? 'changes' : review.status === 'skipped' ? 'skipped' : 'pending',
             comment: review.comments,
           }}
@@ -342,7 +356,7 @@ const DesignDetail: React.FC<{ section: WizardSection; run: RunStatusResponse }>
  * ------------------------------------------------------------------ */
 
 const SprintDetail: React.FC<{ section: WizardSection }> = ({ section }) => {
-  const revisions = section.revisions ?? [];
+  const revisions = section.revisions;
 
   return (
     <div className="flex flex-col gap-4">
@@ -377,7 +391,7 @@ const RevisionCard: React.FC<{ revision: SprintRevision }> = ({ revision }) => {
         <span className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary">
           {revision.number === 1 ? 'First pass' : `Pass ${revision.number}`}
         </span>
-        {revision.revisionComment && (
+        {revision.rejection_comment && (
           <span className="text-[11px] text-warning flex items-center gap-1">
             <ThumbsDown className="h-3 w-3" />
             Sent back for changes
@@ -386,14 +400,14 @@ const RevisionCard: React.FC<{ revision: SprintRevision }> = ({ revision }) => {
       </div>
 
       {/* The rejection comment that started this revision (if any) */}
-      {revision.revisionComment && (
+      {revision.rejection_comment && (
         <div className="px-4 py-3 bg-warning/[0.04] border-b border-warning/20">
           <div className="flex items-start gap-2">
             <MessageSquare className="h-3.5 w-3.5 text-warning mt-0.5 flex-none" />
             <div className="min-w-0">
               <p className="text-[11px] font-medium text-warning">Review comment</p>
               <p className="text-[12px] text-text-secondary leading-relaxed mt-1 whitespace-pre-wrap">
-                {revision.revisionComment}
+                {revision.rejection_comment}
               </p>
             </div>
           </div>
@@ -439,17 +453,17 @@ const StepCard: React.FC<{ step: WizardStep; isLast: boolean; showEvents?: boole
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <p className="text-[12px] font-semibold text-white leading-snug">{step.title}</p>
-            {step.durationSeconds !== null && (
+            {step.duration_seconds !== null && (
               <span className="text-[10px] text-text-muted tabular-nums">
-                {step.durationSeconds < 60
-                  ? `${Math.round(step.durationSeconds)}s`
-                  : `${Math.floor(step.durationSeconds / 60)}m ${Math.round(step.durationSeconds % 60)}s`}
+                {step.duration_seconds < 60
+                  ? `${Math.round(step.duration_seconds)}s`
+                  : `${Math.floor(step.duration_seconds / 60)}m ${Math.round(step.duration_seconds % 60)}s`}
               </span>
             )}
           </div>
           <p className="text-[11px] text-text-muted leading-relaxed mt-0.5">{step.blurb}</p>
           <div className="flex items-center gap-2 mt-1">
-            <span className={`text-[10px] font-medium ${tone.text}`}>{step.statusLabel}</span>
+            <span className={`text-[10px] font-medium ${tone.text}`}>{step.status_label}</span>
             {hasEvents && (
               <span className="text-[10px] text-text-muted tabular-nums">
                 {step.events.length} {step.events.length === 1 ? 'note' : 'notes'}
@@ -464,7 +478,7 @@ const StepCard: React.FC<{ step: WizardStep; isLast: boolean; showEvents?: boole
         <div className="px-3 pb-3 pl-[3.25rem]">
           <div className="flex flex-col gap-1.5">
             {step.events.map((event, i) => (
-              <EventNote key={`${event.event_id}-${i}`} event={event} />
+              <EventNote key={`${event.id}-${i}`} event={event} />
             ))}
           </div>
         </div>
@@ -477,11 +491,11 @@ const StepCard: React.FC<{ step: WizardStep; isLast: boolean; showEvents?: boole
  * A single event note (a log line, a tool call, a review, etc.)
  * ------------------------------------------------------------------ */
 
-const EventNote: React.FC<{ event: LogEntry }> = ({ event }) => {
-  const type = event.event_type;
+const EventNote: React.FC<{ event: WizardNote }> = ({ event }) => {
+  const type = event.kind;
   const isReview = type === 'review_request';
-  const isApproval = type === 'approval_request';
-  const isError = type === 'error' || (event.metadata?.failed === true);
+  const isApproval = type === 'approval_request' || type === 'approval_auto';
+  const isError = type === 'error';
   const isTool = type === 'tool_call' || type === 'tool_result';
 
   const Icon = isError ? AlertCircle : isReview ? MessageSquare : isApproval ? Clock : isTool ? Loader2 : Circle;
@@ -538,19 +552,22 @@ const SummaryDetail: React.FC<{
   sprintPlan: { goals: string[]; count: number } | null;
   run: RunStatusResponse;
 }> = ({ summary, sprintPlan, run }) => {
-  const planned = sprintPlan?.count ?? summary.sprintsPlanned;
+  // The plan artifact is the richer source (it has the per-sprint goals); the
+  // server's own count covers runs whose plan has not been written as an
+  // artifact yet.
+  const planned = sprintPlan?.count ?? summary.sprints_planned ?? summary.sprints_executed;
 
   const stats = [
     { label: 'Sprints planned', value: planned, icon: ClipboardList, color: 'text-primary' },
-    { label: 'Sprints executed', value: summary.sprintsExecuted, icon: Rocket, color: 'text-success' },
-    { label: 'Revisions', value: summary.revisionsTotal, icon: ThumbsDown, color: 'text-warning' },
-    { label: 'Test runs', value: summary.testRuns, icon: ListChecks, color: 'text-primary' },
-    { label: 'Defects found', value: summary.defectsFound, icon: AlertCircle, color: 'text-danger' },
-    { label: 'Documents', value: summary.documentsProduced, icon: FileText, color: 'text-text-secondary' },
-    { label: 'Approvals passed', value: summary.approvalsPassed, icon: ThumbsUp, color: 'text-success' },
-    { label: 'Reviews approved', value: summary.reviewsApproved, icon: ThumbsUp, color: 'text-success' },
-    { label: 'Reviews sent back', value: summary.reviewsChanges, icon: ThumbsDown, color: 'text-warning' },
-    { label: 'Reviews pending', value: summary.reviewsPending, icon: Clock, color: 'text-primary' },
+    { label: 'Sprints executed', value: summary.sprints_executed, icon: Rocket, color: 'text-success' },
+    { label: 'Revisions', value: summary.revisions_total, icon: ThumbsDown, color: 'text-warning' },
+    { label: 'Test runs', value: summary.test_runs, icon: ListChecks, color: 'text-primary' },
+    { label: 'Defects found', value: summary.defects_found, icon: AlertCircle, color: 'text-danger' },
+    { label: 'Documents', value: summary.documents_produced, icon: FileText, color: 'text-text-secondary' },
+    { label: 'Approvals passed', value: summary.approvals_passed, icon: ThumbsUp, color: 'text-success' },
+    { label: 'Reviews approved', value: summary.reviews_approved, icon: ThumbsUp, color: 'text-success' },
+    { label: 'Reviews sent back', value: summary.reviews_changes, icon: ThumbsDown, color: 'text-warning' },
+    { label: 'Reviews pending', value: summary.reviews_pending, icon: Clock, color: 'text-primary' },
   ];
 
   return (
@@ -605,9 +622,3 @@ const SummaryDetail: React.FC<{
     </div>
   );
 };
-
-/* ------------------------------------------------------------------ *
- * Helpers
- * ------------------------------------------------------------------ */
-
-const isTerminal = (status: string) => ['completed', 'failed', 'cancelled'].includes(status);

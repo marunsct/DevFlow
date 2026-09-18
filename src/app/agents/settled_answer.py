@@ -615,6 +615,33 @@ def build_settled_answer_middleware(
                         ],
                         "jump_to": "end",
                     }
+                # Past the budget with nothing written. The warning has said so
+                # on every call since 70% and been ignored each time - measured
+                # on run-1a7a62c2, where `specialist_testing` was told 71 times
+                # and kept running `npm test` for over an hour and a half.
+                #
+                # Nothing else here can stop it. `_decide` only ends a stage it
+                # can see an answer in, and the graph's own recovery
+                # (`_restart_on_a_fresh_conversation`) is reached only when the
+                # stage *ends* - so a stage that neither answers nor ends is
+                # outside every guard the run has. Ending it now hands it to
+                # that recovery, which clears the conversation and retries, and
+                # fails the run only after the retry budget is spent.
+                logger.warning(
+                    "Stage %s is past its model-call budget (%d calls) with no "
+                    "structured response written; ending it so the run can "
+                    "retry on a fresh conversation",
+                    stage_name or "?", _model_calls_used(messages),
+                )
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=getattr(last, "content", "") or "",
+                            id=getattr(last, "id", None),
+                        )
+                    ],
+                    "jump_to": "end",
+                }
 
             # An answer the model put in a file rather than in the response
             # channel is still an answer, and this turn is about to be refused

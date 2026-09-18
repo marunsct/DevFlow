@@ -234,6 +234,34 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     return imported
 
 
+def _imported_only_by_tests(project: Path, package: str) -> bool:
+    """Whether `package` is imported only by files this project owns as tests.
+
+    A test runner or browser binary imported by a test file is test tooling, so
+    the constraint on the product's dependencies has nothing to say about it.
+    The same package imported by the application itself is a product dependency
+    and is reported. `file_kinds.is_test` is the one answer to "is this a test"
+    across the codebase - see that module for why it must not be re-derived.
+    """
+    from app.analysis.file_kinds import is_test
+
+    try:
+        for script in project.rglob("*"):
+            if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
+                continue
+            if is_test(str(script.relative_to(project))):
+                continue
+            try:
+                source = script.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if package in _IMPORTS_A_PACKAGE.findall(source):
+                return False
+    except Exception:  # noqa: BLE001 - a check must never fail the review
+        return False
+    return True
+
+
 def what_the_brief_forbids_that_is_there(
     document_text: str, repository_root: str | Path
 ) -> list[str]:
@@ -257,6 +285,16 @@ def what_the_brief_forbids_that_is_there(
 
     Decidable, so it is stated rather than left to a reading: the constraint is
     a quoted line of the brief and the packages are `package.json`'s own.
+
+    Only the product's dependencies are reported. `devDependencies` are not
+    shipped - `npm ci --omit=dev` in a production image installs none of them -
+    so a test runner sitting there breaks no constraint, and a package imported
+    only by test files is treated the same way. Measured on run-2d9066e2, which
+    spent all three of its remediation attempts on `@playwright/test` in
+    devDependencies against a brief reading "No external dependencies beyond
+    basic HTML/CSS/JS" and failed without a product defect in it. The
+    constraint was never aimed at the test suite; this check no longer reads it
+    as though it were. See `app.agents.testing_dependency_rule`.
     """
     if not document_text:
         return []
@@ -274,17 +312,53 @@ def what_the_brief_forbids_that_is_there(
                 declared = json.loads(manifest.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 continue
-            packages = sorted(
+            # The brief constrains what ships, and only that. `devDependencies`
+            # are the developer's: they are not installed by `npm ci --omit=dev`
+            # in a production image and never reach the user, so a test runner
+            # sitting there violates nothing. Measured on run-2d9066e2, which
+            # spent all three remediation attempts on `@playwright/test` in
+            # devDependencies against a brief reading "No external dependencies
+            # beyond basic HTML/CSS/JS" and failed without a product defect.
+            # See `app.agents.testing_dependency_rule`.
+            shipped = sorted(
                 set(declared.get("dependencies") or {})
-                | set(declared.get("devDependencies") or {})
+                - set(declared.get("devDependencies") or {})
             )
-            packages = [name for name in packages if name not in _NOT_A_DEPENDENCY]
+            dev_only = sorted(
+                set(declared.get("devDependencies") or {})
+                - set(declared.get("dependencies") or {})
+            )
+            imported = _packages_the_code_imports(manifest.parent)
+            # Test tooling: declared as a devDependency AND never touched by
+            # product code. It ships to nobody, so the constraint on the
+            # product has nothing to say about it.
+            test_only = {
+                name
+                for name in dev_only
+                if name not in _NOT_A_DEPENDENCY
+                and _imported_only_by_tests(manifest.parent, name)
+            }
+            packages = [
+                name
+                for name in shipped
+                if name not in _NOT_A_DEPENDENCY
+            ]
+            # A devDependency the product itself imports is a product dependency
+            # filed in the wrong place: the product needs it at runtime, so the
+            # brief rules it out - and `npm ci --omit=dev` would break it too.
+            misfiled = [
+                name
+                for name in dev_only
+                if name not in test_only and name not in _NOT_A_DEPENDENCY
+            ]
+            packages = packages + misfiled
             undeclared = sorted(
-                _packages_the_code_imports(manifest.parent)
-                - set(packages)
+                imported
+                - set(shipped)
+                - set(dev_only)
                 - _NOT_A_DEPENDENCY
             )
-            if not packages and not undeclared:
+            if not packages and not undeclared and not test_only:
                 continue
             how = []
             if packages:
@@ -296,6 +370,16 @@ def what_the_brief_forbids_that_is_there(
                 how.append(
                     "imports " + ", ".join(f"`{name}`" for name in undeclared[:6])
                     + " without declaring it"
+                )
+            if not how:
+                # Everything present is test-only and declared as such, which
+                # is exactly what the constraint asks for. Say so rather than
+                # falling silent, so a reviewer reading the note knows the
+                # check ran and the product itself carries no dependencies.
+                how.append(
+                    "declares no product dependencies; "
+                    + ", ".join(f"`{name}`" for name in sorted(test_only)[:6])
+                    + " are devDependencies used for testing only and are not shipped"
                 )
             found.append(
                 f"{manifest.parent.name}/package.json "
@@ -367,4 +451,5 @@ __all__ = [
     "constraint_lines",
     "constraints_note",
     "what_the_brief_asked_for_that_is_missing",
+    "what_the_brief_forbids_that_is_there",
 ]

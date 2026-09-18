@@ -100,6 +100,23 @@ def test_a_repeated_call_without_an_answer_is_left_alone() -> None:
     assert _after(state) is None
 
 
+def test_a_stage_under_its_budget_with_no_answer_is_left_alone() -> None:
+    """The safety property for the new stop: a budget is not a deadline.
+
+    A stage that has not answered and has not spent its budget is still
+    working, and stopping it would cut short every slow-but-healthy stage.
+    """
+    repeated = _call("run_terminal_command", {"command": "npm test"})
+    messages = [
+        AIMessage(content="looking", tool_calls=[dict(repeated, id="c0")], id="first"),
+        ToolMessage(content="tests failed", tool_call_id="c0"),
+    ]
+    messages += [_ai("running the tests again", [repeated]) for _ in range(10)]
+
+    middleware = build_settled_answer_middleware(Verdict, "s", 40)
+    assert middleware.after_model({"messages": messages}, None) is None
+
+
 def test_prose_that_merely_mentions_json_is_not_an_answer() -> None:
     repeated = _call("read_file", {"file_path": "/a/script.js"})
     state = {
@@ -1009,16 +1026,28 @@ def test_a_stage_at_its_budget_with_an_answer_is_ended() -> None:
     assert update is not None and update["jump_to"] == "end"
 
 
-def test_a_stage_at_its_budget_with_no_answer_is_left_alone() -> None:
-    """Ending is safe only because a valid answer exists. Without one there is
-    nothing better to do than let it carry on."""
+def test_a_stage_at_its_budget_with_no_answer_is_ended() -> None:
+    """run-1a7a62c2's `specialist_testing` had no answer and no end.
+
+    It was told it was out of budget 71 times and kept running `npm test` for
+    an hour and a half. Ending is safe here for a different reason than the
+    answered case: it does not discard a finished answer, because there is
+    none. What it ends is the spending, and the stage is handed to the graph's
+    own recovery, which retries it on a fresh conversation and fails the run
+    only once that retry budget is spent.
+
+    This used to assert the opposite - that a stage with no answer was left
+    alone - which is exactly the hole the run fell through.
+    """
     from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
 
     middleware = build_settled_answer_middleware(Verdict, "s", MODEL_CALLS_PER_STAGE)
 
-    assert middleware.after_model(
+    update = middleware.after_model(
         _long_state(MODEL_CALLS_PER_STAGE + 1, answered=False), None
-    ) is None
+    )
+
+    assert update is not None and update["jump_to"] == "end"
 
 
 def test_under_the_budget_repetition_is_still_required() -> None:

@@ -69,6 +69,17 @@ class RunEvent(BaseModel):
         "agent_message",
         "tool_call",
         "tool_result",
+        # A human's answer to a gate, recorded when it is submitted. Before
+        # these existed, a decision was not a fact anywhere: the only trace of
+        # it was *which stage ran next*, so every consumer (the timeline and
+        # each dashboard) re-derived "was this review approved or sent back"
+        # from the stages that followed it, and could be wrong. The event
+        # carries the answer itself; the following stage is now only a cross-
+        # check. Old runs predate these events and their history cannot be
+        # rewritten, so readers still keep the stage-inference fallback for
+        # them.
+        "review_decision",
+        "approval_decision",
     ] = Field(description="Type of the event.")
     message: str = Field(description="Human-readable message.")
     metadata: dict[str, Any] = Field(

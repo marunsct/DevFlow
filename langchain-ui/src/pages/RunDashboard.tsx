@@ -4,7 +4,8 @@ import type {
   RunStatusResponse,
   LogEntry,
   ReviewPayload,
-  ApprovalPayload
+  ApprovalPayload,
+  WizardModel
 } from '../types';
 import {
   getRun,
@@ -17,7 +18,8 @@ import {
   resumeRun,
   cloneRun,
   startRun,
-  getStreamTicket
+  getStreamTicket,
+  getWizard
 } from '../api';
 import { LogViewer } from '../components/LogViewer';
 import { ArtifactList } from '../components/ArtifactList';
@@ -37,6 +39,10 @@ export const RunDashboard: React.FC = () => {
 
   const [run, setRun] = useState<RunStatusResponse | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  // The wizard model: the finished phase structure of the run, derived on the
+  // server from its event history and graph state. Fetched alongside the run
+  // itself so both are always in sync; `null` until the first fetch lands.
+  const [wizard, setWizard] = useState<WizardModel | null>(null);
   const [review, setReview] = useState<ReviewPayload | null>(null);
   const [approval, setApproval] = useState<ApprovalPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -108,6 +114,19 @@ export const RunDashboard: React.FC = () => {
     try {
       const runData = await getRun(runId);
       setRun(runData);
+
+      // The wizard model is derived server-side from the same event history,
+      // so it refreshes in lockstep with the run status. It is only needed in
+      // wizard mode, but fetching it unconditionally keeps the two views equal
+      // and costs one small request per (already coalesced) refresh.
+      try {
+        setWizard(await getWizard(runId));
+      } catch {
+        // A failed wizard fetch should not take the whole dashboard down; the
+        // run status above is the load-bearing data. The wizard view shows its
+        // own loading state on the next successful fetch.
+        setWizard(null);
+      }
 
       if (runData.status === 'waiting_for_review') {
         const reviewData = await getPendingReview(runId);
@@ -540,7 +559,7 @@ export const RunDashboard: React.FC = () => {
           presents the run as phases (intake, design, sprints, summary) with a
           detail panel; the classic dashboard shows stages + log + activity. */}
       {viewMode === 'wizard' ? (
-        <WizardDashboard run={run} logs={logs} />
+        <WizardDashboard run={run} model={wizard} />
       ) : (
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] xl:flex-1 xl:min-h-[28rem]">
         <div className="min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">

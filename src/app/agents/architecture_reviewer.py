@@ -22,6 +22,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -221,6 +222,8 @@ Acceptable risks to note (do NOT block on):
 - Infrastructure choices (cloud provider, database engine) when they serve the requirements
 
 {SCOPE_DISCIPLINE}
+
+{TESTING_DEPENDENCY_RULE}
 
 Constraints:
 - Do not modify application source code or the specification itself; you only

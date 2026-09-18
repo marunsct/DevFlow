@@ -2681,6 +2681,35 @@ def build_workflow_graph(
                     ),
                     milestone_review=review,
                 )
+            if not review.findings:
+                # The reviewer described a defect only in `acceptance_evidence`.
+                # `_findings_that_block` reads `findings`, so gating would be
+                # bypassed and the lead would be handed prose it cannot act on
+                # deterministically - the failure behind run-27fac2a5, where a
+                # browser-breaking defect survived three revisions because it was
+                # never turned into a task. Ask the reviewer again on a fresh
+                # conversation before falling back to the evidence below.
+                retries = dict(state.get("structured_retries", {}))
+                attempted = retries.get("milestone_review:findings", 0) + 1
+                retries["milestone_review:findings"] = attempted
+                if attempted < _max_structured_retries():
+                    logger.warning(
+                        "Milestone review requested changes with no structured "
+                        "findings; re-reviewing on a fresh conversation "
+                        "(attempt %d of %d)",
+                        attempted + 1,
+                        _max_structured_retries(),
+                    )
+                    return _handing_on(
+                        stage="milestone_review",
+                        structured_retries=retries,
+                        milestone_review=review,
+                    )
+                logger.warning(
+                    "Milestone review still has no structured findings after %d "
+                    "attempts; falling back to the recorded evidence",
+                    attempted,
+                )
             revision_count = state.get("milestone_revision_count", 0) + 1
             if revision_count >= MAX_MILESTONE_REVISIONS:
                 return _escalate_to_a_human(

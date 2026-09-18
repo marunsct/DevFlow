@@ -42,11 +42,44 @@ RUN uv pip install --no-cache .
 FROM python:3.12-slim AS runtime
 
 # curl for the healthcheck; git because the repository tools shell out to it.
-# No build toolchain in the final image.
+# ripgrep because the agents' file-search tool falls back to a slow Python grep
+# without it - every search in every run logs the fallback and pays for it.
+# The browser libraries are here because `TESTABILITY_RULE` makes Playwright
+# mandatory for UI code, and Chromium cannot run without them: the run's own
+# verdict on run-2d9066e2 was "Playwright regression tests fail due to missing
+# system library libglib-2.0.so.0", and it spent all three remediation attempts
+# on a defect no amount of code could fix. The rule tells the model to "fix the
+# test environment" rather than delete the code under test; this is that fix.
+# `playwright install --with-deps` is not used because it needs root and a
+# package manager at install time; the names below are the same set it would
+# pull, pinned to the image instead.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         git \
         ca-certificates \
+        ripgrep \
+        libasound2t64 \
+        libatk-bridge2.0-0t64 \
+        libatk1.0-0t64 \
+        libatspi2.0-0t64 \
+        libcairo2 \
+        libcups2t64 \
+        libdbus-1-3 \
+        libdrm2 \
+        libgbm1 \
+        libglib2.0-0t64 \
+        libnss3 \
+        libnspr4 \
+        libpango-1.0-0 \
+        libx11-6 \
+        libxcomposite1 \
+        libxcb1 \
+        libxdamage1 \
+        libxext6 \
+        libxfixes3 \
+        libxkbcommon0 \
+        libxrandr2 \
+        libxshmfence1 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 

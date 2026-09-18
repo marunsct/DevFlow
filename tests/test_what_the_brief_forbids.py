@@ -52,24 +52,63 @@ def project(tmp_path: Path):
     return build
 
 
-def test_a_declared_dependency_is_reported(project):
+def test_a_shipped_dependency_is_reported(project):
+    root = project({"name": "t", "dependencies": {"express": "^4"}})
+    (root / "todo" / "index.js").write_text("const express = require('express');\n")
+
+    found = what_the_brief_forbids_that_is_there(FORBIDS, root)
+
+    assert len(found) == 1
+    assert "`express`" in found[0]
+
+
+def test_a_test_only_devdependency_is_not_a_violation(project):
+    """A test runner in `devDependencies` ships to nobody, so a brief that
+    forbids dependencies has nothing to say about it. Measured on run-2d9066e2,
+    which spent all three remediation attempts on `@playwright/test` here and
+    failed without a product defect in it.
+    """
+    root = project({"name": "t", "devDependencies": {"@playwright/test": "^1.49"}})
+    (root / "todo" / "app.js").write_text("export function add(a, b) { return a + b; }\n")
+    (root / "todo" / "app.test.mjs").write_text(
+        "import { test } from '@playwright/test';\n"
+    )
+
+    found = what_the_brief_forbids_that_is_there(FORBIDS, root)
+
+    assert len(found) == 1
+    # The tail sentence is boilerplate on every finding; the head is what
+    # distinguishes a violation from a note that the check ran and found none.
+    assert found[0].startswith("todo/package.json declares no product dependencies")
+    assert "not shipped" in found[0]
+
+
+def test_a_devdependency_the_product_itself_imports_is_still_reported(project):
+    """`devDependencies` is not a loophole. A package the product imports at
+    runtime is a product dependency wherever it is declared, and `npm ci
+    --omit=dev` would break it into the bargain.
+    """
     root = project({"name": "t", "devDependencies": {"jsdom": "^21"}})
+    (root / "todo" / "app.js").write_text("import { JSDOM } from 'jsdom';\n")
 
     found = what_the_brief_forbids_that_is_there(FORBIDS, root)
 
     assert len(found) == 1
     assert "`jsdom`" in found[0]
+    assert "rules that out in its own words" in found[0]
 
 
 def test_it_says_the_brief_rules_it_out_in_its_own_words(project):
     root = project({"name": "t", "dependencies": {"express": "^4"}})
+    (root / "todo" / "index.js").write_text("const express = require('express');\n")
 
     assert "rules that out in its own words" in what_the_brief_forbids_that_is_there(FORBIDS, root)[0]
 
 
 def test_it_does_not_argue_about_why_it_was_needed(project):
-    """jsdom for a DOM in tests is a reasonable instinct and still forbidden."""
-    root = project({"name": "t", "devDependencies": {"jsdom": "^21"}})
+    """A shipped dependency is forbidden whatever it was for."""
+    root = project({"name": "t", "dependencies": {"express": "^4"}})
+    (root / "todo" / "index.js").write_text("const express = require('express');\n")
 
     assert "Whatever it was needed for" in what_the_brief_forbids_that_is_there(FORBIDS, root)[0]
 
@@ -112,13 +151,14 @@ def test_installed_packages_are_not_read_as_the_projects_own(project):
 def test_the_milestone_reviewer_is_given_it(project):
     from app.agents.milestone_reviewer import build_milestone_review_request
 
-    root = project({"name": "t", "devDependencies": {"jsdom": "^21"}})
+    root = project({"name": "t", "dependencies": {"express": "^4"}})
+    (root / "todo" / "index.js").write_text("const express = require('express');\n")
 
     body = build_milestone_review_request(
         "goal", ["todo/app.js"], "tests pass", "none", str(root), None, FORBIDS
     )["messages"][0]["content"]
 
-    assert "`jsdom`" in body
+    assert "`express`" in body
     assert "Checked deterministically against what was built" in body
 
 
@@ -135,8 +175,38 @@ def test_a_package_imported_but_never_declared_is_still_a_dependency(tmp_path):
     assert found and "jsdom" in found[0] and "without declaring it" in found[0]
 
 
+def test_a_package_the_product_imports_but_never_declares_is_reported(tmp_path):
+    """The undeclared-import check still fires for product code: a package the
+    shipped code needs is a dependency whether it is declared or not.
+    """
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"dependencies": {}}))
+    (project / "index.js").write_text("const express = require('express');\n")
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    assert found and "express" in found[0] and "without declaring it" in found[0]
+
+
+def test_a_test_only_package_imported_but_never_declared_is_reported(tmp_path):
+    """Undeclared is still undeclared, even for test tooling: `npm ci` will not
+    install it, so the suite fails on any other machine for a second reason.
+    """
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {}}))
+    (project / "app.js").write_text("export const x = 1;\n")
+    (project / "app.test.mjs").write_text("import { test } from '@playwright/test';\n")
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    assert found and "@playwright/test" in found[0] and "without declaring it" in found[0]
+
+
 def test_a_declared_package_and_an_undeclared_one_are_both_named(tmp_path):
-    """Run cbd22a34 declared `jsdom` and `vitest` and imported `linkedom` too."""
+    """Run cbd22a34 declared `jsdom` and `vitest` and imported `linkedom` too.
+
+    The two declared ones are test-only, so they are no longer a violation; the
+    undeclared one still is, because `npm ci` will not install it and the suite
+    fails on any other machine.
+    """
     project = tmp_path / "app"
     project.mkdir()
     (project / "package.json").write_text(
@@ -144,7 +214,27 @@ def test_a_declared_package_and_an_undeclared_one_are_both_named(tmp_path):
     )
     (project / "app.test.mjs").write_text("import { parseHTML } from 'linkedom';\n")
     found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
-    assert found and "jsdom" in found[0] and "linkedom" in found[0]
+    assert found and "linkedom" in found[0] and "without declaring it" in found[0]
+
+
+def test_a_shipped_package_and_a_test_only_one_are_named_separately(tmp_path):
+    """The report distinguishes what ships from what tests with. A reviewer
+    reading it needs to know which is a violation and which is not.
+    """
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(
+        json.dumps({"dependencies": {"express": "^4"}, "devDependencies": {"vitest": "^1"}})
+    )
+    (project / "index.js").write_text("const express = require('express');\n")
+    (project / "index.test.mjs").write_text("import { test } from 'vitest';\n")
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    assert len(found) == 1
+    assert "declares `express`" in found[0]
+    assert "rules that out in its own words" in found[0]
+    # `vitest` is test-only and declared as such, so it must not be named as a
+    # violation - only the shipped `express` is.
+    assert "vitest" not in found[0]
 
 
 def test_node_builtins_are_not_dependencies(tmp_path):

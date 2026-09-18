@@ -19,6 +19,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -311,6 +312,8 @@ Responsibilities:
 - Confirm whether you reviewed documentation and tests.
 
 {SCOPE_DISCIPLINE}
+
+{TESTING_DEPENDENCY_RULE}
 
 Constraints:
 - Do not modify application source code or the milestone artifacts themselves; you only

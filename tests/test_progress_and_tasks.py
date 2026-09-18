@@ -154,6 +154,38 @@ def test_a_cancelled_run_is_not_executed(run_store, monkeypatch):
     assert executed == []
 
 
+def test_the_worker_calls_a_method_the_runner_actually_has(run_store, monkeypatch):
+    """The worker dispatches `runner._run_loop(record, document, repository,
+    resume=...)`.
+
+    This used to be mocked in every dispatch test, so a rename of the method on
+    `WorkflowRunner` passed every test and then crashed every real run with
+    `AttributeError: 'WorkflowRunner' object has no attribute '_run_loop'`. The
+    assertion below binds the two together: the real runner must expose the
+    method the worker calls, and it must accept the arguments the worker passes.
+    """
+    import inspect
+
+    from app.server import tasks
+    from app.server.runner import WorkflowRunner
+
+    # What the worker actually calls, read off the source rather than remembered.
+    source = inspect.getsource(tasks.execute_workflow_run)
+    call = "runner._run_loop("
+    assert call in source, "the worker no longer calls _run_loop; update this test"
+
+    # The real runner must expose that method with a compatible signature.
+    assert hasattr(WorkflowRunner, "_run_loop"), (
+        "WorkflowRunner is missing _run_loop, so every dispatched run dies with "
+        "AttributeError before it reaches the graph"
+    )
+    params = inspect.signature(WorkflowRunner._run_loop).parameters
+    assert list(params)[:4] == ["self", "record", "document", "repository"], (
+        f"_run_loop signature drifted: {list(params)}"
+    )
+    assert "resume" in params, "_run_loop no longer accepts resume="
+
+
 def test_marking_a_run_failed_is_recorded(run_store, monkeypatch):
     from app.server import tasks
     from app.server.run_store import RunStore

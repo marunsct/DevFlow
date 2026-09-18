@@ -6,6 +6,7 @@ import type {
   RunListResponse,
   RunStatusResponse,
   StartRunRequest,
+  WizardModel,
 } from '../types';
 
 export const api = axios.create({
@@ -81,6 +82,19 @@ export const listRuns = async (): Promise<RunListResponse> => {
 
 export const getRun = async (runId: string): Promise<RunStatusResponse> => {
   const response = await api.get<RunStatusResponse>(`/runs/${runId}`);
+  return response.data;
+};
+
+/**
+ * Fetch the guided wizard's finished model for a run.
+ *
+ * The phases (intake, design, sprints with their revisions, summary) are
+ * derived on the server from the run's event history and graph state. The
+ * browser used to re-derive them locally from the same events, and the two
+ * readers drifted apart - the server is now the single source of truth.
+ */
+export const getWizard = async (runId: string): Promise<WizardModel> => {
+  const response = await api.get<WizardModel>(`/runs/${runId}/wizard`);
   return response.data;
 };
 

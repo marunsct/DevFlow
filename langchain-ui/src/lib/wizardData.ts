@@ -291,7 +291,10 @@ export function buildWizardModel(
   };
 
   const sprintSections: WizardSection[] = [];
-  const sections: WizardSection[] = [intake, design, ...sprintSections, summary];
+  // The sections array is rebuilt at the end of the walk, once all sprint
+  // sections have been pushed. A snapshot here would be empty (sprintSections
+  // is still empty at this point) and the sprints would never appear.
+  let sections: WizardSection[] = [intake, design, summary];
 
   // The section and revision the walk is currently writing into.
   let activeSection: WizardSection = intake;
@@ -325,8 +328,18 @@ export function buildWizardModel(
     };
   };
 
+  // Where the current step lives depends on the phase: inside a sprint it is
+  // part of the revision being built (currentSteps), but before the first
+  // sprint opens, intake and design steps belong to their section directly.
+  // If we pushed them into currentSteps they would be dropped - that array is
+  // only committed when a sprint revision commits, and it is reset when the
+  // first revision starts.
+  const stepContainer = (): WizardStep[] =>
+    sprintNumber > 0 ? currentSteps : (activeSection.steps ?? []);
+
   const closeCurrentStep = (at: string) => {
-    const last = currentSteps[currentSteps.length - 1];
+    const container = stepContainer();
+    const last = container[container.length - 1];
     if (last && last.endedAt === null) {
       last.endedAt = at;
       last.durationSeconds = durationBetween(last.startedAt, last.endedAt);
@@ -359,13 +372,25 @@ export function buildWizardModel(
     revisionComment = comment;
   };
 
+  // The stage the walk last saw. A stage transition is detected when the
+  // `stage` field of an event differs from the previous event's stage. This
+  // works because the log does not always publish `stage_change` events for
+  // every transition - it only publishes them for pause stages. The actual
+  // stage transitions (technical_lead, sprint_advance, etc.) are visible as
+  // the `stage` field of the events that happen while that stage is running.
+  let prevStage: string | null = null;
+
   for (const event of events) {
     const stage = event.stage;
     const base = baseStage(stage);
 
-    // A stage_change is the only event that tells us the run moved to a new
-    // stage. Everything else is a note about the stage that is already running.
-    if (event.event_type === 'stage_change') {
+    // A stage transition: the stage field changed from the previous event.
+    // This is the only reliable signal of a new stage, because the log does
+    // not publish `stage_change` events for non-pause stages.
+    const isTransition = stage !== prevStage;
+    prevStage = stage;
+
+    if (isTransition) {
       // A pause stage is not a new step - it is the current step waiting on a
       // person. We handle it below (it opens a review) rather than as a step.
       if (isPauseStage(stage)) {
@@ -400,7 +425,24 @@ export function buildWizardModel(
       if (isLeadStage(stage)) {
         closeCurrentStep(event.timestamp);
 
-        if (sawAdvance) {
+        if (sprintNumber === 0) {
+          // The first technical_lead entry opens the first sprint.
+          sprintNumber += 1;
+          const section: WizardSection = {
+            id: `sprint-${sprintNumber}`,
+            kind: 'sprint',
+            title: `Sprint ${sprintNumber}`,
+            blurb: 'Building, testing and reviewing this chunk of the product.',
+            status: 'upcoming',
+            statusLabel: 'Up next',
+            sprintNumber,
+            revisions: [],
+            events: [],
+          };
+          sprintSections.push(section);
+          activeSection = section;
+          startRevision(null);
+        } else if (sawAdvance) {
           // An approved review ran sprint_advance in between: genuinely new sprint.
           commitRevision();
           sprintNumber += 1;
@@ -433,7 +475,7 @@ export function buildWizardModel(
         sawReview = false;
 
         const step = openStep(base, event.timestamp);
-        currentSteps.push(step);
+        stepContainer().push(step);
         step.events.push(event);
         continue;
       }
@@ -460,15 +502,16 @@ export function buildWizardModel(
       }
 
       const step = openStep(base, event.timestamp);
-      currentSteps.push(step);
+      stepContainer().push(step);
       step.events.push(event);
       continue;
     }
 
-    // Not a stage_change: a note about the stage that is already running.
+    // Not a stage transition: a note about the stage that is already running.
     // Attach it to the current step if the stage matches, otherwise to the
     // section (events with no matching step still belong somewhere).
-    const lastStep = currentSteps[currentSteps.length - 1];
+    const container = stepContainer();
+    const lastStep = container[container.length - 1];
     if (lastStep && baseStage(lastStep.name) === base) {
       lastStep.events.push(event);
     } else if (activeSection) {
@@ -479,6 +522,10 @@ export function buildWizardModel(
   // End of the walk: close whatever is still open.
   closeCurrentStep(events.length ? events[events.length - 1].timestamp : '');
   if (activeRevision) commitRevision();
+
+  // Rebuild the sections array now that all sprint sections have been pushed.
+  // The order is intake, design, sprints (in the order they opened), summary.
+  sections = [intake, design, ...sprintSections, summary];
 
   /* ---- 2. Fill in section and step statuses ------------------------- */
 
@@ -508,6 +555,29 @@ export function buildWizardModel(
     intake.statusLabel = inIntake ? 'Working on it' : 'Done';
     design.status = inIntake ? 'upcoming' : 'active';
     design.statusLabel = inIntake ? 'Up next' : 'Working on it';
+  }
+
+  // The steps inside intake and design need the same treatment as sprint
+  // steps: a step is finished once the run has moved past it. So when its
+  // section is done, every step in it is done; while the section is current,
+  // only its last step is still in flight (or waiting).
+  for (const section of [intake, design]) {
+    const steps = section.steps ?? [];
+    if (section.status === 'done') {
+      for (const step of steps) {
+        step.status = 'done';
+        step.statusLabel = 'Done';
+      }
+    } else if (section.status === 'active' || section.status === 'waiting') {
+      steps.forEach((step, i) => {
+        // markStepStatus handles failed runs: passed steps show "Stopped".
+        if (i < steps.length - 1) {
+          markStepStatus(step, false);
+        } else {
+          markStepStatus(step, true);
+        }
+      });
+    }
   }
 
   for (const section of sprintSections) {

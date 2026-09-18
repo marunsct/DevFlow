@@ -32,7 +32,7 @@ from app.graph.workflow import (
     request_changes_decision,
     skip_decision,
 )
-from app.server.events import EventBus
+from app.server.events import EventBus, RunEvent
 from pathlib import Path
 
 from app.server.models import (
@@ -50,6 +50,13 @@ from app.server.models import (
     RunSummary,
     SpinnerResponse,
     StartRunRequest,
+    SprintRevision,
+    WizardModel,
+    WizardNote,
+    WizardReview,
+    WizardSection,
+    WizardStep,
+    WizardSummary,
 )
 from app.server.runner import RunRecord, WorkflowRunner, _api_status, _stage_meaning
 from app.server.object_store import archive_directory, archive_file, ensure_local
@@ -414,6 +421,19 @@ def create_runs_router(
         record = _require_run(runner, run_id, user)
         return await _build_status_response(record, runner)
 
+    @runs.get("/{run_id}/wizard", response_model=WizardModel)
+    async def get_wizard(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> WizardModel:
+        """The guided-wizard view of a run: phases, steps, revisions and the
+        review outcomes that closed them.
+
+        Built server-side from the event history (see `build_wizard_model`),
+        so every client renders the same structure instead of each deriving it
+        on its own."""
+        record = _require_run(runner, run_id, user)
+        return await build_wizard_model(record, runner)
+
     @runs.get("/{run_id}/stages")
     async def get_stages(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
@@ -617,7 +637,7 @@ def create_runs_router(
         user: UserInDB = Depends(require_operator),
     ) -> dict[str, str]:
         """Record an approval decision. Only one can win."""
-        _require_run(runner, run_id, user)
+        record = _require_run(runner, run_id, user)
         decision = (
             approve_write_decision()
             if body.action == "approve"
@@ -627,6 +647,24 @@ def create_runs_router(
             await runner.submit_approval(run_id, decision)
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
+
+        # Same rationale as the review event above: a manual approval is a
+        # fact about the run and belongs in its history. Auto-approvals are
+        # already recorded (approval_auto); these were the missing half.
+        stage = str(record.current_stage or "").removeprefix(APPROVAL_PAUSE_PREFIX)
+        await event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await event_bus.next_sequence(run_id),
+                stage=stage or record.current_stage or "",
+                event_type="approval_decision",
+                message=f"Approval decision: {body.action}"
+                + (f" — {body.reason}" if body.reason else ""),
+                metadata={"action": body.action},
+            ),
+        )
+
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action=f"run.approval.{body.action}",
             subject=run_id, detail={"reason": body.reason},
@@ -662,7 +700,7 @@ def create_runs_router(
         user: UserInDB = Depends(require_operator),
     ) -> dict[str, str]:
         """Record a review decision, optionally with an edited artifact."""
-        _require_run(runner, run_id, user)
+        record = _require_run(runner, run_id, user)
 
         edited_content: str | None = None
         if file is not None and file.filename:
@@ -700,6 +738,29 @@ def create_runs_router(
             await runner.submit_review(run_id, decision)
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
+
+        # The decision is now a fact in the event history. Before this event
+        # existed, "was the review approved or sent back" was only implied by
+        # whichever stage ran next, and every timeline re-derived it separately.
+        state = record.graph_state(runner.checkpointer)
+        review_point = str(state.get("stage", "")).removeprefix(REVIEW_PAUSE_PREFIX)
+        await event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await event_bus.next_sequence(run_id),
+                stage=review_point or record.current_stage or "",
+                event_type="review_decision",
+                message=f"Review decision: {action}" + (f" — {comment}" if comment else ""),
+                metadata={
+                    "action": action,
+                    "review_point": review_point,
+                    "has_comment": bool(comment),
+                    "has_edit": bool(edited_content),
+                },
+            ),
+        )
+
         record_audit(
             actor=user.username, tenant_id=user.tenant_id, action=f"run.review.{action}",
             subject=run_id, detail={"has_comment": bool(comment), "has_edit": bool(edited_content)},
@@ -893,6 +954,566 @@ def _stage_in_flight(record: RunRecord, stages: list[dict[str, Any]]) -> str:
     return record.current_stage or ""
 
 
+# ----------------------------------------------------------------------
+# The wizard model
+#
+# The guided-wizard view of a run shows the build the way a person follows it:
+# intake, design, sprint one, sprint two, done. That phase structure - which
+# stage belongs to which sprint, which pass of a sprint was rejected and why,
+# how each review ended up - has to be derived from the raw event stream.
+#
+# This derivation used to live in the browser (a 700-line TypeScript module)
+# and separately in `_derive_stages` for the classic timeline: two readers of
+# one truth, free to drift apart, with review outcomes *guessed* on the client
+# because no event ever recorded them. The server now owns the derivation and
+# hands the browser a finished `WizardModel`; the browser only renders it.
+#
+# Review decisions are facts since `review_decision` events exist (Step 1 of
+# this change): when one follows a review pause, the outcome is read from the
+# event. Old runs predate the event and their history cannot be rewritten, so
+# those reviews fall back to inference from the stages that followed - the same
+# rule the browser used, kept here for backward compatibility only.
+# ----------------------------------------------------------------------
+
+#: Plain-English copy for stage names, mirroring the frontend's `describeStage`
+#: (langchain-ui/src/lib/activity.ts). The wizard must not show a raw
+#: identifier, and this map is the one place those become sentences. Kept in
+#: sync by hand: it is display text, not behaviour.
+_WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
+    "product_manager": ("Understanding your product", "Reading your document to work out what you want built and who it is for."),
+    "tools_models": ("Comparing the options", "Weighing up the technologies and AI models that would suit this product."),
+    "stack_selector": ("Choosing the technology", "Settling on the languages, frameworks and services the build will use."),
+    "principal_architect": ("Designing how it works", "Writing the technical plan: the pieces, the data, and how they fit together."),
+    "architecture_review": ("Checking the design", "A second opinion on the plan, looking for security holes and things that will not work."),
+    "user_review_specification": ("Your review", "Paused for you to read the technical plan and say whether to continue."),
+    "scrum_master": ("Planning the work", "Splitting the design into sprints small enough to build one at a time."),
+    "technical_lead": ("Setting up the next chunk", "Picking what to build first and breaking it into individual tasks."),
+    "specialist_dispatch": ("Building it", "Writing the actual code and tests for this piece of the product."),
+    "test_and_triage": ("Testing", "Running the tests and writing down anything that failed."),
+    "defect_remediation": ("Fixing what broke", "Sending each problem back to be fixed, then testing again."),
+    "security_review": ("Security check", "Looking over the finished code for anything unsafe."),
+    "milestone_review": ("Reviewing the work", "Checking the finished piece against what was planned."),
+    "user_review_sprint": ("Your review", "Paused for you to look at the completed sprint and say whether to continue."),
+    "sprint_advance": ("Starting the next sprint", "This chunk is done. Moving on to the next one."),
+    "complete": ("Finished", "Everything ran through to the end. The results are ready below."),
+    "failed": ("Stopped", "Something went wrong and the run needs a person to look at it."),
+}
+
+#: Numbered specialist stages (`specialist_backend_0`) resolve to their role.
+_WIZARD_SPECIALIST_COPY: dict[str, tuple[str, str]] = {
+    "backend": ("Building the backend", "Writing the server code, data models and APIs."),
+    "frontend": ("Building the interface", "Writing the screens people will actually click on."),
+    "ui_ux": ("Designing the interface", "Laying out the screens and how someone moves between them."),
+    "testing": ("Writing tests", "Writing checks that prove the code does what it should, and running them."),
+    "devops": ("Setting up deployment", "Making the project buildable and runnable outside a laptop."),
+    "security": ("Hardening security", "Closing gaps that would let the wrong person in."),
+    "data": ("Working on the data layer", "Shaping how information is stored and retrieved."),
+}
+
+#: The review *points* a run pauses on, mirroring the workflow's constants
+#: (`SPRINT_REVIEW`, `SPECIFICATION_REVIEW`, `PRODUCT_INTAKE_REVIEW`). A pause
+#: stage is `awaiting_user_review:<point>`, and the runner's `review_request`
+#: event carries the same point in its metadata - so a review is recognised by
+#: its point, not by the node name. An approval pause is not a review - it is
+#: the stage working - so it does not count.
+_REVIEW_POINTS = frozenset({"sprint", "technical_specification", "product_intake"})
+
+
+def _wizard_base_stage(raw: str) -> str:
+    """Strip the pause prefix from a stage name.
+
+    While a run waits on a person, `stage` is `awaiting_user_review:sprint` or
+    `awaiting_approval:principal_architect`; the part after the colon is the
+    stage that is actually paused, and that is the name every other event uses.
+    """
+    for prefix in (APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX):
+        if raw.startswith(prefix):
+            return raw[len(prefix):]
+    return raw
+
+
+def _wizard_stage_copy(name: str) -> tuple[str, str]:
+    """Title and blurb for a stage name, never the raw identifier."""
+    base = _wizard_base_stage(name)
+    if copy := _WIZARD_STAGE_COPY.get(base):
+        return copy
+    # specialist_<role>[_<n>] -> role copy.
+    if base.startswith("specialist_"):
+        rest = base[len("specialist_"):]
+        role, _, num = rest.rpartition("_")
+        if not num.isdigit():
+            role, num = rest, ""
+        if role in _WIZARD_SPECIALIST_COPY:
+            return _WIZARD_SPECIALIST_COPY[role]
+        words = " ".join(w for w in role.split("_") if w)
+        return (f"Building the {words} part", "Writing code and tests for this piece of the product.")
+    title = " ".join(word.capitalize() for word in base.replace("-", "_").split("_") if word)
+    return (title or "Getting started", "Working through this step.")
+
+
+def _wizard_status(is_last: bool, run_status: str, current_stage: str | None) -> tuple[str, str]:
+    """The status a step gets, in the words the UI badges use.
+
+    Mirrors the frontend `stepStatus`: a step is done once a later step started;
+    the last step of a live run is the one in flight (or waiting); a stopped
+    run leaves its passed steps as 'Stopped' rather than pretending they
+    finished cleanly.
+    """
+    if not is_last:
+        if run_status in ("failed", "cancelled"):
+            return ("error", "Stopped")
+        return ("done", "Done")
+
+    if run_status == "completed":
+        return ("done", "Done")
+    if run_status == "failed":
+        return ("error", "Stopped")
+    if run_status == "cancelled":
+        return ("idle", "Cancelled")
+    if run_status in ("waiting_for_review", "waiting_for_approval"):
+        return ("waiting", "Waiting for you")
+    if run_status == "paused":
+        return ("waiting", "Paused")
+    if run_status in ("running", "created"):
+        if run_status == "created" or not current_stage:
+            return ("idle", "Up next")
+        return ("active", "Working on it")
+    return ("idle", "Up next")
+
+
+def _wizard_note(event: RunEvent) -> WizardNote:
+    """A log line the wizard can render. The UI only needs its id, type and text."""
+    return WizardNote(id=event.event_id, kind=event.event_type, message=event.message)
+
+
+async def build_wizard_model(record: RunRecord, runner: WorkflowRunner) -> WizardModel:
+    """Build the guided-wizard view of one run from its event history.
+
+    A single pass over the events in sequence order, folding them into phases
+    (intake, design, sprints 1..n, summary). The fold's only hard question is
+    every `technical_lead` re-entry: new sprint or revision of the current one?
+    `sprint_advance` ran in between -> genuinely new sprint; a review ran in
+    between without an advance -> the sprint was sent back, so a new *revision*
+    under the same sprint (the behaviour the wizard exists to show); neither
+    (e.g. re-entry from defect remediation) -> the same revision continues.
+
+    Review outcomes are read from `review_decision` events when present - the
+    decision is recorded where it was made, not inferred from what ran next.
+    Runs that predate those events fall back to stage inference; see
+    `_wizard_review_outcome`.
+    """
+    history = await runner.event_bus.get_history(record.run_id)
+    events = sorted(history, key=lambda e: e.sequence)
+
+    run_status = record.status
+    is_terminal = run_status in ("completed", "failed", "cancelled")
+    current_stage = record.current_stage or None
+
+    state = record.graph_state(runner.checkpointer)
+    # The pending review's comment - the only place a still-open review's
+    # text survives in the API.
+    pending_comment: str | None = None
+    for point, review in (state.get("reviews") or {}).items():
+        status_value = getattr(review, "status", None)
+        if status_value == "pending" or (hasattr(status_value, "value") and status_value.value == "pending"):
+            comments = "\n".join(getattr(review, "comments", []) or []) or None
+            if comments:
+                pending_comment = comments
+
+    intake = WizardSection(
+        id="intake", kind="intake", title="Product intake",
+        blurb="Reading your document to work out what you want built and who it is for.",
+    )
+    design = WizardSection(
+        id="design", kind="design", title="Design",
+        blurb="Comparing options, choosing the technology, and writing the technical plan.",
+    )
+    summary_section = WizardSection(
+        id="summary", kind="summary", title="Final summary",
+        blurb="How the run went: sprints planned vs. built, revisions, tests and reviews.",
+    )
+
+    sprint_sections: list[WizardSection] = []
+    active_section = intake
+    active_revision: SprintRevision | None = None
+    sprint_number = 0
+    current_steps: list[WizardStep] = []
+    pending_review: WizardReview | None = None
+    revision_comment: str | None = None
+    saw_advance = False
+    saw_review = False
+    # Every review pause in order, with the sequence of the event that opened
+    # it. A decision belongs to the review whose window contains it (after this
+    # pause, before the next review anywhere), so each keeps its opening
+    # sequence for the resolution pass at the end.
+    review_seqs: list[tuple[WizardReview, int]] = []
+
+    def step_container() -> list[WizardStep]:
+        # Inside a sprint a step belongs to the revision being built; before
+        # the first sprint, steps belong to their phase section directly.
+        return current_steps if sprint_number > 0 else active_section.steps
+
+    def close_current_step(at: str | None) -> None:
+        container = step_container()
+        if not container:
+            return
+        last = container[-1]
+        if last.ended_at is None and at:
+            try:
+                start = datetime.fromisoformat(last.started_at.isoformat()) if last.started_at else None
+                end = datetime.fromisoformat(at)
+            except (TypeError, ValueError):
+                start, end = None, None
+            if start and end and end >= start:
+                last.ended_at = end
+                last.duration_seconds = max((end - start).total_seconds(), 0.0)
+
+    def commit_revision() -> None:
+        nonlocal active_revision, current_steps, pending_review, revision_comment, active_section
+        if not active_revision:
+            return
+        # The review's rejection comment is the text that started the *next*
+        # pass - it belongs to this revision only once a later one exists.
+        active_revision.steps = list(current_steps)
+        active_revision.review = pending_review
+        active_revision.rejection_comment = revision_comment
+        # Whether an approved review ran sprint_advance after this pass: the
+        # fact the outcome fallback for old runs needs (see section 3).
+        active_revision.saw_advance = saw_advance
+        # A revision only exists once it is attached to its sprint - a sprint
+        # with no committed revisions would render as an empty card.
+        if isinstance(active_section, WizardSection) and active_section.kind == "sprint":
+            active_section.revisions.append(active_revision)
+        active_revision = None
+        current_steps = []
+        pending_review = None
+        revision_comment = None
+
+    def start_revision(comment: str | None) -> None:
+        nonlocal active_revision, current_steps, pending_review, revision_comment
+        number = (active_revision.number if active_revision else 0) + 1
+        active_revision = SprintRevision(number=number, steps=[], review=None, rejection_comment=comment)
+        current_steps = []
+        pending_review = None
+        revision_comment = comment
+
+    def open_sprint_section() -> WizardSection:
+        nonlocal sprint_number, active_section
+        sprint_number += 1
+        section = WizardSection(
+            id=f"sprint-{sprint_number}", kind="sprint", title=f"Sprint {sprint_number}",
+            blurb="Building, testing and reviewing this chunk of the product.",
+            sprint_number=sprint_number,
+        )
+        sprint_sections.append(section)
+        active_section = section
+        return section
+
+    # Transition detection compares *base* stages, not raw ones. A pause is a
+    # state of the step that is running, not a new step: while a node works it
+    # writes artifacts through the approval gate, so its events flap between
+    # `specialist_backend_1` and `awaiting_approval:specialist_backend_1`.
+    # Comparing raw stages would read every flap as two transitions and open a
+    # duplicate step per gate (the classic timeline collapses these into one
+    # stage with an approval count for exactly this reason). A genuine change
+    # of base is always a transition, even if it arrives while paused.
+    prev_base: str | None = None
+    for event in events:
+        # Decision events are recorded *after* the run has already moved on, so
+        # their `stage` field carries a bare review point (e.g. `sprint`) that
+        # matches no running stage - if they were walked like anything else they
+        # would read as a transition and open a phantom step named after the
+        # point. They carry no step information; the resolution pass below pairs
+        # them with the reviews they answer.
+        if event.event_type in ("review_decision", "approval_decision"):
+            continue
+
+        stage = event.stage
+        base = _wizard_base_stage(stage)
+        is_transition = base != prev_base
+        prev_base = base
+
+        if is_transition:
+            # A pause is not a step - it is the current step waiting on a person.
+            if stage.startswith(APPROVAL_PAUSE_PREFIX) or stage.startswith(REVIEW_PAUSE_PREFIX):
+                meta = event.metadata or {}
+                point = str(meta.get("review_point") or base)
+                if point in _REVIEW_POINTS:
+                    pending_review = WizardReview(
+                        point=point,
+                        revision=int(meta.get("revision") or 0),
+                        requested_at=datetime.fromisoformat(event.timestamp) if event.timestamp else None,
+                        outcome="pending",
+                        comment=None,
+                    )
+                    saw_review = True
+                    review_seqs.append((pending_review, event.sequence))
+                # An approval pause is the step working, not a new step or a
+                # review. `prev_base` is deliberately left untouched: if this
+                # were the first word about its stage, the bare event that
+                # follows must still read as a transition and open the step.
+                continue
+
+            if base in ("complete", "failed"):
+                close_current_step(event.timestamp)
+                commit_revision()
+                continue
+
+            if base == "technical_lead":
+                close_current_step(event.timestamp)
+                if sprint_number == 0:
+                    open_sprint_section()
+                    start_revision(None)
+                elif saw_advance:
+                    # An approved review ran sprint_advance in between: genuinely new sprint.
+                    commit_revision()
+                    open_sprint_section()
+                    start_revision(None)
+                elif saw_review:
+                    # A review ran in between but no advance: sent back - a new
+                    # revision under the *same* sprint, not a new sprint.
+                    comment = pending_review.comment if pending_review else None
+                    commit_revision()
+                    start_revision(comment)
+                # else: re-entry without review or advance (defect remediation);
+                # the same revision continues.
+
+                saw_advance = False
+                saw_review = False
+                title, blurb = _wizard_stage_copy(base)
+                step = WizardStep(
+                    name=base, title=title, blurb=blurb,
+                    started_at=datetime.fromisoformat(event.timestamp) if event.timestamp else None,
+                    status="active", status_label="Working on it",
+                )
+                step.events.append(_wizard_note(event))
+                step_container().append(step)
+                continue
+
+            close_current_step(event.timestamp)
+            if base == "sprint_advance":
+                # The bridge between sprints: not a step of either, just the mark
+                # that the current one is done.
+                saw_advance = True
+                continue
+
+            if sprint_number == 0:
+                active_section = intake if base == "product_manager" else design
+
+            title, blurb = _wizard_stage_copy(base)
+            step = WizardStep(
+                name=base, title=title, blurb=blurb,
+                started_at=datetime.fromisoformat(event.timestamp) if event.timestamp else None,
+                status="active", status_label="Working on it",
+            )
+            step.events.append(_wizard_note(event))
+            step_container().append(step)
+            continue
+
+        # Not a stage transition: a note about the stage already running.
+        container = step_container()
+        last_step = container[-1] if container else None
+        if last_step is not None and _wizard_base_stage(last_step.name) == base:
+            last_step.events.append(_wizard_note(event))
+
+    # End of the walk: close whatever is still open.
+    close_current_step(events[-1].timestamp if events else None)
+    commit_revision()
+
+    sections = [intake, design, *sprint_sections, summary_section]
+
+    # ---- 2. Fill in section and step statuses ------------------------
+
+    first_sprint_opened = bool(sprint_sections)
+    if first_sprint_opened or is_terminal:
+        for section in (intake, design):
+            section.status, section.status_label = "done", "Done"
+    elif run_status != "created":
+        # In the design phase: whichever of intake/design is current.
+        in_intake = bool(current_stage) and _wizard_base_stage(current_stage) == "product_manager"
+        intake.status, intake.status_label = ("active", "Working on it") if in_intake else ("done", "Done")
+        design.status, design.status_label = ("upcoming", "Up next") if in_intake else ("active", "Working on it")
+
+    for section in (intake, design):
+        steps = section.steps
+        if section.status == "done":
+            for step in steps:
+                step.status, step.status_label = "done", "Done"
+        elif section.status in ("active", "waiting"):
+            for i, step in enumerate(steps):
+                step.status, step.status_label = _wizard_status(
+                    i < len(steps) - 1, run_status, current_stage
+                )
+
+    last_sprint_index = len(sprint_sections) - 1
+    for idx, section in enumerate(sprint_sections):
+        is_last_sprint = idx == last_sprint_index
+        if is_last_sprint and not is_terminal:
+            status, label = _wizard_status(True, run_status, current_stage)
+            section.status, section.status_label = status, label
+        else:
+            section.status, section.status_label = "done", "Done"
+        revisions = section.revisions
+        last_revision_index = len(revisions) - 1
+        for ridx, revision in enumerate(revisions):
+            is_last_step_of_run = ridx == last_revision_index and is_last_sprint and not is_terminal
+            for i, step in enumerate(revision.steps):
+                step.status, step.status_label = _wizard_status(
+                    is_last_step_of_run and i == len(revision.steps) - 1, run_status, current_stage
+                )
+
+    if is_terminal:
+        summary_section.status, summary_section.status_label = "done", "Done"
+    else:
+        summary_section.status, summary_section.status_label = "upcoming", "Up next"
+
+    current_section_id: str | None = None
+    if not is_terminal:
+        for section in sections:
+            if section.status in ("active", "waiting"):
+                current_section_id = section.id
+                break
+
+    # ---- 3. Resolve review outcomes -----------------------------------
+
+    # Explicit decision events win: they record the answer where it was made,
+    # so no inference is needed at all for runs that have them. Runs that
+    # predate those events fall back to what ran next - the rule the browser
+    # used before this endpoint existed, kept here so old history still reads
+    # correctly rather than as a blank.
+    decision_events = [e for e in events if e.event_type == "review_decision"]
+    # Each review's opening sequence, plus the one that follows it (its upper
+    # bound). A decision belongs to the window between this review opening and
+    # the next one opening - so a later sprint's answer cannot leak backwards
+    # onto an earlier review, even though both carry the same point name.
+    opened_seqs = [seq for _, seq in review_seqs]
+    upper_bound_for: dict[int, int | None] = {
+        opened_seqs[i]: (opened_seqs[i + 1] if i + 1 < len(opened_seqs) else None)
+        for i in range(len(opened_seqs))
+    }
+    seq_by_review = {id(review): seq for review, seq in review_seqs}
+
+    def _decision_for(opened_seq: int) -> RunEvent | None:
+        upper = upper_bound_for.get(opened_seq)
+        window = [
+            e for e in decision_events
+            if e.sequence > opened_seq and (upper is None or e.sequence < upper)
+        ]
+        # There should be exactly one; the last is safe against out-of-order.
+        return window[-1] if window else None
+
+    for section in sprint_sections:
+        revisions = section.revisions
+        for i, revision in enumerate(revisions):
+            review = revision.review
+            if review is None or review.outcome != "pending":
+                continue
+
+            decision = _decision_for(seq_by_review.get(id(review), 0))
+
+            if decision is not None:
+                action = str((decision.metadata or {}).get("action") or "")
+                message = decision.message or ""
+                if action == "changes":
+                    review.outcome = "changes"
+                    # The event's message is `Review decision: changes — <comment>`.
+                    tail = message.removeprefix("Review decision: changes")
+                    review.comment = tail.strip().lstrip("—- ").strip() or None
+                elif action == "skip":
+                    review.outcome = "skipped"
+                else:
+                    # `approve` (the only other action the API accepts): approved.
+                    review.outcome = "approved"
+                    if action == "approve" and " — " in message:
+                        review.comment = message.rsplit(" — ", 1)[1].strip() or None
+                continue
+
+            # Fallback for runs whose history predates decision events,
+            # mirroring the browser's inference exactly: a later revision that
+            # started with a rejection comment means this one was sent back;
+            # moving on to the next sprint (or finishing) means approved or
+            # skipped; still waiting means pending; anything else is not
+            # "sent back".
+            nxt = revisions[i + 1] if i + 1 < len(revisions) else None
+            if nxt is not None and nxt.rejection_comment:
+                review.outcome = "changes"
+                review.comment = nxt.rejection_comment
+            elif revision.saw_advance or is_terminal:
+                review.outcome = "approved"
+            elif run_status == "waiting_for_review":
+                review.outcome = "pending"
+            else:
+                review.outcome = "approved"
+
+    # A still-open review carries its comment from the graph state.
+    if pending_comment is not None:
+        for section in sprint_sections:
+            for revision in section.revisions:
+                if revision.review is not None and revision.review.outcome == "pending":
+                    revision.review.comment = pending_comment
+
+    # ---- 4. The summary -------------------------------------------------
+
+    all_revisions = [rev for section in sprint_sections for rev in section.revisions]
+    all_reviews = [rev.review for rev in all_revisions if rev.review is not None]
+
+    def _count(outcome: str) -> int:
+        return sum(1 for review in all_reviews if review.outcome == outcome)
+
+    # The planned count is content, not structure: it comes from the sprint
+    # plan artifact when it exists. A parse failure means "not known yet", not
+    # "zero sprints".
+    sprints_planned: int | None = None
+    plan = state.get("sprint_plan")
+    if plan is not None:
+        sprints = getattr(plan, "sprints", None) or (plan.get("sprints") if isinstance(plan, dict) else None)
+        if isinstance(sprints, list):
+            sprints_planned = len(sprints)
+
+    cycle = state.get("remediation")
+    test_runs = len(getattr(cycle, "test_runs", []) or []) if cycle is not None else 0
+    defects_found = len(getattr(cycle, "defects", []) or []) if cycle is not None else 0
+
+    # Approvals: count the same way the classic timeline does - one per
+    # approval event in this run's history.
+    approvals_passed = sum(1 for e in events if e.event_type in _APPROVAL_EVENTS)
+
+    started_at = datetime.fromisoformat(record.created_at) if record.created_at else None
+    ended_at = (
+        datetime.fromisoformat(record.updated_at) if is_terminal and record.updated_at else None
+    )
+
+    summary_model = WizardSummary(
+        sprints_planned=sprints_planned,
+        sprints_executed=len(sprint_sections),
+        revisions_total=len(all_revisions),
+        test_runs=test_runs,
+        defects_found=defects_found,
+        documents_produced=len(_collect_artifacts(record, runner)),
+        approvals_passed=approvals_passed,
+        reviews_approved=_count("approved") + _count("skipped"),
+        reviews_changes=_count("changes"),
+        reviews_skipped=_count("skipped"),
+        reviews_pending=_count("pending"),
+        started_at=started_at,
+        ended_at=ended_at,
+        status=run_status,
+        status_label={
+            "created": "Not started yet",
+            "running": "Working on it",
+            "waiting_for_approval": "Waiting for you",
+            "waiting_for_review": "Needs your review",
+            "paused": "Paused",
+            "failed": "Stopped",
+            "cancelled": "Cancelled",
+            "completed": "Done",
+        }.get(run_status, run_status),
+        error=record.error,
+    )
+
+    return WizardModel(sections=sections, summary=summary_model, current_section_id=current_section_id)
+
+
 async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> RunStatusResponse:
     """Assemble the full status payload for one run."""
     # Derived from the event history rather than stored: the history is already
@@ -956,6 +1577,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         reviews=reviews,
         remediation=remediation,
         error=record.error,
+        auto_approve=bool(record.auto_approve),
     )
 
 

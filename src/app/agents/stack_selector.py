@@ -14,6 +14,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
+from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.role_agent import create_role_agent
 from app.agents.tools_models import TechnologyStack
 from app.state import RepositoryContext
@@ -185,6 +186,8 @@ A constraint in the intake is a boundary, not a preference:
   the product's size or risk actually calls for one.
 
 {EXECUTION_ENVIRONMENT}
+
+{TESTING_DEPENDENCY_RULE}
 Constraints:
 - Do not modify application source code and do not install dependencies.
 - Ground choices in the provided product intake and tools models comparison.

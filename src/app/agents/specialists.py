@@ -20,6 +20,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.testability import TESTABILITY_RULE
+from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
@@ -643,6 +644,8 @@ Constraints:
 - Keep the output structured and concise.
 
 {TESTABILITY_RULE}
+
+{TESTING_DEPENDENCY_RULE}
 
 Return the response in the required output schema only.
 

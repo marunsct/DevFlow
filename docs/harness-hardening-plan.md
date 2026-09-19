@@ -2697,3 +2697,158 @@ it.
 message "a browser is now available - update describe_execution_environment()".
 It fired, exactly as designed, two days after the capability landed. It is
 kept, inverted to assert the agreement in both directions.
+
+---
+
+### 4y. Bugs found by watching a live run (run-eb48de7a, 2026-09-19)
+
+Deployed the §4w/§4x fixes with the source mounted, started a run on
+`tests/brief_low.md`, and audited the transcript, the event stream, the
+execution ledger and the run database while it went. Four defects surfaced
+that no test had, and two of them were live within three minutes of start.
+
+**A whole file escaped twice over was fatal; the same fault in an edit was
+not.** At 03:37, two minutes in, `test_round_0` sent
+
+```
+write_artifact(relative_path="todo-app/package.json",
+               content='{\n  "name": "todo-app", ... }')
+```
+
+with every newline as the two characters backslash-n. `json.loads` stops at
+column 2, the write is refused - correctly, a broken `package.json` breaks
+every module in its directory - and the model sent the identical bytes three
+times. The repairs for exactly this fault have existed since run-95ca3f72 and
+were reachable only from `edit_artifact`'s `find`. Twelve of thirteen again,
+with the thirteenth being the path that carries whole files. Fixed by reusing
+`_transcription_repairs` on the write path, under the same conservative rule:
+repair only when the content is invalid as sent and valid after.
+
+**An already-broken file could not be repaired a piece at a time.** The write
+guard refuses any change leaving a file the parser cannot read. Right when the
+change is what breaks it; a trap when the file arrived broken, because every
+partial repair still leaves it broken. `todo-app/main.js` had a duplicate `li`
+declaration and `specialist_ui_ux_2` and `_3` were refused four consecutive
+edits, reported at lines 22, 59, 83 and 72. **The moving line number is the
+evidence**: the model was getting closer each time and every step was rejected
+for not finishing the job. Now the rule a pre-merge gate uses - you may not
+make it worse - with what remains wrong reported as a note. This affected
+`edit_artifact` as much as `replace_lines`; they share the guard.
+
+**Nothing ever called the orphan recovery.** A run is handed to one Celery
+task and `task_acks_late=False`, so a worker that dies mid-task never has it
+redelivered: the row says `running` for ever, `resume` compare-and-sets from
+`failed` and refuses, and `reconcile-runs` leaves unattended runs alone. The
+work is all on disk. `recover_orphaned_runs` fixed that as a command an
+operator has to remember to type, and nothing called it. Against the live
+database: of the forty most recent failed runs, **twenty** carried "The worker
+running this stage stopped without finishing", and one run had sat at
+`running` for eight hours after its container was replaced, reporting healthy
+to every caller. A worker restart is not exceptional here - it happens on
+every deploy, every OOM and every configuration change, against runs lasting
+hours. Now wired to `worker_ready` behind a Redis lock, switchable off, and
+unable to stop a worker starting.
+
+**A new test file took the suite from 4 failures to 19.** `app.server.redis_client`
+caches a client per process, and touching it - even through a monkeypatch that
+is later undone - left a pool aimed at `localhost:6379`, which is not where
+Redis is under the test containers. Fifteen later tests failed with
+`Connection refused` and every failure looked like it belonged to the test
+reporting it. Worth knowing generally: in this suite, a cached client is
+shared state and must be reset in a fixture.
+
+### 4z. Two hypotheses this session's measurements refuted
+
+Recorded because the method is the point: both were plausible, both were
+acted on, and the data said no.
+
+**Composing the transcription repairs would cut the edit failures.** It is a
+real fault and it is fixed, but replaying 75 real failures resolved 7 before
+and 7 after. Transcription repair had reached its limit; the answer was
+`replace_lines`, which removes the requirement rather than forgiving it.
+
+**The read-after-edit loop is a major waste.** One stage spent 20 of its 28
+tool calls reading and editing a single file, which looked like a systematic
+loop. Measured across the whole run: 63 mutations, 11 followed within two
+calls by a read of the same file - 17%. The edit result already returns the
+changed lines with their numbers, which is most of what a re-read would give.
+Not worth a fix; recorded so the next reader does not re-derive it.
+
+### 4aa. A green suite, and the three committed failures that were hiding in it
+
+The suite had four failures that predated this session's work and were
+attributed, wrongly, to "someone's work in progress". They were committed, and
+all four came from one change: commit 8a17712 made Playwright mandatory for UI
+code and moved the advice from jsdom, and nothing that depended on the old
+advice was updated.
+
+| failure | what it actually was |
+|---|---|
+| three in `test_test_discovery` | the tests asserted the note recommends `npm install --save-dev jsdom`; the note now recommends Playwright |
+| one in `test_integration_checks` | a new "presence of Playwright" check fired on a fixture of one `<div>` and one stylesheet |
+
+The third is the interesting one, and the test was right to fail. The check
+asked for a browser test on a product with **no JavaScript at all and no
+`package.json`** - a remedy ("install it in package.json") naming a file that
+does not exist, for behaviour that does not exist. Narrowed to require client
+logic, a manifest, and an HTML page, each condition removing a false positive
+the first version produced.
+
+One of the three was also more than a stale string. `a_dom_built_by_hand`
+used to end by explaining that `--save-dev` matters, because a brief reading
+"no external dependencies" constrains the product and not the machine that
+builds it. That sentence went with the jsdom advice. Without it the note
+orders an install that the brief appears to forbid - which is B20 arriving
+from a third direction, and it cost run-519a9d8a six refusals. Restored
+alongside the Playwright wording rather than deleted with the assertion.
+
+**The suite is green at 3474 passing.** Worth stating plainly because four
+failures had been carried for long enough to be assumed environmental, and
+three of them were a real regression in a shipped check.
+
+### 4ab. What the run measured, against the run it replaced
+
+Same brief, same model, same machine.
+
+| | run 519a9d8a | run eb48de7a |
+|---|---|---|
+| costly tool failures | 24 (5.4% of calls) | 1 (0.5%) |
+| `edit_artifact` "could not find that text" | 21 | 1 |
+| identical repeats in a stage | 10 (2.0%) | 3 (1.4%) |
+| refusals that prevented damage | 56 | 21 |
+
+`replace_lines` was used unprompted eight times in the first 190 calls, which
+is the signal worth watching: the tool the model reaches for when it has just
+read a file is the one that needs no transcription.
+
+### 4ac. Two more, found while the run loop was blocked
+
+**A server with no model loaded passed the startup probe.** LM Studio answers
+`/v1/models` with `200` and `{"data": []}` when nothing is loaded, so
+`probe_endpoint` called the endpoint healthy and the run started. It died
+thirty-five minutes later on `400 - No models loaded`. The run's own failure
+message was good; what it could not do was refuse to start. The probe now
+treats a parsed, empty model list as not-ready and names `lms load` as the
+remedy. Only when the list parses and is empty - a server that does not
+publish its models at all returns something unreadable, and "cannot tell"
+must never become "not there", which is the rule `_live_task_ids` already
+rests on.
+
+**A product in most languages reported a size of zero.** `_COUNTED_SUFFIXES`
+held ten entries and `_COLLECTED_SUFFIXES` not many more, so a workspace
+holding only Swift or Kotlin came back "No HTML, CSS or JavaScript files were
+found to cross-check": no size, no evidence block, and a milestone reviewer
+that cannot block because it was handed nothing. A brief capping "lines of
+code" was enforced for two ecosystems and silently unenforced for the rest.
+
+Both lists now cover sixteen languages, and `tests/test_size_in_every_language.py`
+pins a minimal program per language against `TOOLCHAINS`, so a language a run
+can choose and the size report cannot see is a failing test. This is the size
+half of B1. The reference graph and entry-point rules are the rest, and they
+do need per-language analysers.
+
+Counting needed none: every language has files, lines, blanks and comments,
+and `_code_lines` already strips `//`, `#`, `/* */` and `<!-- -->`. Worth
+separating, because "B1 needs a LanguageAnalyser protocol" was true of the
+part nobody had measured and false of the part the milestone budget actually
+reads.

@@ -100,12 +100,50 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310
             body = response.read(4096).decode("utf-8", errors="replace")
+        names: list[str] = []
+        listed_nothing = False
         try:
             payload = json.loads(body)
-            served = payload.get("data") or payload.get("models") or []
-            names = [str(m.get("id") or m.get("name") or "") for m in served if isinstance(m, dict)]
+            served = payload.get("data")
+            if served is None:
+                served = payload.get("models")
+            if isinstance(served, list):
+                # Parsed, and the server said what it has. An empty list is an
+                # answer, not a silence.
+                listed_nothing = not served
+                names = [
+                    str(m.get("id") or m.get("name") or "")
+                    for m in served
+                    if isinstance(m, dict)
+                ]
         except (ValueError, AttributeError):
             names = []
+
+        if listed_nothing:
+            # A server with no model loaded answers `/models` with `200` and
+            # `{"data": []}`, so every check that asks "is anything serving
+            # here" passes and the run dies on its first model call instead.
+            #
+            # Measured on run-eb48de7a: LM Studio unloaded its model
+            # thirty-five minutes into the run, and the next call came back
+            # `400 - No models loaded. Please load a model in the developer
+            # page or use the 'lms load' command`. The harness reported that
+            # well. What it could not do was refuse to start, because the
+            # probe had already called the endpoint healthy.
+            #
+            # Only when the list parses and is empty. A server that does not
+            # publish its models at all returns something this cannot read,
+            # and "cannot tell" must never become "not there" - the same rule
+            # `_live_task_ids` rests on.
+            return EndpointStatus(
+                False,
+                f"The server at {endpoint} is running but has no model loaded - it "
+                "answered with an empty list. Load one before starting a run (in LM "
+                "Studio, `lms load <model>` or the developer page); every stage would "
+                "otherwise fail on its first call with 'No models loaded'.",
+                endpoint,
+            )
+
         listed = f" Serving: {', '.join(n for n in names[:3] if n)}." if any(names) else ""
         return EndpointStatus(True, f"The model server answered at {endpoint}.{listed}", endpoint)
     except urllib.error.HTTPError as exc:

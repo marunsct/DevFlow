@@ -165,3 +165,78 @@ def test_a_refused_connection_is_not_read_as_dns():
     from app.models.endpoint_probe import _is_name_resolution_failure
 
     assert not _is_name_resolution_failure(urllib.error.URLError("Connection refused"))
+
+
+# ---------------------------------------------------------------------------
+# A server with no model loaded answers `/models` with 200 and `{"data": []}`,
+# so every check that asks "is anything serving here" passes, and the run dies
+# on its first model call instead.
+#
+# Measured on run-eb48de7a: LM Studio unloaded its model thirty-five minutes
+# in, and the next call returned `400 - No models loaded`. The harness
+# reported that well; what it could not do was refuse to start, because the
+# probe had already called the endpoint healthy.
+# ---------------------------------------------------------------------------
+
+
+def _serving(monkeypatch, body: str, *, status: int = 200):
+    """Point the probe at a fake server returning `body`."""
+    import io
+    import urllib.request
+
+    from app.models import endpoint_probe
+
+    monkeypatch.setattr(endpoint_probe, "_listening", lambda *a, **k: True)
+
+    class _Response(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(
+        urllib.request, "urlopen", lambda *a, **k: _Response(body.encode())
+    )
+
+
+def test_a_server_with_no_model_loaded_is_not_ready(monkeypatch):
+    from app.models.endpoint_probe import probe_endpoint
+
+    _serving(monkeypatch, '{"data": [], "object": "list"}')
+
+    status = probe_endpoint("http://localhost:1234/v1")
+
+    assert not status.reachable
+    assert "no model loaded" in status.detail
+    assert "lms load" in status.detail, "the message must name the remedy"
+
+
+def test_a_server_with_a_model_loaded_is_ready(monkeypatch):
+    from app.models.endpoint_probe import probe_endpoint
+
+    _serving(monkeypatch, '{"data": [{"id": "openai/gpt-oss-20b"}], "object": "list"}')
+
+    status = probe_endpoint("http://localhost:1234/v1")
+
+    assert status.reachable
+    assert "gpt-oss-20b" in status.detail
+
+
+def test_a_server_that_does_not_publish_its_models_is_left_alone(monkeypatch):
+    """"Cannot tell" must never become "not there"."""
+    from app.models.endpoint_probe import probe_endpoint
+
+    for body in ('{"ok": true}', "not json at all", "[]"):
+        _serving(monkeypatch, body)
+        assert probe_endpoint("http://localhost:1234/v1").reachable, body
+
+
+def test_the_models_key_is_read_under_either_name(monkeypatch):
+    from app.models.endpoint_probe import probe_endpoint
+
+    _serving(monkeypatch, '{"models": []}')
+    assert not probe_endpoint("http://localhost:1234/v1").reachable
+
+    _serving(monkeypatch, '{"models": [{"name": "llama"}]}')
+    assert probe_endpoint("http://localhost:1234/v1").reachable

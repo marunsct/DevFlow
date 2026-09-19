@@ -16,6 +16,9 @@ resets should require access to the host, not a session.
 
 from __future__ import annotations
 
+import logging
+import os
+
 import argparse
 import secrets
 import sys
@@ -28,6 +31,9 @@ from app.server.auth import (
 )
 
 VALID_ROLES = ("admin", "operator", "viewer")
+
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_password() -> str:
@@ -253,6 +259,74 @@ def _worker_ran_out_of_memory() -> bool:
     return False
 
 
+#: Marks a run this process has already carried back onto the queue, so a
+#: run whose worker dies again is recovered again but resumed only once. A
+#: run that kills its worker every time it starts would otherwise restart for
+#: ever, and each restart costs the whole stage.
+_RESUMED_ON_START: set[str] = set()
+
+
+def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
+    """Put runs their worker abandoned back on the queue. Never raises.
+
+    `recover_orphaned_runs` marks such a run `failed`, which is what makes it
+    reachable again - and then nothing reaches it. Measured over this
+    session's own work: four worker restarts, four runs correctly recovered,
+    four manual `POST /api/runs/<id>/resume` calls to carry each one forward.
+    A deploy is not an exceptional event in this system; it happens on every
+    configuration change and every code change, and a run lasts hours.
+
+    Safety comes from three places and none of them is a timeout:
+
+    * `recover_orphaned_runs` has already established that no worker claims
+      the task, which is the property that stops two writers on one thread.
+    * A run is resumed at most once per worker process. A run that kills its
+      worker on every attempt is recovered every time and resumed the first
+      time only, so a crash loop costs one repeat rather than an unbounded
+      number.
+    * An OOM-killed worker resumes nothing. The cause is the run's own memory
+      use, restarting it repeats the kill, and the operator needs to see the
+      message rather than watch it loop.
+
+    Returns how many were queued.
+    """
+    if os.environ.get("RESUME_ORPHANS_ON_START", "true").strip().lower() in {
+        "0", "false", "no", "off",
+    }:
+        return 0
+    if _worker_ran_out_of_memory():
+        logger.warning(
+            "This worker has been OOM-killed, so %d recovered run(s) were left "
+            "failed rather than resumed: restarting them repeats the kill. "
+            "Raise the worker's memory limit or lower SANDBOX_MEMORY_LIMIT.",
+            len(run_ids),
+        )
+        return 0
+
+    from app.server.runner import WorkflowRunner
+
+    queued = 0
+    for run_id in run_ids:
+        if run_id in _RESUMED_ON_START:
+            logger.warning(
+                "Run %s was already resumed once by this worker and its worker "
+                "stopped again; leaving it failed so a crash loop cannot run "
+                "for ever.", run_id,
+            )
+            continue
+        _RESUMED_ON_START.add(run_id)
+        try:
+            runner = WorkflowRunner.shared()
+            import asyncio
+
+            asyncio.run(runner.resume_run(run_id))
+            queued += 1
+            logger.info("Resumed run %s, abandoned by a worker that stopped", run_id)
+        except Exception:  # noqa: BLE001 - one bad run must not block the rest
+            logger.warning("Could not resume run %s", run_id, exc_info=True)
+    return queued
+
+
 def recover_orphaned_runs(dry_run: bool = False) -> int:
     """Return runs whose worker died to a state that can be resumed.
 
@@ -296,6 +370,7 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
         offset += 500
 
     repaired = 0
+    recovered: list[str] = []
     for record in records:
         if record.status != "running":
             continue
@@ -324,6 +399,7 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
         )
         record.updated_at = datetime.now(timezone.utc).isoformat()
         store.save(record)
+        recovered.append(record.run_id)
 
     if repaired and oom_killed:
         print(
@@ -335,7 +411,11 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
     elif dry_run:
         print(f"\n{repaired} run(s) would be recovered. Re-run without --dry-run to apply.")
     else:
-        print(f"\nRecovered {repaired} run(s). Resume them to continue.")
+        queued = resume_runs_a_restart_abandoned(recovered)
+        if queued:
+            print(f"\nRecovered {repaired} run(s) and resumed {queued} of them.")
+        else:
+            print(f"\nRecovered {repaired} run(s). Resume them to continue.")
     return 0
 
 

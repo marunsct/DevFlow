@@ -3759,3 +3759,35 @@ policy ones were rewritten to assert the new behaviour with the measurement
 in their docstrings, and `test_documents_are_still_welcome_there` became
 `test_documents_belong_with_the_product_not_in_docs`. Suite: 3,869 passed,
 6 skipped.
+
+### 4ar. Recovered, and then left sitting
+
+`_recover_runs_their_worker_abandoned` (§4 earlier) marks a run whose worker
+died `failed`, which is precisely what makes it reachable again -
+`resume_run` compare-and-sets from `failed`. And then nothing reached it.
+
+Measured over this session's own work on 2026-09-19: four worker restarts,
+four runs correctly recovered by the sweep, four manual
+`POST /api/runs/<id>/resume` calls to carry each one forward. The diagnosis
+was right every time and the repair stopped one step short.
+
+A deploy is not an exceptional event in this system. It happens on every
+configuration change and every code change, `task_acks_late` is false so the
+task is never redelivered, and a run lasts hours. Leaving the last step to an
+operator's memory is the same mistake the sweep itself was written to fix.
+
+`resume_runs_a_restart_abandoned` now runs at the end of a successful sweep.
+Three safety properties, each tested:
+
+* Nothing is resumed unless the sweep first established that **no worker
+  claims the task**. That is the property that stops two writers on one
+  thread, and it is inherited unchanged.
+* A run is resumed **at most once per worker process**. A run that kills its
+  worker every time it starts is recovered every time and resumed once, so a
+  crash loop costs one repeat rather than an unbounded number.
+* An **OOM-killed worker resumes nothing**. The cause is the run's own memory
+  use, restarting repeats the kill, and the operator needs to read the
+  message rather than watch it loop.
+
+`RESUME_ORPHANS_ON_START=false` turns it off. Default on, because the case
+where it is wrong is the case the three guards above already exclude.

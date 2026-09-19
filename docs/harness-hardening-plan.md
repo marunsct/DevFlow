@@ -3228,3 +3228,44 @@ and this model reaches for it constantly, and `other`, so an unrecognised
 category is preserved rather than guessed at. `other` composes with §4ak's
 scope gate - no brief ever says "other" - so an unclassifiable finding is
 kept, reported, and unable to hold a sprint.
+
+### 4an. The run completed, and its browser suite had never run
+
+Run-cac07d52 finished: status `complete`, 322 model calls, 5 costly tool
+failures at 1.2%, six milestone cycles, 278 lines of application code against
+a 500-line budget, and no blocking cross-file problems. Its unit suite was
+run afterwards and is genuinely green:
+
+```
+# tests 34   # pass 34   # fail 0
+```
+
+Then its browser suite was run:
+
+```
+5 failed
+  tests/app.test.ts:10:1 › Add task via form and show in list
+  tests/app.test.ts:20:1 › Edit title/description updates UI
+  tests/app.test.ts:48:1 › Toggle status changes visual cue
+  tests/app.test.ts:63:1 › Delete removes from list
+  tests/app.test.ts:78:1 › Refresh reloads same tasks
+```
+
+`scripts.test` is `node --test tests/`. The Playwright suite is reachable
+only through `scripts["test:e2e"]`, and **no stage in this pipeline runs
+anything but `scripts.test`**. So five tests of the actual user interface
+never executed at a gate, every review read `# pass 34  # fail 0` as evidence
+the product works, and the run was accepted.
+
+This is the "false green is worse than a red" failure the harness already has
+a check for, arriving from a direction the check could not see:
+`_tests_the_project_never_runs` considered only `.js`, `.mjs` and `.cjs`. A
+`.ts` suite is not stranded by accident - `node --test` cannot parse
+TypeScript - it is stranded by design, and the design is what needed
+reporting. The check now says so, and names the script that does run it.
+
+**Worth stating plainly: the run is still the best one this harness has
+produced.** It converged, it stayed inside its budget, it shipped a working
+data layer with 34 real tests. The finding is not that the run was bad. It is
+that "the suite passes" meant less than every gate took it to mean, and that
+the one number every stage trusts was measuring two thirds of the product.

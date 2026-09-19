@@ -356,6 +356,15 @@ _NODE_COLLECTS = re.compile(r"^(?:.+[.\-_]test|test|test-.+)\.[cm]?js$", re.IGNO
 _RUNNERS_WITH_THEIR_OWN_CONFIG = ("jest", "vitest", "mocha", "ava", "tap", "playwright")
 
 
+def _looks_like_a_test_command(body: str) -> bool:
+    """Whether an npm script runs tests, by what it invokes."""
+    text = (body or "").lower()
+    return any(
+        runner in text
+        for runner in ("playwright", "jest", "vitest", "mocha", "node --test", "cypress", "ava")
+    )
+
+
 def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     """Test files the project's own `npm test` will not execute.
 
@@ -431,6 +440,44 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
             if not _node_runs(path, project, searched, listed_files)
             and path.resolve() not in imported
         ]
+        # A suite in a language `scripts.test` cannot run at all, reachable
+        # only through another script. `node --test` will not parse
+        # TypeScript, so a `.ts` suite is never stranded by accident - it is
+        # stranded by design, and the design is the problem.
+        #
+        # Measured on run-cac07d52, which COMPLETED: `scripts.test` is
+        # `node --test tests/` and collected 34 passing tests, while
+        # `tests/app.test.ts` held five Playwright tests reachable only
+        # through `scripts["test:e2e"]`. No stage in this pipeline runs
+        # anything but `scripts.test`, so those five never ran at a gate, and
+        # every review read "# pass 34  # fail 0" as evidence the UI works.
+        # Run directly afterwards, all five failed.
+        other_scripts = sorted(
+            name for name, body in scripts.items()
+            if name != "test" and _looks_like_a_test_command(str(body))
+        )
+        unrunnable = [
+            path
+            for path in files
+            if path.suffix.lower() in {".ts", ".tsx", ".jsx"}
+            and is_test(str(path.relative_to(root)))
+            and _is_within(path, project)
+        ]
+        if unrunnable:
+            names = ", ".join(sorted(str(p.relative_to(root)) for p in unrunnable))
+            through = (
+                f" They are reachable through `npm run {other_scripts[0]}`, and no "
+                "stage in this pipeline runs anything but `test`."
+                if other_scripts
+                else " Nothing in the project runs them at all."
+            )
+            problems.append(
+                f"{manifest.relative_to(root)} runs `{command}`, which cannot run "
+                f"{names} - `node --test` does not parse TypeScript or JSX."
+                + through
+                + " A suite no gate executes is not evidence: make `test` run "
+                "both, so one command proves the whole product."
+            )
         if not stranded:
             continue
         if listed_files:

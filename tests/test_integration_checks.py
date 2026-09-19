@@ -1394,3 +1394,83 @@ def test_a_ui_that_already_has_playwright_is_left_alone(tmp_path):
     )
 
     assert "Playwright is not installed" not in summarise_integration(root)
+
+
+# ---------------------------------------------------------------------------
+# A suite the gating command cannot run at all.
+#
+# Measured on run-cac07d52, which COMPLETED. Its `scripts.test` is
+# `node --test tests/` and collected 34 passing tests, while
+# `tests/app.test.ts` held five Playwright tests reachable only through
+# `scripts["test:e2e"]`. No stage in this pipeline runs anything but
+# `scripts.test`, so those five never ran at a gate, and every review read
+# "# pass 34  # fail 0" as evidence the UI works. Run directly afterwards,
+# all five failed.
+#
+# `_tests_the_project_never_runs` could not see them: it considered only
+# `.js`, `.mjs` and `.cjs`. A `.ts` suite is not stranded by accident -
+# `node --test` cannot parse TypeScript - it is stranded by design, and the
+# design is what needed reporting.
+# ---------------------------------------------------------------------------
+
+
+def test_a_typescript_suite_the_test_command_cannot_run_is_reported(tmp_path):
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0",'
+                            '"scripts":{"test":"node --test tests/",'
+                            '"test:e2e":"npx playwright test"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "tests/unit.test.mjs": "import {test} from 'node:test';\ntest('x',()=>{});\n",
+            "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
+        },
+    )
+
+    report = summarise_integration(root)
+
+    assert "does not parse TypeScript" in report
+    assert "app.test.ts" in report
+    assert "test:e2e" in report, "the message must name the script that does run it"
+
+
+def test_it_says_when_nothing_runs_the_suite_at_all(tmp_path):
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0",'
+                            '"scripts":{"test":"node --test tests/"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
+        },
+    )
+
+    assert "Nothing in the project runs them at all" in summarise_integration(root)
+
+
+def test_an_all_javascript_project_is_not_newly_flagged(tmp_path):
+    """The check must not start reporting projects that were always fine."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0","scripts":{"test":"node --test"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "tests/unit.test.mjs": "import {test} from 'node:test';\ntest('x',()=>{});\n",
+        },
+    )
+
+    assert "does not parse TypeScript" not in summarise_integration(root)
+
+
+def test_a_jest_project_decides_its_own_discovery(tmp_path):
+    """Jest and Vitest read their own config; a claim here would be a guess."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0","scripts":{"test":"jest"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "tests/app.test.ts": "test('ui', () => {});\n",
+        },
+    )
+
+    assert "does not parse TypeScript" not in summarise_integration(root)

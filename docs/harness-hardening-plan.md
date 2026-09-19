@@ -3995,3 +3995,41 @@ Two ways it refuses to be clever:
 
 What it tracks is bounded to 32 conversations, because a worker process runs
 many stages.
+
+### 4ax. And the first version of that fix trimmed nothing
+
+Deployed §4aw, watched the next five `model_request` entries, and every one
+of them said `carried=0`:
+
+```
+07:47:17   26.9 KB  carried=0  added=2
+07:47:19   49.8 KB  carried=0  added=7
+07:47:24   83.2 KB  carried=0  added=12
+07:47:29   83.8 KB  carried=0  added=14
+07:47:31   84.7 KB  carried=0  added=16
+```
+
+The conversation was growing and nothing was being trimmed. The test suite
+was green, because the tests grew a conversation by appending to its end -
+which is not what this harness does.
+
+**Several middlewares append to the request without persisting it.** The
+workspace digest does it on every call, deliberately; so do the
+settled-answer correction and the response reminder. So the model sees
+`history + injected`, and the next call sees `history + new turns +
+injected`, with the injected message at a *different index*. A strict "is
+the recorded list a prefix of the new one" test therefore fails on every
+single call - the divergence is at the injected message, which is near the
+end and moves each time.
+
+Fixed with the longest common prefix rather than a prefix test. The history
+is carried; the new turns and the injected message are recorded. An injected
+message recorded again on every call is correct - it genuinely differs per
+call - and `carried + len(messages)` is still the length the model saw.
+
+**The lesson, which is the same one as §4at one level along.** The test
+built its input the obvious way rather than the way the system builds it.
+Green tests, deployed code, and the behaviour it was written for did not
+happen once. What caught it was looking at the field in a live transcript
+two minutes after the deploy - which is the argument for watching a run
+rather than watching a suite.

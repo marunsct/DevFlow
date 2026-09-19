@@ -343,28 +343,44 @@ def _only_what_is_new(
     earlier ones this request resent and the fingerprints prove they were the
     same ones.
 
-    Falls back to the whole conversation whenever the prefix does not match -
-    a compaction rewrites history, and a delta against a history that moved
-    would be a lie. Never raises: a record that fails is worse than a long
-    one.
+    Falls back to the whole conversation whenever nothing at all is shared -
+    a compaction rewrites history from the first message, and a delta against
+    a history that moved would be a lie.
+
+    An injected message that is not part of history is recorded again on
+    every call that carries it, which is correct: it genuinely differs per
+    call, and `carried + len(messages)` is still the length the model saw.
     """
     if not run_id:
         return messages, 0
     key = (run_id, stage)
     now = _fingerprints(messages)
     seen, since_full = _RECORDED_PREFIX.get(key, ([], FULL_CONVERSATION_EVERY))
-    keep_whole = (
-        since_full >= FULL_CONVERSATION_EVERY
-        or len(now) < len(seen)
-        or now[: len(seen)] != seen
-    )
+
+    # The longest common prefix, not "is the old list a prefix of the new
+    # one". Several middlewares append to the request without persisting it -
+    # the workspace digest on every call, the settled-answer correction, the
+    # response reminder - so the conversation the model sees is
+    # `history + injected`, and the NEXT one is `history + new turns +
+    # injected`. The injected message lands at a different index each time,
+    # which made a strict prefix test fail on every single call.
+    #
+    # Measured live after the first deploy of this code: five consecutive
+    # requests, `carried=0` on all five, nothing trimmed at all.
+    shared = 0
+    for before, after in zip(seen, now):
+        if before != after:
+            break
+        shared += 1
+
+    keep_whole = since_full >= FULL_CONVERSATION_EVERY or shared == 0
     _RECORDED_PREFIX[key] = (now, 0 if keep_whole else since_full + 1)
     _RECORDED_PREFIX.move_to_end(key)
     while len(_RECORDED_PREFIX) > MAX_CONVERSATIONS_TRACKED:
         _RECORDED_PREFIX.popitem(last=False)
     if keep_whole:
         return messages, 0
-    return messages[len(seen):], len(seen)
+    return messages[shared:], shared
 
 
 def build_transcript_callback(run_id: str | None, stage: str) -> Any:

@@ -74,15 +74,36 @@ def test_a_rewritten_history_records_the_whole_conversation():
     assert carried == 0
 
 
-def test_a_changed_message_is_not_treated_as_a_prefix():
+def test_a_changed_message_ends_the_shared_prefix_there():
+    """Only what still matches is carried; the rest is recorded again."""
     _only_what_is_new("r", "s", _grown(3))
 
     edited = _grown(4)
     edited[1] = {"role": "human", "content": "changed"}
     added, carried = _only_what_is_new("r", "s", edited)
 
-    assert carried == 0
-    assert added == edited
+    assert carried == 1
+    assert added == edited[1:]
+
+
+def test_a_message_injected_at_the_end_does_not_defeat_it():
+    """The bug that made the first version trim nothing at all.
+
+    Several middlewares append to the request without persisting it - the
+    workspace digest on every call, the settled-answer correction, the
+    response reminder. So the model sees `history + injected`, and the next
+    call sees `history + new turns + injected`, with the injected message at
+    a different index. A strict "is the old list a prefix of the new one"
+    test failed on every call: measured live, five consecutive requests with
+    `carried=0` and nothing trimmed.
+    """
+    digest = {"role": "human", "content": "the workspace as it stands"}
+
+    _only_what_is_new("r", "s", [*_grown(3), digest])
+    added, carried = _only_what_is_new("r", "s", [*_grown(5), digest])
+
+    assert carried == 3, "the history is carried"
+    assert added == [*_grown(5)[3:], digest], "the new turns and the injection"
 
 
 def test_a_full_copy_is_written_regularly():

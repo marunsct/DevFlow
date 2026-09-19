@@ -537,6 +537,23 @@ def _transcription_repairs(wanted: str) -> list[tuple[str, str]]:
         "Matched after removing the line numbers from your text. Those come from "
         "`read_file`'s output and are not in the file - strip them before editing.",
     )
+    # One stray quote at the end, from closing the JSON string a character
+    # late. Measured on run-eb48de7a: `specialist_ui_ux_0` sent an 85-line
+    # passage that matched the file exactly except for a trailing `"`, twice,
+    # and the diff correctly reported `you sent: });"` against
+    # `file has: });`. Every line but the last was right.
+    #
+    # Safe for the same reason as every repair here: it is offered only after
+    # the original has failed, and the caller still requires the candidate to
+    # match exactly once. A passage that really ends in a quote already
+    # matched.
+    if wanted[-1:] in {'"', "'"}:
+        add(
+            wanted[:-1],
+            "Matched after dropping one trailing quote from your text. The tool "
+            "call is already JSON - `find` holds the literal passage, so it does "
+            "not need a closing quote of its own.",
+        )
     # Line numbers must be stripped AFTER the escapes are decoded, not before.
     # `_without_read_line_numbers` works line by line, and a passage whose
     # newlines are still the two characters `\n` is one long line to it - so it

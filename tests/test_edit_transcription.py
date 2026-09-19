@@ -319,3 +319,50 @@ def test_a_targeted_change_cannot_skip_the_guards(workspace):
     """Both tools share `_guard_a_targeted_change`; neither may lose a check."""
     with pytest.raises(RepositoryToolError):
         replace_approved_lines(workspace, "docs/product_intake.md", 1, 1, "x")
+
+
+# ---------------------------------------------------------------------------
+# One stray quote at the end, from closing the JSON string a character late.
+#
+# Measured on run-eb48de7a: `specialist_ui_ux_0` sent an 85-line passage that
+# matched `tests/app.test.ts` exactly except for a trailing `"`, twice. The
+# diff reported it correctly - `you sent: });"` against `file has: });` - and
+# every line but the last was right.
+# ---------------------------------------------------------------------------
+
+
+def test_a_stray_trailing_quote_is_repaired(workspace):
+    target = workspace / "p" / "app.test.ts"
+    target.write_text(
+        "import { test } from '@playwright/test';\n\n"
+        "test('x', async () => {\n  await go();\n});\n",
+        encoding="utf-8",
+    )
+    sent = (
+        "import { test } from '@playwright/test';\n\n"
+        "test('x', async () => {\n  await go();\n});\""
+    )
+
+    result = edit_approved_artifact(workspace, "p/app.test.ts", sent, "// replaced\n")
+
+    assert result.get("status") in {"edited", "written"}
+    assert "// replaced" in target.read_text(encoding="utf-8")
+
+
+def test_a_passage_that_really_ends_in_a_quote_is_untouched(workspace):
+    """It already matched, so no repair is ever offered for it."""
+    target = workspace / "p" / "b.ts"
+    target.write_text('const a = "x";\nconst b = "y";\n', encoding="utf-8")
+
+    edit_approved_artifact(workspace, "p/b.ts", 'const a = "x";', 'const a = "z";')
+
+    assert target.read_text(encoding="utf-8") == 'const a = "z";\nconst b = "y";\n'
+
+
+def test_the_repair_still_requires_a_unique_match(workspace):
+    """Dropping a quote may forgive transcription, never ambiguity."""
+    target = workspace / "p" / "c.ts"
+    target.write_text("go();\ngo();\n", encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError):
+        edit_approved_artifact(workspace, "p/c.ts", 'go();"', "stop();")

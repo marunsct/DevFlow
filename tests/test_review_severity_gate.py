@@ -117,5 +117,23 @@ def test_both_reviewers_route_on_it() -> None:
     architecture = source.index("def architecture_review_node")
     milestone = source.index("def milestone_review_node")
 
-    assert "_findings_that_block(review)" in source[architecture:architecture + 4000]
-    assert "_findings_that_block(review)" in source[milestone:milestone + 6000]
+    # `_findings_that_block(review, root)` since the scope gate: the root is
+    # what lets a finding about something nobody asked for be capped rather
+    # than blocking. Matched on the call rather than its exact arguments so
+    # the next argument added here does not read as the routing being lost.
+    assert "_findings_that_block(review" in source[architecture:architecture + 4000]
+    assert "_findings_that_block(review" in source[milestone:milestone + 6000]
+
+
+def test_both_reviewers_are_given_the_workspace_to_judge_scope() -> None:
+    """The gate is inert without it, and inert would look like passing."""
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    for node in ("def architecture_review_node", "def milestone_review_node"):
+        start = source.index(node)
+        window = source[start:start + 6000]
+        call = window[window.index("_findings_that_block(review"):][:120]
+        assert "root_path" in call, f"{node} judges scope without the workspace"

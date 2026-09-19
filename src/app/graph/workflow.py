@@ -1489,7 +1489,7 @@ def _severity_gates(value: Any) -> bool:
     return rank is not None and rank <= _WORST_RANK_THAT_PASSES
 
 
-def _findings_that_block(review: Any) -> list[Any]:
+def _findings_that_block(review: Any, repo_root: str | None = None) -> list[Any]:
     """The findings in a review that justify another round of work.
 
     This constant existed and was used only to *format* the failure message at
@@ -1516,11 +1516,40 @@ def _findings_that_block(review: Any) -> list[Any]:
     a vocabulary, it is decoration. `minor` has to mean "not worth another
     round" or there is no reason to offer the word.
     """
-    return [
+    gating = [
         finding
         for finding in (getattr(review, "findings", None) or [])
         if _severity_gates(getattr(finding, "severity", ""))
     ]
+    if not gating or not repo_root:
+        return gating
+    # A finding about something the product's own documents never raise
+    # cannot hold the sprint. `SCOPE_DISCIPLINE` says exactly this, at every
+    # stage that can inflate scope, and it is ignored: across 50 transcripts
+    # milestone review raised 13 BLOCKING accessibility findings against
+    # briefs in which the words "accessibility", "aria", "wcag" and "screen
+    # reader" do not appear at all. Seven of the last sixty failures are runs
+    # that ended with "the milestone review still required changes".
+    #
+    # The finding is not discarded - it is still reported and still read. It
+    # simply stops being a reason for another round, which is what the prompt
+    # already told the reviewer to do with it.
+    try:
+        from app.analysis.scope_attestation import categories_in_scope, out_of_scope_reason
+
+        in_scope = categories_in_scope(repo_root)
+    except Exception:  # noqa: BLE001 - a scope check must never fail a review
+        return gating
+    kept = []
+    for finding in gating:
+        reason = out_of_scope_reason(str(getattr(finding, "category", "") or ""), in_scope)
+        if reason:
+            logger.info(
+                "Milestone finding capped to minor, out of scope: %s", reason
+            )
+            continue
+        kept.append(finding)
+    return kept
 
 
 def _format_finding(finding: Any) -> str:
@@ -2205,7 +2234,7 @@ def build_workflow_graph(
         # copy that can disagree with it. See `app.agents.review_document`.
         _record_document(state, "docs/architecture_review.md", render_architecture_review(review))
 
-        blocking = _findings_that_block(review)
+        blocking = _findings_that_block(review, state["repository"].root_path)
         if review.status != "approved" and review.findings and not blocking:
             # Findings, but none of them gate. See `_findings_that_block`.
             logger.info(
@@ -2718,7 +2747,8 @@ def build_workflow_graph(
                 milestone_review=review,
             )
         elif review.status == "changes_required" and (
-            not review.findings or _findings_that_block(review)
+            not review.findings
+            or _findings_that_block(review, state["repository"].root_path)
         ):
             # A `changes_required` carrying nothing above the gating severities
             # falls through to the accepted path below - the same hole that

@@ -3892,3 +3892,28 @@ prefer it and points at the mismatch.
 about that interface. Where a test patches a boundary, one test somewhere
 must assert that the boundary is spelled the way the code spells it, without
 patching anything.
+
+### 4au. The task list, built and switched off
+
+§25 implemented as specified: `src/app/agents/task_list.py`,
+`HARNESS_TASK_LIST=true` to turn it on, off by default, spliced last into
+the middleware chain so it cannot displace anything the rest depends on.
+
+Two things were verified rather than assumed:
+
+* **Its tool works here.** `langchain.agents.middleware.todo.write_todos`
+  has a real `func`, not only a `coroutine`. That is the exact property that
+  makes every `langchain-mcp-adapters` tool unusable under this harness's
+  synchronous `agent.invoke` control plane, and it is now asserted by a test
+  so a version bump that changes it is caught here rather than in a run.
+* **Its prompt is ours.** The default that ships with the middleware is
+  addressed to a chat assistant deciding whether a task is worth tracking.
+  The one written here is addressed to a stage with a fixed job, a plan it
+  did not write and a budget of forty model calls, and it says the four
+  things this harness has actually been burned by: the sprint plan is the
+  task list, mark a task done when its *evidence* exists rather than when
+  its file is written, never reword a task to fit what you managed to do,
+  and the list is not the deliverable.
+
+**It stays off until the experiment in §25 says otherwise.** The numbers
+that would justify it do not exist, and building it is not evidence for it.

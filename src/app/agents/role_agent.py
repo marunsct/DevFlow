@@ -36,6 +36,7 @@ from app.agents.settled_answer import build_settled_answer_middleware
 #: actually accumulates - see `app.agents.settled_answer._model_calls_used`.
 from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
 from app.agents.repeated_queries import build_repeated_query_middleware
+from app.agents.task_list import build_task_list_middleware
 from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
@@ -643,6 +644,11 @@ def create_role_agent(
             if response_format is not None
             else []
         ),
+        # Last, so it cannot displace anything the rest of the chain depends
+        # on, and empty unless `HARNESS_TASK_LIST` is on. See
+        # `app.agents.task_list` for why it is opt-in and what would earn it a
+        # default.
+        *build_task_list_middleware(),
     ]
 
     _disable_the_general_purpose_subagent()

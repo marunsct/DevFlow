@@ -24,7 +24,9 @@ mid-write (the file is still valid up to the last complete line), needs no
 schema migration, and can be read with `grep` when nothing else is available -
 the same reasoning as the execution ledger beside it.
 
-**Kinds.** `model_request` (every message sent, and the tools bound),
+**Kinds.** `model_request` (the messages this call ADDED, plus `carried` -
+how many earlier ones it resent unchanged; see `_only_what_is_new`, and note
+that every message appears exactly once across a stage's entries),
 `model_response` (content, tool calls, token usage, finish reason),
 `tool_call` and `tool_result` (post-middleware, so the notices are in the
 record), and `note` for anything a stage wants to leave behind.
@@ -35,10 +37,12 @@ transcript. Every entry point swallows and logs.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import re
+from collections import OrderedDict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -300,6 +304,69 @@ def _tool_names(kwargs: dict[str, Any]) -> list[str]:
         return []
 
 
+#: How many requests may record only what is new before one records the
+#: whole conversation again. A full copy every so often means a chain broken
+#: by a crash, a rotation or a bug self-heals within this many entries
+#: instead of leaving the rest of the stage unreadable.
+FULL_CONVERSATION_EVERY = 25
+
+#: `(run_id, stage) -> (fingerprints of every message recorded so far, how
+#: many requests since the last full copy)`. Bounded: a worker process runs
+#: many stages and this must not grow with them.
+_RECORDED_PREFIX: "OrderedDict[tuple[str, str], tuple[list[str], int]]" = OrderedDict()
+MAX_CONVERSATIONS_TRACKED = 32
+
+
+def _fingerprints(messages: list[dict[str, Any]]) -> list[str]:
+    """One short hash per message, for comparing two conversations cheaply."""
+    return [
+        hashlib.sha1(
+            json.dumps(message, sort_keys=True, default=str).encode("utf-8", "replace")
+        ).hexdigest()[:16]
+        for message in messages
+    ]
+
+
+def _only_what_is_new(
+    run_id: str | None, stage: str, messages: list[dict[str, Any]]
+) -> tuple[list[dict[str, Any]], int]:
+    """The messages this request added, and how many it carried unchanged.
+
+    A model request carries the whole conversation, and the transcript
+    recorded all of it every time - so the file grows with the square of a
+    stage's length. Measured on run-ed05e20e mid-run: 36.6 MB, of which 279
+    `model_request` entries were 33.4 MB. 91% of the record was copies of
+    text already in it, and the stored transcripts came to 490 MB.
+
+    Recording the delta keeps every message exactly once and keeps the whole
+    conversation reconstructible, because `carried` says how many of the
+    earlier ones this request resent and the fingerprints prove they were the
+    same ones.
+
+    Falls back to the whole conversation whenever the prefix does not match -
+    a compaction rewrites history, and a delta against a history that moved
+    would be a lie. Never raises: a record that fails is worse than a long
+    one.
+    """
+    if not run_id:
+        return messages, 0
+    key = (run_id, stage)
+    now = _fingerprints(messages)
+    seen, since_full = _RECORDED_PREFIX.get(key, ([], FULL_CONVERSATION_EVERY))
+    keep_whole = (
+        since_full >= FULL_CONVERSATION_EVERY
+        or len(now) < len(seen)
+        or now[: len(seen)] != seen
+    )
+    _RECORDED_PREFIX[key] = (now, 0 if keep_whole else since_full + 1)
+    _RECORDED_PREFIX.move_to_end(key)
+    while len(_RECORDED_PREFIX) > MAX_CONVERSATIONS_TRACKED:
+        _RECORDED_PREFIX.popitem(last=False)
+    if keep_whole:
+        return messages, 0
+    return messages[len(seen):], len(seen)
+
+
 def build_transcript_callback(run_id: str | None, stage: str) -> Any:
     """A callback that records every prompt and every reply, in full."""
     from langchain_core.callbacks import BaseCallbackHandler
@@ -313,11 +380,17 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
             try:
                 offered = _tool_names(kwargs)
                 for conversation in messages or []:
+                    whole = _messages_of(conversation)
+                    added, carried = _only_what_is_new(run_id, stage, whole)
                     record(
                         run_id,
                         stage,
                         "model_request",
-                        messages=_messages_of(conversation),
+                        messages=added,
+                        # How many earlier messages this request resent
+                        # unchanged. `carried + len(messages)` is the length
+                        # of the conversation the model actually saw.
+                        carried=carried,
                         model=(serialized or {}).get("name"),
                         tools=offered,
                     )
@@ -468,7 +541,15 @@ def render_transcript(run_id: str, kinds: set[str] | None = None) -> str:
 
         if kind == "model_request":
             messages = entry.get("messages") or []
-            lines.append(f"[{clock}] --> model ({len(messages)} messages)")
+            # `carried` messages were resent unchanged and were printed by an
+            # earlier entry of this stage - see `_only_what_is_new`. Saying so
+            # is what keeps the reading honest: the model saw all of them.
+            carried = int(entry.get("carried") or 0)
+            seen_before = f", {carried} carried from above" if carried else ""
+            lines.append(
+                f"[{clock}] --> model ({carried + len(messages)} messages"
+                f"{seen_before})"
+            )
             for message in messages:
                 role = str(message.get("role", "?"))
                 body = str(message.get("content", "")).rstrip()

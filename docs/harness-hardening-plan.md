@@ -3955,3 +3955,43 @@ Fixed: the diagnosis is cleared at the top of every call, each branch records
 what kind of failure it found, and the two kinds now log different sentences.
 A third test asserts that one stage's diagnosis cannot describe the next -
 the same class of bug as §4at, state outliving the call that set it.
+
+### 4aw. The record grew with the square of the conversation
+
+Auditing run-ed05e20e mid-run, its transcript was **36.6 MB** and broke down
+like this:
+
+| kind | entries | bytes |
+| --- | --- | --- |
+| `model_request` | 279 | **33.4 MB** |
+| `tool_result` | 406 | 2.09 MB |
+| `model_response` | 276 | 0.84 MB |
+| `tool_call` | 407 | 0.27 MB |
+
+91% of the record was text already in the record. A model request carries the
+whole conversation, the transcript wrote all of it every time, so the file
+grows with the *square* of a stage's length. The stored transcripts had
+reached 490 MB, on a disk at 90%.
+
+It is not only disk. The transcript is the instrument every finding in this
+document was measured with, and an 11 MB file is one that has to be copied
+out of the container before it can be read.
+
+**Each request now records only what it added**, plus `carried` - how many
+earlier messages it resent unchanged. Every message still appears exactly
+once, and `carried + len(messages)` is the length the model actually saw, so
+nothing is lost: the reader prints it, and a grep over the file now finds
+each message once instead of once per subsequent call.
+
+Two ways it refuses to be clever:
+
+* **A rewritten history records the whole conversation.** Compaction
+  replaces earlier messages, and a delta against a history that moved would
+  be a lie. The prefix is compared message by message, by fingerprint, and
+  any mismatch means a full copy.
+* **A full copy is written every 25 requests anyway**, so a chain broken by a
+  crash, a rotation or a bug in this code self-heals within a bounded window
+  instead of leaving the rest of the stage unreadable.
+
+What it tracks is bounded to 32 conversations, because a worker process runs
+many stages.

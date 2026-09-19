@@ -2895,3 +2895,56 @@ browser test or lost the sprint to the test environment.
 | costly failures, first ~90 calls | 8 | 1 | 2 |
 | identical repeats | 4 | 0 | 3 |
 | reached a browser test | no | no | **yes** |
+
+### 4ae. Notice efficacy, measured for the first time
+
+§3.4 proposes driving the escalation ladder from "fired / next-call-changed".
+That had never been measured. Across all 50 stored transcripts, for every
+notice the harness emits, whether the next tool call from the same stage
+differed from the one that drew it:
+
+| notice | fired | next call changed | repeated it | efficacy |
+|---|---|---|---|---|
+| query repeat | 29 | 25 | 2 | **93%** |
+| read repeat | 457 | 413 | 36 | **92%** |
+| failed the same way | 112 | 70 | 31 | 69% |
+| write unchanged | 127 | 67 | 38 | 64% |
+| no-op refusal | 28 | 8 | 13 | **38%** |
+
+**The strongest intervention is the least effective.** The ladder this
+codebase keeps arriving at is hint, note, rewrite, refuse - and refuse, its
+final rung, is ignored 62% of the time. Every other notice is a note, and
+every one of them outperforms it.
+
+Part of that is selection: the no-op refusal only fires after two "write
+unchanged" notes have already been ignored, so its population is the
+stubborn tail by construction. That does not rescue it. A rung that exists
+to stop a stage that has ignored everything else, and is itself ignored
+almost two times in three, is not the end of the ladder - it only looks like
+one because nothing comes after it.
+
+What it costs, for the ten stages that ignored one at least once:
+
+| | |
+|---|---|
+| model calls spent after the first ignored refusal | median 3, mean 7.7, max 48 |
+| total | 77 |
+
+The median is cheap and the tail is not: one stage spent 48 further calls
+after being refused. Four of ten stages ended within two calls, so the
+refusal does work about as often as the efficacy figure says.
+
+**What this changes.** The read and query notices are done - at 92% and 93%
+there is nothing left to win, and effort spent rewording them is wasted. The
+two worth attention are "write unchanged" at 64% with the largest absolute
+loss (38 ignored fires) and the refusal at 38%. And the ladder needs a rung
+after refuse: the only thing stronger than refusing a call is ending the
+stage, which `settled_answer` already does for a stage that has its answer
+and is circling. The gap is a stage circling on a refused write that has not
+produced one.
+
+Method note: this is §5.2 of the plan carried out rather than described -
+verify against previous run data before acting. Two hypotheses earlier in
+this session were refuted the same way, and the reason to record efficacy
+now is that the next person to improve a notice should know which ones are
+already finished.

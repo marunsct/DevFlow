@@ -1688,6 +1688,37 @@ _TAP_PASS = re.compile(r"#\s*pass\s+(\d+)")
 _TAP_FAIL = re.compile(r"#\s*fail\s+(\d+)")
 _TAP_TESTS = re.compile(r"#\s*tests\s+(\d+)")
 
+#: How each test runner reports its totals.
+#:
+#: The counts were read from TAP alone - `# pass N`, `# fail N`, `# tests N` -
+#: which is what `node --test` emits and nothing else does. Every other runner
+#: reported its results in its own words and the ledger recorded no counts, so
+#: `_fewer_pass_than_last_time` had nothing to compare and could not fire.
+#:
+#: Measured across all 50 transcripts: 40 of the 41 runs that ran a suite
+#: reached a green one at some point, **39 of those 40 went green and then red
+#: again**, and only 13 ended green. The regression note fired in 3 runs. The
+#: check was right and blind.
+#:
+#: Each entry yields (passed, failed) and the total is their sum, because a
+#: runner that reports a total separately does not always agree with it -
+#: Playwright counts flaky and skipped tests in neither column.
+_RUNNER_TOTALS: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = (
+    # jest: "Tests:       1 failed, 5 passed, 6 total"
+    ("jest", re.compile(r"Tests:.*?(\d+)\s+passed", re.S),
+             re.compile(r"Tests:.*?(\d+)\s+failed", re.S)),
+    # vitest: "Tests  5 passed | 1 failed (6)"
+    ("vitest", re.compile(r"Tests\s+.*?(\d+)\s+passed", re.S),
+               re.compile(r"Tests\s+.*?(\d+)\s+failed", re.S)),
+    # pytest: "5 passed, 1 failed in 0.12s"
+    ("pytest", re.compile(r"(\d+)\s+passed"), re.compile(r"(\d+)\s+failed")),
+    # cargo: "test result: FAILED. 3 passed; 1 failed;"
+    ("cargo", re.compile(r"test result:.*?(\d+)\s+passed", re.S),
+              re.compile(r"test result:.*?(\d+)\s+failed", re.S)),
+    # go: one "--- PASS:" / "--- FAIL:" line per test
+    ("go", re.compile(r"^---\s+PASS:", re.M), re.compile(r"^---\s+FAIL:", re.M)),
+)
+
 
 def _the_counts_a_test_run_reported(result: dict) -> dict:
     """`{"passed": n, "failed": n, "tests": n}` from TAP output, or `{}`.
@@ -1702,13 +1733,31 @@ def _the_counts_a_test_run_reported(result: dict) -> dict:
         _TAP_FAIL.search(text),
         _TAP_TESTS.search(text),
     )
-    if not (passed and failed and tests):
-        return {}
-    return {
-        "passed": int(passed.group(1)),
-        "failed": int(failed.group(1)),
-        "tests": int(tests.group(1)),
-    }
+    if passed and failed and tests:
+        return {
+            "passed": int(passed.group(1)),
+            "failed": int(failed.group(1)),
+            "tests": int(tests.group(1)),
+        }
+
+    # Not TAP. Every other runner says the same thing in its own words, and
+    # reading only TAP is why the regression check fired in 3 runs of 41 while
+    # 39 of them broke a suite that had been green. See `_RUNNER_TOTALS`.
+    for name, pass_pattern, fail_pattern in _RUNNER_TOTALS:
+        if name == "go":
+            ok, bad = len(pass_pattern.findall(text)), len(fail_pattern.findall(text))
+            if not (ok or bad):
+                continue
+        else:
+            ok_match, bad_match = pass_pattern.search(text), fail_pattern.search(text)
+            if not (ok_match or bad_match):
+                continue
+            ok = int(ok_match.group(1)) if ok_match else 0
+            bad = int(bad_match.group(1)) if bad_match else 0
+        if ok == 0 and bad == 0:
+            continue
+        return {"passed": ok, "failed": bad, "tests": ok + bad}
+    return {}
 
 
 def _fewer_pass_than_last_time(

@@ -2175,7 +2175,9 @@ def test_an_ambiguous_edit_says_where_the_copies_are(repo_root: Path) -> None:
 
     message = str(caught.value)
     assert "lines 3 and 7" in message
-    assert "Add whichever of these surrounding lines differs" in message
+    assert "whichever of these surrounding lines differs" in message
+    # And the way out that cannot be ambiguous, named with the numbers in hand.
+    assert "replace_lines" in message
     # And the surroundings themselves, which is what makes it actable.
     assert "the copy at line 3:" in message
     assert "loadTasks();" in message

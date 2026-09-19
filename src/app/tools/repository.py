@@ -1037,11 +1037,26 @@ def _how_it_differs(content: str, wanted: str) -> str:
     if not differences:
         return ""
 
+    # Naming `replace_lines` here, with the numbers already in hand.
+    #
+    # This message knew exactly which lines it nearly matched and told the
+    # model to try quoting them again - the one thing that had just failed.
+    # Measured across the fifty stored transcripts: 292 edits failed with
+    # "could not find that text", 113 of them close enough to diff, while
+    # `replace_lines` - which cannot fail this way, because a line number
+    # needs no quoting - was called 42 times against `edit_artifact`'s 1,707.
+    # A tool used in 2% of edits is a tool nobody was told to reach for.
+    first_line = window[0] if window else ""
     return (
         f"\n\nIt is nearly the passage at line {start + 1}. These lines differ:\n"
         + "\n".join(differences)
-        + "\n\nSend `find` exactly as the file has it, and put what you want "
-        "instead in `replace`."
+        + "\n\nTwo ways forward. Either send `find` exactly as the file has it "
+        "above, with what you want instead in `replace` - or skip the quoting "
+        "entirely and call `replace_lines` with "
+        f"start_line={start + 1}, end_line={start + len(window)}, "
+        f"expect_start={_clip(first_line).strip()!r}, and your new text as "
+        "`content`. That names the passage by position, so nothing has to "
+        "match character for character."
     )
 
 
@@ -1449,9 +1464,11 @@ def edit_approved_artifact(
             raise RepositoryToolError(
                 f"That text appears {occurrences} times in '{relative_path}', so it is "
                 "ambiguous which one to change. It starts at "
-                f"{_where_each_match_starts(original, find)}. Add whichever of "
-                "these surrounding lines differs between them to your `find`, and "
-                "send it again."
+                f"{_where_each_match_starts(original, find)}. Either add whichever "
+                "of these surrounding lines differs between them to your `find` "
+                "and send it again, or - simpler - call `replace_lines` with the "
+                "line numbers of the one you meant. A position is never "
+                "ambiguous, and the numbers are in the list above."
                 f"{_what_sits_around_each_match(original, find)}"
             )
 

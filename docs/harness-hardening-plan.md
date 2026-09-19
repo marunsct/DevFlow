@@ -3378,3 +3378,345 @@ The number is small and worth writing down as small. It is reported here at
 its true size rather than the 247 that counting `read_file` would have
 produced, because `read_file` was already handled and claiming it would have
 been claiming someone else's fix.
+
+---
+
+# Part III. Three structural changes: a fixed document set, a project memory, and a task list
+
+Three ideas, raised on 2026-09-19, researched against the fifty stored
+transcripts and the eighty-two stored workspaces before any of them was
+written. Each is stated with the measurement that justifies it, the design,
+and step-by-step implementation instructions. They are ordered by evidence,
+strongest first, and that is also the order to build them in.
+
+**The measurements, up front, so the ranking is checkable.**
+
+| idea | the number that justifies it |
+| --- | --- |
+| project memory | 30% of all reads are a later stage re-fetching bytes an earlier stage already had - 1,199 of 4,001 |
+| fixed document set | 563 writes into `docs/` across 50 runs, 334 of them creating a file nothing reads, in 28 of 50 runs |
+| task list | no measurement supports it yet; built behind a setting, to be measured |
+
+## 22. The measurements
+
+### 22.1 Reads
+
+Counting every `read_file` result in the fifty stored transcripts, keyed on
+the normalised path and the SHA-1 of the bytes returned:
+
+| | reads | share |
+| --- | --- | --- |
+| first time anyone in the run saw these bytes | 2,162 | 54% |
+| **a later stage, bytes an earlier stage already had** | **1,199** | **30%** |
+| same stage, bytes it already had | 640 | 16% |
+
+Median reads per run: 69.
+
+The 16% is already under attack: `workspace_digest` tells a stage what is
+there so it need not go looking, and `workspace_backend._note_if_repeated`
+tells it when bytes are ones it has already been handed. The 30% has nothing
+aimed at it at all. Every stage is a fresh agent with an empty conversation,
+and the only thing carried between them is the digest - which lists names,
+line counts and exported symbol names, and stops there.
+
+That is the gap the project memory fills, and it says exactly what the memory
+has to carry: enough that a later stage does not need the bytes.
+
+### 22.2 Documents
+
+Across the eighty-two stored workspaces, nine document names are stable -
+`product_intake`, `tools_and_models`, `technology_stack`,
+`technical_specification`, `architecture_review`, `sprint_plan`,
+`milestone_plan`, `milestone_review`, `security_review` - appearing in 55 to
+82 workspaces each. The workflow renders every one of them from a structured
+response.
+
+Beside them are about ninety other names, nearly all appearing in exactly one
+workspace: `placeholder.md`, `empty.md`, `blocker.md`, `structured_response.json`,
+`style.css.md`, `old_architecture_review.md`, `architecture_review_new.md`,
+`TaskCleanupReport.md`, `SimpleToDoListAppCompletion.md`.
+
+Counting the calls rather than the files:
+
+| writes into `docs/` | calls |
+| --- | --- |
+| a document the workflow renders (refused every time) | 229 |
+| something else (allowed, and nothing reads it) | 334 |
+| **total** | **563** |
+
+against 2,725 writes everywhere else in the project. So one write in six goes
+into `docs/`, and none of them produces anything any stage reads. 28 of the 50
+runs created at least one. `implementation` alone wrote 129 of them.
+
+Two of those names deserve singling out. `docs/structured_response.md` (41
+calls) and `docs/structured_response.json` (8) are a stage writing its own
+answer to a file - the harness already refuses that shape under its real
+name and did not recognise it here. And `old_architecture_review.md` beside
+`architecture_review_new.md` is a second copy of a workflow document under a
+different name, which is precisely the "second copy that can disagree with
+the one the run acts on" that `stack_selector`'s prompt warns about.
+
+### 22.3 Repeated work
+
+No measurement yet separates "the stage repeated a *task*" from "the stage
+repeated a *call*". The call-level repeats are known and mostly addressed:
+1,134 failed tool results out of 9,632 (11.8%), of which `edit_artifact`
+text-matching failures are 37%. Whether a task list reduces those is an open
+question, and §25 is written to answer it rather than to assume it.
+
+## 23. The fixed document set
+
+**The rule, in one sentence.** `docs/` is the workflow's namespace, and a
+document the workflow does not render does not belong in it.
+
+Deliberately about `docs/` and not about documentation. A product README, an
+API guide, an architecture decision record that ships with the code are all
+legitimate deliverables and they belong in the *project* directory beside the
+code they describe, where the milestone reviewer reads them as part of the
+product. Nothing in this rule stops any of that.
+
+### 23.1 The manifest
+
+One module, `src/app/agents/document_manifest.py`, holding the whole truth
+about which documents exist, which stage produces each, and what renders it.
+Everything else imports from it, so the set cannot drift between the prompt
+that describes it, the tool that enforces it and the check that audits it -
+which is how this codebase has broken the same thing five times.
+
+```python
+"""The documents this workflow produces, and nothing else.
+
+`docs/` is the workflow's namespace. Every file in it is rendered by the
+workflow from a stage's structured response, so a file an agent writes there
+is at best ignored and at worst a second copy of a document the run acts on.
+
+Measured across the 82 stored workspaces: nine document names appear in 55 to
+82 of them, and about ninety more appear in exactly one. Counting calls
+rather than files, 563 writes went into `docs/` across the 50 stored
+transcripts - 229 refused, 334 creating a file nothing reads.
+"""
+
+from __future__ import annotations
+
+from typing import NamedTuple
+
+
+class Document(NamedTuple):
+    """One document the workflow renders."""
+
+    stem: str          #: file name without its extension
+    stage: str         #: the stage whose structured response renders it
+    summary: str       #: one line, for the prompt that tells agents the set
+
+
+#: Every document this workflow produces, in the order the run produces them.
+DOCUMENTS: tuple[Document, ...] = (
+    Document("product_intake", "product_manager", "the approved brief"),
+    Document("tools_and_models", "tools_models", "the technology comparison"),
+    Document("technology_stack", "stack_selector", "the chosen stack"),
+    Document("technical_specification", "principal_architect", "the specification"),
+    Document("architecture_review", "architecture_review", "the architecture review"),
+    Document("milestone_plan", "scrum_master", "the milestone plan"),
+    Document("sprint_plan", "technical_lead", "the sprint plan"),
+    Document("security_review", "security_review", "the security review"),
+    Document("milestone_review", "milestone_review", "the milestone review"),
+)
+
+RENDERED_STEMS = frozenset(d.stem for d in DOCUMENTS)
+```
+
+### 23.2 Enforcement
+
+In `repository.py`, where a write is validated, one check: a write whose
+normalised path starts with `docs/` and whose stem is not in `RENDERED_STEMS`
+is refused, with a message that says where the content should go instead.
+The existing refusal for a *rendered* document stays exactly as it is; this
+one covers the other 334.
+
+The message has to name the alternative, because a refusal that names none is
+the harness's most expensive shape - §4an and §4ao are both that mistake.
+Three cases, distinguished by what the agent was evidently trying to do:
+
+* The stem matches a rendered document with a suffix or prefix
+  (`architecture_review_new`, `old_architecture_review`, `tech_specification`):
+  say that the workflow renders that document from a named stage's response
+  and a second copy can disagree with it.
+* The stem contains `structured_response`, `structured_output`, `final_output`
+  or `response`: say that the structured response reaches the workflow through
+  the return value, not through a file.
+* Anything else: say that `docs/` holds only the nine, and that documentation
+  which ships with the product goes in the project directory beside the code.
+
+### 23.3 Prompt
+
+`document_manifest.describe()` renders the nine as a list with their owning
+stage, and every role prompt that currently says anything about documents
+includes it instead. One source, one wording.
+
+### 23.4 Test
+
+`tests/test_document_manifest.py`: each of the nine is accepted for its own
+stage; each of the three refusal shapes above is refused with the message that
+fits it; a `.md` written into the project directory is accepted; and - the
+regression that matters - every stem in `RENDERED_STEMS` matches a document
+the workflow actually renders, asserted against the workflow rather than
+against a second copy of the list.
+
+## 24. The project memory
+
+**What it is.** One durable index per run, one row per file: the path, its
+size in lines, its purpose, its public interface, and which stage last changed
+it. Written when a file is written, moved or deleted. Injected into every
+stage in place of today's digest.
+
+**Why a purpose line is the missing piece.** Today's digest says
+`task-manager/app.js (348 lines): createTask, toggleTask, deleteTask,
+filterTasks, saveTasks, loadTasks, renderTaskList, init`. A stage that needs
+to know *what app.js is for* cannot get it from that, so it reads the file -
+and 1,199 reads across fifty runs are exactly that read, performed by a stage
+that was not the one that wrote it.
+
+**Where the purpose comes from: the file itself.** Every language has a
+header comment or docstring, and the file's author has usually already
+written one. Run-ed05e20e's `server.mjs` opens with "Minimal static file
+server for Playwright testing", which is a better purpose line than anything
+a separate model call would produce and costs nothing. Deriving it rather
+than asking for it also means no tool gains an argument, no prompt gains a
+demand, and a file written by a stage that ignores the convention still gets
+an entry - just without the purpose line.
+
+### 24.1 Module
+
+`src/app/analysis/project_memory.py`.
+
+```python
+class FileNote(NamedTuple):
+    path: str            #: normalised, workspace-relative
+    lines: int
+    purpose: str         #: first header comment, one line, or ""
+    interface: str       #: exported signatures, comma-separated, or ""
+    changed_by: str      #: the stage that last wrote it
+    changed_at: str      #: ISO-8601
+```
+
+Stored as JSON at `<run data dir>/project_memory.json`, read and written
+through `stage_memory`-style helpers so a worker restart does not lose it.
+Never raises: a memory that throws is worse than a memory that is empty, and
+every caller treats an exception as "no entry".
+
+### 24.2 Extracting a purpose, in any language
+
+One function, `_purpose_of(text, suffix)`, reading the first of:
+
+| form | languages |
+| --- | --- |
+| `"""..."""` or `'''...'''` as the first statement | Python |
+| `/** ... */` before the first declaration | JS, TS, Java, C, C++, C#, Go, Rust, PHP, Swift, Kotlin |
+| a run of `//` or `#` or `--` lines at the top of the file | everything else |
+| `<!-- ... -->` at the top | HTML, XML, Markdown |
+
+Take the first sentence, cap it at 120 characters, and drop it if it is the
+file's own name and nothing else (`// app.js` is not a purpose). Return `""`
+rather than guessing: a wrong purpose line is worse than none, because a
+stage will act on it without reading the file, which is the entire point.
+
+### 24.3 Extracting an interface
+
+`workspace_digest` already finds exported symbol *names* through
+`_SYMBOL_PATTERNS`. Widen those patterns to capture the parameter list too,
+so the index can say `createTask(title, dueDate)` rather than `createTask`.
+A signature answers "can I call this with what I have" and a bare name does
+not, and it is the commonest reason a later stage opens a file it has been
+told about.
+
+Keep the existing per-language patterns and add the parameter group to each.
+Where a language's signature does not fit on a line - a Java method with
+annotations, a Rust function with a where-clause - take what is on the
+declaring line and stop. An incomplete signature is still more than a name.
+
+### 24.4 Keeping it current
+
+In `repository.py`, after each successful `write_artifact`, `edit_artifact`,
+`replace_lines`, `move_artifact` and `delete_artifact`, call
+`project_memory.record(path, text, stage)`. One call, wrapped so a failure
+cannot fail the write.
+
+The staleness risk is real and is handled by not trusting the index for
+freshness: every entry carries `changed_by` and `changed_at`, and the digest
+renders them, so a stage reading "changed by specialist_backend_2" knows
+whose work it is looking at. A file changed outside the tools - by a test
+runner writing a snapshot, say - is picked up on the next full scan, which
+runs when the digest is built.
+
+### 24.5 What a stage sees
+
+```
+The workspace as it stands. This is what is there - you do not need to list
+the directories or read these files to find out:
+
+  task-manager/app.js - 348 lines - written by specialist_backend_2
+    The task model and every operation on it: create, toggle, delete, filter.
+    createTask(title), toggleTask(id), deleteTask(id), filterTasks(state),
+    saveTasks(), loadTasks(), renderTaskList(tasks), init()
+
+  task-manager/server.mjs - 61 lines - written by specialist_testing_2
+    Minimal static file server for Playwright testing.
+```
+
+Same injection point and same cap as today's digest - `MAX_FILES = 40`, and
+§4-B15 already flags that cap as needing a measured replacement. The budget
+question is sharper now, because each entry is three lines instead of one, so
+the cap should be measured in characters against `ContextBudget` rather than
+in files. That is the one open decision in this section and it is settled by
+measurement, not by choosing a number here.
+
+### 24.6 How to tell whether it worked
+
+The measurement in §22.1, repeated after the change, on runs produced by the
+same brief. Success is the 30% falling. If it does not fall, the memory is
+carrying the wrong thing and the next question is which reads remain - not
+whether to add more to the index.
+
+## 25. The task list
+
+`langchain` 1.3.18 ships `TodoListMiddleware` in
+`langchain.agents.middleware`. It adds a `write_todos` tool and a `todos`
+state channel, and its tool is a `StructuredTool` with a synchronous
+implementation - so unlike the MCP tools of Part II, it works in this
+harness's synchronous control plane. Confirmed against the installed package,
+not just the documentation.
+
+**What the evidence says, honestly: nothing yet.** The waste this harness
+actually measures is repeated *calls* - re-reads, failed edits, refused
+writes - and a todo list does not obviously reduce any of them. The two
+stages that ran away most expensively, `specialist_testing_2` at 170 tool
+calls and `specialist_ui_ux_0` at 175, were in edit-run-edit-run loops on a
+failing suite, where every iteration is a different attempt at the same task.
+A list with "fix the failing test" marked in-progress would have been
+accurate the whole way down.
+
+There is also a cost. `write_todos` is a model call, and the default prompt
+that ships with the middleware says in as many words that for objectives of
+fewer than three steps it is better not to use the tool - while the median
+stage here takes 3 to 12 tool calls. On a stage with a 40-call budget, a plan
+written and revised four times is 10% of the budget spent on planning.
+
+**So: build it behind a setting, default off, and measure.**
+
+1. `HARNESS_TASK_LIST` in settings, default `false`.
+2. In `role_agent.create_role_agent`, when it is on, append
+   `TodoListMiddleware(system_prompt=...)` to the middleware chain - last, so
+   it cannot displace the transcript or workspace middleware that everything
+   else depends on.
+3. Write the prompt rather than taking the default. The default is addressed
+   to a chat assistant deciding whether a task is worth tracking; this needs
+   one addressed to a stage with a fixed job and a call budget, saying: the
+   plan is the sprint's task list, not a new one; mark a task done when its
+   test passes, not when its file is written; and do not revise the plan to
+   match what you managed to do.
+4. Run the same brief five times with it on and five with it off, on the same
+   model, and compare: model calls per stage, tool calls per stage, failed
+   calls, and whether the run reached green.
+5. Keep it only if it wins on the numbers. Write the result here either way -
+   a measured negative is the more useful finding, because it closes the
+   question.

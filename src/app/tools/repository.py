@@ -1235,7 +1235,14 @@ def replace_approved_lines(
             body += "\n"
         updated = "".join(lines[:start_line - 1]) + body + "".join(lines[last:])
 
-        _refuse_if_broken(relative_path, updated)
+        # Only when the edit is what breaks it. A file that arrived broken is
+        # being repaired, and refusing every step that has not yet finished
+        # the repair is the trap measured on run-eb48de7a - four consecutive
+        # refusals at lines 22, 59, 83 and 72 of one file, the moving line
+        # number showing the model was getting closer each time. See the same
+        # rule in `_write_unless_it_changes_nothing`.
+        if _what_is_structurally_wrong(target, relative_path, original) is None:
+            _refuse_if_broken(relative_path, updated)
         _write_unless_it_changes_nothing(target, original, updated, relative_path)
         note = (
             f"Replaced lines {start_line}-{last} of {total}. "
@@ -1473,6 +1480,35 @@ def _where_it_landed(written: str, replace: str) -> str:
     return f"Now reads (> marks what you changed):\n{quoted}"
 
 
+def _what_is_still_wrong_after_a_repair(
+    target: Path, relative_path: str, content: str
+) -> str:
+    """The structural problem remaining, as a note rather than a refusal.
+
+    `_structural_note` raises for the file types whose grammar is certain, and
+    that is right at the gate: a write that breaks a healthy Python or JSON
+    file is refused. It is wrong *after* a write that has already happened.
+    Once an edit to an already-broken file is allowed through, raising here
+    would report a failure for a change that is on disk - the tool lying about
+    what it did, which is the failure this codebase has spent the most time
+    removing.
+
+    So the same problem is reported, in the same words, as a note.
+    """
+    problem = _what_is_structurally_wrong(target, relative_path, content)
+    if not problem:
+        return ""
+    # `_what_is_structurally_wrong` reports through the refusal path, so its
+    # text opens "Refusing to write 'x': ...". Nothing was refused here - the
+    # change is on disk - and saying otherwise is the contradiction the model
+    # then has to resolve instead of fixing the file.
+    return (
+        f"The file still does not parse: {problem} It was already broken before "
+        "your change and your change was kept, so you are part-way through a "
+        "repair. Keep going until the parser is satisfied."
+    )
+
+
 def _edited(
     target: Path,
     root: Path,
@@ -1512,7 +1548,7 @@ def _edited(
     if landed:
         result["context"] = landed
     notes = [
-        _structural_note(relative_path, written),
+        _what_is_still_wrong_after_a_repair(target, relative_path, written),
         _discovery_note(relative_path, written, target),
         _import_note(root, target, written),
         # From the path, not from a caller's variable: this is the edit path,
@@ -1741,6 +1777,29 @@ def _refuse_if_node_cannot_parse(
     problem = _javascript_parse_error(target, relative_path, content)
     if problem:
         raise RepositoryToolError(_refusal_for(relative_path, problem, editing=editing))
+
+
+def _what_is_structurally_wrong(
+    target: Path, relative_path: str, content: str
+) -> str | None:
+    """The structural problem in this content, or None. Never raises.
+
+    The same two checks the write guard refuses on, asked as a question
+    instead of enforced as a rule, so a caller can tell "this edit broke the
+    file" from "this file was already broken".
+    """
+    try:
+        from app.analysis.syntax_balance import structural_problem
+
+        # The raw problem, not the refusal that wraps it. The wrapper ends
+        # "Nothing was written. Send the file again with that fixed.", which
+        # is true at a gate and false in a note about a change that landed.
+        problem = structural_problem(relative_path, content)
+        if problem:
+            return problem
+        return _javascript_parse_error(target, relative_path, content) or None
+    except Exception:  # noqa: BLE001 - a probe must never fail its caller
+        return None
 
 
 def _refusal_for(relative_path: str, problem: str, *, editing: bool = False) -> str:
@@ -2337,6 +2396,76 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
         return ""
 
 
+#: CommonJS at the start of a line: `require(...)`, `module.exports`,
+#: `exports.x =`. Anchored per line so the words inside a string or a comment
+#: about CommonJS do not match.
+_COMMONJS_SYNTAX = re.compile(
+    r"^\s*(?:(?:const|let|var)\s+[\w{},\s]+=\s*)?require\s*\("
+    r"|^\s*module\.exports\s*="
+    r"|^\s*exports\.\w+\s*=",
+    re.M,
+)
+
+
+def _the_module_type_here_rejects_this_file(target: Path, content: str) -> str:
+    """Why this file cannot run under the manifest beside it, or "".
+
+    The mirror of `_the_module_type_this_declares_breaks_files_here`, which
+    checks a manifest against the files around it. Nothing checked a file
+    against the manifest already there, so the same contradiction was caught
+    from one side and invisible from the other - the twelve-of-thirteen shape
+    this codebase keeps meeting.
+
+    Only the CommonJS-into-ESM direction needs saying. ESM into CommonJS is a
+    parse error and `node --check` already refuses it at the write; `require`
+    in an ES module is perfectly good syntax and fails only when it runs, so
+    no parser sees it and the cost lands on whoever runs the file.
+
+    Measured live on run-eb48de7a. `specialist_testing_5` wrote
+    `todo-app/test_core.js` opening `const assert = require('assert');` into a
+    project whose `package.json` says `"type": "module"`. The write was
+    accepted in silence. The next call ran it and got
+    `ReferenceError: require is not defined in ES module scope`; the stage
+    then tried to delete the file (refused - it is a test), to write a `.cjs`
+    twin (refused - a second copy of the module), read both files and the
+    manifest, and finally rewrote it as ESM. Fourteen model calls to learn
+    something both facts needed for were already on disk at the moment of the
+    write.
+
+    A note rather than a refusal: a file about to be renamed to `.cjs` is a
+    legitimate intermediate state, and the refusal for that path already
+    names `move_artifact`.
+    """
+    if target.suffix.lower() != ".js":
+        # `.cjs` and `.mjs` carry their own answer and the manifest does not
+        # apply to them.
+        return ""
+    if not _COMMONJS_SYNTAX.search(content or ""):
+        return ""
+    import json as _json
+
+    for directory in (target.parent, *target.parent.parents[:4]):
+        manifest = directory / "package.json"
+        try:
+            if not manifest.is_file():
+                continue
+            declared = _json.loads(manifest.read_text(encoding="utf-8")).get("type")
+        except (OSError, ValueError):
+            return ""
+        if declared != "module":
+            return ""
+        return (
+            f"This file uses CommonJS (`require` or `module.exports`), and "
+            f"`{manifest.parent.name}/package.json` declares `\"type\": \"module\"`, "
+            "so Node loads every `.js` here as an ES module. Running it fails with "
+            "`ReferenceError: require is not defined in ES module scope` - not at "
+            "import, which is why no parser catches it, but the moment it runs. "
+            "Use `import` and `export` here, or rename the file to `.cjs` with "
+            "`move_artifact` if it really must be CommonJS."
+        )
+    return ""
+
+
 def _the_module_type_this_declares_breaks_files_here(target: Path, content: str) -> str:
     """Why this manifest's `"type"` contradicts files beside it, or "".
 
@@ -2601,11 +2730,30 @@ def _write_unless_it_changes_nothing(
             # a file the parser rejects into one it accepts - which is the
             # evidence that the escaping, not the edit, was the mistake.
             rescued = _with_escaped_newlines_resolved(original, updated)
-            if rescued is None or rescued == original:
+            if rescued is not None and rescued != original:
+                _refuse_if_broken(relative_path, rescued, editing=True)
+                _refuse_if_node_cannot_parse(target, relative_path, rescued, editing=True)
+                target.write_text(rescued, encoding="utf-8")
+                return
+            # A file that was ALREADY broken cannot be repaired a piece at a
+            # time if every piece is refused for leaving it broken. The model
+            # is then trapped: the only move the guard allows is rewriting the
+            # whole file correctly in one call, and `write_artifact` refuses
+            # broken content too.
+            #
+            # Measured live on run-eb48de7a. `todo-app/main.js` had a
+            # duplicate `li` declaration, and `specialist_ui_ux_2` and `_3`
+            # were refused four consecutive edits - at lines 22, 59, 83 and
+            # 72. The moving line number is the evidence it was making
+            # progress; each step was rejected for not finishing the job.
+            #
+            # So the rule is the one a pre-merge gate uses: you may not make it
+            # worse. An edit to an already-broken file is allowed through and
+            # what remains wrong is reported as a note, which is what the
+            # model needs to take the next step.
+            if _what_is_structurally_wrong(target, relative_path, original) is None:
                 raise
-            _refuse_if_broken(relative_path, rescued, editing=True)
-            _refuse_if_node_cannot_parse(target, relative_path, rescued, editing=True)
-            target.write_text(rescued, encoding="utf-8")
+            target.write_text(updated, encoding="utf-8")
             return
         target.write_text(updated, encoding="utf-8")
         return
@@ -3492,6 +3640,7 @@ def write_approved_artifact(
         _nearly_a_workflow_document(relative_parts),
         _unrunnable_script_note(relative_path),
         _the_module_type_this_declares_breaks_files_here(target, content),
+        _the_module_type_here_rejects_this_file(target, content),
         _the_page_and_this_module_disagree_on_how_it_loads(root, target, content),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]

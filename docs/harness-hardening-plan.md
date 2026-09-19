@@ -3917,3 +3917,41 @@ Two things were verified rather than assumed:
 
 **It stays off until the experiment in §25 says otherwise.** The numbers
 that would justify it do not exist, and building it is not evidence for it.
+
+### 4av. Two measurements taken while the run worked
+
+**The richer digest costs almost nothing.** §24.5 left the file cap as the
+one open decision, and B15 has flagged `MAX_FILES = 40` as a number nobody
+measured. Rendered over all 90 stored workspaces with the project memory in
+place:
+
+| | chars | lines |
+| --- | --- | --- |
+| median | 1,307 | 27 |
+| largest | 3,749 | 64 |
+
+The document budget on the running configuration is 63,000 characters, so
+the largest digest any stored workspace produces is **6% of it**. The cap is
+not binding on size and adding two lines per file did not make it so. B15 is
+answered: the number to watch is not 40 files, it is the point at which a
+digest crowds the brief, and nothing is near it.
+
+**A log that could not name the fault.** Watching run-ed05e20e at 07:38:50:
+
+```
+Stage specialist_testing sent an answer that does not satisfy its
+schema (unknown); returning the validation errors
+```
+
+The stage had answered with **no JSON object at all** - prose where the
+schema was expected - which is a different fault with a different fix. And
+"(unknown)" was an empty field list, because `_LAST_FAILING_FIELDS` is
+module-level and the prose branch never sets it; a busier run would have
+printed the previous stage's fields instead.
+
+On the model this run is using, each of those calls costs three and a half
+minutes, so a log that cannot say what to change is expensive twice over.
+Fixed: the diagnosis is cleared at the top of every call, each branch records
+what kind of failure it found, and the two kinds now log different sentences.
+A third test asserts that one stage's diagnosis cannot describe the next -
+the same class of bug as §4at, state outliving the call that set it.

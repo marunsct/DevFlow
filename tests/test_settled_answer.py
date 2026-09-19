@@ -1280,3 +1280,62 @@ def test_a_stage_that_has_an_answer_is_told_the_gentler_truth() -> None:
 
     assert "already written an answer" in warning
     assert "started again from an empty conversation" not in warning
+
+
+# --- the log has to name the fault, not the nearest fault ------------------
+
+
+def test_a_prose_answer_is_not_reported_as_a_schema_failure():
+    """Measured live on run-ed05e20e at 07:38:50.
+
+        Stage specialist_testing sent an answer that does not satisfy its
+        schema (unknown); returning the validation errors
+
+    The stage had answered with no JSON object at all, which is a different
+    fault with a different fix, and "(unknown)" was an empty field list left
+    over from whatever diagnosed last. Each such call cost three and a half
+    minutes on the model that was running, so a log that cannot say what to
+    change is expensive.
+    """
+    from langchain_core.messages import AIMessage
+
+    from app.agents import settled_answer
+
+    why = settled_answer._why_it_was_not_accepted(
+        AIMessage(content="## Changed files\n\n- app.js\n", id="m"), Verdict
+    )
+
+    assert why
+    assert settled_answer._LAST_FAILURE_KIND == "no-json"
+    assert settled_answer._LAST_FAILING_FIELDS == []
+
+
+def test_a_schema_failure_still_names_its_fields():
+    from langchain_core.messages import AIMessage
+
+    from app.agents import settled_answer
+
+    why = settled_answer._why_it_was_not_accepted(
+        AIMessage(content='{"verdict": {"nested": true}}', id="m"), Verdict
+    )
+
+    assert why
+    assert settled_answer._LAST_FAILURE_KIND == "schema"
+    assert settled_answer._LAST_FAILING_FIELDS
+
+
+def test_one_stages_diagnosis_does_not_describe_the_next():
+    """A module-level diagnosis that survives its own call is a false report."""
+    from langchain_core.messages import AIMessage
+
+    from app.agents import settled_answer
+
+    settled_answer._why_it_was_not_accepted(
+        AIMessage(content='{"verdict": {"nested": true}}', id="m"), Verdict
+    )
+    assert settled_answer._LAST_FAILING_FIELDS
+
+    settled_answer._why_it_was_not_accepted(AIMessage(content=ANSWER, id="m"), Verdict)
+
+    assert settled_answer._LAST_FAILING_FIELDS == []
+    assert settled_answer._LAST_FAILURE_KIND == ""

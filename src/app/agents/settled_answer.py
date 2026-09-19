@@ -398,6 +398,17 @@ MAX_REPORTED_ERRORS = 6
 #: what else was wrong. Diagnosing what you cannot see is finding 47 again.
 _LAST_FAILING_FIELDS: list[str] = []
 
+#: What kind of answer problem the last diagnosis found: "schema" when
+#: pydantic rejected the fields, "no-json" when the message held no object at
+#: all, "" when nothing was wrong.
+#:
+#: Without this the log said "sent an answer that does not satisfy its schema
+#: (unknown)" for a stage that had answered in prose - a different fault, the
+#: same words, and a field list left over from whatever diagnosed last.
+#: Measured live on run-ed05e20e at 07:38, where each such call cost three and
+#: a half minutes on a 35B model and the log could not say what to change.
+_LAST_FAILURE_KIND: str = ""
+
 
 def _it_is_not_json_at_all(text: str) -> str:
     """What to say when a message holds no JSON object the schema can read.
@@ -448,6 +459,12 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     ends, which helps only when the answer is CORRECT. A near miss is discarded
     and the stage spins to the recursion limit with nothing to correct.
     """
+    global _LAST_FAILURE_KIND
+
+    # Cleared first, in every path. A module-level diagnosis that survives its
+    # own call reports an earlier stage's fields against this one's failure.
+    _LAST_FAILING_FIELDS.clear()
+    _LAST_FAILURE_KIND = ""
     if schema is None:
         return ""
     text = str(getattr(message, "content", "") or "")
@@ -457,6 +474,7 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
         # `specialist_testing_1`, which wrote `## changed_files` to
         # `docs/structured_response.md` twenty times and was refused each time
         # by a message that never says what shape a right answer has.
+        _LAST_FAILURE_KIND = "no-json"
         return _it_is_not_json_at_all(text)
     from app.agents.model_output import strip_reasoning
     from app.graph.workflow import _first_json_object
@@ -466,6 +484,7 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     # the raw text is then the example rather than the answer.
     candidate = _first_json_object(strip_reasoning(text))
     if not candidate:
+        _LAST_FAILURE_KIND = "no-json"
         return _it_is_not_json_at_all(text)
     try:
         payload = json.loads(candidate)
@@ -479,6 +498,7 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
         schema.model_validate(unwrapped(payload, schema))
     except Exception as exc:  # noqa: BLE001 - any validation failure is the point
         _LAST_FAILING_FIELDS[:] = failing_fields(exc)
+        _LAST_FAILURE_KIND = "schema"
         return _render_errors(exc)
     return ""
 
@@ -669,12 +689,20 @@ def build_settled_answer_middleware(
                 if last_ai is None:
                     return handler(request)
                 correction = _why_it_was_not_accepted(last_ai, schema)
-                if correction:
+                if correction and _LAST_FAILURE_KIND == "no-json":
+                    logger.info(
+                        "Stage %s answered with no JSON object at all - prose or "
+                        "Markdown where the schema was expected; telling it what "
+                        "shape an answer has",
+                        stage_name or "?",
+                    )
+                elif correction:
                     logger.info(
                         "Stage %s sent an answer that does not satisfy its schema "
                         "(%s); returning the validation errors",
                         stage_name or "?",
-                        ", ".join(_LAST_FAILING_FIELDS[:MAX_REPORTED_ERRORS]) or "unknown",
+                        ", ".join(_LAST_FAILING_FIELDS[:MAX_REPORTED_ERRORS])
+                        or "no field named",
                     )
                 else:
                     # Logged apart from the schema case, and never using

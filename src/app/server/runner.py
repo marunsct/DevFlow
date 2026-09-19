@@ -317,7 +317,7 @@ suite, and fixing what broke tripped it after 26 rounds of real progress, and
 the run then reported itself as looping when it was not.
 """
 
-MAX_LOOPS_ANSWERED_BY_DENIAL = 2
+MAX_LOOPS_ANSWERED_BY_DENIAL = 4
 """How many times a looping stage is answered before the run is ended.
 
 Ending the whole run was the first and only response, and it is the harshest
@@ -332,7 +332,28 @@ request tells the agent, in the one channel it is certainly reading, that this
 write will not happen and why; the stage then either moves on or ends on its
 own guards, and the workflow's existing handling for a stage that finishes
 without an answer takes over. Only a stage that goes on looping after being
-told twice ends the run, which is what the original check was for.
+told ends the run, which is what the original check was for.
+
+Raised from 2 to 4 on 2026-09-19, from the first measurement of what this
+denial is worth. It reached a model in 18 of the 50 stored runs, and:
+
+    the stage stopped within 3 calls        9 of 18   (50%)
+    the run went on for 50+ more calls     12 of 18
+    calls the run spent afterwards         median 90, max 541
+
+So it rescues about half the time, and when it does not end the stage it
+still almost always leaves the run alive to finish. Against that, 14 of the
+60 most recent failures are runs ended by this guard after the allowance ran
+out - the single largest cause after a worker restart.
+
+Each denial resets the repeat counter, so another `MAX_IDENTICAL_GATES + 1`
+identical gates must accumulate before the next one. Two more allowances is
+therefore at most ten extra gates in the worst case, against a 50% chance
+each of saving a run that has already completed sprints, test rounds and
+reviews. `MAX_GATES_PER_STAGE` and the task timeout still bound the whole.
+
+This is a measured constant now rather than a chosen one, and the numbers
+above are what to re-derive it against.
 """
 
 

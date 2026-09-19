@@ -2948,3 +2948,80 @@ verify against previous run data before acting. Two hypotheses earlier in
 this session were refuted the same way, and the reason to record efficacy
 now is that the next person to improve a notice should know which ones are
 already finished.
+
+### 4af. Where the harness actually spends itself
+
+Across 49 transcripts, 10,948 model calls, median 205 per run.
+
+| share | calls | stage |
+|---|---|---|
+| 19.2% | 2,107 | specialist_testing |
+| 18.2% | 1,988 | test_round |
+| 16.8% | 1,843 | specialist_ui_ux |
+| 12.0% | 1,316 | specialist_backend |
+| 13.6% | 1,495 | defect_fix (1, 2, 3) |
+| 5.1% | 563 | technical_lead |
+| 3.5% | 380 | milestone_review |
+| 1.6% | 178 | principal_architect |
+
+**Half of everything - 51% - goes to testing and fixing defects.** Planning
+and review together are under 11%. Any improvement inside the test-and-fix
+loop has roughly five times the leverage of one in the stages that decide
+what to build, which is worth knowing before choosing what to work on.
+
+Inside that loop, 3,885 tool calls:
+
+| tool | calls | failure rate |
+|---|---|---|
+| read_file | 1,412 | 1% |
+| edit_artifact | 853 | **39%** |
+| write_artifact | 592 | 25% |
+| run_validation | 551 | 0% |
+| delete_artifact | 40 | 55% |
+
+The most-run command is `npm test`, 381 times, 267 of them repeats inside one
+stage. Most of those are legitimate - edit, test, edit, test is what debugging
+looks like - so they were separated:
+
+| test commands re-run inside one stage | |
+|---|---|
+| after a successful write (legitimate) | 575 |
+| with nothing changed in between | **203** |
+| of those, byte-identical output | 2 |
+
+Two of 203. Test output carries timings, so **no content digest can catch
+these** - the write-gate is the only thing that can, and it was broken. See
+the commit: a test runner writes its report into the directory the gate
+walks, so the command's own output cleared the gate that suppresses the note,
+and the ledger note fired once in fifty runs.
+
+### 4ag. The escalation ladder, end to end, measured
+
+Putting §4ae together with the run-level guard gives the whole ladder with a
+number against every rung, for the first time:
+
+| rung | where | fired | worked |
+|---|---|---|---|
+| note: read/query repeat | tool result | 486 | 92% |
+| note: failed the same way | tool result | 112 | 69% |
+| note: write unchanged | tool result | 127 | 64% |
+| refuse the call | tool result | 28 | **38%** |
+| deny at the gate | approval | 18 | **50%** |
+| end the run | runner | 14 failures | terminal |
+
+Two things fall out of it.
+
+**The ladder is not monotonic.** Refusing a call works less well than the
+note above it and less well than the denial below it. A rung that is weaker
+than both its neighbours is not an escalation.
+
+**The last rung before the cliff is the one worth buying more of.** The gate
+denial rescues half the stages it reaches and costs a handful of calls, while
+the cliff - ending the run - destroyed 14 runs in the last 60 failures, each
+of which had already completed sprints, test rounds and reviews. Its
+allowance was 2 and is now 4.
+
+What is still missing is a rung between "refuse the call" and "deny at the
+gate" that ends the *stage* rather than the run. `settled_answer` does this
+for a stage that has an answer and is circling; the gap is a stage circling
+without one.

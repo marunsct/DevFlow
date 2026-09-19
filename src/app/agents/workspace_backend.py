@@ -180,6 +180,29 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: that a loop does not take.
 READS_BEFORE_WITHHOLDING = 5
 
+#: Repeated reads across ALL files in a stage before the notice stops being
+#: about the file and starts being about the stage.
+#:
+#: Both rungs above are per file, and a stage that cycles three files reaches
+#: neither quickly. Measured live on run-cac07d52: `specialist_ui_ux_0`,
+#: restarted on a fresh conversation, made 55 reads of which 50 were files the
+#: previous attempt had already read, cycling `index.html`, `app.js` and
+#: `styles.css` about a dozen times. Both per-file rungs fired - 24 notes and
+#: 19 withholdings across the run - and it kept going until the model-call
+#: budget stopped it.
+#:
+#: Deliberately NOT a harsher rung. Measured across all 50 transcripts, every
+#: notice that takes something away does worse than the note above it:
+#:
+#:     note, read repeat   91%    withhold the content  58%
+#:     note, write unchanged 64%  refuse the call       38%
+#:
+#: The order is inverse to harshness, and the working explanation is that a
+#: note leaves the model able to act while the harsher rungs do not. So this
+#: rung adds information rather than removing more: it names the exit, which
+#: is the one thing none of the others say.
+REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
+
 
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
@@ -413,6 +436,8 @@ class _NoticingRepeats:
         count = counts.get(digest, 0)
         counts[digest] = count + 1
         seen[where] = (identity, counts)
+        if count >= REPEATS_BEFORE_SAYING_SO:
+            self._repeated_reads = getattr(self, "_repeated_reads", 0) + 1
         if count >= READS_BEFORE_WITHHOLDING:
             self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
             return (
@@ -421,7 +446,7 @@ class _NoticingRepeats:
                 "repeated here, because you already have it - scroll back to "
                 "any of those results. If you need a part of it you have not "
                 "seen, ask for a different line range. Otherwise use what you "
-                "have and move on.]"
+                "have and move on.]" + self._the_way_out()
             )
         if count >= REPEATS_BEFORE_SAYING_SO:
             return (
@@ -429,8 +454,32 @@ class _NoticingRepeats:
                 "previous times in this stage, and it has not changed since. "
                 "Asking for a different range of it will not help - this is "
                 "the whole file. Use what you have and move on.]"
+                + self._the_way_out()
             )
         return ""
+
+    def _the_way_out(self) -> str:
+        """Name the exit once a stage is circling over its whole file set.
+
+        Both rungs above are about one file, and say what not to do. A stage
+        cycling three files hits neither quickly, and neither ever says what
+        it should do instead. This does, and only once the reading has stopped
+        being research - see `REPEATED_READS_BEFORE_NAMING_THE_EXIT` for the
+        run this was measured on and why it adds information rather than
+        taking more away.
+        """
+        if getattr(self, "_repeated_reads", 0) < REPEATED_READS_BEFORE_NAMING_THE_EXIT:
+            return ""
+        return (
+            "\n\n[You have now re-read files this stage had already been given "
+            f"{self._repeated_reads} times, and written nothing between them. "
+            "Reading again cannot tell you anything new: nothing has changed "
+            "these files since you last saw them. There are two ways out and "
+            "both end this stage. If you have what you need, return your "
+            "structured response now. If something is stopping you, return it "
+            "in `blockers` and say what you would need - a blocker is a "
+            "complete answer and the workflow acts on it.]"
+        )
 
 
 def _path_of(entry: Any) -> str:

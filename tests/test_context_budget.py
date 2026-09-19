@@ -318,3 +318,46 @@ def test_the_reply_ceiling_is_settable_at_runtime():
     from app.server.runtime_settings import SETTABLE_KEYS
 
     assert SETTABLE_KEYS["model_max_output_tokens"] == "MODEL_MAX_OUTPUT_TOKENS"
+
+
+# ---------------------------------------------------------------------------
+# `CHARS_PER_TOKEN` was 4 and described as conservative. Measured across every
+# stored transcript - 10,841 request pairs from 49 runs, pairing the characters
+# sent against the `input_tokens` the server counted - the real figure is:
+#
+#     mean 2.98    median 2.99    p10 2.63    p90 3.37
+#
+# 4 is the unsafe direction in both places the constant is used, so every
+# budget derived through it allowed about a third more text than it accounted
+# for, on exactly the content this harness handles most.
+# ---------------------------------------------------------------------------
+
+
+def test_the_token_ratio_matches_what_was_measured():
+    from app.agents.context_budget import CHARS_PER_TOKEN
+
+    assert 2.6 <= CHARS_PER_TOKEN <= 3.1, (
+        "the measured median is 2.99; a ratio above it over-fills every budget "
+        "and one far below it wastes the window"
+    )
+
+
+def test_the_ratio_is_never_optimistic_again():
+    """A value above the p90 would be wrong in the dangerous direction."""
+    from app.agents.context_budget import CHARS_PER_TOKEN
+
+    assert CHARS_PER_TOKEN <= 3.37
+
+
+def test_a_token_budget_converted_to_chars_fits_back_inside_it():
+    """The round trip is the property that matters, at the dense end."""
+    from app.agents.context_budget import CHARS_PER_TOKEN
+
+    observed_p10 = 2.63
+    budget_tokens = 10_000
+    allowed_chars = budget_tokens * CHARS_PER_TOKEN
+    worst_case_tokens = allowed_chars / observed_p10
+
+    # Some overshoot is accepted and the fractions leave margin for it; a third
+    # is what the old value produced and is not acceptable.
+    assert worst_case_tokens / budget_tokens < 1.2

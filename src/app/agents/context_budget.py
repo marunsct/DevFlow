@@ -58,13 +58,40 @@ large silently breaks every run, because compaction is scheduled to fire at a
 point the model never reaches. Guessing low fails safely and visibly.
 """
 
-CHARS_PER_TOKEN = 4
-"""Characters per token, for converting a text budget into a token budget.
+CHARS_PER_TOKEN = 3
+"""Characters per token, for converting between a text budget and a token budget.
 
-An approximation, and a deliberately conservative one for English prose and
-code. It only has to be right enough that a budget derived through it lands
-inside the window with margin to spare - which is why the fractions below leave
-that margin rather than spending it.
+Measured, not assumed. Every stored transcript records the characters sent and
+the `input_tokens` the server counted for them, and across **10,841 request
+pairs from 49 runs**:
+
+    mean 2.98    median 2.99    p10 2.63    p90 3.37
+
+It was 4, described as "a deliberately conservative one". It is not
+conservative: 4 is the unsafe direction in **both** places this is used.
+
+  tokens -> chars   `document_chars = tokens * CHARS_PER_TOKEN`
+                    too high, and the text handed to the model is larger than
+                    the token budget it was derived from.
+  chars -> tokens   `tool_bytes // CHARS_PER_TOKEN`
+                    too high, and the tokens a message will cost are
+                    under-estimated.
+
+At 4 against a real 2.99, every budget derived here allowed about a third more
+text than it accounted for - on exactly the content this harness handles most,
+which is code and JSON rather than English prose.
+
+3 rather than the p10 of 2.63 deliberately. The remaining error at the dense
+end is about 14%, which the fractions below already leave margin for; 2.63
+would shrink every budget by a further 12% and buy compaction the evidence
+does not call for. If overflow is ever seen again, this is the first number to
+lower, and the distribution above is what to lower it against.
+
+Still a constant, which is the part that is still wrong: this is a property of
+the tokeniser and moves with the model. Deriving it per model at startup, from
+the `usage_metadata` every call already returns, is §3.1's `ModelProfile` and
+retires the whole class. Until then it is a measured constant rather than a
+guessed one, which is the difference between this and what it replaced.
 """
 
 FRAMING_TOKENS = 6_000

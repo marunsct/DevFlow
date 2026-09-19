@@ -1921,6 +1921,30 @@ def failed_this_way_before(
     )
 
 
+#: Directories a test runner or build writes as a side effect of running.
+#:
+#: Deliberately NOT added to `IGNORED_DIRECTORIES`, which hides a directory
+#: from every listing and read. Playwright's `test-results/` holds
+#: `error-context.md`, which says why a browser test failed and which an agent
+#: read to good effect on run-cac07d52. Hiding it would remove the best
+#: diagnostic the suite produces.
+#:
+#: They are excluded from one thing only: the "has anything changed since"
+#: gate that decides whether to tell an agent it has re-run a command
+#: unchanged. A test runner writes its report every single time it runs, so
+#: the command's own output cleared the gate that suppresses the note, and the
+#: note could never fire for a suite that produces a report.
+#:
+#: Measured across all 50 transcripts: 203 test commands were re-run inside a
+#: stage with no successful write in between, and the ledger note fired once.
+#: `test-results/` is present in four of the six most recent workspaces.
+_RUNNER_OUTPUT_DIRECTORIES = frozenset({
+    "test-results", "playwright-report", "blob-report",
+    "coverage", ".nyc_output", "htmlcov",
+    ".turbo", ".parcel-cache", ".vite", ".cache",
+})
+
+
 def _written_since(
     repo_root: str,
     when: str | None,
@@ -1955,7 +1979,10 @@ def _written_since(
         moment = datetime.fromisoformat(when).timestamp()
         for directory, subdirectories, files in os.walk(base):
             subdirectories[:] = [
-                name for name in subdirectories if name not in IGNORED_DIRECTORIES
+                name
+                for name in subdirectories
+                if name not in IGNORED_DIRECTORIES
+                and name not in _RUNNER_OUTPUT_DIRECTORIES
             ]
             for name in files:
                 try:

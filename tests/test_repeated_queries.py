@@ -202,6 +202,59 @@ def test_a_different_edit_failure_starts_the_count_again() -> None:
     assert "failed the same way" not in changed
 
 
+def test_edit_failures_that_vary_the_find_still_count_together() -> None:
+    """The loop this codebase keeps missing.
+
+    `edit_artifact` answers `Could not find that text in '<path>'` and the
+    stage responds by guessing a different passage, so `find` changes on every
+    retry. Keying the guard on the arguments saw ten retries as ten first
+    attempts. The refusal is the event; the passage it sent is not.
+
+    Measured on run-519a9d8a: `test_round_1` sent a different failing `find`
+    for `todo-app/test_app.test.js` ten times, and `specialist_testing_2` seven
+    times for `tests/playwright.test.ts`.
+    """
+    middleware = build_repeated_query_middleware()
+    not_found = (
+        '{"error": "Could not find that text in \'app.mjs\'. '
+        'It must match exactly, including whitespace and punctuation."}'
+    )
+
+    first = _failing_edit(
+        middleware, {"relative_path": "app.mjs", "find": "const a = 1;"}, not_found
+    )
+    second = _failing_edit(
+        middleware, {"relative_path": "app.mjs", "find": "const b = 2;"}, not_found
+    )
+    third = _failing_edit(
+        middleware, {"relative_path": "app.mjs", "find": "const c = 3;"}, not_found
+    )
+
+    assert "failed the same way" not in first
+    assert "failed the same way" not in second
+    assert "failed the same way" in third
+
+
+def test_edit_failures_are_scoped_to_their_file() -> None:
+    """The path is part of the shape, so a failure on one file is not charged
+    to another."""
+    middleware = build_repeated_query_middleware()
+    not_found = (
+        '{"error": "Could not find that text in \'app.mjs\'. It must match exactly."}'
+    )
+    other = (
+        '{"error": "Could not find that text in \'other.mjs\'. It must match exactly."}'
+    )
+
+    _failing_edit(middleware, {"relative_path": "app.mjs", "find": "a"}, not_found)
+    _failing_edit(middleware, {"relative_path": "app.mjs", "find": "b"}, not_found)
+    elsewhere = _failing_edit(
+        middleware, {"relative_path": "other.mjs", "find": "c"}, other
+    )
+
+    assert "failed the same way" not in elsewhere
+
+
 def test_both_error_shapes_are_recognised() -> None:
     """Filesystem tools return `Error: ...`; repository tools return JSON."""
     from app.agents.repeated_queries import _looks_like_a_failure

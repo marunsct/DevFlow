@@ -131,8 +131,61 @@ def test_prose_that_merely_mentions_json_is_not_an_answer() -> None:
     assert _after(state) is None
 
 
-def test_a_turn_with_no_pending_call_ends_on_its_own() -> None:
-    assert _after({"messages": [_ai(ANSWER)]}) is None
+def test_a_turn_with_no_pending_call_and_no_answer_ends_on_its_own() -> None:
+    """Prose with no answer in it is the model thinking out loud or asking a
+    question. Nothing here has anything to say about it.
+    """
+    assert _after({"messages": [_ai("I will check the tests next")]}) is None
+
+
+def test_an_answer_returned_as_a_message_with_no_tool_call_ends_the_stage() -> None:
+    """run-519a9d8a's `specialist_testing_1` emitted its complete, valid
+    response as a message and stopped calling tools - twenty times in a row.
+
+    The answer was already there. This middleware returned None at a guard that
+    assumed a turn with no pending call needs no decision, so nothing ended the
+    stage and the model was asked again for something it had already given.
+    """
+    update = _after({"messages": [_ai(ANSWER)]})
+
+    assert update is not None
+    assert update["jump_to"] == "end"
+    settled = update["messages"][0]
+    assert not settled.tool_calls
+    assert settled.content == ANSWER
+
+
+def test_a_wrapped_answer_returned_as_a_message_ends_the_stage() -> None:
+    """The same turn, with the answer under a `SpecialistOutput` key - the
+    shape run-519a9d8a actually emitted. `unwrapped` handles the key once the
+    message reaches `_answer_in`.
+    """
+    wrapped = '{"SpecialistOutput": {"status": "changes_required", "reason": "t"}}'
+    update = _after({"messages": [_ai(wrapped)]})
+
+    assert update is not None
+    assert update["jump_to"] == "end"
+
+
+def test_an_answer_in_a_markdown_fence_ends_the_stage() -> None:
+    """The model that wrote its answer as prose with a fenced ```json block
+    instead of bare JSON. `_first_json_object` already extracts the fence; the
+    answer is valid, so the stage is done.
+    """
+    fenced = "Here is my verdict:\n\n```json\n" + ANSWER + "\n```\n"
+    update = _after({"messages": [_ai(fenced)]})
+
+    assert update is not None
+    assert update["jump_to"] == "end"
+
+
+def test_prose_with_no_valid_answer_and_no_tool_call_is_left_alone() -> None:
+    """A schema failure is not an answer. The model is sent the validation
+    errors by `wrap_model_call` and given another turn, as before.
+    """
+    update = _after({"messages": [_ai('{"status": "changes_required"}')]})
+
+    assert update is None
 
 
 def test_a_stage_with_no_schema_has_nothing_to_be_finished_with() -> None:
@@ -533,10 +586,52 @@ def test_a_valid_answer_gets_no_correction() -> None:
 
 
 def test_prose_with_no_json_gets_no_correction() -> None:
-    """A model narrating its work has not attempted an answer."""
+    """A model narrating its work has not attempted an answer, and being told
+    its prose is not JSON would interrupt a stage that is still working.
+    """
     from app.agents.settled_answer import _why_it_was_not_accepted
 
     assert _why_it_was_not_accepted(AIMessage(content="Let me look.", id="m"), Verdict) == ""
+
+
+def test_a_markdown_answer_is_corrected_on_its_shape() -> None:
+    """run-519a9d8a's `specialist_testing_1` wrote its answer as Markdown to
+    `docs/structured_response.md` twenty times. The write is refused for a
+    reason that never mentions the answer's shape, so the model had nothing to
+    correct and wrote the document again.
+    """
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    markdown = (
+        "---\n## Structured Response\n\n"
+        "## changed_files - `todo-app/app.js`\n"
+    )
+    why = _why_it_was_not_accepted(AIMessage(content=markdown, id="m"), Verdict)
+
+    assert "Markdown document" in why
+    assert "RETURNED" in why
+    assert "JSON object" in why
+    # The content was fine; only its shape was wrong.
+    assert "the work is done, only its shape is wrong" in why
+
+
+def test_a_fenced_code_block_is_corrected_too() -> None:
+    """The same answer wrapped in a ```json fence is still not returned, and
+    the correction must say so rather than leaving the model to guess.
+    """
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    fenced = "Here it is:\n\n```\nstatus = changes_required\n```\n"
+    why = _why_it_was_not_accepted(AIMessage(content=fenced, id="m"), Verdict)
+
+    assert why != ""
+    assert "JSON object" in why
+
+
+def test_an_empty_message_gets_no_correction() -> None:
+    from app.agents.settled_answer import _why_it_was_not_accepted
+
+    assert _why_it_was_not_accepted(AIMessage(content="", id="m"), Verdict) == ""
 
 
 def test_the_correction_reaches_the_request_without_touching_history() -> None:
@@ -991,6 +1086,86 @@ def test_a_stage_with_no_schema_is_unaffected() -> None:
     state = {"messages": [_ai("", [write])]}
 
     assert build_settled_answer_middleware(None, "s").after_model(state, None) is None
+
+
+# --- a truncated object is an unfinished answer, not a wrong one ----------
+
+
+def test_a_missing_bracket_is_repaired_into_the_answer() -> None:
+    """run-91a18470 wrote this object fifty-nine times and was refused each time.
+
+    The `defects` array is missing its closing `]`, so the object fails one
+    character from the end. Everything the schema requires is present; only the
+    punctuation is unfinished.
+    """
+    from app.agents.specialists import SpecialistOutput
+
+    truncated = (
+        '{"changed_files": ["app.js"], "decisions": ["d"], "tests": ["t"], '
+        '"verification": [], "documentation": [], "risks": [], "blockers": [], '
+        '"defects": [{"description": "d", "severity": "medium", "owner": "test", '
+        '"reproduction_steps": "r", "expected_behavior": "e", '
+        '"actual_behavior": "a", "affected_files": ["app.js"]} }'
+    )
+    write = _call("write_artifact", {"relative_path": "docs/s.json", "content": truncated})
+
+    update = build_settled_answer_middleware(SpecialistOutput, "s").after_model(
+        {"messages": [_ai("", [write])]}, None
+    )
+
+    assert update is not None and update["jump_to"] == "end"
+
+
+def test_repair_closes_in_the_right_order() -> None:
+    """An array and an object open need `]}` not `]}` counted blindly."""
+    from app.agents.settled_answer import _repair_json
+
+    # `[` then `{` open; the object's `}` is present, the array's `]` is not.
+    assert _repair_json('{"a": [1, 2}') == '{"a": [1, 2]}'
+
+
+def test_repair_drops_a_closer_that_matches_nothing() -> None:
+    """The truncation usually loses a closer in the middle, not at the end.
+
+    The array's `]` goes missing while the object's `}` is still emitted, so the
+    text ends in a `}` that closes nothing. Keeping it would leave the repair a
+    level too deep forever.
+    """
+    from app.agents.settled_answer import _repair_json
+
+    assert _repair_json('{"a": [1, 2]}') is None, "already balanced"
+    # The stray `}` is dropped and the array is closed; the space it sat next to
+    # is kept, because rewriting the text around it is how bytes get moved.
+    assert _repair_json('{"a": [1} ') == '{"a": [1 ]}'
+
+
+def test_repair_ignores_brackets_inside_strings() -> None:
+    """A `]` in a value must not close an array that is still open."""
+    from app.agents.settled_answer import _repair_json
+
+    assert _repair_json('{"a": "the ] char", "b": [1') == '{"a": "the ] char", "b": [1]}'
+
+
+def test_repair_closes_an_unterminated_string() -> None:
+    from app.agents.settled_answer import _repair_json
+
+    assert _repair_json('{"a": "oops') == '{"a": "oops"}'
+
+
+def test_repair_gives_up_on_prose() -> None:
+    from app.agents.settled_answer import _repair_json
+
+    assert _repair_json("I have finished.") is None
+
+
+def test_repair_cannot_invent_an_answer() -> None:
+    """Schema validation is the real test; a repair that breaks it is discarded."""
+    from app.agents.settled_answer import _answer_in
+
+    # Balanced and valid JSON, but not this schema's answer.
+    assert _answer_in(_ai('{"unrelated": 1}'), Verdict) is None
+    # Truncated past usefulness: no field survives.
+    assert _answer_in(_ai('{"stat'), Verdict) is None
 
 
 # --- the budget, which used to threaten something that did not happen -----

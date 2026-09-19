@@ -48,16 +48,45 @@ def permitting(tmp_path):
     "command",
     [
         ["npm", "install", "jsdom"],
-        ["npm", "install", "--save-dev", "jsdom"],
         ["npm", "install", "jest"],
-        ["npm", "install", "--save-dev", "jest-environment-jsdom"],
-        ["npm", "install", "--save-dev", "text-encoding"],
         ["yarn", "add", "jsdom"],
         ["pnpm", "add", "jsdom"],
     ],
 )
 def test_every_recorded_install_of_a_named_package_is_refused(forbidding, command):
+    """A production install - one that writes to `dependencies` and ships to
+    the user - is still refused, in the brief's own words.
+    """
     assert _refuse_an_install_the_brief_rules_out(command, str(forbidding))
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["npm", "install", "--save-dev", "jsdom"],
+        ["npm", "install", "--save-dev", "jest-environment-jsdom"],
+        ["npm", "install", "--save-dev", "text-encoding"],
+        ["npm", "i", "-D", "@playwright/test"],
+    ],
+)
+def test_a_test_scoped_install_is_not_the_product_the_brief_describes(
+    forbidding, command
+):
+    """The recorded installs that carried a test-scope flag.
+
+    These were refused, and the refusal is what made run-519a9d8a worse: the
+    model needed `@playwright/test` for the only suite that can exercise a real
+    DOM, the brief's constraint governs the shipped product, and being refused
+    it installed the package *without* the flag - leaving it in `node_modules`
+    and absent from `package.json`, which the milestone reviewer then filed as
+    a blocking defect from the other direction.
+
+    A test-scoped install breaks no constraint the brief states, so it is
+    allowed through; whether the package is genuinely test-only is decided
+    downstream by `what_the_brief_forbids_that_is_there`, which can see the
+    imports this refusal cannot.
+    """
+    assert _refuse_an_install_the_brief_rules_out(command, str(forbidding)) == ""
 
 
 @pytest.mark.parametrize(
@@ -112,6 +141,11 @@ def test_the_refusal_says_what_to_do_instead(forbidding):
     # And the escape hatch, so a genuinely impossible brief is reported rather
     # than worked around.
     assert "blocker in your report" in refusal
+    # And the other one: a test suite is not the product, so the install the
+    # rule asks for is not refused. Without this sentence the refusal and the
+    # rule contradict each other in the model's context.
+    assert "npm i -D" in refusal
+    assert "not shipped" in refusal
 
 
 def test_the_constraint_is_also_read_from_the_stack_document(tmp_path):

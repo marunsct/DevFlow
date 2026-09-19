@@ -72,7 +72,31 @@ and wiring is the part a test does not need to load.
 """
 
 TESTABILITY_RULE = """Testability - this decides whether the tests can run at all:
-- FOR FRONTEND WEB UI CODE ONLY: YOU MUST USE Playwright (`@playwright/test`) to verify DOM interactions and application logic end-to-end. Do NOT use jsdom or Node-based DOM mocks, as they cause false positives and break the real UI. To test DOM logic, write Playwright tests that interact with the real browser. Install it using `npm i -D @playwright/test` and `npx playwright install chromium`. Configure Playwright to use the TAP reporter (e.g. `npx playwright test --reporter=tap`).
+- The thing that breaks a headless test is a module that reads or writes the DOM
+  while it is being loaded. It reaches for `document`, `window` or `localStorage`
+  at module scope, so the import itself runs that code and throws before any of
+  your assertions are reached - and the only fix left to the test is to skip the
+  import and copy the code, which tests nothing.
+- FOR FRONTEND WEB UI CODE ONLY: YOU MUST USE Playwright (`@playwright/test`) to verify DOM interactions and application logic end-to-end. Do NOT use jsdom or Node-based DOM mocks, as they cause false positives and break the real UI. To test DOM logic, write Playwright tests that interact with the real browser. Install it using `npm i -D @playwright/test` and `npx playwright install chromium`. Run it with `npx playwright test`, and use a BUILT-IN reporter - `--reporter=line` or `--reporter=list`. Do NOT pass `--reporter=tap`: Playwright resolves that name to an npm package called `tap`, which is not installed, and the whole suite dies with "Cannot find module 'tap'" before a single test runs.
+- A PLAYWRIGHT TEST CANNOT OPEN THE PAGE WITH `file://`. Chromium blocks an ES
+  module script loaded from a `file://` URL on CORS grounds - "Cross origin
+  requests are only supported for protocol schemes: ... http, https" - so the
+  page loads, the script never runs, and the test times out waiting for a
+  global the module never set. The page is not broken and neither is the test;
+  the URL scheme is. Measured on run-519a9d8a, whose suite waited for
+  `window.addTask` over `file://` and failed on every run of it.  Load the page over `http://localhost:<port>` instead, and let Playwright
+  manage the server itself - declare a `webServer` in `playwright.config.ts`
+  and it starts the server, runs the suite, and stops it again, all inside the
+  one `npx playwright test` command that terminates on its own:
+      webServer: {
+        command: 'npx serve .',       // or `node server.mjs`
+        url: 'http://localhost:3000',
+        reuseExistingServer: false,
+      }
+  Do NOT run a static server as a command of its own - it never exits, it is
+  refused, and nothing connects to it. A page that must also work when opened
+  directly from the filesystem is a separate requirement; it is not tested by
+  a `file://` Playwright test that cannot load it.
 - FOR ALL OTHER LANGUAGES/STACKS (Python, Go, Java, CLI apps, backend, etc): Use the testing framework appropriate to the language (e.g., PyTest, Go test, JUnit). Ensure tests are runnable and output results clearly.
 - NEVER remove or disable core application logic (including UI logic) to satisfy a test framework's limitations (e.g., headless test errors). If a test environment cannot support a feature, fix the test environment or mock appropriately, rather than deleting the code under test.
 - ALWAYS compare the output files against requirements and logs. Ensure that no previously working features were silently dropped.

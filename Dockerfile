@@ -53,6 +53,15 @@ FROM python:3.12-slim AS runtime
 # `playwright install --with-deps` is not used because it needs root and a
 # package manager at install time; the names below are the same set it would
 # pull, pinned to the image instead.
+#
+# The six marked `[host validation]` are the ones Playwright's own host check
+# still reported missing on run-519a9d8a after the set above was installed:
+# `npx playwright install` printed "Host system is missing dependencies to run
+# browsers" and named exactly these, so Chromium downloaded and never ran. The
+# model cannot fix this from inside a run - there is no tool that installs an
+# OS package, and `TESTABILITY_RULE` tells it to "fix the test environment"
+# rather than delete the code under test, which is an instruction the
+# environment has to be able to satisfy.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         git \
@@ -80,6 +89,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxkbcommon0 \
         libxrandr2 \
         libxshmfence1 \
+        libxcursor1 \
+        libgtk-3-0t64 \
+        libgdk-pixbuf-2.0-0 \
+        libpangocairo-1.0-0 \
+        libcairo-gobject2 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin appuser
 

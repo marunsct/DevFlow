@@ -20,6 +20,8 @@ on that ground.
 
 from __future__ import annotations
 
+import json
+
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 
 
@@ -109,3 +111,91 @@ def test_the_rule_is_not_duplicated_in_the_testability_rule():
     from app.agents.testability import TESTABILITY_RULE
 
     assert "Testing is exempt" not in TESTABILITY_RULE
+
+
+def test_the_sandbox_does_not_refuse_a_test_scoped_install(tmp_path):
+    """The rule tells an agent to `npm i -D @playwright/test`; the sandbox must
+    not refuse the install it asks for.
+
+    Measured on run-519a9d8a: the refusal blocked the only suite that can
+    exercise a real DOM, the model installed the package *without* the flag to
+    get past it, and the milestone reviewer then filed the undeclared package
+    as a blocking defect from the other direction. Refusing the test-scoped
+    install made the product worse and the review wrong.
+    """
+    from app.tools.sandbox import _refuse_an_install_the_brief_rules_out
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text(
+        "# Constraints\n- No external dependencies beyond basic HTML/CSS/JS\n"
+    )
+
+    refused = _refuse_an_install_the_brief_rules_out(
+        ["npm", "i", "-D", "@playwright/test"], str(tmp_path)
+    )
+    assert refused == ""
+
+
+def test_the_sandbox_still_refuses_a_production_install(tmp_path):
+    """The product's dependencies are still the brief's business. A bare
+    `npm install <pkg>` writes to `dependencies` and ships to the user.
+    """
+    from app.tools.sandbox import _refuse_an_install_the_brief_rules_out
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text(
+        "# Constraints\n- No external dependencies beyond basic HTML/CSS/JS\n"
+    )
+
+    refused = _refuse_an_install_the_brief_rules_out(
+        ["npm", "install", "express"], str(tmp_path)
+    )
+    assert refused.startswith("Refusing to install express")
+    assert "npm i -D" in refused
+
+
+def test_a_test_scoped_install_is_allowed_and_a_misfiled_one_is_caught_downstream(
+    tmp_path,
+):
+    """`-D` is not a loophole for a package the product itself imports.
+
+    The sandbox cannot see imports, so it allows the test-scoped install - the
+    same install the rule asks for - and the manifest check downstream reports
+    the package as a product dependency filed in the wrong place. Two layers,
+    each doing the part it has the evidence for.
+    """
+    from app.agents.brief_constraints import what_the_brief_forbids_that_is_there
+    from app.tools.sandbox import _refuse_an_install_the_brief_rules_out
+
+    forbids = (
+        "# Brief\n\n## Technical Constraints\n"
+        "- No external dependencies beyond basic HTML/CSS/JS\n"
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text(
+        "# Constraints\n- No external dependencies beyond basic HTML/CSS/JS\n"
+    )
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(
+        json.dumps({"devDependencies": {"express": "^4"}})
+    )
+    (project / "index.js").write_text("const express = require('express');\n")
+
+    assert (
+        _refuse_an_install_the_brief_rules_out(
+            ["npm", "install", "--save-dev", "express"], str(tmp_path)
+        )
+        == ""
+    )
+    found = what_the_brief_forbids_that_is_there(forbids, tmp_path)
+    assert found and "`express`" in found[0]
+
+
+def test_an_install_with_no_constraint_is_silent(tmp_path):
+    """A brief that allows dependencies has nothing to refuse."""
+    from app.tools.sandbox import _refuse_an_install_the_brief_rules_out
+
+    assert _refuse_an_install_the_brief_rules_out(
+        ["npm", "install", "express"], str(tmp_path)
+    ) == ""

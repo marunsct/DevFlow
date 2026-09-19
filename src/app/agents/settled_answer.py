@@ -62,6 +62,115 @@ def _call_signature(call: Any) -> str:
     return f"{name}({rendered})"
 
 
+def _repair_json(text: str) -> str | None:
+    """Close the brackets and quotes a model left open, or None if hopeless.
+
+    Measured on run-91a18470: `specialist_testing` wrote its complete answer to
+    `docs/structured_response.json` fifty-nine times, and every copy was
+    truncated one character short - `defects` missing its closing `]`, so the
+    object is 3068 bytes long and fails at character 3067. The answer was
+    there, complete in everything but punctuation, and nothing in this module
+    could accept it. So the stage could neither return the answer nor write it,
+    and circled until the run's repeat guard killed it.
+
+    A model that emits near-valid JSON is common, and a harness that accepts
+    only perfect JSON will spend a stage's whole budget on a one-character
+    omission. This is the narrowest repair that recovers it: append the closers
+    implied by what is still open, then let schema validation decide.
+    Validation is the real test - a repair that produces something the schema
+    rejects is discarded, so this can never turn a wrong answer into an accepted
+    one. It can only promote an answer that was already right apart from its
+    punctuation.
+    """
+    if "{" not in text:
+        return None
+    # Walk the candidate tracking every container we opened, so the closers can
+    # be emitted in the reverse of the order they were opened. Appending them as
+    # a plain count gets the nesting wrong whenever an array and an object are
+    # open at once: `{"a": [1} ` would become `{"a": [1} ]}` when it needs
+    # `{"a": [1]}`.
+    #
+    # A closer that matches nothing open is dropped rather than counted. A
+    # truncated object usually loses a closer somewhere in the middle, not at
+    # the end - the array's `]` goes missing while the object's `}` is still
+    # emitted, so the text ends in a `}` that closes nothing. Keeping it would
+    # leave the repair one level too deep forever.
+    stack: list[str] = []
+    out: list[str] = []
+    in_string = False
+    escaped = False
+    for ch in text:
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\":
+            escaped = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            out.append(ch)
+            continue
+        out.append(ch)
+        if in_string:
+            continue
+        if ch == "{":
+            stack.append("}")
+        elif ch == "[":
+            stack.append("]")
+        elif ch in ("}", "]"):
+            if stack and stack[-1] == ch:
+                stack.pop()
+            else:
+                # A closer with nothing to close: the truncation lost its
+                # opener, and this character is what makes the text unparseable.
+                out[-1] = ""
+    if not stack and not in_string:
+        return None
+    # An unterminated string needs its quote before any closer can count.
+    if in_string:
+        out.append('"')
+    out.extend(reversed(stack))
+    return "".join(out)
+
+
+#: Set on the message a budget hard stop leaves behind. The graph's own
+#: recovery (`_nudge_for_the_structured_response`) re-invokes the inner thread
+#: to ask for the answer again, and on a thread this middleware already had to
+#: stop that is a guaranteed extra model call for an answer the model has
+#: shown it cannot produce. See `was_stopped_by_the_budget`.
+BUDGET_STOP_MARKER = "settled_answer_budget_stop"
+
+
+def was_stopped_by_the_budget(result: Any) -> bool:
+    """Did `settled_answer` end this thread because it ran out of model calls?
+
+    The hard stop itself works: the inner graph ends. What costs the extra
+    calls is the recovery that runs afterwards. `_nudge_for_the_structured_
+    response` re-invokes the same inner thread, which re-enters at `__start__`
+    and runs another `before_agent -> model -> after_model` cycle, so the model
+    makes one more call per gate. Measured on run-91a18470's `test_round_3`:
+    eighteen `__start__` writes and thirty-four `jump_to=end` writes on one
+    inner thread, the model-call count climbing every gate until the run's
+    repeat guard killed it.
+
+    A thread that reached its budget has already been told it is out of room -
+    the warning fires from 70% of the budget onward - and kept going. Asking it
+    again cannot produce a different answer, so the caller should go straight to
+    the fresh-conversation retry instead of nudging.
+    """
+    if not isinstance(result, dict):
+        return False
+    for message in reversed(result.get("messages") or []):
+        kwargs = getattr(message, "additional_kwargs", None)
+        if isinstance(kwargs, dict) and kwargs.get(BUDGET_STOP_MARKER):
+            return True
+        # Only the trailing AI messages matter; anything older than the last
+        # answer attempt is not evidence about how this invoke ended.
+        if getattr(message, "type", None) == "ai":
+            break
+    return False
+
+
 def _answer_in(message: Any, schema: Any) -> Any | None:
     """The message content read as an instance of the stage's response schema.
 
@@ -85,7 +194,15 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
     try:
         payload = json.loads(candidate)
     except ValueError:
-        return None
+        # A truncated object is not a wrong answer, it is an unfinished one.
+        # Try to close it before giving up; the schema still has to accept it.
+        repaired = _repair_json(candidate)
+        if not repaired:
+            return None
+        try:
+            payload = json.loads(repaired)
+        except ValueError:
+            return None
     if not isinstance(payload, dict):
         return None
     from app.agents.wrapped_answer import unwrapped
@@ -282,6 +399,39 @@ MAX_REPORTED_ERRORS = 6
 _LAST_FAILING_FIELDS: list[str] = []
 
 
+def _it_is_not_json_at_all(text: str) -> str:
+    """What to say when a message holds no JSON object the schema can read.
+
+    A model that answers in prose or Markdown gets no correction from the
+    refusal it triggers, because the tool it called to write that prose refuses
+    for a different reason - "a structured response is returned, not written to
+    a file". So it writes the document again. Measured on run-519a9d8a's
+    `specialist_testing_1`: twenty auto-approvals, each a write of the same
+    Markdown to the same path.
+
+    The correction names the one thing that is actually wrong - the answer's
+    shape, not its content.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return ""
+    looks_like_markdown = any(
+        stripped.startswith(mark) for mark in ("#", "-", "*", "|", ">")
+    ) or "```" in stripped
+    if not looks_like_markdown:
+        return ""
+    return (
+        "Your last message was a Markdown document, not the structured response "
+        "this stage needs. Nothing has been recorded, and writing it to a file "
+        "does not record it either - the response is RETURNED, as a JSON object, "
+        "and the workflow reads it from your message.\n\n"
+        "Send the same content as a single JSON object that satisfies this "
+        "stage's response schema. Do not write it to a file, do not wrap it in "
+        "a code block for a person to read, and do not call any more tools - "
+        "the work is done, only its shape is wrong."
+    )
+
+
 def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     """Why the JSON in this message is not a valid answer, or "" if it is.
 
@@ -302,16 +452,21 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
         return ""
     text = str(getattr(message, "content", "") or "")
     if "{" not in text:
-        return ""
+        # Prose with no object in it at all. The model may have written its
+        # answer as a Markdown document instead - measured on run-519a9d8a's
+        # `specialist_testing_1`, which wrote `## changed_files` to
+        # `docs/structured_response.md` twenty times and was refused each time
+        # by a message that never says what shape a right answer has.
+        return _it_is_not_json_at_all(text)
     from app.agents.model_output import strip_reasoning
     from app.graph.workflow import _first_json_object
 
     # Reasoning first: a model that thinks about the schema before emitting it
-    # leaves an example object inside `<think>`, and the first JSON object in
+    # leaves an example object inside ``, and the first JSON object in
     # the raw text is then the example rather than the answer.
     candidate = _first_json_object(strip_reasoning(text))
     if not candidate:
-        return ""
+        return _it_is_not_json_at_all(text)
     try:
         payload = json.loads(candidate)
     except ValueError:
@@ -573,9 +728,6 @@ def build_settled_answer_middleware(
             if getattr(last, "type", None) != "ai":
                 return None
             pending = list(getattr(last, "tool_calls", None) or [])
-            if not pending:
-                # A turn with no pending call ends on its own.
-                return None
             # The answer need not be in the LAST message. run-d6369866's
             # `scrum_master` wrote a valid sprint plan at 15:23:30 and then
             # spent eleven minutes writing prose about creating files it has
@@ -638,6 +790,7 @@ def build_settled_answer_middleware(
                         AIMessage(
                             content=getattr(last, "content", "") or "",
                             id=getattr(last, "id", None),
+                            additional_kwargs={BUDGET_STOP_MARKER: True},
                         )
                     ],
                     "jump_to": "end",
@@ -662,6 +815,39 @@ def build_settled_answer_middleware(
                     ],
                     "jump_to": "end",
                 }
+
+            # The model answered in prose in THIS turn, with no tool call at
+            # all. Measured on run-519a9d8a's `specialist_testing_1`: the model
+            # emitted `{"SpecialistOutput": {...}}` as an `agent_message` and
+            # stopped calling tools, twenty times in a row. The answer was
+            # complete and valid once unwrapped, but this middleware returned
+            # None at the `if not pending` guard above, so nothing ended the
+            # stage and the model was asked again for something it had already
+            # given.
+            #
+            # Repetition is not required here, because there is nothing pending
+            # to repeat: a turn that makes no tool call cannot be circling. The
+            # answer is validated against the schema, which is the real test.
+            if not pending:
+                in_this_turn = _answer_in(last, schema)
+                if in_this_turn is not None:
+                    logger.info(
+                        "Stage %s returned its structured response as a message "
+                        "with no tool call; taking it as the answer",
+                        stage_name or "?",
+                    )
+                    return {
+                        "messages": [
+                            AIMessage(
+                                content=getattr(last, "content", "") or "",
+                                id=getattr(last, "id", None),
+                            )
+                        ],
+                        "jump_to": "end",
+                    }
+                # No answer and nothing pending: the model is thinking out loud
+                # or asking a question. Leave it alone, as before.
+                return None
 
             answer = _most_recent_answer(messages, schema)
             if answer is None:
@@ -688,8 +874,10 @@ def build_settled_answer_middleware(
 __all__ = [
     "ANSWER_LOOKBACK_MESSAGES",
     "BUDGET_WARNING_FRACTION",
+    "BUDGET_STOP_MARKER",
     "MODEL_CALLS_PER_STAGE",
     "MAX_REPORTED_ERRORS",
     "MUTATING_TOOLS",
     "build_settled_answer_middleware",
+    "was_stopped_by_the_budget",
 ]

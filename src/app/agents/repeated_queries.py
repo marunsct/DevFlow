@@ -114,6 +114,15 @@ def _looks_like_a_failure(content: str) -> bool:
 #: about the same file reads the same however the message names it.
 _WHY_REFUSED = re.compile(r"""(?:Refusing to \w+|Cannot \w+)[^:]*:\s*([^.]{0,60})""")
 
+#: The repository edit tool's failure, which has no colon in it. Its text is
+#: `Could not find that text in '<path>'` followed by the reason, so the whole
+#: opening - path included - is the stable shape. A stage that keeps guessing
+#: at the passage varies `find` on every retry, and keying the repeat guard on
+#: the arguments let all ten of those retries count as ten first attempts.
+#: Measured on run-519a9d8a: `specialist_testing_2` sent a different failing
+#: `find` for the same file seven times, and `test_round_1` ten times.
+_EDIT_NOT_FOUND = re.compile(r"(Could not find that text in '[^']*')")
+
 
 def _the_same_refusal(content: str) -> str:
     """A stable shape for a refusal, or "" when this is not one.
@@ -133,7 +142,11 @@ def _the_same_refusal(content: str) -> str:
     """
     if not _looks_like_a_failure(content):
         return ""
-    found = _WHY_REFUSED.search(content[:400])
+    head = content[:400]
+    found = _EDIT_NOT_FOUND.search(head)
+    if found:
+        return found.group(1)
+    found = _WHY_REFUSED.search(head)
     return found.group(1).strip() if found else ""
 
 

@@ -237,6 +237,29 @@ The architecture reviewer rejected a *specification* six times for lacking "clas
 `repository.py` `_LOOKS_LIKE_A_TEST` and `integration_checks.py` `_NOT_APPLICATION` are separate regexes. Finding 92 was a third definition. The codebase's own comment names this pattern: "the two halves never spoke."
 **Fix:** one `classify_file(path) -> {application, test, config, document, stray}` in a shared module; every consumer imports it.
 
+### B20 — Three parts of the harness disagree about whether a browser exists  *(verified 2026-09-19)*
+
+Playwright became mandatory for UI code on 17 September, and the Dockerfile now installs Chromium's system libraries for it. Two older mechanisms were never told.
+
+| where | what it says | checked |
+|---|---|---|
+| `testability.py:80` | "FOR FRONTEND WEB UI CODE ONLY: YOU MUST USE Playwright (`@playwright/test`)" | read |
+| `stack_selector.py` `EXECUTION_ENVIRONMENT` | "There is NO browser and no display. Nothing can open a page, click a button, or read DevTools." | read, and it is in the live prompt |
+| `tools_models._must_be_runnable` | rejects `"headless browser testing with Playwright"` | constructed the model and caught the `ValidationError` |
+| `ROLE_EXECUTABLES` | `playwright` is on no role's allowlist, for any role | enumerated all seven |
+
+So the stack selector is told a browser cannot exist, and will not choose one; if it chooses one anyway and phrases it the natural way, the validator throws the whole answer away; bare `"Playwright"` is accepted only because it trips none of the forbidden words, not because anything recognised it as a runner; and the specialist is then ordered to use Playwright regardless.
+
+**This is B18, still open and no longer low.** B18's fix derives the set of acceptable runners from `ROLE_EXECUTABLES` minus `COMMON_EXECUTABLES`, so a runner that is on no allowlist cannot be recognised however it is spelled. `npx playwright test` works only because `npx` can run anything, which is the accident that has hidden four earlier allowlist gaps.
+
+**Fix, in the order that makes each step safe:**
+1. Add `playwright` to `TOOLCHAINS["javascript"]` and `["typescript"]`, so the derived runner set contains it and B18's check starts working as written.
+2. Rewrite `describe_execution_environment` to derive the browser sentence from the allowlist rather than assert it. "There is no browser" was true when written and is now false in a prompt the deciding stage reads.
+3. Keep "no *manual* browser testing" — still true, and it is what the paragraph was actually for. No human watches the workspace. What changed is that an automated browser now exists.
+4. One test asserting the three places agree: if Playwright is runnable, no prompt may say a browser is impossible, and the validator must accept a testing framework that names it.
+
+This is root-cause class A wearing a new hat. Three prompts and one validator each hold a copy of the same fact, and a capability was added to one of them.
+
 ### B19 — The stack pin is one language; the stack is two  *(verified)*
 `TechnologyStack` carries `language` **and** `frontend_framework`, and the stack selector's prompt requires both filled for a product with a separate frontend. Only one reaches the sandbox: `workflow.py:1921` reads `stack.language` and calls `pin_project_stack(root, language)`, which writes a single key to `.project-stack`; `allowed_executables` then does `TOOLCHAINS.get(key)` — one lookup, one toolchain. `frontend_framework` is read in exactly two places, `specialists.describe_stack` (prose shown to the model) and `integration_checks.py:753`, and reaches no allowlist, no timeout and no analyser.
 
@@ -932,7 +955,17 @@ What LSP uniquely adds over layers L0–L3 is cross-file type checking. That is 
 
 ### 8.7 Crawl4AI — **replace** *(assessed, with a verified alternative)*
 
-Crawl4AI renders pages with Playwright. Playwright's browser binaries take a packaged install past 600 MB. The worker image is deliberately `python:3.12-slim` with no build toolchain, running as a non-root user with a read-only root filesystem in the sandbox path. Putting a browser in it to read documentation is a large change for a small job.
+Crawl4AI renders pages with Playwright.
+
+**Updated 2026-09-19: the size objection no longer holds.** The Dockerfile now installs Chromium's system libraries, because `TESTABILITY_RULE` makes Playwright mandatory for UI code. A browser is already in the image, so "it would add 600 MB" is no longer a reason to refuse.
+
+The verdict does not change, for the reasons that were always the stronger ones:
+
+- **Documentation sites are server-rendered.** Rendering buys nothing for the content this layer fetches.
+- **`llms.txt` and the DevDocs mirror are free and version-pinned.** Neither needs a browser, and both beat a scrape on accuracy.
+- **A browser in the request path is a second failure mode** on the one layer that already has a network dependency and a daily rate limit.
+
+Keep the ordering in the rest of this section. Reconsider only for a documentation site that genuinely renders client-side, and then note that the browser is already available.
 
 Three cheaper routes, in the order the broker should try them:
 
@@ -1869,7 +1902,7 @@ Two consequences for the design. Rust and Go emit good diagnostics from a comman
 
 **`tsc` implementation note.** Passing file paths on the command line makes `tsc` ignore `tsconfig.json` and fail with `error TS5112: tsconfig.json is present but will not be loaded if files are specified on commandline`. Run it in project mode with `-p`, and scope the results afterwards.
 
-### 20.3 Do not use the runtime's own syntax flag for JavaScript *(verified)*
+### 20.3 The JavaScript syntax gate *(superseded 2026-09-19 — this section's advice was overtaken by `javascript_parse.py`)*
 
 `node --check` looks like the obvious per-file syntax gate. It is not usable as one. Measured on identical bytes:
 
@@ -1883,7 +1916,26 @@ tree-sitter           has_error = True, MISSING '}' at row 0, column 40
 
 The verdict depends on the file extension, not on the content, because the extension decides whether node parses the file as a module. A gate that reports success for a broken file is the worst shape a result can have, and this codebase has already paid for that shape twice: a shell operator that made a command a silent no-op with exit 0, and an edit that returned "edited" without editing. The harness also already carries `_checks_a_file_node_cannot_parse` for a milder version of the same flaw.
 
-**Tree-sitter caught it on both extensions and named the missing brace.** L0 is the JavaScript syntax gate. `node --check` is not used.
+**Tree-sitter caught it on both extensions and named the missing brace.**
+
+**What happened since.** `app/analysis/javascript_parse.py` landed on 17 September and solves this properly, which the conclusion above did not anticipate. It does not call `node --check` naively: it writes the content to a temporary sibling of the real file so `package.json`'s `type` resolves exactly as it will for the real one, and falls back to an explicit module goal when the extension is ambiguous. Re-tested on 19 September against the same bytes that defeated the naive call:
+
+| case | `javascript_parse.parse_error` |
+|---|---|
+| broken, `t.js` | caught, names line 2 and the unclosed `{` from line 1 |
+| broken, `t.mjs` | caught |
+| broken, `t.cjs` | caught |
+| broken, `t.js` with `{"type":"module"}` | caught |
+| valid `.js` | `None` |
+
+That is strictly better than tree-sitter for JavaScript, and for the reason this plan uses elsewhere to rank L2 above L3: it is the parser that will actually load the file, so its verdict is proof rather than a grammar's approximation. It also composes the bracket-balance evidence into the message, which is the "where to look, not where the parser gave up" property §10.4 asks for.
+
+**The corrected position.** `node --check` is unusable *called naively*, and that finding stands — it silently passes a broken `.js`. It is the right tool *called the way `javascript_parse` calls it*. So:
+
+- **JavaScript, TypeScript-as-JS, `.cjs`, `.mjs`:** use `javascript_parse.parse_error`. Do not replace it with tree-sitter.
+- **Python:** `ast.parse`, as today. Also proof.
+- **Everything else** — Go, Rust, Java, C#, Ruby, PHP, Kotlin, Swift, Dart and the rest: tree-sitter, per §10. This is where L0 still earns its place, and it is untouched by the above.
+- **The pattern to copy:** `javascript_parse` is the template for any language whose runtime ships a parse-only flag. Prefer the real parser; fall back to tree-sitter. §10.5's `REFUSE_ON_PARSE_ERROR` set should therefore *shrink* as real parsers are added, not grow.
 
 ### 20.4 The diagnostics gate
 
@@ -2492,3 +2544,44 @@ Before implementing §2, re-verify each item the way these were: one grep for
 the thing the entry claims is broken. An entry marked *(verified)* was
 verified when written, not today. The cheapest order is to strike the done
 ones first, so the remaining list is real.
+
+### 4v. The full sweep, 2026-09-19
+
+Every entry in §2 re-checked by running the code rather than reading it, 236
+commits after §2 was written. Method: import the module and assert the thing
+the entry claims is broken.
+
+| item | state on 2026-09-19 | evidence |
+|---|---|---|
+| B1 cross-file checks are JS-only | **open** | `_COUNTED_SUFFIXES` still present |
+| B2 role allowlist is a fixed table | **open** | the static table is still primary; `TOOLCHAINS` now covers 13 languages and supplements it |
+| B3 timeouts are a four-entry table | **open** | `TIMEOUTS` is still exactly `install/build/test/default` |
+| B4 server detection is a word list | **open** | `_SERVER_COMMANDS`, 7 names |
+| B5 scaffolding knows five layouts | **partly moved** | now referenced from `agents/tools_models.py`; the §4u note that nothing calls it is out of date |
+| B6 budget read from prose by regex | **done** | `agents/brief_constraints.py` |
+| B7 `CHARS_PER_TOKEN = 4` | **open** | still the literal 4 |
+| B8 every endpoint treated as llama.cpp | **open** | `speaks_llama_cpp = bool(...)` unchanged |
+| B9 reasoning delimiters unsanitised | **partial** | `model_output.strip_reasoning` exists; no single sanitiser across all three write paths |
+| B10 no text-embedded tool-call fallback | **done** | `agents/text_tool_calls.py` |
+| B11 events miss middleware notes | **done** | the transcript records `tool_result` post-middleware |
+| B12 findings lack stage-appropriateness | **open** | no `check_reference` in `architecture_reviewer.py` |
+| B13 restart discards stage memory | **done** | `agents/stage_memory.py`, keyed on the inner thread id |
+| B14 gate ceilings are absolute counts | not re-checked | |
+| B15 digest truncates at 40 files | **open** | `MAX_FILES = 40` |
+| B16 ledger omits `working_directory` | **done** | part of the record and of the repeat identity |
+| B17 "what is a test file" defined twice | **done** | `repository` delegates to `file_kinds` |
+| B18 validators sniff strings | **open, and escalated** | see B20: `"headless browser testing with Playwright"` still raises |
+| B19 stack pin is one language | **open** | `pin_project_stack(repo_root, language)` unchanged |
+| B20 browser contradiction | **new, open** | three prompts and one validator disagree |
+
+Seven done, eleven open, one new. The done ones were closed by ordinary work
+rather than by anyone working this list, which is worth knowing: the list is a
+record of what was true, not a queue anyone is draining.
+
+**Two Part II sections were overtaken by this work and have been corrected in
+place:** §20.3, because `analysis/javascript_parse.py` now does the JavaScript
+syntax gate better than the tree-sitter plan proposed, and §8.7, because a
+browser is now in the image so the size argument against a scraper no longer
+applies. Both corrections are marked with the date and keep the original
+reasoning visible, because the reasoning was right and only the environment
+changed.

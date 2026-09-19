@@ -705,7 +705,18 @@ def _first_json_object(text: str) -> str | None:
             depth -= 1
             if depth == 0:
                 return text[start : index + 1]
-    return None
+    # Unbalanced: the object never closed. Returning None here made the answer
+    # unreachable for every consumer of this function, because each of them
+    # treats None as "no object present" rather than "object unfinished" - so
+    # a model that truncated one character short of valid JSON had written an
+    # answer nothing could read. Measured on run-91a18470, whose
+    # `specialist_testing` wrote the same 3068-byte object fifty-nine times and
+    # failed at character 3067 every time.
+    #
+    # Hand the remainder back instead. Callers that need valid JSON parse it
+    # and fail, which is what they did before; callers that can repair it -
+    # `settled_answer._answer_in` - now get the chance.
+    return text[start:] if depth > 0 else None
 
 
 def _answer_written_into_the_conversation(result: dict[str, Any], schema: Any) -> Any | None:
@@ -737,7 +748,18 @@ def _answer_written_into_the_conversation(result: dict[str, Any], schema: Any) -
         try:
             payload = json.loads(candidate)
         except ValueError:
-            continue
+            # `_first_json_object` hands back an unbalanced object rather than
+            # None now, because that is the shape of a truncated answer. Try to
+            # close it; the schema still has to accept the result.
+            from app.agents.settled_answer import _repair_json
+
+            repaired = _repair_json(candidate)
+            if not repaired:
+                continue
+            try:
+                payload = json.loads(repaired)
+            except ValueError:
+                continue
         if not isinstance(payload, dict):
             continue
         from app.agents.wrapped_answer import unwrapped
@@ -1306,15 +1328,39 @@ def _run_gated_agent(
     if structured_response is None:
         # Then ask the conversation for it. Once per node execution, so this
         # cannot loop.
-        nudged = _nudge_for_the_structured_response(
-            agent,
-            inner_thread_id,
-            activity,
-            result,
-            getattr(agent, "workflow_response_format", None),
-            config["configurable"].get(APP_RUN_ID_KEY),
-            stage_name,
-        )
+        #
+        # But not when `settled_answer` ended the thread at its model-call
+        # budget. That re-invokes the same inner thread, which re-enters at
+        # `__start__` and runs another model call before stopping again - so
+        # every gate costs a call and the count climbs until the run's repeat
+        # guard kills it. Measured on run-91a18470's `test_round_3`: eighteen
+        # re-entries and thirty-four hard stops on one inner thread. The model
+        # has already been told it is out of room and kept going; asking again
+        # cannot produce a different answer, so go straight to the retry.
+        from app.agents.settled_answer import was_stopped_by_the_budget
+
+        nudged = None
+        if not was_stopped_by_the_budget(result):
+            nudged = _nudge_for_the_structured_response(
+                agent,
+                inner_thread_id,
+                activity,
+                result,
+                getattr(agent, "workflow_response_format", None),
+                config["configurable"].get(APP_RUN_ID_KEY),
+                stage_name,
+            )
+        elif schema_of_stage := getattr(agent, "workflow_response_format", None):
+            # The nudge's second half is free: it reads the conversation the
+            # thread already holds. Do that here rather than lose it.
+            recovered = _answer_written_into_the_conversation(result, schema_of_stage)
+            if recovered is not None:
+                logger.info(
+                    "Stage %s was stopped at its model-call budget but had "
+                    "written its structured response; recovered it without a "
+                    "retry", stage_name,
+                )
+                structured_response = recovered
         if nudged is not None:
             if nudged.get("__interrupt__"):
                 approval = extract_pending_approval(
@@ -1980,18 +2026,28 @@ def build_workflow_graph(
                 "docs/tools_and_models.md",
                 render_artifact(update["tools_models"], title="Tools and Models"),
             )
-            # Pin the language so the sandbox can open its toolchain to every
-            # role that writes code. The allowlist cannot ask this stage
-            # directly - it is handed a role name and a workspace - so the
-            # decision is recorded in the workspace the way the project
-            # directory already is.
+            # Pin every language the stack names, so the sandbox can open the
+            # right toolchain to every role that writes code. The allowlist
+            # cannot ask this stage directly - it is handed a role name and a
+            # workspace - so the decision is recorded in the workspace the way
+            # the project directory already is.
+            #
+            # Every field, not just `language`. A full-stack product names a
+            # backend language and a frontend framework, and passing only the
+            # first pinned `go` for a Go/TypeScript product - leaving every
+            # role without `tsc`. `frontend_framework` was filled by the stack
+            # selector, shown to specialists in prose, and reached no
+            # allowlist, no timeout and no analyser.
             try:
                 from app.tools.sandbox import pin_project_stack
 
                 stack = getattr(update["tools_models"], "technology_stack", None)
-                language = getattr(stack, "language", None) if stack else None
-                if language:
-                    pin_project_stack(state["repository"].root_path, language)
+                named = [
+                    str(getattr(stack, field, "") or "")
+                    for field in ("language", "frontend_framework", "framework")
+                ] if stack else []
+                if any(named):
+                    pin_project_stack(state["repository"].root_path, *named)
             except Exception:  # noqa: BLE001 - a run must not fail over a pin
                 logger.warning("Could not pin the project stack", exc_info=True)
         return update

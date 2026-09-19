@@ -41,27 +41,167 @@ from typing import Any, Dict, Iterable, Sequence
 logger = logging.getLogger(__name__)
 
 
-_INSTALLS = frozenset({"install", "add", "i"})
-_NOT_A_PACKAGE = frozenset({"install", "add", "i", "npm", "yarn", "pnpm", "npx", "--"})
+#: How each package manager spells "add a named dependency", and how it spells
+#: "but only for development".
+#:
+#: Keyed by the executable, one entry per manager the stack selector can
+#: choose. Before this, the whole check read
+#:
+#:     if not any(m in words[0] for m in ("npm", "yarn", "pnpm")): return []
+#:
+#: so a brief reading "no external dependencies" was enforced for JavaScript
+#: and silently unenforced for every other language. Measured on 2026-09-19
+#: against the live guard: `pip install pytest`, `cargo add serde`,
+#: `go get github.com/gin-gonic/gin`, `dotnet add package Newtonsoft.Json`,
+#: `bundle add rspec` and `composer require phpunit/phpunit` were all allowed
+#: through a constraint that refused `npm install express`.
+#:
+#: That is root-cause class H wearing class B's clothes: a rule defined over
+#: one member of a set. The table is the rule; `TOOLCHAINS` is the set, and
+#: `test_every_toolchain_with_a_package_manager_has_install_grammar` asserts
+#: the two agree, so adding a language cannot silently reopen this.
+#:
+#: `subcommands` are the words that mean "add something not already declared".
+#: A bare `npm install` or `pip install -r requirements.txt` installs what the
+#: manifest already names and adds nothing, so neither is this.
+#:
+#: `dev_flags` decide whether a constraint on the shipped product applies at
+#: all: a test-scoped dependency ships to nobody. Kept narrow on purpose - a
+#: flag not listed here is treated as a production install, which is the safe
+#: direction to be wrong in.
+_INSTALL_GRAMMAR: dict[str, dict[str, frozenset[str]]] = {
+    # JavaScript. `i` is npm's alias for install; `-D`/`--save-dev` is the
+    # devDependencies scope `npm ci --omit=dev` never installs.
+    "npm":      {"subcommands": frozenset({"install", "add", "i"}),
+                 "dev_flags": frozenset({"-d", "--save-dev", "--dev", "--production=false", "--no-save"})},
+    "yarn":     {"subcommands": frozenset({"add"}),
+                 "dev_flags": frozenset({"-d", "--dev"})},
+    "pnpm":     {"subcommands": frozenset({"add", "install", "i"}),
+                 "dev_flags": frozenset({"-d", "--save-dev", "--dev"})},
+    "bun":      {"subcommands": frozenset({"add", "install", "i"}),
+                 "dev_flags": frozenset({"-d", "--dev", "--development"})},
+    # Python. `pip` has no dev scope at all - a dev dependency is a separate
+    # requirements file - so nothing here is exempt and that is correct.
+    "pip":      {"subcommands": frozenset({"install"}), "dev_flags": frozenset()},
+    "pip3":     {"subcommands": frozenset({"install"}), "dev_flags": frozenset()},
+    "uv":       {"subcommands": frozenset({"add"}),
+                 "dev_flags": frozenset({"--dev", "-d", "--group"})},
+    "poetry":   {"subcommands": frozenset({"add"}),
+                 "dev_flags": frozenset({"--dev", "-d", "--group"})},
+    # Rust, Go, .NET.
+    "cargo":    {"subcommands": frozenset({"add"}), "dev_flags": frozenset({"--dev"})},
+    "go":       {"subcommands": frozenset({"get"}), "dev_flags": frozenset()},
+    "dotnet":   {"subcommands": frozenset({"add"}), "dev_flags": frozenset()},
+    # Ruby, PHP.
+    "gem":      {"subcommands": frozenset({"install"}), "dev_flags": frozenset()},
+    "bundle":   {"subcommands": frozenset({"add"}),
+                 "dev_flags": frozenset({"--group", "--groups"})},
+    "composer": {"subcommands": frozenset({"require"}), "dev_flags": frozenset({"--dev"})},
+    # Dart and Flutter.
+    "dart":     {"subcommands": frozenset({"add"}), "dev_flags": frozenset({"--dev"})},
+    "flutter":  {"subcommands": frozenset({"add"}), "dev_flags": frozenset({"--dev"})},
+    # Elixir. `mix deps.get` resolves what mix.exs already declares; only
+    # `mix deps.add` names a new one, and not every version has it.
+    "mix":      {"subcommands": frozenset({"deps.add"}), "dev_flags": frozenset()},
+}
+
+#: Words that appear where a package name would and are not one. Per manager
+#: rather than global: `dotnet add package X` and `go get -u ./...` each carry
+#: their own noise, and a global list would have to hold every manager's.
+_NOT_A_PACKAGE_NAME: dict[str, frozenset[str]] = {
+    "dotnet": frozenset({"package", "reference"}),
+    "bundle": frozenset({"development", "test", "dev"}),
+    "go": frozenset({"./...", "all"}),
+    "uv": frozenset({"dev"}),
+    "poetry": frozenset({"dev"}),
+}
+
+#: Arguments meaning "install from a manifest", which adds nothing new. `-r`
+#: and `--requirement` for pip, `-f`/`--file` where a manager takes one.
+_FROM_A_MANIFEST = frozenset({"-r", "--requirement", "--requirements"})
+
+
+def _manager_of(command: Sequence[str]) -> str | None:
+    """The package manager this command drives, by argv[0], or None.
+
+    Matched on the basename exactly rather than by substring. The previous
+    substring test (`if "npm" in words[0]`) also matched any path containing
+    those three letters, which is the class of bug `validate_command` already
+    fixed for executables.
+    """
+    if not command:
+        return None
+    return os.path.basename(str(command[0])) or None
 
 
 def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
     """The package names an install command would add, or [].
 
-    A bare `npm install` installs what the manifest already declares and adds
-    nothing, so it is not this. Only a named package is.
+    A bare `npm install`, a `pip install -r requirements.txt` and a
+    `mix deps.get` all install what the manifest already declares and add
+    nothing, so none of them is this. Only a named package is.
+
+    Technology-agnostic by table: see `_INSTALL_GRAMMAR`.
     """
+    manager = _manager_of(command)
+    grammar = _INSTALL_GRAMMAR.get(manager or "")
+    if grammar is None:
+        return []
     words = [str(word) for word in command]
-    if not any(manager in words[0] for manager in ("npm", "yarn", "pnpm")):
+    # The subcommand is near the front; anything further in is an argument.
+    if not any(word in grammar["subcommands"] for word in words[1:4]):
         return []
-    if not any(word in _INSTALLS for word in words[:3]):
+    if any(word in _FROM_A_MANIFEST for word in words):
         return []
+    noise = _NOT_A_PACKAGE_NAME.get(manager or "", frozenset())
     named = [
         word
         for word in words[1:]
-        if not word.startswith("-") and word not in _NOT_A_PACKAGE
+        if not word.startswith("-")
+        and word not in grammar["subcommands"]
+        and word not in noise
+        and word != manager
     ]
     return named
+
+
+def _is_a_test_only_install(command: Sequence[str]) -> bool:
+    """Whether this install puts its packages somewhere the product does not ship.
+
+    `npm install -D @playwright/test` writes to `devDependencies`, which
+    `npm ci --omit=dev` never installs and the user never receives. A brief
+    forbidding dependencies constrains the product, not the machine that builds
+    it - see `app.agents.testing_dependency_rule` - so a test-scoped install
+    breaks no constraint the brief states.
+
+    A bare `npm install <pkg>` writes to `dependencies` and IS the product's,
+    so it is still refused as before.
+
+    Per manager, because the flag differs and a global list would exempt
+    `--dev` for a manager that has no dev scope. `pip` genuinely has none, so
+    no `pip install` is ever exempt - which is right, not an omission.
+
+    `--group`-style flags are only a dev scope when the group they name is a
+    development one; `poetry add --group runtime x` ships.
+    """
+    manager = _manager_of(command)
+    grammar = _INSTALL_GRAMMAR.get(manager or "")
+    if grammar is None:
+        return False
+    words = [str(word).lower() for word in command]
+    for index, word in enumerate(words):
+        if word not in grammar["dev_flags"]:
+            continue
+        if word in ("--group", "--groups"):
+            following = words[index + 1] if index + 1 < len(words) else ""
+            if following not in _DEVELOPMENT_GROUPS:
+                continue
+        return True
+    return False
+
+
+#: Group names that mean "not shipped", for the managers that scope by group.
+_DEVELOPMENT_GROUPS = frozenset({"dev", "development", "test", "testing"})
 
 
 def _the_brief_forbids_installing_anything(repo_root: str) -> str:
@@ -107,9 +247,25 @@ def _refuse_an_install_the_brief_rules_out(
     A refusal, not a note, on the escalation the codebase has settled twice:
     the instruction is already in the prompt, in the role's own words, and is
     being ignored.
+
+    Not every install is the product's. A test-scoped one - `npm i -D` - lands
+    in `devDependencies`, which ships to nobody, so the constraint on the
+    shipped product has nothing to say about it and it is allowed through.
+    Measured on run-519a9d8a: `specialist_ui_ux_0` needed `@playwright/test`
+    for the only suite that can exercise a real DOM, this refusal blocked it,
+    and the model installed the package *without* the flag to get past the
+    refusal - leaving it in `node_modules` and absent from `package.json`,
+    which the milestone reviewer then filed as a blocking defect from the other
+    direction. The constraint was never aimed at the test suite; refusing its
+    install made the product worse and the review wrong.
     """
     packages = _a_package_this_command_would_add(command)
     if not packages:
+        return ""
+    if _is_a_test_only_install(command):
+        # The rule is stated in the prompt and this is the install it asks for.
+        # Recording it as a risk or refusing it is the constraint applied to
+        # the wrong thing.
         return ""
     constraint = _the_brief_forbids_installing_anything(repo_root)
     if not constraint:
@@ -122,7 +278,10 @@ def _refuse_an_install_the_brief_rules_out(
         "`node:assert` need no install, and logic written as functions that "
         "take their inputs as arguments can be tested without a DOM at all. "
         "If the product genuinely cannot be built within the constraint, say "
-        "so as a blocker in your report rather than installing past it."
+        "so as a blocker in your report rather than installing past it. "
+        "A test suite is a different matter: `npm i -D <pkg>` puts it in "
+        "`devDependencies`, which is not shipped and breaks no constraint in "
+        "the brief."
     )
 
 
@@ -383,9 +542,18 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
     os.makedirs(home, exist_ok=True)
     environment["HOME"] = home
     environment["TMPDIR"] = home
-    # Playwright browsers are installed globally in the container image;
-    # point the child at them so `npx playwright test` finds Chromium.
+    # Playwright's browsers are large (Chromium alone is ~190MB) and are
+    # downloaded by `npx playwright install`, which runs as a child of this
+    # function and therefore writes to `home` above - the workspace, not a
+    # home directory that survives no longer than the command. Point the child
+    # back at that same cache on every later command, or a run that downloaded
+    # Chromium once downloads it again and still cannot run it.
+    #
+    # The image-level cache below is still checked first: a browser shipped in
+    # the image is shared by every run and costs a run nothing.
     _pw_cache = os.path.expanduser("~/.cache/ms-playwright")
+    if not os.path.isdir(_pw_cache):
+        _pw_cache = os.path.join(home, ".cache", "ms-playwright")
     if os.path.isdir(_pw_cache):
         environment["PLAYWRIGHT_BROWSERS_PATH"] = _pw_cache
     # Before `extra_env`, so a caller can still override a specific value.
@@ -701,26 +869,109 @@ def _toolchain_key(language: str) -> str | None:
     return _LANGUAGE_ALIASES.get(head)
 
 
-def pin_project_stack(repo_root: str | Path, language: str) -> None:
-    """Record the language this run is building in. Never raises."""
-    key = _toolchain_key(language)
-    if key is None:
-        logger.info("No toolchain known for language %r; roles keep their defaults", language)
+#: The language a framework is written in, for the fields that name a
+#: framework instead of a language.
+#:
+#: `TechnologyStack` carries `language` AND `frontend_framework`, and the stack
+#: selector's prompt requires both filled for a product with a separate
+#: frontend. Only `language` ever reached the sandbox, so a Go-backend /
+#: TypeScript-frontend product pinned `go` and every code-writing role got
+#: Go's toolchain and no `tsc`. It had not bitten yet only because
+#: `ROLE_EXECUTABLES["ui_ux_specialist"]` hard-codes the JavaScript set - the
+#: same accident that hid four earlier allowlist gaps, and it disappears the
+#: moment a frontend is not JavaScript.
+#:
+#: A full-stack product is the normal case, not the exception, so the pin
+#: holds a set.
+FRAMEWORK_LANGUAGES: dict[str, str] = {
+    # JavaScript and TypeScript frontends.
+    "react": "typescript", "next": "typescript", "next.js": "typescript",
+    "vue": "typescript", "nuxt": "typescript", "svelte": "typescript",
+    "sveltekit": "typescript", "angular": "typescript", "solid": "typescript",
+    "preact": "typescript", "astro": "typescript", "remix": "typescript",
+    "ember": "javascript", "jquery": "javascript", "htmx": "javascript",
+    "vanilla": "javascript", "vite": "typescript", "express": "javascript",
+    "nest": "typescript", "nestjs": "typescript", "fastify": "javascript",
+    "electron": "typescript",
+    # Backends whose framework name does not contain the language.
+    "django": "python", "flask": "python", "fastapi": "python",
+    "rails": "ruby", "sinatra": "ruby", "hanami": "ruby",
+    "laravel": "php", "symfony": "php", "slim": "php",
+    "spring": "java", "spring boot": "java", "quarkus": "java", "micronaut": "java",
+    "ktor": "kotlin",
+    "gin": "go", "echo": "go", "fiber": "go", "chi": "go",
+    "actix": "rust", "axum": "rust", "rocket": "rust",
+    "phoenix": "elixir",
+    "asp.net": "csharp", "aspnet": "csharp", "blazor": "csharp",
+    "flutter": "dart",
+    "swiftui": "swift", "vapor": "swift",
+}
+
+
+def _toolchain_keys(*names: str) -> set[str]:
+    """Every toolchain these language or framework names imply.
+
+    Takes both, because the stack records a language for the backend and a
+    framework for the frontend and a run needs the tools for both. A name that
+    maps to nothing is skipped rather than failing the pin.
+    """
+    keys: set[str] = set()
+    for name in names:
+        text = str(name or "").strip().lower()
+        if not text:
+            continue
+        key = _toolchain_key(text)
+        if key is None:
+            # Not a language. It may still be a framework whose language is
+            # known - "React" implies TypeScript tooling, "Rails" implies Ruby.
+            key = FRAMEWORK_LANGUAGES.get(text)
+            if key is None:
+                # "Spring Boot 3", "React 19" - take the leading words.
+                for candidate in (" ".join(text.split()[:2]), text.split()[0] if text.split() else ""):
+                    if candidate in FRAMEWORK_LANGUAGES:
+                        key = FRAMEWORK_LANGUAGES[candidate]
+                        break
+        if key:
+            keys.add(key)
+    return keys
+
+
+def pin_project_stack(repo_root: str | Path, *languages: str) -> None:
+    """Record every language this run builds in. Never raises.
+
+    Variadic, and callers should pass the whole stack: the backend language,
+    the frontend framework, and anything else that implies a toolchain. One
+    key per line, so a file written by the previous single-language version
+    still reads correctly.
+    """
+    keys = _toolchain_keys(*languages)
+    if not keys:
+        logger.info(
+            "No toolchain known for %r; roles keep their defaults", list(languages)
+        )
         return
     try:
-        (Path(repo_root) / STACK_MARKER).write_text(key + "\n", encoding="utf-8")
+        (Path(repo_root) / STACK_MARKER).write_text(
+            "\n".join(sorted(keys)) + "\n", encoding="utf-8"
+        )
     except OSError:
         logger.debug("Could not pin the project stack", exc_info=True)
 
 
-def project_stack(repo_root: str | Path | None) -> str | None:
-    """The language pinned for this run, or None. Never raises."""
+def project_stack(repo_root: str | Path | None) -> frozenset[str]:
+    """Every toolchain pinned for this run. Never raises; empty when unpinned.
+
+    Returns a set rather than one key. A marker file written before this was
+    a set holds a single line, which reads back as a one-element set, so no
+    migration is needed.
+    """
     if not repo_root:
-        return None
+        return frozenset()
     try:
-        return (Path(repo_root) / STACK_MARKER).read_text(encoding="utf-8").strip() or None
+        text = (Path(repo_root) / STACK_MARKER).read_text(encoding="utf-8")
     except OSError:
-        return None
+        return frozenset()
+    return frozenset(line.strip() for line in text.splitlines() if line.strip())
 
 
 #: What to do instead, for the commands a model reaches for that this
@@ -840,10 +1091,12 @@ def allowed_executables(
     base = ROLE_EXECUTABLES.get(role_name, frozenset()) | COMMON_EXECUTABLES
     if role_name not in ROLE_EXECUTABLES:
         return base
-    key = project_stack(repo_root)
-    if key is None:
+    keys = project_stack(repo_root)
+    if not keys:
         return base
-    return base | TOOLCHAINS.get(key, frozenset())
+    for key in keys:
+        base = base | TOOLCHAINS.get(key, frozenset())
+    return base
 
 
 def validate_command(
@@ -2098,6 +2351,7 @@ __all__ = [
     "SandboxExecutor",
     "SandboxUnavailable",
     "allowed_executables",
+    "FRAMEWORK_LANGUAGES",
     "pin_project_stack",
     "project_stack",
     "TOOLCHAINS",

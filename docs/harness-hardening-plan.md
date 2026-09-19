@@ -3101,3 +3101,72 @@ and three times to write its own structured response to `final_output.json`.
 The second group got a notice on the third attempt because the path repeated.
 The first got none, because the path did not - which is exactly the gap
 §4ag's policy-refusal grouping closes, seen here in the run that prompted it.
+
+### 4aj. The harness breaks its own green suite, 39 times out of 40
+
+The test-and-fix loop takes 51% of every run's model calls (§4af), so whether
+it converges is the most important question about this harness. Measured
+across all 50 transcripts, for the 41 runs that ran a suite at all:
+
+| | runs |
+|---|---|
+| reached a green suite at some point | **40** |
+| went green and then red again | **39** |
+| ended on a green suite | 13 |
+| never green | 1 |
+| test runs per run | median 27, max 84 |
+
+**Reaching green is not the problem. Staying green is.** Forty of forty-one
+runs got there; thirteen finished there. The loop is not failing to converge
+so much as diverging after it has already succeeded, and a run that has been
+green once has proved the product can work.
+
+The harness has exactly the right check for this - `_fewer_pass_than_last_time`,
+which says "N test(s) that were passing have stopped ... this is something a
+change since then broke, not a new test failing". It fired in **3** of those
+41 runs.
+
+It was right and blind. It compares the pass and test counts in the ledger,
+and `_the_counts_a_test_run_reported` read only TAP - `# pass N`, `# fail N`,
+`# tests N` - which is what `node --test` emits and nothing else does. Every
+other runner reported its results in its own words, so the ledger recorded no
+counts and the comparison had nothing to compare. In the corpus, `Tests: …
+passed` appears 44 times and a bare `N passed` over fifteen thousand.
+
+Now read from jest, vitest, Playwright, pytest, cargo and go as well. This is
+class H again, and the most expensive instance of it found so far: a check
+worth a whole sprint, written for the one runner in front of it.
+
+**What to measure next.** Whether detection is enough. The note tells a stage
+that its own change broke something, and §4ag's efficacy numbers say a note
+is the best-performing rung available - but no run has yet had one at the
+moment it mattered, because until now the counts were not there to raise it.
+The first runs after this land are the evidence.
+
+### 4ak. The reviewer blocks on what nobody asked for
+
+Milestone review raised 174 findings across the corpus, 87 of them blocking:
+
+| category | blocking | advisory |
+|---|---|---|
+| testing | 59 | 24 |
+| documentation | 0 | 36 |
+| accessibility | **13** | 11 |
+| security | 11 | 8 |
+| correctness | **1** | 1 |
+| contracts | 2 | 0 |
+| migrations | 1 | 0 |
+
+Two things stand out. **Only one blocking finding in the whole corpus is
+about correctness** - whether the product works. And **accessibility blocks
+thirteen times** against briefs in which the words "accessibility", "aria",
+"wcag", "screen reader" and "contrast" do not appear at all; the word appears
+in zero of run-519a9d8a's own documents.
+
+`SCOPE_DISCIPLINE` already says this must not happen, in those words, at
+every stage that can inflate scope. It is stated and ignored - class A - so
+it is now a check at both reviewers: a finding in a category the product's
+own documents never raise is capped to minor. It is still reported and still
+read; it stops being a reason for another round. Seven of the last sixty
+failures were runs that ended with the milestone review still requiring
+changes.

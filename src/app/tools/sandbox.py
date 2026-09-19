@@ -1283,20 +1283,60 @@ def validate_command(
 #: Half of all command timeouts on record. A refusal costs nothing and says
 #: what to do instead; a timeout costs two minutes and says nothing. This is
 #: the shape of the `node -e` refusal above, which works.
+#: Words that name a long-running server, in any ecosystem.
+#:
+#: This was seven names, all JavaScript, plus two Python modules. Every other
+#: way of starting a server - `rails server`, `flask run`, `uvicorn`,
+#: `dotnet run`, `php -S`, `mix phx.server`, `ng serve` - ran until the
+#: timeout and returned nothing, and the agent then retried it. That is the
+#: pattern that cost run-e9e7f48f, and the timeout scaling added on
+#: 2026-09-19 makes it cost more: on a Rust or Java stack the same hang now
+#: waits several times as long before saying anything.
+#:
+#: Matched on any argument rather than on argv[0], because these arrive as
+#: `npx serve`, `python -m uvicorn`, `bundle exec rails server` - the server's
+#: name is rarely the executable.
 _SERVER_COMMANDS = frozenset(
     {
-        "serve",
-        "http-server",
-        "live-server",
-        "browser-sync",
-        "webpack-dev-server",
-        "vite",
-        "nodemon",
+        # JavaScript and TypeScript.
+        "serve", "http-server", "live-server", "browser-sync",
+        "webpack-dev-server", "vite", "nodemon", "next", "nuxt", "astro",
+        "remix", "ng", "parcel", "webpack", "turbo",
+        # Python.
+        "uvicorn", "gunicorn", "hypercorn", "daphne", "waitress-serve",
+        "runserver", "flask", "fastapi",
+        # Ruby.
+        "rails", "puma", "unicorn", "thin", "webrick", "jekyll",
+        # PHP, Elixir, Go, Rust, Java, .NET.
+        "phx.server", "watch", "air", "realize",
+        "spring-boot:run", "quarkus:dev", "bootRun",
+        # Generic.
+        "dev", "start",
     }
 )
 
-#: `python3 -m http.server`, the same idea from the other language.
-_SERVER_MODULES = frozenset({"http.server", "SimpleHTTPServer"})
+#: `python3 -m http.server`, the same idea reached through `-m`.
+_SERVER_MODULES = frozenset({
+    "http.server", "SimpleHTTPServer", "uvicorn", "gunicorn", "flask",
+    "hypercorn", "waitress", "daphne",
+})
+
+#: Subcommands that make an otherwise-ambiguous executable a server. `rails`
+#: alone might be `rails --version`; `rails server` is not. Keyed so that a
+#: generic word like `dev` or `start` only counts after a runner that has one.
+_SERVER_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "rails": frozenset({"server", "s"}),
+    "flask": frozenset({"run"}),
+    "php": frozenset({"-S"}),
+    "dotnet": frozenset({"run", "watch"}),
+    "mix": frozenset({"phx.server"}),
+    "ng": frozenset({"serve"}),
+    "npm": frozenset({"start", "dev"}),
+    "yarn": frozenset({"start", "dev"}),
+    "pnpm": frozenset({"start", "dev"}),
+    "deno": frozenset({"task"}),
+    "manage.py": frozenset({"runserver"}),
+}
 
 
 #: Extensions `node` will parse as JavaScript. Anything else makes it throw
@@ -1371,10 +1411,21 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
     `npx serve` and `npx --yes serve`, never as `serve` alone.
     """
     parts = [os.path.basename(str(part)) for part in argv]
+    # `<runner> <subcommand>` first: it is the unambiguous form, and it lets
+    # a generic word like `start` count only behind a runner that has one.
+    for index, part in enumerate(parts[:-1]):
+        wanted = _SERVER_SUBCOMMANDS.get(part)
+        if wanted and parts[index + 1] in wanted:
+            return f"{part} {parts[index + 1]}"
     for index, part in enumerate(parts):
-        if part in _SERVER_MODULES:
+        if part in _SERVER_MODULES and "-m" in parts[:index]:
             return part
         if part not in _SERVER_COMMANDS:
+            continue
+        # A generic word is only a server behind something that takes one;
+        # `npm run dev` reaches here as `dev` and is caught above, while a
+        # file called `start` is not a server.
+        if part in {"dev", "start", "watch"} and index == 0:
             continue
         # `vite build` and `webpack-dev-server --help` terminate; only the bare
         # invocation and an explicit `dev`/`start`/`serve` keep running.

@@ -1519,7 +1519,15 @@ def _files_that_contradict_the_declared_module_type(
 
 #: Runners that define `test`, `it` and `describe` as globals, so a file using
 #: them without an import is correct. `node --test` is not one of them.
-_PROVIDES_TEST_GLOBALS = ("jest", "vitest", "mocha", "jasmine", "karma", "cypress")
+_PROVIDES_TEST_GLOBALS = (
+    "jest", "vitest", "mocha", "jasmine", "karma", "cypress",
+    # Playwright does not inject globals - it exports them - but a project
+    # that depends on it is one whose `.spec` files import from
+    # `@playwright/test`, and this check has no business judging them. It
+    # blocked run-ed05e20e's `app.spec.js`, which opens
+    # `import { test, expect } from '@playwright/test';` and passes 24 of 24.
+    "playwright",
+)
 
 #: `test(`, `it(` or `describe(` called at the file's own top level.
 _CALLS_A_SUITE_GLOBAL = re.compile(
@@ -1531,6 +1539,36 @@ _IMPORTS_FROM_NODE_TEST = re.compile(
     r"""from\s+['"]node:test['"]|require\(\s*['"]node:test['"]\s*\)"""
     r"""|from\s+['"]test['"]""",
 )
+
+
+def _imports_the_name(content: str, name: str) -> bool:
+    """Whether this file binds `name` by importing it from anywhere.
+
+    The question is whether `test` is defined when the file runs, and the
+    module it came from is beside the point. Matching only `node:test` made
+    this check blind to every other runner that exports rather than injects.
+
+    Measured live on run-ed05e20e: `app.spec.js` opens
+    `import { test, expect } from '@playwright/test';` and passes 24 of 24
+    under `npx playwright test`. The check called it a file where "every case
+    throws ReferenceError" and, being blocking, held the sprint - and its
+    remedy, "add `import { test } from 'node:test'`", would have broken the
+    working suite.
+
+    A false positive on a blocking check whose fix makes things worse is the
+    most expensive shape a check can have.
+    """
+    escaped = re.escape(name)
+    return bool(
+        # import { test } from '...'   /  import { test as t } from '...'
+        re.search(rf"import\s*\{{[^}}]*(?<![\w$]){escaped}(?![\w$])[^}}]*\}}\s*from", content)
+        # import test from '...'
+        or re.search(rf"import\s+(?<![\w$]){escaped}(?![\w$])\s*(?:,|from)", content)
+        # const { test } = require('...')  /  = await import('...')
+        or re.search(
+            rf"(?:const|let|var)\s*\{{[^}}]*(?<![\w$]){escaped}(?![\w$])[^}}]*\}}\s*=", content
+        )
+    )
 
 #: The file declaring `test`, `it` or `describe` itself. Run 44653b's
 #: `Task.test.mjs` opens with its own four-line harness -
@@ -1593,6 +1631,11 @@ def _suites_calling_a_global_node_does_not_define(
         if _DEFINES_ITS_OWN.search(content):
             continue
         name = called.group(1)
+        # Imported from anywhere at all, not only `node:test`. See
+        # `_imports_the_name`: the question is whether the name is bound when
+        # the file runs, and which module bound it does not change the answer.
+        if _imports_the_name(content, name):
+            continue
         problems.append(
             f"{path.relative_to(root)} calls `{name}(...)` and nothing imports "
             f"`{name}`. Jest and Vitest inject it as a global; `node --test` "

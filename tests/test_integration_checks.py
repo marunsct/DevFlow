@@ -1524,3 +1524,78 @@ def test_every_blocking_marker_still_appears_in_a_real_message():
         "these phrases mark a finding as blocking and no check produces them "
         f"any more, so whatever replaced them is now merely untidy: {orphans}"
     )
+
+
+# ---------------------------------------------------------------------------
+# A blocking finding against a suite that demonstrably passes, whose remedy
+# would have broken it.
+#
+# Measured live on run-ed05e20e. `task-manager/app.spec.js` opens
+#
+#     import { test, expect } from '@playwright/test';
+#
+# and passes 24 of 24 under `npx playwright test`. The check called it a file
+# where "every case throws ReferenceError: test is not defined", blocked the
+# sprint on it, and advised adding `import { test } from 'node:test'` - which
+# would have broken the working suite.
+#
+# It matched only `node:test`, so every runner that exports its helpers
+# rather than injecting them was invisible. The question is whether the name
+# is bound when the file runs; which module bound it does not change the
+# answer.
+# ---------------------------------------------------------------------------
+
+
+def test_a_playwright_spec_is_not_told_its_import_is_missing(tmp_path):
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0",'
+                            '"scripts":{"test":"npx playwright test"},'
+                            '"devDependencies":{"@playwright/test":"^1.0.0"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "app.spec.js": "import { test, expect } from '@playwright/test';\n"
+                           "test('ui', async ({ page }) => { await page.goto('/'); });\n",
+        },
+    )
+
+    assert "app.spec.js calls" not in summarise_integration(root)
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        "import { test, expect } from '@playwright/test';",
+        "import { test } from 'node:test';",
+        "import test from 'ava';",
+        "const { test } = require('node:test');",
+        "import { test as check } from 'vitest';",
+    ],
+)
+def test_the_name_imported_from_anywhere_counts(tmp_path, header):
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0","scripts":{"test":"node --test"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "app.test.js": f"{header}\ntest('x', () => {{}});\n",
+        },
+    )
+
+    assert "and nothing imports" not in summarise_integration(root)
+
+
+def test_a_file_that_really_imports_nothing_is_still_reported(tmp_path):
+    """The true positive must survive: this one genuinely throws."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0","scripts":{"test":"node --test"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "app.test.js": "test('x', () => {});\n",
+        },
+    )
+
+    report = summarise_integration(root)
+    assert "and nothing imports" in report
+    assert "a feature DOES NOT WORK" in report, "it stops the suite running, so it blocks"

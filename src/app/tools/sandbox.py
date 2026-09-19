@@ -1434,6 +1434,18 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
     `npx serve` and `npx --yes serve`, never as `serve` alone.
     """
     parts = [os.path.basename(str(part)) for part in argv]
+    # Installing a server is not running one. `npm install -D serve` names
+    # `serve` as the package to add, and every word-matching check here sees
+    # a server.
+    #
+    # Measured live on run-ed05e20e: `specialist_backend_2` was refused
+    # `npm install -D serve` twice, told "it runs until it is stopped, and
+    # nothing here will stop it" about a command that would have exited in
+    # seconds. `serve` has been in this list since before it was widened, so
+    # the false positive is older than the widening - it simply had no
+    # install grammar to check against until now.
+    if _a_package_this_command_would_add(argv):
+        return None
     # `<runner> <subcommand>` first: it is the unambiguous form, and it lets
     # a generic word like `start` count only behind a runner that has one.
     for index, part in enumerate(parts[:-1]):

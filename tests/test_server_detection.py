@@ -93,3 +93,45 @@ def test_every_language_the_stack_can_choose_has_a_server_form():
     known = _SERVER_COMMANDS | set(_SERVER_SUBCOMMANDS)
     for expected in ("rails", "flask", "uvicorn", "dotnet", "php", "mix", "ng", "vite"):
         assert expected in known, f"no way to recognise a {expected} server"
+
+
+# ---------------------------------------------------------------------------
+# Installing a server is not running one.
+#
+# Measured live on run-ed05e20e: `specialist_backend_2` was refused
+# `npm install -D serve` twice, told "it runs until it is stopped, and nothing
+# here will stop it" about a command that would have exited in seconds. Every
+# word-matching check here saw `serve` and called it a server.
+#
+# `serve` has been in `_SERVER_COMMANDS` since long before that list was
+# widened, so the false positive is older than the widening - it simply had
+# no install grammar to check against until one existed.
+# ---------------------------------------------------------------------------
+
+INSTALLS_NOT_SERVERS = [
+    ["npm", "install", "-D", "serve"],
+    ["npm", "install", "serve"],
+    ["npm", "i", "-D", "vite"],
+    ["yarn", "add", "next"],
+    ["pnpm", "add", "-D", "nodemon"],
+    ["pip", "install", "uvicorn"],
+    ["pip", "install", "gunicorn"],
+    ["cargo", "add", "axum"],
+    ["gem", "install", "puma"],
+    ["composer", "require", "symfony/http-kernel"],
+]
+
+
+@pytest.mark.parametrize("command", INSTALLS_NOT_SERVERS, ids=lambda c: " ".join(c)[:26])
+def test_installing_a_server_package_is_not_starting_one(command):
+    assert _starts_a_server(command) is None, (
+        f"`{' '.join(command)}` adds a package and exits; refusing it as a "
+        "long-running server blocks a legitimate install"
+    )
+
+
+def test_running_the_package_it_installed_is_still_a_server():
+    """The narrowing must not blind the check to the real thing."""
+    assert _starts_a_server(["npx", "serve"])
+    assert _starts_a_server(["serve", "-s", "dist"])
+    assert _starts_a_server(["npx", "vite"])

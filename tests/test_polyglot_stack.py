@@ -133,3 +133,29 @@ def test_no_role_loses_an_executable_when_a_second_language_is_pinned(role, tmp_
     pin_project_stack(tmp_path, "Go", "React")
     two = allowed_executables(role, tmp_path)
     assert one <= two
+
+
+# ---------------------------------------------------------------------------
+# B2's core harm, pinned as a matrix. The bug was a static per-role table:
+# `go` and `cargo` appeared under one role, and `dotnet`, `mvn`, `ruby`,
+# `php`, `swift` and `dart` under none, so a product in any of those could be
+# written and never run. Four separate fixes each added one executable to one
+# role before the toolchain table existed.
+#
+# This asserts the rule that generates all of them rather than any one member:
+# whatever language a run pins, every role holding an allowlist can run that
+# language's whole toolchain.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("language", sorted(TOOLCHAINS))
+@pytest.mark.parametrize("role", sorted(ROLE_EXECUTABLES))
+def test_every_role_can_run_every_pinned_toolchain(tmp_path, language, role):
+    pin_project_stack(tmp_path, language)
+
+    missing = sorted(TOOLCHAINS[language] - allowed_executables(role, tmp_path))
+
+    assert not missing, (
+        f"{role} cannot run {', '.join(missing)} on a {language} product, so it "
+        "can write code it has no way to execute"
+    )

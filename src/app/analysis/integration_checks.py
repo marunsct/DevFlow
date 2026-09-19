@@ -2530,6 +2530,14 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
 #: untidy, and one that matches too much makes a reviewer block on dead CSS.
 _BREAKS_BEHAVIOUR = (
     "have never executed, and a passing suite",  # a false green suite
+    # The same false green, reached the other way: a suite the gating command
+    # cannot run at all. Run-cac07d52 COMPLETED with five Playwright tests
+    # that had never executed once, because `scripts.test` is `node --test`
+    # and they are TypeScript; all five failed when run afterwards. Classified
+    # untidy at first for want of a phrase in this tuple, which is the stale
+    # -marker failure this file is most exposed to - see
+    # `test_every_blocking_check_is_classified_as_blocking`.
+    "does not parse TypeScript or JSX",
     "starts an HTTP server, and this run's",  # a server a browser-only stack forbids
     "does not exist from",               # a manifest script naming a bad path
     "parses it as a classic script",     # ESM behind a plain <script> tag

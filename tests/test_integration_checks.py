@@ -1474,3 +1474,53 @@ def test_a_jest_project_decides_its_own_discovery(tmp_path):
     )
 
     assert "does not parse TypeScript" not in summarise_integration(root)
+
+
+def test_the_stranded_typescript_suite_blocks(tmp_path):
+    """A suite no gate runs is a false green, and a false green must block.
+
+    Classified untidy at first, for want of a phrase in `_BREAKS_BEHAVIOUR`.
+    Run-cac07d52 COMPLETED with five Playwright tests that had never executed
+    once, and all five failed when run afterwards.
+    """
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"name":"a","version":"1.0.0",'
+                            '"scripts":{"test":"node --test tests/",'
+                            '"test:e2e":"npx playwright test"}}',
+            "app.js": "export function go() { return 1; }\n",
+            "tests/unit.test.mjs": "import {test} from 'node:test';\ntest('x',()=>{});\n",
+            "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
+        },
+    )
+
+    assert "a feature DOES NOT WORK" in summarise_integration(root)
+
+
+def test_every_blocking_marker_still_appears_in_a_real_message():
+    """Blocking is decided by exact phrases, so a reworded message downgrades
+    a check in silence.
+
+    This is the stale-marker failure twice over in one session: the audit
+    script matched one of two read-repeat wordings and reported zero, and the
+    stranded-TypeScript finding was classified untidy because its phrase was
+    not in the tuple. A phrase that no check can produce any more is the
+    warning sign for both.
+    """
+    import pathlib
+    import re
+
+    from app.analysis.integration_checks import _BREAKS_BEHAVIOUR
+
+    source = pathlib.Path("src/app/analysis/integration_checks.py").read_text(
+        encoding="utf-8"
+    )
+    # Adjacent string literals are one string at runtime.
+    joined = re.sub(r"[\"']\s*\n\s*(?:f)?[\"']", "", source)
+
+    orphans = [m for m in _BREAKS_BEHAVIOUR if m not in joined]
+    assert not orphans, (
+        "these phrases mark a finding as blocking and no check produces them "
+        f"any more, so whatever replaced them is now merely untidy: {orphans}"
+    )

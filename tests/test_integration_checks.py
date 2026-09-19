@@ -1328,3 +1328,69 @@ def test_a_missing_file_is_still_reported_as_missing(tmp_path):
 
     assert any("does not exist" in p for p in problems)
     assert not any("exists but is empty" in p for p in problems)
+
+
+# ---------------------------------------------------------------------------
+# The Playwright presence check, narrowed 2026-09-19. It fired on a fixture of
+# one `<div>` and one stylesheet: no JavaScript, no manifest, nothing a browser
+# test could assert on, and a remedy ("install it in package.json") naming a
+# file that did not exist.
+# ---------------------------------------------------------------------------
+
+
+def test_a_static_page_is_not_asked_for_a_browser_test(tmp_path):
+    """Markup and styling have no behaviour to regression-test."""
+    root = _workspace(
+        tmp_path,
+        {
+            "index.html": '<div id="app">hello</div>',
+            "styles.css": "#app { color: #fff; }",
+        },
+    )
+
+    # On the finding, not the word: the report preamble lists every check
+    # that ran, "presence of Playwright for UI testing" among them.
+    assert "Playwright is not installed" not in summarise_integration(root)
+
+
+def test_a_project_with_no_manifest_is_not_told_to_edit_one(tmp_path):
+    """"Not installed in package.json" cannot be acted on without one."""
+    root = _workspace(
+        tmp_path,
+        {
+            "index.html": '<div id="app"></div><script src="app.js"></script>',
+            "app.js": "document.getElementById('app').textContent = 'hi';",
+        },
+    )
+
+    # On the finding, not the word: the report preamble lists every check
+    # that ran, "presence of Playwright for UI testing" among them.
+    assert "Playwright is not installed" not in summarise_integration(root)
+
+
+def test_a_ui_with_logic_and_a_manifest_is_still_asked_for_one(tmp_path):
+    """The case the check was written for must survive the narrowing."""
+    root = _workspace(
+        tmp_path,
+        {
+            "index.html": '<div id="app"></div><script type="module" src="app.js"></script>',
+            "app.js": "export function go() { document.getElementById('app'); }",
+            "package.json": '{"name": "a", "version": "1.0.0", "type": "module"}',
+        },
+    )
+
+    assert "Playwright is not installed" in summarise_integration(root)
+
+
+def test_a_ui_that_already_has_playwright_is_left_alone(tmp_path):
+    root = _workspace(
+        tmp_path,
+        {
+            "index.html": '<div id="app"></div><script type="module" src="app.js"></script>',
+            "app.js": "export function go() { document.getElementById('app'); }",
+            "package.json": '{"name": "a", "version": "1.0.0", "type": "module",'
+                            ' "devDependencies": {"@playwright/test": "^1.0.0"}}',
+        },
+    )
+
+    assert "Playwright is not installed" not in summarise_integration(root)

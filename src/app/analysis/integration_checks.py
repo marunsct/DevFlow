@@ -73,6 +73,19 @@ _COLLECTED_SUFFIXES = frozenset({
     ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".json",
     ".py", ".rb", ".go", ".rs", ".java", ".cs", ".php", ".ts", ".tsx", ".jsx",
     ".scss", ".sass", ".vue", ".svelte", ".toml", ".cfg",
+    # Added 2026-09-19. A workspace holding only these came back "No HTML, CSS
+    # or JavaScript files were found to cross-check" - no size count, no
+    # evidence block, and a milestone reviewer that cannot block because it
+    # was handed nothing. The list had grown once already, for Python and Go,
+    # and stopped at the languages in front of it at the time.
+    #
+    # Collection is deliberately wider than any single check: each check
+    # filters this list by the suffixes it understands, so a language here
+    # costs nothing until something knows what to do with it, and a language
+    # absent here is invisible to all of them at once.
+    ".kt", ".kts", ".scala", ".swift", ".dart", ".ex", ".exs",
+    ".c", ".h", ".cpp", ".cc", ".hpp", ".m", ".mm",
+    ".pl", ".lua", ".sql", ".sh", ".bash", ".less", ".pyi",
 })
 
 
@@ -2000,7 +2013,34 @@ def _stack_conflicts(files: list[Path], root: Path, stack: Any) -> list[str]:
 #: Files whose length is the product's size, as a brief means it. Lockfiles,
 #: minified bundles and vendored code are excluded: nobody writing "maximum 500
 #: lines" means a `package-lock.json`.
-_COUNTED_SUFFIXES = frozenset({".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".py"})
+#: Suffixes the size report counts as the product.
+#:
+#: This was ten entries, all of them HTML, CSS, JavaScript or Python, so a Go,
+#: Rust, Java, C#, Ruby, PHP, Kotlin, Swift or Dart product reported a size of
+#: zero. A brief capping "lines of code" was therefore enforced for two
+#: ecosystems and silently unenforced for the rest - B1, and root-cause class
+#: H: a rule written for the stack that happened to be in front of it.
+#:
+#: Counting lines needs no per-language analyser. Every language has files,
+#: lines, blanks and comments, and `_code_lines` already strips `//` and `#`
+#: line comments and `/* */` and `<!-- -->` blocks, which between them cover
+#: every language below. The languages that need more than that - a full
+#: reference graph, an entry-point rule - are B1's remaining work; a size
+#: count is not, and it is what the milestone budget check actually reads.
+_COUNTED_SUFFIXES = frozenset({
+    # Web.
+    ".html", ".htm", ".css", ".scss", ".sass", ".less",
+    ".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".vue", ".svelte",
+    # Python.
+    ".py", ".pyi",
+    # Compiled and JVM.
+    ".go", ".rs", ".java", ".kt", ".kts", ".scala", ".cs", ".swift",
+    ".c", ".h", ".cpp", ".cc", ".hpp", ".m", ".mm",
+    # Scripting.
+    ".rb", ".php", ".pl", ".lua", ".dart", ".ex", ".exs", ".sh", ".bash",
+    # Data and query languages that are part of a product rather than config.
+    ".sql",
+})
 _NOT_COUNTED = re.compile(r"(^|/)(package-lock\.json|.*\.min\.(js|css))$")
 
 
@@ -2709,12 +2749,40 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _missing_playwright_for_ui(files, root, stack)),
 )
 
+#: Extensions that carry behaviour a browser test could exercise. A page of
+#: markup and styling has none.
+_CLIENT_LOGIC_SUFFIXES = frozenset({".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx"})
+
+
 def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> list[str]:
-    """Ensures that UI applications test end-to-end functionality using Playwright."""
+    """A UI with behaviour and no browser test, or [].
+
+    Narrowed on 2026-09-19 after it fired on a fixture of one `<div>` and one
+    stylesheet. Three conditions, and each removes a false positive the first
+    version produced:
+
+    - there must be **client-side logic**, not merely HTML. A static page has
+      no behaviour to regression-test, and demanding a browser harness for it
+      is asking for a test with nothing to assert.
+    - there must be a **manifest**. With no `package.json` there is no
+      JavaScript project yet, so "not installed in package.json" names a file
+      that does not exist and the remedy cannot be carried out.
+    - the page must actually **load a script**, which is what
+      `_a_page_no_script_ever_touches` already reasons about: markup that
+      loads nothing has no end-to-end path through a browser.
+
+    Left as a finding rather than dropped, because the case it was written for
+    is real - a product whose UI logic is only ever unit-tested has no
+    evidence it works in a browser, and `TESTABILITY_RULE` requires one.
+    """
     has_html = any(f.suffix == ".html" for f in files)
     if not has_html:
         return []
-    
+    if not any(f.suffix.lower() in _CLIENT_LOGIC_SUFFIXES for f in files):
+        return []
+    if not any(f.name == "package.json" for f in files):
+        return []
+
     packages = _manifest_packages(files, "package.json")
     if "playwright" not in packages and "@playwright/test" not in packages:
         return [

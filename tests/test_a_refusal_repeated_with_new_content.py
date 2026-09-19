@@ -74,12 +74,38 @@ def test_the_third_is_flagged_though_the_content_differs(call):
 
 
 def test_another_file_is_counted_on_its_own(call):
-    for i in range(3):
-        call({"relative_path": "docs/spec.md", "content": f"v{i}"}, REFUSAL)
+    """For a refusal about CONTENT, a new file is a new problem.
 
-    out = call({"relative_path": "docs/other.md", "content": "x"}, REFUSAL)
+    This used to use the workflow-document refusal, which is a refusal about
+    what a file *is* - and that reads the same whatever path it lands on. See
+    the test below: those now count together, deliberately.
+    """
+    for i in range(3):
+        call({"relative_path": "app.js", "content": f"v{i}"}, OTHER_REFUSAL)
+
+    out = call({"relative_path": "other.js", "content": "x"}, OTHER_REFUSAL)
 
     assert "failed the same way" not in out
+
+
+def test_a_policy_refusal_counts_across_files(call):
+    """For a refusal about what a file IS, the path is not part of the event.
+
+    Measured on run-cac07d52's `test_round_0`: refused a write to
+    `docs/technical_specification.md`, then `docs/milestone_review.md`, then
+    `docs/technical_specification.md` again - the same refusal in the same
+    words, three times in one stage - and nothing ever fired, because two
+    were spread over two paths and the third was only the second for its own.
+
+    Counting per file gives three free attempts at each of the workflow's
+    documents, and there are several.
+    """
+    call({"relative_path": "docs/technical_specification.md", "content": "a"}, REFUSAL)
+    call({"relative_path": "docs/milestone_review.md", "content": "b"}, REFUSAL)
+
+    out = call({"relative_path": "docs/technical_specification.md", "content": "c"}, REFUSAL)
+
+    assert "failed the same way" in out
 
 
 def test_a_different_refusal_about_the_same_file_is_counted_on_its_own(call):

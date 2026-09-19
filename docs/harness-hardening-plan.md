@@ -3026,6 +3026,40 @@ gate" that ends the *stage* rather than the run. `settled_answer` does this
 for a stage that has an answer and is circling; the gap is a stage circling
 without one.
 
+**Corrected and extended, 2026-09-19.** The audit script matched only one of
+the two read-repeat wordings, so the read figures above were low. With both
+counted, and with the withholding rung measured for the first time, the whole
+ladder sorted by what it achieves rather than by how hard it hits:
+
+| rung | how harsh | fired | worked |
+|---|---|---|---|
+| note: query repeat | gentlest | 29 | **93%** |
+| note: read repeat | | 583 | **91%** |
+| note: failed the same way | | 112 | 69% |
+| note: write unchanged | | 127 | 64% |
+| withhold the file's content | | 19 | 58% |
+| deny at the gate | | 18 | 50% |
+| refuse the call | harshest | 28 | **38%** |
+
+**The order is exactly inverse to harshness.** Every note outperforms every
+intervention that takes something away, and the two harshest rungs are the
+two worst. This is not the selection effect alone: withholding is reached
+after the same counter as the note that precedes it at 91%, and it drops to
+58% purely by removing the content.
+
+The working explanation is that a note leaves the model able to act and the
+harsher rungs do not. Withholding removes the text it may actually have
+needed; refusing removes its only move and offers no other. Both leave it
+with the same intent and fewer ways to satisfy it, and repeating the call is
+what is left.
+
+If that holds, the ladder this codebase keeps arriving at - hint, note,
+rewrite, refuse - is upside down past its second rung, and the rung worth
+building is not harsher but *more informative*: a refusal that names the
+next action, or a rewrite that performs it. That is a hypothesis with a
+number against it rather than a conclusion, and §3.4's per-notice efficacy
+store is what would settle it.
+
 ### 4ah. The token ratio travels between models (one pair, checked)
 
 `CHARS_PER_TOKEN` was set to a measured 3 from a corpus that is almost all

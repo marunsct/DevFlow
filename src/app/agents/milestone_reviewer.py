@@ -18,6 +18,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.agents.finding_category import validator_for as category_in
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -52,7 +53,27 @@ class MilestoneReviewFinding(BaseModel):
         "documentation",
         "security",
         "regression",
+        # A bucket of its own because it is none of the above, and this model
+        # reaches for it: `code_quality` 24 times in run-cac07d52 alone.
+        "code_quality",
+        # So an unrecognised category is preserved rather than guessed at.
+        # No brief ever says "other", so `scope_attestation` caps such a
+        # finding to minor - kept, reported, unable to hold a sprint, which
+        # is the right answer for something the harness could not classify.
+        "other",
     ] = Field(..., description="The type of issue found.")
+
+    # `severity` has been forgiven since run-0deeb8bf; `category` was a bare
+    # Literal and was not. Measured live on run-cac07d52 at 05:36: one
+    # unrecognised word rejected a whole milestone review and cost three and a
+    # half minutes re-generating it. See `app.agents.finding_category`.
+    _known_category = field_validator("category", mode="before")(
+        category_in(
+            "correctness", "contracts", "migrations", "authorization",
+            "accessibility", "testing", "documentation", "security",
+            "regression", "code_quality", "other",
+        )
+    )
     description: str = Field(..., description="What is wrong or missing.")
     affected_files: list[str] = Field(
         default_factory=list, description="Files implicated in this finding."

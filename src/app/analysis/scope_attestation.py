@@ -84,6 +84,13 @@ _ALSO_ATTESTS: dict[str, tuple[str, ...]] = {
     "migrations": ("migration", "migrations", "alembic"),
     "contracts": ("contract", "contracts", "openapi", "interface", "interfaces"),
     "correctness": ("correct", "correctly", "behaviour", "behavior", "acceptance"),
+    # Added with the category vocabulary. `code_quality` is attested by a
+    # brief that asks for it; `other` never is, by design - an unrecognised
+    # finding is kept and reported and cannot hold a sprint.
+    "code_quality": ("quality", "lint", "linting", "maintainability", "refactor", "style"),
+    "authorization": ("authorisation", "authorization", "permission", "permissions", "role", "roles"),
+    "regression": ("regression", "regressions"),
+    "other": (),
 }
 
 
@@ -123,10 +130,24 @@ def categories_in_scope(repo_root: str | Path) -> frozenset[str]:
     return frozenset(found)
 
 
+def _normalised(value: str) -> str:
+    """A category reduced to letters, for comparing against the table.
+
+    Both sides, or neither. Stripping only the incoming value left
+    `code_quality` as `codequality`, which matches no key in `_ALSO_ATTESTS`,
+    so every `code_quality` finding was treated as a category this module
+    does not know and allowed to block - silently, and in exactly the
+    category the model reaches for most after testing and security.
+    """
+    return re.sub(r"[^a-z]", "", (value or "").lower())
+
+
 def out_of_scope_reason(category: str, in_scope: frozenset[str]) -> str:
     """Why this category cannot hold a sprint, or "" if it can."""
-    key = re.sub(r"[^a-z]", "", (category or "").lower())
-    if not key or key not in _ALSO_ATTESTS or key in in_scope:
+    key = _normalised(category)
+    known = {_normalised(name): name for name in _ALSO_ATTESTS}
+    attested = {_normalised(name) for name in in_scope}
+    if not key or key not in known or key in attested:
         return ""
     return (
         f"'{category}' is not something this product's brief, specification or "

@@ -410,3 +410,119 @@ def test_read_file_is_still_left_to_the_backend() -> None:
         content = _call(middleware, "read_file", {"file_path": "/a.js"}, "const a = 1;")
 
     assert "returned exactly what it returned" not in content
+
+
+# ---------------------------------------------------------------------------
+# A refusal about what a file *is* carries the same lesson whatever path it
+# lands on. The counter keyed on `(tool, path, reason)`, which is right for a
+# refusal about content and wrong for a refusal about a class of file.
+#
+# Measured on run-cac07d52's `test_round_0`: refused a write to
+# `docs/technical_specification.md`, then to `docs/milestone_review.md`, then
+# to `docs/technical_specification.md` again - the same refusal in the same
+# words, three times in one stage - and no notice ever fired, because two were
+# spread across two paths and the third was only the second for its own.
+# ---------------------------------------------------------------------------
+
+from app.agents.repeated_queries import (
+    _POLICY_REFUSALS,
+    _is_about_the_kind_of_file,
+    _the_same_refusal,
+)
+
+
+class _Request:
+    def __init__(self, name, args):
+        self.tool_call = {"name": name, "args": args}
+
+
+class _Result:
+    def __init__(self, content):
+        self.content = content
+        self.status = "error"
+
+    def model_copy(self, update=None):
+        return _Result((update or {}).get("content", self.content))
+
+
+def _refusal(path, reason="the workflow writes this file from the stage response, so an edit is discarded"):
+    return _Result('{"error": "Refusing to change \'%s\': %s"}' % (path, reason))
+
+
+def test_the_same_policy_refusal_counts_across_different_files():
+    middleware = build_repeated_query_middleware()
+    paths = [
+        "docs/technical_specification.md",
+        "docs/milestone_review.md",
+        "docs/technical_specification.md",
+    ]
+
+    fired = []
+    for index, path in enumerate(paths):
+        result = middleware.wrap_tool_call(
+            _Request("write_artifact", {"relative_path": path, "content": f"v{index}"}),
+            lambda _request, p=path: _refusal(p),
+        )
+        fired.append("failed the same way" in result.content)
+
+    assert fired == [False, False, True], (
+        "the third attempt at the same policy is the one worth saying something about"
+    )
+
+
+def test_a_content_refusal_still_counts_per_file():
+    """"Could not find that text" in one file says nothing about another."""
+    middleware = build_repeated_query_middleware()
+    reason = "Could not find that text in a file. It must match exactly"
+
+    fired = []
+    for path in ("a.js", "b.js", "c.js"):
+        result = middleware.wrap_tool_call(
+            _Request("edit_artifact", {"relative_path": path, "find": "x", "replace": "y"}),
+            lambda _request, p=path: _refusal(p, reason),
+        )
+        fired.append("failed the same way" in result.content)
+
+    assert fired == [False, False, False], "three different files, three first attempts"
+
+
+@pytest.mark.parametrize("marker", _POLICY_REFUSALS)
+def test_every_policy_refusal_is_recognised(marker):
+    assert _is_about_the_kind_of_file(f"Refusing: {marker} and so on")
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "Could not find that text in 'x'",
+        "the file already contained exactly this content",
+        "Node cannot parse this file on line 4",
+    ],
+)
+def test_a_refusal_about_content_is_not_treated_as_policy(reason):
+    assert not _is_about_the_kind_of_file(reason)
+
+
+def test_the_policy_markers_match_the_messages_they_come_from():
+    """A reworded refusal must fail here, not stop grouping in silence.
+
+    Adjacent string literals are joined before searching, because every one
+    of these messages is written as a run of them across several lines and a
+    plain substring search finds none of the longer markers.
+    """
+    import pathlib
+    import re
+
+    sources = "\n".join(
+        pathlib.Path(p).read_text(encoding="utf-8")
+        for p in (
+            "src/app/tools/repository.py",
+            "src/app/tools/sandbox.py",
+            "src/app/tools/agent_toolkit.py",
+        )
+    )
+    # `"...foo "\n        "bar..."` is one string at runtime.
+    joined = re.sub(r"[\"']\s*\n\s*(?:f)?[\"']", "", sources)
+
+    missing = [m for m in _POLICY_REFUSALS if m not in joined]
+    assert not missing, f"no refusal in the tools produces these any more: {missing}"

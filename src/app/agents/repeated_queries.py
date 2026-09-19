@@ -153,6 +153,40 @@ def _the_same_refusal(content: str) -> str:
     return found.group(1).strip() if found else ""
 
 
+#: Refusals that are about what a file *is*, not about what was sent to it.
+#:
+#: The counter keys a refusal on `(tool, path, reason)`, which is right for a
+#: refusal about content - "could not find that text" in one file says nothing
+#: about another. It is wrong for a refusal about a class of file, because the
+#: lesson does not belong to the path.
+#:
+#: Measured on run-cac07d52's `test_round_0`: it was refused a write to
+#: `docs/technical_specification.md`, then to `docs/milestone_review.md`, then
+#: to `docs/technical_specification.md` again - the same refusal, in the same
+#: words, three times in one stage - and no notice ever fired, because two of
+#: the three were spread across two paths and the third was only the second
+#: for its own.
+#:
+#: Matched on the reason `_the_same_refusal` already extracts, so a wording
+#: change shows up here as a refusal that stops grouping rather than as a
+#: silent regression - and `test_every_policy_refusal_is_recognised` pins the
+#: messages these come from.
+_POLICY_REFUSALS = (
+    "the workflow writes this file",
+    "is a test, and tests are part of what",
+    "is not permitted for role",
+    "the brief rules that out",
+    "it can execute arbitrary code",
+    "is your structured response, not an artifact",
+    "would create or rewrite a project manifest",
+)
+
+
+def _is_about_the_kind_of_file(reason: str) -> bool:
+    """Whether this refusal would read the same about any other path."""
+    return any(marker in reason for marker in _POLICY_REFUSALS)
+
+
 def build_repeated_query_middleware() -> Any:
     """Middleware that tells a stage when a query answered exactly as before."""
     from langchain.agents.middleware import AgentMiddleware
@@ -253,6 +287,11 @@ def build_repeated_query_middleware() -> Any:
                 # reason: the refusal is the event, and the body sent with it
                 # is not part of what happened.
                 path = str(args.get("relative_path") or args.get("file_path") or "")
+                if _is_about_the_kind_of_file(refusal):
+                    # The path is not part of this event: the refusal says
+                    # what kind of file it is, and the model has made the same
+                    # mistake whichever one it aimed at.
+                    path = ""
                 key = (name, path, refusal) if path else (name, refusal)
                 digest = refusal
             else:

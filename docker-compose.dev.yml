@@ -28,6 +28,19 @@ services:
       - --reload
       - --reload-dir
       - /app/src
+      # A reload waits for in-flight requests to finish, and this API holds
+      # long-lived ones: the run event stream and the log tail are open for
+      # as long as a browser watches a run. On 2026-09-19 a source edit
+      # triggered a reload that sat at "Waiting for background tasks to
+      # complete" until Docker marked the container unhealthy, and every
+      # later call - including `/health` - hung. The worker carried on, so
+      # nothing said the API had gone.
+      #
+      # Five seconds is long enough for an ordinary request and short enough
+      # that a stream cannot hold a reload open. Development only: the base
+      # file runs gunicorn with no reloader at all.
+      - --timeout-graceful-shutdown
+      - "5"
 
   worker:
     environment:

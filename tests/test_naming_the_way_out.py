@@ -97,5 +97,15 @@ def test_a_first_read_is_untouched(backend):
 
 
 def test_the_thresholds_stay_in_a_sane_order():
-    assert REPEATS_BEFORE_SAYING_SO < READS_BEFORE_WITHHOLDING
+    """Hint, note, withhold - and every rung has to be reachable.
+
+    Lowering `READS_BEFORE_WITHHOLDING` to `REPEATS_BEFORE_SAYING_SO` was
+    tried and caught here: the withholding is tested first, so the note rung
+    would never have fired once. The note is the most-obeyed rung measured
+    across the transcripts (91%, against 58% for withholding), so skipping it
+    trades the effective rung for the weaker one.
+    """
+    assert REPEATS_BEFORE_SAYING_SO < READS_BEFORE_WITHHOLDING, (
+        "the note must fire at least once before the content is taken away"
+    )
     assert REPEATED_READS_BEFORE_NAMING_THE_EXIT >= REPEATS_BEFORE_SAYING_SO

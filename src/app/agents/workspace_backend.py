@@ -179,7 +179,32 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: request for *the same bytes* of an *unchanged* file. Any other range still
 #: returns content, so a model that has genuinely lost the text has a way back
 #: that a loop does not take.
-READS_BEFORE_WITHHOLDING = 5
+#:
+#: Measured across all 50 stored transcripts, counting how often one stage was
+#: handed byte-identical content for one unchanged file:
+#:
+#:     read once   3,013 (file, stage) pairs      read 4 times   39
+#:     twice         293                          5 times        25
+#:     three times    87                          6 or more      9
+#:
+#: At 5 this withholds 20 reads across those fifty runs. At 3 it withholds
+#: 127, which is about two and a half model calls per run, and on the model
+#: these runs use a call costs three and a half minutes.
+#:
+#: Not 2, which would withhold 287 - because `REPEATS_BEFORE_SAYING_SO` is
+#: also 2 and the withholding is tested first, so the note rung would never
+#: fire at all. The note is the most-obeyed rung this codebase has measured
+#: (91%, against 58% for withholding), and skipping straight past it to the
+#: harsher one is the mistake the escalation ladder in
+#: `REPEATED_READS_BEFORE_NAMING_THE_EXIT` documents.
+#:
+#: Three is safe because of what has already happened by then: the model has
+#: been handed these exact bytes three times and told about it once, the file
+#: has not changed (the count is keyed on the file's identity, so a write
+#: resets it), and any other line range still returns content. The
+#: withholding message also carries the file's length and its first and last
+#: lines, so a stage whose context was compacted away still has an anchor.
+READS_BEFORE_WITHHOLDING = 3
 
 #: Repeated reads across ALL files in a stage before the notice stops being
 #: about the file and starts being about the stage.
@@ -203,6 +228,48 @@ READS_BEFORE_WITHHOLDING = 5
 #: rung adds information rather than removing more: it names the exit, which
 #: is the one thing none of the others say.
 REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
+
+
+#: Lines of the withheld file shown at each end, so the message is an anchor
+#: rather than only a refusal.
+ANCHOR_LINES = 3
+
+
+def _an_anchor_to_what_was_withheld(text: str) -> str:
+    """The shape of the file whose content was not repeated.
+
+    Withholding assumes the model can scroll back to a result it was given
+    earlier in the stage. Usually it can. It cannot when the conversation has
+    been compacted since, and that is exactly the case where a stage would
+    otherwise be told "you already have it" about text that is no longer
+    anywhere it can see.
+
+    So the withholding carries the file's length and its first and last few
+    lines. A model that still has the earlier result loses nothing; one that
+    does not has enough to recognise the file, confirm it has not changed,
+    and ask for the line range it needs - which is never withheld, because a
+    different range is different bytes.
+    """
+    lines = (text or "").splitlines()
+    if not lines:
+        return ""
+    if len(lines) <= ANCHOR_LINES * 2:
+        # Short enough that the anchor would be the whole file anyway.
+        # Withholding a six-line file saves nothing and costs clarity, so
+        # this rung quietly becomes a note for files that small.
+        shown = "\n".join(f"  {n:>4} | {line[:100]}" for n, line in enumerate(lines, 1))
+        return f"\n(All {len(lines)} lines of it, unchanged:\n{shown}\n)"
+    head = "\n".join(f"  {n:>4} | {line[:100]}" for n, line in enumerate(lines[:ANCHOR_LINES], 1))
+    tail_from = len(lines) - ANCHOR_LINES + 1
+    tail = "\n".join(
+        f"  {n:>4} | {line[:100]}"
+        for n, line in enumerate(lines[-ANCHOR_LINES:], tail_from)
+    )
+    return (
+        f"\n(It is {len(lines)} lines, unchanged. It begins and ends:\n"
+        f"{head}\n   ... |\n{tail}\n"
+        "Ask for a line range if you need a part you cannot see.)"
+    )
 
 
 class _NoticingRepeats:
@@ -450,7 +517,9 @@ class _NoticingRepeats:
                 "repeated here, because you already have it - scroll back to "
                 "any of those results. If you need a part of it you have not "
                 "seen, ask for a different line range. Otherwise use what you "
-                "have and move on.]" + self._the_way_out()
+                "have and move on.]"
+                + _an_anchor_to_what_was_withheld(text)
+                + self._the_way_out()
             )
         if count >= REPEATS_BEFORE_SAYING_SO:
             return (

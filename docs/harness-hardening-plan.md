@@ -4121,3 +4121,58 @@ would delete whatever now sits at the other end - and this tool exists
 because a wrong guess about position is expensive. One test asserts that the
 advice it gives actually works: the exact call it recommends succeeds, with
 no read in between.
+
+### 4ba. Withholding a read, measured rather than guessed
+
+`specialist_testing_1` in run-ed05e20e spent **54 of its 67 tool calls on
+`read_file`** - 81% - and opened by reading every file in the project one by
+one: `index.html`, `app.js`, `package.json`, `playwright.config.ts`,
+`server.mjs`, `app.spec.js`. The other two long stages opened identically.
+That is the orientation sweep `workspace_digest` exists to prevent, and the
+digest had already told them what was there.
+
+**Inlining small files is not the answer, and the measurement says so.**
+Counting every read across the 50 stored transcripts by the size of what came
+back:
+
+| whole-file reads under | reads | share of all 4,246 |
+| --- | --- | --- |
+| 1,000 chars | 201 | 4.7% |
+| 4,000 chars | 333 | 7.8% |
+| 16,000 chars | 555 | 13.1% |
+
+Even inlining every file under 16 KB would reach 13% of reads while costing a
+large slice of the context budget. The reads that hurt are of *large* files,
+read again and again.
+
+**So: how often is one stage handed byte-identical content for one unchanged
+file?**
+
+| read | (file, stage) pairs |
+| --- | --- |
+| once | 3,013 |
+| twice | 293 |
+| three times | 87 |
+| four times | 39 |
+| five times | 25 |
+| six or more | 9 |
+
+`READS_BEFORE_WITHHOLDING` was 5, which withholds 20 reads across fifty runs.
+At 3 it withholds **127** - about two and a half model calls a run, and on
+the model these runs use a call costs three and a half minutes.
+
+**Not 2, and the test caught me trying it.** `REPEATS_BEFORE_SAYING_SO` is
+also 2 and the withholding branch is tested first, so at 2 the *note* rung
+would never fire once. The note is the most-obeyed rung this codebase has
+measured - 91%, against 58% for withholding - so lowering the harsher rung
+onto it trades the effective one for the weaker one.
+`test_the_thresholds_stay_in_a_sane_order` now says why rather than only
+asserting the inequality.
+
+**The withholding now carries an anchor.** Withholding assumes the model can
+scroll back to an earlier result. It cannot when the conversation has been
+compacted since - exactly the case where a stage would be told "you already
+have it" about text that is nowhere it can see. So the message carries the
+file's length and its first and last three lines, and a file short enough
+that the anchor would be the whole file is simply shown in full: withholding
+six lines saves nothing and costs the stage its bearings.

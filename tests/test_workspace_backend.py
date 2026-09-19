@@ -227,14 +227,34 @@ def test_the_bytes_are_withheld_once_the_note_has_been_ignored(backend) -> None:
     """
     from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
 
+    # Long enough to be worth withholding. A file of a few lines is shown in
+    # full even at this rung - see the test below - because withholding six
+    # lines saves nothing and costs clarity.
+    big = "\n".join(f"export function fn{n}() {{ return {n}; }}" for n in range(40))
+    target = Path(backend._resolve_path("/todo-app/big.js"))
+    target.write_text(big + "\n", encoding="utf-8")
+
     for _ in range(READS_BEFORE_WITHHOLDING):
-        backend.read("/todo-app/app.js")
+        backend.read("/todo-app/big.js")
 
-    content = backend.read("/todo-app/app.js").file_data["content"]
+    content = backend.read("/todo-app/big.js").file_data["content"]
 
-    assert "export function a" not in content, "repeating the bytes is the cost"
+    assert "export function fn20" not in content, "repeating the bytes is the cost"
     assert "you already have it" in content
     assert "different line range" in content, "a model that truly lost it needs a way back"
+    # And an anchor, for a stage whose earlier results were compacted away.
+    assert "40 lines, unchanged" in content
+    assert "export function fn0" in content, "the first lines, so it knows which file"
+
+
+def test_a_short_file_is_shown_in_full_even_when_withheld(backend) -> None:
+    """Withholding six lines saves nothing and costs the stage its anchor."""
+    from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
+
+    for _ in range(READS_BEFORE_WITHHOLDING + 1):
+        content = backend.read("/todo-app/app.js").file_data["content"]
+
+    assert "export function a" in content
 
 
 def test_a_range_it_has_not_seen_still_returns_content(tmp_path) -> None:
@@ -503,6 +523,13 @@ def test_the_notice_comes_before_the_content(tmp_path) -> None:
 
 
 def test_the_content_is_still_complete_when_a_notice_is_added(tmp_path) -> None:
+    """A note adds to the result; it must never take the file away.
+
+    Withholding is a separate, later rung and does take it away - see
+    `READS_BEFORE_WITHHOLDING`, now 2 - so this checks the rung it is about.
+    A file this short is shown in full even when withheld, because
+    withholding six lines saves nothing.
+    """
     (tmp_path / "a.js").write_text("line one\nline two\nline three\n", encoding="utf-8")
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 

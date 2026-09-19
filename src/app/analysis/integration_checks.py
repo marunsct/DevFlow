@@ -34,6 +34,11 @@ from pathlib import Path
 from typing import Any
 
 #: Directories that are never the project's own source.
+#: The harness's own files, never the product's. Read from one place.
+_HARNESS_BOOKKEEPING = frozenset({
+    ".project-directory", ".project-stack", ".project-memory.json",
+})
+
 _SKIP = {
     "node_modules", ".git", "dist", "build", "coverage", ".agent-home",
     "large_tool_results", "__pycache__", ".venv", "vendor",
@@ -102,6 +107,8 @@ def _source_files(root: Path) -> list[Path]:
         # exactly that. Each check filters this list by the suffixes it
         # understands, so widening the collection adds files without changing
         # what any existing check looks at.
+        if path.name in _HARNESS_BOOKKEEPING:
+            continue
         if path.suffix.lower() in _COLLECTED_SUFFIXES or path.name in _MANIFEST_OF:
             found.append(path)
     return found

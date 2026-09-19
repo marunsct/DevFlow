@@ -65,6 +65,77 @@ def _symbols(text: str, limit: int = 8) -> list[str]:
     return found
 
 
+def _is_a_rendered_document(name: str) -> bool:
+    """Whether this is one of the nine the workflow writes."""
+    try:
+        from app.analysis.document_manifest import is_rendered
+
+        parts = Path(name).parts
+        return len(parts) == 2 and parts[0].lower() == "docs" and is_rendered(parts[1])
+    except Exception:  # noqa: BLE001 - the digest must survive anything
+        return False
+
+
+def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
+    """One file, as the lines a later stage reads instead of the file itself.
+
+    The digest used to print `app.js (348 lines): createTask, toggleTask` and
+    stop. Two things were missing and both are why a later stage opened the
+    file: what it is *for*, and how to *call* it.
+
+    Measured across the 50 stored transcripts: 30% of all 4,001 reads were a
+    later stage fetching bytes an earlier stage had already been given. See
+    `app.analysis.project_memory`, which derives both fields from the file
+    and asks no model for anything.
+
+    A file with neither a header comment nor a callable surface prints
+    exactly the one line it printed before, so nothing gets longer without
+    saying something.
+    """
+    from app.analysis import project_memory
+
+    count = text.count("\n") + 1
+    head = f"  {name} ({count} lines)"
+    try:
+        changed_by = project_memory.who_changed(root, name)
+        if changed_by:
+            head += f" - written by {changed_by}"
+        # Not for the nine. Every stage already knows what
+        # `docs/milestone_plan.md` is, and its first heading is whatever that
+        # stage's model happened to write: on run-ed05e20e it was "Milestone
+        # Plan - The layout adapts cleanly to both mobile (<600px) and
+        # desktop (1280px) viewports", which describes one bullet inside it.
+        purpose = "" if _is_a_rendered_document(name) else project_memory.purpose_of(text, name)
+        interface = (
+            project_memory.interface_of(text)
+            if path.suffix.lower() in _CODE_SUFFIXES or _LOOKS_LIKE_CODE.search(text[:400])
+            else ""
+        )
+    except Exception:  # noqa: BLE001 - the digest must survive a bad file
+        purpose, interface = "", ""
+    out = [head]
+    if purpose:
+        out.append(f"      {purpose}")
+    if interface:
+        out.append(f"      {interface}")
+    if not purpose and not interface and path.suffix.lower() in _CODE_SUFFIXES:
+        # Fall back to the bare names rather than saying nothing at all.
+        found = _symbols(text)
+        if found:
+            out[0] += ": " + ", ".join(found)
+    return out
+
+
+#: A language the suffix list does not name. `_CODE_SUFFIXES` is JS and
+#: Python only, which left Go, Rust, Java, C# and the rest with no interface
+#: line at all - and this harness is meant to build in all of them.
+_LOOKS_LIKE_CODE = re.compile(
+    r"^\s*(?:package\s+\w|fn\s+\w|func\s+\w|public\s+class|namespace\s+\w"
+    r"|#include|using\s+\w+;|import\s+\w|module\s+\w|class\s+\w)",
+    re.M,
+)
+
+
 def _in_reading_order(root: Path, names: list[str]) -> list[str]:
     """The project first, then documents, then everything else.
 
@@ -195,13 +266,7 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        count = text.count("\n") + 1
-        entry = f"  {name} ({count} lines)"
-        if path.suffix.lower() in _CODE_SUFFIXES:
-            names_found = _symbols(text)
-            if names_found:
-                entry += ": " + ", ".join(names_found)
-        lines.append(entry)
+        lines.extend(_entry_for(root, name, path, text))
 
     if not lines:
         return ""
@@ -228,8 +293,10 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
     return (
         "The workspace as it stands. This is what is there - you do not need to "
         "list the directories to find out:\n" + "\n".join(lines) + more + "\n"
-        "Read the files you actually need; the names after a filename are its "
-        "top-level definitions."
+        "Read the files you actually need. Under each name is what that file "
+        "says it is for and the calls it exposes, taken from the file itself - "
+        "so a file you only need to CALL or to know ABOUT is one you do not "
+        "have to open."
     )
 
 

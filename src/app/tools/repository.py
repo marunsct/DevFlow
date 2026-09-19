@@ -175,6 +175,24 @@ def is_secret_path(path: Path) -> bool:
     return any(fnmatch(name, pattern) for pattern in SECRET_FILE_PATTERNS)
 
 
+#: The harness's own bookkeeping, written into the workspace beside the work.
+#: None of it is the product and none of it is evidence, so no listing, no
+#: digest, no cross-file check and no line count should ever see it.
+#:
+#: `.project-directory` and `.project-stack` were already invisible by
+#: accident - nothing reads a dotfile with no suffix - and `.project-memory
+#: .json` was not, because it has one. It appeared at the top of the first
+#: digest that carried it, which is exactly where a stage looks first.
+HARNESS_FILES = frozenset({
+    ".project-directory", ".project-stack", ".project-memory.json",
+})
+
+
+def is_harness_bookkeeping(path: Path) -> bool:
+    """Whether this file is the harness's own, not the product's."""
+    return path.name in HARNESS_FILES
+
+
 def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list[Path]:
     """List project files, pruning noise directories and credential files.
 
@@ -188,17 +206,29 @@ def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list
 
     if not allow_subdirectories:
         for path in sorted(repo_root.iterdir()):
-            if path.is_file() and not is_secret_path(path):
+            if path.is_file() and not is_secret_path(path) and not is_harness_bookkeeping(path):
                 files.append(path)
         return files
 
     for dirpath, dirnames, filenames in os.walk(repo_root):
         # Pruning in place is what stops os.walk descending further.
-        dirnames[:] = sorted(d for d in dirnames if d not in IGNORED_DIRECTORIES and not d.startswith(".cache"))
+        # A test runner's own output goes with the dependency directories:
+        # `test-results/.last-run.json` and `playwright-report/index.html`
+        # are not the product, and on run-ed05e20e the first appeared in the
+        # digest every stage reads. `_RUNNER_OUTPUT_DIRECTORIES` is the same
+        # set `sandbox._written_since` already excludes.
+        from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
+
+        dirnames[:] = sorted(
+            d for d in dirnames
+            if d not in IGNORED_DIRECTORIES
+            and d not in _RUNNER_OUTPUT_DIRECTORIES
+            and not d.startswith(".cache")
+        )
         current = Path(dirpath)
         for filename in sorted(filenames):
             candidate = current / filename
-            if is_secret_path(candidate):
+            if is_secret_path(candidate) or is_harness_bookkeeping(candidate):
                 continue
             if candidate.is_file():
                 files.append(candidate)
@@ -1543,6 +1573,22 @@ def _what_is_still_wrong_after_a_repair(
     )
 
 
+def _remember_who_wrote_it(root: Path, relative_path: str) -> None:
+    """Record the authoring stage in the project memory. Never raises.
+
+    Called from the two success paths every mutation funnels through, so a
+    third path cannot reopen the gap - the mistake `_edited`'s own docstring
+    names. See `app.analysis.project_memory`.
+    """
+    try:
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+
+        project_memory.record(root, relative_path, _stage_from_config(""))
+    except Exception:  # noqa: BLE001 - bookkeeping must never fail a write
+        pass
+
+
 def _edited(
     target: Path,
     root: Path,
@@ -1568,6 +1614,7 @@ def _edited(
     thirteen" mistake this codebase names in its own tests, and building the
     result in one place is what stops a third path from reopening it.
     """
+    _remember_who_wrote_it(root, str(target.relative_to(root)))
     summary = replace[:80] + ("..." if len(replace) > 80 else "")
     result: dict[str, str] = {
         "path": str(target.relative_to(root)),
@@ -3665,6 +3712,7 @@ def write_approved_artifact(
         )
     else:
         result["status"] = "written"
+        _remember_who_wrote_it(root, str(target.relative_to(root)))
     notes = [
         # First, because it explains why what landed differs from what was
         # sent. A silent repair teaches the model nothing and it escapes the

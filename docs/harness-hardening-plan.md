@@ -3791,3 +3791,68 @@ Three safety properties, each tested:
 
 `RESUME_ORPHANS_ON_START=false` turns it off. Default on, because the case
 where it is wrong is the case the three guards above already exclude.
+
+### 4as. The project memory, built
+
+§24 implemented. `src/app/analysis/project_memory.py` derives three things
+from each file and the digest carries them between stages:
+
+```
+  task-manager/app.js (392 lines) - written by specialist_backend_2
+      ES module with all task management logic.
+      createTask(title, description = ''), toggleTask(taskList, taskId),
+      deleteTask(taskList, taskId), filterTasks(taskList, status),
+      saveTasks(taskList), loadTasks(), renderTaskList(tasks, ...), init()
+  task-manager/server.mjs (61 lines) - written by specialist_testing_2
+      Minimal static file server for Playwright testing.
+```
+
+Rendered from run-ed05e20e's live workspace, not invented for this document.
+
+**Nothing asks a model for anything.** The purpose is the file's own header
+comment, which its author has usually already written; the interface is its
+declarations with their parameter lists; the author is recorded by the two
+success paths every mutation funnels through. No tool gained an argument and
+no prompt gained a demand.
+
+**Only the authorship is persisted.** Purpose and interface are read from the
+file when the digest is built, so they cannot go stale - a file changed
+outside the tools, by a formatter or a runner writing a snapshot, is
+described correctly whether or not anything told the index.
+
+**Five things the live workspace taught that the unit tests did not.**
+
+1. `.project-memory.json` appeared at the top of the first digest that
+   carried it. `.project-directory` and `.project-stack` had been invisible
+   by accident - nothing reads a dotfile with no suffix - and this one has
+   one. `HARNESS_FILES` now names all three in one place, filtered from the
+   listing, the digest and the cross-file checks.
+2. `test-results/.last-run.json` was in the listing. A test runner's output
+   is not the product; `_RUNNER_OUTPUT_DIRECTORIES`, the set
+   `sandbox._written_since` already excludes, is now pruned from the walk.
+3. The header of `app.js` opens `task-manager/app.js — ES module with all
+   task management logic`, so stripping only the base name left the
+   directory in. The full relative path is tried first, and a spelling that
+   carries the extension may be dropped with no separator at all -
+   `task-manager/style.css Production styles for ...` had none.
+4. `createMockStorage({ getItemFn = ()` - the parameter regex stops at the
+   first `)`, which a default value or a destructured argument contains. An
+   unbalanced capture now falls back to the bare name, because a signature
+   cut mid-expression is worse than no signature: a stage will try to call
+   it.
+5. The nine rendered documents get no purpose line. `docs/milestone_plan.md`
+   produced "Milestone Plan - The layout adapts cleanly to both mobile
+   (<600px) and desktop (1280px) viewports", which describes one bullet
+   inside it. Every stage already knows what those nine are.
+
+**One thing the unit tests taught.** `_NOT_A_NAME` began as a list of
+keywords a declaration regex mistakes for a function name, and it held `go`,
+`new`, `print`, `match`, `select`, `is` and `as` - every one of them a name a
+real function has. `interface_of("function go(...)")` returned nothing.
+Narrowed to control flow only: dropping a genuine name is the failure that
+matters here, because the line exists so a stage need not open the file, and
+a missing entry sends it there.
+
+**How to tell whether it worked**, unchanged from §24.6: re-run the §22.1
+measurement on runs produced by the same brief and see whether the 30% falls.
+Not yet measurable - the runs that would show it have not been produced.

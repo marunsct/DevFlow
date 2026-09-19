@@ -4033,3 +4033,15 @@ Green tests, deployed code, and the behaviour it was written for did not
 happen once. What caught it was looking at the field in a live transcript
 two minutes after the deploy - which is the argument for watching a run
 rather than watching a suite.
+
+**Verified live** on the next four requests after the second deploy:
+
+```
+07:51:33    4.7 KB  carried=31  added=3
+07:51:35   33.1 KB  carried=33  added=5
+07:52:01   58.5 KB  carried=34  added=6
+07:52:17    8.4 KB  carried=39  added=3
+```
+
+4.7 KB where the same entry had been 85 KB. The two larger ones are big tool
+results inside the *added* messages - real content, recorded once.

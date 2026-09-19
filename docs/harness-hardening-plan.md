@@ -4221,3 +4221,46 @@ nothing: the answer the prompt recommends actually validates against
 `TechnologyStack._must_be_runnable`. Another asserts the two prompts no
 longer disagree - both name the browser runner and both name the built-in
 one.
+
+### 4bc. Every run downloaded its own copy of Chromium
+
+`sandbox._child_environment` has always preferred an image-level browser
+cache at `~/.cache/ms-playwright`, falling back to a per-run one only when
+that is absent:
+
+```python
+_pw_cache = os.path.expanduser("~/.cache/ms-playwright")
+if not os.path.isdir(_pw_cache):
+    _pw_cache = os.path.join(home, ".cache", "ms-playwright")
+```
+
+It was absent. Nothing ever put a browser in the image, so the preference
+was dead code and the fallback was the only path anything took.
+
+Measured on 2026-09-19 across the stored workspaces: **22 of them held
+`.agent-home/.cache/ms-playwright`, between 0.6 and 1.2 GB each, 8.5 GB in
+total.** Not one byte was ever reused by another run. Every run paid a
+download of roughly 650 MB before it could test a page, and the disk this
+harness runs on was at 90%.
+
+The Dockerfile now installs Chromium as `appuser`, whose home is where the
+preferred path resolves to. Verified in the built image: 658 MB at
+`/home/appuser/.cache/ms-playwright`, holding `chromium-1243`,
+`chromium_headless_shell-1243` and `ffmpeg-1011`; and verified from inside
+the running worker that `_child_environment` now hands a run that path, that
+it exists, and that it is writable.
+
+**Writable on purpose.** When a run installs a Playwright whose browser
+revision is not in the image, it downloads the missing one *into the shared
+cache* rather than failing, and every later run gets it - so the first run
+after a Playwright release pays once on behalf of all of them. That is what
+makes it safe to leave the version unpinned in `TESTABILITY_RULE`.
+
+The per-run home is unchanged and still inside the workspace, so npm, pip and
+cargo caches do not become shared state. Only the browser is shared, because
+only the browser is both enormous and identical between runs.
+
+**A test asserts the half that lives outside Python** - that the Dockerfile
+contains the install and that it runs after `USER appuser`. The preference
+existed in the code for as long as the fallback did; what was missing was
+the line in the image, which is exactly the shape of bug that comes back.

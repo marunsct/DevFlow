@@ -128,6 +128,27 @@ RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser 
 # Runs unprivileged. The image previously ran as root.
 USER appuser
 
+# Chromium in the image, downloaded once and shared by every run.
+#
+# `sandbox._base_environment` already prefers `~/.cache/ms-playwright` over
+# the per-run one and falls back only when it is absent - it just was
+# absent, so every run downloaded its own copy into its own workspace.
+# Measured on 2026-09-19: 22 stored workspaces holding 8.5 GB of Chromium
+# between them, 0.6 to 1.2 GB each, none of it ever reused by another run,
+# and each run paying the download before it could test a page.
+#
+# Run as `appuser` so it lands in that user's home, which is also what makes
+# the failure mode graceful: when a run installs a Playwright whose browser
+# revision is not in here, it downloads the missing one INTO this shared
+# cache, and every later run gets it. The first run after a Playwright
+# release pays once for all of them.
+#
+# The system libraries Chromium needs are installed further up, as root,
+# with a note explaining why `--with-deps` is not used here.
+RUN npx --yes playwright install chromium \
+    && test -d "$HOME/.cache/ms-playwright" \
+    && du -sh "$HOME/.cache/ms-playwright"
+
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

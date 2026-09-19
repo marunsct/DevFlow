@@ -4045,3 +4045,79 @@ rather than watching a suite.
 
 4.7 KB where the same entry had been 85 KB. The two larger ones are big tool
 results inside the *added* messages - real content, recorded once.
+
+### 4ay. run-ed05e20e completed, and what it left to fix
+
+The run finished at 07:55:39 after five sprints, and it is the cleanest this
+harness has produced.
+
+| | |
+| --- | --- |
+| model calls | 349 |
+| tool calls | 506 |
+| costly failures | **10 (2.0%)** against a corpus average of 11.8% |
+| refusals that prevented damage | 5 |
+| identical repeats in a stage | 19 (5.4% of model calls) |
+| cross-file problems in the delivered product | **none** |
+| `npx playwright test` | **rc 0** |
+| `node --test` on both suites | rc 0 |
+| ledger totals on the final `npm test` | `passed 5, failed 0, tests 5` in 20.7s |
+
+"No cross-file problems found" is the first time that sentence has appeared
+for a completed run, and the browser suite ran green at a gate rather than
+being discovered unrun afterwards (§4an).
+
+**What it leaves.**
+
+1. **111 read-repeat notices**, still the largest single waste signal. The
+   project memory (§4as) deployed *during* this run, so the next one is the
+   first that can be measured against §22.1.
+2. **Three `replace_lines` refusals for a stale line number**, fixed below.
+3. **Three stages over 30 model calls** - `specialist_testing_1` at 45,
+   `specialist_testing_2` at 38, `specialist_backend_2` at 34 - against a
+   median of 3 to 12.
+4. **2,287 lines of tests against 461 lines of application code.** Counted
+   separately, so no budget was breached, but five times as much test code
+   as product is worth a measurement of its own.
+
+### 4az. "Read the file again" for something the tool was holding
+
+Three of run-ed05e20e's ten costly failures were one refusal:
+
+```
+Line 195 of 'task-manager/app.js' is not what you expected, so the
+numbering has moved since you read it.
+  you expected: export function renderTaskList(tasks, emptyMessage = ...)
+  line 195 is:  *   void
+Read the file again and use the new line numbers. Nothing was changed.
+```
+
+The refusal itself is right - a stale line number silently changing the
+wrong place is exactly the damage `expect_start` exists to prevent. The
+advice was the problem: a read of the whole file and a second attempt, to
+rediscover a number the function already had. In all three cases the line
+had moved **two lines**, and `specialist_testing_2` asked for the same line
+at 195 twice.
+
+This matters more than it did yesterday, because §4ap rewrote two
+`edit_artifact` refusals to send the model to `replace_lines`. A dead end
+here is a dead end at the end of the path the harness now recommends.
+
+It now says where the line went:
+
+```
+It is line 197 now, 2 lines further down. Send the same call with
+start_line=197 and end_line adjusted by the same amount. You do not need to
+read the file again. Nothing was changed.
+```
+
+Three cases, all tested: the line is somewhere else (named, with the
+direction and distance), the line appears several times (all of them named),
+the line is gone (say so, and a read is genuinely needed).
+
+**It reports rather than applies**, deliberately. `expect_start` pins only
+the first line of the range, so shifting the whole range by the same offset
+would delete whatever now sits at the other end - and this tool exists
+because a wrong guess about position is expensive. One test asserts that the
+advice it gives actually works: the exact call it recommends succeeds, with
+no read in between.

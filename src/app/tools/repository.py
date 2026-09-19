@@ -1214,6 +1214,53 @@ def _guard_a_targeted_change(
     return root, target
 
 
+def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> str:
+    """Where the line the caller expected actually is now.
+
+    "Read the file again and use the new line numbers" costs a read of the
+    whole file and a second attempt, to rediscover something this function
+    already has in its hands.
+
+    Measured on run-ed05e20e: three of the run's ten costly failures were
+    this refusal, and in every one the expected line was two or three lines
+    from where the caller looked - `specialist_testing_2` asked for
+    `export function renderTaskList(...)` at line 195 twice, and it was at
+    197 both times.
+
+    Reports rather than applies. `expect_start` pins only the FIRST line, so
+    shifting the whole range by the same offset would delete whatever now
+    sits at the other end, and this tool exists because a wrong guess about
+    position is expensive.
+    """
+    wanted = expected.strip()
+    if not wanted:
+        return "Read the file again and use the new line numbers. Nothing was changed."
+    found = [n for n, line in enumerate(lines, 1) if line.strip() == wanted]
+    if not found:
+        return (
+            "That line is not in the file at all now - it may have been "
+            "changed or removed since you read it. Read the file again. "
+            "Nothing was changed."
+        )
+    if len(found) == 1:
+        moved = found[0]
+        shift = moved - asked_for
+        direction = f"{abs(shift)} line{'s' if abs(shift) != 1 else ''} " + (
+            "further down" if shift > 0 else "further up"
+        )
+        return (
+            f"It is line {moved} now, {direction}. Send the same call with "
+            f"start_line={moved} and end_line adjusted by the same amount. "
+            "You do not need to read the file again. Nothing was changed."
+        )
+    where = ", ".join(str(n) for n in found[:6])
+    return (
+        f"That line appears {len(found)} times now, at lines {where}. Pass the "
+        "one you meant as `start_line`, with `end_line` adjusted by the same "
+        "amount. Nothing was changed."
+    )
+
+
 def replace_approved_lines(
     repo_root: str | Path,
     relative_path: str,
@@ -1285,8 +1332,7 @@ def replace_approved_lines(
                     f"expected, so the numbering has moved since you read it.\n"
                     f"  you expected: {_clip(expect_start.strip())}\n"
                     f"  line {start_line} is:  {_clip(actual_first.strip())}\n"
-                    "Read the file again and use the new line numbers. Nothing "
-                    "was changed."
+                    + _where_that_line_went(lines, expect_start, start_line)
                 )
 
         replaced = "".join(lines[start_line - 1:last])

@@ -113,17 +113,35 @@ def main(path):
         print("\ncostly failures:")
         for (t, m), n in shapes.most_common(10):
             print(f"  {n:3d} {t}: {m}")
+    # Each notice can be worded more than one way, and matching only one of
+    # them reports zero for a notice that fired forty-two times. Measured on
+    # run-cac07d52: the read-repeat notice has a span form ("You have already
+    # read lines 31-50 of this file") and a bytes form ("the same bytes this
+    # file gave you"), and only the second was counted - so every audit in
+    # this session under-reported read repeats, including the ones used to
+    # decide what to work on.
+    #
+    # Keep these in step with the messages in `app/agents/workspace_backend.py`,
+    # `app/agents/repeated_queries.py` and `app/tools/sandbox.py`. A phrase
+    # that stops matching moves a notice silently to zero, which reads as
+    # "this never fires" rather than "the audit cannot see it".
     notices = [
-        ("returned exactly what it returned", "query repeat"),
-        ("same bytes this file gave you", "read repeat"),
-        ("you already have it", "read withheld"),
-        ("already contained exactly this content", "write unchanged"),
-        ("you have already been told that twice", "no-op refusal"),
-        ("already failed", "ledger command"),
+        (("returned exactly what it returned",), "query repeat"),
+        (("same bytes this file gave you", "already read lines"), "read repeat"),
+        (("you already have it",), "read withheld"),
+        (("already contained exactly this content",), "write unchanged"),
+        (("you have already been told that twice",), "no-op refusal"),
+        (("already failed", "has already run", "already been refused",
+          "already timed out"), "ledger command"),
     ]
     print("\nnotices:")
-    for phrase, label in notices:
-        n = sum(1 for r in rows if r["kind"] == "tool_result" and phrase in (r.get("content") or ""))
+    for phrases, label in notices:
+        n = sum(
+            1
+            for r in rows
+            if r["kind"] == "tool_result"
+            and any(p in (r.get("content") or "") for p in phrases)
+        )
         print(f"  {n:4d} {label}")
 
 def the_product(workspace):

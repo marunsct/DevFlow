@@ -232,7 +232,18 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
         "to it. Mocking the DOM is no longer permitted. You MUST write a browser-based "
         "test using Playwright (`npm install -D @playwright/test`) to verify the "
         "end-to-end functionality including UI logic with a real browser. Do NOT "
-        "remove or disable the UI logic."
+        "remove or disable the UI logic.\n"
+        # Restored when the advice changed from jsdom to Playwright: the tool
+        # moved and this sentence did not, and without it a brief reading "no
+        # external dependencies" reads as a ban on the very install the
+        # sentence above orders. That contradiction is what B20 cost a run -
+        # the install guard refused `@playwright/test` six times while
+        # `TESTABILITY_RULE` demanded it.
+        "`-D` matters: a brief that forbids external dependencies constrains "
+        "the product, not the machine that builds it. A test tool in "
+        "`devDependencies` ships to nobody and breaks no such constraint, "
+        "while the same package in `dependencies` is a runtime dependency the "
+        "product does not have and is reported as a defect of its own."
     )
 
 

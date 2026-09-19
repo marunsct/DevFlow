@@ -212,7 +212,11 @@ def test_a_hand_built_dom_is_flagged() -> None:
     note = a_dom_built_by_hand("app.test.mjs", RUN_D3965815)
 
     assert note is not None
-    assert "npm install --save-dev jsdom" in note
+    # The advice changed with commit 8a17712, which made Playwright
+    # mandatory for UI code and put Chromium's libraries in the image.
+    # jsdom is a hand-built DOM by another name, and this note exists to
+    # say that a hand-built DOM does not hold.
+    assert "Playwright" in note
     assert "runtime dependency" in note, "a brief that forbids dependencies means the product's"
 
 
@@ -247,7 +251,7 @@ def test_the_note_reaches_the_write_as_well(tmp_path) -> None:
 
     result = write_approved_artifact(tmp_path, "proj/app.test.mjs", RUN_D3965815)
 
-    assert "npm install --save-dev jsdom" in (result.get("note") or "")
+    assert "Playwright" in (result.get("note") or "")
 
 
 RUN_A7150A6C = """// Test to ensure style.css is linked in index.html
@@ -336,7 +340,7 @@ def test_the_run_740edb6b_test_is_warned(project) -> None:
 
     assert note is not None
     assert "document is not defined" in note
-    assert "jsdom" in note
+    assert "Playwright" in note
 
 
 @pytest.mark.parametrize(

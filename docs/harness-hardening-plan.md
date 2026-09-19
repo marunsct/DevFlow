@@ -4176,3 +4176,48 @@ have it" about text that is nowhere it can see. So the message carries the
 file's length and its first and last three lines, and a file short enough
 that the anchor would be the whole file is simply shown in full: withholding
 six lines saves nothing and costs the stage its bearings.
+
+### 4bb. The stack chose one runner and the specification chose the other
+
+Watching run-83c41ea1's first architecture review:
+
+> `technology_stack.md` selects 'node --test' as the testing framework. The
+> `technical_specification.md` (testing section and ADR-003) selects
+> Playwright with detailed justification including webServer configuration,
+> browser management, and DOM testing rationale.
+
+Reported as a Minor finding, and the architect revised three times around
+that review.
+
+**Measured across every stored workspace: 14 technical specifications name
+Playwright, and only 2 of their technology stacks agree.** Twelve of
+fourteen - 86% - disagree in exactly this way.
+
+**Neither stage was wrong.** `describe_execution_environment` tells the stack
+selector two true things and never says how they combine:
+
+* "A HEADLESS browser is available, through Playwright, and it is the
+  required way to test frontend UI code here."
+* "Prefer a runner the runtime already provides over one that must be
+  installed. `node --test` and Python's `unittest` ship with their runtimes
+  and cost nothing to add."
+
+For a browser-only to-do list both apply. The selector resolves it one way,
+the architect - reading the same text plus `TESTABILITY_RULE`, which is
+unambiguous about Playwright - resolves it the other, and the reviewer
+reports the two documents as contradicting each other.
+
+**The answer is both, and the delivered products already prove it.**
+Run-ed05e20e shipped `app.test.mjs` under `node --test` *and* `app.spec.js`
+under Playwright, and passed both. So the environment now says so in as many
+words: a product with a user interface needs both runners, naming both in
+`testing_framework` is the right answer, and the reason is that neither can
+do the other's job - nothing built into a language runtime can open a page.
+The preference for a built-in runner is scoped to the logic rather than
+deleted, because it is right about the logic.
+
+One test asserts the thing that would otherwise make this worse than
+nothing: the answer the prompt recommends actually validates against
+`TechnologyStack._must_be_runnable`. Another asserts the two prompts no
+longer disagree - both name the browser runner and both name the built-in
+one.

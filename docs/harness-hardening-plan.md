@@ -2852,3 +2852,46 @@ and `_code_lines` already strips `//`, `#`, `/* */` and `<!-- -->`. Worth
 separating, because "B1 needs a LanguageAnalyser protocol" was true of the
 part nobody had measured and false of the part the milestone budget actually
 reads.
+
+### 4ad. Run two, and two more found by watching it
+
+Deployed everything from §4w-§4ac, reloaded the model, and started
+run-cac07d52 on the same brief. Two defects surfaced that the first run's
+audit had not, and both were in code written earlier the same day.
+
+**The stack pin was written empty.** `_toolchain_key` took the leading word of
+the language name, which handled "JavaScript (ES6+)", "Python 3.12" and "Go
+1.22" and failed on anything with a qualifier in front. The selector answered
+"Plain JavaScript (ES6+)", the head word was `plain`, and `.project-stack`
+came out empty - so every role lost the JavaScript toolchain, and `tsc`,
+`vitest` and `playwright` were on no allowlist in a run whose own suite is
+Playwright.
+
+It did not stop the run, and that is the part worth recording: `npm test`
+reaches `npx playwright test`, and `npx` runs anything. The allowlist was
+bypassed by the same escape hatch that has hidden four earlier gaps in it. A
+check that is routinely bypassed does not report its own failure, so this was
+only visible by reading `.project-stack` directly.
+
+Now scanned rather than parsed from the front, longest match first so
+"javascript" wins over the "java" inside it, with nineteen spellings pinned.
+
+**One stray quote at the end of an edit's `find`.** `specialist_ui_ux_0` sent
+an 85-line passage matching `tests/app.test.ts` exactly except for a trailing
+`"`, and sent it twice. The diff said so precisely - `you sent: });"` against
+`file has: });` - and every line but the last was right. Added to the repair
+chain under the same rule as the rest: offered only after the original fails,
+and still required to match exactly once.
+
+**What the run did right.** It installed Playwright, downloaded Chromium, ran
+five browser tests and failed all five on a real defect - the page renders no
+`span.title` for the tests to assert on. That is the harness working: a UI
+product with a browser suite, run headless, failing for a reason a defect-fix
+stage can act on. Every earlier run of this brief either shipped without a
+browser test or lost the sprint to the test environment.
+
+| | run 519a9d8a | run eb48de7a | run cac07d52 |
+|---|---|---|---|
+| costly failures, first ~90 calls | 8 | 1 | 2 |
+| identical repeats | 4 | 0 | 3 |
+| reached a browser test | no | no | **yes** |

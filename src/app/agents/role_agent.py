@@ -391,18 +391,19 @@ def _compaction_middleware(agent_name: str) -> list:
 def _documents_the_workflow_owns() -> str:
     """The `docs/` filenames an agent must not write, named in the prompt.
 
-    The writing rules tell every specialist to put its reports in `docs/`, and
-    the workflow owns nine files in there - it renders each from the structured
-    response of the stage that produces it and rewrites it whole every time.
-    An agent that writes one is refused, correctly, but nothing had told it
-    which names were taken, so it found out by spending a call.
+    The writing rules used to tell every specialist to put its reports in
+    `docs/`, and the workflow owns nine files in there - it renders each from
+    the structured response of the stage that produces it and rewrites it
+    whole every time. An agent that writes one is refused, correctly, but
+    nothing had told it which names were taken, so it found out by spending a
+    call.
 
     Measured across runs 60-67: 31 such calls, from 13 different stages - every
     kind of specialist, plus two test rounds. Not one stage's mistake; the
     instruction to write into `docs/` with no list of what is already claimed.
 
-    Read from `WORKFLOW_DOCUMENTS` rather than restated, so the prompt cannot
-    fall out of step with the refusal.
+    Read from the manifest rather than restated, so the prompt cannot fall out
+    of step with the refusal. See `app.analysis.document_manifest`.
     """
     from app.tools.repository import WORKFLOW_DOCUMENTS
 
@@ -411,18 +412,23 @@ def _documents_the_workflow_owns() -> str:
 
 _WRITING_RULES = (
     "CRITICAL DIRECTORY RULES:\n"
-        "- Write all document artifacts (intakes, specs, plans, reports) inside the\n"
-        "  `docs/` folder. Use the exact filename your brief names - never invent\n"
-        "  a shorter one. A second document about the same subject is worse than\n"
-        "  no document: a reviewer reads whichever it finds first.\n"
-        "- These names in `docs/` are NOT yours to write, and writing one is\n"
-        "  refused: " + _documents_the_workflow_owns() + ".\n"
+        "- `docs/` is the WORKFLOW's directory, not yours. It holds exactly these\n"
+        "  nine files and nothing else: " + _documents_the_workflow_owns() + ".\n"
         "  The workflow renders each of them from the structured response of the\n"
         "  stage that produces it, and rewrites it whole every time that stage\n"
-        "  runs, so any change you make there is discarded. Read them freely. If\n"
-        "  one is wrong or out of date, say so in your OWN structured response -\n"
-        "  that reaches the workflow and the next stage; a file written beside\n"
-        "  one of these reaches nobody.\n"
+        "  runs, so any change you make there is discarded. Read them freely.\n"
+        "  Writing ANY file into `docs/` is refused - the nine because the\n"
+        "  workflow owns them, anything else because nothing reads it. Measured\n"
+        "  across fifty runs: 563 writes went into `docs/`, and not one of them\n"
+        "  produced something a later stage read.\n"
+        "- So where does your report go? Nowhere, usually. If it is something the\n"
+        "  next stage needs - a decision you made, a risk you found, something\n"
+        "  that blocks the work - it goes in your OWN structured response, which\n"
+        "  is the only thing the workflow actually receives. If it is\n"
+        "  documentation that SHIPS WITH THE PRODUCT - a README, an API guide, a\n"
+        "  design note for whoever maintains this code - write it inside the\n"
+        "  project folder beside the code it describes, where the reviewer reads\n"
+        "  it as part of the work.\n"
         "- Write all code artifacts inside ONE top-level project folder. Run `ls`\n"
         "  first: if a project folder already exists, use it exactly as spelled.\n"
         "  Do NOT create a second folder that differs only in separators or case\n"

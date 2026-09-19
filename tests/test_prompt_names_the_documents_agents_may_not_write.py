@@ -19,14 +19,21 @@ def test_every_document_the_workflow_owns_is_named():
 
 
 def test_the_rule_says_what_to_do_instead():
-    """A prohibition with no alternative is how the run-db3a4a0b stall started."""
+    """A prohibition with no alternative is how the run-db3a4a0b stall started.
+
+    The rule now refuses the whole of `docs/`, not only the nine names, so it
+    has two alternatives to give and must give both: the structured response
+    for anything a later stage needs, and the project directory for
+    documentation that ships with the product.
+    """
     assert "structured response" in _WRITING_RULES
-    assert "NOT yours to write" in _WRITING_RULES
+    assert "WORKFLOW's directory" in _WRITING_RULES
+    assert "project folder beside the code" in _WRITING_RULES
 
 
 def test_a_read_only_agent_is_not_given_write_rules():
     """It has no `write_artifact`, so a list of paths it may not write is noise."""
-    assert "NOT yours to write" not in _READ_ONLY_RULES
+    assert "WORKFLOW's directory" not in _READ_ONLY_RULES
 
 
 def test_the_list_is_derived_rather_than_restated():

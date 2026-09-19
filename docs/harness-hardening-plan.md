@@ -3720,3 +3720,42 @@ written and revised four times is 10% of the budget spent on planning.
 5. Keep it only if it wins on the numbers. Write the result here either way -
    a measured negative is the more useful finding, because it closes the
    question.
+
+### 4aq. The document manifest, built - and the instruction that contradicted it
+
+§23 implemented. `src/app/analysis/document_manifest.py` holds the nine
+documents, their owning stage and a one-line summary;
+`repository.WORKFLOW_DOCUMENTS` is derived from it rather than restated, so
+the tool that refuses, the prompt that describes and the audit that reads can
+no longer drift apart.
+
+**The half that would have broken it.** Four role prompts said, in capitals,
+*"All documentation goes in the `docs/` directory"*, and `_WRITING_RULES`
+told every specialist to "write all document artifacts (intakes, specs,
+plans, reports) inside the `docs/` folder". Enforcing the manifest without
+rewriting those would have been §4ao exactly: the harness ordering a file
+into existence and then refusing the sprint for it. Both were changed in the
+same commit. The rules now say `docs/` is the workflow's directory, that
+writing anything into it is refused, and where the two kinds of content
+actually go - the structured response for anything a later stage needs, the
+project directory for documentation that ships with the product.
+
+**What the refusal says.** Three messages, chosen by what the agent was
+evidently doing, because a refusal that names no way out is the most
+expensive shape this harness has:
+
+| the write | what it is told |
+| --- | --- |
+| `docs/structured_response.md`, `docs/final_output.md` | the answer is returned, not written |
+| `docs/tech_specification.md` | a near-copy of a rendered document, and a reviewer reads the differences as contradictions |
+| `docs/README.md`, `docs/QA_report.md` | nothing reads a file added to `docs/`; the project directory is where product documentation goes |
+
+A subdirectory is covered too - `docs/notes/README.md` is refused - because
+that is the obvious next thing to try after a refusal.
+
+**Tests.** 51 existing tests asserted the old permissive policy or used
+`docs/` as a neutral fixture. The neutral ones moved to `notes/`; the
+policy ones were rewritten to assert the new behaviour with the measurement
+in their docstrings, and `test_documents_are_still_welcome_there` became
+`test_documents_belong_with_the_product_not_in_docs`. Suite: 3,869 passed,
+6 skipped.

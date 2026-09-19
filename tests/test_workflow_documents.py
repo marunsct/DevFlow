@@ -67,30 +67,34 @@ def test_a_copy_anywhere_else_is_refused(tmp_path, path: str) -> None:
     assert "Read 'docs/" in message, "the message must name where the real one is"
 
 
-def test_a_specialists_own_document_is_unaffected(tmp_path) -> None:
+def test_a_specialists_own_document_belongs_with_its_code(tmp_path) -> None:
+    """A document inside the project is the product's and always was."""
     assert write_approved_artifact(tmp_path, "proj/docs/design_notes.md", "# mine\n")["status"]
-    assert write_approved_artifact(tmp_path, "docs/README.md", "# readme\n")["status"]
-    assert write_approved_artifact(tmp_path, "docs/testing_results.md", "# results\n")["status"]
+    assert write_approved_artifact(tmp_path, "proj/README.md", "# readme\n")["status"]
 
 
-# --- the near-miss spelling, between the exact name and an explicit _v2 ----
+# --- `docs/` holds the nine and nothing else ------------------------------
+#
+# This section used to assert the opposite: a near-miss name earned a note, a
+# document of its own earned nothing, and both were written. Measured across
+# the 50 stored transcripts, 334 such files were created in 28 of 50 runs and
+# not one of them was read by a later stage, while a near-copy of a workflow
+# document has ended a run - a reviewer with two specifications in front of it
+# reads the differences between them as contradictions.
 
 
 @pytest.mark.parametrize(
     "name", ["tech_specification.md", "technicalspecification.md", "tools_and_model.md"]
 )
-def test_a_name_a_reader_would_confuse_is_noted(tmp_path, name: str) -> None:
+def test_a_name_a_reader_would_confuse_is_refused(tmp_path, name: str) -> None:
     """run-454adf22 wrote `docs/tech_specification.md`, 470 bytes, beside the
-    workflow's `docs/technical_specification.md`, 5,847 bytes.
+    workflow's `docs/technical_specification.md`, 5,847 bytes."""
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n")
 
-    The harm is the one `technical_specification_v2.md` caused: a reviewer with
-    two specifications read the differences between them as contradictions,
-    reported a blocking finding that existed only because the second file did,
-    and the run stopped unresolved.
-    """
-    note = write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n").get("note") or ""
-
-    assert "very close to" in note
+    message = str(caught.value)
+    assert "near-copy" in message
+    assert "technical_specification" in message or "tools_and_models" in message
 
 
 @pytest.mark.parametrize(
@@ -104,35 +108,49 @@ def test_a_name_a_reader_would_confuse_is_noted(tmp_path, name: str) -> None:
         "api_reference.md",
     ],
 )
-def test_a_document_of_its_own_is_not_nagged(tmp_path, name: str) -> None:
-    note = write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n").get("note") or ""
+def test_a_document_of_its_own_is_refused_there_and_welcome_elsewhere(
+    tmp_path, name: str
+) -> None:
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n")
 
-    assert "very close to" not in note
+    message = str(caught.value)
+    assert "nothing reads a file you add to it" in message
+    assert "structured response" in message, "a refusal must name the way out"
 
-
-def test_a_note_and_not_a_refusal(tmp_path) -> None:
-    """It cannot tell a careless near-duplicate from a deliberate companion:
-    `security_review_notes.md` is a reasonable thing to write."""
-    result = write_approved_artifact(tmp_path, "docs/security_review_notes.md", "# n\n")
-
-    assert result["status"] == "written"
-    assert (tmp_path / "docs" / "security_review_notes.md").is_file()
+    assert write_approved_artifact(tmp_path, f"proj/{name}", "# doc\n")["status"]
 
 
-def test_the_note_reaches_an_edit_of_one_too(tmp_path) -> None:
-    """This is the path that had no `relative_parts` and raised NameError."""
-    write_approved_artifact(tmp_path, "docs/tech_specification.md", "# a\n# b\n")
+@pytest.mark.parametrize(
+    "name", ["structured_response.md", "structured_response.json", "final_output.md"]
+)
+def test_the_answer_itself_written_to_a_file_is_refused(tmp_path, name: str) -> None:
+    """Measured: `docs/structured_response.md` 41 times, `.json` 8 more.
 
-    result = edit_approved_artifact(tmp_path, "docs/tech_specification.md", "# a", "# A")
+    Two refusals can fire here - `_the_response_it_should_be_returning` knows
+    the well-known names and the manifest catches the rest - and either is
+    right. What both must say is that the answer is returned, not written.
+    """
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(tmp_path, f"docs/{name}", '{"a": 1}')
 
-    assert result["status"] == "edited"
-    assert "very close to" in (result.get("note") or "")
+    message = str(caught.value)
+    assert "structured response" in message
+    assert "not written" in message or "through what you return" in message
 
 
-def test_an_ordinary_document_edit_still_works(tmp_path) -> None:
-    write_approved_artifact(tmp_path, "docs/notes.md", "# one\n# two\n")
+def test_a_subdirectory_of_docs_is_still_docs(tmp_path) -> None:
+    """The obvious next thing to try after a refusal."""
+    with pytest.raises(RepositoryToolError):
+        write_approved_artifact(tmp_path, "docs/notes/README.md", "# mine\n")
 
-    assert edit_approved_artifact(tmp_path, "docs/notes.md", "# one", "# ONE")["status"]
+
+def test_the_workflow_itself_is_never_refused(tmp_path) -> None:
+    """Every refusal here is for an agent. The workflow renders these."""
+    for name in sorted(WORKFLOW_DOCUMENTS):
+        assert write_approved_artifact(
+            tmp_path, f"docs/{name}", "# rendered\n", by_the_workflow=True
+        )["status"]
 
 
 def test_the_refusal_names_the_channel_that_works(tmp_path) -> None:
@@ -190,10 +208,10 @@ def test_nothing_can_be_moved_onto_a_workflow_document(tmp_path) -> None:
     from app.tools.repository import move_approved_artifact
 
     write_approved_artifact(tmp_path, "docs/sprint_plan.md", "# plan\n", by_the_workflow=True)
-    write_approved_artifact(tmp_path, "docs/notes.md", "# mine\n")
+    write_approved_artifact(tmp_path, "proj/notes.md", "# mine\n")
 
     with pytest.raises(RepositoryToolError):
-        move_approved_artifact(tmp_path, "docs/notes.md", "docs/sprint_plan.md")
+        move_approved_artifact(tmp_path, "proj/notes.md", "docs/sprint_plan.md")
 
     assert (tmp_path / "docs" / "sprint_plan.md").read_text() == "# plan\n"
 

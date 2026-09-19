@@ -35,7 +35,8 @@ def repo_root(tmp_path: Path) -> Path:
     root = tmp_path / "repo"
     (root / "src").mkdir(parents=True)
     (root / "docs").mkdir()
-    (root / "docs/generated").mkdir()
+    (root / "notes").mkdir()
+    (root / "notes/generated").mkdir()
     (root / ".git").mkdir()
     (root / "node_modules").mkdir()
 
@@ -44,8 +45,8 @@ def repo_root(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (root / "src" / "main.py").write_text("print('hello')\n", encoding="utf-8")
-    (root / "docs" / "brief.md").write_text("# Product\n\nKeep this note.\n", encoding="utf-8")
-    (root / "docs" / "generated" / "artifact.md").write_text("draft\n", encoding="utf-8")
+    (root / "notes" / "brief.md").write_text("# Product\n\nKeep this note.\n", encoding="utf-8")
+    (root / "notes" / "generated" / "artifact.md").write_text("draft\n", encoding="utf-8")
     return root
 
 
@@ -53,13 +54,13 @@ def test_list_repository_files_skips_ignored_directories(repo_root: Path) -> Non
     files = list_repository_files(repo_root)
 
     assert "src/main.py" in files
-    assert "docs/brief.md" in files
+    assert "notes/brief.md" in files
     assert ".git" not in "\n".join(files)
     assert "node_modules" not in "\n".join(files)
 
 
 def test_read_text_file_requires_repo_boundary(repo_root: Path) -> None:
-    result = read_text_file(repo_root, "docs/brief.md")
+    result = read_text_file(repo_root, "notes/brief.md")
 
     assert "Keep this note" in result
 
@@ -71,7 +72,7 @@ def test_search_text_finds_matching_content(repo_root: Path) -> None:
     matches = search_text(repo_root, "Keep this note")
 
     assert matches
-    assert "docs/brief.md" in matches[0]["path"]
+    assert "notes/brief.md" in matches[0]["path"]
 
 
 def test_read_dependency_metadata_reads_project_file(repo_root: Path) -> None:
@@ -94,14 +95,14 @@ def test_read_dependency_metadata_reads_project_file(repo_root: Path) -> None:
 
 def test_one_passage_can_be_changed_without_touching_the_rest(repo_root: Path) -> None:
     original = "# Spec\n\n## Deletion\nDrafts are soft-deleted.\n\n## Storage\nS3 with encryption.\n"
-    write_approved_artifact(repo_root, "docs/spec.md", original)
+    write_approved_artifact(repo_root, "notes/spec.md", original)
 
     result = edit_approved_artifact(
-        repo_root, "docs/spec.md", "Drafts are soft-deleted.", "Drafts are hard-deleted."
+        repo_root, "notes/spec.md", "Drafts are soft-deleted.", "Drafts are hard-deleted."
     )
 
     assert result["status"] == "edited"
-    updated = (repo_root / "docs" / "spec.md").read_text(encoding="utf-8")
+    updated = (repo_root / "notes" / "spec.md").read_text(encoding="utf-8")
     assert "Drafts are hard-deleted." in updated
     # Everything the agent did not name is byte-for-byte intact.
     assert "## Storage\nS3 with encryption.\n" in updated
@@ -109,36 +110,36 @@ def test_one_passage_can_be_changed_without_touching_the_rest(repo_root: Path) -
 
 
 def test_an_edit_can_delete_a_passage(repo_root: Path) -> None:
-    write_approved_artifact(repo_root, "docs/spec.md", "keep this\nremove this\nkeep this too\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "keep this\nremove this\nkeep this too\n")
 
-    edit_approved_artifact(repo_root, "docs/spec.md", "remove this\n", "")
+    edit_approved_artifact(repo_root, "notes/spec.md", "remove this\n", "")
 
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "keep this\nkeep this too\n"
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8") == "keep this\nkeep this too\n"
 
 
 def test_an_edit_that_matches_nothing_is_refused(repo_root: Path) -> None:
     """Silence here would be the worst outcome: the agent believes it fixed something."""
-    write_approved_artifact(repo_root, "docs/spec.md", "Drafts are soft-deleted.\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "Drafts are soft-deleted.\n")
 
     with pytest.raises(RepositoryToolError, match="Could not find"):
-        edit_approved_artifact(repo_root, "docs/spec.md", "Drafts are archived.", "x")
+        edit_approved_artifact(repo_root, "notes/spec.md", "Drafts are archived.", "x")
 
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "Drafts are soft-deleted.\n"
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8") == "Drafts are soft-deleted.\n"
 
 
 def test_an_ambiguous_edit_is_refused_rather_than_guessing(repo_root: Path) -> None:
     """Replacing the first of several matches corrupts the document silently."""
-    write_approved_artifact(repo_root, "docs/spec.md", "status: OPEN\nstatus: OPEN\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "status: OPEN\nstatus: OPEN\n")
 
     with pytest.raises(RepositoryToolError, match="appears 2 times"):
-        edit_approved_artifact(repo_root, "docs/spec.md", "status: OPEN", "status: CLOSED")
+        edit_approved_artifact(repo_root, "notes/spec.md", "status: OPEN", "status: CLOSED")
 
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: OPEN\nstatus: OPEN\n"
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8") == "status: OPEN\nstatus: OPEN\n"
 
 
 def test_editing_a_file_that_does_not_exist_points_at_the_write_tool(repo_root: Path) -> None:
     with pytest.raises(RepositoryToolError, match="write_artifact"):
-        edit_approved_artifact(repo_root, "docs/missing.md", "a", "b")
+        edit_approved_artifact(repo_root, "notes/missing.md", "a", "b")
 
 
 def test_an_edit_cannot_escape_the_repository(repo_root: Path) -> None:
@@ -152,9 +153,9 @@ def test_an_edit_cannot_escape_the_repository(repo_root: Path) -> None:
 
 
 def test_a_slice_of_a_file_can_be_read(repo_root: Path) -> None:
-    write_approved_artifact(repo_root, "docs/long.md", "".join(f"line {n}\n" for n in range(1, 21)))
+    write_approved_artifact(repo_root, "notes/long.md", "".join(f"line {n}\n" for n in range(1, 21)))
 
-    page = read_text_lines(repo_root, "docs/long.md", start_line=5, line_count=3)
+    page = read_text_lines(repo_root, "notes/long.md", start_line=5, line_count=3)
 
     assert page["content"] == "line 5\nline 6\nline 7"
     assert (page["start_line"], page["end_line"]) == (5, 7)
@@ -164,27 +165,27 @@ def test_a_slice_of_a_file_can_be_read(repo_root: Path) -> None:
 
 
 def test_the_last_slice_reports_that_nothing_follows(repo_root: Path) -> None:
-    write_approved_artifact(repo_root, "docs/long.md", "a\nb\nc\n")
+    write_approved_artifact(repo_root, "notes/long.md", "a\nb\nc\n")
 
-    page = read_text_lines(repo_root, "docs/long.md", start_line=2)
+    page = read_text_lines(repo_root, "notes/long.md", start_line=2)
 
     assert page["content"] == "b\nc"
     assert page["has_more"] is False
 
 
 def test_reading_past_the_end_says_how_long_the_file_is(repo_root: Path) -> None:
-    write_approved_artifact(repo_root, "docs/short.md", "a\nb\n")
+    write_approved_artifact(repo_root, "notes/short.md", "a\nb\n")
 
     with pytest.raises(RepositoryToolError, match="has 2 lines"):
-        read_text_lines(repo_root, "docs/short.md", start_line=99)
+        read_text_lines(repo_root, "notes/short.md", start_line=99)
 
 
 @pytest.mark.parametrize(("start", "count"), [(0, None), (-1, None), (1, 0)])
 def test_nonsense_slice_bounds_are_refused(repo_root: Path, start: int, count: int | None) -> None:
-    write_approved_artifact(repo_root, "docs/short.md", "a\nb\n")
+    write_approved_artifact(repo_root, "notes/short.md", "a\nb\n")
 
     with pytest.raises(RepositoryToolError):
-        read_text_lines(repo_root, "docs/short.md", start_line=start, line_count=count)
+        read_text_lines(repo_root, "notes/short.md", start_line=start, line_count=count)
 
 
 def test_a_second_version_of_an_existing_document_is_refused(repo_root: Path) -> None:
@@ -197,22 +198,22 @@ def test_a_second_version_of_an_existing_document_is_refused(repo_root: Path) ->
     the second file did. The run spent its last two revisions on it and stopped
     with it unresolved.
     """
-    write_approved_artifact(repo_root, "docs/spec.md", "# Spec\n\nsoft delete\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "# Spec\n\nsoft delete\n")
 
     with pytest.raises(RepositoryToolError, match="already exists"):
-        write_approved_artifact(repo_root, "docs/spec_v2.md", "# Spec\n\nhard delete\n")
+        write_approved_artifact(repo_root, "notes/spec_v2.md", "# Spec\n\nhard delete\n")
 
-    assert not (repo_root / "docs" / "spec_v2.md").exists()
+    assert not (repo_root / "notes" / "spec_v2.md").exists()
     # The original is untouched, so the refusal costs nothing.
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8").endswith("soft delete\n")
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8").endswith("soft delete\n")
 
 
 @pytest.mark.parametrize(
     "variant",
-    ["docs/spec-v2.md", "docs/spec.v3.md", "docs/spec_final.md", "docs/spec copy.md", "docs/spec_REVISED.md"],
+    ["notes/spec-v2.md", "notes/spec.v3.md", "notes/spec_final.md", "notes/spec copy.md", "notes/spec_REVISED.md"],
 )
 def test_every_shape_of_second_copy_is_refused(repo_root: Path, variant: str) -> None:
-    write_approved_artifact(repo_root, "docs/spec.md", "# Spec\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "# Spec\n")
 
     with pytest.raises(RepositoryToolError, match="already exists"):
         write_approved_artifact(repo_root, variant, "# Spec\n")
@@ -225,21 +226,21 @@ def test_a_numbered_series_is_not_mistaken_for_a_second_copy(repo_root: Path) ->
     Only an explicit version marker counts, and only when the file it would fork
     actually exists.
     """
-    assert write_approved_artifact(repo_root, "docs/adr_1.md", "# ADR 1\n")["status"] == "written"
-    assert write_approved_artifact(repo_root, "docs/adr_2.md", "# ADR 2\n")["status"] == "written"
+    assert write_approved_artifact(repo_root, "notes/adr_1.md", "# ADR 1\n")["status"] == "written"
+    assert write_approved_artifact(repo_root, "notes/adr_2.md", "# ADR 2\n")["status"] == "written"
 
     # And a version-marked name is fine when there is nothing to fork.
-    assert write_approved_artifact(repo_root, "docs/plan_v2.md", "# Plan\n")["status"] == "written"
+    assert write_approved_artifact(repo_root, "notes/plan_v2.md", "# Plan\n")["status"] == "written"
 
 
 def test_rewriting_the_canonical_document_is_still_allowed(repo_root: Path) -> None:
     """The point is to send revisions back to the original, so that must work."""
-    write_approved_artifact(repo_root, "docs/spec.md", "# Spec\n\nfirst\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "# Spec\n\nfirst\n")
 
-    result = write_approved_artifact(repo_root, "docs/spec.md", "# Spec\n\nrevised\n")
+    result = write_approved_artifact(repo_root, "notes/spec.md", "# Spec\n\nrevised\n")
 
     assert result["status"] == "written"
-    assert "revised" in (repo_root / "docs" / "spec.md").read_text(encoding="utf-8")
+    assert "revised" in (repo_root / "notes" / "spec.md").read_text(encoding="utf-8")
 
 
 def test_a_prose_artifact_refuses_a_serialized_structured_response(repo_root: Path) -> None:
@@ -375,19 +376,19 @@ def test_a_leading_slash_means_the_workspace_root_not_the_filesystem_root(tmp_pa
     it had just made, because it addressed it identically both times and only
     one of the two tools understood it.
     """
-    (tmp_path / "docs").mkdir()
-    (tmp_path / "docs" / "spec.md").write_text("one\ntwo\nthree\n")
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "spec.md").write_text("one\ntwo\nthree\n")
 
-    assert read_text_file(tmp_path, "/docs/spec.md") == "one\ntwo\nthree\n"
+    assert read_text_file(tmp_path, "/notes/spec.md") == "one\ntwo\nthree\n"
 
-    sliced = read_text_lines(tmp_path, "/docs/spec.md", start_line=2, line_count=1)
+    sliced = read_text_lines(tmp_path, "/notes/spec.md", start_line=2, line_count=1)
     assert sliced["content"] == "two"
     # Reported back workspace-relative, never as it was typed: the dashboard
     # labels the row from this value.
-    assert sliced["path"] == "docs/spec.md"
+    assert sliced["path"] == "notes/spec.md"
 
-    edit_approved_artifact(tmp_path, "/docs/spec.md", "two", "TWO")
-    assert (tmp_path / "docs" / "spec.md").read_text() == "one\nTWO\nthree\n"
+    edit_approved_artifact(tmp_path, "/notes/spec.md", "two", "TWO")
+    assert (tmp_path / "notes" / "spec.md").read_text() == "one\nTWO\nthree\n"
 
 
 def test_an_absolute_path_inside_the_workspace_is_understood(tmp_path: Path) -> None:
@@ -553,20 +554,20 @@ def test_the_same_document_twice_is_unchanged_whatever_the_final_newline(
     """
     body = "# Blocker\nThe task requires a shell script."
 
-    assert write_approved_artifact(tmp_path, "docs/blocker.md", body + "\n")["status"] == "written"
-    assert write_approved_artifact(tmp_path, "docs/blocker.md", body)["status"] == "unchanged"
+    assert write_approved_artifact(tmp_path, "notes/blocker.md", body + "\n")["status"] == "written"
+    assert write_approved_artifact(tmp_path, "notes/blocker.md", body)["status"] == "unchanged"
     assert (
-        write_approved_artifact(tmp_path, "docs/blocker.md", body + "\n\n\n")["status"]
+        write_approved_artifact(tmp_path, "notes/blocker.md", body + "\n\n\n")["status"]
         == "unchanged"
     )
-    assert (tmp_path / "docs" / "blocker.md").read_text().endswith("script.\n")
+    assert (tmp_path / "notes" / "blocker.md").read_text().endswith("script.\n")
 
 
 def test_an_empty_file_stays_empty(tmp_path: Path) -> None:
     """A newline added to nothing is a file with a blank line in it."""
-    write_approved_artifact(tmp_path, "docs/empty.md", "")
+    write_approved_artifact(tmp_path, "notes/empty.md", "")
 
-    assert (tmp_path / "docs" / "empty.md").read_text() == ""
+    assert (tmp_path / "notes" / "empty.md").read_text() == ""
 
 
 BLANK_LINE_FILE = """test('CRUD operations persist in localStorage', async () => {
@@ -679,7 +680,7 @@ def test_the_surroundings_do_not_run_off_the_ends_of_the_file(tmp_path: Path) ->
     assert "(end of file)" in message
 
 
-@pytest.mark.parametrize("path", ["docs", "docs/"])
+@pytest.mark.parametrize("path", ["docs", "notes/"])
 def test_writing_to_a_directory_says_what_to_do(tmp_path: Path, path: str) -> None:
     """run-08acb1ee's `specialist_ui_ux_1` wrote to `docs/` and got
 
@@ -689,8 +690,12 @@ def test_writing_to_a_directory_says_what_to_do(tmp_path: Path, path: str) -> No
     an errno and a host path, naming neither the problem nor the fix. Every
     other failure in this module is a sentence the agent can act on.
     """
-    write_approved_artifact(tmp_path, "docs/notes.md", "# notes\n")
-    write_approved_artifact(tmp_path, "docs/plan.md", "# plan\n")
+    # The directory has to exist, and hold something, for the message to be
+    # able to say what is already in there.
+    here = tmp_path / path.rstrip("/")
+    here.mkdir(parents=True, exist_ok=True)
+    (here / "notes.md").write_text("# notes\n", encoding="utf-8")
+    (here / "plan.md").write_text("# plan\n", encoding="utf-8")
 
     with pytest.raises(RepositoryToolError) as caught:
         write_approved_artifact(tmp_path, path, "# oops\n")
@@ -710,7 +715,7 @@ def test_an_empty_directory_still_gets_a_usable_message(tmp_path: Path) -> None:
 
 
 def test_an_ordinary_write_is_unaffected(tmp_path: Path) -> None:
-    assert write_approved_artifact(tmp_path, "docs/spec.md", "# spec\n")["status"]
+    assert write_approved_artifact(tmp_path, "notes/spec.md", "# spec\n")["status"]
 
 
 def test_an_edit_says_where_it_landed(tmp_path: Path) -> None:
@@ -1223,8 +1228,13 @@ def test_the_pinned_directory_stays_fully_writable(tmp_path: Path) -> None:
 
 
 def test_documents_and_root_files_are_never_pinned(tmp_path: Path) -> None:
-    """`docs/` and a root README are not the project and must not claim the pin."""
-    write_approved_artifact(tmp_path, "docs/spec.md", "text")
+    """`docs/` and a root README are not the project and must not claim the pin.
+
+    `docs/` is written only by the workflow now, so that is how it is written
+    here. The exemption is unchanged and still matters: the pin decides where
+    every later stage builds.
+    """
+    write_approved_artifact(tmp_path, "docs/product_intake.md", "text", by_the_workflow=True)
     write_approved_artifact(tmp_path, "README.md", "text")
 
     assert pinned_project_directory(tmp_path) is None
@@ -1594,10 +1604,22 @@ def test_every_code_kind_is_refused_there(tmp_path, name):
         ("data.json", '{"x": 1}'),
     ],
 )
-def test_documents_are_still_welcome_there(tmp_path, name, body):
-    from app.tools.repository import write_approved_artifact
+def test_documents_belong_with_the_product_not_in_docs(tmp_path, name, body):
+    """The policy these used to assert is reversed, deliberately.
 
-    assert write_approved_artifact(str(tmp_path), f"docs/{name}", body)["status"]
+    `docs/` held only the nine documents the workflow renders, and every other
+    file written there was read by nothing: measured across the 50 stored
+    transcripts, 334 such writes in 28 of 50 runs. Documentation that ships
+    with the product is welcome - beside the code it describes, where the
+    reviewer reads it as part of the work.
+    """
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(str(tmp_path), f"docs/{name}", body)
+    assert "project directory" in str(caught.value)
+
+    assert write_approved_artifact(str(tmp_path), f"todo-app/{name}", body)["status"]
 
 
 def test_code_elsewhere_is_unaffected(tmp_path):
@@ -1663,9 +1685,9 @@ def test_a_document_is_not_a_test(repo_root: Path) -> None:
     (repo_root / "todo-app").mkdir()
     (repo_root / PROJECT_MARKER).write_text("todo-app", encoding="utf-8")
 
-    result = write_approved_artifact(repo_root, "docs/plan.md", "# Plan")
+    result = write_approved_artifact(repo_root, "todo-app/plan.md", "# Plan")
 
-    assert result["path"] == "docs/plan.md"
+    assert result["path"] == "todo-app/plan.md"
 
 
 # --- one project directory, and it is not the stylesheets ------------------
@@ -1715,7 +1737,9 @@ def test_a_source_file_in_an_asset_folder_at_the_root_is_refused(repo_root: Path
 
 def test_documents_are_unaffected(repo_root: Path) -> None:
     """`docs/` has its own rule and its own reason."""
-    assert write_approved_artifact(repo_root, "docs/plan.md", "# Plan")["path"] == "docs/plan.md"
+    assert write_approved_artifact(
+        repo_root, "todo-app/plan.md", "# Plan"
+    )["path"] == "todo-app/plan.md"
 
 
 def test_a_project_directory_is_exactly_what_is_wanted(repo_root: Path) -> None:
@@ -1770,7 +1794,9 @@ def test_an_asset_folder_inside_the_project_is_untouched(repo_root: Path) -> Non
 def test_documents_stay_out_of_it_either_way(repo_root: Path) -> None:
     write_approved_artifact(repo_root, "todo-app/index.html", "<html>")
 
-    assert write_approved_artifact(repo_root, "docs/plan.md", "# Plan")["path"] == "docs/plan.md"
+    assert write_approved_artifact(
+        repo_root, "todo-app/plan.md", "# Plan"
+    )["path"] == "todo-app/plan.md"
 
 
 # --- the host path, written verbatim --------------------------------------
@@ -1794,7 +1820,7 @@ def test_documents_stay_out_of_it_either_way(repo_root: Path) -> None:
         ("todo-app/data/config.json", "todo-app/data/config.json"),
         ("data/seed.json", "data/seed.json"),
         ("index.html", "index.html"),
-        ("docs/plan.md", "docs/plan.md"),
+        ("notes/plan.md", "notes/plan.md"),
     ],
 )
 def test_a_host_path_resolves_to_the_workspace(given: str, expected: str) -> None:
@@ -1876,12 +1902,12 @@ def test_an_edit_that_would_change_nothing_is_refused(repo_root: Path) -> None:
     Reporting "edited" for a no-op is a lie the agent cannot see through, and
     re-reading is exactly the right thing for it to do about a suspect write.
     """
-    write_approved_artifact(repo_root, "docs/spec.md", "status: OPEN\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "status: OPEN\n")
 
     with pytest.raises(RepositoryToolError, match="would leave"):
-        edit_approved_artifact(repo_root, "docs/spec.md", "status: OPEN", "status: OPEN")
+        edit_approved_artifact(repo_root, "notes/spec.md", "status: OPEN", "status: OPEN")
 
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: OPEN\n"
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8") == "status: OPEN\n"
 
 
 def test_the_refusal_says_the_file_is_not_broken(repo_root: Path) -> None:
@@ -1891,10 +1917,10 @@ def test_the_refusal_says_the_file_is_not_broken(repo_root: Path) -> None:
     Naming both ways out - make `replace` differ, or stop editing and move on -
     is what the loop needs to hear.
     """
-    write_approved_artifact(repo_root, "docs/spec.md", "a\nb\nc\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "a\nb\nc\n")
 
     with pytest.raises(RepositoryToolError) as caught:
-        edit_approved_artifact(repo_root, "docs/spec.md", "b\n", "b\n")
+        edit_approved_artifact(repo_root, "notes/spec.md", "b\n", "b\n")
 
     message = str(caught.value)
     assert "still has 3 lines" in message
@@ -1909,14 +1935,14 @@ def test_a_no_op_arriving_through_a_forgiving_match_is_also_refused(repo_root: P
     replace a *candidate* rather than `find`, so comparing the two arguments
     would let a no-op through any of them.
     """
-    write_approved_artifact(repo_root, "docs/spec.md", "alpha\nbeta\ngamma\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "alpha\nbeta\ngamma\n")
 
     # `find` carries the line-number prefix that `read_file` prints; the text
     # it actually matches is "beta", and `replace` is that same text.
     with pytest.raises(RepositoryToolError, match="would leave"):
-        edit_approved_artifact(repo_root, "docs/spec.md", "2\tbeta", "beta")
+        edit_approved_artifact(repo_root, "notes/spec.md", "2\tbeta", "beta")
 
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8") == "alpha\nbeta\ngamma\n"
 
 
 def test_a_no_op_edit_does_not_touch_the_file(repo_root: Path) -> None:
@@ -1926,23 +1952,23 @@ def test_a_no_op_edit_does_not_touch_the_file(repo_root: Path) -> None:
     file would clear the very notice that tells the agent it is going in
     circles - which is how the loop stayed invisible for five rounds.
     """
-    write_approved_artifact(repo_root, "docs/spec.md", "keep\n")
-    target = repo_root / "docs" / "spec.md"
+    write_approved_artifact(repo_root, "notes/spec.md", "keep\n")
+    target = repo_root / "notes" / "spec.md"
     before = target.stat().st_mtime_ns
 
     with pytest.raises(RepositoryToolError):
-        edit_approved_artifact(repo_root, "docs/spec.md", "keep\n", "keep\n")
+        edit_approved_artifact(repo_root, "notes/spec.md", "keep\n", "keep\n")
 
     assert target.stat().st_mtime_ns == before
 
 
 def test_a_real_edit_still_succeeds(repo_root: Path) -> None:
-    write_approved_artifact(repo_root, "docs/spec.md", "status: OPEN\n")
+    write_approved_artifact(repo_root, "notes/spec.md", "status: OPEN\n")
 
-    result = edit_approved_artifact(repo_root, "docs/spec.md", "status: OPEN", "status: CLOSED")
+    result = edit_approved_artifact(repo_root, "notes/spec.md", "status: OPEN", "status: CLOSED")
 
     assert result["status"] == "edited"
-    assert (repo_root / "docs" / "spec.md").read_text(encoding="utf-8") == "status: CLOSED\n"
+    assert (repo_root / "notes" / "spec.md").read_text(encoding="utf-8") == "status: CLOSED\n"
 
 
 def _js_lines(count: int) -> str:
@@ -2005,7 +2031,7 @@ def test_writing_a_document_is_not_told_about_the_code_budget(repo_root: Path) -
     complaint about the wrong file."""
     _project_with_a_budget(repo_root, 600)
 
-    result = write_approved_artifact(repo_root, "docs/notes.md", "# Notes\n")
+    result = write_approved_artifact(repo_root, "app/notes.md", "# Notes\n")
 
     assert "note" not in result
 

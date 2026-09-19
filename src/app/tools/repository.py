@@ -1922,17 +1922,14 @@ def _unrunnable_script_note(relative_path: str) -> str:
 #: root and nowhere else. Each is rendered from a stage's structured response,
 #: so a copy of one is a copy of a record - stale the moment the next stage
 #: runs, and read by nothing.
-WORKFLOW_DOCUMENTS = frozenset({
-    "architecture_review.md",
-    "milestone_plan.md",
-    "milestone_review.md",
-    "product_intake.md",
-    "security_review.md",
-    "sprint_plan.md",
-    "technical_specification.md",
-    "technology_stack.md",
-    "tools_and_models.md",
-})
+from app.analysis import document_manifest as _document_manifest
+
+#: Derived from `document_manifest`, not restated. Two copies of this list is
+#: how the set drifts between the tool that enforces it, the prompt that
+#: describes it and the audit that reads it.
+WORKFLOW_DOCUMENTS = frozenset(
+    f"{stem}.md" for stem in _document_manifest.RENDERED_STEMS
+)
 
 
 #: The stem an agent reaches for when it mistakes "return your structured
@@ -3469,6 +3466,11 @@ def write_approved_artifact(
         owned = _a_workflow_document(relative_parts)
         if owned is not None:
             raise RepositoryToolError(owned)
+        # And the other 334: a document `docs/` was never going to hold.
+        # See `app.analysis.document_manifest`.
+        intruding = _document_manifest.why_it_does_not_belong(relative_parts)
+        if intruding:
+            raise RepositoryToolError(intruding)
     scattered = _scaffolding_at_the_workspace_root(artifact_root, relative_parts)
     if scattered is not None:
         raise RepositoryToolError(scattered)

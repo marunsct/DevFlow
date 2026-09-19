@@ -29,7 +29,7 @@ three lines that matter, and what each is for:
 fragment that stops matching silently moves calls from the first line to the
 third, so keep it in step with the messages in `app/tools/repository.py`.
 """
-import json, sys, collections, re
+import json, sys, collections, re, os
 
 SAVED = (
     "Node cannot parse", "Refusing to write", "Refusing to change",
@@ -144,6 +144,51 @@ def main(path):
         )
         print(f"  {n:4d} {label}")
 
+def _the_stack_this_run_chose(workspace):
+    """The stack, rebuilt from the document the workflow rendered from it.
+
+    Several checks take the stack and are inert without it - the one that
+    catches an HTTP server in a product whose own storage is `localStorage`
+    is the sharpest of them. `summarise_integration(workspace)` with no stack
+    silently skips them, so this script's verdict was milder than the
+    reviewer's on exactly the findings that block.
+
+    Found on run-ed05e20e: the audit reported 3 cross-file problems and the
+    reviewer saw 4, the extra one being a `server.mjs` the product has no use
+    for. Returns None when the document cannot be read, which is the old
+    behaviour.
+    """
+    import re as _re
+
+    try:
+        from app.agents.tools_models import TechnologyStack
+
+        text = open(
+            os.path.join(workspace, "docs", "technology_stack.md"), encoding="utf-8"
+        ).read()
+    except Exception:  # noqa: BLE001 - an audit must never fail on a missing doc
+        return None
+
+    def field(label, default=""):
+        # The renderer puts the label on one line and the value on the next.
+        m = _re.search(rf"^\*\*{label}:\*\*\s*\n(.+)$", text, _re.M)
+        return (m.group(1).strip() if m else default) or default
+
+    language = ""
+    heading = _re.search(r"^#### (.+)$", text, _re.M)
+    if heading:
+        language = heading.group(1).strip()
+    try:
+        return TechnologyStack(
+            language=language or "unknown",
+            framework=field("Framework", "unknown"),
+            database=field("Database", "none"),
+            testing_framework=field("Testing framework", "node --test"),
+        )
+    except Exception:  # noqa: BLE001 - a stack that will not validate is no stack
+        return None
+
+
 def the_product(workspace):
     """What the deterministic checks say about the built product.
 
@@ -159,7 +204,7 @@ def the_product(workspace):
     except Exception as exc:  # noqa: BLE001 - the audit still has value without it
         print(f"\nthe product: could not load the checks ({exc})")
         return
-    report = summarise_integration(workspace)
+    report = summarise_integration(workspace, _the_stack_this_run_chose(workspace))
     # On the phrase without its verb: the summary writes "means" for one
     # finding and "mean" for several, so matching the singular reported "no
     # blocking problems" for every workspace that had more than one - silent

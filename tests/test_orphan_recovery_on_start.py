@@ -23,11 +23,39 @@ from __future__ import annotations
 
 import pytest
 
-from app.server import tasks
+
+@pytest.fixture(autouse=True)
+def _leave_no_redis_client_behind():
+    """Reset the cached Redis pool this module's patches can leave pointing home.
+
+    `app.server.redis_client` caches a client per process. Touching it here -
+    even through a monkeypatch that is later undone - can leave a pool aimed
+    at `localhost:6379`, which is not where Redis is under the test
+    containers. Every later test that needs Redis then fails with
+    `Connection refused`, and the failure looks like it belongs to that test.
+
+    Measured on 2026-09-19: adding this module took the suite from 4 failures
+    to 19, all of them in files that run after it and none of them broken.
+    """
+    from app.server import redis_client
+
+    yield
+    try:
+        redis_client.reset_clients()
+    except Exception:  # noqa: BLE001 - cleanup must not fail a passing test
+        pass
 
 
-def test_a_worker_becoming_ready_recovers_abandoned_runs(monkeypatch):
-    called: list[bool] = []
+@pytest.fixture()
+def tasks():
+    """Imported per test, never at module scope, for the same reason."""
+    from app.server import tasks as module
+
+    return module
+
+
+def test_a_worker_becoming_ready_starts_the_sweep(monkeypatch, tasks):
+    started: list[str] = []
 
     class _Lock:
         def set(self, *_args, **_kwargs):
@@ -35,16 +63,67 @@ def test_a_worker_becoming_ready_recovers_abandoned_runs(monkeypatch):
 
     monkeypatch.setattr("app.server.redis_client.get_redis_client", lambda: _Lock())
     monkeypatch.setattr(
-        "app.server.manage.recover_orphaned_runs",
-        lambda dry_run=False: called.append(dry_run) or 0,
+        tasks.threading if hasattr(tasks, "threading") else __import__("threading"),
+        "Thread",
+        lambda **kw: type("T", (), {"start": lambda self: started.append(kw.get("name", ""))})(),
     )
 
     tasks._recover_runs_their_worker_abandoned()
 
-    assert called == [False], "recovery did not run, or ran as a dry run"
+    assert started == ["orphan-sweep"]
 
 
-def test_only_one_worker_sweeps_per_restart(monkeypatch):
+def test_the_sweep_waits_until_the_broker_can_answer(monkeypatch, tasks):
+    """`worker_ready` fires before this worker can answer about itself.
+
+    Measured on the deploy at 04:36: the first version ran the sweep inline
+    and was told "No worker answered, so nothing can be judged orphaned.
+    Nothing changed." The safety property held and the feature did not exist.
+    """
+    answers = [None, None, {"abc"}]
+    called: list[bool] = []
+
+    monkeypatch.setattr(tasks, "_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("app.server.manage._live_task_ids", lambda: answers.pop(0))
+    monkeypatch.setattr(
+        "app.server.manage.recover_orphaned_runs",
+        lambda dry_run=False: called.append(dry_run) or 0,
+    )
+
+    tasks._sweep_for_abandoned_runs()
+
+    assert called == [False], "the sweep gave up before the broker answered"
+
+
+def test_the_sweep_gives_up_rather_than_guessing(monkeypatch, tasks):
+    """"Cannot tell" must never become "nothing is running"."""
+    called: list[bool] = []
+
+    monkeypatch.setattr(tasks, "_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("app.server.manage._live_task_ids", lambda: None)
+    monkeypatch.setattr(
+        "app.server.manage.recover_orphaned_runs",
+        lambda dry_run=False: called.append(dry_run) or 0,
+    )
+
+    tasks._sweep_for_abandoned_runs()
+
+    assert called == [], "a silent broker must repair nothing"
+
+
+def test_a_failing_sweep_never_takes_the_worker_down(monkeypatch, tasks):
+    monkeypatch.setattr(tasks, "_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr("app.server.manage._live_task_ids", lambda: {"x"})
+
+    def _explode(dry_run=False):
+        raise RuntimeError("database unreachable")
+
+    monkeypatch.setattr("app.server.manage.recover_orphaned_runs", _explode)
+
+    tasks._sweep_for_abandoned_runs()  # must not raise
+
+
+def test_only_one_worker_sweeps_per_restart(monkeypatch, tasks):
     """Several workers come up together on every deploy."""
     called: list[bool] = []
 
@@ -63,7 +142,7 @@ def test_only_one_worker_sweeps_per_restart(monkeypatch):
     assert called == [], "a second worker repeated the sweep"
 
 
-def test_recovery_can_be_switched_off(monkeypatch):
+def test_recovery_can_be_switched_off(monkeypatch, tasks):
     called: list[bool] = []
     monkeypatch.setenv("RECOVER_ORPHANS_ON_START", "false")
     monkeypatch.setattr(
@@ -77,7 +156,7 @@ def test_recovery_can_be_switched_off(monkeypatch):
 
 
 @pytest.mark.parametrize("boom", [RuntimeError("redis down"), OSError("no socket")])
-def test_a_worker_still_starts_when_recovery_fails(monkeypatch, boom):
+def test_a_worker_still_starts_when_recovery_fails(monkeypatch, boom, tasks):
     """A worker that cannot run this must still accept tasks."""
     def _raise():
         raise boom
@@ -87,21 +166,9 @@ def test_a_worker_still_starts_when_recovery_fails(monkeypatch, boom):
     tasks._recover_runs_their_worker_abandoned()  # must not raise
 
 
-def test_a_failing_sweep_does_not_propagate(monkeypatch):
-    class _Lock:
-        def set(self, *_args, **_kwargs):
-            return True
-
-    def _explode(dry_run=False):
-        raise RuntimeError("database unreachable")
-
-    monkeypatch.setattr("app.server.redis_client.get_redis_client", lambda: _Lock())
-    monkeypatch.setattr("app.server.manage.recover_orphaned_runs", _explode)
-
-    tasks._recover_runs_their_worker_abandoned()  # must not raise
 
 
-def test_the_handler_is_connected_to_worker_ready():
+def test_the_handler_is_connected_to_worker_ready(tasks):
     """Wiring is the whole fix; the function already existed and was never called."""
     from celery.signals import worker_ready
 
@@ -113,7 +180,7 @@ def test_the_handler_is_connected_to_worker_ready():
     )
 
 
-def test_late_acknowledgement_stays_off():
+def test_late_acknowledgement_stays_off(tasks):
     """The premise: a dead worker's task is never redelivered.
 
     If `task_acks_late` were turned on, the broker would redeliver and this

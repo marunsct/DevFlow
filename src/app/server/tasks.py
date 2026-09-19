@@ -126,12 +126,55 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
         logger.warning("Could not take the orphan-recovery lock; skipping", exc_info=True)
         return
 
-    try:
-        from app.server.manage import recover_orphaned_runs
+    # Off the startup path, and not immediately.
+    #
+    # `worker_ready` fires the moment this worker will accept tasks, which is
+    # before it can answer a broadcast `inspect.active` about itself. The
+    # first version ran the sweep inline and was answered "No worker answered,
+    # so nothing can be judged orphaned. Nothing changed." - measured on the
+    # deploy at 04:36 - so it never repaired anything. The safety property
+    # held; the feature did not exist.
+    #
+    # A daemon thread, because blocking here delays the worker accepting work,
+    # and the sweep is worth seconds of patience rather than none.
+    import threading
 
-        recover_orphaned_runs(dry_run=False)
-    except Exception:  # noqa: BLE001 - recovery must never stop a worker starting
-        logger.warning("Could not recover abandoned runs", exc_info=True)
+    threading.Thread(
+        target=_sweep_for_abandoned_runs, name="orphan-sweep", daemon=True
+    ).start()
+
+
+#: How long to give this worker to become answerable on the broker before
+#: believing "no worker answered". Retried rather than slept once, because the
+#: delay that matters is registration, not a fixed duration.
+_SWEEP_ATTEMPTS = 6
+_SWEEP_INTERVAL_SECONDS = 5
+
+
+def _sweep_for_abandoned_runs() -> None:
+    """Run the orphan sweep once the broker can answer. Never raises."""
+    import time
+
+    from app.server.manage import _live_task_ids, recover_orphaned_runs
+
+    for attempt in range(_SWEEP_ATTEMPTS):
+        time.sleep(_SWEEP_INTERVAL_SECONDS)
+        try:
+            if _live_task_ids() is None:
+                # Not "nothing is running" - "cannot tell yet". The difference
+                # is the whole safety property; see `_live_task_ids`.
+                continue
+            recover_orphaned_runs(dry_run=False)
+            return
+        except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+            logger.warning("Could not recover abandoned runs", exc_info=True)
+            return
+    logger.warning(
+        "No worker answered the broker after %d attempts; abandoned runs were "
+        "not swept. Run `manage.py recover-orphans` by hand if a run is stuck "
+        "at `running` with nothing executing.",
+        _SWEEP_ATTEMPTS,
+    )
 
 
 @worker_process_init.connect

@@ -3025,3 +3025,45 @@ What is still missing is a rung between "refuse the call" and "deny at the
 gate" that ends the *stage* rather than the run. `settled_answer` does this
 for a stage that has an answer and is circling; the gap is a stage circling
 without one.
+
+### 4ah. The token ratio travels between models (one pair, checked)
+
+`CHARS_PER_TOKEN` was set to a measured 3 from a corpus that is almost all
+gpt-oss-20b. The obvious objection is that it is a property of the tokeniser
+and should move with the model. Run-cac07d52 was resumed on a different model
+and a different server - `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on llama.cpp,
+after gpt-oss-20b on LM Studio - which makes the comparison available:
+
+| | samples | mean | median | p10 | p90 |
+|---|---|---|---|---|---|
+| gpt-oss-20b (run-519a9d8a) | 524 | 3.15 | 3.14 | 2.90 | 3.44 |
+| the switched run (run-cac07d52) | 152 | 3.12 | 3.09 | 2.72 | 3.71 |
+
+Within 2% at the median. The tail is slightly wider on the new model - denser
+at p10, looser at p90 - and 3 remains on the safe side of both.
+
+That does not retire §3.1. Two models that happen to agree is not a law, and
+the honest version still derives this from `usage_metadata` at startup. It
+does say the constant is not currently the thing costing runs, which is worth
+knowing before spending a phase on it.
+
+### 4ai. What the model switch did and did not break
+
+Checked the resumed run for every model-format failure the plan lists under
+class G: `<think>`, `</think>`, `<|…|>` control tokens, `<tool_call>` and
+`<tools>` wrappers, and `reasoning_content`. **None appear.** The new model
+produces clean tool calls through the OpenAI-compatible path, so the
+text-tool-call fallback and the control-token write guard both stayed dormant,
+which is what they are for.
+
+The failure that did appear is not model-specific: `test_round_0` reached 88
+model calls, 77 tool calls, of which 38 were reads. Most of the read repeats
+are legitimate - the stage edited `app.js` thirteen times, so a re-read
+returns different bytes and the notice correctly stays quiet.
+
+The stage also asked three times to write documents the workflow owns
+(`technical_specification.md`, `milestone_review.md`, `technical_specification.md`)
+and three times to write its own structured response to `final_output.json`.
+The second group got a notice on the third attempt because the path repeated.
+The first got none, because the path did not - which is exactly the gap
+§4ag's policy-refusal grouping closes, seen here in the run that prompted it.

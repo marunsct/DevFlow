@@ -34,23 +34,39 @@ def _forget_what_was_resumed():
     manage._RESUMED_ON_START.clear()
 
 
+def test_the_runner_this_calls_is_the_one_that_exists():
+    """The regression that reached the worker log and not the suite.
+
+    The first version called `WorkflowRunner.shared()`. There is no such
+    method: the runner is built per worker process by
+    `tasks._init_worker_process` and handed out by `tasks._get_runner`. The
+    unit test supplied a double that had `shared`, so the double was the only
+    place the method existed, and every test passed while the deploy logged
+    `AttributeError: type object 'WorkflowRunner' has no attribute 'shared'`.
+
+    So this asserts against the real modules, with nothing patched: the name
+    this code reaches for has to be there, and it has to be callable with no
+    arguments and return something that can resume a run.
+    """
+    from app.server.runner import WorkflowRunner
+    from app.server.tasks import _get_runner
+
+    assert callable(_get_runner)
+    assert hasattr(WorkflowRunner, "resume_run")
+    assert not hasattr(WorkflowRunner, "shared"), (
+        "if this is ever added, prefer it - but the code must match the code"
+    )
+
+
 @pytest.fixture
 def resumed(monkeypatch):
     """Record which runs were handed to the runner, without a runner."""
     seen: list[str] = []
 
-    class _Runner:
-        @staticmethod
-        def shared():
-            return _Runner()
+    def _resume_one(run_id: str) -> None:
+        seen.append(run_id)
 
-        @staticmethod
-        async def resume_run(run_id: str) -> None:
-            seen.append(run_id)
-
-    import app.server.runner as runner_module
-
-    monkeypatch.setattr(runner_module, "WorkflowRunner", _Runner)
+    monkeypatch.setattr(manage, "_resume_one", _resume_one)
     monkeypatch.setattr(manage, "_worker_ran_out_of_memory", lambda: False)
     monkeypatch.delenv("RESUME_ORPHANS_ON_START", raising=False)
     return seen
@@ -86,20 +102,12 @@ def test_an_operator_can_turn_it_off(resumed, monkeypatch, setting: str):
 
 
 def test_one_run_that_cannot_resume_does_not_block_the_rest(resumed, monkeypatch):
-    class _Runner:
-        @staticmethod
-        def shared():
-            return _Runner()
+    def _resume_one(run_id: str) -> None:
+        if run_id == "run-a":
+            raise RuntimeError("the model server is down")
+        resumed.append(run_id)
 
-        @staticmethod
-        async def resume_run(run_id: str) -> None:
-            if run_id == "run-a":
-                raise RuntimeError("the model server is down")
-            resumed.append(run_id)
-
-    import app.server.runner as runner_module
-
-    monkeypatch.setattr(runner_module, "WorkflowRunner", _Runner)
+    monkeypatch.setattr(manage, "_resume_one", _resume_one)
 
     assert manage.resume_runs_a_restart_abandoned(["run-a", "run-b"]) == 1
     assert resumed == ["run-b"]

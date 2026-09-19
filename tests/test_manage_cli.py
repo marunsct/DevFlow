@@ -321,6 +321,14 @@ def _with_task(run_store, run_id: str, status: str, stage: str, task_id: str | N
 
 
 def test_a_run_whose_worker_died_becomes_resumable(run_store, monkeypatch, capsys):
+    """The recovery half, with the resume half turned off.
+
+    A successful sweep now also puts the run back on the queue, which moves
+    it out of `failed` again - see
+    `test_a_recovered_run_is_carried_all_the_way_back` below. This one is
+    about the state it must pass through, so the resume is disabled.
+    """
+    monkeypatch.setenv("RESUME_ORPHANS_ON_START", "false")
     _with_task(run_store, "run-orphan", "running", "specialist_ui_ux_0", "task-gone")
     # A worker answered, and did not claim this task.
     monkeypatch.setattr(manage, "_live_task_ids", lambda: {"task-someone-else"})
@@ -331,6 +339,30 @@ def test_a_run_whose_worker_died_becomes_resumable(run_store, monkeypatch, capsy
     assert recovered.status == "failed", "the run must reach the state resume accepts"
     assert "resume continues from the last checkpoint" in recovered.error
     assert "Recovered 1 run(s)." in capsys.readouterr().out
+
+
+def test_a_recovered_run_is_carried_all_the_way_back(run_store, monkeypatch, capsys):
+    """Recovering without resuming left every deploy needing an operator.
+
+    Measured over one session on 2026-09-19: four worker restarts, four runs
+    correctly recovered, four manual resume calls. The sweep now finishes the
+    job, and this asserts it end to end rather than against a double - the
+    first version of the resume called a method that existed only in its own
+    test's mock.
+    """
+    monkeypatch.delenv("RESUME_ORPHANS_ON_START", raising=False)
+    monkeypatch.setattr(manage, "_worker_ran_out_of_memory", lambda: False)
+    resumed: list[str] = []
+    monkeypatch.setattr(manage, "_resume_one", resumed.append)
+    manage._RESUMED_ON_START.clear()
+
+    _with_task(run_store, "run-orphan", "running", "specialist_ui_ux_0", "task-gone")
+    monkeypatch.setattr(manage, "_live_task_ids", lambda: {"task-someone-else"})
+
+    assert manage.recover_orphaned_runs() == 0
+
+    assert resumed == ["run-orphan"]
+    assert "resumed 1 of them" in capsys.readouterr().out
 
 
 def test_a_run_whose_task_is_alive_is_never_touched(run_store, monkeypatch, capsys):

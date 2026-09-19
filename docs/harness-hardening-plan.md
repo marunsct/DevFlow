@@ -3856,3 +3856,39 @@ a missing entry sends it there.
 **How to tell whether it worked**, unchanged from §24.6: re-run the §22.1
 measurement on runs produced by the same brief and see whether the 30% falls.
 Not yet measurable - the runs that would show it have not been produced.
+
+### 4at. A test whose double defined the interface
+
+§4ar's auto-resume shipped calling `WorkflowRunner.shared()`. There is no
+such method. The runner is built per worker process by
+`tasks._init_worker_process` and handed out by `tasks._get_runner`.
+
+Every test passed. The deploy logged:
+
+```
+AttributeError: type object 'WorkflowRunner' has no attribute 'shared'
+```
+
+**The mechanism, because it will happen again.** The unit test needed a
+runner it could observe without starting one, so it supplied a double. The
+double was written to match the call, not the class, and so it *had*
+`shared`. The double was the only place in the codebase where that method
+existed, and the test asserted that the code agreed with the double, which
+it did, perfectly.
+
+This is the same shape as every "reached twelve of thirteen" finding in this
+document, one level up: the check was thorough and it was checking the wrong
+thing.
+
+**Two changes.** The resume now goes through `_resume_one`, a two-line
+function whose whole job is to name the real accessor once so a test can
+patch *it* rather than invent a class API. And
+`test_the_runner_this_calls_is_the_one_that_exists` asserts against the real
+modules with nothing patched: `_get_runner` is callable, `resume_run` is on
+the class, and `shared` is not - so if anyone adds it, the test says to
+prefer it and points at the mismatch.
+
+**The general rule.** A double that defines an interface proves nothing
+about that interface. Where a test patches a boundary, one test somewhere
+must assert that the boundary is spelled the way the code spells it, without
+patching anything.

@@ -303,8 +303,6 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
         )
         return 0
 
-    from app.server.runner import WorkflowRunner
-
     queued = 0
     for run_id in run_ids:
         if run_id in _RESUMED_ON_START:
@@ -316,15 +314,29 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
             continue
         _RESUMED_ON_START.add(run_id)
         try:
-            runner = WorkflowRunner.shared()
-            import asyncio
-
-            asyncio.run(runner.resume_run(run_id))
+            _resume_one(run_id)
             queued += 1
             logger.info("Resumed run %s, abandoned by a worker that stopped", run_id)
         except Exception:  # noqa: BLE001 - one bad run must not block the rest
             logger.warning("Could not resume run %s", run_id, exc_info=True)
     return queued
+
+
+def _resume_one(run_id: str) -> None:
+    """Hand one run back to this process's runner.
+
+    The runner is built per worker process by `tasks._init_worker_process`,
+    and `tasks._get_runner` returns it - building it if the signal did not
+    fire, which is the case this sweep runs in. There is no class-level
+    accessor; an earlier version of this function invented one, its unit test
+    supplied a double that had it, and the double was the only place it
+    existed. The failure reached the worker log and not the suite.
+    """
+    import asyncio
+
+    from app.server.tasks import _get_runner
+
+    asyncio.run(_get_runner().resume_run(run_id))
 
 
 def recover_orphaned_runs(dry_run: bool = False) -> int:

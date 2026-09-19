@@ -23,7 +23,12 @@ import os
 from datetime import datetime, timezone
 
 from celery import Celery
-from celery.signals import task_failure, worker_process_init, worker_process_shutdown
+from celery.signals import (
+    task_failure,
+    worker_process_init,
+    worker_process_shutdown,
+    worker_ready,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +70,68 @@ celery_app.conf.update(
 _RETRYABLE = (ConnectionError, TimeoutError, OSError)
 
 _runner = None
+
+
+#: How long the recovery lock is held. Long enough that a second worker
+#: starting beside this one does not repeat the work, short enough that a
+#: worker killed mid-recovery does not block the next start for long.
+_RECOVERY_LOCK_SECONDS = 120
+
+
+@worker_ready.connect
+def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
+    """Unstick runs whose worker died, once, when a worker comes up.
+
+    A run is handed to one Celery task and the row says `running` for as long
+    as that task lives. `task_acks_late=False`, so a worker that dies mid-task
+    never has it redelivered: nothing writes a terminal status and the row
+    says `running` for ever. `resume_run` compare-and-sets from `failed` and
+    refuses; `reconcile-runs` deliberately leaves unattended runs alone. The
+    work is all still on disk - the graph checkpoints at every node boundary -
+    and nothing can reach it.
+
+    That was already known and already fixed, as a command an operator has to
+    remember to type. Nothing called it. Measured on 2026-09-19 against the
+    live database: of the forty most recent failed runs, twenty carried "The
+    worker running this stage stopped without finishing", and one run had sat
+    at `running` since the container was replaced eight hours earlier while
+    reporting healthy to every caller that asked.
+
+    A worker restart is not an exceptional event here. It happens on every
+    deploy, every OOM and every configuration change, and runs last hours. So
+    the repair belongs where the restart is observed rather than in an
+    operator's memory.
+
+    Safety is inherited unchanged from `recover_orphaned_runs`: a run is only
+    touched when a worker answered the broker and did not claim its task. If
+    no worker answers, nothing is judged orphaned. Marking the row `failed` is
+    what makes `resume` able to reach it again; it does not discard the work.
+
+    Never raises. A worker that cannot run this must still accept tasks.
+    """
+    if os.environ.get("RECOVER_ORPHANS_ON_START", "true").strip().lower() in {
+        "0", "false", "no", "off",
+    }:
+        return
+    try:
+        from app.server.redis_client import get_redis_client
+
+        # One worker per restart does the sweep. `nx` makes this a lock rather
+        # than a race: several workers come up together on every deploy.
+        client = get_redis_client()
+        if not client.set("harness:recover-orphans", "1", nx=True, ex=_RECOVERY_LOCK_SECONDS):
+            logger.info("Another worker is recovering abandoned runs; skipping")
+            return
+    except Exception:  # noqa: BLE001 - no lock is a reason to skip, not to crash
+        logger.warning("Could not take the orphan-recovery lock; skipping", exc_info=True)
+        return
+
+    try:
+        from app.server.manage import recover_orphaned_runs
+
+        recover_orphaned_runs(dry_run=False)
+    except Exception:  # noqa: BLE001 - recovery must never stop a worker starting
+        logger.warning("Could not recover abandoned runs", exc_info=True)
 
 
 @worker_process_init.connect

@@ -315,6 +315,18 @@ Responsibilities:
 
 {TESTING_DEPENDENCY_RULE}
 
+A test-only dependency is not a violation, and reading one as a violation is
+the defect. `@playwright/test`, `vitest`, `jest`, `jsdom` and the like sitting
+in `devDependencies` with an empty or absent `dependencies` block break no
+constraint a brief places on the product: `npm ci --omit=dev` installs none of
+them, so the user receives nothing of them. Filing that as a BLOCKING finding
+does not protect the brief - it overrules the testing the brief never forbade,
+and the remediation it asks for ("remove the test framework") is the wrong
+answer by construction. The deterministic check reports a real violation as
+"declares `<package>`"; a package that is only ever imported by test files and
+the framework's own configuration is test tooling, whatever the brief says
+about dependencies.
+
 Constraints:
 - Do not modify application source code or the milestone artifacts themselves; you only
   review them and record findings.

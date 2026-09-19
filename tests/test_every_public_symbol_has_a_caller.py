@@ -84,7 +84,6 @@ KNOWN_UNWIRED = {
     "deploy/ci_generator.py: CIGenerator",
     "deploy/compose_generator.py: ComposeGenerator",
     "deploy/docker_generator.py: DockerGenerator",
-    "observability/metrics.py: MetricsTracker",
     "observability/metrics.py: get_metrics_payload",
     "scaffolding/dependencies.py: DependencyManager",
     "server/auth.py: TokenData",

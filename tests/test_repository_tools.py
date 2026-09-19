@@ -1534,6 +1534,47 @@ def test_code_is_refused_in_the_documents_directory(tmp_path):
     assert "belongs in the project directory" in message
 
 
+def test_the_refusal_names_where_to_write_instead(tmp_path):
+    """A refusal that says only "not here" is a dead end.
+
+    The agent has read the rule and cannot apply it: it does not know which of
+    the directories it has seen is the project one. On run-2bfa5e6e the testing
+    specialist was refused `docs/tests/playwright.config.js`, concluded "the
+    requirement conflicts, so we have a blocker", and shipped the milestone
+    with no UI tests - the review then failed the run for missing them. Naming
+    the destination is what `_tests_outside_the_project` already does.
+    """
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
+
+    # Pin a project directory first, so the refusal has a destination to name.
+    write_approved_artifact(str(tmp_path), "todo-app/index.html", "<html></html>")
+
+    with pytest.raises(RepositoryToolError) as exc:
+        write_approved_artifact(
+            str(tmp_path), "docs/tests/playwright.config.js", "// config"
+        )
+
+    message = str(exc.value)
+    assert "Write 'todo-app/tests/playwright.config.js' instead." in message
+
+
+def test_the_refusal_names_the_workspace_root_before_any_project_is_pinned(
+    tmp_path,
+):
+    """With no project pinned yet, the destination is the workspace root.
+
+    The pin is written by the first code write, so this refusal can be the very
+    first one. Naming `tests/...` rather than a project it cannot know keeps
+    the guidance true instead of invented.
+    """
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
+
+    with pytest.raises(RepositoryToolError) as exc:
+        write_approved_artifact(str(tmp_path), "docs/run.sh", "echo hi")
+
+    assert "Write 'run.sh' instead." in str(exc.value)
+
+
 @pytest.mark.parametrize("name", ["helper.py", "style.css", "index.html", "run.sh"])
 def test_every_code_kind_is_refused_there(tmp_path, name):
     from app.tools.repository import RepositoryToolError, write_approved_artifact

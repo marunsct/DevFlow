@@ -70,6 +70,47 @@ def build_stack_selector_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+def _describe_the_browser(runnable: list[str]) -> str:
+    """What this environment can and cannot do with a browser, derived.
+
+    This paragraph used to assert "There is NO browser and no display", which
+    was true when it was written and became false on 2026-09-17: the
+    `TESTABILITY_RULE` now makes Playwright mandatory for frontend UI code and
+    the Dockerfile installs Chromium's system libraries for it.
+
+    Nothing told this stage. So the stack selector was choosing a testing
+    approach against a statement that a browser could not exist, while the
+    specialist downstream was ordered to use one - and `_must_be_runnable`
+    rejected the phrase "headless browser testing with Playwright" because
+    Playwright was on no allowlist. Three copies of one fact, and a capability
+    added to one of them.
+
+    Derived from the allowlist rather than asserted, so the next capability
+    change cannot leave a prompt lying. The half that is still true is stated
+    separately: there is no display and no human, so a *manual* or *visual*
+    check remains impossible however good the browser is.
+    """
+    automated = "playwright" in runnable
+    if not automated:
+        return (
+            "- There is NO browser and no display. Nothing can open a page, click a\n"
+            "  button, or read DevTools. 'Manual browser testing' cannot be carried\n"
+            "  out here by anyone: no human sees this workspace either.\n"
+        )
+    return (
+        "- A HEADLESS browser is available, through Playwright, and it is the\n"
+        "  required way to test frontend UI code here. It installs as a test-only\n"
+        "  dependency (`npm i -D @playwright/test`), so a brief that forbids\n"
+        "  external dependencies does not rule it out: a test-scoped package\n"
+        "  ships to nobody and is not part of the product.\n"
+        "- There is still NO display and NO human. Nothing watches the screen, so\n"
+        "  'manual browser testing', 'visual inspection' and 'check it in DevTools'\n"
+        "  remain impossible - not because a browser is missing, but because\n"
+        "  nobody is there to look. Every check must report a pass or a fail by\n"
+        "  itself.\n"
+    )
+
+
 def describe_execution_environment() -> str:
     """What the sandbox can actually run, derived from the allowlist itself.
 
@@ -94,10 +135,8 @@ def describe_execution_environment() -> str:
     return (
         "The execution environment - what a specialist can actually run:\n"
         f"- Available commands: {', '.join(runnable)}.\n"
-        "- There is NO browser and no display. Nothing can open a page, click a\n"
-        "  button, or read DevTools. 'Manual browser testing' cannot be carried\n"
-        "  out here by anyone: no human sees this workspace either.\n"
-        "- There is no network except during dependency installation.\n"
+        + _describe_the_browser(runnable)
+        + "- There is no network except during dependency installation.\n"
         "- NOTHING IS RUNNING except the command you start. There is no database\n"
         "  server, no message broker, no cache and no application server waiting\n"
         "  to be connected to, and no way to start one that outlives a single\n"

@@ -61,6 +61,7 @@ from app.tools.agent_toolkit import (
     build_artifact_move_tool,
     build_artifact_edit_tool,
     build_artifact_write_tool,
+    build_line_replace_tool,
     build_repository_read_tools,
     build_sprint_history_tool,
 )
@@ -190,6 +191,7 @@ def writing_tools(
     return [
         build_artifact_write_tool(repo_root, answer_fields),
         build_artifact_edit_tool(repo_root),
+        build_line_replace_tool(repo_root),
         build_artifact_delete_tool(repo_root),
         build_artifact_move_tool(repo_root),
     ]
@@ -440,6 +442,12 @@ _WRITING_RULES = (
         "- `write_artifact` CREATES a file, or replaces one completely. Its\n"
         "  `relative_path` is relative to the workspace root, e.g. the filename\n"
         "  your brief gives you, under `docs/`.\n"
+        "- `replace_lines` CHANGES a numbered range: `start_line`, `end_line` and\n"
+        "  the new text. Use it whenever you have just read the file. Reproducing\n"
+        "  a passage byte for byte is the single largest cause of failed edits in\n"
+        "  this harness, and naming two line numbers cannot get it wrong. Pass\n"
+        "  `expect_start` (the first line as you read it) and a stale line number\n"
+        "  is refused instead of changing the wrong place.\n"
         "- `edit_artifact` CHANGES part of a file that already exists. Give it the\n"
         "  exact passage to replace and what to replace it with. Use this for\n"
         "  every revision to an existing document: it leaves the rest of the file\n"
@@ -472,6 +480,10 @@ _WRITING_RULES = (
         "  create    `write_artifact`        a new file\n"
         "  replace   `write_artifact`        the whole file, again\n"
         "  change    `edit_artifact`         one exact passage, rest untouched\n"
+        "  change lines `replace_lines`      lines 21-23, by number - no text to\n"
+        "            quote. PREFER THIS once you have read the file: the read\n"
+        "            shows you the line numbers, so there is nothing to copy,\n"
+        "            escape or indent, and it works the same in every language.\n"
         "  cut       `edit_artifact` with an empty `replace` - deletes that\n"
         "            passage without touching the rest of the file\n"
         "  remove    `delete_artifact`       the whole file\n"

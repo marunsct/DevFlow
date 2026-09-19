@@ -403,8 +403,29 @@ def read_text_lines(
     }
 
 
-_READ_LINE_NUMBER = re.compile(r"^\s*\d+\s{1,}")
-"""The `NNN  ` prefix `read_file` puts in front of every line it returns."""
+_READ_LINE_NUMBER = re.compile(r"^[ \t]*>?[ \t]*\d+[ \t]*(?:[|:][ \t]?|[ \t])")
+"""A line-number gutter, in every format this harness puts in front of a line.
+
+Three producers, three spellings, and the pattern used to know one:
+
+    `1  def add(a, b):`      deepagents' `read_file`      matched
+    `   21 | const url =`    this module's own            digits matched, `| ` left behind
+    `>   21 | const url =`   ditto, nearest-line marker   same
+    `21: content`            the filesystem tool's docs   not matched at all
+
+The second is the one that mattered. `_closest_passage` quotes the file back
+with a `NN | ` gutter and a `>` marker and says "Copy the passage from there
+exactly"; the model does exactly that; the stripper removed the digits and
+left the pipe, so the repaired candidate still did not match and the edit
+failed again. The harness was teaching the model to send text it would then
+reject - the self-inflicted half of the 247 "Could not find that text"
+failures swept across 45 transcripts on 2026-09-19.
+
+Safe to widen because this only runs on a `find` that has already failed to
+match, and every repaired candidate must still match exactly once before it
+is used. A line of real code reading `2 | x` is not at risk unless stripping
+it happens to produce a unique match, and then the original would have
+matched too."""
 
 
 def _without_read_line_numbers(wanted: str) -> str | None:
@@ -454,6 +475,82 @@ def _without_double_escaping(wanted: str) -> str | None:
     """
     collapsed = wanted.replace("\\\\", "\\")
     return collapsed if collapsed != wanted else None
+
+
+def _transcription_repairs(wanted: str) -> list[tuple[str, str]]:
+    """Every repaired spelling of `wanted`, including composed ones.
+
+    The repairs are independent faults and a model commits them together. A
+    `find` can be double-escaped *and* JSON-escaped at once, and applying
+    either one alone leaves the other in place - so both candidates miss and
+    the agent is told only that its text is not in the file.
+
+    Returns candidates in order of confidence, cheapest first. Each is still
+    required by the caller to match exactly once, so composing forgives more
+    transcription without forgiving any ambiguity: the exactness guarantee is
+    unchanged.
+
+    Bounded at one pass of each repair in each order. A fixed point is not
+    worth chasing - a `find` needing three rounds of unescaping is not a
+    transcription slip.
+    """
+    seen = {wanted}
+    out: list[tuple[str, str]] = []
+
+    def add(candidate: str | None, explanation: str) -> str | None:
+        if candidate is None or candidate in seen:
+            return None
+        seen.add(candidate)
+        out.append((candidate, explanation))
+        return candidate
+
+    doubled = add(
+        _without_double_escaping(wanted),
+        "Matched after collapsing doubled backslashes in your text. A backslash "
+        "needs escaping once in JSON, not twice.",
+    )
+    jsoned = add(
+        _without_json_escaping(wanted),
+        "Matched after reading your text as JSON escapes - your `find` carried "
+        "\\n and \\\" where the file has a real newline and a plain quote. The "
+        "tool call is already JSON; put the literal text in `find`, not an "
+        "escaped copy of it.",
+    )
+    # Both faults at once, in either order. `\\\\n` needs the collapse first and
+    # then the decode; a payload escaped the other way round needs the reverse.
+    if doubled is not None:
+        add(
+            _without_json_escaping(doubled),
+            "Matched after collapsing doubled backslashes and then reading the "
+            "result as JSON escapes - your `find` was escaped twice over. Put the "
+            "literal text in `find`, exactly as the file has it.",
+        )
+    if jsoned is not None:
+        add(
+            _without_double_escaping(jsoned),
+            "Matched after reading your text as JSON escapes and collapsing the "
+            "doubled backslashes left behind. Put the literal text in `find`, "
+            "exactly as the file has it.",
+        )
+    add(
+        _without_read_line_numbers(wanted),
+        "Matched after removing the line numbers from your text. Those come from "
+        "`read_file`'s output and are not in the file - strip them before editing.",
+    )
+    # Line numbers must be stripped AFTER the escapes are decoded, not before.
+    # `_without_read_line_numbers` works line by line, and a passage whose
+    # newlines are still the two characters `\n` is one long line to it - so it
+    # strips the first number and leaves every other one in place. Applying it
+    # to each decoded candidate is what handles a passage copied out of a read
+    # and then escaped, which is the ordinary way this arrives.
+    for candidate in list(seen - {wanted}):
+        add(
+            _without_read_line_numbers(candidate),
+            "Matched after decoding your escapes and then removing `read_file`'s "
+            "line numbers. Copy the passage from the file itself, without the "
+            "numbers and without escaping it.",
+        )
+    return out
 
 
 def _without_json_escaping(wanted: str) -> str | None:
@@ -786,6 +883,43 @@ def _changed_underneath(relative_path: str, original: str) -> bool:
         return False
 
 
+def _only_the_whitespace_differs(sent: str, actual: str) -> str:
+    """How two lines differ when they differ only in spacing, or "".
+
+    A diff that prints `you sent: X` above `file has: X` is worse than no
+    diff: the reader cannot see the difference, concludes the tool is wrong,
+    and sends the identical text again. Leading indentation and trailing
+    space are both invisible, and both are what a model reconstructing a
+    passage from memory gets wrong.
+
+    Returns a phrase naming the difference in words, so it survives being
+    read rather than looked at.
+    """
+    if sent == actual or sent.strip() != actual.strip():
+        return ""
+    sent_indent = len(sent) - len(sent.lstrip())
+    actual_indent = len(actual) - len(actual.lstrip())
+    notes: list[str] = []
+    if sent_indent != actual_indent:
+        difference = actual_indent - sent_indent
+        direction = "more" if difference > 0 else "less"
+        notes.append(
+            f"indented {abs(difference)} space{'s' if abs(difference) != 1 else ''} {direction}"
+            f" ({actual_indent} not {sent_indent})"
+        )
+    if "\t" in actual and "\t" not in sent:
+        notes.append("indented with tabs, not spaces")
+    elif "\t" in sent and "\t" not in actual:
+        notes.append("indented with spaces, not tabs")
+    if sent.rstrip() != sent and actual.rstrip() == actual:
+        notes.append("with no trailing space")
+    elif actual.rstrip() != actual and sent.rstrip() == sent:
+        notes.append("with trailing space")
+    if not notes:
+        notes.append("spaced differently")
+    return ", ".join(notes)
+
+
 def _how_it_differs(content: str, wanted: str) -> str:
     """Name the differences between the sent passage and the file's, or "".
 
@@ -852,6 +986,22 @@ def _how_it_differs(content: str, wanted: str) -> str:
                 window[file_from:file_to],
                 range(file_from, file_to),
             ):
+                # A whitespace-only difference prints as two identical lines
+                # and teaches nothing. Measured on run-519a9d8a's
+                # `test_round_1`, which was answered with
+                #
+                #   you sent:  const url = `file://...index.html`;
+                #   file has:    const url = `file://...index.html`;
+                #
+                # and re-sent the same text. The only difference was the left
+                # margin, which is invisible in a message. Say it in words and
+                # count it, rather than showing the reader two things that
+                # look the same.
+                gap = _only_the_whitespace_differs(sent, actual)
+                if gap:
+                    differences.append(f"  you sent:  {_clip(sent)}")
+                    differences.append(f"  file has:  the same text, {gap}   (line {start + offset + 1})")
+                    continue
                 differences.append(f"  you sent:  {_clip(sent)}")
                 differences.append(
                     f"  file has:  {_clip(actual)}   (line {start + offset + 1})"
@@ -946,6 +1096,154 @@ def _quote(lines: list[str], start: int, end: int, marked: int | None) -> str:
     )
 
 
+def _guard_a_targeted_change(
+    repo_root: str | Path, relative_path: str, replacement: str
+) -> tuple[Path, Path]:
+    """Every check a targeted change must pass, in one place.
+
+    `edit_artifact` and `replace_lines` change part of a file and differ only
+    in how they say *which* part. Every other question - is the path inside
+    the workspace, is it a credential, is it a document the workflow renders,
+    is this the stage's own structured response, does the file exist, does the
+    replacement carry the model's own control tokens - has one answer, and it
+    had one implementation only while there was one tool.
+
+    Returning `(root, target)` rather than duplicating the sequence is the
+    rule this codebase keeps arriving at: define the check once over the set
+    it applies to. A third targeted-change tool gets these for free.
+    """
+    root = _normalize_repo_root(repo_root)
+    target = (root / _repo_relative_path(root, relative_path)).resolve()
+    _assert_within_repo(root, target)
+
+    if is_secret_path(target):
+        raise RepositoryToolError(
+            f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
+        )
+    returning = _the_response_it_should_be_returning(
+        tuple(_repo_relative_path(root, relative_path).parts)
+    )
+    if returning is not None:
+        raise RepositoryToolError(returning)
+    if not target.is_file():
+        canonical = _supersedes_existing(target)
+        if canonical is not None:
+            raise RepositoryToolError(
+                f"Cannot edit '{relative_path}': it does not exist. "
+                f"Edit '{canonical.name}' instead - it is the current version of "
+                "this document. Do not recreate the file you just tried to edit."
+            )
+        moved_to = _where_this_stage_put_it(relative_path)
+        if moved_to is not None:
+            raise RepositoryToolError(
+                f"Cannot edit '{relative_path}': it does not exist, because "
+                f"this stage moved it to '{moved_to}'. Edit that instead. "
+                "Writing this path again would put back the file you renamed "
+                "and leave two copies of the same module."
+            )
+        raise RepositoryToolError(
+            f"Cannot edit '{relative_path}': it does not exist yet. "
+            "Use write_artifact to create it."
+        )
+    _refuse_control_tokens(relative_path, replacement)
+    owned = _a_workflow_document(tuple(_repo_relative_path(root, relative_path).parts))
+    if owned is not None:
+        raise RepositoryToolError(owned)
+    return root, target
+
+
+def replace_approved_lines(
+    repo_root: str | Path,
+    relative_path: str,
+    start_line: int,
+    end_line: int,
+    content: str,
+    expect_start: str = "",
+) -> dict[str, str]:
+    """Replace a numbered range of lines, with no text to transcribe.
+
+    Why this exists. Swept across 45 stored transcripts on 2026-09-19:
+    "Could not find that text" was 247 of 371 costly tool failures, 67%, and
+    the largest single cause by a factor of eight. The repair chain already
+    forgave line numbers, doubled backslashes, JSON escaping, indentation and
+    blank lines, and replaying the real failures against it resolved 7 of 75 -
+    so transcription repair had reached its limit.
+
+    The measurement that redirected this: of 330 failed edits, 294 were
+    against a file the same stage had already read. The model is not editing
+    blind. It reads the file and still cannot reproduce a passage from it
+    byte for byte, because reproducing bytes from context is the hard part
+    and it is a requirement this tool invented.
+
+    A line range removes the requirement. `read_file` numbers every line it
+    returns, so "replace lines 21 to 23" is something the model can read off
+    the output it already has, and there is nothing to quote, escape or
+    indent. No language is special: a line range means the same thing in Go,
+    Rust, Ruby and Markdown.
+
+    `expect_start` is an optional guard against stale numbers, compared with
+    surrounding whitespace ignored. It is checked loosely on purpose: a strict
+    comparison would put back the exact-transcription requirement this tool
+    exists to remove.
+
+    Inputs:
+        start_line: 1-based, inclusive.
+        end_line: 1-based, inclusive. Equal to `start_line` replaces one line.
+        content: the replacement text. Empty deletes the range.
+        expect_start: optional. The first line as you read it, for safety.
+    """
+    root, target = _guard_a_targeted_change(repo_root, relative_path, content)
+
+    with _MUTATION_LOCK:
+        original = target.read_text(encoding="utf-8")
+        lines = original.splitlines(keepends=True)
+        total = len(lines)
+
+        if start_line < 1 or end_line < start_line:
+            raise RepositoryToolError(
+                f"Line range {start_line}-{end_line} is not a range. Lines are "
+                "numbered from 1 and `end_line` must not be before `start_line`."
+            )
+        if start_line > total:
+            raise RepositoryToolError(
+                f"'{relative_path}' has {total} line{'s' if total != 1 else ''}, so "
+                f"line {start_line} does not exist. Read the file to see the "
+                "current numbering - a previous edit may have shortened it."
+            )
+        # A range running past the end is clamped rather than refused: asking to
+        # replace "from line 40 to the end" by naming a generous end is
+        # reasonable, and refusing it costs a call to learn the line count.
+        last = min(end_line, total)
+
+        if expect_start:
+            actual_first = lines[start_line - 1]
+            if expect_start.strip() != actual_first.strip():
+                raise RepositoryToolError(
+                    f"Line {start_line} of '{relative_path}' is not what you "
+                    f"expected, so the numbering has moved since you read it.\n"
+                    f"  you expected: {_clip(expect_start.strip())}\n"
+                    f"  line {start_line} is:  {_clip(actual_first.strip())}\n"
+                    "Read the file again and use the new line numbers. Nothing "
+                    "was changed."
+                )
+
+        replaced = "".join(lines[start_line - 1:last])
+        # Keep the file's own line ending on the replacement, so replacing the
+        # last line of a file that ends with a newline does not silently drop it.
+        body = content
+        if body and not body.endswith("\n") and replaced.endswith("\n"):
+            body += "\n"
+        updated = "".join(lines[:start_line - 1]) + body + "".join(lines[last:])
+
+        _refuse_if_broken(relative_path, updated)
+        _write_unless_it_changes_nothing(target, original, updated, relative_path)
+        note = (
+            f"Replaced lines {start_line}-{last} of {total}. "
+            f"The file now has {len(updated.splitlines())} lines."
+        )
+        return _edited(target, root, relative_path, content, note, replaced)
+
+
 def edit_approved_artifact(
     repo_root: str | Path, relative_path: str, find: str, replace: str
 ) -> dict[str, str]:
@@ -969,54 +1267,17 @@ def edit_approved_artifact(
         first-match replacement in a long document corrupts it somewhere the
         agent is not looking.
     """
-    root = _normalize_repo_root(repo_root)
-    target = (root / _repo_relative_path(root, relative_path)).resolve()
-    _assert_within_repo(root, target)
-
-    if is_secret_path(target):
-        raise RepositoryToolError(
-            f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
-        )
-    # Before the existence check: otherwise a stage looping on its own response
-    # is told to use `write_artifact`, and pays another call to be refused there.
-    returning = _the_response_it_should_be_returning(
-        tuple(_repo_relative_path(root, relative_path).parts)
-    )
-    if returning is not None:
-        raise RepositoryToolError(returning)
-    if not target.is_file():
-        # When the missing file is a forked version of one that does exist, say
-        # so here. The generic "use write_artifact to create it" sends the agent
-        # to a write that `_supersedes_existing` then refuses, costing a model
-        # call to learn something this message already knows.
-        canonical = _supersedes_existing(target)
-        if canonical is not None:
-            raise RepositoryToolError(
-                f"Cannot edit '{relative_path}': it does not exist. "
-                f"Edit '{canonical.name}' instead - it is the current version of "
-                "this document. Do not recreate the file you just tried to edit."
-            )
-        moved_to = _where_this_stage_put_it(relative_path)
-        if moved_to is not None:
-            raise RepositoryToolError(
-                f"Cannot edit '{relative_path}': it does not exist, because "
-                f"this stage moved it to '{moved_to}'. Edit that instead. "
-                "Writing this path again would put back the file you renamed "
-                "and leave two copies of the same module."
-            )
-        raise RepositoryToolError(
-            f"Cannot edit '{relative_path}': it does not exist yet. "
-            "Use write_artifact to create it."
-        )
+    # Shared with `replace_approved_lines` - see `_guard_a_targeted_change`.
+    # These were inline here while this was the only tool that changed part of
+    # a file; a second one would have had to copy nine checks or quietly go
+    # without them.
+    root, target = _guard_a_targeted_change(repo_root, relative_path, replace)
     if not find:
         raise RepositoryToolError(
             "The `find` text is empty. Give the exact passage to replace, or use "
-            "write_artifact to replace the whole file."
+            "write_artifact to replace the whole file, or use replace_lines to "
+            "change a numbered range without quoting it."
         )
-    _refuse_control_tokens(relative_path, replace)
-    owned = _a_workflow_document(tuple(_repo_relative_path(root, relative_path).parts))
-    if owned is not None:
-        raise RepositoryToolError(owned)
 
     # Read, replace and write as one step. Parallel tool calls in the same turn
     # would otherwise each replace a passage in their own copy of the file and
@@ -1032,30 +1293,19 @@ def edit_approved_artifact(
             # fallback still requires a *unique* match, so the exactness
             # guarantee is unchanged - only the transcription is forgiven.
             attempts: list[tuple[str, str]] = []
-            unescaped = _without_double_escaping(find)
-            if unescaped is not None:
-                attempts.append((
-                    unescaped,
-                    "Matched after collapsing doubled backslashes in your text. A "
-                    "backslash needs escaping once in JSON, not twice.",
-                ))
-            unjsoned = _without_json_escaping(find)
-            if unjsoned is not None:
-                attempts.append((
-                    unjsoned,
-                    "Matched after reading your text as JSON escapes - your `find` "
-                    "carried \\n and \\\" where the file has a real newline and a plain "
-                    "quote. The tool call is already JSON; put the literal text in "
-                    "`find`, not an escaped copy of it.",
-                ))
-            renumbered = _without_read_line_numbers(find)
-            if renumbered is not None:
-                attempts.append((
-                    renumbered,
-                    "Matched after removing the line numbers from your text. Those come "
-                    "from `read_file`'s output and are not in the file - strip them before "
-                    "editing.",
-                ))
+            # Composed, not tried one at a time. Each repair used to be applied
+            # to the original `find` alone, so a passage carrying BOTH faults
+            # defeated both: `\\\\n` collapses to `\\n`, which is still a
+            # literal backslash-n and still not the newline the file holds, and
+            # neither candidate ever matched.
+            #
+            # Measured on run-519a9d8a's `test_round_1`, which sent
+            # `...index.html`;\\n    await page.evaluate(...)` - double-escaped
+            # around a JSON-escaped newline - and was answered with a quoted
+            # near-miss it could not act on. Composing costs three extra string
+            # searches on a call that has already failed.
+            for candidate, explanation in _transcription_repairs(find):
+                attempts.append((candidate, explanation))
             attempts.append((
                 find,
                 "Matched ignoring indentation - the passage you gave was indented "
@@ -1374,6 +1624,56 @@ def _where_each_match_starts(text: str, find: str) -> str:
         return f"line {lines[0]}"
     listed = ", ".join(str(n) for n in lines[:-1])
     return f"lines {listed} and {lines[-1]}"
+
+
+def _content_a_model_escaped_twice(relative_path: str, content: str) -> tuple[str, str] | None:
+    """Content that only fails because its escapes were written twice, repaired.
+
+    Measured live on run-eb48de7a at 03:37. `test_round_0` sent
+
+        {"relative_path": "todo-app/package.json",
+         "content": "{\\n  \"name\": \"todo-app\", ... }"}
+
+    where every newline is the two characters backslash-n rather than a
+    newline. The content is therefore `{\\n  "name": ...`, `json.loads` stops
+    at column 2, and the write is refused - correctly, because a broken
+    `package.json` breaks every module in its directory. The model sent the
+    identical bytes three times and the stage made no progress.
+
+    The repairs that fix this have existed since run-95ca3f72 and run-0b55ad49.
+    They were reachable only from `edit_artifact`'s `find`. `write_artifact`
+    had none, so the same transcription fault was forgiven on one path and
+    fatal on the other - twelve of thirteen again, with the thirteenth being
+    the path that carries whole files.
+
+    Deliberately conservative, on the same rule the edit repairs use: the
+    content must be structurally invalid as sent AND structurally valid after
+    the repair. A file that legitimately contains a literal backslash-n is
+    already valid, so it is never touched, and a repair that does not fix the
+    problem is discarded rather than written.
+
+    Returns `(repaired, explanation)` or None.
+    """
+    from app.analysis.syntax_balance import structural_problem
+
+    if structural_problem(relative_path, content) is None:
+        return None
+    for candidate, _ in _transcription_repairs(content):
+        if not candidate.strip():
+            continue
+        if structural_problem(relative_path, candidate) is None:
+            # The explanations on `_transcription_repairs` are written for
+            # `edit_artifact`'s `find`. Saying "your `find`" to a write would
+            # send the model looking for an argument it did not pass.
+            return candidate, (
+                f"Your content for '{relative_path}' was escaped twice over - it "
+                "carried the two characters backslash-n where the file needs a "
+                "real newline, so it did not parse. It has been written with the "
+                "escapes decoded, which is what you meant. The tool call is "
+                "already JSON: put the literal text in `content`, not an escaped "
+                "copy of it."
+            )
+    return None
 
 
 def _structural_note(relative_path: str, content: str, *, editing: bool = False) -> str:
@@ -2554,7 +2854,9 @@ def _tests_outside_the_project(root: Path, relative_parts: tuple[str, ...]) -> s
     )
 
 
-def _code_in_the_documents_directory(relative_parts: tuple[str, ...]) -> str | None:
+def _code_in_the_documents_directory(
+    root: Path, relative_parts: tuple[str, ...]
+) -> str | None:
     """Why this file does not belong in `docs/`, or None if it does.
 
     `docs/` is what every reviewer reads as documentation, and what the
@@ -2566,17 +2868,32 @@ def _code_in_the_documents_directory(relative_parts: tuple[str, ...]) -> str | N
     file that no test runner would ever collect - the project's runner looks in
     the project directory. The repeat guard stopped the stage; the file was in
     the wrong place from the first write.
+
+    Names the destination, not just the rule. A refusal that says only "not
+    here" leaves an agent that has read the rule and cannot apply it: on
+    run-2bfa5e6e the testing specialist was refused `docs/tests/playwright.config.js`,
+    answered "the requirement conflicts, so we have a blocker", and shipped the
+    milestone with no UI tests at all - the run then failed the review for
+    missing them. `_test_outside_the_project` already names where to write
+    instead, and this is the same refusal with the same information missing.
     """
     if len(relative_parts) < 2 or relative_parts[0] != "docs":
         return None
     suffix = Path(relative_parts[-1]).suffix.lower()
     if suffix not in _CODE_SUFFIXES:
         return None
+    project = pinned_project_directory(root)
+    destination = (
+        f"{project}/{'/'.join(relative_parts[1:])}"
+        if project
+        else "/".join(relative_parts[1:]) or relative_parts[-1]
+    )
     return (
         f"Refusing to write '{'/'.join(relative_parts)}': `docs/` is for documents "
         "a person reads, and a reviewer reads everything there as documentation. "
         f"A {suffix} file belongs in the project directory, where the test runner "
-        "and the build will actually find it."
+        "and the build will actually find it. "
+        f"Write '{destination}' instead."
     )
 
 
@@ -2952,7 +3269,7 @@ def write_approved_artifact(
     # honoured by every stage afterwards. Without this each stage derived its own
     # name and the same application was built three times over.
     relative_parts = target.relative_to(artifact_root).parts
-    misplaced = _code_in_the_documents_directory(relative_parts)
+    misplaced = _code_in_the_documents_directory(artifact_root, relative_parts)
     if misplaced is not None:
         raise RepositoryToolError(misplaced)
     stranded = _tests_outside_the_project(artifact_root, relative_parts)
@@ -3029,6 +3346,15 @@ def write_approved_artifact(
     # delimiters is not a document with a formatting problem, it is a
     # transcript that escaped.
     _refuse_control_tokens(relative_path, content)
+    # Before refusing the shape: content that is broken only because its
+    # escapes were written twice is a transcription fault, and the repairs for
+    # it already exist on the edit path. See
+    # `_content_a_model_escaped_twice` - the repair is applied only when the
+    # content is invalid as sent and valid after, so nothing legitimate moves.
+    repaired = _content_a_model_escaped_twice(relative_path, content)
+    escape_note = ""
+    if repaired is not None:
+        content, escape_note = repaired
     _refuse_if_broken(relative_path, content)
     _refuse_if_node_cannot_parse(target, relative_path, content)
 
@@ -3156,6 +3482,10 @@ def write_approved_artifact(
     else:
         result["status"] = "written"
     notes = [
+        # First, because it explains why what landed differs from what was
+        # sent. A silent repair teaches the model nothing and it escapes the
+        # next file the same way.
+        escape_note,
         _structural_note(relative_path, content),
         _discovery_note(relative_path, content, target),
         _import_note(root, target, content),

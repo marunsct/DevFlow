@@ -261,3 +261,53 @@ def test_relative_and_url_imports_are_not_packages(tmp_path):
         "import z from '/src/z.js';\n"
     )
     assert what_the_brief_forbids_that_is_there(FORBIDS, tmp_path) == []
+
+
+def test_a_test_framework_config_file_is_test_tooling_not_product_code(tmp_path):
+    """The one import that cost run-519a9d8a its milestone.
+
+    `@playwright/test` sat in `devDependencies` with no `dependencies` at all,
+    imported by a test file and by `playwright.config.ts`. `file_kinds` classifies
+    that config as `config`, not `test` - correctly, it is not a test - so
+    `_imported_only_by_tests` treated the runner's own configuration as product
+    code and the check reported a dependency that ships to nobody. The milestone
+    reviewer filed it BLOCKING and the run ended after three remediation rounds.
+    """
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(
+        json.dumps({"devDependencies": {"@playwright/test": "latest"}})
+    )
+    (project / "app.js").write_text("export const addTask = () => {};\n")
+    (project / "tests").mkdir()
+    (project / "tests" / "playwright.test.ts").write_text(
+        "import { test } from '@playwright/test';\n"
+    )
+    (project / "playwright.config.ts").write_text(
+        "import { defineConfig } from '@playwright/test';\n"
+        "export default defineConfig({});\n"
+    )
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    # Nothing is reported as a violation. The check still says it ran, so a
+    # reviewer knows the product carries no dependencies - that is the note,
+    # not a finding against the brief.
+    assert len(found) == 1
+    assert "declares no product dependencies" in found[0]
+    assert "not shipped" in found[0]
+
+
+def test_a_test_framework_imported_by_product_code_is_still_reported(tmp_path):
+    """The exemption is for the suite's own files, not for product code that
+    happens to sit beside a config. `app.js` importing the runner is a shipped
+    dependency filed in the wrong place."""
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(
+        json.dumps({"devDependencies": {"@playwright/test": "latest"}})
+    )
+    (project / "app.js").write_text("import { chromium } from '@playwright/test';\n")
+    (project / "playwright.config.ts").write_text(
+        "import { defineConfig } from '@playwright/test';\n"
+    )
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+    assert found and "@playwright/test" in found[0]

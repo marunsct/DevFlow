@@ -62,7 +62,10 @@ QUERY_TOOLS = frozenset({
 #: the query notice covers listings and searches; mutations were the member of
 #: the set nobody had added, which is the mistake this codebase has made five
 #: times now.
-MUTATING_TOOLS = frozenset({"edit_artifact", "write_artifact", "delete_artifact", "move_artifact"})
+MUTATING_TOOLS = frozenset({
+    "edit_artifact", "write_artifact", "delete_artifact", "move_artifact",
+    "replace_lines",
+})
 
 
 #: How many identical no-op writes to tolerate before refusing one. The write

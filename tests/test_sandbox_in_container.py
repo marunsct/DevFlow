@@ -188,6 +188,10 @@ def test_only_what_a_build_needs_is_passed(workspace):
     set_deliberately = {
         "NODE_OPTIONS", "VITEST_MAX_THREADS", "VITEST_MIN_THREADS",
         "VITEST_MAX_FORKS", "UV_THREADPOOL_SIZE",
+        # Playwright downloads Chromium (~190 MB) on first use and would do it
+        # again per run with HOME inside the workspace. Pointing it at a shared
+        # cache is deliberate, and it carries no credential - it is a path.
+        "PLAYWRIGHT_BROWSERS_PATH",
     }
 
     assert set(_child_env(workspace)) <= passed_through | set_deliberately

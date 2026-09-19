@@ -242,14 +242,29 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     The same package imported by the application itself is a product dependency
     and is reported. `file_kinds.is_test` is the one answer to "is this a test"
     across the codebase - see that module for why it must not be re-derived.
+
+    A test framework's own configuration file counts as test tooling as well.
+    `playwright.config.ts` is the one that imports `@playwright/test`, and
+    `file_kinds` classifies it as `config` rather than `test` - correctly, it is
+    not a test - so a check that asked only `is_test` saw the runner's config as
+    product code and reported the package as a shipped dependency. Measured on
+    run-519a9d8a, whose milestone review then filed "package.json declares
+    @playwright/test, violating the brief" as BLOCKING and ended the run, three
+    remediation rounds later, over a devDependency that ships to nobody. The
+    config belongs to the suite, not the product: nothing in `dependencies`
+    pulls it in, and `npm ci --omit=dev` never installs it.
     """
-    from app.analysis.file_kinds import is_test
+    from app.analysis.file_kinds import classify_file, is_test
 
     try:
         for script in project.rglob("*"):
             if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
                 continue
-            if is_test(str(script.relative_to(project))):
+            relative = str(script.relative_to(project))
+            if is_test(relative):
+                continue
+            if classify_file(relative) == "config":
+                # A test framework's config is part of the suite it configures.
                 continue
             try:
                 source = script.read_text(encoding="utf-8", errors="replace")

@@ -31,6 +31,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -307,6 +308,9 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # `test_every_specialist_role_has_an_allowlist` now pins the correspondence.
     "ui_ux_specialist": frozenset({
         "npm", "npx", "node", "yarn", "pnpm", "make", "python3", "jest", "vitest", "tsc",
+        # See TOOLCHAINS: the rule that governs this role's own work names
+        # Playwright as mandatory, and the role could not name it back.
+        "playwright",
     }),
     # `node` belongs here for the same reason `npx` already did: a JavaScript
     # backend's entry point is `node server.js`, and without it the role that
@@ -353,7 +357,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # argument forms that turn an interpreter back into a general one.
     "testing_specialist": frozenset({
         "pytest", "python", "python3", "npm", "npx", "yarn", "pnpm", "go", "cargo", "make",
-        "jest", "mocha", "vitest", "jasmine", "karma", "tsc",
+        "jest", "mocha", "vitest", "jasmine", "karma", "tsc", "playwright",
         # The role whose job is running tests must be able to run a test script.
         # Measured on run-3da8dd91: the testing specialist wrote a plain
         # `test-harness.js`, found `node` missing, and reasoned that it had
@@ -437,6 +441,68 @@ def _max_output_size() -> int:
 MAX_OUTPUT_SIZE = _max_output_size()
 
 TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120}
+
+#: How much longer than the JavaScript baseline each toolchain needs.
+#:
+#: The table above was measured on npm and applied to everything. A `cargo
+#: build` of a dependency tree, a Gradle build, a `dotnet restore` or a first
+#: `go build` of a module routinely exceed 180 seconds on a cold cache, and
+#: the timeout then reports "Command timed out" for a build that was working -
+#: which sends the agent to shrink the build rather than wait for it.
+#:
+#: Scaled rather than tabulated per (stack, category): the shape of the
+#: difference is "this toolchain compiles", not "this toolchain's install is
+#: slow and its test is fast", and one number per toolchain is one thing to
+#: get wrong instead of four.
+#:
+#: These are ratios, not measurements - the harness does not yet have enough
+#: recorded durations per language to derive them. `_record_execution` now
+#: stores `duration_seconds` so that it will, and so B3's measured version
+#: (p95 of successful runs, doubled) can replace this table with evidence.
+#: Until then a generous ratio costs a slow run its patience and a tight one
+#: costs it the build.
+TOOLCHAIN_TIMEOUT_SCALE: dict[str, float] = {
+    "rust": 4.0,       # cargo builds the dependency tree from source
+    "java": 3.0,       # maven/gradle resolve and compile
+    "kotlin": 3.0,
+    "swift": 3.0,
+    "csharp": 2.5,     # dotnet restore then build
+    "dart": 2.0,       # flutter pub get is large
+    "scala": 4.0,
+    "cpp": 3.0,
+    "c": 2.0,
+    "go": 1.5,         # fast, but a cold module cache is not
+    "elixir": 1.5,
+    "python": 1.0,
+    "ruby": 1.5,       # native gem extensions compile
+    "php": 1.0,
+    "javascript": 1.0,
+    "typescript": 1.0,
+}
+
+#: No command waits longer than this, whatever the scale works out to. A
+#: command that has not finished in fifteen minutes is not slow, it is stuck,
+#: and the timeout is the only thing that will ever end it.
+MAX_TIMEOUT_SECONDS = 900
+
+
+def timeout_for(category: str, repo_root: str | Path | None = None) -> int:
+    """Seconds this command may run, given the category and the run's stack.
+
+    Never raises: an unreadable pin yields the unscaled baseline, which is
+    exactly the behaviour before this existed.
+    """
+    base = TIMEOUTS.get(category, TIMEOUTS["default"])
+    try:
+        pinned = project_stack(repo_root)
+    except Exception:  # noqa: BLE001 - a timeout must not fail the command
+        return base
+    if not pinned:
+        return base
+    # The slowest toolchain in the stack decides. A Rust backend with a
+    # TypeScript frontend builds at Rust's pace.
+    scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned), default=1.0)
+    return int(min(base * scale, MAX_TIMEOUT_SECONDS))
 
 # Resource ceilings. A fork bomb or a runaway build hits these instead of the host.
 MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "4g")
@@ -825,8 +891,16 @@ the workspace the way the project directory already is.
 #: JavaScript module as Python. That was the fourth time `node` was added to one
 #: role at a time. A table keyed by language is what stops there being a fifth.
 TOOLCHAINS: dict[str, frozenset[str]] = {
-    "javascript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc"}),
-    "typescript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "ts-node"}),
+    # `playwright` is here because `TESTABILITY_RULE` makes it mandatory for
+    # frontend UI code and the Dockerfile installs Chromium's system libraries
+    # for it. It was on no role's allowlist, so the runner the harness orders
+    # the model to use was one nothing could name: `_must_be_runnable` derives
+    # its set of real runners from these tables, and rejected "headless
+    # browser testing with Playwright" for a runner it had never heard of.
+    # `npx playwright test` worked only because `npx` runs anything, which is
+    # the accident that hid four earlier allowlist gaps.
+    "javascript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "playwright"}),
+    "typescript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "ts-node", "playwright"}),
     "python": frozenset({"python", "python3", "pip", "pip3", "pytest", "uv", "poetry", "ruff"}),
     "go": frozenset({"go", "gofmt"}),
     "rust": frozenset({"cargo", "rustc", "rustfmt"}),
@@ -838,6 +912,12 @@ TOOLCHAINS: dict[str, frozenset[str]] = {
     "swift": frozenset({"swift", "swiftc"}),
     "dart": frozenset({"dart", "flutter"}),
     "elixir": frozenset({"elixir", "mix"}),
+    # Added 2026-09-19 alongside the timeout scales. A language the scale
+    # table named and this table did not could never be pinned, so its scale
+    # could never apply - the completeness test now pins both directions.
+    "scala": frozenset({"scala", "scalac", "sbt", "mill", "gradle"}),
+    "c": frozenset({"gcc", "clang", "make", "cmake"}),
+    "cpp": frozenset({"g++", "clang++", "make", "cmake"}),
 }
 
 #: Spellings the stack selector actually produces, mapped to a table key.
@@ -1624,6 +1704,7 @@ def _record_execution(
     result: dict,
     working_directory: str | None = None,
     category: str = "default",
+    duration_seconds: float | None = None,
 ) -> None:
     """Append one command's outcome to the run's ledger. Never raises.
 
@@ -1654,6 +1735,14 @@ def _record_execution(
             "category": category,
             "returncode": _as_exit_code(result.get("returncode")),
             "error": result.get("error"),
+            # How long it actually took. Nothing reads this yet; it is here so
+            # B3's measured timeout - p95 of a category's successful runs on
+            # this stack, doubled - has evidence to derive from. A constant
+            # measured on one toolchain and typed into source is what class C
+            # exists to retire, and `TOOLCHAIN_TIMEOUT_SCALE` is currently one.
+            "duration_seconds": (
+                round(duration_seconds, 3) if duration_seconds is not None else None
+            ),
             **_the_counts_a_test_run_reported(result),
         }
         with path.open("a", encoding="utf-8") as handle:
@@ -1746,11 +1835,37 @@ def failed_this_way_before(
     # times that it had changed nothing. The settled-answer middleware and the
     # repeat-read notices all treat a write as invalidating what came before;
     # this did not, and should have.
-    return sum(1 for entry in failures if not _written_since(repo_root, entry.get("at")))
+    #
+    # Scoped to the command's own directory for the reason in
+    # `_written_since`: a whole-workspace walk is tripped by the review
+    # documents the workflow renders between stages, which the command never
+    # read.
+    return sum(
+        1
+        for entry in failures
+        if not _written_since(repo_root, entry.get("at"), working_directory)
+    )
 
 
-def _written_since(repo_root: str, when: str | None) -> bool:
-    """Whether any project file has changed since `when`. Never raises.
+def _written_since(
+    repo_root: str,
+    when: str | None,
+    working_directory: str | None = None,
+) -> bool:
+    """Whether anything the command could have been affected by changed since `when`.
+
+    Scoped to the directory the command ran in, not the whole workspace. The
+    gate exists to stop telling an agent "nothing has changed" when it has just
+    edited the file under test, so the only writes that should clear it are
+    writes where the command runs. The workflow itself writes `docs/*.md`
+    between every stage, and the old whole-workspace walk counted those: on
+    run-2bfa5e6e a `npm test` failing on a missing `package.json` was re-run
+    three times in three different stages, each with only a rendered review
+    document between them, and the "already failed N times" note never fired
+    once. The agent was never told what the harness already knew.
+
+    Falls back to the workspace root when the command named no directory, which
+    is where such a command reads and writes.
 
     Prunes the ignored directories as it descends rather than walking
     everything and discarding afterwards. The discarding version still entered
@@ -1762,8 +1877,9 @@ def _written_since(repo_root: str, when: str | None) -> bool:
     if not when:
         return True
     try:
+        base = _resolve_a_working_directory(repo_root, working_directory)
         moment = datetime.fromisoformat(when).timestamp()
-        for directory, subdirectories, files in os.walk(repo_root):
+        for directory, subdirectories, files in os.walk(base):
             subdirectories[:] = [
                 name for name in subdirectories if name not in IGNORED_DIRECTORIES
             ]
@@ -1776,6 +1892,19 @@ def _written_since(repo_root: str, when: str | None) -> bool:
     except Exception:  # noqa: BLE001 - unknown means "assume it changed"
         return True
     return False
+
+
+def _resolve_a_working_directory(repo_root: str, working_directory: str | None) -> str:
+    """The absolute directory a command runs in, or the workspace root.
+
+    Never raises: a directory that cannot be resolved is the workspace root,
+    which is where a command with no `working_directory` reads and writes, so
+    the fallback is the same place rather than a guess.
+    """
+    if not working_directory:
+        return repo_root
+    candidate = os.path.join(repo_root, working_directory.strip().strip("/"))
+    return candidate if os.path.isdir(candidate) else repo_root
 
 
 def timed_out_this_way_before(
@@ -1854,7 +1983,11 @@ def succeeded_this_way_before(
     ]
     if not passes:
         return 0
-    return sum(1 for entry in passes if not _written_since(repo_root, entry.get("at")))
+    return sum(
+        1
+        for entry in passes
+        if not _written_since(repo_root, entry.get("at"), working_directory)
+    )
 
 
 
@@ -2168,6 +2301,7 @@ class SandboxExecutor:
         # A command that carries its own `working_directory` or `--prefix` is
         # left alone either way: it has said where it means, including when
         # that is the root.
+        started = time.monotonic()
         belongs_in = (
             None if working_directory else the_project_this_command_belongs_in(command, repo_root)
         )
@@ -2191,7 +2325,8 @@ class SandboxExecutor:
         if ruled_out:
             outcome = {"error": ruled_out}
             _record_execution(
-                repo_root, role_name, command, outcome, working_directory, category
+                repo_root, role_name, command, outcome, working_directory, category,
+                duration_seconds=time.monotonic() - started,
             )
             return outcome
 
@@ -2229,7 +2364,8 @@ class SandboxExecutor:
                 "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
             }
         _record_execution(
-            repo_root, role_name, command, outcome, working_directory, category
+            repo_root, role_name, command, outcome, working_directory, category,
+            duration_seconds=time.monotonic() - started,
         )
         return outcome
 
@@ -2277,7 +2413,7 @@ class SandboxExecutor:
             )
             return {"error": why}
 
-        timeout = TIMEOUTS.get(category, TIMEOUTS["default"])
+        timeout = timeout_for(category, repo_root)
 
         if execution_mode() == IN_CONTAINER_MODE:
             return cls._execute_here(
@@ -2355,6 +2491,8 @@ __all__ = [
     "pin_project_stack",
     "project_stack",
     "TOOLCHAINS",
+    "TOOLCHAIN_TIMEOUT_SCALE",
+    "timeout_for",
     "workspace_rooted_arguments",
     "execution_enabled",
     "execution_mode",

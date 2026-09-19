@@ -266,7 +266,8 @@ def test_every_file_operation_has_a_tool() -> None:
     mutating = {tool.name for tool in writing_tools("/workspace")}
 
     assert mutating == {
-        "write_artifact", "edit_artifact", "delete_artifact", "move_artifact"
+        "write_artifact", "edit_artifact", "replace_lines",
+        "delete_artifact", "move_artifact",
     }
     assert {"ls", "read_file", "glob", "grep"} <= set(_WORKSPACE_READ_TOOLS)
 
@@ -278,9 +279,11 @@ def test_the_prompt_names_a_tool_for_every_case() -> None:
     rules = _normalised(_WRITING_RULES)
 
     for operation in ("list", "search", "read all", "read part", "create",
-                      "replace", "change", "cut", "remove", "relocate"):
+                      "replace", "change", "cut", "remove", "relocate",
+                      "change lines"):
         assert operation in rules, operation
     assert "move_artifact" in rules
+    assert "replace_lines" in rules
 
 
 # --- a test is evidence, not clutter --------------------------------------

@@ -755,6 +755,69 @@ def test_a_failure_with_nothing_written_since_still_counts(tmp_path) -> None:
     assert failed_this_way_before(str(tmp_path), command) == 2
 
 
+def test_a_write_outside_the_command_directory_does_not_clear_the_count(
+    tmp_path,
+) -> None:
+    """A workflow's own rendered documents must not silence the repeat notice.
+
+    The gate exists so an agent that edits the file under test is not told
+    "nothing has changed". The whole-workspace walk it used applied that same
+    logic to files the command never touched: between two stages the workflow
+    rewrites `docs/milestone_review.md`, and that single write reset the
+    failure count to zero. On run-2bfa5e6e a `npm test` failing on a missing
+    `package.json` was re-run across three stages and the "already failed"
+    note never fired once.
+    """
+    import time
+
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "proj/a.js").write_text("x\n", encoding="utf-8")
+    command = ["node", "a.js"]
+
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1}, "proj")
+    time.sleep(0.02)
+    # The workflow renders a review document between stages. The command runs
+    # under `proj` and never reads it.
+    (tmp_path / "docs/milestone_review.md").write_text("rendered\n", encoding="utf-8")
+    time.sleep(0.02)
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1}, "proj")
+    time.sleep(0.02)
+
+    assert failed_this_way_before(str(tmp_path), command, "proj") == 2
+
+
+def test_a_write_in_the_command_directory_does_clear_the_count(tmp_path) -> None:
+    """The behaviour the gate exists to preserve.
+
+    An agent that edits the file under test and re-runs has genuinely changed
+    the situation, so the failure from before the edit is no longer live. The
+    count is the failures with nothing written since them, so a write between
+    two failures prunes the first: without the write both count (two), with it
+    only the later, still-live one does (one).
+    """
+    import time
+
+    from app.tools.sandbox import _record_execution, failed_this_way_before
+
+    (tmp_path / "proj").mkdir()
+    (tmp_path / "proj/a.js").write_text("x\n", encoding="utf-8")
+    command = ["node", "a.js"]
+
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1}, "proj")
+    time.sleep(0.02)
+    (tmp_path / "proj/a.js").write_text("y\n", encoding="utf-8")
+    time.sleep(0.02)
+    _record_execution(str(tmp_path), "r", command, {"returncode": 1}, "proj")
+    time.sleep(0.02)
+
+    # The first failure is pruned by the edit; the second has nothing written
+    # since it and so is still live.
+    assert failed_this_way_before(str(tmp_path), command, "proj") == 1
+
+
 def test_a_command_that_already_passed_unchanged_is_counted(tmp_path) -> None:
     """The leak the failure-side check left open.
 

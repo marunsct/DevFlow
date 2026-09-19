@@ -2585,3 +2585,115 @@ browser is now in the image so the size argument against a scraper no longer
 applies. Both corrections are marked with the date and keep the original
 reasoning visible, because the reasoning was right and only the environment
 changed.
+
+---
+
+### 4w. The tool-call waste audit, and what it redirected (2026-09-19)
+
+Swept all 45 stored transcripts, 8,442 tool calls, grouping every failure by
+normalised cause rather than reading runs one at a time.
+
+| | count | share |
+|---|---|---|
+| costly tool failures (refusals that prevented damage excluded) | 371 | 4.4% of calls |
+| `edit_artifact` "Could not find that text" | 247 | **67% of failures** |
+| next largest single cause (`File not found`) | 23 | 6% |
+
+One cause is eight times the next. Editing a file is language-independent, so
+this is waste the harness pays in every stack it builds.
+
+**The first two hypotheses were wrong, and the replay said so.** The repair
+chain already forgave line numbers, doubled backslashes, JSON escaping,
+indentation and blank lines. Two residual faults were found in run-519a9d8a
+and fixed:
+
+- the repairs were applied to the original `find` one at a time and never
+  composed, so a passage carrying two faults at once defeated all of them;
+- `_READ_LINE_NUMBER` matched `NN␣␣` but not the `NN | ` gutter that
+  `_closest_passage` itself prints. The harness quoted the file back with its
+  own gutter, said "Copy the passage from there exactly", and then rejected
+  the copy. A self-inflicted loop.
+
+Both are real and both are now fixed with tests. Then 75 of the failures were
+replayed against the file content their own error messages quoted:
+
+| repair chain | resolved |
+|---|---|
+| before | 7 of 75 |
+| after composing and widening the gutter | 7 of 75 |
+
+**Zero improvement on the corpus.** Transcription repair had reached its limit
+and the remaining failures are not transcription at all.
+
+**The measurement that redirected the work.** For every failed edit, whether
+the same stage had already read that file:
+
+| | count |
+|---|---|
+| the stage had read the file | 294 |
+| the stage had never read it | 36 |
+| total | 330 |
+
+89% were against a file the model had read. It is not editing blind.
+Reproducing a passage byte for byte from context is simply the hard part - and
+it is a requirement `edit_artifact` invented, not one the task has.
+
+**The structural answer: `replace_lines`.** A numbered range has nothing to
+transcribe. `read_file` numbers every line it returns, so the model reads the
+range off output it already holds; there is no text to quote, escape or
+indent; and a line range means the same thing in Go, Rust, Ruby and Markdown,
+which no text-matching repair can claim. `expect_start` is an optional, loose
+check against a stale number - loose on purpose, because a strict one would
+put back the requirement the tool exists to remove.
+
+Wired into the whole set rather than added beside it: `writing_tools`,
+`HUMAN_APPROVAL_TOOLS`, `MUTATING_TOOLS`, the file-operation matrix test and
+the toolset table in `_WRITING_RULES`. `edit_artifact` and `replace_lines` now
+share `_guard_a_targeted_change`, so the nine checks a targeted change must
+pass have one definition rather than one per tool.
+
+### 4x. Three technology-agnostic gaps found while doing it
+
+Each was a rule defined over one member of a set - class B arriving through
+class H.
+
+**The install guard understood only npm.** Against a brief reading "No
+external dependencies beyond basic HTML/CSS/JS", measured live:
+
+```
+npm install express                 REFUSED
+pip install flask                   allowed
+cargo add serde                     allowed
+go get github.com/gin-gonic/gin     allowed
+dotnet add package Newtonsoft.Json  allowed
+bundle add rspec                    allowed
+composer require phpunit/phpunit    allowed
+```
+
+The check read `if not any(m in words[0] for m in ("npm","yarn","pnpm"))`.
+Replaced by `_INSTALL_GRAMMAR`, a table of 17 managers with their install
+subcommands and their dev-scope flags, plus a completeness test against
+`TOOLCHAINS`. Dev scope is per manager, because `pip` has none and a global
+flag list would exempt `pip install --dev x` on a flag pip does not have.
+
+**The stack pin held one language; the stack names two.** `pin_project_stack`
+took a single string and `allowed_executables` did one `TOOLCHAINS.get`, so a
+Go backend with a TypeScript frontend pinned `go` and left every role without
+`tsc`. Now variadic, with `FRAMEWORK_LANGUAGES` mapping a framework name to
+its language, and a test over eleven full-stack combinations. This is B19,
+closed.
+
+**Playwright was mandated and unrunnable by name.** `TESTABILITY_RULE` orders
+it, the Dockerfile installs Chromium's libraries for it, and it was on no
+role's allowlist - so `_must_be_runnable`, which derives its runners from the
+allowlist, rejected "headless browser testing with Playwright". Meanwhile the
+stack selector was still told "There is NO browser and no display". Playwright
+is now a named runner; the browser paragraph is derived from the allowlist
+instead of asserted; and `tests/test_capability_agreement.py` fails if any of
+the four copies of that fact disagree again. This is B20, closed, and B18 with
+it.
+
+`test_no_browser_is_actually_available` had been written as a canary with the
+message "a browser is now available - update describe_execution_environment()".
+It fired, exactly as designed, two days after the capability landed. It is
+kept, inverted to assert the agreement in both directions.

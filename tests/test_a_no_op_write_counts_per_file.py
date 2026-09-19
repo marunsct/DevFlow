@@ -102,17 +102,43 @@ def test_a_write_that_actually_changed_the_file_is_never_refused():
         assert "Refusing this write" not in result.content
 
 
-def test_repeated_failures_still_count_per_arguments():
-    """A different failing call is a different event and keeps its own count."""
+def test_repeated_edit_failures_count_by_file_not_by_the_passage_sent():
+    """The failure is the event; the passage the stage guessed at is not.
+
+    `edit_artifact` answers "Could not find that text in 'a.js'" and a stage
+    that cannot find it responds by sending a different passage, so `find`
+    changes on every retry. Counting per arguments saw every retry as a first
+    attempt. Measured on run-519a9d8a: ten retries in `test_round_1`, seven in
+    `specialist_testing_2`, each a different `find` against the same file.
+    """
     stage_memory.forget_everything()
     middleware = build_repeated_query_middleware()
     failure = '{"error": "Could not find that text in \'a.js\'."}'
 
-    for _ in range(6):
-        request = _Request("edit_artifact", {"relative_path": "a.js", "find": "x", "replace": "y"})
+    for find in ("x", "y", "z"):
+        request = _Request(
+            "edit_artifact", {"relative_path": "a.js", "find": find, "replace": "r"}
+        )
+        result = middleware.wrap_tool_call(request, lambda _r: _Result(failure))
+
+    assert "failed the same way" in result.content
+
+
+def test_repeated_failures_on_another_file_keep_their_own_count():
+    """The path is part of the shape, so a failure on one file is not charged
+    to another."""
+    stage_memory.forget_everything()
+    middleware = build_repeated_query_middleware()
+    failure = '{"error": "Could not find that text in \'a.js\'."}'
+    other_failure = '{"error": "Could not find that text in \'b.js\'."}'
+
+    for _ in range(3):
+        request = _Request(
+            "edit_artifact", {"relative_path": "a.js", "find": "x", "replace": "y"}
+        )
         middleware.wrap_tool_call(request, lambda _r: _Result(failure))
 
-    other = _Request("edit_artifact", {"relative_path": "a.js", "find": "p", "replace": "q"})
-    result = middleware.wrap_tool_call(other, lambda _r: _Result(failure))
+    other = _Request("edit_artifact", {"relative_path": "b.js", "find": "p", "replace": "q"})
+    result = middleware.wrap_tool_call(other, lambda _r: _Result(other_failure))
 
     assert "failed the same way" not in result.content

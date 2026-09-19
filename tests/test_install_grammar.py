@@ -41,7 +41,12 @@ from app.tools.sandbox import (
 #: install guard is the wrong place for them by construction - the write path
 #: is where their dependency arrives - so they are exempt here deliberately
 #: rather than forgotten.
-ADDS_BY_EDITING_THE_MANIFEST = frozenset({"mvn", "gradle", "kotlinc", "swift"})
+ADDS_BY_EDITING_THE_MANIFEST = frozenset({
+    "mvn", "gradle", "kotlinc", "swift",
+    # Scala's build tools resolve `libraryDependencies` from build.sbt; there
+    # is no `sbt add`. CMake reads CMakeLists.txt the same way.
+    "sbt", "mill", "cmake",
+})
 
 #: Executables in `TOOLCHAINS` that are runtimes, compilers or test runners
 #: and never install anything.
@@ -50,12 +55,17 @@ NOT_A_PACKAGE_MANAGER = frozenset({
     "python", "python3", "pytest", "ruff",
     "gofmt", "rustc", "rustfmt", "java", "javac",
     "kotlin", "rake", "rspec", "phpunit", "swiftc", "elixir",
+    # A browser-driving test runner, invoked as `npx playwright test`. It
+    # installs packages no more than `jest` does.
+    "playwright",
     # Interpreters, not package managers. Ruby installs through `gem` and
     # `bundle`, PHP through `composer`, and all three are in the grammar. The
     # completeness test found these two on its first run, which is the test
     # working: `ruby` and `php` are in `TOOLCHAINS` beside their managers and
     # look like managers to anything that does not know the difference.
     "ruby", "php",
+    # Compilers and build drivers, not package managers.
+    "scala", "scalac", "gcc", "clang", "g++", "clang++", "make",
 })
 
 

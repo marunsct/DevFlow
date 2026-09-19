@@ -20,16 +20,45 @@ from __future__ import annotations
 from app.agents.stack_selector import _SYSTEM_PROMPT, describe_execution_environment
 
 
-def test_the_selector_is_told_there_is_no_browser():
-    assert "NO browser and no display" in _SYSTEM_PROMPT
+def test_the_selector_is_told_the_truth_about_the_browser():
+    """Whichever way round it is, the prompt must match the allowlist.
+
+    This used to assert "NO browser and no display" unconditionally. That was
+    true until 2026-09-17, when `TESTABILITY_RULE` made Playwright mandatory
+    for UI code and the Dockerfile gained Chromium's system libraries. The
+    assertion then pinned a statement the harness had made false, and the
+    stack selector went on being told a browser could not exist while the
+    specialist downstream was ordered to use one.
+
+    Asserting the agreement instead of the answer is what makes this survive
+    the next capability change in either direction.
+    """
+    from app.tools.sandbox import allowed_executables
+
+    available = "playwright" in allowed_executables("ui_ux_specialist")
+    flat = " ".join(_SYSTEM_PROMPT.split())
+
+    if available:
+        assert "NO browser and no display" not in flat, (
+            "the prompt denies a browser the harness provides"
+        )
+        assert "HEADLESS browser is available" in flat
+    else:
+        assert "NO browser and no display" in flat
 
 
 def test_the_selector_is_told_manual_testing_is_impossible():
-    """Not merely inconvenient - there is no human looking at this workspace."""
+    """The half that stays true however good the browser is.
+
+    A headless browser is not a person watching a screen. No display and no
+    human means manual and visual checks remain impossible, and that sentence
+    must survive any change to the browser paragraph - it is the one that
+    stops the selector choosing "check it in DevTools".
+    """
     flat = " ".join(_SYSTEM_PROMPT.split())
 
-    assert "'Manual browser testing' cannot be carried out here" in flat
-    assert "no human sees this workspace either" in flat
+    assert "manual browser testing" in flat.lower()
+    assert "NO display" in flat or "no display" in flat
 
 
 def test_the_available_commands_are_listed():
@@ -50,8 +79,20 @@ def test_the_list_comes_from_the_allowlist_not_a_copy():
         assert command in described, f"{command} is permitted but not described"
 
 
-def test_no_browser_is_actually_available():
-    """The premise of the whole rule. If this fails, the rule is now a lie."""
+def test_whatever_browser_exists_is_described_to_the_selector():
+    """The canary, kept, and pointed at the agreement instead of the absence.
+
+    In its original form this asserted no browser was reachable, with the
+    message "a browser is now available - update
+    describe_execution_environment(), which currently tells the stack selector
+    there is none". On 2026-09-19 it fired, exactly as designed: Playwright had
+    been made mandatory and added to the image two days earlier, and nothing
+    had updated the prompt.
+
+    A test that has done its job once should not be deleted. It is inverted:
+    it now fails if a browser is reachable and undescribed, or described and
+    unreachable.
+    """
     from app.tools.sandbox import allowed_executables
 
     permitted = set()
@@ -59,11 +100,18 @@ def test_no_browser_is_actually_available():
         permitted |= allowed_executables(role)
 
     browsers = {"chromium", "chrome", "google-chrome", "firefox", "playwright", "puppeteer"}
+    described = describe_execution_environment()
+    reachable = bool(permitted & browsers)
 
-    assert not (permitted & browsers), (
-        "a browser is now available - update describe_execution_environment(), "
-        "which currently tells the stack selector there is none"
-    )
+    if reachable:
+        assert "HEADLESS browser is available" in described, (
+            f"{sorted(permitted & browsers)} is runnable and the stack selector "
+            "is not told, so it will not choose a browser-based test"
+        )
+    else:
+        assert "NO browser" in described, (
+            "no browser is reachable and the prompt implies one is"
+        )
 
 
 def test_the_selector_is_told_to_choose_something_that_runs():

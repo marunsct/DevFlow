@@ -933,11 +933,84 @@ def _exports_no_test_mentions(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
+#: A runtime being handed a file to execute: `node server.mjs`,
+#: `python -u app.py`, `deno run --allow-net main.ts`, `bun start.ts`,
+#: `dotnet Program.dll`. The command may be in a config, a manifest, a CI
+#: workflow, a Dockerfile, a Makefile or a README - all of them are callers.
+_A_RUNTIME_LAUNCHES = re.compile(
+    r"\b(?:node|nodemon|deno\s+run|bun|tsx|ts-node|python3?|ruby|php|perl|dotnet|java)\b"
+    # Separators cover the shell form (`node -u app.py`) and the exec form a
+    # Dockerfile or a CI matrix writes (`["python", "-u", "app.py"]`).
+    r"(?:[\s'\",]{1,4}|-{1,2}[A-Za-z][\w-]*){1,8}"
+    r"([^\s'\"`;&|()\[\],]+\.[A-Za-z][\w]*)"
+)
+
+
+def _files_a_command_launches(text: str) -> set[str]:
+    """Base names a command string in `text` hands to a runtime to execute.
+
+    `_orphaned_scripts` knows two kinds of caller: a `<script>` tag and an
+    `import`. A third kind is as real as either and was invisible to it - a
+    command that runs the file, wherever that command is written down.
+
+    Measured on run-ed05e20e, whose `TESTABILITY_RULE` told the model to "let
+    Playwright manage the server itself - declare a `webServer` in
+    `playwright.config.ts`". The model did exactly that, with
+    `command: 'node server.mjs'`, and the orphan check then reported
+    `server.mjs` as a blocking finding: "never loaded by a page or imported by
+    another module. Nothing runs it." Playwright ran it on every test.
+
+    Deliberately not a Playwright rule. A CI workflow, a Dockerfile `CMD`, a
+    Procfile, a Makefile recipe, a compose `command:` and a README's "run it
+    with" line all say the same thing in the same shape, in every language the
+    regex names, and none of them were counted either.
+    """
+    return {Path(target).name for target in _A_RUNTIME_LAUNCHES.findall(text)}
+
+
+#: Files whose whole job is to say how the product is run. None of them are
+#: source in any language, so `_source_files` does not collect them - and the
+#: one question they answer is exactly the one the orphan check asks.
+_A_RUN_DESCRIPTION = re.compile(
+    r"^(?:Dockerfile|Containerfile|Procfile|Makefile|Justfile|Taskfile\.ya?ml"
+    r"|(?:docker-)?compose(?:\.\w+)?\.ya?ml|\w[\w.-]*\.ya?ml|README(?:\.\w+)?"
+    r"|\w[\w.-]*\.(?:sh|bat|ps1|cmd))$",
+    re.I,
+)
+
+
+def _how_the_product_is_run(root: Path) -> str:
+    """Every run description in the project, concatenated. Never raises.
+
+    A Dockerfile `CMD`, a Procfile line, a Makefile recipe, a compose
+    `command:`, a CI workflow step, a shell script and a README's "run it
+    with" all name the file that gets executed, and none of them are source in
+    any language, so nothing collected them.
+
+    Walks once, pruning the same directories every other check prunes, so a
+    `node_modules` with forty thousand files costs nothing here.
+    """
+    import os
+
+    texts: list[str] = []
+    try:
+        for parent, directories, names in os.walk(root):
+            directories[:] = [d for d in directories if d not in _SKIP]
+            for name in names:
+                if _A_RUN_DESCRIPTION.match(name):
+                    texts.append(_read(Path(parent) / name))
+    except OSError:
+        return ""
+    return "\n".join(texts)
+
+
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:
     """Application scripts that nothing loads or imports, as relative paths."""
     referenced: set[str] = set()
+    referenced.update(_files_a_command_launches(_how_the_product_is_run(root)))
     for path in files:
         text = _read(path)
+        referenced.update(_files_a_command_launches(text))
         if path.suffix.lower() in {".html", ".htm"}:
             referenced.update(Path(src).name for src in _SCRIPT_SRC.findall(text))
         elif path.suffix.lower() in {".js", ".mjs", ".cjs"}:
@@ -2624,6 +2697,53 @@ _STARTS_A_SERVER = re.compile(
 )
 
 
+#: Config files belonging to a browser test runner. A file one of these
+#: launches is the harness, not the product.
+_A_TEST_RUNNER_CONFIG = re.compile(
+    r"^(?:playwright|cypress|wdio|karma|nightwatch|testcafe|vitest|jest"
+    r"|web-test-runner|protractor|codecept)[.\w-]*\.(?:c|m)?(?:j|t)s(?:on)?$",
+    re.I,
+)
+
+
+def _servers_started_by_a_test_runner(files: list[Path], root: Path) -> set[Path]:
+    """Files a test runner's own config starts, resolved against the project.
+
+    `TESTABILITY_RULE` tells the model, in these words, to "let Playwright
+    manage the server itself - declare a `webServer` in
+    `playwright.config.ts`". Run-ed05e20e's model did exactly that, with
+    `command: 'node server.mjs'`, and two checks then reported `server.mjs` as
+    blocking: one because the stack stores data in the browser and therefore
+    "has no server", the other because no page loads it. The harness asked for
+    the file and then refused the sprint for containing it.
+
+    A server the test runner starts is test infrastructure. It ships to
+    nobody, holds no product data and disappears when the suite ends, so
+    neither "this product has no backend" nor "no page imports this" is a
+    fault of it.
+
+    Not a Playwright rule: Cypress, WebdriverIO, Karma, Nightwatch, TestCafe
+    and Web Test Runner all declare a server the same way, and every one of
+    them would have been reported the same.
+
+    Never raises. An exemption that throws turns a false finding into a lost
+    check.
+    """
+    started: set[Path] = set()
+    by_name: dict[str, list[Path]] = {}
+    for path in files:
+        by_name.setdefault(path.name, []).append(path)
+    try:
+        for path in files:
+            if not _A_TEST_RUNNER_CONFIG.match(path.name):
+                continue
+            for name in _files_a_command_launches(_read(path)):
+                started.update(candidate.resolve() for candidate in by_name.get(name, ()))
+    except Exception:  # noqa: BLE001 - an exemption must never fail a check
+        return set()
+    return started
+
+
 def _a_server_in_a_browser_only_product(files: list[Path], root: Path, stack: Any) -> list[str]:
     """A server in a product whose own stack says there is none.
 
@@ -2648,11 +2768,17 @@ def _a_server_in_a_browser_only_product(files: list[Path], root: Path, stack: An
     if not any(marker in database for marker in _BROWSER_ONLY_STORAGE):
         return []
 
+    # A server the test runner starts is the one `TESTABILITY_RULE` asks for,
+    # not a product server. See `_servers_started_by_a_test_runner`.
+    exempt = _servers_started_by_a_test_runner(files, root)
+
     problems: list[str] = []
     for path in files:
         if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts"}:
             continue
         if is_test(str(path.relative_to(root))):
+            continue
+        if path.resolve() in exempt:
             continue
         text = _read(path)
         if not _STARTS_A_SERVER.search(text):

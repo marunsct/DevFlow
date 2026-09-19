@@ -3269,3 +3269,61 @@ produced.** It converged, it stayed inside its budget, it shipped a working
 data layer with 34 real tests. The finding is not that the run was bad. It is
 that "the suite passes" meant less than every gate took it to mean, and that
 the one number every stage trusts was measuring two thirds of the product.
+
+### 4ao. The harness ordered a file into existence and then blocked the sprint for it
+
+Run-ed05e20e, `brief_low`, browser-only to-do list. `TESTABILITY_RULE` tells
+the model, in these words, to *"let Playwright manage the server itself -
+declare a `webServer` in `playwright.config.ts`"*. The model did exactly that:
+
+```ts
+webServer: { command: 'node server.mjs', url: 'http://localhost:3000' }
+```
+
+and wrote a 61-line static file server to go with it. Two cross-file checks
+then reported that file as **blocking**:
+
+| check | what it said |
+| --- | --- |
+| `_a_server_in_a_browser_only_product` | "starts an HTTP server, and this run's stack declares its storage as 'Browser localStorage' ... the product it describes has no server" |
+| `_unreferenced_scripts` | "is never loaded by a page or imported by another module. **Nothing runs it.**" |
+
+Playwright ran it on every test. This is the same shape as §4an and §4ai: one
+part of the harness instructs, another part of the harness punishes, and the
+sprint pays for the disagreement. Both were verified against the live
+workspace - present before the fix, absent after, with the run's real stack
+(`Browser localStorage`) in hand.
+
+**Two distinct causes, fixed separately.**
+
+1. **`_orphaned_scripts` knew two kinds of caller.** A `<script src>` tag and
+   an `import`. A *command that runs the file* is a third kind, it is written
+   down in every ecosystem, and none of it was counted. Fixed with
+   `_files_a_command_launches`, which reads a runtime being handed a file -
+   `node server.mjs`, `python -u app.py`, `deno run main.ts`, `bun start.ts`,
+   `ruby bin/worker.rb`, `java -jar app.jar`, `dotnet Api.dll`,
+   `php index.php` - in both the shell form and the exec form a Dockerfile or
+   a CI matrix writes (`["python", "-u", "app.py"]`). Deliberately not a
+   Playwright rule.
+
+2. **Those commands mostly live in files no check collected.**
+   `_source_files` collects source and manifests. A Dockerfile, a Procfile, a
+   Makefile, a compose file, a CI workflow, a shell script and a README are
+   none of those, and they are precisely where "how this is run" is written.
+   `_how_the_product_is_run` walks for them once, pruning the same
+   directories every other check prunes.
+
+3. **A server the test runner starts is not a product server.**
+   `_servers_started_by_a_test_runner` exempts it from the browser-only-storage
+   check. It covers Playwright, Cypress, WebdriverIO, Karma, Nightwatch,
+   TestCafe, Web Test Runner, Protractor and CodeceptJS, because every one of
+   them declares a server the same way and every one would have been reported
+   the same. A build config such as `vite.config.js` is *not* on that list and
+   does not exempt anything - tested.
+
+**The general lesson, for the record.** Three of the last four blocking-finding
+bugs have had this exact shape: a rule written for the common case, meeting an
+artefact the harness's own prompts asked for. The check is not wrong about the
+common case. It is wrong that the common case is the only one. Every new
+blocking check should be read once with the question *"which of our own
+instructions produces a file that trips this?"*

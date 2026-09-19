@@ -26,6 +26,8 @@ import hashlib
 import re
 from typing import Any
 
+from app.agents.workspace_paths import the_same_place
+
 #: One repeat is ordinary; the second is the one worth mentioning. Matches
 #: `app.agents.workspace_backend.REPEATS_BEFORE_SAYING_SO`, deliberately: the
 #: two notices should not disagree about what counts as circling.
@@ -88,6 +90,31 @@ MUTATING_TOOLS = frozenset({
 #: number today; the point is that changing it now changes the behaviour it
 #: describes.
 NO_OP_WRITES_BEFORE_REFUSING = 2
+
+
+#: Argument names that hold a location in the workspace. A tool may spell it
+#: any of these ways; the location is the same thing.
+_PATH_ARGUMENTS = frozenset({
+    "path", "file_path", "relative_path", "filename", "file", "dir",
+    "directory", "working_directory", "cwd", "root", "target", "destination",
+    "source", "src",
+})
+
+
+def _comparable(args: dict) -> dict:
+    """The arguments of a call, with every path spelled one way.
+
+    Applied to both sides of every comparison, so a value it normalises
+    differently from some other component cannot cause a false match - only
+    two calls that named the same place can collide.
+    """
+    if not isinstance(args, dict):
+        return {}
+    return {
+        key: (the_same_place(value) if key in _PATH_ARGUMENTS and isinstance(value, str)
+              else value)
+        for key, value in args.items()
+    }
 
 
 #: `"status": "unchanged"` however the serialiser spaced it. Matching the
@@ -273,11 +300,11 @@ def build_repeated_query_middleware() -> Any:
                 # keeps a tool spelled some other way counting as it did
                 # before, rather than collapsing every such call into one
                 # bucket and refusing an unrelated file's first no-op.
-                path = str(args.get("relative_path") or "")
+                path = the_same_place(args.get("relative_path") or "")
                 key = (
                     (name, path, "changed nothing")
                     if path
-                    else (name, repr(sorted(args.items())))
+                    else (name, repr(sorted(_comparable(args).items())))
                 )
                 digest = "changed nothing" if path else hashlib.sha1(
                     content.encode("utf-8", "replace")
@@ -286,7 +313,7 @@ def build_repeated_query_middleware() -> Any:
                 # Same treatment as the no-op write above, for the same
                 # reason: the refusal is the event, and the body sent with it
                 # is not part of what happened.
-                path = str(args.get("relative_path") or args.get("file_path") or "")
+                path = the_same_place(args.get("relative_path") or args.get("file_path") or "")
                 if _is_about_the_kind_of_file(refusal):
                     # The path is not part of this event: the refusal says
                     # what kind of file it is, and the model has made the same
@@ -295,7 +322,7 @@ def build_repeated_query_middleware() -> Any:
                 key = (name, path, refusal) if path else (name, refusal)
                 digest = refusal
             else:
-                key = (name, repr(sorted(args.items())))
+                key = (name, repr(sorted(_comparable(args).items())))
                 digest = hashlib.sha1(content.encode("utf-8", "replace")).hexdigest()
             counts = self._counts.setdefault(key, {})
             count = counts.get(digest, 0)

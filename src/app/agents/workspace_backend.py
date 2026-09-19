@@ -29,6 +29,7 @@ from deepagents.backends.filesystem import FilesystemBackend
 
 #: Directory names hidden from an agent's view of the workspace. Sourced from
 #: the repository tools so the two listings cannot drift apart.
+from app.agents.workspace_paths import the_same_place
 from app.tools.repository import IGNORED_DIRECTORIES
 
 
@@ -361,7 +362,10 @@ class _NoticingRepeats:
             self._failed_reads = own  # noqa: SLF001 - own attribute
         seen = store("failed_reads", own)
 
-        key = f"{file_path}|{error}"
+        # Normalised: `/todo/app.js` and `todo/app.js` are the same miss, and
+        # keying on the raw spelling gave each its own allowance. See
+        # `the_same_place`.
+        key = f"{the_same_place(str(file_path))}|{error}"
         count = seen.get(key, 0)
         seen[key] = count + 1
         if count < READ_FAILURES_BEFORE_SAYING_SO:

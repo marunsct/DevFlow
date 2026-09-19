@@ -33,6 +33,40 @@ _PATH_ARGUMENTS: dict[str, str] = {
 }
 
 
+def the_same_place(value: str) -> str:
+    """One spelling for one location in the workspace.
+
+    The workspace is rooted at `/`, so `/task-manager/app.js`,
+    `task-manager/app.js` and `./task-manager/app.js` are the same file and
+    every tool here reads all three. The repeat guard keyed on the raw
+    arguments, so they were three different files to it and each got its own
+    allowance before anything was said.
+
+    Measured on run-ed05e20e's `specialist_ui_ux_1`: `style.css` read six
+    times as `/task-manager/style.css` and four more as
+    `task-manager/style.css`, and `app.js` six and four the same way. Ten
+    reads of one unchanged file in one stage, counted as two runs of four and
+    six, so the notice arrived late twice instead of once early.
+
+    Deliberately textual and deliberately not `Path.resolve`: this normalises
+    a string the model wrote, which may name a file that does not exist, and
+    touching the filesystem to compare two arguments would be both slower and
+    wrong.
+    """
+    text = str(value or "").strip().replace("\\", "/")
+    while "//" in text:
+        text = text.replace("//", "/")
+    parts: list[str] = []
+    for part in text.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == ".." and parts and parts[-1] != "..":
+            parts.pop()
+            continue
+        parts.append(part)
+    return "/".join(parts)
+
+
 def workspace_relative(path: str, repo_root: str) -> str:
     """The same file, named from the workspace root.
 

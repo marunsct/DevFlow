@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 
 from app.agents.stage_memory import store
+from app.agents.workspace_paths import the_same_place
 
 #: Files remembered per stage before the oldest is dropped. A stage touches a
 #: handful; this is a ceiling against a pathological stage, not a working limit.
@@ -56,7 +57,7 @@ def _digest(content: str) -> str:
 def remember(relative_path: str, content: str) -> None:
     """Record that this stage has seen `content` at `relative_path`."""
     seen = store(_PURPOSE, _FALLBACK)
-    seen[str(relative_path)] = _digest(content)
+    seen[the_same_place(relative_path)] = _digest(content)
     while len(seen) > MAX_FILES_REMEMBERED:
         seen.pop(next(iter(seen)))
 
@@ -64,7 +65,7 @@ def remember(relative_path: str, content: str) -> None:
 def record_state(relative_path: str, content: str) -> None:
     """Remember that this stage has left `relative_path` holding `content`."""
     history = store(_HISTORY, _FALLBACK_HISTORY)
-    states = history.setdefault(str(relative_path), [])
+    states = history.setdefault(the_same_place(relative_path), [])
     digest = _digest(content)
     if digest in states:
         states.remove(digest)
@@ -91,7 +92,7 @@ def returned_to_an_earlier_state(relative_path: str, content: str) -> bool:
     has is a no-op, which `_write_unless_it_changes_nothing` answers better.
     """
     history = store(_HISTORY, _FALLBACK_HISTORY)
-    states = history.get(str(relative_path)) or []
+    states = history.get(the_same_place(relative_path)) or []
     return _digest(content) in states[:-1]
 
 
@@ -106,7 +107,7 @@ def record_replacement(relative_path: str, find: str, replace: str) -> None:
     if not find:
         return
     applied = store(_REPLACEMENTS, _FALLBACK_REPLACEMENTS)
-    pairs = applied.setdefault(str(relative_path), [])
+    pairs = applied.setdefault(the_same_place(relative_path), [])
     pairs.append((find, replace))
     del pairs[:-MAX_REPLACEMENTS_PER_FILE]
 
@@ -126,7 +127,7 @@ def what_replaced_it(relative_path: str, find: str) -> str | None:
     was answered with a character diff six times over.
     """
     applied = store(_REPLACEMENTS, _FALLBACK_REPLACEMENTS)
-    for previous, replacement in reversed(applied.get(str(relative_path)) or []):
+    for previous, replacement in reversed(applied.get(the_same_place(relative_path)) or []):
         if previous == find:
             return replacement
     return None
@@ -143,12 +144,12 @@ def record_move(relative_path: str, destination: str) -> None:
     if not relative_path or not destination:
         return
     moved = store(_MOVES, _FALLBACK_MOVES)
-    moved[str(relative_path)] = str(destination)
+    moved[the_same_place(relative_path)] = the_same_place(destination)
     # Follow a chain: a file moved twice should answer with where it is now,
     # not with the intermediate name that is also gone.
     for source, target in list(moved.items()):
-        if target == str(relative_path):
-            moved[source] = str(destination)
+        if target == the_same_place(relative_path):
+            moved[source] = the_same_place(destination)
     for stale in list(moved)[:-MAX_MOVES_REMEMBERED]:
         del moved[stale]
 
@@ -164,7 +165,7 @@ def where_this_stage_moved_it(relative_path: str) -> str | None:
     "not found". That stage ran 47 model calls against a next-longest of 10.
     """
     moved = store(_MOVES, _FALLBACK_MOVES)
-    return moved.get(str(relative_path))
+    return moved.get(the_same_place(relative_path))
 
 
 _UNDO_WARNINGS = "times this stage was told an edit undid an earlier one"
@@ -179,12 +180,12 @@ UNDO_WARNINGS_BEFORE_REFUSING = 2
 def record_undo_warning(relative_path: str) -> None:
     """Remember that this stage has been told an edit here undid an earlier one."""
     warned = store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS)
-    warned[str(relative_path)] = warned.get(str(relative_path), 0) + 1
+    warned[the_same_place(relative_path)] = warned.get(the_same_place(relative_path), 0) + 1
 
 
 def times_warned_about_undoing(relative_path: str) -> int:
     """How often this stage has been told its edits here are going backwards."""
-    return store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS).get(str(relative_path), 0)
+    return store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS).get(the_same_place(relative_path), 0)
 
 
 _DELETIONS = "files this stage has deleted"
@@ -199,7 +200,7 @@ def record_deletion(relative_path: str) -> None:
     if not relative_path:
         return
     gone = store(_DELETIONS, _FALLBACK_DELETIONS)
-    gone[str(relative_path)] = True
+    gone[the_same_place(relative_path)] = True
     for stale in list(gone)[:-MAX_DELETIONS_REMEMBERED]:
         del gone[stale]
 
@@ -215,7 +216,7 @@ def this_stage_deleted_it(relative_path: str) -> bool:
     Measured on run 551640d3: twelve failed deletes across two stages, ten of
     them on a path that same stage had deleted successfully a moment earlier.
     """
-    return bool(store(_DELETIONS, _FALLBACK_DELETIONS).get(str(relative_path)))
+    return bool(store(_DELETIONS, _FALLBACK_DELETIONS).get(the_same_place(relative_path)))
 
 
 def changed_since_seen(relative_path: str, content: str) -> bool:
@@ -226,7 +227,7 @@ def changed_since_seen(relative_path: str, content: str) -> bool:
     messages about copying the passage exactly.
     """
     seen = store(_PURPOSE, _FALLBACK)
-    previous = seen.get(str(relative_path))
+    previous = seen.get(the_same_place(relative_path))
     return previous is not None and previous != _digest(content)
 
 

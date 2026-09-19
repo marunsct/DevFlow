@@ -3327,3 +3327,54 @@ artefact the harness's own prompts asked for. The check is not wrong about the
 common case. It is wrong that the common case is the only one. Every new
 blocking check should be read once with the question *"which of our own
 instructions produces a file that trips this?"*
+
+### 4ap. One file, four spellings, four allowances
+
+The workspace is rooted at `/`, and every filesystem tool here accepts
+`task-manager/app.js`, `/task-manager/app.js`, `./task-manager/app.js` and
+`task-manager//app.js` as the same file. Four guards did not: they keyed on
+the argument as the model typed it, so each spelling got its own allowance
+before anything was said.
+
+Found while auditing run-ed05e20e's `specialist_ui_ux_1`, which read
+`style.css` six times as `/task-manager/style.css` and four more as
+`task-manager/style.css`, and `app.js` six and four the same way.
+
+**What was already safe, stated first.** `read_file` was fine.
+`workspace_backend._note_if_repeated` keys on the file's identity through the
+*resolved* path - `_file_identity` calls `stat()` - precisely so that spelling
+cannot split it, and a comment there records the run where that was learned.
+Reading is by far the commonest repeat, so most of the raw difference in the
+transcripts was already being caught.
+
+**What was not.**
+
+| guard | keyed on |
+| --- | --- |
+| `repeated_queries` generic branch | `repr(sorted(args.items()))` |
+| `repeated_queries` no-op-write branch | `args["relative_path"]` raw |
+| `repeated_queries` refusal branch | `relative_path or file_path` raw |
+| `seen_content` (every function) | `str(relative_path)` |
+| `workspace_backend._note_if_it_failed_this_way_before` | `f"{file_path}|{error}"` |
+
+`seen_content` is the one with reach beyond a notice: it holds what a stage
+has written, what it replaced, where it moved a file and every state it has
+left a file in. A stage that wrote `/app.js` and then edited `app.js` had two
+separate histories, so "you are undoing your own change" and "you already
+replaced that passage" could not fire.
+
+**Fixed** with one normaliser, `workspace_paths.the_same_place`, used by all
+of them. Textual and deliberately not `Path.resolve`: it normalises a string
+the model wrote, which may name a file that does not exist, and touching the
+filesystem to compare two arguments would be both slower and wrong. A `..`
+that would escape the workspace is kept rather than dropped, because leaving
+is not the same place as staying.
+
+**Measured** over the 50 stored transcripts, restricted to the tools these
+guards actually watch: 625 repeated calls visible by raw spelling, 641 by
+normalised path. 16 more, in 12 of the 50 runs.
+
+The number is small and worth writing down as small. It is reported here at
+its true size rather than the 247 that counting `read_file` would have
+produced, because `read_file` was already handled and claiming it would have
+been claiming someone else's fix.

@@ -3170,3 +3170,61 @@ own documents never raise is capped to minor. It is still reported and still
 read; it stops being a reason for another round. Seven of the last sixty
 failures were runs that ended with the milestone review still requiring
 changes.
+
+### 4al. The divergence, watched live, and the fix validated against it
+
+Run-cac07d52 was resumed on a different model and watched while it ran. Its
+test outcomes in order, one character per run of the suite, `.` green and
+`X` red:
+
+```
+X X . X X X X X X X X . . . X . X . . . X X X . . . X . . .
+```
+
+Fourteen green of thirty, and it breaks again after almost every one. This is
+§4aj's corpus finding happening in front of the audit rather than inferred
+from it: the loop reaches a working product repeatedly and does not stay
+there.
+
+The product moved the same way. At three milestones in it had no blocking
+cross-file problems and 235 lines of code; an hour later it had **two
+blocking problems** and 265 lines - a `package.json` test script naming a
+glob `node --test` does not expand, and four exported functions no test
+mentions.
+
+**The fix validated against the run that motivated it.** Running the new
+multi-runner count parser over this run's own 30 test executions:
+
+| parser | test runs it can extract counts from |
+|---|---|
+| old, TAP only | **0** of 30 |
+| new | **23** of 30 |
+
+So on a run that went green and red fourteen times, the regression check had
+nothing to compare on every single one, and would now have numbers on
+twenty-three. The note it produces - "N test(s) that were passing have
+stopped ... this is something a change since then broke" - is the
+best-performing kind of rung by §4ag's measurement.
+
+The remaining 7 are runs whose output carried no recognisable totals at all,
+mostly commands that failed before the suite started.
+
+### 4am. A vocabulary that cost a review, on the model that was swapped in
+
+Watching the same run caught the failure a model switch is most likely to
+cause, and it was not a format problem:
+
+    05:36:58  Stage milestone_reviewer sent an answer that does not satisfy
+              its schema (findings.4.category); returning the validation errors
+
+Three and a half minutes and a full re-generation of a milestone review, over
+one word. `severity` has been forgiven since run-0deeb8bf for exactly this
+reason; `category` was a bare `Literal` and was not. Across the same run the
+model wrote `code_quality` 24 times and `test` for `testing` four times.
+
+`app.agents.finding_category` now does for category what `severity` does for
+severity. Two new members: `code_quality`, because it is none of the others
+and this model reaches for it constantly, and `other`, so an unrecognised
+category is preserved rather than guessed at. `other` composes with §4ak's
+scope gate - no brief ever says "other" - so an unclassifiable finding is
+kept, reported, and unable to hold a sprint.

@@ -159,3 +159,67 @@ def test_every_role_can_run_every_pinned_toolchain(tmp_path, language, role):
         f"{role} cannot run {', '.join(missing)} on a {language} product, so it "
         "can write code it has no way to execute"
     )
+
+
+# ---------------------------------------------------------------------------
+# The resolver took the leading word, which handled "JavaScript (ES6+)" and
+# failed on anything with a qualifier in front of the name.
+#
+# Measured live on run-cac07d52: the stack selector answered "Plain JavaScript
+# (ES6+)", the head word was `plain`, nothing matched, and `.project-stack`
+# was written empty. Every role lost the JavaScript toolchain, so `tsc`,
+# `vitest` and `playwright` were on no allowlist - in a run whose own test
+# suite is Playwright. `node` and `npm` survived only because two roles
+# hard-code them, which is the accident the toolchain table exists to stop
+# relying on.
+# ---------------------------------------------------------------------------
+
+from app.tools.sandbox import _toolchain_key
+
+
+@pytest.mark.parametrize(
+    "written,expected",
+    [
+        ("Plain JavaScript (ES6+)", "javascript"),
+        ("Vanilla JavaScript", "javascript"),
+        ("plain old javascript", "javascript"),
+        ("HTML/CSS/JavaScript", "javascript"),
+        ("JavaScript (ES6+)", "javascript"),
+        ("Modern TypeScript 5", "typescript"),
+        ("Python 3.12", "python"),
+        ("Go 1.22", "go"),
+        ("Golang", "go"),
+        ("C#", "csharp"),
+        (".NET 8", "csharp"),
+        ("Rust (stable)", "rust"),
+        ("Ruby on Rails", "ruby"),
+        ("PHP 8.3", "php"),
+        ("Java 21", "java"),
+        ("Kotlin/JVM", "kotlin"),
+        ("Swift 5.9", "swift"),
+        ("Dart 3", "dart"),
+        ("Scala 3", "scala"),
+    ],
+)
+def test_a_language_is_found_however_it_is_qualified(written, expected):
+    assert _toolchain_key(written) == expected
+
+
+def test_javascript_is_preferred_over_the_java_inside_it():
+    """Longest match first, or every JavaScript product pins Java."""
+    assert _toolchain_key("JavaScript") == "javascript"
+    assert _toolchain_key("Java") == "java"
+
+
+@pytest.mark.parametrize("written", ["", "None", "Assembly", "COBOL", "n/a"])
+def test_something_that_names_no_known_language_pins_nothing(written):
+    assert _toolchain_key(written) is None
+
+
+def test_the_live_failure_now_pins_its_toolchain(tmp_path):
+    """run-cac07d52 end to end: the selector's own words reach the allowlist."""
+    pin_project_stack(tmp_path, "Plain JavaScript (ES6+)", "None – vanilla JS")
+
+    assert project_stack(tmp_path) == frozenset({"javascript"})
+    for role in ("ui_ux_specialist", "testing_specialist"):
+        assert "playwright" in allowed_executables(role, tmp_path)

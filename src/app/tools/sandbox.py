@@ -934,7 +934,24 @@ _LANGUAGE_ALIASES = {
 
 
 def _toolchain_key(language: str) -> str | None:
-    """The table key for a language name as a model wrote it."""
+    """The table key for a language name as a model wrote it.
+
+    Scanned, not parsed from the front. Taking the leading word handled
+    "JavaScript (ES6+)", "Python 3.12" and "Go 1.22", and failed on anything
+    with a qualifier in front of the name.
+
+    Measured live on run-cac07d52, whose stack selector answered "Plain
+    JavaScript (ES6+)": the head word was `plain`, nothing matched, and
+    `.project-stack` was written empty. Every role then lost the JavaScript
+    toolchain, so `tsc`, `vitest` and `playwright` were on no allowlist - in a
+    run whose own test suite is Playwright. `node` and `npm` survived only
+    because two roles hard-code them, which is the accident this table exists
+    to stop relying on.
+
+    Longest match first, so "javascript" is preferred over the "java" inside
+    it. On word boundaries, so "javascripty" is not JavaScript and a sentence
+    mentioning Go in passing does not pin Go unless it stands as a word.
+    """
     text = (language or "").strip().lower()
     if not text:
         return None
@@ -942,11 +959,17 @@ def _toolchain_key(language: str) -> str | None:
         return text
     if text in _LANGUAGE_ALIASES:
         return _LANGUAGE_ALIASES[text]
-    # "JavaScript (ES6+)", "Python 3.12", "Go 1.22" - take the leading word.
-    head = re.split(r"[^a-z#.+]+", text)[0] if text else ""
-    if head in TOOLCHAINS:
-        return head
-    return _LANGUAGE_ALIASES.get(head)
+
+    # Every name that could appear, longest first. `c` and `go` are real keys
+    # and also common English words, so they are matched only as whole words -
+    # which the boundary below already enforces.
+    candidates = sorted(
+        set(TOOLCHAINS) | set(_LANGUAGE_ALIASES), key=len, reverse=True
+    )
+    for name in candidates:
+        if re.search(rf"(?<![\w#.+]){re.escape(name)}(?![\w#+])", text):
+            return TOOLCHAINS.get(name) and name or _LANGUAGE_ALIASES.get(name)
+    return None
 
 
 #: The language a framework is written in, for the fields that name a

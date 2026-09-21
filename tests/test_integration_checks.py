@@ -1599,3 +1599,70 @@ def test_a_file_that_really_imports_nothing_is_still_reported(tmp_path):
     report = summarise_integration(root)
     assert "and nothing imports" in report
     assert "a feature DOES NOT WORK" in report, "it stops the suite running, so it blocks"
+
+
+class TestAnAttributeTheScriptSetsItself:
+    """A script that sets an attribute is not reading one nothing sets.
+
+    `_JS_ASSIGNS_ID` has covered the `setAttribute` form since it was written;
+    the data-attribute side covered only `element.dataset.x = ...`. That is the
+    §1-B mistake again - a rule defined over part of the set it governs.
+
+    Run c97f5a88 built inline editing whose inputs carry
+    `setAttribute('data-field', 'title')` and whose save handler reads
+    `li.querySelector('[data-field="title"]')`. It was reported for reading an
+    attribute "which no HTML element sets. It is `undefined` every time", as a
+    blocking finding, against code that works.
+    """
+
+    def _page(self, tmp_path):
+        (tmp_path / "index.html").write_text(
+            '<!doctype html><html><body><ul id="task-list"></ul>'
+            '<script src="app.js"></script></body></html>'
+        )
+
+    def _problems(self, tmp_path):
+        from app.analysis.integration_checks import (
+            _hooks_javascript_reaches_for,
+            _source_files,
+        )
+
+        return _hooks_javascript_reaches_for(_source_files(tmp_path), tmp_path)
+
+    def test_set_attribute_then_read_by_selector_is_fine(self, tmp_path):
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "const input = document.createElement('input');\n"
+            "input.setAttribute('data-field', 'title');\n"
+            "const found = el.querySelector('[data-field=\"title\"]');\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_dataset_assignment_then_read_by_selector_is_fine(self, tmp_path):
+        """The early subtraction let the selector path put it back."""
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "el.dataset.field = 'title';\n"
+            "const found = el.querySelector('[data-field=\"title\"]');\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_an_attribute_genuinely_nobody_sets_is_still_reported(self, tmp_path):
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "const found = el.querySelector('[data-status=\"done\"]');\n"
+        )
+        problems = self._problems(tmp_path)
+        assert len(problems) == 1 and "data-status" in problems[0]
+
+    def test_a_camel_cased_dataset_write_matches_the_dashed_attribute(self, tmp_path):
+        self._page(tmp_path)
+        (tmp_path / "app.js").write_text(
+            "const el = document.getElementById('task-list');\n"
+            "el.dataset.taskId = '1';\n"
+            "const found = el.querySelector('[data-task-id=\"1\"]');\n"
+        )
+        assert self._problems(tmp_path) == []

@@ -272,6 +272,18 @@ _JS_ASSIGNS_ID = re.compile(
 #: `element.dataset.status` - which reads the HTML attribute `data-status`.
 _JS_DATASET = re.compile(r"""\.dataset\.([A-Za-z][\w]*)""")
 _JS_ASSIGNS_DATASET = re.compile(r"""\.dataset\.([A-Za-z][\w]*)\s*=""")
+
+#: `setAttribute("data-field", "title")` - the other way a script gives an
+#: element an attribute it will later read. `_JS_ASSIGNS_ID` has had the
+#: `setAttribute` form since it was written and the data-attribute side did
+#: not, which is the §1-B mistake again: a rule covering part of the set it
+#: governs. Run c97f5a88 built inline editing whose inputs carry
+#: `setAttribute('data-field', 'title')` and whose handler reads
+#: `[data-field="title"]`, and was reported as reading an attribute "which no
+#: HTML element sets" - a blocking finding against working code.
+_JS_SETS_DATA_ATTRIBUTE = re.compile(
+    r"""setAttribute\(\s*["']data-([A-Za-z][\w-]*)["']"""
+)
 _HTML_DATA_ATTR = re.compile(r"""\bdata-([A-Za-z][\w-]*)\s*=""")
 _JS_DATA_SELECTOR = re.compile(r"""\[\s*data-([A-Za-z][\w-]*)""")
 
@@ -337,14 +349,19 @@ def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
                 "nothing, silently."
             )
 
-        set_here = set(_JS_ASSIGNS_DATASET.findall(text))
+        set_here = {_camel_to_dashed(n) for n in _JS_ASSIGNS_DATASET.findall(text)}
+        set_here.update(_JS_SETS_DATA_ATTRIBUTE.findall(text))
         read_here = {
-            _camel_to_dashed(name)
-            for name in set(_JS_DATASET.findall(text)) - set_here
+            _camel_to_dashed(name) for name in set(_JS_DATASET.findall(text))
         }
         for selector in _JS_QUERY.findall(text):
             read_here.update(_JS_DATA_SELECTOR.findall(selector))
-        for attribute in sorted(read_here - declared_data):
+        # `set_here` is subtracted once, at the end, rather than from the
+        # `dataset` reads alone. Subtracting it early left the selector path -
+        # `querySelector('[data-field="title"]')` - to put the attribute back,
+        # so a script that set an attribute and then looked it up by selector
+        # was still reported for reading what nothing sets.
+        for attribute in sorted(read_here - declared_data - set_here):
             problems.append(
                 f"{path.relative_to(root)} reads the attribute "
                 f"`data-{attribute}`, which no HTML element sets. It is "

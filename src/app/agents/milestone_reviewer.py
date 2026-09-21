@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.agents.finding_category import validator_for as category_in
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
@@ -89,7 +89,16 @@ class MilestoneReviewOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: Literal["accepted", "changes_required", "blocked"] = Field(
-        ..., description="Routing decision: accepted, changes required, or blocked."
+        ...,
+        description=(
+            "What happens next. 'accepted': the sprint continues. "
+            "'changes_required': the Technical Lead re-plans and the "
+            "specialists fix your findings - this is the one to use for "
+            "anything that can be fixed, however severe. 'blocked': the run "
+            "ENDS HERE, permanently, with no attempt to fix anything - use it "
+            "only when the milestone cannot proceed for a reason no amount of "
+            "work inside this run could resolve."
+        ),
     )
     findings: list[MilestoneReviewFinding] = Field(default_factory=list)
     acceptance_evidence: str = Field(
@@ -99,6 +108,52 @@ class MilestoneReviewOutput(BaseModel):
         ..., description="Whether documentation was reviewed."
     )
     tests_reviewed: bool = Field(..., description="Whether tests were reviewed.")
+
+    @model_validator(mode="after")
+    def _blocked_means_unfixable(self) -> "MilestoneReviewOutput":
+        """Refuse `blocked` for findings that state how to fix themselves.
+
+        The three statuses have wildly different consequences and the schema
+        said only "Routing decision: accepted, changes required, or blocked."
+        `changes_required` re-plans the milestone and lets specialists fix the
+        findings; `blocked` ends the run immediately with no attempt at any of
+        them. Nothing told the reviewer that.
+
+        Measured on run e7ef79a2, which died sixteen minutes in. Its review was
+        good - `toggleTask` absent so every checkbox did nothing, filter buttons
+        with no handlers, and no tests for either - and every finding carried a
+        precise `required_remediation`. It chose "blocked" because its findings
+        were severity "blocking", which is the natural reading of the word, and
+        the run ended without one revision being attempted. Run 8904f87b's
+        reviewer called the same class of defect `changes_required` and got
+        three.
+
+        The prompt already says to use `changes_required` for a blocking
+        finding, and this reviewer read past it - class A of
+        `docs/harness-hardening-plan.md`, where guidance loses and corrections
+        win. So this is a correction: a finding that says how to remedy itself
+        is remediable by definition, and a status meaning "nothing can be done"
+        cannot be carried by a list of things to do.
+
+        Costs one model call and returns the validation error, which is the
+        same conversation one call earlier - against a run that otherwise ends.
+        """
+        if self.status != "blocked" or not self.findings:
+            return self
+        remediable = [f for f in self.findings if (f.required_remediation or "").strip()]
+        if len(remediable) != len(self.findings):
+            return self
+        raise ValueError(
+            f"status='blocked' ends this run immediately and nothing will be "
+            f"fixed, but all {len(self.findings)} of your findings state a "
+            "`required_remediation`, so they are fixable. Use "
+            "'changes_required': the Technical Lead re-plans the milestone and "
+            "the specialists carry out exactly the remediations you wrote. "
+            "Reserve 'blocked' for a milestone that cannot proceed for a reason "
+            "no work inside this run could resolve - and then say so in a "
+            "finding with no remediation, because there is none."
+        )
+
 
 
 def _execution_evidence(repository_root: str) -> str:

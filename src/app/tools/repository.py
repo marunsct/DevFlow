@@ -875,6 +875,58 @@ def _refuse_an_edit_that_goes_backwards_again(relative_path: str, updated: str) 
     )
 
 
+def _refuse_a_hand_built_dom_again(relative_path: str, content: str) -> None:
+    """Refuse a hand-built browser API, once the note has been ignored twice.
+
+    `a_dom_built_by_hand` says so and lets the write through, on the reasoning
+    that "a tiny stub for one function is a reasonable thing to write, and
+    this cannot tell that from a mock that is about to collapse". That is
+    right the first time and the second.
+
+    The third is what this is for. Run 6b511391's `specialist_testing_1` was
+    told nine times, and grew `app.test.mjs` from 145 lines to 1,195 while
+    being told - a `Proxy` over a `Map` standing in for `dataset`, a
+    `mockStorage` throwing `QUOTA_EXCEEDED`, an `eventListeners` registry -
+    and then spent three whole conversations debugging the mock instead of the
+    product. Every one reached the model-call budget. The run failed with
+    13.5 million tokens spent and nothing delivered.
+
+    Refused before anything is written, so the file keeps the state it has
+    rather than taking one more step into a browser it is writing itself.
+    """
+    try:
+        from app.analysis.test_discovery import a_dom_built_by_hand
+        from app.tools.seen_content import (
+            MOCK_DOM_WARNINGS_BEFORE_REFUSING,
+            times_warned_about_a_mock_dom,
+        )
+
+        if times_warned_about_a_mock_dom(relative_path) < MOCK_DOM_WARNINGS_BEFORE_REFUSING:
+            return
+        if not a_dom_built_by_hand(relative_path, content):
+            return
+    except Exception:  # noqa: BLE001 - a bookkeeping miss must not refuse a write
+        logger.debug("Could not check the DOM history of %s", relative_path, exc_info=True)
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': it assigns `global.document` or "
+        "`global.window`, and you have been told twice already in this stage "
+        "what that costs. Nothing was changed. A hand-built browser holds only "
+        "until the code under test touches something the mock does not have, "
+        "and the failure then appears inside application code that is correct "
+        "- which is how a stage ends up debugging its own mock instead of the "
+        "product.\n"
+        "Take a real one instead. `npm install -D jsdom` and import it, or "
+        "`npm install -D @playwright/test` and drive a browser. `-D` matters: "
+        "a brief that forbids external dependencies constrains the product, "
+        "not the machine that builds it, and `npm ci --omit=dev` ships none of "
+        "it. If neither is possible here, test the logic that does not touch "
+        "the DOM and say in your response that the UI is untested - an honest "
+        "gap is worth more than a suite that passes against a browser you "
+        "wrote yourself."
+    )
+
+
 def _an_edit_that_undoes_an_earlier_one(relative_path: str, content: str) -> str:
     """Note that this edit put the file back where it already was, or "".
 
@@ -2584,6 +2636,16 @@ def _the_test_command_will_not_run_this(target: Path | None) -> str:
     """
     if target is None:
         return ""
+    # Only a test file has assertions to strand. Measured across all twelve
+    # stored transcripts this fired 215 times on files that are not tests and
+    # 41 times on files that are: `app.js` was told 83 times that "this one's
+    # assertions never execute" and to "Add it to the script", which would put
+    # the application file into `node --test`. Four in five of this note's
+    # firings were false, in every run.
+    from app.analysis.file_kinds import is_test
+
+    if not is_test(target.name):
+        return ""
     try:
         import json as _json
 
@@ -2613,6 +2675,26 @@ def _the_test_command_will_not_run_this(target: Path | None) -> str:
         return ""
 
 
+def _a_dom_built_by_hand_and_remember(relative_path: str, content: str) -> str:
+    """The hand-built-DOM note, counted so the third one can be a refusal.
+
+    Counted here rather than at the refusal, because the refusal has to know
+    how many times the model was *told*, and this is the only place that
+    decides to tell it.
+    """
+    from app.analysis.test_discovery import a_dom_built_by_hand
+
+    note = a_dom_built_by_hand(relative_path, content)
+    if note:
+        try:
+            from app.tools.seen_content import record_mock_dom_warning
+
+            record_mock_dom_warning(relative_path)
+        except Exception:  # noqa: BLE001 - never fail a write over bookkeeping
+            logger.debug("Could not record the DOM warning for %s", relative_path)
+    return note or ""
+
+
 def _discovery_note(relative_path: str, content: str, target: Path | None = None) -> str:
     """Warn about a test file the project's runner will not collect, or "".
 
@@ -2623,7 +2705,6 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     """
     from app.analysis.test_discovery import (
         a_call_the_signature_does_not_accept,
-        a_dom_built_by_hand,
         a_name_this_test_defines_instead_of_importing,
         a_suite_calling_a_global_node_does_not_define,
         a_suite_that_only_checks_things_exist,
@@ -2643,7 +2724,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             a_test_that_asserts_nothing(relative_path, content),
             tests_the_runner_will_never_call(relative_path, content),
             a_suite_that_only_checks_things_exist(relative_path, content),
-            a_dom_built_by_hand(relative_path, content),
+            _a_dom_built_by_hand_and_remember(relative_path, content),
             a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
             a_call_the_signature_does_not_accept(
                 relative_path, content, target.parent if target else None
@@ -2986,6 +3067,10 @@ def _write_unless_it_changes_nothing(
     """
     if updated != original:
         _refuse_an_edit_that_goes_backwards_again(relative_path, updated)
+        # Edits are how run 6b511391's mock grew: 145 lines to 1,195, one
+        # `edit_artifact` at a time. Refusing only the write would leave the
+        # path that was actually used wide open.
+        _refuse_a_hand_built_dom_again(relative_path, updated)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
             _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
@@ -3775,6 +3860,7 @@ def write_approved_artifact(
         content, escape_note = repaired
     _refuse_if_broken(relative_path, content)
     _refuse_if_node_cannot_parse(target, relative_path, content)
+    _refuse_a_hand_built_dom_again(relative_path, content)
 
     if target.name == "package.json":
         _refuse_a_script_path_that_repeats_its_own_directory(target, content)

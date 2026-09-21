@@ -188,6 +188,36 @@ def times_warned_about_undoing(relative_path: str) -> int:
     return store(_UNDO_WARNINGS, _FALLBACK_UNDO_WARNINGS).get(the_same_place(relative_path), 0)
 
 
+_MOCK_DOM_WARNINGS = "times this stage was told it was building a DOM by hand"
+
+#: How many times to say it before refusing the write. The same threshold as
+#: the undo refusal, and for the same reason: a note the model has ignored
+#: twice is not a note that needs rewording.
+#:
+#: Measured on run-6b511391. `specialist_testing_1` was told nine times that
+#: "This test builds a browser API by hand ... Mocking the DOM is no longer
+#: permitted. You MUST write a browser-based test using Playwright", and grew
+#: the mock from 145 lines to 1,195 - Proxy traps over a `Map` for `dataset` -
+#: while being told. It then spent three whole conversations debugging the
+#: mock rather than the product, reached its model-call budget on each, and
+#: the run failed with nothing delivered.
+MOCK_DOM_WARNINGS_BEFORE_REFUSING = 2
+
+
+def record_mock_dom_warning(relative_path: str) -> None:
+    """Remember that this stage has been told this file hand-builds a DOM."""
+    warned = store(_MOCK_DOM_WARNINGS, _FALLBACK_MOCK_DOM_WARNINGS)
+    key = the_same_place(relative_path)
+    warned[key] = warned.get(key, 0) + 1
+
+
+def times_warned_about_a_mock_dom(relative_path: str) -> int:
+    """How often this stage has been told this file builds a browser by hand."""
+    return store(_MOCK_DOM_WARNINGS, _FALLBACK_MOCK_DOM_WARNINGS).get(
+        the_same_place(relative_path), 0
+    )
+
+
 _DELETIONS = "files this stage has deleted"
 
 #: Deletions remembered per stage. A stage clearing up after itself removes a
@@ -249,6 +279,7 @@ _FALLBACK_MOVES: dict[str, str] = {}
 
 #: And the undo-warning counter's.
 _FALLBACK_UNDO_WARNINGS: dict[str, int] = {}
+_FALLBACK_MOCK_DOM_WARNINGS: dict[str, int] = {}
 
 #: And the deletion log's.
 _FALLBACK_DELETIONS: dict[str, bool] = {}
@@ -261,6 +292,7 @@ def forget_everything() -> None:
     _FALLBACK_REPLACEMENTS.clear()
     _FALLBACK_MOVES.clear()
     _FALLBACK_UNDO_WARNINGS.clear()
+    _FALLBACK_MOCK_DOM_WARNINGS.clear()
     _FALLBACK_DELETIONS.clear()
 
 
@@ -270,6 +302,7 @@ __all__ = [
     "changed_since_seen",
     "forget_everything",
     "MAX_MOVES_REMEMBERED",
+    "MOCK_DOM_WARNINGS_BEFORE_REFUSING",
     "UNDO_WARNINGS_BEFORE_REFUSING",
     "MAX_REPLACEMENTS_PER_FILE",
     "MAX_DELETIONS_REMEMBERED",
@@ -280,6 +313,8 @@ __all__ = [
     "record_state",
     "remember",
     "this_stage_deleted_it",
+    "record_mock_dom_warning",
+    "times_warned_about_a_mock_dom",
     "times_warned_about_undoing",
     "what_replaced_it",
     "where_this_stage_moved_it",

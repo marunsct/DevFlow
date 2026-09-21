@@ -46,6 +46,18 @@ x-app-env: &app-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   GOOGLE_API_KEY: "${GOOGLE_API_KEY:-${GEMINI_API_KEY:-}}"
   METRICS_SCRAPE_TOKEN: ${METRICS_SCRAPE_TOKEN:-}
+  # Shared metric storage. The recorders run in the worker and `/metrics` is
+  # served by the app, so a per-process registry can only report what the API
+  # itself increments - `run_total` moved and `stage_duration_seconds` stayed
+  # empty forever. Both services mount `appdata`, so they share this directory.
+  # Unset it to go back to per-process metrics.
+  PROMETHEUS_MULTIPROC_DIR: ${PROMETHEUS_MULTIPROC_DIR:-/app/data/prometheus}
+  # Per-run spending ceiling in US dollars; empty or 0 disables it. A run that
+  # reaches it pauses at the next stage boundary as `waiting_for_budget` and
+  # waits for a person - it does not fail. See .env.example.
+  MAX_RUN_COST_USD: ${MAX_RUN_COST_USD:-}
+  # JSON corrections to the built-in model price table.
+  MODEL_PRICES_JSON: ${MODEL_PRICES_JSON:-}
   # Encrypts provider credentials set through the settings page. Falls back
   # to deriving from JWT_SECRET_KEY, so rotating that one makes stored
   # credentials unreadable until they are re-entered.
@@ -136,7 +148,13 @@ services:
           memory: 768m
 
   minio:
-    image: minio/minio:RELEASE.2024-09-13T20-26-02Z
+    # quay.io, not Docker Hub. The `minio/minio` repository no longer exists on
+    # Hub at all - a pull returns "repository does not exist or may require
+    # 'docker login'", and the v2 API returns "object not found" for the
+    # repository as well as for this tag, so it is a withdrawal rather than a
+    # tag that aged out. quay.io is MinIO's own registry and carries this exact
+    # release, so the pinned version is unchanged and only its source moves.
+    image: quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:

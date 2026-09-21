@@ -185,6 +185,35 @@ class RemediationInfo(BaseModel):
     test_runs: int = Field(description="Number of test runs performed.")
 
 
+class RunCostSummary(BaseModel):
+    """What a run has spent on model calls, and how much of it was priced.
+
+    `estimated_cost_usd` on its own is a trap: a run whose model is absent from
+    the price table would report `0.0`, which reads as "this was free" rather
+    than "this was not measured". `fully_priced` and `unpriced_requests` are
+    what tell those two apart, so they are not optional extras here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    estimated_cost_usd: float = Field(description="Spend on calls that could be priced.")
+    total_tokens: int = Field(description="Tokens across every call, priced or not.")
+    prompt_tokens: int = Field(description="Input tokens across every call.")
+    completion_tokens: int = Field(description="Output tokens across every call.")
+    successful_requests: int = Field(description="Model calls that completed.")
+    priced_requests: int = Field(description="Calls charged at a known rate.")
+    unpriced_requests: int = Field(
+        description="Calls whose model had no published rate; their cost is unknown, not zero."
+    )
+    unpriced_models: list[str] = Field(
+        default_factory=list, description="Model ids that had no rate."
+    )
+    fully_priced: bool = Field(
+        description="False when any call went unpriced, so the total is partial."
+    )
+    prices_as_of: str = Field(description="Month the built-in price table was current.")
+
+
 class RunStatusResponse(BaseModel):
     """Comprehensive status of a run."""
     model_config = ConfigDict(extra="forbid")
@@ -196,6 +225,13 @@ class RunStatusResponse(BaseModel):
         "running",
         "waiting_for_approval",
         "waiting_for_review",
+        # Parked at `MAX_RUN_COST_USD`. Listed here and not only in the runner,
+        # because a status this model does not accept makes *reading* the run
+        # fail with a `ValidationError` - the run is fine and the page that would
+        # show why it stopped is the thing that breaks. This is the shape of the
+        # `approval_denied` defect that `test_event_types_are_registered` exists
+        # to prevent, on the status field rather than the event field.
+        "waiting_for_budget",
         "paused",
         "failed",
         "cancelled",
@@ -216,6 +252,16 @@ class RunStatusResponse(BaseModel):
             "Whether the run answers its own approval gates (unattended). The UI "
             "needs this to know whether a gate is waiting on a person or will "
             "clear itself, and the wizard uses it to label a paused stage."
+        ),
+    )
+    cost: RunCostSummary | None = Field(
+        default=None,
+        description=(
+            "What this run has spent on model calls so far, when the worker "
+            "holding its total is this process. Absent rather than zero when it "
+            "is not: a run whose accounting lives in another worker has an "
+            "unknown cost, and reporting $0.00 for it would be the fabricated "
+            "measurement this field was added to remove."
         ),
     )
 

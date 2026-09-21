@@ -36,6 +36,7 @@ from app.server.events import EventBus, RunEvent
 from pathlib import Path
 
 from app.server.models import (
+    RunCostSummary,
     ApprovalDecisionRequest,
     ArtifactInfo,
     RemediationInfo,
@@ -58,7 +59,13 @@ from app.server.models import (
     WizardStep,
     WizardSummary,
 )
-from app.server.runner import RunRecord, WorkflowRunner, _api_status, _stage_meaning
+from app.server.runner import (
+    BUDGET_PAUSE_STATUS,
+    RunRecord,
+    WorkflowRunner,
+    _api_status,
+    _stage_meaning,
+)
 from app.server.object_store import archive_directory, archive_file, ensure_local
 from app.server.seeding import SeedError, seed_workspace
 from app.server.uploads import (
@@ -332,12 +339,19 @@ def create_runs_router(
     async def resume_run(
         run_id: str, user: UserInDB = Depends(require_operator)
     ) -> dict[str, str]:
-        """Resume a failed run."""
+        """Resume a failed or budget-paused run."""
         record = _require_run(runner, run_id, user)
-        if record.status != "failed":
+        # A run parked at its spending ceiling is not failed - it is waiting for
+        # someone to decide whether to keep paying. Refusing to resume it here
+        # would leave the only pause in the system with no way out but cancel.
+        resumable = ("failed", BUDGET_PAUSE_STATUS)
+        if record.status not in resumable:
             raise HTTPException(
                 status_code=409,
-                detail=f"Run {run_id} is {record.status}; only failed runs can be resumed.",
+                detail=(
+                    f"Run {run_id} is {record.status}; only {' or '.join(resumable)} "
+                    "runs can be resumed."
+                ),
             )
         try:
             await runner.resume_run(run_id)
@@ -1578,7 +1592,46 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         remediation=remediation,
         error=record.error,
         auto_approve=bool(record.auto_approve),
+        cost=_cost_summary(record.run_id),
     )
+
+
+def _cost_summary(run_id: str) -> RunCostSummary | None:
+    """This run's spend, or `None` when this process is not the one tracking it.
+
+    Two sources, in order of precision. The live registry is authoritative but
+    per-process, so it answers only in the worker that made the calls; the API
+    is a different container and would otherwise report nothing for every run.
+    The transcript is the shared fallback - both containers mount
+    `DATA_DIR/transcripts/` and every `model_response` line carries its usage.
+
+    `None` when neither has anything, and not a zeroed summary: absent means
+    "not known here", and a `$0.00` on a run that has made a hundred paid calls
+    is exactly the fabricated measurement plan-part3 §3.2 set out to remove.
+
+    A run genuinely on a local model reports a summary with `0.0` and
+    `fully_priced` true, which is a different statement and reads as one.
+    """
+    from app.observability.cost_tracker import cost_from_transcript, run_cost
+
+    total = run_cost(run_id)
+    if total.successful_requests == 0:
+        # Not this process's run. Fall back to the transcript, which both
+        # containers can read - otherwise the API reports no cost for every run,
+        # because the worker is where the calls were made.
+        provider = model = ""
+        try:
+            from app.models import _runtime_settings
+
+            resolved = _runtime_settings()
+            provider = getattr(resolved, "llm_provider", "") or ""
+            model = getattr(resolved, "model_name", "") or ""
+        except Exception:  # noqa: BLE001 - an unpriced total beats no total
+            logger.debug("Could not resolve settings for the cost summary", exc_info=True)
+        total = cost_from_transcript(run_id, provider, model)
+        if total is None:
+            return None
+    return RunCostSummary(**total.summary())
 
 
 __all__ = ["create_runs_router"]

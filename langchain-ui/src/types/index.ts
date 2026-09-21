@@ -37,6 +37,21 @@ export interface RemediationInfo {
   test_runs: number;
 }
 
+export interface RunCostSummary {
+  estimated_cost_usd: number;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  successful_requests: number;
+  priced_requests: number;
+  /** Calls whose model had no published rate: cost unknown, not zero. */
+  unpriced_requests: number;
+  unpriced_models: string[];
+  /** False when any call went unpriced, so estimated_cost_usd is partial. */
+  fully_priced: boolean;
+  prices_as_of: string;
+}
+
 export interface RunStatusResponse {
   run_id: string;
   thread_id: string;
@@ -45,6 +60,9 @@ export interface RunStatusResponse {
     | "running"
     | "waiting_for_approval"
     | "waiting_for_review"
+    // Parked at MAX_RUN_COST_USD. A pause, not a failure: the run is intact and
+    // resumes once the ceiling is raised.
+    | "waiting_for_budget"
     | "paused"
     | "failed"
     | "cancelled"
@@ -58,6 +76,9 @@ export interface RunStatusResponse {
   reviews: ReviewInfo[];
   remediation: RemediationInfo | null;
   error: string | null;
+  // Absent when this run's accounting lives in another worker process, which is
+  // not the same as zero - see RunCostSummary on the API side.
+  cost?: RunCostSummary | null;
 }
 
 export interface RunSummary {

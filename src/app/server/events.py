@@ -60,6 +60,11 @@ class RunEvent(BaseModel):
         # passed, because no test ran the runner's denial path against this
         # model. See `test_event_types_are_registered`.
         "approval_denied",
+        # A run parked at its `MAX_RUN_COST_USD` ceiling, naming the spend. Not
+        # `error`: the run is intact and the operator may simply raise the
+        # ceiling and resume. Registered here in the same change as the runner
+        # code that emits it, which is the lesson of `approval_denied` above.
+        "budget_pause",
         "error",
         "complete",
         # Agent activity. One event per assistant message, tool call and tool

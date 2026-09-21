@@ -202,3 +202,47 @@ class TestThePathsAreOnesTheToolsAccept:
         note = carry_over_note("t1", str(workspace))
 
         assert note.count("a/app.js") == 1
+
+
+class TestTheWorkspaceReachesTheNote:
+    """The parameter existed and nothing passed it.
+
+    `_restart_on_a_fresh_conversation` gained `repo_root` so the carry-over
+    could name files relative to the workspace, and every call site kept using
+    the default of None. The unit test for the None case passed, the relative
+    -path tests passed, and run 6b511391 still received
+
+        Files you already read, and which have not changed since:
+          /app/data/workspaces/default/todo-run12-.../todo-list-app/app.js
+
+    which no tool accepts. Only reading a live run's transcript showed it.
+    """
+
+    def test_every_restart_passes_the_workspace(self):
+        import inspect
+
+        from app.graph import workflow
+
+        source = inspect.getsource(workflow._run_gated_agent)
+        restarts = source.count("_restart_on_a_fresh_conversation(")
+        passed = source.count("_repository_root(state)")
+        assert restarts > 0
+        assert passed == restarts, (
+            f"{restarts} restarts but {passed} pass the workspace; a carry-over "
+            "without it names absolute paths"
+        )
+
+    def test_the_root_is_read_defensively(self):
+        """A missing repository must not turn a restart into a failure."""
+        from app.graph.workflow import _repository_root
+
+        assert _repository_root({}) is None
+        assert _repository_root({"repository": None}) is None
+
+    def test_it_returns_the_root_when_there_is_one(self):
+        from app.graph.workflow import _repository_root
+
+        class _Repo:
+            root_path = "/app/data/workspaces/default/todo-run12"
+
+        assert _repository_root({"repository": _Repo()}) == _Repo.root_path

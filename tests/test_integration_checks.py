@@ -1666,3 +1666,79 @@ class TestAnAttributeTheScriptSetsItself:
             "const found = el.querySelector('[data-task-id=\"1\"]');\n"
         )
         assert self._problems(tmp_path) == []
+
+
+class TestABrowserHelperIsNotACopy:
+    """An end-to-end helper shares a name with the application and nothing else.
+
+    `addTask(page, title)` types into a form and clicks a button.
+    `addTask(title, description)` returns an object. Importing the second in
+    place of the first would defeat the test, which is why run 35424714's
+    milestone reviewer rebutted this finding in its own words: "importing the
+    JS module would defeat the purpose of end-to-end verification and is not
+    required or expected". Run 86a60de1 was reported for the same thing.
+
+    Two reviewers pushing back on a blocking finding is the signal the finding
+    is wrong - and a specialist sent to fix working code is what cost run
+    8904f87b its life.
+    """
+
+    def _problems(self, tmp_path):
+        from app.analysis.integration_checks import (
+            _redefined_instead_of_imported,
+            _source_files,
+        )
+
+        return _redefined_instead_of_imported(_source_files(tmp_path), tmp_path)
+
+    def _app(self, tmp_path):
+        (tmp_path / "app.js").write_text(
+            "export function addTask(title, description) {\n"
+            "  return { title, description };\n}\n"
+        )
+
+    def test_a_playwright_fixture_is_not_reported(self, tmp_path):
+        self._app(tmp_path)
+        (tmp_path / "fixtures.ts").write_text(
+            "import { expect, type Page } from '@playwright/test';\n"
+            "export async function addTask(page: Page, title: string): Promise<void> {\n"
+            "  await page.fill('#task-title', title);\n"
+            "  await page.click('#add');\n}\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_a_helper_taking_page_first_is_not_reported(self, tmp_path):
+        self._app(tmp_path)
+        (tmp_path / "e2e.spec.js").write_text(
+            "export async function addTask(page, title) {\n"
+            "  await page.getByRole('textbox').fill(title);\n}\n"
+        )
+        assert self._problems(tmp_path) == []
+
+    def test_a_unit_test_copying_the_application_is_still_reported(self, tmp_path):
+        """The defect this check exists for must survive the exemption."""
+        self._app(tmp_path)
+        (tmp_path / "app.test.mjs").write_text(
+            "import { test } from 'node:test';\n"
+            "function addTask(title, description) { return { title, description }; }\n"
+            "test('adds', () => { addTask('a', 'b'); });\n"
+        )
+
+        problems = self._problems(tmp_path)
+
+        assert len(problems) == 1
+        assert "addTask" in problems[0]
+        assert "tests a copy" in problems[0]
+
+    def test_a_copy_that_merely_mentions_a_page_variable_is_still_reported(
+        self, tmp_path
+    ):
+        """The exemption is for a driver, not for the word `page` appearing."""
+        self._app(tmp_path)
+        (tmp_path / "app.test.mjs").write_text(
+            "import { test } from 'node:test';\n"
+            "function addTask(title, description) { return { title, description }; }\n"
+            "const page = 1;\n"
+            "test('adds', () => { addTask('a', 'b'); });\n"
+        )
+        assert len(self._problems(tmp_path)) == 1

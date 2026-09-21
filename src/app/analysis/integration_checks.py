@@ -1520,6 +1520,41 @@ def _tests_that_depend_on_the_working_directory(files: list[Path], root: Path) -
     return problems
 
 
+#: A browser-driver helper: its first parameter is Playwright's or Puppeteer's
+#: page handle, or its body works the page rather than the data.
+_DRIVES_A_BROWSER = re.compile(
+    r"""\(\s*(?:page|browser|context)\b|:\s*Page\b|"""
+    r"""\bpage\s*\.\s*(?:goto|locator|getBy\w+|click|fill|waitFor)""",
+    re.I,
+)
+
+
+def _a_browser_helper_of_the_same_name(text: str, name: str) -> bool:
+    """Whether `name` here drives a browser rather than copying the application.
+
+    An end-to-end helper called `addTask(page, title)` types into a form and
+    clicks a button. It shares a name with the application's
+    `addTask(title, description)` and nothing else: different parameters,
+    different job, and importing the application's version in its place would
+    defeat the test.
+
+    Run 86a60de1's `tests/fixtures.ts` was reported for exactly that, and run
+    35424714's milestone reviewer had already rebutted the same finding in its
+    own words - "importing the JS module would defeat the purpose of end-to-end
+    verification and is not required or expected". Two reviewers pushing back on
+    a blocking finding is the signal that the finding is wrong, and a specialist
+    sent to fix working code is what cost run 8904f87b its life.
+    """
+    found = re.search(
+        rf"(?:function\s+{re.escape(name)}|{re.escape(name)}\s*[:=]\s*(?:async\s*)?\()",
+        text,
+    )
+    if not found:
+        return False
+    window = text[found.start() : found.start() + 400]
+    return bool(_DRIVES_A_BROWSER.search(window))
+
+
 def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
     """Test files that define the application's own functions rather than import them.
 
@@ -1582,7 +1617,11 @@ def _redefined_instead_of_imported(files: list[Path], root: Path) -> list[str]:
             _TOP_LEVEL_CONST_FN.findall(text)
         )
         shared = sorted(
-            name for name in defined if name in application and name not in imported
+            name
+            for name in defined
+            if name in application
+            and name not in imported
+            and not _a_browser_helper_of_the_same_name(text, name)
         )
         if not shared:
             continue

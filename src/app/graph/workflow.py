@@ -950,6 +950,21 @@ def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     )
 
 
+def _repository_root(state: WorkflowGraphState) -> str | None:
+    """This run's workspace path, or None when the state has no repository.
+
+    Threaded into the restart so the carry-over note can name files the way the
+    tools name them. It was not, and the parameter defaulted to None, so the
+    note shipped absolute container paths and the unit test that covered the
+    None case passed while production did the wrong thing - visible only by
+    reading a live run's transcript.
+    """
+    try:
+        return state["repository"].root_path
+    except Exception:  # noqa: BLE001 - a hint must never fail a restart
+        return None
+
+
 def _restart_on_a_fresh_conversation(
     state: WorkflowGraphState,
     stage_name: str,
@@ -1325,7 +1340,9 @@ def _run_gated_agent(
                         ],
                     }
                 restarted = _restart_on_a_fresh_conversation(
-                    state, stage_name, inner_thread_id, "spun without returning an answer"
+                    state, stage_name, inner_thread_id,
+                    "spun without returning an answer",
+                    _repository_root(state),
                 )
                 if restarted is not None:
                     return restarted
@@ -1407,7 +1424,9 @@ def _run_gated_agent(
                         ],
                     }
                 restarted = _restart_on_a_fresh_conversation(
-                    state, stage_name, inner_thread_id, "spun without returning an answer"
+                    state, stage_name, inner_thread_id,
+                    "spun without returning an answer",
+                    _repository_root(state),
                 )
                 if restarted is not None:
                     return restarted
@@ -1507,7 +1526,8 @@ def _run_gated_agent(
         # conversation that failed, replays it, and fails identically - which is
         # exactly what happened on run-0b55ad49 until this existed.
         restarted = _restart_on_a_fresh_conversation(
-            state, stage_name, inner_thread_id, "produced no structured response"
+            state, stage_name, inner_thread_id, "produced no structured response",
+            _repository_root(state),
         )
         if restarted is not None:
             return restarted

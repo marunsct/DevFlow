@@ -56,6 +56,11 @@ x-app-env: &app-env
   # reaches it pauses at the next stage boundary as `waiting_for_budget` and
   # waits for a person - it does not fail. See .env.example.
   MAX_RUN_COST_USD: ${MAX_RUN_COST_USD:-}
+  # Runs that may execute at once; unset or 0 means no limit. This
+  # deployment's model server answers one request at a time, so two runs
+  # contend rather than go faster - measured 2026-09-20, when orphan
+  # recovery resumed one run as another was started.
+  MAX_CONCURRENT_RUNS: ${MAX_CONCURRENT_RUNS:-}
   # JSON corrections to the built-in model price table.
   MODEL_PRICES_JSON: ${MODEL_PRICES_JSON:-}
   # Encrypts provider credentials set through the settings page. Falls back

@@ -29,6 +29,7 @@ from app.documents import DocumentContent
 from app.graph.workflow import (
     APPROVAL_PAUSE_PREFIX,
     REVIEW_PAUSE_PREFIX,
+    RunCancelled,
     approve_decision,
     build_workflow_graph,
     request_changes_decision,
@@ -221,6 +222,42 @@ else left to notice the cancel flag.
 """
 
 
+def _max_concurrent_runs() -> int:
+    """How many runs may execute at once; 0 or less disables the limit.
+
+    Item 6 of `docs/harness-hardening-plan-part3.md`, and the gate on Part I's
+    item 2. Nothing bounded this: two unattended runs against one local model
+    server shared that server's queue and neither could know its latency was
+    being caused by the other.
+
+    Observed on 2026-09-20. Orphan recovery resumed run 9c0fc48d at the moment
+    run 8904f87b was started, and both executed - throughput halved and the 524
+    rate rose, on a deployment whose model server answers one request at a time.
+
+    Why Part I's probe needs this. That item derives a request timeout from a
+    *measured* generation rate. A probe run on a contended server measures a
+    rate the run will not see, or the reverse, and the derived timeout is wrong
+    in whichever direction the contention happened to push it. Measuring the
+    model requires being the only load.
+
+    Read on every dispatch rather than captured at import, for the reason
+    `_max_run_cost_usd` gives: the answer to "the queue is full" is to raise the
+    limit, and that should not need a worker restart.
+
+    Off by default, because a deployment with a worker pool sized for the work
+    already has its answer and a second ceiling underneath the first is a
+    surprise.
+    """
+    raw = os.environ.get("MAX_CONCURRENT_RUNS", "").strip()
+    if not raw:
+        return 0
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        logger.warning("MAX_CONCURRENT_RUNS is not a number: %r; ignoring it", raw)
+        return 0
+
+
 def _max_run_cost_usd() -> float:
     """The per-run spending ceiling in US dollars; 0 or less disables it.
 
@@ -287,6 +324,15 @@ def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:
 
 class RunConflict(RuntimeError):
     """A lifecycle transition was attempted from the wrong status."""
+
+
+class RunQueueFull(RunConflict):
+    """Every worker slot is taken. A queueing signal, not a failure.
+
+    A subclass of `RunConflict` so existing handlers keep returning 409 without
+    change, and its own type so a caller that wants to distinguish "you cannot
+    do that" from "not yet" can.
+    """
 
 
 _SECRET_OVERRIDE_KEYS = frozenset({"openai_api_key", "anthropic_api_key", "google_api_key"})
@@ -856,8 +902,30 @@ class WorkflowRunner:
         await self.event_bus.close(run_id)
 
     def _dispatch(self, run_id: str, *, resume: bool, decision_payload: dict[str, Any] | None) -> None:
-        """Hand the run to a Celery worker and remember the task id."""
+        """Hand the run to a Celery worker and remember the task id.
+
+        Refuses rather than queues when every slot is taken. Celery would
+        happily accept the message and hold it, which is the behaviour that
+        made two runs contend for one model server in the first place: the
+        second run looked started, and was in fact competing.
+        """
         from app.server.tasks import execute_workflow_run
+
+        limit = _max_concurrent_runs()
+        if limit > 0:
+            try:
+                in_flight = self.run_store.count_in_flight()
+            except Exception:  # noqa: BLE001 - a limit must never be the reason a run cannot start
+                logger.warning("Could not count in-flight runs; dispatching", exc_info=True)
+            else:
+                if in_flight >= limit:
+                    raise RunQueueFull(
+                        f"{in_flight} of {limit} run slots are in use. This "
+                        "deployment runs one model server, and a second run "
+                        "started now would contend with the first rather than "
+                        "go faster. Wait for a slot, or raise "
+                        "MAX_CONCURRENT_RUNS."
+                    )
 
         async_result = execute_workflow_run.delay(
             run_id=run_id, resume=resume, decision_payload=decision_payload
@@ -949,6 +1017,15 @@ class WorkflowRunner:
         except asyncio.CancelledError:
             await self._finish_cancelled(record)
             raise
+        except RunCancelled:
+            # Not a failure. The graph saw the cancel flag at a stage boundary
+            # and stopped there, with the previous stage already checkpointed -
+            # which is the whole point of item 7: a SIGTERM would have killed
+            # the turn wherever it was and lost it back to that same checkpoint,
+            # only messily and with a traceback.
+            logger.info("Run %s stopped at a stage boundary after cancellation", run_id)
+            await self._finish_cancelled(record)
+            return
         except Exception as exc:
             # The full traceback goes to the log, keyed by correlation id. Only a
             # short message reaches the API, because run.error is rendered in the

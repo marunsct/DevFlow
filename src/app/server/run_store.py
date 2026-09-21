@@ -110,6 +110,10 @@ _LIST_TENANT_SQL = (
 )
 _COUNT_ALL_SQL = "SELECT COUNT(*) FROM runs"
 _COUNT_TENANT_SQL = "SELECT COUNT(*) FROM runs WHERE tenant_id = %s"
+#: Runs holding a worker slot right now. `running` is the only status that
+#: occupies one: every pause - approval, review, budget - has released the
+#: worker and is waiting on a human.
+_COUNT_IN_FLIGHT_SQL = "SELECT COUNT(*) FROM runs WHERE status = 'running'"
 
 
 def database_url() -> str:
@@ -337,6 +341,20 @@ class RunStore:
                     cur.execute(_COUNT_TENANT_SQL, (tenant_id,))
                 else:
                     cur.execute(_COUNT_ALL_SQL)
+                return int(cur.fetchone()[0])
+
+    def count_in_flight(self) -> int:
+        """How many runs are executing right now, across every tenant.
+
+        Counted in the database rather than from Celery, because the question
+        is asked at dispatch by whichever API worker took the request and
+        Celery's own inspection is a broadcast with a timeout. The status is
+        written before the task is dispatched and cleared by the worker, so
+        this is the same fact one join earlier.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(_COUNT_IN_FLIGHT_SQL)
                 return int(cur.fetchone()[0])
 
     @staticmethod

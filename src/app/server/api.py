@@ -217,7 +217,29 @@ def create_app(
         except Exception:  # noqa: BLE001
             status["celery"] = "error"
 
-        if any(v == "error" for k, v in status.items() if k != "status"):
+        # How many slots are taken, and how many there are. A full worker is
+        # the difference between "queued" and "broken" and nothing here
+        # distinguished them: an operator watching a run that had not started
+        # could not tell whether it was waiting or wedged. Reported rather
+        # than judged - a full pool is a healthy pool doing its job, so this
+        # never makes readiness fail.
+        def _slots() -> dict[str, Any]:
+            from app.server.run_store import RunStore
+            from app.server.runner import _max_concurrent_runs
+
+            return {
+                "in_flight": RunStore.shared().count_in_flight(),
+                "limit": _max_concurrent_runs() or None,
+            }
+
+        try:
+            status["runs"] = await run_in_threadpool(_slots)
+        except Exception:  # noqa: BLE001 - never fail readiness over a count
+            pass
+
+        if any(
+            v == "error" for k, v in status.items() if k not in ("status", "runs")
+        ):
             status["status"] = "error"
             raise HTTPException(status_code=503, detail=status)
         return status

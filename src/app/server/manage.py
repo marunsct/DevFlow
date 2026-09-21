@@ -23,6 +23,8 @@ import argparse
 from typing import Any, Callable
 import secrets
 import sys
+import time
+from pathlib import Path
 
 from app.server.auth import (
     get_db_connection,
@@ -558,6 +560,115 @@ def clear_run_overrides(run_id: str | None = None, dry_run: bool = False) -> int
     return 0
 
 
+#: A workspace is not stale while its run could still write to it. Terminal
+#: means the workflow will not reopen it: the run store's own vocabulary.
+TERMINAL_RUN_STATUSES = frozenset({"completed", "failed", "cancelled"})
+
+
+def _directory_size(path: Path) -> int:
+    total = 0
+    for item in path.rglob("*"):
+        try:
+            if item.is_file() and not item.is_symlink():
+                total += item.stat().st_size
+        except OSError:  # noqa: PERF203 - a file that vanished mid-walk is 0
+            continue
+    return total
+
+
+def _run_id_in(name: str) -> str:
+    """The run id embedded in a workspace directory name, or "".
+
+    `allocate_workspace` names them `<label>-<run_id>`, and the label is free
+    text, so the run id is recognised by its own prefix rather than by position.
+    """
+    marker = name.find("run-")
+    return name[marker:] if marker >= 0 else ""
+
+
+def workspaces(older_than_days: float | None = None, delete: bool = False) -> int:
+    """Report what the run workspaces are costing, and optionally reclaim it.
+
+    Nothing ages these out. `delete_workspace` exists and is called from one
+    place - `DELETE /api/runs/{id}` - so a workspace survives for as long as
+    the deployment does. Measured on this deployment: 846 MB across twelve
+    runs of a to-do list, most of it `node_modules` and `.agent-home/.npm`
+    that each run installs again.
+
+    Deletion is opt-in twice over: `--older-than-days` has no default, and
+    without `--delete` this only reports. A workspace whose run is not
+    terminal is never offered, however old it is - a run parked for a human
+    decision is still going to be resumed.
+    """
+    from app.server.run_store import RunStore
+    from app.server.workspaces import delete_workspace, workspace_root
+
+    root = workspace_root()
+    if not root.exists():
+        print(f"No workspace root at {root}.")
+        return 0
+
+    store = RunStore.shared()
+    now = time.time()
+    rows: list[tuple[Path, int, float, str]] = []
+    for tenant in sorted(p for p in root.iterdir() if p.is_dir()):
+        for workspace in sorted(p for p in tenant.iterdir() if p.is_dir()):
+            run_id = _run_id_in(workspace.name)
+            record = store.load(run_id) if run_id else None
+            status = getattr(record, "status", None) or ("unknown" if run_id else "no run")
+            age_days = (now - workspace.stat().st_mtime) / 86400
+            rows.append((workspace, _directory_size(workspace), age_days, str(status)))
+
+    if not rows:
+        print(f"No workspaces under {root}.")
+        return 0
+
+    total = sum(size for _, size, _, _ in rows)
+    for workspace, size, age_days, status in sorted(rows, key=lambda r: -r[1]):
+        print(
+            f"{size / 1_048_576:9.1f} MB  {age_days:6.1f}d  {status:10s} "
+            f"{workspace.relative_to(root)}"
+        )
+    print(f"{total / 1_048_576:9.1f} MB  total across {len(rows)} workspace(s)")
+
+    if older_than_days is None:
+        print("\nPass --older-than-days N to see what could be reclaimed.")
+        return 0
+
+    stale = [
+        (workspace, size)
+        for workspace, size, age_days, status in rows
+        if age_days >= older_than_days and status in TERMINAL_RUN_STATUSES
+    ]
+    held = [
+        (workspace, status)
+        for workspace, _, age_days, status in rows
+        if age_days >= older_than_days and status not in TERMINAL_RUN_STATUSES
+    ]
+    for workspace, status in held:
+        print(f"\nKept {workspace.name}: its run is {status}, not finished.")
+    if not stale:
+        print(f"\nNothing older than {older_than_days} day(s) is safe to remove.")
+        return 0
+
+    reclaim = sum(size for _, size in stale)
+    if not delete:
+        for workspace, size in stale:
+            print(f"\nWould delete {workspace.name} ({size / 1_048_576:.1f} MB)")
+        print(
+            f"\n{reclaim / 1_048_576:.1f} MB in {len(stale)} workspace(s) could be "
+            "reclaimed. Re-run with --delete to apply. The files are gone "
+            "afterwards; the run's artifacts in object storage are not touched."
+        )
+        return 0
+
+    for workspace, size in stale:
+        delete_workspace(workspace)
+        print(f"Deleted {workspace.name} ({size / 1_048_576:.1f} MB)")
+    print(f"\nReclaimed {reclaim / 1_048_576:.1f} MB.")
+    return 0
+
+
 def list_users() -> int:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -611,6 +722,21 @@ def main(argv: list[str] | None = None) -> int:
     pins.add_argument("run_id", nargs="?", help="One run; omit for every run")
     pins.add_argument("--dry-run", action="store_true", help="Report without changing anything")
 
+    spaces = sub.add_parser(
+        "workspaces",
+        help="Report what run workspaces are using on disk, and optionally reclaim it",
+    )
+    spaces.add_argument(
+        "--older-than-days",
+        type=float,
+        help="Offer workspaces at least this old whose run has finished",
+    )
+    spaces.add_argument(
+        "--delete",
+        action="store_true",
+        help="Actually remove them; without this the command only reports",
+    )
+
     disable = sub.add_parser("disable-user", help="Disable an account")
     disable.add_argument("username")
 
@@ -632,6 +758,8 @@ def main(argv: list[str] | None = None) -> int:
         return recover_orphaned_runs(args.dry_run)
     if args.command == "reconcile-runs":
         return reconcile_runs(args.dry_run)
+    if args.command == "workspaces":
+        return workspaces(args.older_than_days, args.delete)
     if args.command == "clear-run-overrides":
         return clear_run_overrides(args.run_id, args.dry_run)
     if args.command == "disable-user":

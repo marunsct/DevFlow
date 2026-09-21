@@ -343,6 +343,80 @@ def what_the_specialists_reported(outputs: Any) -> str:
     return "".join(parts)
 
 
+def what_you_said_last_time(previous: Any, revisions_used: int, revisions_allowed: int) -> str:
+    """The reviewer's own previous findings, and what is left of the budget.
+
+    The reviewer has been reviewing blind. `revision_comments` carries its
+    findings forward to the technical lead, so the builders know what was
+    asked; the reviewer itself is handed a fresh conversation with no record
+    of what it said last round, and it contradicts itself.
+
+    Measured on the two runs that failed at the revision limit:
+
+    run-35424714, milestone two, round 2 raised as **minor** - "init() is the
+    main DOM wiring entry point exported from ui.js, but no automated test
+    exercises it". Round 3 raised the same defect as **blocking** - "The init()
+    function exported from ui.js has no automated test coverage" - and that
+    round was the third, so the run ended there. Nothing about the file had
+    changed to make it worse; the reviewer simply weighted it differently.
+
+    run-8904f87b, round 1 certified the size explicitly in its acceptance
+    evidence: "Confirmed 447 code lines (non-blank, non-comment) is under the
+    500-line brief limit". Round 3 raised **major** "Application source files
+    total 631 lines ... exceeding the brief's stated constraint" - a fair
+    finding on its own, but one the same reviewer had passed twice, and the
+    round it appeared in was the last one available.
+
+    Both runs spent their three revisions on a moving target. This hands the
+    reviewer what it said before and how much room is left, which is what it
+    would have had if the rounds were one conversation.
+
+    Deliberately not enforced by clamping severities: matching "init() has no
+    test coverage" to "no automated test exercises init()" needs fuzzy text
+    matching, and a wrong match would silence a real blocking finding, which is
+    a worse failure than the one being fixed.
+    """
+    findings = list(getattr(previous, "findings", None) or [])
+    if not findings and not revisions_used:
+        return ""
+
+    parts = ["--- What you found on this milestone last time ---\n"]
+    if findings:
+        for finding in findings[:MAX_REPORTED_PER_KIND]:
+            severity = getattr(finding, "severity", "?")
+            category = getattr(finding, "category", "?")
+            description = str(getattr(finding, "description", "")).strip()
+            parts.append(f"- [{severity}] {category}: {description}\n")
+        parts.append(
+            "\nEvery one of these is either fixed or still open, and saying "
+            "which is part of this review. A finding you raised before and do "
+            "not raise again reads as fixed, so only drop it if you checked. "
+            "A defect you called optional last round is optional this round "
+            "too: re-weighing the same unchanged code is how a milestone "
+            "spends its revisions without converging.\n\n"
+        )
+    if revisions_allowed:
+        left = max(revisions_allowed - revisions_used, 0)
+        parts.append(
+            f"This is revision {revisions_used + 1} of {revisions_allowed}. "
+        )
+        if left <= 1:
+            parts.append(
+                "It is the last one. If you require changes now the run ENDS "
+                "with nothing delivered - not another round of fixes. A "
+                "blocking or major finding here has to be worth the whole "
+                "product; anything smaller belongs at minor or suggestion, "
+                "where it is recorded and the milestone still ships.\n\n"
+            )
+        else:
+            parts.append(
+                f"After {left} more the run ends with whatever is built, so "
+                "findings that matter belong in this round rather than the "
+                "next one.\n\n"
+            )
+    return "".join(parts)
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
@@ -352,6 +426,9 @@ def build_milestone_review_request(
     stack: Any = None,
     document_text: str = "",
     specialist_outputs: Any = None,
+    previous_review: Any = None,
+    revisions_used: int = 0,
+    revisions_allowed: int = 0,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the milestone artifacts awaiting review."""
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
@@ -359,6 +436,7 @@ def build_milestone_review_request(
         WORKSPACE_ROOT_NOTE
         + _against_the_brief(document_text, repository_root)
         + what_the_specialists_reported(specialist_outputs)
+        + what_you_said_last_time(previous_review, revisions_used, revisions_allowed)
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"
@@ -464,4 +542,6 @@ __all__ = [
     "MilestoneReviewOutput",
     "build_milestone_review_request",
     "create_milestone_reviewer_agent",
+    "what_the_specialists_reported",
+    "what_you_said_last_time",
 ]

@@ -2866,6 +2866,22 @@ def build_workflow_graph(
             # were written into state and read by nothing - see
             # `what_the_specialists_reported`.
             outputs,
+            # And what this reviewer itself said last round. Without it every
+            # review is a fresh opinion of the same code, and two runs died at
+            # the revision limit chasing one - see `what_you_said_last_time`.
+            # Only on a re-review of the same milestone. `sprint_advance_node`
+            # resets `milestone_revision_count` but leaves `milestone_review`
+            # in state, so on the first review of a new sprint that field
+            # still holds the last sprint's verdict - and handing a reviewer
+            # another milestone's findings as "what you found last time" is
+            # worse than handing it nothing.
+            previous_review=(
+                state.get("milestone_review")
+                if state.get("milestone_revision_count", 0)
+                else None
+            ),
+            revisions_used=state.get("milestone_revision_count", 0),
+            revisions_allowed=MAX_MILESTONE_REVISIONS,
         )
         update = _run_gated_agent(
             state,

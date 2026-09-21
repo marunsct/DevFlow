@@ -363,7 +363,9 @@ class _NoticingRepeats:
             return ""
         return f"{stat.st_size}:{stat.st_mtime_ns}"
 
-    def _note_if_already_seen(self, path: str, digest: str, first: int, last: int) -> str:
+    def _note_if_already_seen(
+        self, path: str, digest: str, first: int, last: int, text: str = ""
+    ) -> str:
         """Whether this stage has already been served these exact lines.
 
         Finding 59 caught a byte-identical call. This catches the same waste
@@ -398,21 +400,61 @@ class _NoticingRepeats:
             own = {}
             self._read_spans = own  # noqa: SLF001 - own attribute
         seen = store("read_spans", own)
-        previous_digest, covered = seen.get(path, (None, set()))
+        # Three elements since the withholding rung was added; entries written
+        # by the two-element version still unpack.
+        entry = seen.get(path, (None, set(), 0))
+        previous_digest, covered, nothing_new = (*entry, 0)[:3]
         if previous_digest != digest:
-            seen[path] = (digest, set(range(first, last + 1)))
+            seen[path] = (digest, set(range(first, last + 1)), 0)
             return ""
         wanted = set(range(first, last + 1))
         fresh = wanted - covered
         covered |= wanted
-        # Bounded: a file large enough for this to matter is already paged.
-        seen[path] = (digest, covered if len(covered) < 100_000 else set())
         if fresh:
+            # Bounded: a file large enough for this to matter is already paged.
+            seen[path] = (digest, covered if len(covered) < 100_000 else set(), 0)
             return ""
+        nothing_new += 1
+        seen[path] = (digest, covered if len(covered) < 100_000 else set(), nothing_new)
+        self._repeated_reads = getattr(self, "_repeated_reads", 0) + 1
+        if nothing_new >= READS_BEFORE_WITHHOLDING:
+            # The same rung the byte-identical ladder reaches, on the same
+            # count, because they are the same waste. Measured on run-d483f554's
+            # `specialist_ui_ux_0`, reading a 391-line `app.js` it had just
+            # written:
+            #
+            #   reads  2-11  whole file      withheld from the 4th   1,111 bytes
+            #   read     12  limit=120       3,483 bytes returned in full
+            #   reads 12-14  limit=120       withheld on the 3rd
+            #   read     15  limit=100       2,897 bytes returned in full
+            #   reads 15-17  limit=100       withheld on the 3rd
+            #
+            # Narrowing the window reset the digest counter and the file came
+            # back whole, twice, after ten withholdings - about 19,000
+            # characters of lines the stage had already been given. Those six
+            # calls are what carried it to the edge of its model-call budget.
+            #
+            # This rung knows they were not new: it is the check that printed
+            # "you have already read lines 1-120" on reads 12 and 13 and
+            # returned the bytes anyway.
+            self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
+            return (
+                f"[Lines {first}-{last} are ones this stage has already been "
+                f"given, and the file has not changed since. This is the "
+                f"{nothing_new}th read of it that returned nothing new, so the "
+                "content is not repeated here - scroll back to any earlier "
+                "result. A narrower or wider window of the same lines is still "
+                "the same lines; if there is a part you have not seen, ask for "
+                "a range outside what you have read. Otherwise use what you "
+                "have and move on.]"
+                + _an_anchor_to_what_was_withheld(text)
+                + self._the_way_out()
+            )
         return (
             f"\n\n[You have already read lines {first}-{last} of this file in "
             "this stage, and it has not changed since. This returned nothing "
             "you did not already have.]"
+            + self._the_way_out()
         )
 
     def _the_project_is_called(self, wanted: str) -> str:
@@ -685,8 +727,12 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             last = getattr(result, "end_line", None)
             if isinstance(first, int) and isinstance(last, int) and last >= first:
                 note = self._note_if_already_seen(
-                    str(file_path), self._file_identity(file_path), first, last
+                    str(file_path), self._file_identity(file_path), first, last, content
                 )
+                if self._withheld:
+                    # Same as the byte-identical rung above: the bytes are
+                    # replaced, not prefixed.
+                    return replace(result, file_data={**data, "content": note})
         if not note:
             return result
         # Ahead of the content, not after it. A file of any size puts an

@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+
+# Test image: the CI environment, runnable locally.
+#
+# `.github/workflows/ci.yml` runs the suite on Python 3.12 with `.[test]`
+# installed and `PYTHONPATH=src`. This reproduces that, so a failure here is a
+# failure there. It exists because the host is not guaranteed to have 3.12 -
+# this machine has 3.9 - and installing a second Python to run a test suite for
+# a service that ships in a container is the wrong trade.
+#
+# Build:  docker build -f Dockerfile.test -t devflow-tests .
+# Run:    docker run --rm -v "$PWD/tests:/app/tests:ro" -v "$PWD/src:/app/src:ro" \
+#           devflow-tests pytest tests/ -q
+#
+# Tests that use testcontainers need a Docker daemon; mount the socket for
+# those. The unit suites do not.
+FROM python:3.12-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir uv
+
+# Dependencies first, so editing a test does not reinstall the tree.
+COPY pyproject.toml ./
+COPY src/ ./src/
+RUN uv pip install --system ".[test]"
+
+ENV PYTHONPATH=/app/src \
+    ENV=development
+
+CMD ["pytest", "tests/", "-q"]

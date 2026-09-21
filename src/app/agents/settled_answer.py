@@ -567,6 +567,31 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
 #: calls, the ninetieth percentile 16 to 27, and the worst healthy stage seen is
 #: 37. A stage past forty is not working, it is circling.
 MODEL_CALLS_PER_STAGE = 40
+"""Model calls a stage may spend before it is stopped and retried.
+
+Measured across 71 stage executions in four runs (b598780b, 9c0fc48d, 8904f87b,
+b0db10b1), counting `model_request` records per stage from the transcripts:
+
+    stages that finished under the ceiling   61
+      most calls any of them needed          36  (specialist_backend_1)
+      next                                   33  (milestone_review)
+      median                                  5
+      90th percentile                        26
+
+    stages that reached the ceiling          10
+
+So 40 sits four calls above the largest stage that has ever finished, and the
+gap between the 90th percentile and the ceiling is where the warnings live.
+Lowering it to 30 - which the spinning stages make tempting - would have cut off
+`specialist_backend_1` and `milestone_review` mid-answer, and a stage killed with
+work in hand is worse than one that wastes a dozen calls before the retry.
+
+Raising it is worse still: the stages that reach 40 do not finish at 50 either.
+Every one of the ten above had been told to return what it had from 70% onward,
+had content withheld from repeated reads, and had the exit named for it - on
+b0db10b1's `specialist_testing_1`, seventeen reads withheld and the exit named
+96 times across the run. They are not short of room; they are not using it.
+"""
 
 
 def _model_calls_used(messages: list[Any]) -> int:

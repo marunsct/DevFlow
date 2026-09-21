@@ -120,3 +120,72 @@ def test_one_blocking_problem_is_reported(run_audit):
     out = run_audit({"index.html": DEAD_PAGE, "app.js": PURE})
 
     assert "BLOCKING problems found" in out
+
+
+class TestASandboxRefusalIsNotACost:
+    """A guard firing is prevented damage, not a failure that cost the run.
+
+    `audit_run.py`'s `SAVED` tuple marks the messages that mean "the harness
+    stopped something bad". Its own docstring says to keep it in step with the
+    refusals in `app/tools/repository.py` - and the sandbox writes its own,
+    which the list had never covered.
+
+    On run b0db10b1, six of the eight calls filed under "failures that cost the
+    run" were sandbox refusals: five withheld repeats of a settled command and
+    one refused long-running server. Counting them as costs made the number the
+    script exists to drive down rise whenever a guard did its job. Corrected,
+    that run reports 2 costly failures (0.3%) rather than 8 (1.2%), and twice
+    the prevented damage.
+    """
+
+    def _saved(self):
+        # Read out of the source rather than imported. Importing a script to
+        # look at one constant runs everything else in it, and this one parses
+        # `sys.argv` - under the full suite that is pytest's, so the first
+        # version died with `IsADirectoryError: Is a directory: 'tests/'`.
+        # `audit_run.py` now guards its entry point, and this no longer depends
+        # on whether it does.
+        import ast
+
+        assert SCRIPT.is_file()
+        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
+        for node in tree.body:
+            targets = getattr(node, "targets", [])
+            if any(getattr(t, "id", None) == "SAVED" for t in targets):
+                return ast.literal_eval(node.value)
+        raise AssertionError("audit_run.py no longer defines SAVED")
+
+    def test_the_sandbox_refusals_are_marked_as_prevented(self):
+        saved = self._saved()
+        for fragment in (
+            "Not running this again",
+            "it runs until it is stopped",
+            "installs system packages as root",
+        ):
+            assert fragment in saved, f"{fragment!r} would be counted as a cost"
+
+    def test_every_marker_is_a_phrase_the_tools_really_emit(self):
+        """A fragment that stops matching moves real refusals into the cost column.
+
+        The same staleness `_BREAKS_BEHAVIOUR` is checked for, applied to the
+        other list that decides what a number means.
+        """
+        import inspect
+        import re
+
+        # `javascript_parse` too: "Node cannot parse" is written there, not in
+        # either tool module, and a search of the two alone reported a live
+        # marker as stale.
+        from app.analysis import javascript_parse
+        from app.tools import repository, sandbox
+
+        source = "".join(
+            inspect.getsource(module)
+            for module in (repository, sandbox, javascript_parse)
+        )
+        joined = re.sub(r'"\s*\n\s*"', "", source)
+
+        missing = [
+            fragment for fragment in self._saved() if fragment not in joined
+        ]
+        assert not missing, f"no tool emits these any more: {missing}"

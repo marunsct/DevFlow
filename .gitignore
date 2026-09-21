@@ -28,3 +28,7 @@ patch*.py
 patch*.diff
 test_out.txt
 coverage.xml
+
+# Handover archive - contains env-secrets.txt with real credentials.
+harness-handover-*.zip
+harness-handover/

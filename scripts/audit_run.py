@@ -35,13 +35,27 @@ SAVED = (
     "Node cannot parse", "Refusing to write", "Refusing to change",
     "already been applied", "exactly as it is", "already contained exactly",
     "is a test, and tests are part of what", "already holds this module",
-    "you have already been told that twice",
+    # Was "you have already been told that twice", which nothing emits: the
+    # sentence in `repository.py` reads "into a state it already had, and you
+    # have been told that twice". One stray word, and every one of those
+    # refusals had been counted as a cost since the marker was written.
+    "you have been told that twice",
     # Found missing by sweeping every distinct error across runs 60-67 rather
     # than reading them one at a time, which is how the first three of these
     # went unnoticed:
     "so it is ambiguous which one",   # editing one of N identical passages at random
     "it can execute arbitrary code",  # `node -e`, with a file-based alternative given
     "Moving onto it would delete it", # a move that would silently destroy the target
+    # The sandbox's refusals, which this list had never covered - the docstring
+    # above says to keep it in step with `app/tools/repository.py` and the
+    # sandbox writes its own. On run b0db10b1 six of the eight calls filed under
+    # "failures that cost the run" were these: five withheld repeats and one
+    # refused server. They are the guards working, and counting them as costs
+    # made the number this script exists to drive down go up whenever a guard
+    # fired.
+    "Not running this again",             # a settled command, withheld
+    "it runs until it is stopped",        # a server with nothing to stop it
+    "installs system packages as root",   # an install the sandbox cannot grant
 )
 
 def load(path):
@@ -219,8 +233,14 @@ def the_product(workspace):
             print(f"  {line.strip()[:150]}")
 
 
-if len(sys.argv) > 2:
+# Guarded, as `server/manage.py` guards its own entry point. Without this,
+# importing the module runs it against whatever `sys.argv` happens to hold: a
+# test that read `SAVED` from here died with
+# `IsADirectoryError: Is a directory: 'tests/'` because pytest's first argument
+# became the transcript path.
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        raise SystemExit(__doc__.strip().splitlines()[2].strip())
     main(sys.argv[1])
-    the_product(sys.argv[2])
-else:
-    main(sys.argv[1])
+    if len(sys.argv) > 2:
+        the_product(sys.argv[2])

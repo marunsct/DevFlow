@@ -84,15 +84,19 @@ def test_the_sweep_waits_until_the_broker_can_answer(monkeypatch, tasks):
     called: list[bool] = []
 
     monkeypatch.setattr(tasks, "_SWEEP_INTERVAL_SECONDS", 0)
+    monkeypatch.setattr(tasks, "_SECOND_SWEEP_DELAY_SECONDS", 0)
     monkeypatch.setattr("app.server.manage._live_task_ids", lambda: answers.pop(0))
     monkeypatch.setattr(
         "app.server.manage.recover_orphaned_runs",
-        lambda dry_run=False, emit=print: called.append(dry_run) or 0,
+        lambda dry_run=False, emit=print, grace_seconds=0: called.append(dry_run) or 0,
     )
 
     tasks._sweep_for_abandoned_runs()
 
-    assert called == [False], "the sweep gave up before the broker answered"
+    # Two passes, not one. A run inside the recency grace on the first pass has
+    # to be judged once it leaves the window, or it stays `running` for ever -
+    # see `RECENTLY_TOUCHED_SECONDS`.
+    assert called == [False, False], "the sweep gave up before the broker answered"
 
 
 def test_the_sweep_gives_up_rather_than_guessing(monkeypatch, tasks):

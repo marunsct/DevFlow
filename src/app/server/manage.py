@@ -20,7 +20,7 @@ import logging
 import os
 
 import argparse
-from typing import Callable
+from typing import Any, Callable
 import secrets
 import sys
 
@@ -340,8 +340,56 @@ def _resume_one(run_id: str) -> None:
     asyncio.run(_get_runner().resume_run(run_id))
 
 
+def _touched_within(record: Any, seconds: float) -> bool:
+    """Whether this run was written to within `seconds`. False if unknowable.
+
+    False on a missing or unparseable timestamp, so a row that cannot be dated
+    is judged the way it was before this existed rather than protected for ever.
+    """
+    from datetime import datetime, timezone
+
+    stamp = getattr(record, "updated_at", None)
+    if not stamp:
+        return False
+    try:
+        when = datetime.fromisoformat(str(stamp))
+    except (TypeError, ValueError):
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - when).total_seconds() < seconds
+
+
+#: A run touched more recently than this is never judged orphaned, whatever the
+#: broker says. `updated_at` is a liveness signal that does not depend on
+#: inspect timing, and inspect timing is what went wrong.
+#:
+#: Measured on run 7c0bf755, 2026-09-21. It was dispatched at 15:45:00 as task
+#: `fce6686c` and the worker's startup sweep ran eleven seconds later, while
+#: that task was executing. `_live_task_ids()` answered - so the "no worker
+#: replied" guard did not fire - but its reply did not yet list a task handed
+#: to a pool child moments earlier. The run was marked failed, resumed as task
+#: `ed7d5341`, and then ran twice: two executions of one run interleaving
+#: stages into one workspace and one transcript, contending for the same model
+#: server. The docstring below already named that damage - "guessing wrong here
+#: puts two writers on one thread" - and the guess was still available to make.
+#:
+#: 120 seconds is far longer than the dispatch race and far shorter than any
+#: real abandonment, and nothing is lost by waiting: the sweep looks again.
+#:
+#: Applied by the automatic startup sweep and not by the CLI, which defaults to
+#: no grace at all. The two callers are asking different questions. The sweep
+#: guesses, from a broker reply that can be incomplete seconds after a
+#: hand-off. A human running `manage.py recover-orphans` has looked and
+#: decided, and making them wait two minutes to act on their own judgement
+#: would be answering a question they did not ask.
+RECENTLY_TOUCHED_SECONDS = 120
+
+
 def recover_orphaned_runs(
-    dry_run: bool = False, emit: Callable[[str], None] = print
+    dry_run: bool = False,
+    emit: Callable[[str], None] = print,
+    grace_seconds: float = 0.0,
 ) -> int:
     """Return runs whose worker died to a state that can be resumed.
 
@@ -393,11 +441,22 @@ def recover_orphaned_runs(
         offset += 500
 
     repaired = 0
+    deferred = 0
     recovered: list[str] = []
     for record in records:
         if record.status != "running":
             continue
         if record.task_id and record.task_id in live:
+            continue
+        if _touched_within(record, grace_seconds):
+            # Alive by the one signal that does not depend on the broker
+            # answering in time. See `RECENTLY_TOUCHED_SECONDS`.
+            emit(
+                f"{record.run_id}: running, and touched in the last "
+                f"{grace_seconds:.0f}s - too recent to call abandoned. "
+                "Looking again shortly."
+            )
+            deferred += 1
             continue
         emit(f"{record.run_id}: running -> failed  (stage: {record.current_stage or '?'})")
         repaired += 1
@@ -423,6 +482,12 @@ def recover_orphaned_runs(
         record.updated_at = datetime.now(timezone.utc).isoformat()
         store.save(record)
         recovered.append(record.run_id)
+
+    if deferred:
+        emit(
+            f"{deferred} run(s) were too recently touched to judge. A run that "
+            "has genuinely stopped goes quiet, so the next sweep will see it."
+        )
 
     if repaired and oom_killed:
         emit(

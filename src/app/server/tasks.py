@@ -151,12 +151,24 @@ def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
 _SWEEP_ATTEMPTS = 6
 _SWEEP_INTERVAL_SECONDS = 5
 
+#: How long the sweep waits before looking a second time. Sized to the grace
+#: `recover_orphaned_runs` gives a recently-touched run, because that is exactly
+#: what the second look is for: a run inside the window on the first pass has to
+#: be judged once it leaves it. A module constant so a test can shorten it -
+#: blocking a daemon thread for two minutes is free in a worker and is not free
+#: in a test suite.
+_SECOND_SWEEP_DELAY_SECONDS: float | None = None
+
 
 def _sweep_for_abandoned_runs() -> None:
     """Run the orphan sweep once the broker can answer. Never raises."""
     import time
 
-    from app.server.manage import _live_task_ids, recover_orphaned_runs
+    from app.server.manage import (
+        RECENTLY_TOUCHED_SECONDS,
+        _live_task_ids,
+        recover_orphaned_runs,
+    )
 
     for attempt in range(_SWEEP_ATTEMPTS):
         time.sleep(_SWEEP_INTERVAL_SECONDS)
@@ -169,7 +181,33 @@ def _sweep_for_abandoned_runs() -> None:
             # startup thread, where Celery's `redirect_stdouts` turns every
             # `print` into a WARNING. The healthy outcome was being logged as a
             # warning on every worker start.
-            recover_orphaned_runs(dry_run=False, emit=logger.info)
+            # The grace belongs here, not in the function's default: this is
+            # the caller that guesses, from a broker reply that can be
+            # incomplete seconds after a hand-off. See
+            # `RECENTLY_TOUCHED_SECONDS`.
+            recover_orphaned_runs(
+                dry_run=False, emit=logger.info,
+                grace_seconds=RECENTLY_TOUCHED_SECONDS,
+            )
+            # Once more, after the grace window a freshly-dispatched run is
+            # protected by. A run that is genuinely gone stops touching its row,
+            # so it is still caught; one that is working has moved on and is
+            # skipped again. Without this second look, a run abandoned moments
+            # before the worker restarted would stay `running` for ever, which
+            # is the state this sweep exists to clear.
+            delay = (
+                RECENTLY_TOUCHED_SECONDS
+                if _SECOND_SWEEP_DELAY_SECONDS is None
+                else _SECOND_SWEEP_DELAY_SECONDS
+            )
+            time.sleep(delay)
+            try:
+                recover_orphaned_runs(
+                    dry_run=False, emit=logger.info,
+                    grace_seconds=RECENTLY_TOUCHED_SECONDS,
+                )
+            except Exception:  # noqa: BLE001 - a sweep must never take a worker down
+                logger.warning("Second orphan sweep failed", exc_info=True)
             return
         except Exception:  # noqa: BLE001 - a sweep must never take a worker down
             logger.warning("Could not recover abandoned runs", exc_info=True)

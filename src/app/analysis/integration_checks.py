@@ -2855,6 +2855,8 @@ _BREAKS_BEHAVIOUR = (
     # requirement delivered as far as the documents and no further is the
     # product not doing what it was asked to do.
     "Either build it or record why it was dropped",  # a dropped criterion
+    # The same criterion, descoped by a decision the run wrote itself.
+    "the deferral carries no authority",  # a self-authorised descope
     # A requirement no test covers. The suite is green because it was
     # written from the code, which cannot miss what the code does not do.
     "the only thing here that remembers",  # a requirement nothing tests
@@ -3682,6 +3684,38 @@ _LOOKS_LIKE_A_CRITERION = re.compile(
 )
 
 
+#: A decision record that drops something: "ADR-08 - Inline Editing: Deferred",
+#: "out of scope for the MVP", "not implemented in this release".
+_A_DEFERRAL = re.compile(
+    r"defer\w*|out of scope|post-?mvp|not implemented|won't ship|will not ship",
+    re.I,
+)
+
+
+def _where_the_run_deferred_it(root: Path, action: str, words: tuple[str, ...]) -> str:
+    """The line in this run's own documents that drops `action`, or "".
+
+    A run may decide not to build something and record why - that is what a
+    decision record is for. What it may not do is make that decision about a
+    criterion the brief states, on its own authority, and this finds the line
+    where it did.
+    """
+    for folder in (root / "docs", root):
+        if not folder.is_dir():
+            continue
+        for document in sorted(folder.glob("*.md")):
+            try:
+                text = _read(document)
+            except Exception:  # noqa: BLE001 - a missing document defers nothing
+                continue
+            for line in text.splitlines():
+                if not _A_DEFERRAL.search(line):
+                    continue
+                if _names_the_action(line, words, inflected=True):
+                    return f"{document.name}: {line.strip()[:160]}"
+    return ""
+
+
 def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list[str]:
     """An action the run's own documents enumerate and the product never names.
 
@@ -3758,6 +3792,28 @@ def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list
         if _names_the_action(corpus, words):
             continue
         alternatives = ", ".join(f"`{word}`" for word in words[1:])
+        deferral = _where_the_run_deferred_it(root, action, words)
+        if deferral:
+            # Recorded, not forgotten - which is better, and still not the
+            # run's decision to make. Run 35424714 captured "Users can
+            # successfully add, edit, and delete tasks without errors" in its
+            # intake, then wrote "ADR-08 - Inline Editing: Deferred - not
+            # implemented in MVP", and its milestone reviewer cited that ADR to
+            # accept the milestone and called this check a false positive. The
+            # ADR was real and the reasoning was sound; the authority was not.
+            # A decision record the run wrote cannot descope a criterion the
+            # brief states.
+            problems.append(
+                f"This project's own documents require that a user can "
+                f"`{action}` - \"{required[action][:140]}\" - and also defer it: "
+                f"{deferral}. Nothing in the product names it. Deferring is a "
+                "decision a person makes, not one this run may make about a "
+                "criterion it was given: the same workflow wrote both lines, so "
+                "the deferral carries no authority the requirement does not. "
+                "Build it, or put the descope to the operator and record their "
+                "answer."
+            )
+            continue
         problems.append(
             f"This project's own documents require that a user can `{action}`: "
             f"\"{required[action][:160]}\". Nothing in the product names it - "

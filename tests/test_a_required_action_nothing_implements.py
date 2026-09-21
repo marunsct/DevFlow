@@ -242,3 +242,82 @@ class TestEvidenceIsBehaviourNotMarkup:
             "</script></body></html>\n"
         )
         assert _problems(wants_filtering) == []
+
+
+class TestADescopeTheRunAuthorisedItself:
+    """Recorded is better than forgotten, and still not the run's call.
+
+    Run 35424714 captured "Users can successfully add, edit, and delete tasks
+    without errors" in its intake, then wrote into its technical specification
+
+        ADR-08 - Inline Editing: Deferred - not implemented in MVP
+
+    and its milestone reviewer cited that ADR to accept the milestone, calling
+    this check a false positive and suggesting the spec be reworded "to prevent
+    future cross-file check false positives regarding deferred features".
+
+    The ADR was real and the reasoning was reasonable. The authority was not:
+    the same workflow wrote the requirement and the deferral, so one cannot
+    overrule the other. This is the four-runs-running gap - runs 2, 3, 4 and 5
+    all shipped without editing - and the difference in run 5 is only that it
+    was argued rather than silent.
+    """
+
+    @pytest.fixture
+    def deferred(self, project):
+        (project / "app.js").write_text(
+            "function addTask(t) { return t; }\n"
+            "function deleteTask(id) { return id; }\n"
+        )
+        return project
+
+    def test_a_recorded_deferral_changes_the_finding(self, deferred):
+        (deferred / "docs" / "technical_specification.md").write_text(
+            "# Spec\n\n## Decisions (ADR)\n"
+            "ADR-08 - Inline Editing: Deferred - not implemented in MVP\n"
+        )
+
+        problems = _problems(deferred)
+
+        assert len(problems) == 1
+        assert "also defer it" in problems[0]
+        assert "ADR-08" in problems[0], "the finding must quote the line it found"
+        assert "carries no authority" in problems[0]
+        assert "put the descope to the operator" in problems[0]
+
+    def test_without_a_deferral_the_plain_finding_stands(self, deferred):
+        problems = _problems(deferred)
+        assert len(problems) == 1
+        assert "also defer it" not in problems[0]
+        assert "Either build it or record why it was dropped" in problems[0]
+
+    def test_a_deferral_of_something_else_is_not_this_one(self, deferred):
+        """`add` and `delete` are built; only a deferral of `edit` counts."""
+        (deferred / "docs" / "technical_specification.md").write_text(
+            "# Spec\n- Authentication is deferred to post-MVP.\n"
+        )
+
+        problems = _problems(deferred)
+
+        assert "also defer it" not in problems[0]
+
+    def test_a_built_feature_is_not_reported_however_it_is_described(self, project):
+        """A deferral that was later reversed must not resurrect the finding."""
+        (project / "app.js").write_text(
+            "function addTask(t) { return t; }\n"
+            "function editTask(id) { return id; }\n"
+            "function deleteTask(id) { return id; }\n"
+        )
+        (project / "docs" / "technical_specification.md").write_text(
+            "# Spec\nADR-08 - Inline Editing: Deferred - not implemented in MVP\n"
+        )
+        assert _problems(project) == []
+
+    def test_it_still_blocks(self, deferred):
+        from app.analysis.integration_checks import _severity_of
+
+        (deferred / "docs" / "technical_specification.md").write_text(
+            "ADR-08 - Inline Editing: Deferred - not implemented in MVP\n"
+        )
+
+        assert all(_severity_of(p) == "BREAKS" for p in _problems(deferred))

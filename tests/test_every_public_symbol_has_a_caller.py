@@ -67,9 +67,13 @@ EXTERNAL_REFERENCERS = {
 #
 # - `MetricsTracker` / `get_metrics_payload` — plan-part3 §3.1. `/metrics` reports
 #   zeros because nothing constructs the tracker. Item 2 wires it.
-# - `CIGenerator`, `ComposeGenerator`, `DockerGenerator` — plan-part3 §4. Three
-#   generators with no caller; what they emit is not secure either. Item 5 decides
-#   whether they are wired or deleted, and this entry is removed by whichever it is.
+# - `CIGenerator`, `ComposeGenerator`, `DockerGenerator` are no longer listed.
+#   Not because item 5 wired them - it has not - but because they now have tests,
+#   and this fixture counts a mention under `tests/` as a reference by design.
+#   Their four security defects are fixed (`test_the_deploy_generators_are_safe`),
+#   which was the precondition ADR-0003 put on wiring them; the wiring itself is
+#   still open. That debt lives in the plan, not here, because this list cannot
+#   express "referenced but not reached by the product".
 # - `DependencyManager` — the scaffolding dependency resolver; `resolve_dependencies`
 #   is reached, the class that carries it is not.
 # - `TokenData`, `get_user_from_token` — auth helpers the token flow no longer
@@ -81,9 +85,6 @@ EXTERNAL_REFERENCERS = {
 # This list must shrink, never grow. A new entry means a new unwired symbol, which
 # is the failure this test exists to catch.
 KNOWN_UNWIRED = {
-    "deploy/ci_generator.py: CIGenerator",
-    "deploy/compose_generator.py: ComposeGenerator",
-    "deploy/docker_generator.py: DockerGenerator",
     "observability/metrics.py: get_metrics_payload",
     "scaffolding/dependencies.py: DependencyManager",
     "server/auth.py: TokenData",

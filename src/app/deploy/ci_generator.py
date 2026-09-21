@@ -1,5 +1,19 @@
+"""A CI workflow for the product this run built.
+
+Tools are installed from pinned actions, never piped from the internet into a
+shell. §4.1 of `docs/harness-hardening-plan-part3.md` names the line this
+replaces:
+
+    run: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+The harness refuses that pattern everywhere it can reach it - `seeding.py`
+rejects `ext::` git transports because a URL should not be able to execute
+code, and `sandbox.py` refuses `python -c` for the same reason - and then wrote
+it into a file that runs on every push of the product it built.
+"""
+
 from pathlib import Path
-from app.models import TechnologyStack
+from app.agents.tools_models import TechnologyStack
 import os
 from jinja2 import Template
 
@@ -23,7 +37,9 @@ jobs:
       with:
         python-version: "3.12"
     - name: Install uv
-      run: curl -LsSf https://astral.sh/uv/install.sh | sh
+      uses: astral-sh/setup-uv@v5
+      with:
+        version: "0.5.14"
     - name: Install dependencies
       run: |
         uv pip install --system -r requirements.txt

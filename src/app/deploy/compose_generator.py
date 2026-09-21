@@ -1,5 +1,19 @@
+"""A compose file for the product this run built.
+
+Credentials come from the environment and the file refuses to start without
+them, which is what the harness's own `docker-compose.yml` does. §4.1 of
+`docs/harness-hardening-plan-part3.md`: this generator shipped
+`POSTGRES_PASSWORD: password` into every compose file it wrote, so a product
+built here arrived with a plaintext default credential its own builder would
+have refused to run with.
+
+`${VAR:?message}` rather than `${VAR:-default}` deliberately. A default is how
+the credential got there; a compose file that stops and names the variable is
+the only version an operator cannot accidentally deploy.
+"""
+
 from pathlib import Path
-from app.models import TechnologyStack
+from app.agents.tools_models import TechnologyStack
 from jinja2 import Template
 
 COMPOSE_TEMPLATE = """\
@@ -20,9 +34,9 @@ services:
   db:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: appdb
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-appdb}
     ports:
       - "5432:5432"
     volumes:
@@ -38,8 +52,8 @@ services:
   db:
     image: mysql:8
     environment:
-      MYSQL_ROOT_PASSWORD: password
-      MYSQL_DATABASE: appdb
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-appdb}
     ports:
       - "3306:3306"
     volumes:

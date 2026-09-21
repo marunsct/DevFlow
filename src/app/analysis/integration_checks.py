@@ -2855,6 +2855,9 @@ _BREAKS_BEHAVIOUR = (
     # requirement delivered as far as the documents and no further is the
     # product not doing what it was asked to do.
     "Either build it or record why it was dropped",  # a dropped criterion
+    # A requirement no test covers. The suite is green because it was
+    # written from the code, which cannot miss what the code does not do.
+    "the only thing here that remembers",  # a requirement nothing tests
     "and nothing on it works",           # CommonJS behind a module script tag
     "so the suite cannot run",           # files against a declared module type
 )
@@ -3615,6 +3618,29 @@ _SAME_ACTION = {
 }
 
 
+#: How an action word may end when a *test* names it. A suite describes
+#: behaviour in English - `test('adds a task')`, `it('renames inline')` - while
+#: an implementation spells it as an identifier, `addTask`. Matching only the
+#: identifier form against a suite reported every action of every product as
+#: untested, `add` included, with `test('adds a task')` in the file.
+#:
+#: Still refuses an unrelated longer word: `add` does not match `address`,
+#: because `r` is not one of these endings and the lookahead then rejects it.
+_INFLECTED = r"(?:s|es|ed|d|ing)?"
+
+
+def _names_the_action(text: str, words: tuple[str, ...], inflected: bool = False) -> bool:
+    """Whether `text` names this action, by any of its accepted spellings.
+
+    The lookbehind refuses a preceding `.` so a built-in method of the same name
+    is not evidence - `tasks.filter(...)` taught that once already.
+    """
+    tail = _INFLECTED if inflected else ""
+    return any(
+        re.search(rf"(?<![\w.-])(?i:{word}){tail}(?![a-z])", text) for word in words
+    )
+
+
 def _actions_the_documents_require(root: Path) -> dict[str, str]:
     """Every user action this project's own acceptance criteria enumerate.
 
@@ -3729,9 +3755,7 @@ def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list
         # inside `deleteTask` is `Array.prototype.filter`, and it was the only
         # thing standing between run b0db10b1's three dead filter buttons and
         # this finding.
-        if any(
-            re.search(rf"(?<![\w.-])(?i:{word})(?![a-z])", corpus) for word in words
-        ):
+        if _names_the_action(corpus, words):
             continue
         alternatives = ", ".join(f"`{word}`" for word in words[1:])
         problems.append(
@@ -3888,6 +3912,66 @@ def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[s
     return problems
 
 
+def _a_required_action_no_test_covers(files: list[Path], root: Path) -> list[str]:
+    """An action the documents require that no test anywhere names.
+
+    Every verification this harness performs reads the implementation. Unit
+    tests import the module that exists; browser tests drive the page as built;
+    reviewers read the code in front of them. Nothing is derived from the
+    requirement list, so a requirement that was never built has no failing test
+    - it has no test at all, and a green suite says so with confidence.
+
+    Run b0db10b1 is the clean demonstration. Its Playwright suite is good: 72
+    assertions, 22 of them `toHaveCount`, four page reloads checking that tasks
+    survive a refresh. It ran six times, caught real failures - `2 failed, 10
+    passed` early in the run - and finished green at 14 tests. It grew from 12
+    tests to 14 as features were built, so the tests for filtering arrived in
+    the sprint that wired the filter buttons, and never existed while they were
+    dead. `edit`, which that product never built at all, has no test in any of
+    its four files.
+
+    This is the companion to `_a_required_action_nothing_implements`, and the
+    two ask different questions on purpose. That one asks whether the product
+    does it. This asks whether anything would notice if it stopped - which is
+    the question a suite exists to answer, and the one that goes unasked when
+    the suite is written from the code rather than from the brief.
+
+    Silent when the project has no tests at all: that is a different finding and
+    `_tests_the_project_never_runs` and its neighbours already make it.
+    """
+    required = _actions_the_documents_require(root)
+    if not required:
+        return []
+
+    suites = [
+        path for path in files
+        if path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES
+        and is_test(str(path.relative_to(root)))
+    ]
+    if not suites:
+        return []
+    corpus = "\n".join(_read(path) for path in suites)
+
+    problems: list[str] = []
+    for action in sorted(required):
+        words = _SAME_ACTION.get(action, (action,))
+        # Inflected here and not above: a suite says "adds a task" where an
+        # implementation says `addTask`.
+        if _names_the_action(corpus, words, inflected=True):
+            continue
+        named = ", ".join(sorted(str(p.relative_to(root)) for p in suites))
+        problems.append(
+            f"No test names `{action}`, which this project's own documents "
+            f"require a user can do: \"{required[action][:140]}\". Searched "
+            f"{named}. A suite written from the code cannot miss a feature the "
+            "code does not have, so it passes and reports nothing - which is "
+            "how a requirement leaves the intake and never arrives. Write the "
+            f"test for `{action}` even if it fails today: a failing test is the "
+            "only thing here that remembers."
+        )
+    return problems
+
+
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("names a page calls against the import clause that should bind them",
      lambda files, root, stack: _called_without_being_imported(files, root)),
@@ -3897,6 +3981,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack: _a_required_action_nothing_implements(files, root)),
     ("clickable controls against the scripts that should operate them",
      lambda files, root, stack: _a_control_group_no_script_operates(files, root)),
+    ("actions the documents require against the tests that should cover them",
+     lambda files, root, stack: _a_required_action_no_test_covers(files, root)),
     ("the chosen stack against what is on disk",
      lambda files, root, stack: _stack_conflicts(files, root, stack)),
     ("responsive stylesheets against the viewport tag that lets them apply",

@@ -733,6 +733,26 @@ class WorkflowRunner:
         if not status.reachable:
             raise RunConflict(status.detail)
 
+        # Reachable is not the same as usable. A proxy with a fixed origin
+        # timeout can answer a probe in milliseconds and still cut off every
+        # full-length reply the run will ask for. Warned, never refused: the
+        # run works, it just truncates long answers and pays a retry for each,
+        # and that is the operator's trade to make - but it has to be made
+        # knowingly. Run 35424714 made it unknowingly and spent 74 of its 130
+        # minutes waiting out retries that could not succeed.
+        try:
+            from app.observability.proxy_timeouts import (
+                reply_budget_that_cannot_arrive,
+            )
+
+            complaint = reply_budget_that_cannot_arrive(
+                getattr(settings, "openai_base_url", "") or ""
+            )
+        except Exception:  # noqa: BLE001 - a warning never blocks a run
+            complaint = ""
+        if complaint:
+            logger.warning("%s", complaint)
+
     async def start_run(
         self,
         run_id: str,

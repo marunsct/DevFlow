@@ -183,4 +183,77 @@ def install() -> None:
             logger.debug("Could not attach the proxy-timeout observer", exc_info=True)
 
 
-__all__ = ["PROXY_ORIGIN_ERRORS", "install"]
+#: Hosts whose origin timeout is fixed and not configurable by the operator,
+#: with the ceiling each enforces in seconds. A Cloudflare quick tunnel is the
+#: one this deployment uses; the number is Cloudflare's documented 524 ceiling
+#: and matches what was measured here.
+FIXED_ORIGIN_TIMEOUTS = {
+    "trycloudflare.com": 100,
+}
+
+
+def _proxy_ceiling(base_url: str) -> tuple[str, int] | None:
+    """The host and its fixed origin timeout, or None if there is not one."""
+    for host, ceiling in FIXED_ORIGIN_TIMEOUTS.items():
+        if host in (base_url or "").lower():
+            return host, ceiling
+    return None
+
+
+def reply_budget_that_cannot_arrive(base_url: str) -> str:
+    """Why this deployment must produce 524s, or "" when it need not.
+
+    The two numbers were never compared. The harness sizes a reply budget from
+    the measured generation rate, and a proxy in front of the model server caps
+    how long an origin may take to answer; when the first exceeds the second,
+    every full-length reply is cut off, retried on a fixed backoff, and cut off
+    again. Nothing said so until it had happened.
+
+    Measured on run 35424714, 2026-09-21: 37 retries at a fixed 120 seconds
+    each - 74 minutes of a 129.6-minute run spent waiting, 57% of the wall
+    clock - against a reply ceiling of 8,000 tokens on a transport that allows
+    about 7,800. The margin was negative by a couple of hundred tokens and the
+    run paid an hour and a quarter for it.
+
+    Said once, before the work starts, rather than diagnosed forty times after.
+    `install()` explains an individual 524 to whoever reads the log; this
+    explains why they are inevitable to whoever starts the run.
+    """
+    found = _proxy_ceiling(base_url)
+    if not found:
+        return ""
+    host, ceiling = found
+    try:
+        from app.models import (
+            LARGEST_LEGITIMATE_OUTPUT_TOKENS,
+            _tokens_per_second,
+        )
+
+        rate = _tokens_per_second()
+        needed = LARGEST_LEGITIMATE_OUTPUT_TOKENS / rate if rate else 0.0
+    except Exception:  # noqa: BLE001 - a warning must never fail a run
+        logger.debug("Could not size the reply budget", exc_info=True)
+        return ""
+    if not needed or needed <= ceiling:
+        return ""
+    affordable = int(ceiling * rate)
+    return (
+        f"The model server is reached through {host}, which cuts off any reply "
+        f"taking longer than about {ceiling}s and does not let that be changed. "
+        f"This deployment's largest legitimate reply is "
+        f"{LARGEST_LEGITIMATE_OUTPUT_TOKENS:,} tokens, which at the configured "
+        f"{rate:.0f} tokens/second needs {needed:.0f}s - so a full-length answer "
+        "cannot arrive, and the client will retry it on a fixed backoff and "
+        "lose the same way. About "
+        f"{affordable:,} tokens is all that fits. Either put the model server "
+        "somewhere without a fixed origin timeout, or accept that long answers "
+        "will be truncated and size the reply budget for it."
+    )
+
+
+__all__ = [
+    "FIXED_ORIGIN_TIMEOUTS",
+    "PROXY_ORIGIN_ERRORS",
+    "install",
+    "reply_budget_that_cannot_arrive",
+]

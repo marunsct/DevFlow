@@ -382,6 +382,30 @@ def _asks_only_for_what_cannot_have_changed(pending: list[Any], history: list[An
 #: warning is noise; above it the stage is about to lose everything it has.
 BUDGET_WARNING_FRACTION = 0.7
 
+#: Calls at the end of a stage's budget where every tool is taken away and the
+#: only thing the model can still do is return its structured response.
+#:
+#: The warning alone does not work, and that is measured. Across the twelve
+#: stored transcripts the "you have NOT written a structured response yet"
+#: correction was sent on 276 model calls; 13 of those calls returned the
+#: answer and 263 went back to work - 132 `read_file`, 68
+#: `run_terminal_command`, 29 `edit_artifact`. On run-6b511391 the last
+#: request of `specialist_testing_1` said "You have made about 39 of the 40
+#: model calls this stage is allowed ... Return your structured response now"
+#: and the model replied with an `edit_artifact` call. It did that on three
+#: consecutive fresh conversations and the run failed.
+#:
+#: Two, not one, because a model that has just lost its tools may spend a call
+#: saying so. Two calls out of forty is the whole cost, and it is only ever
+#: paid by a stage that would otherwise be killed on the next call and
+#: restarted from an empty conversation - so there is nothing left to lose.
+#:
+#: Not at the warning threshold, which was the tempting version and is wrong:
+#: 23 of the 28 stages that were ever warned went on to answer, some after 36
+#: or 40 further calls of real work. Taking their tools away at 70% would have
+#: cut off the recoveries to save the failures.
+CALLS_RESERVED_FOR_THE_ANSWER = 2
+
 #: How far back to look for an answer the stage already wrote. Bounded so an
 #: answer from the very start of a long stage, superseded by the work since,
 #: does not stop it.
@@ -686,6 +710,33 @@ def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) ->
     )
 
 
+def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -> bool:
+    """True on the last calls of the budget with no answer written yet.
+
+    Deliberately narrow. An answer already written means `_decide` ends the
+    stage gracefully at the limit, so there is nothing to force; and under the
+    reserve the stage is doing ordinary work and keeps every tool.
+    """
+    if limit <= 0 or schema is None:
+        return False
+    if _model_calls_used(messages) < limit - CALLS_RESERVED_FOR_THE_ANSWER:
+        return False
+    return _most_recent_answer(messages, schema) is None
+
+
+#: Sent on the calls where the tools are withheld. It says what was done rather
+#: than asking again, because asking is what the previous 263 calls did.
+TOOLS_WITHHELD_NOTICE = (
+    "Your tools have been withheld for this call. You are at the end of this "
+    "stage's model-call budget with no structured response written, and the "
+    "next thing that happens is this conversation being discarded and the "
+    "stage started again from nothing. There is no file left to read and no "
+    "command left to run: return your structured response now, from what you "
+    "already know. An answer that is complete but imperfect is worth far more "
+    "than none."
+)
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -749,10 +800,33 @@ def build_settled_answer_middleware(
                             "it to return what it has",
                             stage_name or "?",
                         )
+                # The tools go last, after whatever correction was already
+                # due. A schema failure still needs its validation errors -
+                # the model is being asked to answer, and it should know why
+                # its last attempt was refused.
+                answer_only = _nothing_left_but_the_answer(messages, step_limit, schema)
+                if answer_only:
+                    correction = (
+                        f"{correction}\n\n{TOOLS_WITHHELD_NOTICE}"
+                        if correction
+                        else TOOLS_WITHHELD_NOTICE
+                    )
+                    logger.warning(
+                        "Stage %s is %d calls from its budget with nothing "
+                        "written; withholding its tools so the only move left "
+                        "is the answer",
+                        stage_name or "?",
+                        step_limit - _model_calls_used(messages),
+                    )
                 if not correction:
                     return handler(request)
                 request = request.override(
-                    messages=[*messages, {"role": "user", "content": correction}]
+                    messages=[*messages, {"role": "user", "content": correction}],
+                    # Empty here, not empty at the model. `_get_bound_model`
+                    # appends the structured-output tools to whatever this
+                    # list holds, so the model is left bound to exactly one
+                    # tool: the one that ends the stage.
+                    **({"tools": []} if answer_only else {}),
                 )
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
@@ -927,10 +1001,12 @@ def build_settled_answer_middleware(
 __all__ = [
     "ANSWER_LOOKBACK_MESSAGES",
     "BUDGET_WARNING_FRACTION",
+    "CALLS_RESERVED_FOR_THE_ANSWER",
     "BUDGET_STOP_MARKER",
     "MODEL_CALLS_PER_STAGE",
     "MAX_REPORTED_ERRORS",
     "MUTATING_TOOLS",
+    "TOOLS_WITHHELD_NOTICE",
     "build_settled_answer_middleware",
     "was_stopped_by_the_budget",
 ]

@@ -16,6 +16,8 @@ from pydantic import BaseModel
 
 import logging
 
+from app.server.schema_lock import lock_schema
+
 logger = logging.getLogger(__name__)
 
 
@@ -146,9 +148,24 @@ def init_db():
     Raises on failure: an auth store that could not be created will fail every
     request anyway, and a warning that scrolls past in the log is how the broken
     state stayed invisible before.
+
+    Serialised by `lock_schema`, because every gunicorn worker runs this in its
+    lifespan and `WEB_CONCURRENCY` defaults to 4, so against an empty database
+    four sessions create the schema at once. `CREATE TABLE IF NOT EXISTS` does
+    not protect against that; `app.server.schema_lock` explains why, and carries
+    the measurements from the cold start that found it.
+
+    The admin seed at the end of this function has the same shape and is covered
+    by the same lock: it is a `SELECT` for `admin` followed by an `INSERT`, so
+    two workers that both read "no admin" both insert one and the loser fails on
+    the primary key. The lock is held for the whole transaction, not just the
+    DDL, which is what makes that work.
     """
     with get_db_connection() as conn:
         with conn.cursor() as c:
+            # Before any DDL. The losers block here until the winner commits,
+            # then find every object already present and do nothing.
+            lock_schema(c)
             c.execute(
                 """
                 CREATE TABLE IF NOT EXISTS users (

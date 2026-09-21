@@ -96,6 +96,9 @@ CHECKPOINTED_TYPES = (
 """Every type this workflow may store in a LangGraph checkpoint."""
 
 
+from app.server.schema_lock import lock_schema
+
+
 def build_serializer() -> JsonPlusSerializer:
     """Build the checkpoint serializer restricted to this workflow's own types."""
     return JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINTED_TYPES))
@@ -124,8 +127,31 @@ def build_checkpointer():
         saver.setup()
         return saver
     elif settings.checkpointer_type == "postgres":
-        saver = PostgresSaver(get_connection_pool(), serde=serde)
-        saver.setup()
+        pool = get_connection_pool()
+        saver = PostgresSaver(pool, serde=serde)
+        # `PostgresSaver.setup()` creates LangGraph's own checkpoint tables and
+        # inserts into `checkpoint_migrations`. It has the same defect as our
+        # schema creation did, in a library we do not own: the API process and
+        # the worker both call it, and against a fresh database both run the
+        # same migration. Observed on 2026-09-21 in `worker` on a cold start:
+        #
+        #   psycopg.errors.UniqueViolation: duplicate key value violates unique
+        #   constraint "checkpoint_migrations_pkey"
+        #   DETAIL:  Key (v)=(3) already exists.
+        #
+        # It raises out of `build_checkpointer`, so the loser gets no
+        # checkpointer at all. The same advisory lock serialises it; the lock is
+        # taken on a connection of our own and held across `setup()`, which is
+        # what makes the two processes take turns.
+        #
+        # An explicit transaction because this pool is built with
+        # `autocommit=True`: without one, each statement commits on its own and
+        # `pg_advisory_xact_lock` is released the instant it is taken, which
+        # would serialise nothing.
+        with pool.connection() as guard:
+            with guard.transaction():
+                lock_schema(guard.cursor())
+                saver.setup()
         return saver
     else:
         # Default to memory

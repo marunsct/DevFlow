@@ -32,6 +32,8 @@ from psycopg2.pool import ThreadedConnectionPool
 
 from app.server.runner import RunRecord
 
+from app.server.schema_lock import lock_schema
+
 logger = logging.getLogger(__name__)
 
 _CREATE_TABLE = """
@@ -146,8 +148,15 @@ class RunStore:
             cls._shared = None
 
     def _ensure_schema(self) -> None:
+        """Create the runs table and apply the additive migrations.
+
+        Runs when a store is constructed, which happens in the API and in the
+        worker, so two processes starting together race on the `CREATE TABLE IF
+        NOT EXISTS` unless they are serialised. See `app.server.schema_lock`.
+        """
         with self.get_connection() as conn:
             with conn.cursor() as cur:
+                lock_schema(cur)
                 cur.execute(_CREATE_TABLE)
                 for statement in _MIGRATIONS:
                     cur.execute(statement)

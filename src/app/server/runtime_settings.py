@@ -35,6 +35,8 @@ import threading
 import time
 from typing import Any, Mapping
 
+from app.server.schema_lock import ensure_table
+
 logger = logging.getLogger(__name__)
 
 SETTINGS_TABLE_SQL = """
@@ -118,7 +120,7 @@ def _read_overrides_from_db() -> dict[str, str]:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SETTINGS_TABLE_SQL)
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
             cur.execute("SELECT key, value FROM runtime_settings")
             rows = cur.fetchall()
         conn.commit()
@@ -164,7 +166,7 @@ def save(values: Mapping[str, str], *, actor: str = "unknown") -> None:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SETTINGS_TABLE_SQL)
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
             for key, value in values.items():
                 cur.execute(
                     """
@@ -189,7 +191,7 @@ def clear(keys: list[str] | None = None, *, actor: str = "unknown") -> None:
     targets = keys if keys is not None else list(SETTABLE_KEYS)
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SETTINGS_TABLE_SQL)
+            ensure_table(cur, "runtime_settings", SETTINGS_TABLE_SQL)
             cur.execute("DELETE FROM runtime_settings WHERE key = ANY(%s)", (targets,))
         conn.commit()
     overrides(refresh=True)
@@ -250,7 +252,7 @@ def _read_secrets_from_db() -> dict[str, str]:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SECRETS_TABLE_SQL)
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
             cur.execute("SELECT key, ciphertext FROM runtime_secrets")
             rows = cur.fetchall()
         conn.commit()
@@ -311,7 +313,7 @@ def save_secrets(values: Mapping[str, str], *, actor: str = "unknown") -> list[s
     changed: list[str] = []
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SECRETS_TABLE_SQL)
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
             for key, value in values.items():
                 if value == "":
                     cur.execute("DELETE FROM runtime_secrets WHERE key = %s", (key,))
@@ -342,7 +344,7 @@ def clear_secrets(keys: list[str] | None = None) -> None:
     targets = keys if keys is not None else list(SETTABLE_SECRETS)
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            cur.execute(SECRETS_TABLE_SQL)
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
             cur.execute("DELETE FROM runtime_secrets WHERE key = ANY(%s)", (targets,))
         conn.commit()
     secrets(refresh=True)

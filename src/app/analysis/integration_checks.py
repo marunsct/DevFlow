@@ -372,6 +372,71 @@ def _looks_like_a_test_command(body: str) -> bool:
     )
 
 
+#: Imports that mean a test file belongs to a runner other than `node --test`.
+#: Each of these throws under `node --test` rather than merely failing.
+_ANOTHER_RUNNERS_IMPORT = re.compile(
+    r"""from\s+['"](@playwright/test|vitest|@jest/globals|cypress|mocha|ava)['"]""",
+    re.I,
+)
+
+
+def _belongs_to_another_runner(path: Path) -> str:
+    """The runner that owns this test file, or "" for a plain `node --test` one.
+
+    `node --test` does not merely fail on another runner's spec, it throws
+    before a single assertion runs. Verified in this image on 2026-09-21::
+
+        $ node --test e2e/task-manager.spec.js
+        Error: Playwright Test did not expect test.describe() to be called here.
+
+    That matters because `_tests_the_project_never_runs` tells a stage to "name
+    them too" in `scripts.test`. For a Playwright spec that instruction is not
+    merely unhelpful, it breaks a suite that was passing: the run that found
+    this had twenty Playwright assertions green under `npx playwright test`, and
+    the check was recommending a change that would have thrown on all of them.
+
+    A blocking finding whose remedy breaks the product is the worst shape a
+    check can have, because the stage will do as it is told.
+    """
+    found = _ANOTHER_RUNNERS_IMPORT.search(_read(path))
+    return found.group(1) if found else ""
+
+
+#: The command that runs each runner's specs, keyed by the import that
+#: identifies them. Not derived from the package name: see
+#: `other_scripts_that_run_them`.
+_RUNNER_COMMANDS = {
+    "@playwright/test": "playwright",
+    "@jest/globals": "jest",
+    "vitest": "vitest",
+    "cypress": "cypress",
+    "mocha": "mocha",
+    "ava": "ava",
+}
+
+
+def other_scripts_that_run_them(scripts: dict, owned: dict) -> list[str]:
+    """Manifest scripts that invoke the runners these specs belong to.
+
+    A project with `"test:e2e": "npx playwright test"` does run its Playwright
+    specs, and saying otherwise would be the false positive this whole change
+    exists to remove. What the pipeline gates on is a separate question, and
+    `_tests_the_project_never_runs` already reports that for the languages
+    `node --test` cannot parse.
+    """
+    # Mapped explicitly, not derived from the package name. `@playwright/test`
+    # ends in "test", and taking the last path segment made that the word
+    # searched for - which matches `node --test`, so a manifest whose only
+    # script was `node --test` was read as running its Playwright specs and the
+    # genuine finding was swallowed.
+    wanted = {_RUNNER_COMMANDS.get(owner, owner).lower() for owner in owned.values()}
+    return sorted(
+        name
+        for name, body in scripts.items()
+        if any(runner in str(body).lower() for runner in wanted)
+    )
+
+
 def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     """Test files the project's own `npm test` will not execute.
 
@@ -441,12 +506,35 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
             and is_test(str(path.relative_to(root)))
             and _is_within(path, project)
         ]
+        # A spec another runner owns is not stranded by `scripts.test`; it is
+        # simply not that runner's file. Reported separately below, because the
+        # remedy this check would otherwise give - "name them too" - throws.
+        owned_elsewhere = {
+            path: owner
+            for path in tests
+            if not _node_runs(path, project, searched, listed_files)
+            and path.resolve() not in imported
+            and (owner := _belongs_to_another_runner(path))
+        }
         stranded = [
             path
             for path in tests
             if not _node_runs(path, project, searched, listed_files)
             and path.resolve() not in imported
+            and path not in owned_elsewhere
         ]
+        if owned_elsewhere and not other_scripts_that_run_them(scripts, owned_elsewhere):
+            names = ", ".join(
+                sorted(str(p.relative_to(root)) for p in owned_elsewhere)
+            )
+            runners = ", ".join(sorted(set(owned_elsewhere.values())))
+            problems.append(
+                f"{manifest.relative_to(root)} has no script that runs {names} - "
+                f"they are {runners} specs, and nothing in this manifest invokes "
+                f"{runners}. `scripts.test` cannot be made to run them: "
+                "`node --test` throws on another runner's spec rather than "
+                "failing. Add a script that calls the right runner."
+            )
         # A suite in a language `scripts.test` cannot run at all, reachable
         # only through another script. `node --test` will not parse
         # TypeScript, so a `.ts` suite is never stranded by accident - it is
@@ -609,8 +697,43 @@ def _is_within(path: Path, directory: Path) -> bool:
 
 
 def _paths_named_after_the_test_flag(command: str) -> list[str]:
-    """Path arguments the `node --test` command names, ignoring its flags."""
-    words = command.split()
+    """Path arguments the `node --test` command names, ignoring its flags.
+
+    Split the way a shell would, not on whitespace. A manifest may quote its
+    arguments - and one that does was, until this used `shlex`, reported as
+    running no files at all.
+
+    Measured live on 2026-09-21. `task-manager/package.json` held::
+
+        "test": "node --test \\"app.test.mjs\\" \\"line-budget.test.mjs\\""
+
+    so `command.split()` produced `'"app.test.mjs"'` with the quote characters
+    still attached. `_node_runs` then compared that against the real relative
+    path `app.test.mjs`, found no match, and declared both suites stranded -
+    while the very same message listed them as the files the command names. The
+    finding read:
+
+        runs `node --test "app.test.mjs" "line-budget.test.mjs"`, which names
+        "app.test.mjs", "line-budget.test.mjs". ... Stranded: app.test.mjs,
+        e2e/task-manager.spec.js, line-budget.test.mjs.
+
+    Named and stranded at once, and marked BLOCKING - "1 of these means a
+    feature DOES NOT WORK". A false blocking finding is worse than a missed one
+    here: it sends a defect-fix stage to repair something that is not broken,
+    and it teaches a reviewer that the check cannot be trusted.
+
+    `shlex.split` also drops the shell escaping npm writes into a manifest, so
+    `\\"app.test.mjs\\"` and `'app.test.mjs'` and bare `app.test.mjs` all resolve
+    to the same path, which is what the check has always meant to compare.
+    """
+    import shlex
+
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        # An unbalanced quote is a broken manifest, reported elsewhere. Fall
+        # back rather than lose the whole check.
+        words = command.split()
     try:
         after = words[words.index("--test") + 1 :]
     except ValueError:
@@ -2493,6 +2616,39 @@ def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None)
         f"               {code_total:,} of them code (neither blank nor comment)\n"
         f"{listed}{more}"
     )
+
+    # State the verdict, not two numbers and a hint about which to use.
+    #
+    # Run 8904f87b failed on this. Its milestone review blocked with
+    # "Application source files total 631 lines across 3 files, exceeding the
+    # brief's stated constraint of 'Maximum 500 lines of code'. The
+    # deterministic size check confirms this violates the size budget." The
+    # deterministic check said no such thing: 413 lines of code against a
+    # declared 500, comfortably inside, which is why `budget_note_for_a_write`
+    # stayed silent through every write of the run. 631 is the raw total,
+    # blanks and comments included.
+    #
+    # The reviewer then required changes three times over, the rerun limit
+    # fired, and the run ended - 199 model calls and five million tokens - on a
+    # finding the harness's own measurement contradicts. The line above already
+    # said which number to use and was read past anyway, so the number this
+    # project is actually judged against is now stated with its verdict
+    # attached and nothing left to pick between.
+    budget = _declared_line_budget(root)
+    if budget:
+        if code_total > budget:
+            report += (
+                f"\n  Against the {budget:,}-line limit this project's own documents "
+                f"state: OVER by {code_total - budget:,} lines. This is a stated "
+                "acceptance criterion and a reviewer should block on it."
+            )
+        else:
+            report += (
+                f"\n  Against the {budget:,}-line limit this project's own documents "
+                f"state: WITHIN budget, {budget - code_total:,} lines to spare. The "
+                f"raw total of {app_total:,} is not the figure to judge - it counts "
+                "blank lines and comments, which the limit does not."
+            )
     if tests:
         report += f"\n  tests: {test_total:,} lines across {len(tests)} file(s) (counted separately)"
     if stray:
@@ -2682,6 +2838,23 @@ _BREAKS_BEHAVIOUR = (
     "the page never runs it",            # a module only its tests load
     "only checks that something exists",  # a suite of existence checks
     "none of the cases execute",         # a suite the runner never calls
+    # A page that throws on load. Both of these were graded untidy the day
+    # they were written - the summary invited the milestone reviewer to wave
+    # through a product whose every control was dead - which is the third
+    # time this tuple has gone stale behind a new check.
+    "A module script has no global fallback",  # a name the page never imported
+    "is `undefined` every time the application",  # an argument only the tests pass
+    # Its own message says "This BREAKS regression detection. You MUST",
+    # and it was being filed under "worth a minor finding, not a blocking
+    # one" - the summary contradicting the finding it was quoting. Run
+    # 9c0fc48d is the evidence that the message had it right: that product
+    # had no browser test, and its page threw `ReferenceError` on load.
+    "This BREAKS regression detection",  # a UI with no end-to-end test
+    # A capability the run's own acceptance criteria enumerate and the
+    # product never built. "Untidy" is dead rules and unused files; a
+    # requirement delivered as far as the documents and no further is the
+    # product not doing what it was asked to do.
+    "Either build it or record why it was dropped",  # a dropped criterion
     "and nothing on it works",           # CommonJS behind a module script tag
     "so the suite cannot run",           # files against a declared module type
 )
@@ -2921,9 +3094,813 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
 #: added it described none of them - a reviewer reading "here is what was
 #: checked" got a list four items short. Deriving the sentence from the checks
 #: that actually run makes that impossible rather than unlikely.
+#: A width-based media query. `prefers-color-scheme` and `print` are not about
+#: viewport width and do not depend on the meta tag.
+_WIDTH_MEDIA_QUERY = re.compile(r"@media[^{]*\(\s*(?:min|max)-width", re.I)
+
+_VIEWPORT_META = re.compile(
+    r"""<meta\b[^>]*\bname\s*=\s*["']viewport["']""", re.I
+)
+
+
+def _responsive_css_the_page_cannot_use(files: list[Path], root: Path) -> list[str]:
+    """Width media queries on a page with no viewport meta tag.
+
+    A mobile browser renders a page with no `<meta name="viewport">` into a
+    virtual window about 980 CSS pixels wide and then scales the picture down.
+    Every `max-width` query written for a phone therefore evaluates against 980,
+    never fires, and the responsive stylesheet is dead code. Nothing throws and
+    nothing fails: the page just looks like a shrunken desktop.
+
+    Found on the completed run of 2026-09-21, against a brief whose acceptance
+    criteria included "Responsive design for mobile and desktop".
+    `specialist_ui_ux_0` wrote the tag correctly. `specialist_ui_ux_1` then ran::
+
+        replace_lines(relative_path="task-manager/index.html",
+                      start_line=5, end_line=5,
+                      content='  <meta http-equiv="Content-Security-Policy" ...>')
+
+    with no `expect_start`. Line 5 was the viewport tag, so the CSP tag replaced
+    it instead of joining it. The stylesheet kept three width queries, two of
+    them below 360px, which from then on could never match.
+
+    It shipped. Forty-seven Playwright end-to-end tests passed, because
+    Playwright's default viewport is desktop-sized; a security review passed;
+    five milestone reviews passed. This is the shape every check in this module
+    exists for - a real relationship between two files that no suite exercises -
+    and it is the one relationship none of them covered.
+    """
+    pages = [f for f in files if f.suffix.lower() in {".html", ".htm"}]
+    sheets = [f for f in files if f.suffix.lower() == ".css"]
+    if not pages or not sheets:
+        return []
+
+    responsive = [
+        sheet for sheet in sheets if _WIDTH_MEDIA_QUERY.search(_read(sheet))
+    ]
+    if not responsive:
+        return []
+
+    problems: list[str] = []
+    for page in pages:
+        text = _read(page)
+        if not text.strip() or _VIEWPORT_META.search(text):
+            continue
+        # Only a page that actually loads one of the responsive stylesheets.
+        loads = [
+            sheet for sheet in responsive
+            if sheet.name in text or sheet.relative_to(root).as_posix() in text
+        ]
+        if not loads:
+            continue
+        queries = sum(len(_WIDTH_MEDIA_QUERY.findall(_read(sheet))) for sheet in loads)
+        named = ", ".join(sorted(str(sheet.relative_to(root)) for sheet in loads))
+        problems.append(
+            f"{page.relative_to(root)} has no `<meta name=\"viewport\">`, and "
+            f"{named} contains {queries} width-based media "
+            f"{'query' if queries == 1 else 'queries'} that therefore never "
+            "match on a phone. Without the tag a mobile browser lays the page "
+            "out at about 980px and scales it down, so every `max-width` rule "
+            "written for a small screen is dead. Nothing fails - a desktop-sized "
+            "end-to-end run cannot see this. Add "
+            "`<meta name=\"viewport\" content=\"width=device-width, "
+            "initial-scale=1.0\">` to the page head."
+        )
+    return problems
+
+
+#: A call of a bare identifier - `name(`, not `obj.name(`. Matched against text
+#: whose comments and string literals have been blanked by `_only_the_code`.
+_BARE_CALL = re.compile(r"(?<![.\w$])([A-Za-z_$][\w$]*)\s*\(")
+
+#: Keywords that take a parenthesis without being a call.
+_NOT_A_CALL = frozenset({
+    "if", "for", "while", "switch", "catch", "return", "typeof", "new",
+    "function", "await", "delete", "void", "do", "else", "in", "of",
+    "instanceof", "yield", "import", "super", "this", "case", "throw", "with",
+})
+
+#: Names the script itself introduces: declarations, classes and parameters of
+#: its own functions. Anything here is bound when the script runs.
+_DECLARED_LOCALLY = re.compile(
+    r"""(?:^|[;{}\n])\s*(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)"""
+    r"""|(?:^|[;{}\n])\s*class\s+([A-Za-z_$][\w$]*)"""
+    r"""|(?:^|[;{}\n(,])\s*(?:const|let|var)\s+([A-Za-z_$][\w$]*)""",
+    re.M,
+)
+
+
+def _called_without_being_imported(files: list[Path], root: Path) -> list[str]:
+    """A page calls a name its own module exports and its import clause omits.
+
+    An inline `<script type="module">` is a module: an identifier it neither
+    imports nor declares is not a global lookup that might work, it is a
+    `ReferenceError` on the line that reaches it. When that line runs at
+    `DOMContentLoaded`, the page is dead before the user touches anything.
+
+    Found on run-9c0fc48d of 2026-09-20, against `tests/brief_low.md`. The page
+    imported six names::
+
+        import { addTask, toggleTask, deleteTask, setFilter,
+                 getFilteredTasks, setRenderCallback } from './app-logic.mjs';
+
+    and then called five different ones - `addTaskAndPersist`,
+    `toggleTaskAndPersist`, `deleteTaskAndPersist`, `loadPersistedTasks` and
+    `getFilteredTasksFromState` - every one of them exported by the very module
+    already being imported, none of them in the clause. Four of the six names it
+    did import were never used. `init()` calls `loadPersistedTasks()` on
+    `DOMContentLoaded`, so the application threw on load and no button in it
+    ever worked.
+
+    The suite could not see it: it reaches `app-logic.mjs` directly through
+    `import * as appLogic`, so every pure function passed, and that run wrote no
+    browser test at all. The page is the only place the wiring exists.
+
+    Both reviewers did catch this one, and said so precisely - the security
+    review graded it `critical` and named the failing path `init() ->
+    loadPersistedTasks()`; the milestone review graded it `Blocking`, listed all
+    five names and wrote out the corrected import clause. So this check is not
+    here because the reviewers are blind to it. It is here because it is
+    deterministic and free, it fires when the file is written rather than at the
+    end of a sprint, and a reviewer is a model: run b598780b's missing viewport
+    tag passed a security review and five milestone reviews. A check that always
+    fires is worth having behind a reviewer that usually does.
+
+    Deliberately narrow: only a name the imported module *exports* is reported.
+    A bare call to something else may be a browser global, so the certain case
+    is the one where the fix is already on disk and only the clause is wrong.
+    """
+    problems: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in {".html", ".htm"}:
+            continue
+        text = _read(path)
+        for script in _INLINE_SCRIPT.finditer(text):
+            body = script.group(1)
+            # Two strippings, deliberately. `_only_the_code` blanks string
+            # literals, which is right for finding calls and fatal for finding
+            # imports - the module path *is* a string literal, and reading the
+            # targets off the blanked text found none at all.
+            code = _only_the_code(body)
+            declarations = _without_comments(body)
+            targets = [
+                t for t in _IMPORT_TARGET.findall(declarations) if t.startswith(".")
+            ]
+            if not targets:
+                continue
+
+            exported: dict[str, str] = {}
+            for target in targets:
+                module = (path.parent / target).resolve()
+                if not module.is_file():
+                    continue
+                for name in _exports_of(_read(module)):
+                    exported.setdefault(name, module.name)
+            if not exported:
+                continue
+
+            bound = _names_bound_from_a_relative_module(declarations)
+            for match in _DECLARED_LOCALLY.finditer(code):
+                bound.update(name for name in match.groups() if name)
+
+            # Where each name is first called, so the message can point at a
+            # line rather than assert an execution order it cannot know. The
+            # first version named `sorted(...)[0]` as "the first of these to
+            # run", which on the run that motivated this check named
+            # `addTaskAndPersist` when the call that actually throws first is
+            # `loadPersistedTasks()` in `DOMContentLoaded`. Alphabetical order
+            # is not execution order, and a message that guesses at one is
+            # evidence a reader cannot check.
+            first_call: dict[str, int] = {}
+            for match in _BARE_CALL.finditer(code):
+                name = match.group(1)
+                if name not in _NOT_A_CALL:
+                    first_call.setdefault(name, match.start(1))
+
+            missing = sorted((set(first_call) & set(exported)) - bound)
+            if not missing:
+                continue
+
+            earliest = min(missing, key=lambda name: first_call[name])
+            line = text.count("\n", 0, script.start(1) + first_call[earliest]) + 1
+
+            named = ", ".join(f"`{name}`" for name in missing)
+            module_names = ", ".join(sorted({exported[n] for n in missing}))
+            plural = len(missing) > 1
+            problems.append(
+                f"{path.relative_to(root)} calls {named} inside "
+                f'`<script type="module">` and imports '
+                f"{'none of them' if plural else 'it'} from {module_names}, "
+                f"which exports {'them all' if plural else 'that name'}. "
+                "A module script has no global fallback, so line "
+                f"{line} throws `ReferenceError: {earliest} is not defined` "
+                "and every line after it in that handler is skipped. Add the "
+                f"{'names' if plural else 'name'} to the existing `import "
+                "{ ... }` clause."
+            )
+    return problems
+
+
+#: `export function name(params)` and `export const name = (params) =>`.
+_EXPORTED_FUNCTION = re.compile(
+    r"""export\s+(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\(""",
+)
+_EXPORTED_ARROW = re.compile(
+    r"""export\s+(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"""
+    r"""(?:async\s+)?(?:function\s*\*?\s*)?\(""",
+)
+
+
+def _scan(text: str, start: int, stop_at_depth_zero: str = ""):
+    """Walk `text` from `start`, yielding `(index, char, depth)` outside strings.
+
+    Quote-aware because it is given text whose string literals are intact:
+    `f("a, b", c)` passes two arguments, and a splitter blind to quotes reads
+    three. Template literals are treated as strings; a `${...}` inside one is
+    bracket-balanced anyway, so nothing it contains can close the call early.
+    """
+    depth = 0
+    quote = ""
+    i = start
+    while i < len(text):
+        char = text[i]
+        if quote:
+            if char == "\\":
+                i += 2
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "\"'`":
+            quote = char
+        else:
+            if char in "([{":
+                depth += 1
+            elif char in ")]}":
+                depth -= 1
+            yield i, char, depth
+            if depth == 0 and char in stop_at_depth_zero:
+                return
+        i += 1
+
+
+def _balanced(text: str, opening: int) -> tuple[str, int]:
+    """The contents of the bracket at `opening`, and the index just past it.
+
+    Returns `("", -1)` when the bracket never closes, so a truncated file is
+    skipped rather than half-read.
+    """
+    if opening >= len(text) or text[opening] not in "([{":
+        return "", -1
+    for index, char, depth in _scan(text, opening, stop_at_depth_zero=")]}"):
+        if depth == 0 and char in ")]}":
+            return text[opening + 1 : index], index + 1
+    return "", -1
+
+
+def _split_at_top_level(text: str) -> list[str]:
+    """`text` split on commas that are outside any bracket and any string."""
+    parts: list[str] = []
+    last = 0
+    for index, char, depth in _scan(text, 0):
+        if char == "," and depth == 0:
+            parts.append(text[last:index])
+            last = index + 1
+    tail = text[last:]
+    if parts or tail.strip():
+        parts.append(tail)
+    return parts
+
+
+def _required_parameters(params: str) -> list[tuple[int, str]]:
+    """`(position, name)` for each parameter with no default and no rest.
+
+    A parameter with a default is never undefined, and a rest parameter is an
+    array whatever the caller sends. Destructuring is skipped: whether it is
+    satisfied is not a question of argument count.
+    """
+    required: list[tuple[int, str]] = []
+    for position, piece in enumerate(_split_at_top_level(params)):
+        piece = piece.strip()
+        if not piece or "=" in piece or piece.startswith("...") or piece[0] in "{[":
+            continue
+        if _IDENTIFIER.match(piece):
+            required.append((position, piece))
+    return required
+
+
+def _exported_signatures(text: str) -> dict[str, str]:
+    """Exported function name to its parameter list, as written."""
+    signatures: dict[str, str] = {}
+    for pattern in (_EXPORTED_FUNCTION, _EXPORTED_ARROW):
+        for match in pattern.finditer(text):
+            params, _ = _balanced(text, match.end() - 1)
+            if params or text[match.end() - 1 : match.end() + 1] == "()":
+                signatures.setdefault(match.group(1), params)
+    return signatures
+
+
+#: `import * as appLogic from "./app-logic.mjs"`. The namespace is the only
+#: thing bound, so every use of the module reads `appLogic.something(...)`.
+_NAMESPACE_IMPORT = re.compile(
+    r"""import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*["']\.[^"']*["']""",
+)
+
+
+def _namespace_bindings(text: str) -> set[str]:
+    """Names a file binds a whole relative module to."""
+    return set(_NAMESPACE_IMPORT.findall(text))
+
+
+def _argument_counts(
+    code: str, name: str, namespaces: set[str] | None = None, literals: str | None = None
+) -> list[int]:
+    """How many arguments each call of `name` passes.
+
+    Bare calls always count. A member call counts only when its receiver is a
+    namespace this file bound from a relative module - `appLogic.addTask(...)`
+    is a call of the export, `storage.getItem(...)` is not, and only the import
+    clause tells the two apart.
+
+    `code` has its string literals blanked, which is what makes finding a call
+    safe; `literals` is the same text with only its comments blanked, which is
+    what makes *counting* the arguments right. Both strippers replace characters
+    one for one, so an index means the same thing in either. Counting against
+    the blanked text alone read `addTaskAndPersist('New Task', 'desc', storage)`
+    as one argument, because two of the three had been emptied.
+
+    A call spreading an iterable is recorded as `-1`: the count is not knowable
+    from the text, so nothing may be concluded from it.
+    """
+    source = literals if literals is not None and len(literals) == len(code) else code
+    receivers = "|".join(re.escape(ns) for ns in sorted(namespaces or ()))
+    prefix = rf"(?:(?:{receivers})\s*\.\s*)?" if receivers else ""
+    counts: list[int] = []
+    pattern = rf"(?<![.\w$])(?:new\s+)?{prefix}{re.escape(name)}\s*\("
+    for match in re.finditer(pattern, code):
+        args, closing = _balanced(source, match.end() - 1)
+        if closing == -1:
+            continue
+        pieces = [piece.strip() for piece in _split_at_top_level(args)]
+        counts.append(
+            -1 if any(piece.startswith("...") for piece in pieces) else len(pieces)
+        )
+    return counts
+
+
+def _required_arguments_only_the_tests_supply(
+    files: list[Path], root: Path
+) -> list[str]:
+    """A parameter the suite always passes and the application never does.
+
+    The signature of code that was unit-tested and never wired. A module written
+    to take its collaborator as an argument is testable by construction - the
+    suite hands it a fake and every case passes - and the application is the one
+    caller that has to hand it the real thing. When it does not, the parameter is
+    `undefined` on every path a user can reach, and the suite cannot see it.
+
+    Found on run-9c0fc48d of 2026-09-20. `app-logic.mjs` exported::
+
+        export function addTaskAndPersist(title, description = '', storage)
+
+    `app-logic.test.mjs` called it as
+    `addTaskAndPersist('x', 'y', createMockStorage())` and passed. `index.html`
+    called it as `addTaskAndPersist(title, description)`, so `storage` was
+    `undefined`, `saveTasks(tasks, undefined)` reached `undefined.setItem` and
+    threw. `loadPersistedTasks()` took the quieter path - `loadTasks(undefined)`
+    throws inside a `try` that returns `[]` - so the page simply never restored
+    anything. The brief's acceptance criteria required "Tasks persist between
+    page refreshes"; nothing in that product ever wrote a byte.
+
+    No reviewer caught this one. The security review and the milestone review
+    both dissected the import clause on the same file in the same sprint and
+    neither mentioned `storage`; the milestone review's acceptance evidence
+    praised the "mock-storage adapter pattern" and "thorough test coverage of
+    the data layer", which is exactly the arrangement that hid it. When the
+    import clause was then fixed, `loadPersistedTasks(localStorage)` was
+    corrected and the three write paths - add, toggle and delete - were left
+    exactly as they were, so the product could read a saved list and never write
+    one.
+
+    Only reported where the tests *do* supply the argument. That is what makes
+    the parameter's purpose unambiguous: it is wanted, it is exercised, and the
+    product forgot it.
+    """
+    application = [
+        path for path in files
+        if not is_test(str(path.relative_to(root)))
+        and path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES | {".html", ".htm"}
+    ]
+    tests = [
+        path for path in files
+        if is_test(str(path.relative_to(root)))
+        and path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES
+    ]
+    if not application or not tests:
+        return []
+
+    modules = [
+        path for path in files
+        if path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES
+        and not is_test(str(path.relative_to(root)))
+    ]
+
+    problems: list[str] = []
+    for module in modules:
+        signatures = _exported_signatures(_only_the_code(_read(module)))
+        if not signatures:
+            continue
+        for name, params in sorted(signatures.items()):
+            required = _required_parameters(params)
+            if not required:
+                continue
+
+            from_tests: list[int] = []
+            for path in tests:
+                text = _read(path)
+                from_tests.extend(_argument_counts(
+                    _only_the_code(text), name, _namespace_bindings(text),
+                    _without_comments(text),
+                ))
+            from_application: list[int] = []
+            callers: set[str] = set()
+            for path in application:
+                if path == module:
+                    continue
+                text = _read(path)
+                bodies = (
+                    _INLINE_SCRIPT.findall(text)
+                    if path.suffix.lower() in {".html", ".htm"}
+                    else [text]
+                )
+                for body in bodies:
+                    counts = _argument_counts(
+                        _only_the_code(body), name, _namespace_bindings(body),
+                        _without_comments(body),
+                    )
+                    if counts:
+                        callers.add(str(path.relative_to(root)))
+                    from_application.extend(counts)
+
+            if not from_tests or not from_application:
+                continue
+            if -1 in from_tests or -1 in from_application:
+                continue
+
+            for position, parameter in required:
+                if not all(count <= position for count in from_application):
+                    continue
+                if not any(count > position for count in from_tests):
+                    continue
+                named = ", ".join(sorted(callers))
+                most = max(from_application)
+                problems.append(
+                    f"{module.relative_to(root)} exports `{name}(...)` whose "
+                    f"`{parameter}` parameter has no default, and {named} calls "
+                    f"it with {most} argument{'' if most == 1 else 's'} - so "
+                    f"`{parameter}` is `undefined` every time the application "
+                    f"runs it. The test suite does pass that argument, which is "
+                    f"why nothing fails: the suite hands `{name}` a stand-in and "
+                    "the product hands it nothing. Pass the real one at the call "
+                    f"site in {named}, or give `{parameter}` a default the "
+                    "product can rely on."
+                )
+    return problems
+
+
+#: A run of user actions written as a list - "add/edit/delete",
+#: "add, edit and delete", "create, read, update, delete". Only a delimited run
+#: of bare verbs counts: prose mentioning one verb is not an enumeration, and it
+#: is the enumeration that makes the omission of one member legible.
+_ACTION_LIST = re.compile(
+    r"(?<![\w-])((?:[a-z]{3,10})(?:\s*(?:/|,|\s+and\s+|\s+or\s+)\s*[a-z]{3,10}){1,5})(?![\w-])"
+)
+
+#: Verbs that name something a user does to a record. Deliberately a closed set:
+#: an open one turns every comma-separated phrase in a document into a
+#: requirement, and "simple, fast and lightweight" is not a feature list.
+_USER_ACTIONS = frozenset({
+    "add", "create", "edit", "update", "modify", "rename", "delete", "remove",
+    "complete", "filter", "search", "sort", "archive", "duplicate", "reorder",
+})
+
+#: Words that count as evidence the capability exists. Narrow on purpose: a
+#: synonym earns its place only if a developer would write it *because* the
+#: feature is there.
+#:
+#: The first version accepted `update`, `change`, `new`, `append` and `check`,
+#: and run 8904f87b - which has no way to edit a task - was reported clean
+#: because one comment in it reads "update closure so subsequent ops work".
+#: `change` is a DOM event, `new` is an operator, `append` and `check` are
+#: `appendChild` and `checkbox`. None of them says a user can do anything.
+#:
+#: `active` and `completed` were in the `filter` row for the same reason and
+#: were worse: they are the CSS class names every to-do list has whether or not
+#: it filters by them.
+_SAME_ACTION = {
+    "add": ("add", "create"),
+    "create": ("create", "add"),
+    "edit": ("edit", "rename"),
+    "update": ("update", "edit", "rename"),
+    "modify": ("modify", "edit", "rename"),
+    "rename": ("rename", "edit"),
+    "delete": ("delete", "destroy"),
+    "remove": ("remove", "delete", "destroy"),
+    "complete": ("complete", "completed", "toggle", "done"),
+    "filter": ("filter",),
+    "search": ("search", "query"),
+    "sort": ("sort",),
+    "archive": ("archive",),
+    "duplicate": ("duplicate", "clone"),
+    "reorder": ("reorder", "drag"),
+}
+
+
+def _actions_the_documents_require(root: Path) -> dict[str, str]:
+    """Every user action this project's own acceptance criteria enumerate.
+
+    Maps the action to the line it was read from, so a finding can quote its
+    source rather than assert it.
+    """
+    required: dict[str, str] = {}
+    for folder in (root / "docs", root):
+        if not folder.is_dir():
+            continue
+        for document in sorted(folder.glob("*.md")):
+            try:
+                text = _read(document)
+            except Exception:  # noqa: BLE001 - a missing document requires nothing
+                continue
+            for line in text.splitlines():
+                lowered = line.lower()
+                if "acceptance" not in lowered and "criteria" not in lowered:
+                    if not _LOOKS_LIKE_A_CRITERION.search(lowered):
+                        continue
+                for match in _ACTION_LIST.finditer(lowered):
+                    parts = [
+                        piece.strip()
+                        for piece in re.split(r"/|,|\s+and\s+|\s+or\s+", match.group(1))
+                    ]
+                    named = [piece for piece in parts if piece in _USER_ACTIONS]
+                    # Two or more, so a single verb in prose is never a list.
+                    if len(named) < 2:
+                        continue
+                    for action in named:
+                        required.setdefault(action, line.strip())
+    return required
+
+
+#: A bullet that reads as a delivered-capability claim even without the word
+#: "acceptance" on it - the intake writes these as plain list items.
+_LOOKS_LIKE_A_CRITERION = re.compile(
+    r"users? can|must be able|delivered|supports?\b|able to"
+)
+
+
+def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list[str]:
+    """An action the run's own documents enumerate and the product never names.
+
+    The workflow captures acceptance criteria correctly and then loses one.
+    `tests/brief_low.md` lists its features as "Add new tasks", "Mark tasks as
+    complete/incomplete", "Delete tasks", "Filter tasks by status" - and states
+    separately, under Acceptance Criteria, "Users can add, edit, delete tasks".
+    Editing appears in the second list and not the first.
+
+    Two of three runs against that brief shipped no way to edit a task. Run
+    b0db10b1's own `product_intake.md` had it right - "All four acceptance
+    criteria delivered together: add/edit/delete, persistence, filtering, and
+    responsive design" - and the product it then built has no edit control, no
+    edit handler and no test mentioning one. Neither the security review nor the
+    milestone review raised it; run b598780b, from the same brief, implemented
+    editing with a double-click handler and an Edit button, so this is what the
+    workflow drops rather than what it cannot do.
+
+    Deliberately literal. It reports only an action the documents *enumerate*
+    alongside at least one other, and only when neither that word nor any of its
+    ordinary synonyms appears anywhere in the application, the page or the
+    tests. A product that implements editing and calls it `update` is silent
+    here, and so is a criterion like "responsive design", which names no action.
+    """
+    required = _actions_the_documents_require(root)
+    if not required:
+        return []
+
+    # Evidence is behaviour, so the corpus is script, not markup: every script
+    # and test file, plus the bodies of any inline `<script>` - which is where
+    # a page that embeds its whole application keeps it - and no CSS and no
+    # markup at all.
+    #
+    # Run b0db10b1 is why. Its milestone review found "Filter buttons
+    # (All/Active/Completed) are present in index.html with data-filter
+    # attributes and CSS styling, but no JavaScript handler exists for them".
+    # It was right and this check was silent, because `id="filter-buttons"` in
+    # the page and `.filter-btn` in the stylesheet read as `filter` being
+    # delivered. Three buttons that do nothing are the opposite of delivered.
+    pieces: list[str] = []
+    for path in files:
+        suffix = path.suffix.lower()
+        if suffix in _CLIENT_LOGIC_SUFFIXES:
+            pieces.append(_read(path))
+        elif suffix in {".html", ".htm"}:
+            pieces.extend(_INLINE_SCRIPT.findall(_read(path)))
+    if not pieces:
+        return []
+    # Not lowered. The camelCase boundary is the whole point of the matcher
+    # below - `addTask` is `add` followed by a capital - and `.lower()` turned
+    # it into `addtask`, where `add` is followed by a lowercase letter and every
+    # action in every product read as missing.
+    corpus = "\n".join(pieces)
+
+    problems: list[str] = []
+    for action in sorted(required):
+        words = _SAME_ACTION.get(action, (action,))
+        # `(?![a-z])` rather than a word boundary. The capability is almost
+        # always spelled as part of an identifier - `addTask`, `delete-btn`,
+        # `editTask` - and `\b` matches none of those, so the first version
+        # reported every action of every product as missing, `add` included,
+        # with `function addTask` sitting in the file. Refusing only a
+        # following lowercase letter keeps `address` and `additional` from
+        # counting as `add`.
+        # The case-insensitivity is scoped to the word with `(?i:...)` rather
+        # than passed as `re.I`. A global flag makes `[a-z]` match capitals too,
+        # so `(?![a-z])` rejected the capital in `addTask` - the very boundary
+        # it exists to accept - and every action still read as missing.
+        # The lookbehind refuses a preceding `.` as well, so a built-in method
+        # is not evidence of a feature. `tasks.filter(t => t.id !== taskId)`
+        # inside `deleteTask` is `Array.prototype.filter`, and it was the only
+        # thing standing between run b0db10b1's three dead filter buttons and
+        # this finding.
+        if any(
+            re.search(rf"(?<![\w.-])(?i:{word})(?![a-z])", corpus) for word in words
+        ):
+            continue
+        alternatives = ", ".join(f"`{word}`" for word in words[1:])
+        problems.append(
+            f"This project's own documents require that a user can `{action}`: "
+            f"\"{required[action][:160]}\". Nothing in the product names it - "
+            f"not {alternatives} either, in any source file, page or test. "
+            "Every other action in that list is implemented, so this is one "
+            "acceptance criterion delivered as far as the documents and no "
+            "further. Either build it or record why it was dropped."
+        )
+    return problems
+
+
+#: A clickable control carrying a `data-*` attribute: the whole tag, the
+#: attribute's name, and its value. A `data-` attribute on a button exists to be
+#: read by script - that is what the attribute is for - so one no script names
+#: is the clearest form of a control that does nothing.
+_CLICKABLE_WITH_DATA = re.compile(
+    r"""<(?:button|a|input)\b[^>]*\bdata-([a-z][\w-]*)\s*=\s*["'][^"']*["'][^>]*>""",
+    re.I,
+)
+
+#: The `class` and `id` of a tag, so a control wired by either is left alone.
+_TAG_CLASSES = re.compile(r"""\bclass\s*=\s*["']([^"']+)["']""", re.I)
+_TAG_ID = re.compile(r"""\bid\s*=\s*["']([^"']+)["']""", re.I)
+
+#: Two, so a single decorative `data-` attribute is never a feature.
+MIN_DEAD_CONTROLS = 2
+
+
+def _enclosing_ids(markup: str, start: int, end: int) -> set[str]:
+    """Ids of the elements a control at `start`..`end` sits inside.
+
+    Wiring by delegation happens on a container, so a container's id is
+    evidence for the controls within it - and only for those. An element whose
+    closing tag comes before the control is not a container, it is a sibling.
+
+    Both halves of that were learned the hard way. The first version accepted
+    any referenced id anywhere on the page, so on run b0db10b1 `task-list`
+    vouched for filter buttons at the other end of the document. The second
+    took the nearest preceding id, which is the same mistake with a smaller
+    radius: `<ul id="task-list"></ul>` closes immediately and still stood in
+    front of the next thing written after it.
+    """
+    found: set[str] = set()
+    for opening in re.finditer(r"<([a-zA-Z][\w-]*)\b[^>]*>", markup[:start]):
+        name = opening.group(1).lower()
+        declared = _TAG_ID.findall(opening.group(0))
+        if not declared:
+            continue
+        closing = re.search(rf"</{re.escape(name)}\s*>", markup[opening.end():])
+        if closing and opening.end() + closing.start() >= end:
+            found.update(declared)
+    return found
+
+
+def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[str]:
+    """Clickable controls sharing a `data-*` handle nothing in any script reads.
+
+    `_a_page_no_script_ever_touches` asks whether a page is wired at all, and
+    says so in its own docstring: it "requires that nothing touches the document
+    anywhere". A page that is wired for most of itself and dead in one corner is
+    outside it by design, and that is the shape this catches.
+
+    Run b0db10b1 shipped exactly that. Its `index.html` carries
+
+        <nav id="filter-buttons" aria-label="Filter tasks by status">
+          <button data-filter="all" class="filter-btn active">All</button>
+          <button data-filter="active" class="filter-btn">Active</button>
+          <button data-filter="completed" class="filter-btn">Completed</button>
+
+    styled in `style.css`, and no script in the project mentions `data-filter`,
+    `filter-btn` or `filter-buttons`. The only `filter` anywhere in its
+    JavaScript is `tasks.filter(t => t.id !== taskId)` inside `deleteTask` -
+    `Array.prototype.filter`, nothing to do with the feature. The rest of the
+    page works: tasks render, toggle and delete. Three buttons appear, respond
+    to hover, and do nothing at all.
+
+    "Filter functionality works correctly" is one of that brief's four
+    acceptance criteria. Its milestone review found this and rated it Minor.
+
+    A control is left alone if any script names its `data-` attribute, its id,
+    any of its classes, or its parent's id, so delegation and class-based wiring
+    are all evidence. Only a control with no handle referenced anywhere is
+    reported.
+    """
+    scripts: list[str] = []
+    for path in files:
+        suffix = path.suffix.lower()
+        if any(part in _SKIP for part in path.parts):
+            continue
+        # Tests excluded, exactly as `_a_page_no_script_ever_touches` excludes
+        # them. A suite that locates a control does not operate it: run
+        # b0db10b1's `app.pw.spec.ts` holds
+        # `filterNav.locator('[data-filter="all"]')` for three buttons its
+        # product never wires, and reading that as wiring is how a dead control
+        # acquires an alibi from the very suite that should have caught it.
+        if suffix in _CLIENT_LOGIC_SUFFIXES and not is_test(
+            str(path.relative_to(root))
+        ):
+            scripts.append(_read(path))
+    if not scripts:
+        return []
+
+    problems: list[str] = []
+    for page in files:
+        if page.suffix.lower() not in {".html", ".htm"}:
+            continue
+        markup = _read(page)
+        inline = _INLINE_SCRIPT.findall(markup)
+        code = "\n".join(scripts + inline)
+        if not _TOUCHES_THE_PAGE.search(code):
+            # Nothing is wired at all; that is the other check's finding, and
+            # reporting it twice in different words helps nobody.
+            continue
+
+        dead: dict[str, list[str]] = {}
+        for match in re.finditer(r"<[^>]+>", markup):
+            tag = match.group(0)
+            found = _CLICKABLE_WITH_DATA.match(tag)
+            if not found:
+                continue
+            attribute = found.group(1).lower()
+            # The two spellings a script reads the attribute by, and not the
+            # bare name. `filter` on its own matched `tasks.filter(t => ...)`
+            # in run b0db10b1's `deleteTask` - `Array.prototype.filter` - and
+            # vouched for the very buttons this was written to find.
+            handles = {f"data-{attribute}", f"dataset.{attribute}"}
+            handles.update(_TAG_ID.findall(tag))
+            for clause in _TAG_CLASSES.findall(tag):
+                handles.update(clause.split())
+            handles.update(_enclosing_ids(markup, match.start(), match.end()))
+            if any(
+                re.search(rf"(?<![\w-]){re.escape(handle)}(?![\w-])", code)
+                for handle in handles
+                if handle
+            ):
+                continue
+            dead.setdefault(attribute, []).append(tag.strip())
+
+        for attribute, tags in sorted(dead.items()):
+            if len(tags) < MIN_DEAD_CONTROLS:
+                continue
+            problems.append(
+                f"{page.relative_to(root)} has {len(tags)} clickable controls "
+                f"carrying `data-{attribute}`, and no script in this project "
+                f"mentions `data-{attribute}`, their classes or their ids. A "
+                "`data-` attribute on a button exists to be read by script, so "
+                "these render, respond to hover and do nothing when clicked. "
+                f"The first is `{tags[0][:90]}`. Either wire them or take them "
+                "off the page - a control that looks live and is not is worse "
+                "than one that is absent."
+            )
+    return problems
+
+
 _CHECKS: tuple[tuple[str, Any], ...] = (
+    ("names a page calls against the import clause that should bind them",
+     lambda files, root, stack: _called_without_being_imported(files, root)),
+    ("required arguments the suite supplies and the product does not",
+     lambda files, root, stack: _required_arguments_only_the_tests_supply(files, root)),
+    ("actions the run's own acceptance criteria require against what it built",
+     lambda files, root, stack: _a_required_action_nothing_implements(files, root)),
+    ("clickable controls against the scripts that should operate them",
+     lambda files, root, stack: _a_control_group_no_script_operates(files, root)),
     ("the chosen stack against what is on disk",
      lambda files, root, stack: _stack_conflicts(files, root, stack)),
+    ("responsive stylesheets against the viewport tag that lets them apply",
+     lambda files, root, stack: _responsive_css_the_page_cannot_use(files, root)),
     ("test files that cannot fail, never run, or throw before they can",
      lambda files, root, stack: _tests_that_cannot_fail(files, root)),
     ("the installed test runner against the one the stack chose",

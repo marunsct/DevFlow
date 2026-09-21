@@ -103,3 +103,126 @@ def test_every_marker_is_a_phrase_some_message_really_emits():
     # emitted appears at least twice.
     for marker in integration_checks._BREAKS_BEHAVIOUR:
         assert joined.count(marker) >= 2, f"no message emits {marker!r}"
+
+
+def test_a_name_the_page_never_imported_blocks(project: Path):
+    """Run 9c0fc48d: the page threw on load and this was graded untidy."""
+    from app.analysis.integration_checks import _called_without_being_imported
+
+    (project / "logic.mjs").write_text(
+        "export function loadPersistedTasks(storage) { return storage; }\n",
+        encoding="utf-8",
+    )
+    (project / "index.html").write_text(
+        "<!doctype html><html><body>\n"
+        '<script type="module">\n'
+        "import { } from './logic.mjs';\n"
+        "loadPersistedTasks();\n"
+        "</script></body></html>\n",
+        encoding="utf-8",
+    )
+
+    problems = _called_without_being_imported(
+        [project / "index.html", project / "logic.mjs"], project.parent
+    )
+
+    assert problems
+    assert all(_severity_of(problem) == "BREAKS" for problem in problems)
+
+
+def test_an_argument_only_the_tests_supply_blocks(project: Path):
+    """The same run: nothing the product saved was ever written."""
+    from app.analysis.integration_checks import (
+        _required_arguments_only_the_tests_supply,
+    )
+
+    (project / "logic.mjs").write_text(
+        "export function save(task, storage) { storage.setItem('t', task); }\n",
+        encoding="utf-8",
+    )
+    (project / "logic.test.mjs").write_text(
+        "import * as logic from './logic.mjs';\n"
+        "logic.save('x', { setItem() {} });\n",
+        encoding="utf-8",
+    )
+    (project / "index.html").write_text(
+        "<!doctype html><html><body>\n"
+        '<script type="module">\n'
+        "import { save } from './logic.mjs';\n"
+        "save('x');\n"
+        "</script></body></html>\n",
+        encoding="utf-8",
+    )
+
+    problems = _required_arguments_only_the_tests_supply(
+        [
+            project / "index.html",
+            project / "logic.mjs",
+            project / "logic.test.mjs",
+        ],
+        project.parent,
+    )
+
+    assert problems
+    assert all(_severity_of(problem) == "BREAKS" for problem in problems)
+
+
+def test_a_ui_with_no_browser_test_blocks(project: Path):
+    """The grade must not contradict the message.
+
+    This finding's own words are "This BREAKS regression detection. You MUST
+    install `@playwright/test`", and it was being reported under the heading
+    "untidy rather than broken ... worth a minor finding, not a blocking one".
+    A reviewer reading the summary was told to weigh those against each other.
+    """
+    from app.analysis.integration_checks import _missing_playwright_for_ui
+
+    (project / "package.json").write_text(
+        '{"name":"p","type":"module","scripts":{"test":"node --test"}}',
+        encoding="utf-8",
+    )
+    (project / "index.html").write_text(
+        '<!doctype html><html><body><script src="app.js"></script></body></html>',
+        encoding="utf-8",
+    )
+    (project / "app.js").write_text("document.title = 'x';\n", encoding="utf-8")
+
+    problems = _missing_playwright_for_ui(
+        [project / "package.json", project / "index.html", project / "app.js"],
+        project.parent,
+        None,
+    )
+
+    assert problems
+    assert all(_severity_of(problem) == "BREAKS" for problem in problems)
+
+
+def test_a_dropped_acceptance_criterion_blocks(project: Path):
+    """Run b0db10b1 shipped no way to edit a task and nothing said so.
+
+    Its own intake required "add/edit/delete". Untidy is dead rules and unused
+    files; a capability the documents require and the product never built is
+    the product not doing what it was asked to do.
+    """
+    from app.analysis.integration_checks import _a_required_action_nothing_implements
+
+    (project / "docs").mkdir()
+    (project / "docs" / "product_intake.md").write_text(
+        "# Intake\n## Acceptance criteria\n- Users can add, edit, delete tasks\n",
+        encoding="utf-8",
+    )
+    (project / "index.html").write_text(
+        '<!doctype html><html><body><script src="app.js"></script></body></html>',
+        encoding="utf-8",
+    )
+    (project / "app.js").write_text(
+        "function addTask(t) { return t; }\nfunction deleteTask(i) { return i; }\n",
+        encoding="utf-8",
+    )
+
+    problems = _a_required_action_nothing_implements(
+        [project / "index.html", project / "app.js"], project
+    )
+
+    assert problems
+    assert all(_severity_of(problem) == "BREAKS" for problem in problems)

@@ -1553,6 +1553,75 @@ _TIMEOUT_ADVICE = (
     "it. If the command really is just slow, run the smaller part of it."
 )
 
+#: The same advice for a workspace that HAS a browser runner. The text above
+#: is false there, and it was being sent to the stages most likely to need the
+#: truth.
+#:
+#: Measured on run-35424714. `npx playwright test` timed out and was answered
+#: with "there is no browser to open a page with ... To check a page, read the
+#: file and assert on its contents from a test". Seven minutes later
+#: `npx playwright test --project=Desktop` ran 34 tests in this same sandbox,
+#: with real passes and real failures. Browsers work here; the suite had been
+#: run whole, with its web server starting, against a 120-second limit.
+#:
+#: The advice it replaces is worse than merely wrong. "Read the file and assert
+#: on its contents from a test" is a description of the hand-built DOM that
+#: `a_dom_built_by_hand` refuses, so the harness was telling a stage to do the
+#: thing another part of the harness would stop it doing.
+_TIMEOUT_ADVICE_WITH_A_BROWSER = (
+    " A command that does not finish is usually one that was not meant to: a "
+    "server, a watcher, or something waiting on input that will never come. "
+    "This project has a browser runner installed and browsers do run here, so "
+    "the likely causes are different: the whole suite run at once against this "
+    "limit, or a `webServer` that never came up. Run a smaller part of it - one "
+    "project (`--project=...`), one spec file, or `--reporter=line` - and check "
+    "the server command separately. Do not replace the browser test with a "
+    "hand-written `global.document`: that is refused elsewhere, and for good "
+    "reason."
+)
+
+
+def _a_browser_runner_is_installed(repo_root: str, working_directory: str | None) -> bool:
+    """Whether this workspace has Playwright to drive, as opposed to advice.
+
+    Read from the manifests rather than from the command, so it is true for
+    the `npm test` that wraps a Playwright run as well as for a direct one.
+    """
+    try:
+        import json as _json
+
+        root = Path(repo_root)
+        # `_execute_here` passes an absolute `run_in`; the tool layer passes a
+        # path relative to the workspace. `Path.__truediv__` takes an absolute
+        # right-hand side as the whole answer, so one line covers both.
+        start = (root / working_directory) if working_directory else root
+        start = start.resolve()
+        for folder in (start, *start.parents):
+            manifest = folder / "package.json"
+            if not manifest.is_file():
+                if root not in folder.parents and folder != root:
+                    break
+                continue
+            declared = _json.loads(manifest.read_text(encoding="utf-8"))
+            packages = {
+                **(declared.get("dependencies") or {}),
+                **(declared.get("devDependencies") or {}),
+            }
+            if "@playwright/test" in packages or "playwright" in packages:
+                return True
+            if folder == root:
+                break
+    except Exception:  # noqa: BLE001 - never fail a timeout message over a manifest
+        return False
+    return False
+
+
+def _timeout_advice(repo_root: str, working_directory: str | None) -> str:
+    """Which of the two above this workspace has earned."""
+    if _a_browser_runner_is_installed(repo_root, working_directory):
+        return _TIMEOUT_ADVICE_WITH_A_BROWSER
+    return _TIMEOUT_ADVICE
+
 
 def strip_a_redundant_cd(
     command: Sequence[str], working_directory: str | None
@@ -2578,7 +2647,7 @@ class SandboxExecutor:
             )
         except subprocess.TimeoutExpired as expired:
             return {
-                "error": f"Command timed out after {timeout} seconds." + _TIMEOUT_ADVICE,
+                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in),
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"), workspace),
                 "returncode": "124",
@@ -2686,7 +2755,7 @@ class SandboxExecutor:
                     f"Not running this again: it has already timed out "
                     f"{already_timed_out} time(s) in this run and would time out "
                     "again, which costs the run the whole timeout a second time."
-                    + _TIMEOUT_ADVICE
+                    + _timeout_advice(repo_root, working_directory)
                 )
             }
         else:

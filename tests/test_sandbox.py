@@ -557,7 +557,13 @@ def test_a_timeout_says_why_a_command_might_not_finish() -> None:
     # substring test and not a message to anyone.
     messages = re.findall(r'f"Command timed out after[^"]*"[^\n]*', source)
     assert len(messages) >= 2, f"expected both run paths, found {len(messages)}"
-    without = [m for m in messages if "_TIMEOUT_ADVICE" not in m]
+    # Either the constant or the chooser that returns one of the two variants:
+    # a workspace with a browser runner installed is told something different
+    # and true. See `_timeout_advice`.
+    without = [
+        m for m in messages
+        if "_TIMEOUT_ADVICE" not in m and "_timeout_advice(" not in m
+    ]
     assert not without, f"these timeout messages do not carry the advice: {without}"
 
     # The pre-run refusal of a command that already timed out carries it too,
@@ -565,6 +571,11 @@ def test_a_timeout_says_why_a_command_might_not_finish() -> None:
     # `test_the_refusal_keeps_the_advice_the_timeout_gives`.
     assert "usually one that was not meant to" in sandbox._TIMEOUT_ADVICE
     assert "import it and call it" in sandbox._TIMEOUT_ADVICE
+    # Both variants explain the cause; only the remedy differs.
+    assert (
+        "usually one that was not meant to"
+        in sandbox._TIMEOUT_ADVICE_WITH_A_BROWSER
+    )
 
 
 # --- the project directory written twice ---------------------------------

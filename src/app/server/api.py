@@ -73,6 +73,12 @@ def create_app(
         """Open shared resources on startup and close them on shutdown."""
         from app.server.auth import close_db_pool, init_db, init_db_pool
 
+        # Names a proxy origin timeout in the log rather than leaving a bare
+        # status code. See `app.observability.proxy_timeouts`.
+        from app.observability.proxy_timeouts import install as _install_proxy_diagnostics
+
+        _install_proxy_diagnostics()
+
         ensure_upload_dir(effective_upload_dir)
         # Built here rather than at import so the URL is read after the
         # environment is fully assembled, and so a failure stops startup.

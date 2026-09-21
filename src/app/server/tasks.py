@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from celery import Celery
 from celery.signals import (
     task_failure,
+    task_prerun,
     worker_process_init,
     worker_process_shutdown,
     worker_ready,
@@ -164,7 +165,11 @@ def _sweep_for_abandoned_runs() -> None:
                 # Not "nothing is running" - "cannot tell yet". The difference
                 # is the whole safety property; see `_live_task_ids`.
                 continue
-            recover_orphaned_runs(dry_run=False)
+            # `logger.info`, not the default `print`: this runs on a worker
+            # startup thread, where Celery's `redirect_stdouts` turns every
+            # `print` into a WARNING. The healthy outcome was being logged as a
+            # warning on every worker start.
+            recover_orphaned_runs(dry_run=False, emit=logger.info)
             return
         except Exception:  # noqa: BLE001 - a sweep must never take a worker down
             logger.warning("Could not recover abandoned runs", exc_info=True)
@@ -181,12 +186,38 @@ def _sweep_for_abandoned_runs() -> None:
 def _init_worker_process(**_kwargs) -> None:
     """Build the per-process runner once, after fork."""
     global _runner
+
+    # This process makes every model call, so it is where a proxy origin error
+    # shows up. Installing the observer here turns a bare `524` in the log into
+    # a sentence naming the cause. See `app.observability.proxy_timeouts`.
+    from app.observability.proxy_timeouts import install as _install_proxy_diagnostics
+
+    _install_proxy_diagnostics()
     from app.server.events import EventBus
     from app.server.run_store import RunStore
     from app.server.runner import WorkflowRunner
 
     _runner = WorkflowRunner(event_bus=EventBus(), run_store=RunStore.shared())
     logger.info("Worker process initialised")
+
+
+@task_prerun.connect
+def _install_diagnostics_once_logging_is_up(**_kwargs) -> None:
+    """Re-attach the proxy-timeout observer now Celery's handlers exist.
+
+    `worker_process_init` fires before Celery finishes installing its logging
+    handlers, so an observer attached there sees the `httpx` logger and no
+    handlers at all. `install()` is idempotent per target, so calling it again
+    here costs nothing and picks up the handlers that appeared in between.
+    Verified on 2026-09-21: attached only at process init, two live `524`
+    responses went past without the diagnostic firing.
+    """
+    try:
+        from app.observability.proxy_timeouts import install
+
+        install()
+    except Exception:  # noqa: BLE001 - a diagnostic must never fail a task
+        logger.debug("Could not install the proxy-timeout observer", exc_info=True)
 
 
 @worker_process_shutdown.connect
@@ -245,7 +276,25 @@ def _mark_failed(run_id: str, message: str) -> None:
         logger.error("Could not mark run %s as failed", run_id, exc_info=True)
 
 
-@celery_app.task(bind=True, name="execute_workflow_run", max_retries=2)
+# `ignore_result` because nothing reads one. The run's state lives in the run
+# store, which is what every caller queries; no `AsyncResult` is constructed
+# anywhere in `app.server`. Storing a result was therefore write-only - until a
+# cancellation made it worse than useless.
+#
+# `cancel_run` revokes with `terminate=True, signal="SIGTERM"`, which raises
+# `SystemExit` inside the pool child. Celery then tries to store that exception
+# as the task's result, and the JSON serializer cannot encode it. Measured on
+# 2026-09-20, cancelling run 9c0fc48d:
+#
+#     Pool callback raised exception: EncodeError(
+#         TypeError('Object of type SystemExit is not JSON serializable'))
+#
+# followed by two full tracebacks, for a cancellation that had already been
+# recorded correctly in the database. The run was fine; the log said otherwise,
+# and a concurrent run on the same worker was left looking like the suspect.
+@celery_app.task(
+    bind=True, name="execute_workflow_run", max_retries=2, ignore_result=True
+)
 def execute_workflow_run(
     self,
     run_id: str,

@@ -37,6 +37,7 @@ from app.graph.workflow import (
     skip_decision,
     start_workflow,
 )
+from app.observability.cost_tracker import RunCost, forget_run, run_cost
 from app.observability.metrics import MetricsTracker
 from app.server.events import EventBus, RunEvent, redact_metadata
 from app.state import RepositoryContext
@@ -143,6 +144,35 @@ def _api_status(stage: str) -> str:
     return "running"
 
 
+def _the_stage_itself(stage: str) -> str:
+    """`specialist_ui_ux_0` from `awaiting_approval:specialist_ui_ux_0`.
+
+    The gate loop only ever sees a *paused* stage value - the graph runs its
+    nodes internally and returns at an interrupt - so the string handed to the
+    histogram carried the pause prefix. Measured live on 2026-09-21::
+
+        stage_duration_seconds_sum{stage="awaiting_approval:specialist_ui_ux_0"} 78.5
+
+    A dashboard grouping by `stage` therefore sees a series per *pause*, and the
+    stage names an operator would look for never appear at all. `_derive_stages`
+    already folds a pause into its parent for exactly this reason - its docstring
+    opens with "A pause is not a stage" - and the histogram was the one reader
+    that did not.
+
+    **What this does not fix, and cannot from here.** A stage that never pauses
+    is never observed: the loop sees one returned state per interrupt, so five
+    of run 2's first six stages - `tools_models`, `principal_architect`,
+    `architecture_review`, `scrum_master`, `technical_lead`, none of which took
+    an approval - produced no observation at all. The histogram is a record of
+    gated stages, correctly named. Timing every stage needs an observation point
+    inside the graph, where the transitions actually happen.
+    """
+    for prefix in (APPROVAL_PAUSE_PREFIX, REVIEW_PAUSE_PREFIX):
+        if stage.startswith(prefix):
+            return stage.removeprefix(prefix)
+    return stage
+
+
 def _record_stage_duration(timed: dict[str, object]) -> None:
     """Observe how long the previously-timed stage ran, on the metrics histogram.
 
@@ -162,9 +192,78 @@ def _record_stage_duration(timed: dict[str, object]) -> None:
     if not stage or not isinstance(started_at, (int, float)):
         return
     try:
-        MetricsTracker.record_stage_duration(str(stage), time.monotonic() - started_at)
+        MetricsTracker.record_stage_duration(
+            _the_stage_itself(str(stage)), time.monotonic() - started_at
+        )
     except Exception:  # noqa: BLE001 - see the docstring: metrics must not break a run
         logger.warning("Could not record the stage-duration metric", exc_info=True)
+
+
+#: Status of a run parked because it reached its spending ceiling.
+#:
+#: Named like `waiting_for_approval` and `waiting_for_review` because it is the
+#: same kind of state: the run is intact, its work is good, and it is waiting
+#: for a person. It is deliberately not `failed` - nothing went wrong.
+BUDGET_PAUSE_STATUS = "waiting_for_budget"
+
+
+CANCELLABLE_WHILE_PARKED = (
+    "created",
+    "waiting_for_approval",
+    "waiting_for_review",
+    "paused",
+    BUDGET_PAUSE_STATUS,
+)
+"""Statuses in which a run is parked with no worker driving it.
+
+Cancelling one of these has to mark it terminal here, because there is nobody
+else left to notice the cancel flag.
+"""
+
+
+def _max_run_cost_usd() -> float:
+    """The per-run spending ceiling in US dollars; 0 or less disables it.
+
+    Read on every check rather than captured at import, which is what makes
+    `MAX_GATES` and this setting differently shaped. A gate ceiling is consulted
+    by a run that is already moving; this one is consulted by a run an operator
+    has just been asked to make a decision about, and the decision on offer is
+    "raise it and resume". Captured at import, raising it would need a worker
+    restart, which turns a one-line answer into an outage.
+
+    Off by default. A deployment on a local model spends nothing, and a ceiling
+    that fires on a run costing nothing would be the third fabricated number
+    plan-part3 §3.2 set out to remove.
+    """
+    raw = os.environ.get("MAX_RUN_COST_USD", "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning("Malformed MAX_RUN_COST_USD (%r); no ceiling applied", raw)
+        return 0.0
+
+
+def _budget_exceeded(run_id: str) -> tuple[bool, RunCost]:
+    """Whether this run has passed its ceiling, and the total it passed it with.
+
+    Returns the total either way so the caller can name the spend in the pause
+    message without reading it twice - the number that triggers the pause must
+    be the number the operator is shown, or they are being asked to decide about
+    a different run than the one that stopped.
+
+    An unpriced call is not counted against the ceiling, because its cost is
+    unknown rather than zero. That is the safe direction for a *pause*: a
+    ceiling that fires on a number it invented would stop good work for a reason
+    that is not true. `unpriced_requests` on the summary is how an operator sees
+    that the total is partial.
+    """
+    ceiling = _max_run_cost_usd()
+    total = run_cost(run_id)
+    if ceiling <= 0:
+        return False, total
+    return total.usd >= ceiling, total
 
 
 def _stage_narration(stage: str, *, auto_approve: bool) -> tuple[str, str]:
@@ -646,7 +745,7 @@ class WorkflowRunner:
     """
 
     async def resume_run(self, run_id: str) -> None:
-        """Resume a failed run from its last checkpoint."""
+        """Resume a failed or budget-paused run from its last checkpoint."""
         record = self.run_store.load(run_id)
         if record is not None and (record.error or "").startswith(self.UNRESUMABLE_ERROR_MARKER):
             raise RunConflict(
@@ -658,10 +757,20 @@ class WorkflowRunner:
         self._require_a_reachable_model()
 
         now = datetime.now(timezone.utc).isoformat()
-        if not self.run_store.compare_and_set_status(
-            run_id, "failed", "running", updated_at=now, clear_error=True
-        ):
-            raise RunConflict(f"Run {run_id} is not in the 'failed' state.")
+        # A run parked at its spending ceiling resumes by the same path as a
+        # failed one: both continue from the last checkpoint and neither carries
+        # a decision. They are tried in turn rather than read-then-written so the
+        # status change stays a single compare-and-set, which is what stops two
+        # resumes dispatching two tasks onto one thread.
+        for resumable in ("failed", BUDGET_PAUSE_STATUS):
+            if self.run_store.compare_and_set_status(
+                run_id, resumable, "running", updated_at=now, clear_error=True
+            ):
+                break
+        else:
+            raise RunConflict(
+                f"Run {run_id} is not in the 'failed' or '{BUDGET_PAUSE_STATUS}' state."
+            )
         self._dispatch(run_id, resume=True, decision_payload=None)
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
@@ -719,10 +828,17 @@ class WorkflowRunner:
         # A run that is paused has no worker to notice the flag, so mark it
         # terminal here. A running one is left to the worker, which will see the
         # flag and record the cancellation itself.
-        if record.status in ("created", "waiting_for_approval", "waiting_for_review", "paused"):
+        #
+        # `BUDGET_PAUSE_STATUS` belongs in this set for the same reason as the
+        # rest: the run is parked with no worker, so nothing else will ever act
+        # on the flag, and the pause message offers cancelling as one of the two
+        # ways out. Named in one tuple and reused, rather than written twice -
+        # the two lists drifting apart is how a status becomes cancellable in
+        # the test and not in the branch.
+        if record.status in CANCELLABLE_WHILE_PARKED:
             self.run_store.compare_and_set_status(
                 run_id,
-                ("created", "waiting_for_approval", "waiting_for_review", "paused"),
+                CANCELLABLE_WHILE_PARKED,
                 "cancelled",
                 updated_at=now,
             )
@@ -942,6 +1058,53 @@ class WorkflowRunner:
                     ),
                 )
                 await self.event_bus.close(run_id)
+                forget_run(run_id)
+                return
+
+            # The spending ceiling, checked at the stage boundary. After the
+            # terminal check, so a run that has already finished is never parked
+            # for a bill it is not going to add to, and after the cancel check,
+            # because an operator who asked for a stop should get a stop rather
+            # than a question. See plan-part3 §5.2.
+            over_budget, spent = _budget_exceeded(run_id)
+            if over_budget:
+                record.status = BUDGET_PAUSE_STATUS
+                record.updated_at = datetime.now(timezone.utc).isoformat()
+                self._persist(record)
+                summary = spent.summary()
+                partial = (
+                    ""
+                    if spent.fully_priced
+                    else (
+                        f" This is a partial total: {spent.unpriced_requests} of "
+                        f"{spent.successful_requests} model calls used a model with no "
+                        f"published rate ({', '.join(sorted(spent.unpriced_models)) or 'unknown'}), "
+                        "so the real spend is higher than the figure above."
+                    )
+                )
+                message = (
+                    f"Paused at ${spent.usd:.2f}, which has reached the "
+                    f"MAX_RUN_COST_USD ceiling of ${_max_run_cost_usd():.2f}, across "
+                    f"{spent.successful_requests} model calls and "
+                    f"{spent.total_tokens:,} tokens.{partial}\n\n"
+                    "The run is intact and paused at a stage boundary - nothing has "
+                    "failed. Raise MAX_RUN_COST_USD and resume to continue, or cancel "
+                    "it. Resuming without raising the ceiling pauses again at the next "
+                    "stage boundary, because the spend that triggered this does not go "
+                    "down."
+                )
+                await self.event_bus.publish(
+                    run_id,
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=await self.event_bus.next_sequence(run_id),
+                        stage=stage,
+                        event_type="budget_pause",
+                        message=message,
+                        metadata=redact_metadata(summary),
+                    ),
+                )
+                logger.warning("Run %s paused at its cost ceiling: %s", run_id, message)
                 return
 
             if stage.startswith(APPROVAL_PAUSE_PREFIX):
@@ -1303,6 +1466,7 @@ class WorkflowRunner:
         return "failed"
 
     async def _finish_cancelled(self, record: RunRecord) -> None:
+        forget_run(record.run_id)
         record.status = "cancelled"
         record.updated_at = datetime.now(timezone.utc).isoformat()
         self._persist(record)

@@ -20,6 +20,7 @@ import logging
 import os
 
 import argparse
+from typing import Callable
 import secrets
 import sys
 
@@ -339,8 +340,18 @@ def _resume_one(run_id: str) -> None:
     asyncio.run(_get_runner().resume_run(run_id))
 
 
-def recover_orphaned_runs(dry_run: bool = False) -> int:
+def recover_orphaned_runs(
+    dry_run: bool = False, emit: Callable[[str], None] = print
+) -> int:
     """Return runs whose worker died to a state that can be resumed.
+
+    `emit` is where the narration goes. It defaults to `print` because this is a
+    CLI command first, but the worker calls it too, on a startup thread - and
+    Celery's `redirect_stdouts` captures `print` at WARNING, so the healthy
+    outcome ("No orphaned runs; every running row has a live task") was arriving
+    in the log as a warning on every single worker start. A line that means
+    "everything is fine", logged at the level reserved for things that are not,
+    is how a log stops being read.
 
     A run is handed to one Celery task, and the row says `running` for as long
     as that task lives. If the process dies without unwinding - the host loses
@@ -368,7 +379,7 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
     oom_killed = _worker_ran_out_of_memory()
     live = _live_task_ids()
     if live is None:
-        print("No worker answered, so nothing can be judged orphaned. Nothing changed.")
+        emit("No worker answered, so nothing can be judged orphaned. Nothing changed.")
         return 1
 
     store = RunStore.shared()
@@ -388,7 +399,7 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
             continue
         if record.task_id and record.task_id in live:
             continue
-        print(f"{record.run_id}: running -> failed  (stage: {record.current_stage or '?'})")
+        emit(f"{record.run_id}: running -> failed  (stage: {record.current_stage or '?'})")
         repaired += 1
         if dry_run:
             continue
@@ -414,20 +425,20 @@ def recover_orphaned_runs(dry_run: bool = False) -> int:
         recovered.append(record.run_id)
 
     if repaired and oom_killed:
-        print(
+        emit(
             "\nThis worker container has been OOM-killed; that is the likely cause. "
             "See the runs' error text for what to change."
         )
     if not repaired:
-        print("No orphaned runs; every running row has a live task.")
+        emit("No orphaned runs; every running row has a live task.")
     elif dry_run:
-        print(f"\n{repaired} run(s) would be recovered. Re-run without --dry-run to apply.")
+        emit(f"\n{repaired} run(s) would be recovered. Re-run without --dry-run to apply.")
     else:
         queued = resume_runs_a_restart_abandoned(recovered)
         if queued:
-            print(f"\nRecovered {repaired} run(s) and resumed {queued} of them.")
+            emit(f"\nRecovered {repaired} run(s) and resumed {queued} of them.")
         else:
-            print(f"\nRecovered {repaired} run(s). Resume them to continue.")
+            emit(f"\nRecovered {repaired} run(s). Resume them to continue.")
     return 0
 
 

@@ -87,7 +87,7 @@ def test_the_sweep_waits_until_the_broker_can_answer(monkeypatch, tasks):
     monkeypatch.setattr("app.server.manage._live_task_ids", lambda: answers.pop(0))
     monkeypatch.setattr(
         "app.server.manage.recover_orphaned_runs",
-        lambda dry_run=False: called.append(dry_run) or 0,
+        lambda dry_run=False, emit=print: called.append(dry_run) or 0,
     )
 
     tasks._sweep_for_abandoned_runs()
@@ -103,7 +103,7 @@ def test_the_sweep_gives_up_rather_than_guessing(monkeypatch, tasks):
     monkeypatch.setattr("app.server.manage._live_task_ids", lambda: None)
     monkeypatch.setattr(
         "app.server.manage.recover_orphaned_runs",
-        lambda dry_run=False: called.append(dry_run) or 0,
+        lambda dry_run=False, emit=print: called.append(dry_run) or 0,
     )
 
     tasks._sweep_for_abandoned_runs()
@@ -115,7 +115,7 @@ def test_a_failing_sweep_never_takes_the_worker_down(monkeypatch, tasks):
     monkeypatch.setattr(tasks, "_SWEEP_INTERVAL_SECONDS", 0)
     monkeypatch.setattr("app.server.manage._live_task_ids", lambda: {"x"})
 
-    def _explode(dry_run=False):
+    def _explode(dry_run=False, emit=print):
         raise RuntimeError("database unreachable")
 
     monkeypatch.setattr("app.server.manage.recover_orphaned_runs", _explode)
@@ -134,7 +134,7 @@ def test_only_one_worker_sweeps_per_restart(monkeypatch, tasks):
     monkeypatch.setattr("app.server.redis_client.get_redis_client", lambda: _TakenLock())
     monkeypatch.setattr(
         "app.server.manage.recover_orphaned_runs",
-        lambda dry_run=False: called.append(dry_run) or 0,
+        lambda dry_run=False, emit=print: called.append(dry_run) or 0,
     )
 
     tasks._recover_runs_their_worker_abandoned()
@@ -147,7 +147,7 @@ def test_recovery_can_be_switched_off(monkeypatch, tasks):
     monkeypatch.setenv("RECOVER_ORPHANS_ON_START", "false")
     monkeypatch.setattr(
         "app.server.manage.recover_orphaned_runs",
-        lambda dry_run=False: called.append(dry_run) or 0,
+        lambda dry_run=False, emit=print: called.append(dry_run) or 0,
     )
 
     tasks._recover_runs_their_worker_abandoned()

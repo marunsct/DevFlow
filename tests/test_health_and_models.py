@@ -182,7 +182,7 @@ def _llm_result(llm_output, usage_metadata):
 def test_the_cost_tracker_counts_an_unstreamed_response() -> None:
     from app.observability.cost_tracker import CostTrackingCallbackHandler
 
-    tracker = CostTrackingCallbackHandler()
+    tracker = CostTrackingCallbackHandler("cost-unstreamed", provider="openai", model="gpt-4o-mini")
     tracker.on_llm_end(
         _llm_result({"token_usage": {"prompt_tokens": 19, "completion_tokens": 10, "total_tokens": 29}}, None)
     )
@@ -199,7 +199,7 @@ def test_the_cost_tracker_counts_a_streamed_response() -> None:
     """
     from app.observability.cost_tracker import CostTrackingCallbackHandler
 
-    tracker = CostTrackingCallbackHandler()
+    tracker = CostTrackingCallbackHandler("cost-streamed", provider="openai", model="gpt-4o-mini")
     tracker.on_llm_end(
         _llm_result(None, {"input_tokens": 19, "output_tokens": 10, "total_tokens": 29})
     )
@@ -214,7 +214,7 @@ def test_a_response_with_no_usage_anywhere_is_counted_as_a_request_only() -> Non
     """It must not invent numbers, and must not raise."""
     from app.observability.cost_tracker import CostTrackingCallbackHandler
 
-    tracker = CostTrackingCallbackHandler()
+    tracker = CostTrackingCallbackHandler("cost-no-usage", provider="openai", model="gpt-4o-mini")
     tracker.on_llm_end(_llm_result(None, None))
 
     summary = tracker.get_summary()

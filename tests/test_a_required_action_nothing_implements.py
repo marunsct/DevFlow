@@ -83,15 +83,26 @@ def test_a_synonym_counts_as_the_action(project):
     assert _problems(project) == []
 
 
-def test_a_test_naming_the_action_counts(project):
-    """Built or tested - either is evidence the capability was not forgotten."""
+def test_a_test_naming_the_action_does_not_count(project):
+    """Corrected: a suite is not the product.
+
+    This asserted the opposite - "built or tested, either is evidence the
+    capability was not forgotten" - and that union was wrong. Run 6b511391 was
+    reported clean for `edit` on the strength of `app.test.mjs` mentioning it,
+    with no edit anywhere in `app.js`. Whether a suite covers the requirement
+    is `_a_required_action_no_test_covers`'s question, and it reads the suites;
+    this one reads the product.
+    """
     (project / "app.js").write_text(
         "function addTask(t) { return t; }\nfunction deleteTask(i) { return i; }\n"
     )
     (project / "app.test.mjs").write_text(
         "import { test } from 'node:test';\ntest('edit a task', () => {});\n"
     )
-    assert _problems(project) == []
+
+    problems = _problems(project)
+
+    assert len(problems) == 1 and "`edit`" in problems[0]
 
 
 class TestItDoesNotInventRequirements:
@@ -402,3 +413,62 @@ class TestARequirementSectionIsEnoughOnItsOwn:
         assert len(problems) == 1
         assert "`edit`" in problems[0]
         assert "All four CRUD operations" in problems[0]
+
+
+class TestASuiteIsNotTheProduct:
+    """A test naming a feature is not the product having one.
+
+    Run 6b511391 was reported clean for `edit` because `app.test.mjs` mentions
+    it, while `app.js` has no edit anywhere. This check asks whether the product
+    does it; `_a_required_action_no_test_covers` asks whether anything would
+    notice if it stopped. They read different files on purpose, and neither may
+    borrow the other's evidence.
+
+    The same mistake in a different check gave run b0db10b1's dead filter
+    buttons an alibi from the Playwright spec that located them.
+    """
+
+    @pytest.fixture
+    def tested_but_unbuilt(self, project):
+        (project / "app.js").write_text(
+            "function addTask(t) { return t; }\n"
+            "function deleteTask(id) { return id; }\n"
+        )
+        (project / "app.test.mjs").write_text(
+            "import { test } from 'node:test';\n"
+            "test('edits a task title', () => {});\n"
+        )
+        return project
+
+    def test_a_suite_does_not_satisfy_the_built_check(self, tested_but_unbuilt):
+        problems = _problems(tested_but_unbuilt)
+        assert len(problems) == 1 and "`edit`" in problems[0]
+
+    def test_the_two_checks_disagree_as_they_should(self, tested_but_unbuilt):
+        """Not built, and yet covered - both true, and both worth saying."""
+        from app.analysis.integration_checks import (
+            _a_required_action_no_test_covers,
+            _source_files,
+        )
+
+        files = _source_files(tested_but_unbuilt)
+        built = _problems(tested_but_unbuilt)
+        tested = _a_required_action_no_test_covers(files, tested_but_unbuilt)
+
+        assert len(built) == 1 and "`edit`" in built[0], "the product does not do it"
+        # `edit` is covered; `add` and `delete` are not named by this suite, so
+        # the other check reports those instead - which is the point: the two
+        # answer different questions about different files.
+        assert not any("`edit`" in p for p in tested), "a test does name edit"
+
+    def test_an_inline_script_in_the_page_still_counts_as_product(self, project):
+        """Run 9c0fc48d kept its whole application inside the page."""
+        (project / "app.js").write_text("function addTask(t) { return t; }\n")
+        (project / "index.html").write_text(
+            "<!doctype html><html><body>\n"
+            '<script type="module">\n'
+            "function editTask(id) { return id; }\n"
+            "function deleteTask(id) { return id; }\n"
+            "</script></body></html>\n"
+        )
+        assert _problems(project) == []

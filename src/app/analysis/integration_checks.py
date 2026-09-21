@@ -3834,6 +3834,17 @@ def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list
     pieces: list[str] = []
     for path in files:
         suffix = path.suffix.lower()
+        # Tests excluded. This check asks whether the *product* does it, and a
+        # suite naming a feature is not the product having one - run 6b511391
+        # was reported clean for `edit` because `app.test.mjs` mentions it,
+        # while `app.js` has no edit anywhere. `_a_required_action_no_test_covers`
+        # asks the other question and reads only the suites, so the two are
+        # complementary and neither may borrow the other's evidence.
+        #
+        # The same mistake, in a different check, gave run b0db10b1's dead
+        # filter buttons an alibi from the Playwright spec that located them.
+        if is_test(str(path.relative_to(root))):
+            continue
         if suffix in _CLIENT_LOGIC_SUFFIXES:
             pieces.append(_read(path))
         elif suffix in {".html", ".htm"}:

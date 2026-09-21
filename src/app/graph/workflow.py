@@ -1171,6 +1171,59 @@ def _missing_structured_response(
     )
 
 
+class RunCancelled(RuntimeError):
+    """A cancellation was seen between supersteps and the graph stopped for it.
+
+    Item 7 of `docs/harness-hardening-plan-part3.md`. Cancelling a run did two
+    things - set `cancel_requested`, and revoke the Celery task with SIGTERM -
+    and the flag was read only between graph *invokes*. Within one invoke the
+    graph runs every stage it can reach, so a cancellation arriving at the start
+    of a specialist was not seen until that specialist finished, and the SIGTERM
+    that would have stopped it sooner kills the turn wherever it is: the run
+    then resumes from the last checkpoint, which for a specialist stage can be a
+    whole stage of work back.
+
+    Raised at a stage boundary, where the graph has just checkpointed and
+    nothing is in flight, so stopping costs nothing that was not already saved.
+    """
+
+
+#: Per-process memo of runs already known to be cancelled, so the check costs
+#: one query per run rather than one per stage after the first sighting. A
+#: cancellation is never withdrawn - `request_cancel` only sets the flag - so
+#: this can cache the positive and must not cache the negative.
+_CANCELLED_RUNS: set[str] = set()
+
+
+def _stop_if_cancelled(run_id: str | None) -> None:
+    """Raise `RunCancelled` when this run has been asked to stop.
+
+    Called at stage boundaries. One indexed lookup per stage against a run that
+    lasts minutes is not worth caching further, and reading it fresh is what
+    makes a cancellation take effect at the next stage rather than at the next
+    invoke.
+
+    Never raises anything else. A database that cannot answer must not be the
+    reason a healthy run stops: the coarser checks in `runner._run_loop` still
+    hold, and this is an improvement in granularity, not the only guard.
+    """
+    if not run_id:
+        return
+    if run_id in _CANCELLED_RUNS:
+        raise RunCancelled(f"Run {run_id} was cancelled.")
+    try:
+        from app.server.run_store import RunStore
+
+        requested = RunStore.shared().is_cancel_requested(run_id)
+    except Exception:  # noqa: BLE001 - a cancel check must never fail a run
+        logger.debug("Could not read the cancel flag for %s", run_id, exc_info=True)
+        return
+    if requested:
+        _CANCELLED_RUNS.add(run_id)
+        logger.info("Run %s was cancelled; stopping at a stage boundary", run_id)
+        raise RunCancelled(f"Run {run_id} was cancelled.")
+
+
 def _run_gated_agent(
     state: WorkflowGraphState,
     config: RunnableConfig,
@@ -1189,6 +1242,11 @@ def _run_gated_agent(
     instance as the outer graph.
     """
     outer_thread_id = config["configurable"]["thread_id"]
+    # Before anything else, and before this stage's first model call. The graph
+    # has just checkpointed the previous stage, so stopping here costs nothing
+    # that was not already saved.
+    _stop_if_cancelled(config["configurable"].get(APP_RUN_ID_KEY))
+
     # Narration only. `build_activity_callbacks` returns [] when the run id is
     # unknown or the feature is switched off, and the handler never raises.
     from app.server.agent_stream import build_activity_callbacks

@@ -151,6 +151,60 @@ class _Suggesting:
             "Every path is relative to the workspace root, which is '/'."
         )
 
+    def _the_one_path_it_meant(self, wanted: str) -> str:
+        """The workspace path this request unambiguously names, or "".
+
+        `_where_it_actually_is` already finds the file and says where it is. It
+        then returns an error, and the stage spends a model call re-asking with
+        the path it was just handed.
+
+        Measured on the run of 2026-09-21. `technical_lead` asked for
+        `/home/user/workspace/task-manager/package.json`,
+        `/home/user/workspace/task-manager/style.css`,
+        `/home/user/task-manager/style.css` and
+        `/home/user/task-manager/package.json` - four reads, four errors, each
+        one naming the real path in its own message. The container path prefix
+        is invented; everything after it was right.
+
+        Resolved only when the answer cannot be wrong:
+
+        - exactly one file in the workspace carries that basename, so there is
+          nothing to choose between, and
+        - the path asked for *ends with* that workspace path, so the request
+          agrees with the answer about the directory as well as the name.
+
+        `/home/user/workspace/task-manager/app.js` ends with
+        `task-manager/app.js`, so the only thing wrong with it is a prefix the
+        agent imagined. A bare `/app.js` that happens to be unique does not end
+        with `task-manager/app.js` and is left alone: the agent may have meant a
+        file at the root that does not exist, and silently reading a different
+        one is the wrong kind of helpful.
+
+        The candidate comes from an `rglob` rooted at the workspace, so the file
+        resolved is inside it by construction - this widens what a path may be
+        *spelled* as, never what it may reach.
+        """
+        root = getattr(self, "cwd", None)
+        name = _basename(wanted)
+        if not root or not name or "." not in name:
+            return ""
+        try:
+            found = [
+                str(candidate.relative_to(root))
+                for candidate in Path(root).rglob(name)
+                if candidate.is_file()
+                and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+            ]
+        except Exception:  # noqa: BLE001 - a convenience must never fail the call
+            return ""
+        if len(found) != 1:
+            return ""
+        here = found[0].replace("\\", "/")
+        asked = str(wanted).replace("\\", "/").lstrip("/")
+        if not asked.endswith(here) or asked == here:
+            return ""
+        return "/" + here
+
 
 #: How many identical read failures to let pass before saying so. One repeat is
 #: ordinary - a stage may reasonably look twice while it works out what to
@@ -589,6 +643,14 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         if error:
             if "not found" not in error:
                 return result
+            # Before explaining where the file is: read it. The explanation was
+            # already correct and already cost a model call to act on. See
+            # `_the_one_path_it_meant` for what makes this unambiguous.
+            instead = self._the_one_path_it_meant(file_path)
+            if instead:
+                corrected = super().read(instead, *args, **kwargs)
+                if not getattr(corrected, "error", None):
+                    return self.read(instead, *args, **kwargs)
             # What is in it, before where else it might be: a model that read
             # a directory asked what is in it, and "there is a directory of
             # that name at the path you gave" answers nothing.

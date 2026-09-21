@@ -131,22 +131,38 @@ def backend(tmp_path):
     return WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
 
-def test_an_invented_prefix_is_told_where_the_file_is(backend) -> None:
+def test_an_invented_prefix_is_served_not_refused(backend) -> None:
     """The guesses agents actually make, from the stored runs.
 
     On run-3f8e387d - the run that died of gate exhaustion - 72 reads failed
     and 56 of them (77%) named a file that was in the workspace under a
     different path. The error named only the path the agent had invented, so
     it invented another.
+
+    Naming the real path fixed the second invention. It did not fix the cost:
+    the stage still spent a model call re-asking with the path it had just been
+    handed. Measured again on 2026-09-21, `technical_lead` did exactly that four
+    times over `/home/user/workspace/task-manager/...`.
+
+    So the read is now served. This supersedes the older assertion that these
+    return an error - the hint was right and a hint is not what the stage
+    needed. `_the_one_path_it_meant` is stricter than the hint it replaces: the
+    basename must be unique in the workspace AND the path asked for must end
+    with the workspace path, so the request has to agree about the directory
+    too. `test_a_project_file_named_at_the_root_is_located` below covers the
+    case that still gets a hint, and still does.
     """
     for invented in (
         "/home/user/docs/plan.md",
         "/workspace/docs/plan.md",
         "/app/data/workspaces/t1/docs/plan.md",
     ):
-        error = backend.read(invented).error
-        assert "/docs/plan.md" in error
-        assert "relative to the workspace root" in error
+        result = backend.read(invented)
+        assert not getattr(result, "error", None), (
+            f"{invented} should have been served, not refused"
+        )
+        content = (getattr(result, "file_data", None) or {}).get("content", "")
+        assert "# plan" in content, f"{invented} returned no content"
 
 
 def test_a_project_file_named_at_the_root_is_located(backend) -> None:

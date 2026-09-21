@@ -320,6 +320,7 @@ def build_line_replace_tool(repo_root: str) -> BaseTool:
         end_line: int,
         content: str,
         expect_start: str = "",
+        expect_end: str = "",
     ) -> dict[str, str]:
         """Replace a numbered range of lines in a file that already exists.
 
@@ -337,6 +338,13 @@ def build_line_replace_tool(repo_root: str) -> BaseTool:
             expect_start: optional. The first line as you read it. Given, the
                 edit is refused if that line has moved, so a stale line number
                 cannot silently change the wrong place. Whitespace is ignored.
+            expect_end: optional, and worth sending every time you send
+                `expect_start`. The LAST line of the range as you read it. With
+                both ends given, an edit whose numbering has drifted is applied
+                at the range's new position instead of being refused - the two
+                lines identify the range without depending on where it sits.
+                With only `expect_start`, a drifted edit is still refused,
+                because one line cannot say where the range now ends.
 
         Returns `{"error": "..."}` instead of raising when the range is outside
         the file or the file is missing, so a wrong guess is a recoverable tool
@@ -344,7 +352,8 @@ def build_line_replace_tool(repo_root: str) -> BaseTool:
         """
         try:
             return replace_approved_lines(
-                repo_root, relative_path, start_line, end_line, content, expect_start
+                repo_root, relative_path, start_line, end_line, content,
+                expect_start, expect_end,
             )
         except RepositoryToolError as exc:
             return {"error": str(exc)}

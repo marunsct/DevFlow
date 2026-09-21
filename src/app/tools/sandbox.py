@@ -1280,6 +1280,10 @@ def validate_command(
             "it contains."
         )
 
+    root_install = _needs_root_the_sandbox_will_not_give(argv)
+    if root_install is not None:
+        raise CommandNotAllowed(root_install)
+
     server = _starts_a_server(argv)
     if server:
         raise CommandNotAllowed(
@@ -1290,6 +1294,70 @@ def validate_command(
             "from a test; to check the logic, import it and call it."
         )
     return argv
+
+
+#: Playwright subcommands that install *system* packages rather than browsers.
+#: `install-deps` is the documented one; `install --with-deps` is the same thing
+#: reached through a flag.
+_ROOT_INSTALL_SUBCOMMANDS = frozenset({"install-deps"})
+
+
+def _needs_root_the_sandbox_will_not_give(argv: list[str]) -> str | None:
+    """Refuse a command whose only job is to `apt-get install` as root.
+
+    Measured live on this deployment on 2026-09-21. `specialist_ui_ux_2` ran
+    `npx playwright install-deps chromium` and got::
+
+        Installing dependencies...
+        Switching to root user to install dependencies...
+        Failed to install browser dependencies
+        Error: Installation process exited with code: 1
+        stderr: Password: su: Authentication failure
+
+    Three things are wrong with letting that through, and the third is the one
+    that matters.
+
+    It cannot succeed. The runtime image runs as `appuser` deliberately - the
+    whole compose stack is written to avoid root - so a command that shells out
+    to `su` will fail here every time, whatever the agent changes about it.
+
+    It is not needed. The Dockerfile already installs the browser system
+    libraries, for a reason it records: run-2d9066e2 spent all three of its
+    remediation attempts on "Playwright regression tests fail due to missing
+    system library libglib-2.0.so.0". They are present; nothing is missing.
+
+    And the error it returns points the wrong way. `su: Authentication failure`
+    reads as a credentials problem, so an agent's next move is to try again with
+    `sudo`, or to give up on browser tests entirely and delete the suite that
+    was about to pass. The Playwright e2e tests in this very run went on to pass
+    twenty assertions once the agent stopped trying to install dependencies it
+    already had. A refusal that says so costs one tool call; the confusion costs
+    a stage.
+
+    `install` itself is untouched: it is a no-op against the image's cache,
+    returns instantly, and refusing it would teach the agent to distrust a
+    command that works.
+    """
+    parts = [os.path.basename(str(part)) for part in argv]
+    if not any(part == "playwright" for part in parts):
+        return None
+
+    asks_for_deps = any(part in _ROOT_INSTALL_SUBCOMMANDS for part in parts) or (
+        "install" in parts and "--with-deps" in parts
+    )
+    if not asks_for_deps:
+        return None
+
+    return (
+        "`playwright install-deps` installs system packages as root, and this "
+        "container runs as an unprivileged user - it will fail with "
+        "`su: Authentication failure` however it is phrased, and that message is "
+        "about `su`, not about anything you can fix.\n\n"
+        "You do not need it. The browser and its system libraries are already in "
+        "this image. Run your tests directly: `npx playwright test`. If a browser "
+        "binary is genuinely missing, `npx playwright install chromium` is "
+        "permitted and returns immediately against the image's cache."
+    )
 
 
 #: Commands whose whole purpose is to keep running. A static file server is
@@ -1484,6 +1552,64 @@ _TIMEOUT_ADVICE = (
     "and assert on its contents from a test; to check logic, import it and call "
     "it. If the command really is just slow, run the smaller part of it."
 )
+
+
+def strip_a_redundant_cd(
+    command: Sequence[str], working_directory: str | None
+) -> tuple[list[str], str | None]:
+    """Drop a leading `cd <dir> &&` that names the directory already in force.
+
+    Measured live on 2026-09-21, twice in one run, by two different roles::
+
+        specialist_ui_ux_2   ["cd", "task-manager", "&&", "node", "--check", "app.js"]
+                             working_directory: "task-manager"
+        defect_fix_1_0       ["cd", "task-manager", "&&", "npx", "playwright", ...]
+                             working_directory: "task-manager"
+
+    Both were refused with "`cd` is not a program. Pass `working_directory`" -
+    and both had *already passed it*, naming the very directory the `cd` asks
+    for. The refusal is correct about `cd` and useless about the situation: the
+    agent did the right thing and added a belt to its braces, and paid a model
+    call for it.
+
+    This is the `strip_a_doubled_working_directory` shape - an agent expressing
+    the same intent twice - and it takes the same answer: recognise it, do what
+    was meant, and say so.
+
+    Narrow on purpose. The prefix is dropped only when the `cd` target resolves
+    to the same place as `working_directory`. A `cd` somewhere *else* is a real
+    disagreement about where the command should run, and guessing which half is
+    right would be the clever-rather-than-safe move this module avoids: it stays
+    refused, with the message that already explains what to pass.
+    """
+    # A string, not a list, is refused downstream with a message that says so.
+    # `list()` on it would split it into characters and the refusal would name a
+    # one-letter executable instead. `strip_a_doubled_working_directory` carries
+    # the same guard for the same reason, and leaving it out here reintroduced
+    # the defect its comment describes - caught by
+    # `test_a_command_string_is_still_refused`.
+    if isinstance(command, (str, bytes)):
+        return command, None  # type: ignore[return-value]
+    argv = list(command)
+    if len(argv) < 4 or str(argv[0]) != "cd" or str(argv[2]) != "&&":
+        return argv, None
+    if not working_directory:
+        return argv, None
+
+    target = str(argv[1]).strip().strip("/")
+    here = str(working_directory).strip().strip("/")
+    if target != here and target not in {".", "./"}:
+        return argv, None
+
+    rest = [str(part) for part in argv[3:]]
+    if not rest:
+        return argv, None
+    return rest, (
+        f"Dropped the leading `cd {argv[1]} &&`: working_directory is already "
+        f"'{working_directory}', so the command runs there anyway. There is no "
+        "shell here, so `cd` would have been refused - passing "
+        "`working_directory`, as you did, is the whole answer."
+    )
 
 
 def strip_a_doubled_working_directory(
@@ -2099,6 +2225,37 @@ def timed_out_this_way_before(
     )
 
 
+SUCCESSES_BEFORE_WITHHOLDING = 3
+"""Identical passing runs allowed before the command is withheld instead.
+
+`succeeded_this_way_before` has appended a note since the leak it documents was
+measured - eleven identical `node -c` calls in eight seconds, twenty-eight
+identical test runs in one stage. The note asks the agent to stop. This run
+shows what happens when it does not: `defect_fix_1_0` ran
+
+    wc -l task-manager/index.html task-manager/style.css task-manager/app.js
+
+eleven times with a single write before the first of them. The note fired
+correctly on runs four through eleven, counting up as it went - "already passed
+1 time(s)", "2 time(s)", ... "8 time(s)" - and the stage ran the command again
+after every one. Eight notices, eight ignored, sixteen wasted round trips
+counting the model calls that read them.
+
+So it escalates, exactly as `aeb1e3a` escalated the repeated *read*: a notice
+first, and when the notice is not heeded, the thing is withheld. Three because
+that is what reads use, and because two identical results are an accident while
+four is a habit.
+
+The guard is `nothing has been written since`, which is what makes this safe for
+a legitimate edit-test loop: a write re-arms the command immediately. A stage
+that is genuinely making changes never meets this.
+
+Search commands are excluded. `_ran_and_answered` marks a grep-like command
+whose exit 1 means "no match" - a real answer - and those already have their own
+note explaining that the text is simply not there.
+"""
+
+
 def succeeded_this_way_before(
     repo_root: str, command: Sequence[str], working_directory: str | None = None
 ) -> int:
@@ -2477,6 +2634,10 @@ class SandboxExecutor:
                 f"one. Pass working_directory='{belongs_in}' to say so yourself."
             )
 
+        # Before the doubled-directory check and before validation: a leading
+        # `cd <dir> &&` that names the directory already in force is the agent
+        # saying the same thing twice, not a different command.
+        command, redundant_cd = strip_a_redundant_cd(command, working_directory)
         command, doubled = strip_a_doubled_working_directory(
             command, repo_root, working_directory
         )
@@ -2486,6 +2647,32 @@ class SandboxExecutor:
         ruled_out = _refuse_an_install_the_brief_rules_out(command, repo_root)
         if ruled_out:
             outcome = {"error": ruled_out}
+            _record_execution(
+                repo_root, role_name, command, outcome, working_directory, category,
+                duration_seconds=time.monotonic() - started,
+            )
+            return outcome
+
+        # A command that has already passed several times, with nothing written
+        # between, is withheld rather than run again. See
+        # `SUCCESSES_BEFORE_WITHHOLDING` for why the note alone was not enough.
+        settled = succeeded_this_way_before(repo_root, command, working_directory)
+        if settled >= SUCCESSES_BEFORE_WITHHOLDING and not _ran_and_answered(
+            command, 0
+        ):
+            outcome = {
+                "error": (
+                    f"Not running this again. It has already passed {settled} time(s) "
+                    "in this run and nothing has been written since any of them, so "
+                    "its output cannot have changed - you already have the answer, "
+                    f"{settled} copies of it.\n\n"
+                    "You have been told this after each of the last few runs and run "
+                    "it again anyway, so it is now withheld rather than repeated.\n\n"
+                    "This verification is finished. Either return your structured "
+                    "response now, or change a file first - after a write, this "
+                    "command runs normally again."
+                )
+            }
             _record_execution(
                 repo_root, role_name, command, outcome, working_directory, category,
                 duration_seconds=time.monotonic() - started,
@@ -2506,7 +2693,7 @@ class SandboxExecutor:
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
-        notes = [n for n in (doubled, redirected) if n]
+        notes = [n for n in (redundant_cd, doubled, redirected) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
         regressed = _fewer_pass_than_last_time(

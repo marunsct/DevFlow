@@ -19,6 +19,7 @@ import threading
 import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -1214,6 +1215,104 @@ def _guard_a_targeted_change(
     return root, target
 
 
+def _the_same_range_somewhere_else(
+    lines: list[str],
+    expect_start: str,
+    expect_end: str,
+    start_line: int,
+    end_line: int,
+) -> tuple[int, int] | None:
+    """The range's new position when BOTH ends still match, else `None`.
+
+    `_where_that_line_went` explains why a drifted edit is reported rather than
+    applied: `expect_start` pins only the first line, so shifting the whole
+    range by the same offset would delete whatever now sits at the other end.
+    That reasoning is right, and it names its own remedy - pin the other end
+    too.
+
+    With both ends supplied this is no longer a guess. The range is moved only
+    when the first line is found exactly once, the last line is found exactly
+    once, and the gap between them is the length the caller asked for. Any other
+    shape - either end missing, either end ambiguous, the range a different size
+    than before - returns `None` and the caller refuses exactly as it did.
+
+    Measured on the run of 2026-09-21: six of its twelve costly failures were
+    this refusal on `task-manager/app.js`, every one recoverable and every one
+    costing a model call to recover. Two examples, both with the numbering
+    drifted by a line or two and the content otherwise intact.
+
+    `expect_end` is optional, so a caller that sends only `expect_start` gets
+    the old behaviour unchanged: reported, not applied.
+    """
+    if not expect_end.strip():
+        return None
+
+    wanted_start = expect_start.strip()
+    wanted_end = expect_end.strip()
+    if not wanted_start:
+        return None
+
+    starts = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_start]
+    ends = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_end]
+    if len(starts) != 1 or len(ends) != 1:
+        return None
+
+    new_start, new_end = starts[0], ends[0]
+    if new_end < new_start:
+        return None
+    if (new_end - new_start) != (end_line - start_line):
+        # The range is a different size than the caller described, so something
+        # inside it changed as well. Refusing is right: the caller's `content`
+        # was written against a range that no longer exists.
+        return None
+    return new_start, new_end
+
+
+def _what_went_unchecked(expect_start: str, replaced: str, content: str) -> str:
+    """Say what an unguarded replacement actually removed, or "".
+
+    `expect_start` is optional, and the one time it was omitted in the completed
+    run of 2026-09-21 it cost the product a requirement.
+    `specialist_ui_ux_1` sent::
+
+        replace_lines(relative_path="task-manager/index.html",
+                      start_line=5, end_line=5,
+                      content='  <meta http-equiv="Content-Security-Policy" ...>')
+
+    Line 5 was `<meta name="viewport" content="width=device-width, ...">`. The
+    intent was plainly to *add* a Content-Security-Policy tag; the effect was to
+    replace the viewport tag with it, and the stylesheet's three width media
+    queries became unreachable on every phone. The brief required "Responsive
+    design for mobile and desktop". Forty-seven end-to-end tests, a security
+    review and five milestone reviews all passed afterwards.
+
+    Nothing in the result said what had been removed. The tool reported
+    "Replaced lines 5-5 of 39", which is true and tells the reader nothing about
+    the line that is now gone.
+
+    So an unguarded replacement quotes what it deleted. Only when `expect_start`
+    was not sent - with it, the caller has already said what it expected and the
+    tool has already checked - and only when the replacement is not obviously a
+    rewrite of the same line, because echoing an edit back to someone who just
+    made it deliberately is noise.
+    """
+    if expect_start.strip() or not replaced.strip():
+        return ""
+    gone = replaced.strip().splitlines()
+    kept = content.strip().splitlines()
+    # A line the replacement clearly derives from is not a surprise.
+    if gone and kept and gone[0][:24].strip() and gone[0][:24] in content:
+        return ""
+    shown = _clip(gone[0]) if gone else ""
+    more = f" (and {len(gone) - 1} more line(s))" if len(gone) > 1 else ""
+    return (
+        f"\n\nNo `expect_start` was sent, so nothing checked what was there. "
+        f"What this removed: {shown}{more}. If you meant to add a line rather "
+        "than replace one, send it again as an insertion - and pass "
+        "`expect_start` so the tool can refuse a line you did not mean."
+    )
+
+
 def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> str:
     """Where the line the caller expected actually is now.
 
@@ -1268,6 +1367,7 @@ def replace_approved_lines(
     end_line: int,
     content: str,
     expect_start: str = "",
+    expect_end: str = "",
 ) -> dict[str, str]:
     """Replace a numbered range of lines, with no text to transcribe.
 
@@ -1300,6 +1400,10 @@ def replace_approved_lines(
         end_line: 1-based, inclusive. Equal to `start_line` replaces one line.
         content: the replacement text. Empty deletes the range.
         expect_start: optional. The first line as you read it, for safety.
+        expect_end: optional. The LAST line of the range as you read it. Send
+            it whenever you send `expect_start`: with both ends pinned, an edit
+            whose line numbers have drifted is applied at the range's new
+            position instead of being refused, and costs you nothing.
     """
     root, target = _guard_a_targeted_change(repo_root, relative_path, content)
 
@@ -1324,16 +1428,33 @@ def replace_approved_lines(
         # reasonable, and refusing it costs a call to learn the line count.
         last = min(end_line, total)
 
+        shifted_note = ""
         if expect_start:
             actual_first = lines[start_line - 1]
             if expect_start.strip() != actual_first.strip():
-                raise RepositoryToolError(
-                    f"Line {start_line} of '{relative_path}' is not what you "
-                    f"expected, so the numbering has moved since you read it.\n"
-                    f"  you expected: {_clip(expect_start.strip())}\n"
-                    f"  line {start_line} is:  {_clip(actual_first.strip())}\n"
-                    + _where_that_line_went(lines, expect_start, start_line)
+                moved = _the_same_range_somewhere_else(
+                    lines, expect_start, expect_end, start_line, end_line
                 )
+                if moved is None:
+                    raise RepositoryToolError(
+                        f"Line {start_line} of '{relative_path}' is not what you "
+                        f"expected, so the numbering has moved since you read it.\n"
+                        f"  you expected: {_clip(expect_start.strip())}\n"
+                        f"  line {start_line} is:  {_clip(actual_first.strip())}\n"
+                        + _where_that_line_went(lines, expect_start, start_line)
+                    )
+                new_start, new_end = moved
+                shift = new_start - start_line
+                shifted_note = (
+                    f" The numbering had moved: lines {start_line}-{end_line} are "
+                    f"now {new_start}-{new_end}, "
+                    f"{abs(shift)} line{'s' if abs(shift) != 1 else ''} "
+                    + ("further down" if shift > 0 else "further up")
+                    + ". Both ends matched what you expected, so the edit was "
+                    "applied there rather than refused."
+                )
+                start_line, end_line = new_start, new_end
+                last = min(end_line, total)
 
         replaced = "".join(lines[start_line - 1:last])
         # Keep the file's own line ending on the replacement, so replacing the
@@ -1355,6 +1476,8 @@ def replace_approved_lines(
         note = (
             f"Replaced lines {start_line}-{last} of {total}. "
             f"The file now has {len(updated.splitlines())} lines."
+            + shifted_note
+            + _what_went_unchecked(expect_start, replaced, content)
         )
         return _edited(target, root, relative_path, content, note, replaced)
 
@@ -1619,6 +1742,19 @@ def _what_is_still_wrong_after_a_repair(
     )
 
 
+def _line_count(content: str) -> int:
+    """Lines as `wc -l` would count them, plus a trailing unterminated line.
+
+    `wc -l` counts newlines, so a file with no final newline reports one fewer
+    line than it visibly has. An agent comparing this against its own `wc -l`
+    output should see the same number for a well-formed file and a truthful one
+    for a file missing its final newline.
+    """
+    if not content:
+        return 0
+    return content.count("\n") + (0 if content.endswith("\n") else 1)
+
+
 def _remember_who_wrote_it(root: Path, relative_path: str) -> None:
     """Record the authoring stage in the project memory. Never raises.
 
@@ -1662,14 +1798,19 @@ def _edited(
     """
     _remember_who_wrote_it(root, str(target.relative_to(root)))
     summary = replace[:80] + ("..." if len(replace) > 80 else "")
-    result: dict[str, str] = {
+    written = target.read_text(encoding="utf-8")
+    result: dict[str, Any] = {
         "path": str(target.relative_to(root)),
         "status": "edited",
         "summary": summary or "(passage removed)",
+        # As on a write: a stage editing towards a size limit needs the new
+        # length, and a separate `wc -l` for it is a whole round trip. Read back
+        # from disk rather than computed from `replace`, because an edit changes
+        # part of a file and only the file knows the total.
+        "lines": _line_count(written),
     }
     if detail:
         result["detail"] = detail
-    written = target.read_text(encoding="utf-8")
     # So the next call is not a read of the whole file. See `_where_it_landed`.
     landed = _where_it_landed(written, replace)
     if landed:
@@ -3748,6 +3889,17 @@ def write_approved_artifact(
     result = {
         "path": str(target.relative_to(root)),
         "summary": content[:80] + ("..." if len(content) > 80 else ""),
+        # The file's length, returned with every write because a brief with a
+        # size limit makes it the number the stage needs after every edit, and
+        # without it the only way to get it is another tool call.
+        #
+        # Measured live on 2026-09-21. `brief_low.md` says "Maximum 500 lines of
+        # code"; `test_round_0` checked, found 611, and raised it as the run's
+        # only defect - every one of the 48 unit and end-to-end tests passed.
+        # `defect_fix_1_0` then spent twenty `wc -l` calls compressing the files,
+        # one after each edit, because a write said nothing about how long the
+        # result was. The work was real; the round trips were not.
+        "lines": _line_count(content),
     }
     if unchanged:
         result["status"] = "unchanged"

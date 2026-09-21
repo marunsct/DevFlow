@@ -40,13 +40,39 @@ def safe_label(label: str | None) -> str:
     return cleaned[:48] or "workspace"
 
 
-def allocate_workspace(run_id: str, label: str | None = None) -> Path:
+def tenant_segment(tenant_id: str | None) -> str:
+    """The one path segment a tenant's workspaces live under.
+
+    Reduced the same way a label is, and for the same reason: it reaches the
+    filesystem, so it may not contain a separator, a `..`, or anything else that
+    means something to a path. A tenant with no id - every run before tenants
+    existed, and every test that does not care - lands in `shared`, which is
+    exactly where those runs already are.
+    """
+    if not tenant_id:
+        return "shared"
+    cleaned = _LABEL_SAFE.sub("-", Path(str(tenant_id)).name).strip("-")
+    return cleaned[:48] or "shared"
+
+
+def allocate_workspace(
+    run_id: str, label: str | None = None, tenant_id: str | None = None
+) -> Path:
     """Create and return this run's workspace directory.
 
     The path is derived from the server-side run id, so two runs can never share
     a workspace and no caller can steer one at an existing directory.
+
+    Segmented by tenant - item 9 of `docs/harness-hardening-plan-part3.md`.
+    `tenant_id` is enforced consistently in the API and in `run_store` queries,
+    and was not enforced here: every run landed in one flat root. Nothing reads
+    another tenant's workspace today, because every path-taking tool resolves
+    inside the workspace it was given - but that makes the boundary accidental,
+    holding only for as long as no future tool accepts an absolute path. The
+    database boundary is deliberate; this makes the filesystem one deliberate
+    too, by construction rather than by coincidence.
     """
-    root = workspace_root()
+    root = workspace_root() / tenant_segment(tenant_id)
     root.mkdir(parents=True, exist_ok=True)
 
     directory = root / f"{safe_label(label)}-{run_id}"
@@ -79,7 +105,12 @@ def resolve_within_workspace(workspace: str | Path, relative_path: str) -> Path:
 
 
 def delete_workspace(workspace: str | Path) -> None:
-    """Remove a run's workspace, refusing anything outside the configured root."""
+    """Remove a run's workspace, refusing anything outside the configured root.
+
+    Checked against the configured root rather than a tenant's directory under
+    it, so this keeps working for workspaces allocated before there were tenant
+    segments as well as for those allocated since.
+    """
     root = workspace_root()
     target = Path(workspace).expanduser().resolve()
     if root not in target.parents:
@@ -93,5 +124,6 @@ __all__ = [
     "delete_workspace",
     "resolve_within_workspace",
     "safe_label",
+    "tenant_segment",
     "workspace_root",
 ]

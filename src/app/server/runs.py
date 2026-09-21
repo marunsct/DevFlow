@@ -269,7 +269,7 @@ def create_runs_router(
         # from the request body, which let a caller point every agent tool and
         # the sandbox bind-mount at any directory on the host, including "/".
         try:
-            workspace = allocate_workspace(run_id, body.workspace_label)
+            workspace = allocate_workspace(run_id, body.workspace_label, user.tenant_id)
         except WorkspaceError as exc:
             raise HTTPException(status_code=500, detail=f"Could not prepare the workspace: {exc}")
 

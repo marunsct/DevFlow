@@ -3675,11 +3675,16 @@ def _actions_the_documents_require(root: Path) -> dict[str, str]:
                 text = _read(document)
             except Exception:  # noqa: BLE001 - a missing document requires nothing
                 continue
+            in_requirements = False
             for line in text.splitlines():
+                if _A_HEADING.match(line):
+                    in_requirements = bool(_A_REQUIREMENT_SECTION.match(line))
+                    continue
                 lowered = line.lower()
-                if "acceptance" not in lowered and "criteria" not in lowered:
-                    if not _LOOKS_LIKE_A_CRITERION.search(lowered):
-                        continue
+                if not in_requirements:
+                    if "acceptance" not in lowered and "criteria" not in lowered:
+                        if not _LOOKS_LIKE_A_CRITERION.search(lowered):
+                            continue
                 for match in _ACTION_LIST.finditer(lowered):
                     parts = [
                         piece.strip()
@@ -3699,6 +3704,21 @@ def _actions_the_documents_require(root: Path) -> dict[str, str]:
 _LOOKS_LIKE_A_CRITERION = re.compile(
     r"users? can|must be able|delivered|supports?\b|able to"
 )
+
+#: A heading under which every bullet is a requirement, whatever it is worded
+#: like. The per-line test alone was too narrow: run 0cbbb28b's intake stated
+#: "All four CRUD operations (add, edit, delete, mark complete) work without
+#: errors" under `## Success measures`, which names no actor and so matched
+#: nothing, and the run shipped without editing while this check said nothing.
+#: A section heading is the more reliable signal, because the document's own
+#: structure is what says these lines are requirements.
+_A_REQUIREMENT_SECTION = re.compile(
+    r"^#{1,6}\s.*\b(acceptance|criteri|success measure|requirement|"
+    r"must have|definition of done|mvp)", re.I
+)
+
+#: Ends a requirement section: the next heading at any level.
+_A_HEADING = re.compile(r"^#{1,6}\s")
 
 
 #: A decision record that drops something: "ADR-08 - Inline Editing: Deferred",

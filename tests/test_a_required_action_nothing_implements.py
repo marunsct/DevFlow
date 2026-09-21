@@ -321,3 +321,84 @@ class TestADescopeTheRunAuthorisedItself:
         )
 
         assert all(_severity_of(p) == "BREAKS" for p in _problems(deferred))
+
+
+class TestARequirementSectionIsEnoughOnItsOwn:
+    """A heading says these lines are requirements; the wording need not.
+
+    The per-line test was too narrow. Run 0cbbb28b's intake stated
+
+        ## Success measures
+        - All four CRUD operations (add, edit, delete, mark complete) work
+          without errors
+
+    which names no actor - no "users can", no "acceptance" - and so matched
+    nothing. That run shipped with no way to edit a task and this check said
+    nothing about it, which is the second time the same gap has gone unreported
+    for want of a phrase rather than for want of the requirement.
+
+    The document's own structure is the more reliable signal.
+    """
+
+    @pytest.fixture
+    def under_a_heading(self, tmp_path):
+        (tmp_path / "docs").mkdir()
+        (tmp_path / "index.html").write_text(
+            '<!doctype html><html><body><script src="app.js"></script></body></html>'
+        )
+        (tmp_path / "app.js").write_text(
+            "function addTask(t) { return t; }\n"
+            "function deleteTask(id) { return id; }\n"
+        )
+        return tmp_path
+
+    @pytest.mark.parametrize(
+        "heading",
+        [
+            "## Success measures",
+            "## Acceptance criteria",
+            "### Requirements",
+            "## Definition of done",
+            "## MVP candidates",
+        ],
+    )
+    def test_a_bullet_under_a_requirement_heading_counts(
+        self, under_a_heading, heading
+    ):
+        (under_a_heading / "docs" / "product_intake.md").write_text(
+            f"# Intake\n\n{heading}\n"
+            "- All four CRUD operations (add, edit, delete) work without errors\n"
+        )
+
+        problems = _problems(under_a_heading)
+
+        assert len(problems) == 1 and "`edit`" in problems[0]
+
+    def test_the_section_ends_at_the_next_heading(self, under_a_heading):
+        """A later section must not inherit the previous one's authority."""
+        (under_a_heading / "docs" / "product_intake.md").write_text(
+            "# Intake\n\n## Success measures\n- Tasks persist across reloads\n\n"
+            "## Deferred scope\n- We considered add, edit, delete in one screen\n"
+        )
+        assert _problems(under_a_heading) == []
+
+    def test_an_ordinary_section_still_needs_the_wording(self, under_a_heading):
+        (under_a_heading / "docs" / "product_intake.md").write_text(
+            "# Intake\n\n## Notes\n- We discussed add, edit, delete at length\n"
+        )
+        assert _problems(under_a_heading) == []
+
+    def test_the_run_0cbbb28b_line_verbatim(self, under_a_heading):
+        """The exact text that went unreported."""
+        (under_a_heading / "docs" / "product_intake.md").write_text(
+            "# Product Intake\n\n## Success measures\n"
+            "- All four CRUD operations (add, edit, delete, mark complete) "
+            "work without errors\n"
+            "- Tasks persist correctly across page refreshes using local storage\n"
+        )
+
+        problems = _problems(under_a_heading)
+
+        assert len(problems) == 1
+        assert "`edit`" in problems[0]
+        assert "All four CRUD operations" in problems[0]

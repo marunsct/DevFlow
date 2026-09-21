@@ -90,3 +90,19 @@ def forget_everything() -> None:
 
 
 __all__ = ["MAX_STAGES_REMEMBERED", "current_stage_key", "forget_everything", "store"]
+
+
+def recall(thread_id: str, purpose: str) -> dict:
+    """What `thread_id` remembered for `purpose`, or `{}`.
+
+    `store` answers for the stage that is running. This answers for one that
+    has finished, which is what a restart needs: the attempt that just died
+    holds the only record of what it read and ran, and its key is about to stop
+    being anybody's `current_stage_key`.
+
+    Returns a copy. The caller is summarising a dead attempt, not continuing
+    it, and handing out the live dict would let a summary mutate the record it
+    is summarising.
+    """
+    slot = _MEMORY.get((thread_id, purpose))
+    return dict(slot) if slot else {}

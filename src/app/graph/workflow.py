@@ -311,6 +311,9 @@ class WorkflowGraphState(TypedDict, total=False):
     specification_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
     structured_retries: dict[str, int]
+    # Per-stage note from the attempt that just died, read once by the
+    # fresh one and then cleared. See `app.agents.carry_over`.
+    stage_carry_over: dict[str, str]
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
     current_sprint_index: int
@@ -923,6 +926,7 @@ def _restart_on_a_fresh_conversation(
     stage_name: str,
     inner_thread_id: str,
     why: str,
+    repo_root: str | None = None,
 ) -> dict[str, Any] | None:
     """Start the stage over on a clean conversation, or None when spent.
 
@@ -948,7 +952,21 @@ def _restart_on_a_fresh_conversation(
         "Stage %s %s; retrying on a fresh conversation (attempt %d of %d)",
         stage_name, why, attempted + 2, _max_structured_retries() + 1,
     )
+    # What the dying attempt established, before its thread stops being
+    # anybody's key. Clearing the conversation is right and discarding the
+    # facts is not: three attempts used to re-read the same files and re-run
+    # the same commands. See `app.agents.carry_over`.
+    carried = dict(state.get("stage_carry_over") or {})
+    try:
+        from app.agents.carry_over import carry_over_note
+
+        note = carry_over_note(inner_thread_id, repo_root)
+    except Exception:  # noqa: BLE001 - never fail a restart over a hint
+        note = ""
+    if note:
+        carried[stage_name] = note
     return {
+        "stage_carry_over": carried,
         # The node that owns this stage, never the stage's own name:
         # `specialist_ui_ux_0` is not a graph node.
         "stage": _owning_node(stage_name),
@@ -1249,6 +1267,20 @@ def _run_gated_agent(
         # Append a UUID to force a fresh context window for new attempts.
         # This prevents the LLM from drowning in the message history of previous failed attempts.
         inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
+        # A previous attempt at this stage left what it established. The
+        # conversation is deliberately gone; the facts are worth keeping, and
+        # without them each attempt re-read the same files and re-ran the same
+        # commands. Prepended, so it is the first thing the attempt reads
+        # rather than something it reaches after its own instructions.
+        carried = (state.get("stage_carry_over") or {}).get(stage_name)
+        if carried:
+            initial_request = {
+                **initial_request,
+                "messages": [
+                    {"role": "user", "content": carried},
+                    *(initial_request.get("messages") or []),
+                ],
+            }
         try:
             result = agent.invoke(
                 initial_request,
@@ -1399,6 +1431,12 @@ def _run_gated_agent(
 
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)
+    # Dropped with the retry count, and for the same reason. A stage name
+    # recurs - `specialist_ui_ux_0` ran in three separate sprints of run
+    # b0db10b1 - so a note kept past the attempt it was written for would
+    # arrive at a later sprint describing files a different task had read.
+    spent = dict(state.get("stage_carry_over") or {})
+    spent.pop(stage_name, None)
 
     # What the stage decided, on the record. Narration only, and never allowed
     # to fail the stage that produced it.
@@ -1413,6 +1451,7 @@ def _run_gated_agent(
         output_key: structured_response,
         "stage": next_stage,
         "structured_retries": succeeded,
+        "stage_carry_over": spent,
         "pending_approval": None,
         "pending_inner_thread_id": None,
         "pending_decision": None,

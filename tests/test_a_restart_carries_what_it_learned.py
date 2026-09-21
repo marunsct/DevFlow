@@ -32,7 +32,11 @@ def clean_memory():
 
 
 def _remember_reads(thread_id: str, *paths: str) -> None:
-    """What `_note_if_repeated` leaves behind, in its own shape."""
+    """What `_note_if_repeated` leaves behind, in its own shape.
+
+    Keyed on the resolved absolute path, which is what makes two spellings of
+    one file the same key - and what the note must not repeat back.
+    """
     stage_memory._MEMORY[(thread_id, "read_digests")] = {
         path: ("size:mtime", {"digest": 1}) for path in paths
     }
@@ -148,3 +152,53 @@ class TestTheWorkflowWiring:
         from app.graph.workflow import WorkflowGraphState
 
         assert "stage_carry_over" in WorkflowGraphState.__annotations__
+
+
+class TestThePathsAreOnesTheToolsAccept:
+    """Named relative to the workspace, as every tool here names them.
+
+    `read_digests` is keyed on the resolved absolute path. Written straight
+    into the note, that hands the next attempt
+    `/app/data/workspaces/default/todo-run9-.../app.js`, which no tool accepts.
+    Seen in run 86a60de1, where the note fired five times and named absolute
+    paths every time - and an absolute path in front of a model is how the
+    invented `/project/...` prefix gets invented in the first place.
+    """
+
+    def test_an_absolute_path_inside_the_workspace_is_relativised(self, tmp_path):
+        workspace = tmp_path / "todo-run9"
+        (workspace / "app").mkdir(parents=True)
+        target = workspace / "app" / "app.js"
+        target.write_text("x")
+        _remember_reads("t1", str(target))
+
+        note = carry_over_note("t1", str(workspace))
+
+        assert "app/app.js" in note
+        assert str(workspace) not in note, "an absolute path reached the model"
+
+    def test_a_path_outside_the_workspace_is_left_as_it_is(self, tmp_path):
+        workspace = tmp_path / "todo-run9"
+        workspace.mkdir()
+        outside = tmp_path / "elsewhere.js"
+        outside.write_text("x")
+        _remember_reads("t1", str(outside))
+
+        note = carry_over_note("t1", str(workspace))
+
+        assert "elsewhere.js" in note
+
+    def test_without_a_workspace_the_paths_are_unchanged(self):
+        _remember_reads("t1", "/app/data/workspaces/x/app.js")
+        assert "/app/data/workspaces/x/app.js" in carry_over_note("t1", None)
+
+    def test_two_spellings_of_one_file_are_named_once(self, tmp_path):
+        workspace = tmp_path / "w"
+        (workspace / "a").mkdir(parents=True)
+        target = workspace / "a" / "app.js"
+        target.write_text("x")
+        _remember_reads("t1", str(target), str(workspace / "a" / ".." / "a" / "app.js"))
+
+        note = carry_over_note("t1", str(workspace))
+
+        assert note.count("a/app.js") == 1

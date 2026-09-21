@@ -182,7 +182,21 @@ MAX_REMEDIATION_ATTEMPTS = 3
 
 DEFAULT_RECURSION_LIMIT = 100
 
-INNER_AGENT_RECURSION_LIMIT = 60
+# Imported rather than restated: this ceiling is derived from the call budget
+# below, and a second copy of the number is how the two drifted apart before.
+from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
+
+#: Supersteps one model call costs, measured. A react agent spends one node on
+#: the call and one on each tool it invokes, so this is above 1 by however much
+#: the stage uses its tools.
+#:
+#: Measured across 88 stage executions in the stored runs: median 2.41, 90th
+#: percentile 3.14, maximum 3.67. The 90th percentile is used, so nine stages
+#: in ten reach their full model-call budget and the tenth is bounded by the
+#: budget rather than by this.
+SUPERSTEPS_PER_MODEL_CALL = 3.2
+
+INNER_AGENT_RECURSION_LIMIT = int(MODEL_CALLS_PER_STAGE * SUPERSTEPS_PER_MODEL_CALL)
 """Superstep ceiling for one role agent's own graph.
 
 The outer workflow has had a ceiling since it was written; the agent invoked
@@ -195,12 +209,27 @@ stage *ends*.
 Measured on run-2192f23b, whose principal architect spent twenty-two minutes
 and 184 events printing the same specification into the conversation and
 re-reading the same three documents, with zero restarts recorded because the
-stage never finished one. The only ceiling it would have met is the Celery task
-timeout, six hours away.
+stage never finished one.
 
-60 is roughly twice the longest healthy stage observed across fourteen runs and
-well under the outer limit, so a working stage never meets it and a spinning one
-surfaces as an error the workflow can report.
+**Derived rather than chosen, since 2026-09-22.** It was 60, described as
+"roughly twice the longest healthy stage observed across fourteen runs" - but
+that was counted in stages, not in supersteps, and a superstep is not a model
+call. At the measured 2.41 supersteps per call, 60 supersteps is about 25 model
+calls, while `MODEL_CALLS_PER_STAGE` is 40 and the largest stage that has ever
+finished used 36. So this ceiling could kill a stage the call budget says is
+healthy, and did: run 9f14d645's `specialist_ui_ux_0` spun out three times at
+roughly 32 calls an attempt, never reached its call budget, and failed the run.
+
+Worse than stopping a healthy stage, it stopped the *better* guard from acting.
+`MODEL_CALLS_PER_STAGE` ends a stage by looking for an answer already written
+and returning it (`_decide`); this ends it with a `GraphRecursionError` and a
+restart. Letting the call budget bind first means a spin is caught by the guard
+that can salvage something.
+
+Deriving one from the other is what `_request_timeout` does with
+`_time_to_generate_a_full_answer`, and for the same reason: the two numbers
+were chosen independently, drifted, and the drift was invisible until a run
+died of it.
 """
 """Raise LangGraph's superstep ceiling above its default of 25.
 

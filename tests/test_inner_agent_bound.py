@@ -29,7 +29,23 @@ from app.graph.workflow import (
 
 
 def test_the_inner_agent_has_a_ceiling():
-    assert 0 < INNER_AGENT_RECURSION_LIMIT < 100
+    """Bounded, and bounded above the budget it is meant to outlast.
+
+    The upper bound was a flat `< 100`, which is a sanity check rather than a
+    requirement, and it started failing when the ceiling was derived from
+    `MODEL_CALLS_PER_STAGE` instead of chosen. At the measured 3.14 supersteps
+    per model call, 100 supersteps is only 32 model calls - below the 36 the
+    largest healthy stage has used, which is the defect that derivation fixed.
+
+    What actually matters is here: it exists, and a stage can reach its call
+    budget inside it. `test_the_two_stage_ceilings_agree` holds the arithmetic.
+    """
+    from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
+
+    assert INNER_AGENT_RECURSION_LIMIT > 0
+    assert INNER_AGENT_RECURSION_LIMIT > MODEL_CALLS_PER_STAGE
+    # Still a ceiling: a stage that loops for ever is stopped.
+    assert INNER_AGENT_RECURSION_LIMIT < 1000
 
 
 def test_the_first_invoke_carries_it():

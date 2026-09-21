@@ -139,21 +139,20 @@ class TestASandboxRefusalIsNotACost:
     """
 
     def _saved(self):
-        # Read out of the source rather than imported. Importing a script to
-        # look at one constant runs everything else in it, and this one parses
-        # `sys.argv` - under the full suite that is pytest's, so the first
-        # version died with `IsADirectoryError: Is a directory: 'tests/'`.
-        # `audit_run.py` now guards its entry point, and this no longer depends
-        # on whether it does.
-        import ast
+        # The list itself, from the module that now owns it. It used to be a
+        # literal in `audit_run.py`; two copies of it drifted once already -
+        # the script's was missing every sandbox refusal - so the script
+        # imports this one and there is nothing left to keep in step.
+        from app.observability.transcript_metrics import PREVENTED_DAMAGE
 
+        return PREVENTED_DAMAGE
+
+    def test_the_script_reads_the_one_list(self):
+        """Not a second copy. That is what went stale before."""
         assert SCRIPT.is_file()
-        tree = ast.parse(SCRIPT.read_text(encoding="utf-8"))
-        for node in tree.body:
-            targets = getattr(node, "targets", [])
-            if any(getattr(t, "id", None) == "SAVED" for t in targets):
-                return ast.literal_eval(node.value)
-        raise AssertionError("audit_run.py no longer defines SAVED")
+        source = SCRIPT.read_text(encoding="utf-8")
+        assert "from app.observability.transcript_metrics import PREVENTED_DAMAGE" in source
+        assert "SAVED = (" not in source, "a second copy of the markers is back"
 
     def test_the_sandbox_refusals_are_marked_as_prevented(self):
         saved = self._saved()

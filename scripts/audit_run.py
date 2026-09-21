@@ -31,32 +31,12 @@ third, so keep it in step with the messages in `app/tools/repository.py`.
 """
 import json, sys, collections, re, os
 
-SAVED = (
-    "Node cannot parse", "Refusing to write", "Refusing to change",
-    "already been applied", "exactly as it is", "already contained exactly",
-    "is a test, and tests are part of what", "already holds this module",
-    # Was "you have already been told that twice", which nothing emits: the
-    # sentence in `repository.py` reads "into a state it already had, and you
-    # have been told that twice". One stray word, and every one of those
-    # refusals had been counted as a cost since the marker was written.
-    "you have been told that twice",
-    # Found missing by sweeping every distinct error across runs 60-67 rather
-    # than reading them one at a time, which is how the first three of these
-    # went unnoticed:
-    "so it is ambiguous which one",   # editing one of N identical passages at random
-    "it can execute arbitrary code",  # `node -e`, with a file-based alternative given
-    "Moving onto it would delete it", # a move that would silently destroy the target
-    # The sandbox's refusals, which this list had never covered - the docstring
-    # above says to keep it in step with `app/tools/repository.py` and the
-    # sandbox writes its own. On run b0db10b1 six of the eight calls filed under
-    # "failures that cost the run" were these: five withheld repeats and one
-    # refused server. They are the guards working, and counting them as costs
-    # made the number this script exists to drive down go up whenever a guard
-    # fired.
-    "Not running this again",             # a settled command, withheld
-    "it runs until it is stopped",        # a server with nothing to stop it
-    "installs system packages as root",   # an install the sandbox cannot grant
-)
+# The markers live in `app.observability.transcript_metrics`, which is the
+# reduction the harness itself runs. Two copies drifted once already: this
+# list was missing every sandbox refusal, so six of run b0db10b1's eight
+# "costly failures" were guards working, and the number this script exists
+# to drive down rose whenever one fired.
+from app.observability.transcript_metrics import PREVENTED_DAMAGE as SAVED
 
 def load(path):
     rows = []

@@ -4227,8 +4227,61 @@ def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> lis
             "This BREAKS regression detection. You MUST install `@playwright/test` and use it "
             "to test the UI logic end-to-end. Unit testing the data layer alone with `node --test` "
             "is insufficient for verifying that the application works in the browser."
+            + _and_the_brief_bans_dependencies(root)
         ]
     return []
+
+
+#: A project document ruling out dependencies. Deliberately narrow: it has to
+#: be a statement about dependencies, not any sentence with "external" in it.
+_NO_DEPENDENCIES = re.compile(
+    r"no\s+(?:external\s+|third[-\s]party\s+|runtime\s+)?dependencies"
+    r"|without\s+(?:any\s+)?external\s+dependencies"
+    r"|zero\s+dependencies",
+    re.I,
+)
+
+
+def _and_the_brief_bans_dependencies(root: Path) -> str:
+    """The constraint the reviewer has to weigh this finding against, or "".
+
+    The finding above tells a reviewer it MUST install a package. On a brief
+    reading "No external dependencies beyond basic HTML/CSS/JS" that is an
+    instruction to break a stated constraint, and it arrives with no mention
+    that the constraint exists.
+
+    Both of run-d483f554's reviewers worked it out for themselves and wrote
+    the reasoning into their findings - "While the brief forbids external
+    dependencies f..." - and both filed the result as `suggestion`, against a
+    finding this file grades as blocking. A check that two consecutive
+    reviewers have to overrule is not giving them what they need.
+
+    The answer is not in doubt and the reviewer's own prompt already states
+    it: a test-only dependency is not a dependency of the product. Saying so
+    here puts it where the finding is read.
+
+    Read from the workspace's own documents, like `_declared_line_budget`,
+    because that is where the brief has already been restated as something
+    this run committed to.
+    """
+    for folder in (root / "docs", root):
+        if not folder.is_dir():
+            continue
+        for document in sorted(folder.glob("*.md")):
+            try:
+                text = _read(document)
+            except Exception:  # noqa: BLE001 - an unreadable document bans nothing
+                continue
+            if _NO_DEPENDENCIES.search(text):
+                return (
+                    f" This project's documents ({document.name}) rule out external "
+                    "dependencies, and that constraint is about the SHIPPED product: "
+                    "`@playwright/test` belongs in `devDependencies`, where "
+                    "`npm ci --omit=dev` installs none of it and the user receives "
+                    "nothing of it. Installing it as a dev dependency breaks no "
+                    "constraint here. Putting it in `dependencies` would."
+                )
+    return ""
 
 
 def summarise_integration(repository_root: str | Path, stack: Any = None) -> str:

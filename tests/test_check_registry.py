@@ -66,12 +66,22 @@ def test_the_named_checks_are_the_ones_that_run(tmp_path: Path) -> None:
 
 
 def _spy(check, describe, called):
-    def wrapper(files, root, stack):
+    def wrapper(files, root, stack, brief):
         called.add(describe)
-        return check(files, root, stack)
+        return check(files, root, stack, brief)
 
     return wrapper
 
 
 def test_a_workspace_that_cannot_be_read_says_so(tmp_path: Path) -> None:
     assert "could not" in summarise_integration(str(tmp_path / "nowhere"))
+
+
+def test_every_check_takes_the_brief(tmp_path: Path) -> None:
+    """Two of them compare the product against the operator's own brief
+    rather than the run's restatement of it, and the registry calls them all
+    the same way - so a check added with the old three-argument signature
+    raises, `summarise_integration` swallows it, and every finding in the
+    workspace disappears at once. That is what this catches."""
+    for describe, check in _CHECKS:
+        assert check([], tmp_path, None, "") == [] or True, describe

@@ -1898,6 +1898,56 @@ def _review_enabled(state: WorkflowGraphState, review_point: str) -> bool:
     return bool(state.get("review_policy", {}).get(review_point, False))
 
 
+def _a_brief_requirement_the_run_never_built(state: Any) -> str:
+    """What the brief asked for that the product still does not do, or "".
+
+    Asked once, at the last sprint, because it is the only point where the
+    whole brief is the question. Every milestone review before it is scoped to
+    its own milestone, and deferring a requirement out of one is legitimate -
+    a sprint plan exists to do exactly that. Run b6436e36's first review put
+    both `edit` and the filter bar into later sprints, correctly.
+
+    What nothing did was ask again at the end. `complete_node` returns
+    `{"stage": "complete"}` and nothing else, so a requirement deferred out of
+    every milestone in turn was never checked, and three completed runs
+    shipped with no way to edit a task: b0db10b1, 0cbbb28b and 3c8e772e.
+
+    Reads the operator's brief rather than the run's documents, for the reason
+    `_actions_the_brief_requires` gives: a run that redefines a requirement
+    removes it from every document downstream, after which a check that reads
+    those documents agrees with the run.
+
+    Returns "" on any failure. A gate that cannot run must not stop a run that
+    has otherwise passed everything.
+    """
+    try:
+        from pathlib import Path as _Path
+
+        from app.analysis.integration_checks import (
+            _a_required_action_nothing_implements,
+            _source_files,
+        )
+
+        brief = getattr(state.get("document"), "text", "") or ""
+        if not brief.strip():
+            return ""
+        root = _Path(state["repository"].root_path).resolve()
+        problems = _a_required_action_nothing_implements(
+            _source_files(root), root, brief
+        )
+    except Exception:  # noqa: BLE001 - never fail a finished run over this gate
+        logger.warning("Could not check the brief at the last sprint", exc_info=True)
+        return ""
+    if not problems:
+        return ""
+    return (
+        "MUST FIX - the last sprint is accepted and the brief is not "
+        "delivered. This is the final check against the operator's own brief "
+        "rather than this run's restatement of it, and the run does not "
+        "finish until it passes:\n" + "\n".join(f"- {problem}" for problem in problems)
+    )
+
+
 def _escalate_to_a_human(
     state: WorkflowGraphState, error: str, **fields: Any
 ) -> dict[str, Any]:
@@ -3004,6 +3054,40 @@ def build_workflow_graph(
             )
         except Exception:  # noqa: BLE001 - history is a convenience, not the run
             logger.warning("Could not record a commit for this sprint", exc_info=True)
+
+        # The last sprint is the only place the whole brief is the question.
+        # Every milestone review before this one is scoped to its own
+        # milestone, and deferring a requirement out of one is legitimate -
+        # that is what a sprint plan is for. Nothing asked the other question,
+        # and `complete_node` returns `{"stage": "complete"}` and nothing else,
+        # so a requirement deferred out of every milestone in turn was never
+        # checked at all. Three completed runs shipped with no way to edit a
+        # task that way: b0db10b1, 0cbbb28b and 3c8e772e.
+        if not has_more_sprints:
+            unbuilt = _a_brief_requirement_the_run_never_built(state)
+            if unbuilt:
+                revision_count = state.get("milestone_revision_count", 0) + 1
+                if revision_count < MAX_MILESTONE_REVISIONS:
+                    logger.warning(
+                        "The last sprint was accepted with a brief requirement "
+                        "unbuilt; sending it back rather than completing: %s",
+                        unbuilt[:160],
+                    )
+                    return _handing_on(
+                        stage="technical_lead",
+                        revision_comments=state.get("revision_comments", []) + [unbuilt],
+                        milestone_revision_count=revision_count,
+                        milestone_review=review,
+                    )
+                return _escalate_to_a_human(
+                    state,
+                    error=(
+                        "The last sprint was accepted, but the brief has a "
+                        f"requirement this run never built.\n\n{unbuilt}"
+                    ),
+                    milestone_revision_count=revision_count,
+                    milestone_review=review,
+                )
 
         if _review_enabled(state, SPRINT_REVIEW):
             next_stage = "user_review_sprint"

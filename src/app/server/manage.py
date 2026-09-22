@@ -586,6 +586,52 @@ def _run_id_in(name: str) -> str:
     return name[marker:] if marker >= 0 else ""
 
 
+def _megabytes(size: int) -> str:
+    """A size in MB, never rounding something that exists down to nothing.
+
+    One decimal place is the right resolution for a report whose point is
+    which workspaces are large, and it prints anything under 50 KB as
+    "0.0 MB" - which reads as empty. A workspace that holds a few files is
+    not empty, and a column of zeroes is what makes an operator stop reading.
+    """
+    if 0 < size < 102_400:
+        return f"{'<0.1':>9s} MB"
+    return f"{size / 1_048_576:9.1f} MB"
+
+
+def _workspace_directories(root: Path) -> list[Path]:
+    """Every run workspace under `root`, in either layout it may be in.
+
+    Two layouts are on disk at once. `allocate_workspace` originally put a
+    workspace directly under the root; tenant segments were added later, and
+    since then it writes `<root>/<tenant>/<workspace>`. `delete_workspace`
+    was written to cope with both - "checked against the configured root
+    rather than a tenant's directory under it, so this keeps working for
+    workspaces allocated before there were tenant segments" - and the first
+    version of this report was not.
+
+    What that cost, on this deployment: the six pre-tenant workspaces were
+    read as tenant directories, so their `.git` and `docs` subdirectories were
+    listed as workspaces in their own right, the total came to 908 MB against
+    a real 1.1 GB, and none of the six was ever offered for deletion because a
+    `docs` directory carries no run id and its status reads "no run", which is
+    not terminal. Under-reporting and under-deleting is the safe direction to
+    be wrong in, and still wrong.
+
+    A directory is a workspace if its name carries a run id; otherwise it is
+    a tenant segment and its children are looked at instead. That is the same
+    test the rest of this module uses to find a run, and it needs no list of
+    known tenant names.
+    """
+    found: list[Path] = []
+    for entry in sorted(p for p in root.iterdir() if p.is_dir()):
+        if _run_id_in(entry.name):
+            found.append(entry)
+            continue
+        found.extend(sorted(p for p in entry.iterdir() if p.is_dir()))
+    return found
+
+
 def workspaces(older_than_days: float | None = None, delete: bool = False) -> int:
     """Report what the run workspaces are costing, and optionally reclaim it.
 
@@ -611,13 +657,12 @@ def workspaces(older_than_days: float | None = None, delete: bool = False) -> in
     store = RunStore.shared()
     now = time.time()
     rows: list[tuple[Path, int, float, str]] = []
-    for tenant in sorted(p for p in root.iterdir() if p.is_dir()):
-        for workspace in sorted(p for p in tenant.iterdir() if p.is_dir()):
-            run_id = _run_id_in(workspace.name)
-            record = store.load(run_id) if run_id else None
-            status = getattr(record, "status", None) or ("unknown" if run_id else "no run")
-            age_days = (now - workspace.stat().st_mtime) / 86400
-            rows.append((workspace, _directory_size(workspace), age_days, str(status)))
+    for workspace in _workspace_directories(root):
+        run_id = _run_id_in(workspace.name)
+        record = store.load(run_id) if run_id else None
+        status = getattr(record, "status", None) or ("unknown" if run_id else "no run")
+        age_days = (now - workspace.stat().st_mtime) / 86400
+        rows.append((workspace, _directory_size(workspace), age_days, str(status)))
 
     if not rows:
         print(f"No workspaces under {root}.")
@@ -626,10 +671,10 @@ def workspaces(older_than_days: float | None = None, delete: bool = False) -> in
     total = sum(size for _, size, _, _ in rows)
     for workspace, size, age_days, status in sorted(rows, key=lambda r: -r[1]):
         print(
-            f"{size / 1_048_576:9.1f} MB  {age_days:6.1f}d  {status:10s} "
+            f"{_megabytes(size)}  {age_days:6.1f}d  {status:10s} "
             f"{workspace.relative_to(root)}"
         )
-    print(f"{total / 1_048_576:9.1f} MB  total across {len(rows)} workspace(s)")
+    print(f"{_megabytes(total)}  total across {len(rows)} workspace(s)")
 
     if older_than_days is None:
         print("\nPass --older-than-days N to see what could be reclaimed.")

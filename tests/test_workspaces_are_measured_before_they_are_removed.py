@@ -40,10 +40,20 @@ def workspaces(tmp_path, monkeypatch):
     make("todo-run-22222222-bbbb", 2048, 30)
     make("todo-run-33333333-cccc", 1024, 0.5)
 
+    # The pre-tenant layout, which is on disk beside the other one: a
+    # workspace directly under the root, with subdirectories of its own.
+    old = root / "todo-run-44444444-dddd"
+    (old / "docs").mkdir(parents=True)
+    (old / ".git").mkdir()
+    (old / "app.js").write_bytes(b"y" * 8192)
+    when = __import__("time").time() - 30 * 86400
+    __import__("os").utime(old, (when, when))
+
     statuses = {
         "run-11111111-aaaa": "completed",
         "run-22222222-bbbb": "running",
         "run-33333333-cccc": "completed",
+        "run-44444444-dddd": "completed",
     }
     store = types.SimpleNamespace(
         load=lambda run_id: _Record(statuses[run_id]) if run_id in statuses else None
@@ -62,7 +72,7 @@ def test_it_reports_every_workspace_with_its_run_status(workspaces, capsys) -> N
     assert "todo-run-11111111-aaaa" in out
     assert "completed" in out
     assert "running" in out
-    assert "total across 3 workspace(s)" in out
+    assert "total across 4 workspace(s)" in out
 
 
 def test_nothing_is_offered_without_an_age(workspaces, capsys) -> None:
@@ -133,3 +143,47 @@ def test_the_cli_defaults_to_reporting(monkeypatch) -> None:
 
     assert manage.main(["workspaces"]) == 0
     assert seen == {"older": None, "delete": False}
+
+
+# --- the two layouts on disk at once --------------------------------------
+
+
+def test_a_pre_tenant_workspace_is_found(workspaces, capsys) -> None:
+    """`allocate_workspace` put workspaces directly under the root before
+    tenant segments existed, and six of them are still there."""
+    manage.workspaces()
+    out = capsys.readouterr().out
+
+    assert "todo-run-44444444-dddd" in out
+    assert "total across 4 workspace(s)" in out
+
+
+def test_its_subdirectories_are_not_counted_as_workspaces(workspaces, capsys) -> None:
+    """The bug this fixes: `.git` and `docs` were listed in their own right,
+    each with a status of "no run", and the real workspace was never listed."""
+    manage.workspaces()
+    out = capsys.readouterr().out
+
+    assert "/docs" not in out
+    assert "/.git" not in out
+    assert "no run" not in out
+
+
+def test_it_is_offered_for_deletion_like_any_other(workspaces, capsys) -> None:
+    """It never was: a `docs` directory carries no run id, so its status read
+    "no run", which is not terminal, so nothing was ever reclaimed."""
+    manage.workspaces(older_than_days=7)
+    out = capsys.readouterr().out
+
+    assert "Would delete todo-run-44444444-dddd" in out
+
+
+def test_a_workspace_that_exists_never_reads_as_empty(workspaces, capsys) -> None:
+    """One decimal place prints anything under 50 KB as "0.0 MB", and a column
+    of zeroes is what makes an operator stop reading the report."""
+    manage.workspaces()
+    line = next(
+        l for l in capsys.readouterr().out.splitlines() if "todo-run-44444444-dddd" in l
+    )
+
+    assert line.strip().startswith("<0.1 MB")

@@ -82,3 +82,17 @@ def test_the_real_product_reads_as_having_it() -> None:
     """
 
     assert _names_the_action(product, EDIT)
+
+
+def test_a_capital_that_is_not_the_word_is_not_a_boundary() -> None:
+    """Real strings from real suites, and the nearest misses this matcher has.
+
+    `persistedItems` (run 9c0fc48d) and `completedItems` (run 3c8e772e) both
+    contain `edIt`. The camelCase rung looks for the capitalised *word* -
+    `Edit` - so neither counts, and both of those runs are correctly reported
+    as having no test for editing. A looser rule would have accepted a
+    variable about persistence as evidence of a feature.
+    """
+    assert not _names_the_action("const persistedItems = load();", EDIT)
+    assert not _names_the_action("const completedItems = all.filter(t => t.done);", EDIT)
+    assert not _names_the_action("let editedItems = 0;", EDIT, inflected=False)

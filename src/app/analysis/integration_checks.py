@@ -3790,13 +3790,39 @@ _INFLECTED = r"(?:s|es|ed|d|ing)?"
 def _names_the_action(text: str, words: tuple[str, ...], inflected: bool = False) -> bool:
     """Whether `text` names this action, by any of its accepted spellings.
 
-    The lookbehind refuses a preceding `.` so a built-in method of the same name
-    is not evidence - `tasks.filter(...)` taught that once already.
+    Two shapes count, and both are needed.
+
+    **At the start of a name** - `editTask`, `edit-btn`, `edit_task`,
+    `deleteTask(id)`. The lookbehind refuses a preceding `.` so a built-in
+    method of the same name is not evidence: `tasks.filter(...)` is
+    `Array.prototype.filter` and it vouched for three dead buttons once
+    already.
+
+    **At a camelCase boundary inside one** - `saveEdit`, `cancelEdit`,
+    `handleEditClick`. Run-6b511391's product implements inline editing in
+    full: a double-click handler on `.task-title`, `saveEdit()`, `cancelEdit()`,
+    Enter to commit, Escape to cancel, blur to save, and
+    `updateTask(id, { title })` underneath. Not one of those names starts with
+    `edit`, so the first shape alone reported the product as having no way to
+    edit a task, and that finding went to the reviewer as blocking.
+
+    It was harmless while `edit` only entered the required set when the run's
+    own documents kept the word. Now the brief puts it there on every run, so
+    the gap fires on every product that names its handlers this way.
+
+    The boundary has to be a *capital* after a lowercase letter, which is what
+    keeps this narrow: `credit` and `discredit` contain `edit` after a
+    lowercase letter and are not camelCase boundaries, so they still do not
+    count. `editing` and `editor` are still refused by the trailing
+    `(?![a-z])`.
     """
     tail = _INFLECTED if inflected else ""
-    return any(
-        re.search(rf"(?<![\w.-])(?i:{word}){tail}(?![a-z])", text) for word in words
-    )
+    for word in words:
+        starts_a_name = rf"(?<![\w.-])(?i:{word}){tail}(?![a-z])"
+        inside_a_name = rf"(?<=[a-z0-9]){word.capitalize()}{tail}(?![a-z])"
+        if re.search(starts_a_name, text) or re.search(inside_a_name, text):
+            return True
+    return False
 
 
 def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:

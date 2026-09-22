@@ -283,6 +283,41 @@ READS_BEFORE_WITHHOLDING = 3
 #: is the one thing none of the others say.
 REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
 
+#: Repeated reads across all files before a redundant read stops succeeding.
+#:
+#: Every rung below this one is a notice attached to a successful result, and
+#: measured across the stored transcripts, notices do not stop the reading:
+#:
+#:     after a note      27.3% read the same file again,   31% did any work
+#:     after a withhold  30.0% read the same file again,   61.5% read a
+#:                       *different* file, and 8% did any work
+#:     after the exit    93.0% read again
+#:     notice above
+#:
+#: The exit notice fired 515 times across 29 stages, and
+#: `run-b0db10b1`'s `specialist_ui_ux_0` received it 115 times. Withholding
+#: the bytes reduces what a redundant read costs and moves the stage to a
+#: different file rather than to work; naming the exit is ignored outright.
+#:
+#: What does move this model is an error. The `node -e` refusal was answered
+#: by writing the code to a file 49% of the time and retried in the same shape
+#: 9% of the time - the opposite profile - because a refusal arrives in the
+#: channel the model reads as "that did not work", and a withheld result
+#: arrives as a success.
+#:
+#: So past this, a read that would return nothing the stage has not already
+#: been given fails instead of succeeding quietly. Twice the exit-notice
+#: threshold, and derived from it rather than written again, so the two cannot
+#: drift apart: by the time this fires the stage has been handed the exit at
+#: least six times and gone on reading.
+#:
+#: Narrow, in the way that makes it safe: it applies only to a read that is
+#: provably redundant - the same bytes, or a range already served, of a file
+#: that has not changed since. A read of anything new always succeeds, so a
+#: stage that has genuinely lost its context has a way back that a loop does
+#: not take.
+REPEATED_READS_BEFORE_REFUSING = REPEATED_READS_BEFORE_NAMING_THE_EXIT * 2
+
 
 #: Lines of the withheld file shown at each end, so the message is an anchor
 #: rather than only a refusal.
@@ -627,6 +662,31 @@ class _NoticingRepeats:
             )
         return ""
 
+    def _refuse_a_read_that_returns_nothing_new(self, file_path: str) -> str:
+        """Why this read failed, or "" while it should still succeed.
+
+        The last rung of the ladder, and the first one that is not a notice.
+        Reached only by a read that would return nothing this stage has not
+        already been given, and only after the stage has ignored the exit
+        notice for another six repeated reads - see
+        `REPEATED_READS_BEFORE_REFUSING` for the measurement that says notices
+        stop working long before this.
+        """
+        if getattr(self, "_repeated_reads", 0) < REPEATED_READS_BEFORE_REFUSING:
+            return ""
+        return (
+            f"Refusing to read '{file_path}' again: this returns nothing you "
+            f"have not already been given, and it is the "
+            f"{self._repeated_reads}th time this stage has asked for content "
+            "it already has. The file has not changed since you last saw it, "
+            "so nothing here can tell you anything new.\n"
+            "A range you have NOT read still works, and so does `grep` for "
+            "something specific. If you have what you need, return your "
+            "structured response now. If something is stopping you, return it "
+            "in `blockers` and say what you would need - a blocker is a "
+            "complete answer and the workflow acts on it."
+        )
+
     def _the_way_out(self) -> str:
         """Name the exit once a stage is circling over its whole file set.
 
@@ -717,6 +777,9 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         self._withheld = False  # noqa: SLF001 - own attribute
         note = self._note_if_repeated(file_path, content)
         if self._withheld:
+            refusal = self._refuse_a_read_that_returns_nothing_new(file_path)
+            if refusal:
+                return replace(result, error=refusal)
             # The bytes are replaced, not prefixed. Repeating them is the whole
             # cost this is here to stop.
             return replace(result, file_data={**data, "content": note})
@@ -730,6 +793,9 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                     str(file_path), self._file_identity(file_path), first, last, content
                 )
                 if self._withheld:
+                    refusal = self._refuse_a_read_that_returns_nothing_new(file_path)
+                    if refusal:
+                        return replace(result, error=refusal)
                     # Same as the byte-identical rung above: the bytes are
                     # replaced, not prefixed.
                     return replace(result, file_data={**data, "content": note})

@@ -30,6 +30,7 @@ import pytest
 from app.agents.workspace_backend import (
     READS_BEFORE_WITHHOLDING,
     REPEATED_READS_BEFORE_NAMING_THE_EXIT,
+    REPEATED_READS_BEFORE_REFUSING,
     REPEATS_BEFORE_SAYING_SO,
     WorkspaceBackend,
 )
@@ -45,9 +46,15 @@ def backend(tmp_path: pathlib.Path):
 
 
 def _read(backend, name):
+    """Whatever the stage was told, in whichever channel it arrived.
+
+    Past `REPEATED_READS_BEFORE_REFUSING` a read that returns nothing new
+    fails instead of succeeding quietly, so the message moves from the
+    content to the error. Both rungs have to name the two exits, which is
+    what these tests are about - so both are looked at."""
     result = backend.read(f"/{name}")
     data = getattr(result, "file_data", None) or {}
-    return str(data.get("content") or "")
+    return str(data.get("content") or "") + str(getattr(result, "error", "") or "")
 
 
 def test_reading_one_file_a_few_times_does_not_name_the_exit(backend):
@@ -58,21 +65,30 @@ def test_reading_one_file_a_few_times_does_not_name_the_exit(backend):
     assert EXIT not in out
 
 
-def test_cycling_the_whole_file_set_does_name_the_exit(backend):
-    """The case the per-file rungs are slow to reach."""
+def _read_until_the_exit_is_named(backend) -> str:
+    """Cycle the file set until the stage-wide rung fires, and stop there.
+
+    Bounded, and stopping on the first firing rather than looping a fixed
+    number of times: past `REPEATED_READS_BEFORE_REFUSING` a redundant read
+    fails instead of being answered with a notice, and these tests are about
+    the notice.
+    """
     out = ""
     for _ in range(REPEATED_READS_BEFORE_NAMING_THE_EXIT + 3):
         for name in ("index.html", "app.js", "styles.css"):
             out = _read(backend, name)
+            if EXIT in out:
+                return out
+    return out
 
-    assert EXIT in out
+
+def test_cycling_the_whole_file_set_does_name_the_exit(backend):
+    """The case the per-file rungs are slow to reach."""
+    assert EXIT in _read_until_the_exit_is_named(backend)
 
 
 def test_it_names_both_exits_and_neither_is_read_again(backend):
-    out = ""
-    for _ in range(REPEATED_READS_BEFORE_NAMING_THE_EXIT + 3):
-        for name in ("index.html", "app.js", "styles.css"):
-            out = _read(backend, name)
+    out = _read_until_the_exit_is_named(backend)
 
     assert "structured response" in out
     assert "blockers" in out
@@ -80,10 +96,7 @@ def test_it_names_both_exits_and_neither_is_read_again(backend):
 
 def test_the_rung_adds_information_rather_than_removing_it(backend):
     """The measured principle: every rung that takes something away does worse."""
-    out = ""
-    for _ in range(REPEATED_READS_BEFORE_NAMING_THE_EXIT + 3):
-        for name in ("index.html", "app.js", "styles.css"):
-            out = _read(backend, name)
+    out = _read_until_the_exit_is_named(backend)
 
     # It still says what the file is, or where the content already is.
     assert "same bytes" in out or "already have it" in out

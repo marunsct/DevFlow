@@ -3699,12 +3699,39 @@ def _names_the_action(text: str, words: tuple[str, ...], inflected: bool = False
     )
 
 
-def _actions_the_documents_require(root: Path) -> dict[str, str]:
-    """Every user action this project's own acceptance criteria enumerate.
+def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:
+    """Add every user action one document's acceptance criteria enumerate.
 
     Maps the action to the line it was read from, so a finding can quote its
-    source rather than assert it.
+    source rather than assert it. Shared by the two callers below, which differ
+    only in what they read: the run's own documents, and the brief it was given.
     """
+    in_requirements = False
+    for line in text.splitlines():
+        if _A_HEADING.match(line):
+            in_requirements = bool(_A_REQUIREMENT_SECTION.match(line))
+            continue
+        lowered = line.lower()
+        if not in_requirements:
+            if "acceptance" not in lowered and "criteria" not in lowered:
+                if not _LOOKS_LIKE_A_CRITERION.search(lowered):
+                    continue
+        for match in _ACTION_LIST.finditer(lowered):
+            parts = [
+                piece.strip()
+                for piece in re.split(r"/|,|\s+and\s+|\s+or\s+", match.group(1))
+            ]
+            named = [piece for piece in parts if piece in _USER_ACTIONS]
+            # Two or more, so a single verb in prose is never a list.
+            if len(named) < 2:
+                continue
+            for action in named:
+                required.setdefault(action, line.strip())
+    return required
+
+
+def _actions_the_documents_require(root: Path) -> dict[str, str]:
+    """Every user action this project's own acceptance criteria enumerate."""
     required: dict[str, str] = {}
     for folder in (root / "docs", root):
         if not folder.is_dir():
@@ -3714,28 +3741,38 @@ def _actions_the_documents_require(root: Path) -> dict[str, str]:
                 text = _read(document)
             except Exception:  # noqa: BLE001 - a missing document requires nothing
                 continue
-            in_requirements = False
-            for line in text.splitlines():
-                if _A_HEADING.match(line):
-                    in_requirements = bool(_A_REQUIREMENT_SECTION.match(line))
-                    continue
-                lowered = line.lower()
-                if not in_requirements:
-                    if "acceptance" not in lowered and "criteria" not in lowered:
-                        if not _LOOKS_LIKE_A_CRITERION.search(lowered):
-                            continue
-                for match in _ACTION_LIST.finditer(lowered):
-                    parts = [
-                        piece.strip()
-                        for piece in re.split(r"/|,|\s+and\s+|\s+or\s+", match.group(1))
-                    ]
-                    named = [piece for piece in parts if piece in _USER_ACTIONS]
-                    # Two or more, so a single verb in prose is never a list.
-                    if len(named) < 2:
-                        continue
-                    for action in named:
-                        required.setdefault(action, line.strip())
+            _actions_required_in(text, required)
     return required
+
+
+def _actions_the_brief_requires(brief: str) -> dict[str, str]:
+    """Every user action the operator's own brief enumerates.
+
+    The documents above are the run's restatement of this. A restatement can
+    lose a requirement, and when it does, every check that reads only the
+    restatement agrees with the loss.
+
+    Measured on run-3c8e772e. `tests/brief_low.md` states "Users can add, edit,
+    delete tasks". The run's technical specification records:
+
+        Q3: Is inline editing of title/description desired beyond toggling
+        completion status? The acceptance criteria mention 'edit' but the core
+        workflows only describe marking complete/incomplete. Decision recorded:
+        'Edit' refers to toggling completion status. Inline text editing is
+        deferred.
+
+    From that point the documents enumerate create, update, complete and
+    delete - never edit - so `_actions_the_documents_require` returns a set
+    with no `edit` in it, `_a_required_action_nothing_implements` finds nothing
+    missing, and the run completes with no way to edit a task. Four of the
+    eight stored products have no edit for this reason or its cousins.
+
+    Note what this is not: the run is allowed to *defer* a requirement, and
+    `_where_the_run_deferred_it` already reports that with the right words.
+    What it may not do is redefine one out of existence, because then nothing
+    reports anything.
+    """
+    return _actions_required_in(brief or "", {})
 
 
 #: A bullet that reads as a delivered-capability claim even without the word
@@ -3792,7 +3829,9 @@ def _where_the_run_deferred_it(root: Path, action: str, words: tuple[str, ...]) 
     return ""
 
 
-def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list[str]:
+def _a_required_action_nothing_implements(
+    files: list[Path], root: Path, brief: str = ""
+) -> list[str]:
     """An action the run's own documents enumerate and the product never names.
 
     The workflow captures acceptance criteria correctly and then loses one.
@@ -3817,6 +3856,16 @@ def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list
     here, and so is a criterion like "responsive design", which names no action.
     """
     required = _actions_the_documents_require(root)
+    # The brief outranks the run's restatement of it. An action the operator
+    # asked for and the documents no longer mention is still required - see
+    # `_actions_the_brief_requires` for the run that proved it.
+    from_the_brief = _actions_the_brief_requires(brief)
+    redefined = {
+        action: line
+        for action, line in from_the_brief.items()
+        if action not in required
+    }
+    required = {**from_the_brief, **required}
     if not required:
         return []
 
@@ -3880,6 +3929,27 @@ def _a_required_action_nothing_implements(files: list[Path], root: Path) -> list
             continue
         alternatives = ", ".join(f"`{word}`" for word in words[1:])
         deferral = _where_the_run_deferred_it(root, action, words)
+        if action in redefined:
+            # The brief asked for it and this run's own documents no longer do.
+            # That is not a deferral - a deferral leaves the requirement
+            # standing and records a decision against it, which
+            # `_where_the_run_deferred_it` reports in the branch below. This is
+            # the requirement being rewritten, after which nothing in the run
+            # disagrees with the product, because the product matches the
+            # rewrite.
+            because = f" The run recorded why: {deferral}." if deferral else ""
+            problems.append(
+                f"The brief requires that a user can `{action}` - "
+                f"\"{redefined[action][:140]}\" - and this run's own documents "
+                f"no longer ask for it.{because} Nothing in the product names "
+                f"it, and no check in this workspace was going to say so, "
+                "because every one of them reads the documents rather than the "
+                "brief. Restating a brief is not the same as changing it: a "
+                "requirement can be deferred, with the operator's answer on "
+                "the record, but it cannot be defined away by the run that was "
+                "given it. Build it, or put the descope to the operator."
+            )
+            continue
         if deferral:
             # Recorded, not forgotten - which is better, and still not the
             # run's decision to make. Run 35424714 captured "Users can
@@ -4055,7 +4125,9 @@ def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[s
     return problems
 
 
-def _a_required_action_no_test_covers(files: list[Path], root: Path) -> list[str]:
+def _a_required_action_no_test_covers(
+    files: list[Path], root: Path, brief: str = ""
+) -> list[str]:
     """An action the documents require that no test anywhere names.
 
     Every verification this harness performs reads the implementation. Unit
@@ -4082,7 +4154,11 @@ def _a_required_action_no_test_covers(files: list[Path], root: Path) -> list[str
     Silent when the project has no tests at all: that is a different finding and
     `_tests_the_project_never_runs` and its neighbours already make it.
     """
-    required = _actions_the_documents_require(root)
+    # The brief outranks the run's restatement of it here too: a suite
+    # written from documents that dropped a requirement cannot miss it.
+    from_the_documents = _actions_the_documents_require(root)
+    from_the_brief = _actions_the_brief_requires(brief)
+    required = {**from_the_brief, **from_the_documents}
     if not required:
         return []
 
@@ -4103,9 +4179,18 @@ def _a_required_action_no_test_covers(files: list[Path], root: Path) -> list[str
         if _names_the_action(corpus, words, inflected=True):
             continue
         named = ", ".join(sorted(str(p.relative_to(root)) for p in suites))
+        # Named accurately. An action that survives only in the brief is not
+        # something "this project's own documents require" - the documents are
+        # where it was lost, and a finding that misattributes its own source
+        # invites the reviewer to go and check the wrong file.
+        source = (
+            "this project's own documents require"
+            if action in from_the_documents
+            else "the brief requires"
+        )
         problems.append(
-            f"No test names `{action}`, which this project's own documents "
-            f"require a user can do: \"{required[action][:140]}\". Searched "
+            f"No test names `{action}`, which {source} "
+            f"a user can do: \"{required[action][:140]}\". Searched "
             f"{named}. A suite written from the code cannot miss a feature the "
             "code does not have, so it passes and reports nothing - which is "
             "how a requirement leaves the intake and never arrives. Write the "
@@ -4117,73 +4202,73 @@ def _a_required_action_no_test_covers(files: list[Path], root: Path) -> list[str
 
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("names a page calls against the import clause that should bind them",
-     lambda files, root, stack: _called_without_being_imported(files, root)),
+     lambda files, root, stack, brief: _called_without_being_imported(files, root)),
     ("required arguments the suite supplies and the product does not",
-     lambda files, root, stack: _required_arguments_only_the_tests_supply(files, root)),
+     lambda files, root, stack, brief: _required_arguments_only_the_tests_supply(files, root)),
     ("actions the run's own acceptance criteria require against what it built",
-     lambda files, root, stack: _a_required_action_nothing_implements(files, root)),
+     lambda files, root, stack, brief: _a_required_action_nothing_implements(files, root, brief)),
     ("clickable controls against the scripts that should operate them",
-     lambda files, root, stack: _a_control_group_no_script_operates(files, root)),
+     lambda files, root, stack, brief: _a_control_group_no_script_operates(files, root)),
     ("actions the documents require against the tests that should cover them",
-     lambda files, root, stack: _a_required_action_no_test_covers(files, root)),
+     lambda files, root, stack, brief: _a_required_action_no_test_covers(files, root, brief)),
     ("the chosen stack against what is on disk",
-     lambda files, root, stack: _stack_conflicts(files, root, stack)),
+     lambda files, root, stack, brief: _stack_conflicts(files, root, stack)),
     ("responsive stylesheets against the viewport tag that lets them apply",
-     lambda files, root, stack: _responsive_css_the_page_cannot_use(files, root)),
+     lambda files, root, stack, brief: _responsive_css_the_page_cannot_use(files, root)),
     ("test files that cannot fail, never run, or throw before they can",
-     lambda files, root, stack: _tests_that_cannot_fail(files, root)),
+     lambda files, root, stack, brief: _tests_that_cannot_fail(files, root)),
     ("the installed test runner against the one the stack chose",
-     lambda files, root, stack: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
+     lambda files, root, stack, brief: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
     ("CommonJS behind a module script tag, which no browser can run",
-     lambda files, root, stack: _commonjs_loaded_as_a_module(files, root)),
+     lambda files, root, stack, brief: _commonjs_loaded_as_a_module(files, root)),
     ("a server against a stack that says the product runs in the browser",
-     lambda files, root, stack: _a_server_in_a_browser_only_product(files, root, stack)),
+     lambda files, root, stack, brief: _a_server_in_a_browser_only_product(files, root, stack)),
     ("manifests against the project they describe",
-     lambda files, root, stack: _manifest_defects(files, root, stack)),
+     lambda files, root, stack, brief: _manifest_defects(files, root, stack)),
     ("stylesheet id selectors against declared element ids",
-     lambda files, root, stack: _dangling_id_selectors(files, root)),
+     lambda files, root, stack, brief: _dangling_id_selectors(files, root)),
     ("the ids and data attributes scripts reach for against the page",
-     lambda files, root, stack: _hooks_javascript_reaches_for(files, root)),
+     lambda files, root, stack, brief: _hooks_javascript_reaches_for(files, root)),
     ("test files against the project's own test command",
-     lambda files, root, stack: _tests_the_project_never_runs(files, root)),
+     lambda files, root, stack, brief: _tests_the_project_never_runs(files, root)),
     ("module syntax against the script tag that loads it",
-     lambda files, root, stack: _modules_loaded_as_plain_scripts(files, root)),
+     lambda files, root, stack, brief: _modules_loaded_as_plain_scripts(files, root)),
     ("paths in package.json scripts against where npm runs them",
-     lambda files, root, stack: _manifest_scripts_that_cannot_resolve(files, root)),
+     lambda files, root, stack, brief: _manifest_scripts_that_cannot_resolve(files, root)),
     ("exported names against the names any test mentions",
-     lambda files, root, stack: _exports_no_test_mentions(files, root)),
+     lambda files, root, stack, brief: _exports_no_test_mentions(files, root)),
     ("stylesheet class selectors against the elements that carry them",
-     lambda files, root, stack: _dangling_class_selectors(files, root)),
+     lambda files, root, stack, brief: _dangling_class_selectors(files, root)),
     ("commands the documents tell a reader to run",
-     lambda files, root, stack: _documented_commands_that_cannot_run(files, root, root / "docs")),
+     lambda files, root, stack, brief: _documented_commands_that_cannot_run(files, root, root / "docs")),
     ("HTML script and stylesheet references against the files they name",
-     lambda files, root, stack: _broken_local_references(files, root)),
+     lambda files, root, stack, brief: _broken_local_references(files, root)),
     ("application modules against whatever loads them",
-     lambda files, root, stack: _unreferenced_scripts(files, root)),
+     lambda files, root, stack, brief: _unreferenced_scripts(files, root)),
     ("tests against the module they should be importing",
-     lambda files, root, stack: _redefined_instead_of_imported(files, root)),
+     lambda files, root, stack, brief: _redefined_instead_of_imported(files, root)),
     ("application code against the page it is embedded in",
-     lambda files, root, stack: _application_embedded_in_html(files, root)),
+     lambda files, root, stack, brief: _application_embedded_in_html(files, root)),
     ("languages against the directory they share",
-     lambda files, root, stack: _languages_sharing_a_directory(files, root)),
+     lambda files, root, stack, brief: _languages_sharing_a_directory(files, root)),
     ("application modules the page never loads, only the tests",
-     lambda files, root, stack: _reached_only_by_its_tests(files, root)),
+     lambda files, root, stack, brief: _reached_only_by_its_tests(files, root)),
     ("debugging scripts left behind in the product",
-     lambda files, root, stack: _scratch_scripts_left_behind(files, root)),
+     lambda files, root, stack, brief: _scratch_scripts_left_behind(files, root)),
     ("a page whose controls no script anywhere operates",
-     lambda files, root, stack: _a_page_no_script_ever_touches(files, root)),
+     lambda files, root, stack, brief: _a_page_no_script_ever_touches(files, root)),
     ("suite functions called without the import that defines them",
-     lambda files, root, stack: _suites_calling_a_global_node_does_not_define(files, root)),
+     lambda files, root, stack, brief: _suites_calling_a_global_node_does_not_define(files, root)),
     ("files that contradict the module type their manifest declares",
-     lambda files, root, stack: _files_that_contradict_the_declared_module_type(files, root)),
+     lambda files, root, stack, brief: _files_that_contradict_the_declared_module_type(files, root)),
     ("module syntax against a test runner that cannot parse it",
-     lambda files, root, stack: _module_system_mismatch(files, root)),
+     lambda files, root, stack, brief: _module_system_mismatch(files, root)),
     ("tests against the directory they are run from",
-     lambda files, root, stack: _tests_that_depend_on_the_working_directory(files, root)),
+     lambda files, root, stack, brief: _tests_that_depend_on_the_working_directory(files, root)),
     ("the size of the product against the budget its own documents state",
-     lambda files, root, stack: _over_the_declared_budget(files, root, _orphans_quietly(files, root))),
+     lambda files, root, stack, brief: _over_the_declared_budget(files, root, _orphans_quietly(files, root))),
     ("presence of Playwright for UI testing",
-     lambda files, root, stack: _missing_playwright_for_ui(files, root, stack)),
+     lambda files, root, stack, brief: _missing_playwright_for_ui(files, root, stack)),
 )
 
 #: Extensions that carry behaviour a browser test could exercise. A page of
@@ -4284,8 +4369,17 @@ def _and_the_brief_bans_dependencies(root: Path) -> str:
     return ""
 
 
-def summarise_integration(repository_root: str | Path, stack: Any = None) -> str:
-    """What the files in this workspace say about each other. Never raises."""
+def summarise_integration(
+    repository_root: str | Path, stack: Any = None, brief: str = ""
+) -> str:
+    """What the files in this workspace say about each other. Never raises.
+
+    `brief` is the operator's own document, not the run's restatement of it.
+    Two checks read it, and they read it because a run that redefines a
+    requirement removes it from every document downstream - after which a
+    check that reads only those documents agrees with the run. See
+    `_actions_the_brief_requires`.
+    """
     try:
         root = Path(repository_root).resolve()
         if not root.is_dir():
@@ -4300,7 +4394,7 @@ def summarise_integration(repository_root: str | Path, stack: Any = None) -> str
     try:
         problems = []
         for describe, check in _CHECKS:  # noqa: B007 - the description is used below
-            problems.extend(check(files, root, stack))
+            problems.extend(check(files, root, stack, brief))
     except Exception:  # noqa: BLE001
         return "The cross-file checks could not complete on this workspace."
 

@@ -171,17 +171,25 @@ def _execution_evidence(repository_root: str) -> str:
         return "The execution record could not be read for this workspace."
 
 
-def _integration_evidence(repository_root: str, stack: Any = None) -> str:
+def _integration_evidence(
+    repository_root: str, stack: Any = None, document_text: str = ""
+) -> str:
     """What the files in this workspace say about each other. Never raises.
 
     Each specialist writes files that are defensible alone, and no stage checks
     whether they connect. On run-95ca3f72 that let a stylesheet target an id no
     page declared, and a script no page loaded, through four review stages.
+
+    `document_text` is the operator's brief, passed through because two of the
+    checks compare the product against it rather than against the run's own
+    restatement of it. Run-3c8e772e redefined "edit" as "toggling completion
+    status" in its technical specification and shipped without editing, and
+    every check agreed, because every check read the specification.
     """
     try:
         from app.analysis.integration_checks import summarise_integration
 
-        return summarise_integration(repository_root, stack)
+        return summarise_integration(repository_root, stack, document_text)
     except Exception:  # noqa: BLE001 - a reviewer without evidence still reviews
         return "The cross-file checks could not be run for this workspace."
 
@@ -444,7 +452,7 @@ def build_milestone_review_request(
         f"--- Commands actually executed in this workspace ---\n"
         f"{_execution_evidence(repository_root)}\n"
         f"\n--- Cross-file checks (deterministic, not a model's opinion) ---\n"
-        f"{_integration_evidence(repository_root, stack)}\n"
+        f"{_integration_evidence(repository_root, stack, document_text)}\n"
         f"{_how_text_reaches_the_page(repository_root)}"
     )
     return {"messages": [{"role": "user", "content": brief}]}

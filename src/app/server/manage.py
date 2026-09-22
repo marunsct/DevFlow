@@ -735,6 +735,34 @@ def _threads_of(thread_id: str) -> tuple[str, str]:
     return thread_id, f"{thread_id}:%"
 
 
+def _age_in_days(record: Any, now: datetime) -> float:
+    """How old a run is, from a timestamp the store keeps as text.
+
+    `runs.created_at` is a `TEXT` column and `RunRecord` carries it through as
+    the string it was read as, so subtracting it from a `datetime` raises -
+    which is what the first version of `checkpoints` did the moment it met a
+    real record. The unit tests passed because the fake record held a
+    `datetime`, which is the mistake worth remembering here: a fixture that is
+    tidier than production tests something production does not do.
+
+    An unreadable stamp reads as age zero, so a run whose date cannot be
+    parsed is never old enough to be offered for deletion.
+    """
+    stamp = getattr(record, "created_at", None)
+    if not stamp:
+        return 0.0
+    if isinstance(stamp, datetime):
+        when = stamp
+    else:
+        try:
+            when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return 0.0
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return (now - when).total_seconds() / 86400
+
+
 def checkpoints(older_than_days: float | None = None, delete: bool = False) -> int:
     """Report what the graph checkpoints are costing, and optionally reclaim it.
 
@@ -777,9 +805,7 @@ def checkpoints(older_than_days: float | None = None, delete: bool = False) -> i
                     (exact, prefix),
                 )
                 count = cursor.fetchone()[0]
-                created = getattr(record, "created_at", None)
-                age_days = (now - created).total_seconds() / 86400 if created else 0.0
-                rows.append((record, age_days, count))
+                rows.append((record, _age_in_days(record, now), count))
 
     if not rows:
         print("No runs, so no checkpoints.")

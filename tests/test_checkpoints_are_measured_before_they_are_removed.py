@@ -67,11 +67,19 @@ class _Connection:
 
 
 def _record(run_id: str, thread_id: str, status: str, age_days: float):
+    """A record shaped the way the store really hands one over.
+
+    `runs.created_at` is a `TEXT` column and `RunRecord` carries it through as
+    a string. The first version of this fixture used a `datetime`, which is
+    tidier than production and tested something production does not do: the
+    command raised `TypeError: unsupported operand type(s) for -: 'datetime'
+    and 'str'` the first time it met a real record, with every test passing.
+    """
     return types.SimpleNamespace(
         run_id=run_id,
         thread_id=thread_id,
         status=status,
-        created_at=datetime.now(timezone.utc) - timedelta(days=age_days),
+        created_at=(datetime.now(timezone.utc) - timedelta(days=age_days)).isoformat(),
     )
 
 
@@ -198,3 +206,44 @@ def test_the_cli_defaults_to_reporting(monkeypatch) -> None:
 
     assert manage.main(["checkpoints"]) == 0
     assert seen == {"older": None, "delete": False}
+
+
+# --- the shapes a timestamp really arrives in -----------------------------
+
+
+def test_a_trailing_z_is_understood() -> None:
+    """The API renders these as `2026-09-21T16:27:31.293152Z`, and
+    `fromisoformat` did not accept a `Z` before Python 3.11."""
+    stamp = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat()
+    record = types.SimpleNamespace(created_at=stamp.replace("+00:00", "Z"))
+
+    age = manage._age_in_days(record, datetime.now(timezone.utc))
+
+    assert 9.9 < age < 10.1
+
+
+def test_a_datetime_still_works() -> None:
+    record = types.SimpleNamespace(
+        created_at=datetime.now(timezone.utc) - timedelta(days=3)
+    )
+
+    assert 2.9 < manage._age_in_days(record, datetime.now(timezone.utc)) < 3.1
+
+
+def test_a_naive_stamp_is_read_as_utc() -> None:
+    record = types.SimpleNamespace(created_at="2026-09-01T00:00:00")
+
+    assert manage._age_in_days(record, datetime.now(timezone.utc)) > 0
+
+
+def test_an_unreadable_stamp_is_never_old_enough_to_delete() -> None:
+    """Age zero, so a run whose date cannot be parsed is never offered."""
+    record = types.SimpleNamespace(created_at="not a date")
+
+    assert manage._age_in_days(record, datetime.now(timezone.utc)) == 0.0
+
+
+def test_a_missing_stamp_is_the_same(store) -> None:
+    record = types.SimpleNamespace(created_at=None)
+
+    assert manage._age_in_days(record, datetime.now(timezone.utc)) == 0.0

@@ -1926,6 +1926,34 @@ def _review_enabled(state: WorkflowGraphState, review_point: str) -> bool:
     return bool(state.get("review_policy", {}).get(review_point, False))
 
 
+def _a_round_that_found_a_product_defect(defects: list[Any]) -> bool:
+    """Whether this round found anything wrong with the *product*.
+
+    A round that found only test defects is the suite settling down, and
+    charging it against a budget meant for the product is how run b6436e36
+    failed after three attempts with a working product: 43 of 43 unit tests
+    passing, all five features the brief names built, and seven of its eleven
+    defects in `ui.pw.test.mjs` - the Playwright suite the run had just
+    written. Its entire second attempt was spent there and on nothing else.
+
+    A defect with no files named counts against the budget. The question this
+    asks is "do we know this was only the tests?", and an unlocated defect is
+    not known to be anything - reading silence as good news is the mistake
+    every other check in this codebase is written against.
+    """
+    from app.analysis.file_kinds import is_test
+
+    if not defects:
+        return True
+    for defect in defects:
+        files = list(getattr(defect, "affected_files", None) or [])
+        if not files:
+            return True
+        if any(not is_test(str(name)) for name in files):
+            return True
+    return False
+
+
 def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     """What the brief asked for that the product still does not do, or "".
 
@@ -2739,6 +2767,7 @@ def build_workflow_graph(
                 passed=not new_defects,
                 summary=f"{len(new_defects)} defect(s) found" if new_defects else "all applicable tests passed",
                 new_defects=new_defects,
+                charge_the_budget=_a_round_that_found_a_product_defect(new_defects),
             )
         except RemediationLimitExceeded as exc:
             return _escalate_to_a_human(

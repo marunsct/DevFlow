@@ -185,6 +185,12 @@ def start_remediation(
     return RemediationCycle(sprint_goal=sprint_goal, max_attempts=max_attempts)
 
 
+#: Rounds a sprint may run in total, however they are counted. The budget
+#: below can decline to charge a round against `max_attempts`; this is what
+#: stops that becoming unbounded, and it is derived so the two cannot drift.
+ROUNDS_PER_ATTEMPT_CEILING = 2
+
+
 def record_test_run(
     cycle: RemediationCycle,
     *,
@@ -192,16 +198,46 @@ def record_test_run(
     passed: bool,
     summary: str = "",
     new_defects: list[Defect] | None = None,
+    charge_the_budget: bool = True,
 ) -> RemediationCycle:
     """Record one executed test command and any newly discovered defects.
 
+    `charge_the_budget` is False for a round that found nothing wrong with the
+    product - only with the tests. The caller decides that, because deciding
+    it means knowing which files are tests, and that is not this module's
+    business.
+
+    Measured on run-b6436e36, which failed after three attempts with a working
+    product: 43 of its 43 unit tests passed, all five features the brief names
+    were built, and the cross-file checks found one stranded spec and a
+    518-line product against a 500-line cap. Of the eleven defects it spent
+    those attempts on, **seven were in `ui.pw.test.mjs`** - the Playwright
+    suite the run had just written - and its second round was nothing else:
+
+        round 1   2 in app.js, 2 in ui.pw.test.mjs
+        round 2   0 in app.js, 3 in ui.pw.test.mjs
+        round 3   2 in app.js, 2 in ui.pw.test.mjs
+
+    A suite settling down is not the product failing, and charging it against
+    a budget meant for the product is how a run dies with the product working.
+
     Raises:
         RemediationLimitExceeded: if the test failed and recording this
-            attempt would exceed `max_attempts`, so the caller pauses the
-            sprint with an actionable error instead of looping forever on a
-            defect that never gets fixed.
+            attempt would exceed `max_attempts`, or if the sprint has run more
+            rounds than any budget allows, so the caller pauses the sprint with
+            an actionable error instead of looping forever.
     """
-    next_attempt = cycle.attempt + (0 if passed else 1)
+    rounds_so_far = len(cycle.test_runs) + 1
+    if not passed and rounds_so_far > cycle.max_attempts * ROUNDS_PER_ATTEMPT_CEILING:
+        raise RemediationLimitExceeded(
+            f"Sprint '{cycle.sprint_goal}' has run {rounds_so_far} verification "
+            f"rounds, the ceiling for a sprint allowed {cycle.max_attempts} "
+            "remediation attempts. Rounds that found only test defects are not "
+            "charged against those attempts, and this is what bounds that: the "
+            "suite is not settling. A human must intervene."
+        )
+
+    next_attempt = cycle.attempt + (0 if passed or not charge_the_budget else 1)
     if not passed and next_attempt > cycle.max_attempts:
         raise RemediationLimitExceeded(
             f"Sprint '{cycle.sprint_goal}' has failed remediation {cycle.attempt} time(s), "
@@ -217,7 +253,9 @@ def record_test_run(
                 TestRunRecord(command=command, passed=passed, summary=summary),
             ],
             "defects": [*cycle.defects, *(new_defects or [])],
-            "escalated": next_attempt >= cycle.max_attempts and not passed,
+            "escalated": (
+                next_attempt >= cycle.max_attempts and not passed and charge_the_budget
+            ),
         }
     )
 

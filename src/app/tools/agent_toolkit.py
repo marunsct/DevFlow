@@ -486,6 +486,17 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         project's tests from a project directory named `myapp`:
         `command=["npx", "jest"], working_directory="myapp"`.
 
+        Code has to arrive in a file, so `node -e`, `python -c` and the like
+        are refused: write the snippet with `write_artifact`, run the file,
+        then remove it with `delete_artifact`. The reason is that a file is
+        reviewable and an argv is not - everything this run executes should be
+        readable afterwards in the workspace, not only in a command line.
+
+        A command that runs until something stops it - a dev server, a
+        watcher, `serve` - has nothing here to stop it and will sit until the
+        timeout. To serve a page for a browser test, let Playwright start it:
+        `webServer: { command: "...", url: "..." }` in `playwright.config.ts`.
+
         Requires human approval before it runs.
 
         Args:

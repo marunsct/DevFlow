@@ -505,7 +505,13 @@ def test_a_static_file_server_is_refused_rather_than_timed_out() -> None:
             validate_command(argv, "ui_ux_specialist")
         assert "runs until it is stopped" in str(refusal.value)
         # It must say what to do instead, or it only moves the behaviour.
-        assert "import it and call it" in str(refusal.value)
+        # The alternative is now named by the workspace: with a browser runner
+        # installed, Playwright's `webServer` is the supported route and it
+        # works - run-35424714 served this very way and ran 34 browser tests.
+        # Without one, the advice is to call the module directly. Asserted on
+        # the guarantee rather than on one wording of it.
+        assert "webServer" in str(refusal.value)
+        assert "call it from a test" in str(refusal.value)
 
     # `python3 -m http.server` is the same idea from the other language, and
     # the module allowlist already refuses it - with its own wording. Asserted

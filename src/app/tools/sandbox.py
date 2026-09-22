@@ -1289,9 +1289,8 @@ def validate_command(
         raise CommandNotAllowed(
             f"'{server}' is not permitted: it runs until it is stopped, and "
             "nothing here will stop it, so this call would sit until the "
-            "timeout and return nothing. There is also no browser to open the "
-            "page with. To check the page, read the files and assert on them "
-            "from a test; to check the logic, import it and call it."
+            "timeout and return nothing."
+            + _how_to_serve_the_page_instead(str(repo_root or ""))
         )
     return argv
 
@@ -1495,6 +1494,47 @@ def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
     return None
 
 
+def _how_to_serve_the_page_instead(repo_root: str) -> str:
+    """What to do with a page in this workspace, given what it has installed.
+
+    The refusal above is right that a foreground server would sit until the
+    timeout. Its second half was wrong wherever it mattered most: "There is
+    also no browser to open the page with. To check the page, read the files
+    and assert on them from a test."
+
+    Both halves are false in a workspace with Playwright, which is the
+    workspace the harness's own checks push every UI product toward. Measured
+    on run-35424714: `npx serve -p 3000 --cors` was refused with that sentence
+    sixteen times, while the same run's `playwright.config.ts` carried
+    `webServer: { command: 'npx serve .' }`, started it, logged "Accepting
+    connections at http://localhost:3000" and ran 34 browser tests with real
+    passes and failures. The same program, in the same container, refused to
+    the agent and granted to the test runner.
+
+    The advice was worse than the false fact. "Read the files and assert on
+    them from a test" describes the hand-built DOM that `a_dom_built_by_hand`
+    notes and `_refuse_a_hand_built_dom_again` refuses - one part of the
+    harness telling a stage to do what another part stops it doing.
+    """
+    if _any_manifest_declares_a_browser_runner(repo_root):
+        return (
+            " A browser runner is installed here and browsers do run: start "
+            "the server from Playwright instead of from this tool, with "
+            "`webServer: { command: '...', url: '...' }` in "
+            "`playwright.config.ts`. Playwright starts it, waits for the url, "
+            "runs the tests against it and stops it afterwards, which is the "
+            "one shape of this that finishes. Do not replace the browser test "
+            "with a hand-written `global.document`; that is refused elsewhere."
+        )
+    return (
+        " There is no browser here to open the page with either. To check the "
+        "page, import the module and call it from a test - or install a "
+        "browser runner (`npm install -D @playwright/test`) and let its "
+        "`webServer` start the server for you, which is the supported way to "
+        "serve a page in this sandbox."
+    )
+
+
 def _starts_a_server(argv: Sequence[str]) -> str | None:
     """The name of the server this command would start, or None.
 
@@ -1581,12 +1621,55 @@ _TIMEOUT_ADVICE_WITH_A_BROWSER = (
 )
 
 
+def _declares_a_browser_runner(manifest: Path) -> bool:
+    """Whether one `package.json` brings a browser runner with it."""
+    try:
+        import json as _json
+
+        declared = _json.loads(manifest.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - an unreadable manifest declares nothing
+        return False
+    packages = {
+        **(declared.get("dependencies") or {}),
+        **(declared.get("devDependencies") or {}),
+    }
+    return "@playwright/test" in packages or "playwright" in packages
+
+
+def _any_manifest_declares_a_browser_runner(repo_root: str) -> bool:
+    """The same question with no working directory to start the walk from.
+
+    `validate_command` has the workspace root and nothing else, and the
+    manifest is almost never at the root - every run so far has put the
+    product in a subdirectory of its own. Two levels is enough for that and
+    keeps this off `node_modules`.
+    """
+    if not repo_root:
+        # `Path("")` is the current working directory, which is the harness's
+        # own checkout, not a workspace. A caller with no root knows nothing
+        # about the product, and guessing from the process's cwd would answer
+        # a question about the wrong repository.
+        return False
+    try:
+        root = Path(repo_root)
+        if not root.is_dir():
+            return False
+        for manifest in (root / "package.json", *root.glob("*/package.json")):
+            if manifest.is_file() and _declares_a_browser_runner(manifest):
+                return True
+    except Exception:  # noqa: BLE001 - never fail a refusal over a manifest
+        return False
+    return False
+
+
 def _a_browser_runner_is_installed(repo_root: str, working_directory: str | None) -> bool:
     """Whether this workspace has Playwright to drive, as opposed to advice.
 
     Read from the manifests rather than from the command, so it is true for
     the `npm test` that wraps a Playwright run as well as for a direct one.
     """
+    if not working_directory:
+        return _any_manifest_declares_a_browser_runner(repo_root)
     try:
         import json as _json
 

@@ -3164,6 +3164,106 @@ _VIEWPORT_META = re.compile(
 )
 
 
+#: Any technique that makes a layout answer to the width it is given. A
+#: breakpoint is the obvious one and it is not the only one: run-d483f554's
+#: stylesheet has no `@media` at all and is legitimately fluid, built out of
+#: `clamp()`, `min()` and viewport units, which is why this check asks whether
+#: the product does anything responsive rather than whether it has breakpoints.
+_RESPONSIVE_TECHNIQUE = re.compile(
+    r"@media[^{]*\(\s*(?:min|max)-(?:width|inline-size)"   # a breakpoint
+    r"|@container"                                          # container queries
+    r"|\bclamp\s*\("                                       # fluid type and space
+    r"|\b(?:min|max)\s*\([^)]*\b\d+(?:vw|vh|vmin|vmax|%)"  # fluid bounds
+    r"|\b\d+(?:\.\d+)?(?:vw|vh|vmin|vmax)\b"               # viewport units
+    r"|\bminmax\s*\("                                      # responsive grid
+    r"|auto-fit|auto-fill"
+    r"|flex-wrap\s*:\s*wrap",
+    re.I,
+)
+
+#: The word a brief uses when it wants this. Looked for in the project's own
+#: documents and in the brief, because either may be where it is stated.
+_ASKS_FOR_RESPONSIVE = re.compile(r"responsive|mobile\s+and\s+desktop", re.I)
+
+
+def _a_responsive_criterion_nothing_implements(
+    files: list[Path], root: Path, brief: str = ""
+) -> list[str]:
+    """A product asked to be responsive whose styles never mention a width.
+
+    Nothing verified this. `_responsive_css_the_page_cannot_use` asks whether
+    an existing `@media` block can apply, and says nothing about a product
+    that has no responsive handling at all - so "Responsive design for mobile
+    and desktop", one of four acceptance criteria in the brief these runs are
+    given, was the one criterion with no check behind it in either direction.
+
+    Deliberately broad about what counts. Breakpoints are the obvious
+    technique and not the only one: run-d483f554's stylesheet has no `@media`
+    in it and is fluid throughout - `font-size: clamp(0.875rem, 2vw, 1rem)`,
+    `max-width: min(48rem, calc(100% - 2 * var(--container-padding)))` - and a
+    check that demanded `@media` would have filed a blocking finding against
+    the best product this harness has produced. That is the failure mode to
+    avoid here, so anything that answers to the width of the window counts.
+
+    The viewport tag is required with it, for the reason its neighbour
+    documents: without one a phone renders into a virtual 980px window and
+    scales the result down, and every technique above answers to the wrong
+    number.
+
+    Fires on none of the eight stored workspaces. That is the point - it is a
+    guard for a criterion nothing was checking, not a finding waiting to
+    happen.
+    """
+    if not _ASKS_FOR_RESPONSIVE.search(brief or "") and not any(
+        _ASKS_FOR_RESPONSIVE.search(_read(document))
+        for folder in (root / "docs", root)
+        if folder.is_dir()
+        for document in sorted(folder.glob("*.md"))
+    ):
+        return []
+
+    pages = [f for f in files if f.suffix.lower() in {".html", ".htm"}]
+    if not pages:
+        return []
+
+    styles = [_read(f) for f in files if f.suffix.lower() == ".css"]
+    for page in pages:
+        styles.extend(_INLINE_STYLE.findall(_read(page)))
+    if not styles:
+        # No stylesheet at all is a different finding, and the size report
+        # already says the product is a page and a script.
+        return []
+    if any(_RESPONSIVE_TECHNIQUE.search(sheet) for sheet in styles):
+        return []
+
+    named = ", ".join(
+        sorted(str(f.relative_to(root)) for f in files if f.suffix.lower() == ".css")
+    ) or "the page's own <style> block"
+    missing_meta = [p for p in pages if not _VIEWPORT_META.search(_read(p))]
+    viewport = (
+        f" {missing_meta[0].relative_to(root)} also declares no "
+        "`<meta name=\"viewport\">`, without which a phone renders into a "
+        "virtual 980px window and scales the result down, so a layout that "
+        "did answer to the width would still answer to the wrong one."
+        if missing_meta
+        else ""
+    )
+    return [
+        f"This project is required to be responsive and {named} contains "
+        "nothing that answers to the width of the window - no media query, no "
+        "container query, no `clamp()`, no viewport units, no `minmax()` and "
+        f"no wrapping flex row.{viewport} The page will render at one size and "
+        "be scrolled sideways on a phone. Nothing here fails and no test "
+        "catches it: a layout is only wrong on a screen nobody in this "
+        "pipeline looks at."
+    ]
+
+
+#: The body of a `<style>` block, so a page that carries its own CSS is read
+#: the same way as one that links a stylesheet.
+_INLINE_STYLE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)
+
+
 def _responsive_css_the_page_cannot_use(files: list[Path], root: Path) -> list[str]:
     """Width media queries on a page with no viewport meta tag.
 
@@ -4301,6 +4401,9 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _a_required_action_no_test_covers(files, root, brief)),
     ("the chosen stack against what is on disk",
      lambda files, root, stack, brief: _stack_conflicts(files, root, stack)),
+    ("a responsive criterion against styles that answer to no width",
+     lambda files, root, stack, brief: _a_responsive_criterion_nothing_implements(
+         files, root, brief)),
     ("responsive stylesheets against the viewport tag that lets them apply",
      lambda files, root, stack, brief: _responsive_css_the_page_cannot_use(files, root)),
     ("test files that cannot fail, never run, or throw before they can",

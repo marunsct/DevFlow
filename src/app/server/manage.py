@@ -24,6 +24,7 @@ from typing import Any, Callable
 import secrets
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from app.server.auth import (
@@ -714,6 +715,140 @@ def workspaces(older_than_days: float | None = None, delete: bool = False) -> in
     return 0
 
 
+#: The tables a run's graph state is spread across, in the order a delete has
+#: to touch them. No foreign keys tie them together, so the order is chosen
+#: rather than enforced: writes and blobs reference a checkpoint that is left
+#: until last, so an interrupted delete leaves orphaned rows rather than a
+#: checkpoint whose contents have gone.
+CHECKPOINT_TABLES = ("checkpoint_writes", "checkpoint_blobs", "checkpoints")
+
+
+def _threads_of(thread_id: str) -> tuple[str, str]:
+    """The SQL patterns matching every thread a run owns.
+
+    A run's graph writes under its own `thread_id`, and every gated stage runs
+    an inner agent under `f"{outer_thread_id}:{stage_name}:{uuid}"` - see
+    `_run_gated_agent`. So one run of fourteen accounts for a share of the 522
+    distinct threads on this deployment, and deleting only the outer thread
+    would leave almost all of its rows behind.
+    """
+    return thread_id, f"{thread_id}:%"
+
+
+def checkpoints(older_than_days: float | None = None, delete: bool = False) -> int:
+    """Report what the graph checkpoints are costing, and optionally reclaim it.
+
+    Nothing prunes these. There is no `DELETE FROM checkpoint...` anywhere in
+    `src/app` and no thread-deletion call, so every superstep of every run ever
+    executed is still on disk. Measured on this deployment: 144 MB of database
+    for fourteen runs of a to-do list app, 136 MB of it checkpoints - about
+    10 MB per run, across 522 threads.
+
+    The same two-flag shape as `workspaces`, for the same reason: this is the
+    only record of how a run reached its state, and a run that has not finished
+    still needs it to resume. `--older-than-days` has no default and `--delete`
+    is separate from it.
+    """
+    from app.server.run_store import RunStore
+
+    store = RunStore.shared()
+    records, offset = [], 0
+    while True:
+        page = store.list_all(limit=500, offset=offset)
+        records.extend(page)
+        if len(page) < 500:
+            break
+        offset += 500
+
+    now = datetime.now(timezone.utc)
+    rows: list[tuple[Any, float, int]] = []
+    with store.get_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+            db_size = cursor.fetchone()[0]
+            for record in records:
+                thread = getattr(record, "thread_id", "") or ""
+                if not thread:
+                    continue
+                exact, prefix = _threads_of(thread)
+                cursor.execute(
+                    "SELECT count(*) FROM checkpoints "
+                    "WHERE thread_id = %s OR thread_id LIKE %s",
+                    (exact, prefix),
+                )
+                count = cursor.fetchone()[0]
+                created = getattr(record, "created_at", None)
+                age_days = (now - created).total_seconds() / 86400 if created else 0.0
+                rows.append((record, age_days, count))
+
+    if not rows:
+        print("No runs, so no checkpoints.")
+        return 0
+
+    for record, age_days, count in sorted(rows, key=lambda r: -r[2]):
+        print(
+            f"{count:8,d} checkpoints  {age_days:6.1f}d  {record.status:10s} "
+            f"{record.run_id}"
+        )
+    print(f"{sum(c for _, _, c in rows):8,d} checkpoints  across {len(rows)} run(s)")
+    print(f"The database is {db_size} in total.")
+
+    if older_than_days is None:
+        print("\nPass --older-than-days N to see what could be reclaimed.")
+        return 0
+
+    stale = [
+        (record, count)
+        for record, age_days, count in rows
+        if age_days >= older_than_days
+        and record.status in TERMINAL_RUN_STATUSES
+        and count
+    ]
+    held = [
+        (record, count)
+        for record, age_days, count in rows
+        if age_days >= older_than_days and record.status not in TERMINAL_RUN_STATUSES
+    ]
+    for record, _count in held:
+        print(
+            f"\nKept {record.run_id}: its run is {record.status}, not finished. "
+            "Its checkpoints are how it would resume."
+        )
+    if not stale:
+        print(f"\nNothing older than {older_than_days} day(s) is safe to remove.")
+        return 0
+
+    total = sum(count for _, count in stale)
+    if not delete:
+        for record, count in stale:
+            print(f"\nWould delete {count:,} checkpoints for {record.run_id}")
+        print(
+            f"\n{total:,} checkpoints across {len(stale)} run(s) could be "
+            "reclaimed. Re-run with --delete to apply. The run rows, the "
+            "transcripts and the workspaces are not touched - only the graph "
+            "state, which means those runs can no longer be resumed or "
+            "replayed."
+        )
+        return 0
+
+    removed = 0
+    with store.get_connection() as conn:
+        for record, count in stale:
+            exact, prefix = _threads_of(record.thread_id)
+            with conn.cursor() as cursor:
+                for table in CHECKPOINT_TABLES:
+                    cursor.execute(
+                        f"DELETE FROM {table} "  # noqa: S608 - a literal from CHECKPOINT_TABLES
+                        "WHERE thread_id = %s OR thread_id LIKE %s",
+                        (exact, prefix),
+                    )
+            conn.commit()
+            removed += count
+            print(f"Deleted {count:,} checkpoints for {record.run_id}")
+    print(f"\nReclaimed the graph state of {len(stale)} run(s), {removed:,} checkpoints.")
+    return 0
+
+
 def list_users() -> int:
     with get_db_connection() as conn:
         with conn.cursor() as cur:
@@ -782,6 +917,21 @@ def main(argv: list[str] | None = None) -> int:
         help="Actually remove them; without this the command only reports",
     )
 
+    points = sub.add_parser(
+        "checkpoints",
+        help="Report what graph checkpoints are costing, and optionally reclaim it",
+    )
+    points.add_argument(
+        "--older-than-days",
+        type=float,
+        help="Offer the checkpoints of runs at least this old that have finished",
+    )
+    points.add_argument(
+        "--delete",
+        action="store_true",
+        help="Actually remove them; without this the command only reports",
+    )
+
     disable = sub.add_parser("disable-user", help="Disable an account")
     disable.add_argument("username")
 
@@ -803,6 +953,8 @@ def main(argv: list[str] | None = None) -> int:
         return recover_orphaned_runs(args.dry_run)
     if args.command == "reconcile-runs":
         return reconcile_runs(args.dry_run)
+    if args.command == "checkpoints":
+        return checkpoints(args.older_than_days, args.delete)
     if args.command == "workspaces":
         return workspaces(args.older_than_days, args.delete)
     if args.command == "clear-run-overrides":

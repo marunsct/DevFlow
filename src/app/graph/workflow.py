@@ -190,11 +190,39 @@ from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
 #: the call and one on each tool it invokes, so this is above 1 by however much
 #: the stage uses its tools.
 #:
-#: Measured across 88 stage executions in the stored runs: median 2.41, 90th
-#: percentile 3.14, maximum 3.67. The 90th percentile is used, so nine stages
-#: in ten reach their full model-call budget and the tenth is bounded by the
-#: budget rather than by this.
-SUPERSTEPS_PER_MODEL_CALL = 3.2
+#: Measured across 203 stage executions in the stored runs: median 2.29, 90th
+#: percentile 3.14, 95th 3.30, maximum 3.87.
+#:
+#: The **maximum** is what this has to cover, and the reason changed underneath
+#: the first version of this constant. That one took the 90th percentile
+#: deliberately - "so nine stages in ten reach their full model-call budget and
+#: the tenth is bounded by the budget rather than by this" - on the reasoning
+#: that a higher ceiling lets a runaway burn more supersteps. It was written
+#: when the model-call budget only nagged. The budget now *ends* a stage, and
+#: withholds every tool two calls before it does, so the budget is what bounds
+#: a runaway and this ceiling only decides which of the two stops a stage
+#: first.
+#:
+#: That decision matters because the two degrade differently. The budget guard
+#: forces an answer and can salvage one. The superstep ceiling raises
+#: `GraphRecursionError`, and the stage restarts from an empty conversation
+#: with everything it learned discarded.
+#:
+#: At 3.2 the ceiling is 128, which the worst-ratio stage reaches at 33 model
+#: calls - five before the guard withholds tools at 38 - so on those stages the
+#: guard never acts at all. Measured live on run-b6436e36, where
+#: `defect_fix_1_1` hit the ceiling and restarted while the guard sat
+#: unreached. At 4.0 the ceiling is 160, which the worst ratio on record
+#: reaches at 41 calls, one past the budget: the budget now stops every stage
+#: measured, and a stage with a ratio worse than any yet seen falls back to the
+#: behaviour this replaces rather than to something worse.
+SUPERSTEPS_PER_MODEL_CALL = 4.0
+
+#: The worst ratio any stored stage execution has shown, kept beside the
+#: constant above so the relationship between the two ceilings can be asserted
+#: rather than described. See
+#: `test_the_budget_guard_reaches_a_stage_before_the_ceiling_does`.
+WORST_MEASURED_SUPERSTEP_RATIO = 3.87
 
 INNER_AGENT_RECURSION_LIMIT = int(MODEL_CALLS_PER_STAGE * SUPERSTEPS_PER_MODEL_CALL)
 """Superstep ceiling for one role agent's own graph.

@@ -406,6 +406,41 @@ BUDGET_WARNING_FRACTION = 0.7
 #: cut off the recoveries to save the failures.
 CALLS_RESERVED_FOR_THE_ANSWER = 2
 
+
+#: Redundant reads refused in one stage before the read tool itself is taken
+#: away for the rest of it.
+#:
+#: Measured on run-b6436e36's `specialist_ui_ux_1`. It made 73 tool calls, 64
+#: of them reads. The read ladder worked exactly as designed - note, withhold,
+#: then refuse - and the stage read 30 more times after its first refusal, of
+#: which:
+#:
+#:     16  refused as redundant
+#:     13  withheld as redundant
+#:      1  returned content it had not seen
+#:
+#: So once a stage has been refused a redundant read, almost everything it
+#: reads afterwards is redundant too, and every rung of a per-file ladder can
+#: only redirect it: measured across the earlier runs, a withheld read sent it
+#: to a *different* file 61.5% of the time, and the refusal that replaced that
+#: rung raised it to 81.2% while cutting same-file retries from 30.0% to 6.2%.
+#: The loop ended when the model-call budget withheld every tool and the stage
+#: answered.
+#:
+#: Three, because a refusal already requires twelve repeated reads behind it -
+#: the stage has proved the point three times over by then. At three, that run
+#: keeps its one useful read and loses about twenty-six wasted model calls.
+#:
+#: `grep` and the listings are deliberately left: the refusal's own words are
+#: "a range you have NOT read still works, and so does `grep`", and a harness
+#: that says that and then removes `grep` is the contradiction this file keeps
+#: finding elsewhere.
+READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL = 3
+
+#: The tools withheld at that point - the two that return a file's contents,
+#: and nothing else.
+_READ_TOOLS = frozenset({"read_file", "read_repository_file"})
+
 #: How far back to look for an answer the stage already wrote. Bounded so an
 #: answer from the very start of a long stage, superseded by the work since,
 #: does not stop it.
@@ -737,6 +772,55 @@ TOOLS_WITHHELD_NOTICE = (
 )
 
 
+def _refused_reads(messages: list[Any]) -> int:
+    """How many redundant reads this stage has been refused.
+
+    Counted from the conversation rather than from shared state, so the two
+    modules need agree on nothing but the marker the backend writes.
+    """
+    from app.agents.workspace_backend import READ_REFUSED_MARKER
+
+    refused = 0
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        if READ_REFUSED_MARKER in str(getattr(message, "content", "") or ""):
+            refused += 1
+    return refused
+
+
+def _without_the_read_tools(request: Any) -> list[Any] | None:
+    """The request's tools with the file readers removed, or None.
+
+    None when there is nothing to remove or nothing would be left to take it
+    away from, so a request that has already been narrowed is not narrowed
+    again into something the model cannot act with at all.
+    """
+    tools = list(getattr(request, "tools", None) or [])
+    if not tools:
+        return None
+    kept = [
+        tool
+        for tool in tools
+        if str(getattr(tool, "name", "") or (tool.get("name") if isinstance(tool, dict) else ""))
+        not in _READ_TOOLS
+    ]
+    return kept if len(kept) != len(tools) else None
+
+
+#: Sent on the call the read tool is taken away, because a tool that vanishes
+#: with no explanation is a tool the model will keep trying to call.
+_READ_TOOL_WITHHELD_NOTICE = (
+    "Your file-reading tool has been withheld for the rest of this stage. You "
+    "have been refused several reads that returned nothing you had not already "
+    "been given, and on the runs this was measured on, almost every read after "
+    "that point was redundant too. `grep` and the directory listings still "
+    "work, and so does everything that changes a file or runs a command. Use "
+    "what you have: make the change, run the check, or return your structured "
+    "response. If something is genuinely missing, say so in `blockers`."
+)
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -804,6 +888,7 @@ def build_settled_answer_middleware(
                 # due. A schema failure still needs its validation errors -
                 # the model is being asked to answer, and it should know why
                 # its last attempt was refused.
+                reading_nothing_new = _refused_reads(messages)
                 answer_only = _nothing_left_but_the_answer(messages, step_limit, schema)
                 if answer_only:
                     correction = (
@@ -818,15 +903,31 @@ def build_settled_answer_middleware(
                         stage_name or "?",
                         step_limit - _model_calls_used(messages),
                     )
+                if not correction and reading_nothing_new >= (
+                    READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
+                ):
+                    correction = _READ_TOOL_WITHHELD_NOTICE
                 if not correction:
                     return handler(request)
-                request = request.override(
-                    messages=[*messages, {"role": "user", "content": correction}],
+                overrides: dict[str, Any] = {}
+                if answer_only:
                     # Empty here, not empty at the model. `_get_bound_model`
                     # appends the structured-output tools to whatever this
                     # list holds, so the model is left bound to exactly one
                     # tool: the one that ends the stage.
-                    **({"tools": []} if answer_only else {}),
+                    overrides["tools"] = []
+                elif reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
+                    kept = _without_the_read_tools(request)
+                    if kept is not None:
+                        overrides["tools"] = kept
+                        logger.warning(
+                            "Stage %s has been refused %d redundant reads; "
+                            "withholding the read tool for the rest of it",
+                            stage_name or "?", reading_nothing_new,
+                        )
+                request = request.override(
+                    messages=[*messages, {"role": "user", "content": correction}],
+                    **overrides,
                 )
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
@@ -1002,6 +1103,7 @@ __all__ = [
     "ANSWER_LOOKBACK_MESSAGES",
     "BUDGET_WARNING_FRACTION",
     "CALLS_RESERVED_FOR_THE_ANSWER",
+    "READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL",
     "BUDGET_STOP_MARKER",
     "MODEL_CALLS_PER_STAGE",
     "MAX_REPORTED_ERRORS",

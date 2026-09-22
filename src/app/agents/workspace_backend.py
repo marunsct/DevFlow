@@ -318,6 +318,11 @@ REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
 #: not take.
 REPEATED_READS_BEFORE_REFUSING = REPEATED_READS_BEFORE_NAMING_THE_EXIT * 2
 
+#: The opening words of that refusal, named here so the middleware that counts
+#: them cannot drift from the backend that writes them. Counting a message by
+#: a phrase written somewhere else is how a marker goes stale silently.
+READ_REFUSED_MARKER = "Refusing to read"
+
 
 #: Lines of the withheld file shown at each end, so the message is an anchor
 #: rather than only a refusal.
@@ -675,7 +680,7 @@ class _NoticingRepeats:
         if getattr(self, "_repeated_reads", 0) < REPEATED_READS_BEFORE_REFUSING:
             return ""
         return (
-            f"Refusing to read '{file_path}' again: this returns nothing you "
+            f"{READ_REFUSED_MARKER} '{file_path}' again: this returns nothing you "
             f"have not already been given, and it is the "
             f"{self._repeated_reads}th time this stage has asked for content "
             "it already has. The file has not changed since you last saw it, "

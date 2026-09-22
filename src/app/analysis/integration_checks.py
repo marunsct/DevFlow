@@ -2934,8 +2934,33 @@ _BREAKS_BEHAVIOUR = (
 )
 
 
+#: Findings that break nothing and are not untidiness either: the product
+#: works, and it does not meet a criterion the project was given.
+#:
+#: The two-bucket summary had no home for these, so they were filed under
+#: "untidy rather than broken - dead rules, unused files. Worth a minor
+#: finding, not a blocking one" - in the same report whose size section says,
+#: of the same number, "This is a stated acceptance criterion and a reviewer
+#: should block on it". A reviewer reads both and is left to guess which the
+#: harness means.
+#:
+#: Seen on run-9f14d645 (538 lines against 500) and run-b6436e36 (580 against
+#: 500). Not folded into `_BREAKS_BEHAVIOUR`, because that bucket's own
+#: heading says "a feature DOES NOT WORK ... the code path is simply never
+#: reached", and a product eighty lines over its budget works perfectly well.
+#: Grading it there would make the heading false, which is the mistake
+#: `test_a_ui_with_no_browser_test_blocks` exists to prevent.
+_MISSES_A_STATED_CRITERION = (
+    "maximum this project's own documents state",
+)
+
+
 def _severity_of(problem: str) -> str:
-    return "BREAKS" if any(mark in problem for mark in _BREAKS_BEHAVIOUR) else "untidy"
+    if any(mark in problem for mark in _BREAKS_BEHAVIOUR):
+        return "BREAKS"
+    if any(mark in problem for mark in _MISSES_A_STATED_CRITERION):
+        return "CRITERION"
+    return "untidy"
 
 
 #: Storage that lives in the browser and nowhere else. A product whose data
@@ -4643,8 +4668,10 @@ def summarise_integration(
     sizes = _size_report(files, root, orphans)
     if not problems:
         return checked + "\n\nNo cross-file problems found." + sizes
-    breaking = [p for p in problems if _severity_of(p) == "BREAKS"]
-    untidy = [p for p in problems if _severity_of(p) != "BREAKS"]
+    graded = [(p, _severity_of(p)) for p in problems]
+    breaking = [p for p, g in graded if g == "BREAKS"]
+    criterion = [p for p, g in graded if g == "CRITERION"]
+    untidy = [p for p, g in graded if g == "untidy"]
     sections = []
     if breaking:
         sections.append(
@@ -4654,6 +4681,15 @@ def summarise_integration(
             "reached - so a passing suite is not evidence against them. Each is "
             "a blocking finding unless you can show it is not:\n"
             + "\n".join(f"- {problem}" for problem in breaking)
+        )
+    if criterion:
+        sections.append(
+            f"{len(criterion)} {'is' if len(criterion) == 1 else 'are'} a stated "
+            "acceptance criterion this product does not meet. Nothing is broken "
+            "and nothing is untidy: the work simply does not match what the "
+            "project was asked for, and only a person may decide that no longer "
+            "holds:\n"
+            + "\n".join(f"- {problem}" for problem in criterion)
         )
     if untidy:
         sections.append(

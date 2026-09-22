@@ -3991,6 +3991,22 @@ _CLICKABLE_WITH_DATA = re.compile(
     re.I,
 )
 
+#: A radio or checkbox that belongs to a named group: the whole tag and the
+#: group's name. The other common way to build a set of controls, and the one
+#: `_CLICKABLE_WITH_DATA` cannot see, because it carries no `data-` attribute.
+#:
+#: Run-3c8e772e's filter bar is three of these. It wired them, so nothing was
+#: lost there - but run-b0db10b1's dead filter bar was caught only because that
+#: run happened to spell its buttons `data-filter`, and the same bar written
+#: this way would have shipped dead and unreported.
+_INPUT_IN_A_GROUP = re.compile(
+    r"""<input\b[^>]*\btype\s*=\s*["'](?:radio|checkbox)["'][^>]*"""
+    r"""\bname\s*=\s*["']([^"']+)["'][^>]*>"""
+    r"""|<input\b[^>]*\bname\s*=\s*["']([^"']+)["'][^>]*"""
+    r"""\btype\s*=\s*["'](?:radio|checkbox)["'][^>]*>""",
+    re.I,
+)
+
 #: The `class` and `id` of a tag, so a control wired by either is left alone.
 _TAG_CLASSES = re.compile(r"""\bclass\s*=\s*["']([^"']+)["']""", re.I)
 _TAG_ID = re.compile(r"""\bid\s*=\s*["']([^"']+)["']""", re.I)
@@ -4023,6 +4039,29 @@ def _enclosing_ids(markup: str, start: int, end: int) -> set[str]:
         if closing and opening.end() + closing.start() >= end:
             found.update(declared)
     return found
+
+
+def _enclosing_classes(markup: str, start: int, end: int) -> set[str]:
+    """Every class on an element that encloses this span.
+
+    The companion to `_enclosing_ids`. A group of radios is usually reached
+    through the thing around it - `.filter-bar input`, `.filters label` - and
+    the inputs themselves carry no class, so without this an ordinary wiring
+    reads as no wiring.
+    """
+    classes: set[str] = set()
+    depth = 0
+    for match in reversed(list(re.finditer(r"<(/?)([a-zA-Z][\w-]*)\b([^>]*)>", markup[:start]))):
+        closing, _name, attributes = match.groups()
+        if closing:
+            depth += 1
+            continue
+        if depth:
+            depth -= 1
+            continue
+        for clause in _TAG_CLASSES.findall(attributes):
+            classes.update(clause.split())
+    return classes
 
 
 def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[str]:
@@ -4108,6 +4147,55 @@ def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[s
             ):
                 continue
             dead.setdefault(attribute, []).append(tag.strip())
+
+        # The same question for a control group built the other common way:
+        # radios or checkboxes sharing a `name`, which carry no `data-`
+        # attribute and so are invisible to the pattern above.
+        grouped: dict[str, list[str]] = {}
+        for match in _INPUT_IN_A_GROUP.finditer(markup):
+            tag = match.group(0)
+            group = (match.group(1) or match.group(2) or "").strip()
+            if not group:
+                continue
+            # The spellings a script reaches a named group by - never the bare
+            # word. `filter` on its own matches `tasks.filter(t => ...)`, which
+            # is the trap this file has already fallen into once.
+            handles = {
+                f'name="{group}"',
+                f"name='{group}'",
+                f"name={group}",
+                f'getElementsByName("{group}")',
+                f"getElementsByName('{group}')",
+            }
+            handles.update(_TAG_ID.findall(tag))
+            for clause in _TAG_CLASSES.findall(tag):
+                handles.update(clause.split())
+            handles.update(_enclosing_ids(markup, match.start(), match.end()))
+            # And the classes of whatever encloses them: `.filter-bar input`
+            # is how a group inside a labelled section is usually reached, and
+            # the inputs themselves often carry no class at all.
+            handles.update(_enclosing_classes(markup, match.start(), match.end()))
+            if any(
+                handle in code
+                or re.search(rf"(?<![\w-]){re.escape(handle)}(?![\w-])", code)
+                for handle in handles
+                if handle
+            ):
+                continue
+            grouped.setdefault(group, []).append(tag.strip())
+
+        for group, tags in sorted(grouped.items()):
+            if len(tags) < MIN_DEAD_CONTROLS:
+                continue
+            problems.append(
+                f"{page.relative_to(root)} has {len(tags)} inputs in the "
+                f"`{group}` group, and no script in this project reaches them "
+                f"- not by `name=\"{group}\"`, not by their ids or classes, "
+                "and not by the id or class of anything they sit inside. A "
+                "radio group exists to be read when it changes, so these "
+                "render, take the click and change nothing. The first is "
+                f"`{tags[0][:90]}`. Either wire them or take them off the page."
+            )
 
         for attribute, tags in sorted(dead.items()):
             if len(tags) < MIN_DEAD_CONTROLS:

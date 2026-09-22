@@ -120,3 +120,57 @@ def test_the_write_time_note_and_the_report_agree(project):
 
     assert "WITHIN budget" in report
     assert note == "", "the note fired on a project the report calls within budget"
+
+
+# --- who the budget note is delivered to ----------------------------------
+
+
+def test_the_budget_note_is_not_sent_to_a_test_file(tmp_path) -> None:
+    """The number is application code only - that is the note's whole point -
+    but a note is delivered to whoever is writing *this* file. A testing
+    specialist told "you are 80 lines over" while holding `app.test.mjs` has
+    one obvious way to comply, which is to cut the file in its hand.
+
+    That is the reaction the note's own comment warns about, arriving through
+    the addressee rather than through the total. 7 of its 27 firings across
+    the stored runs landed on a test file.
+    """
+    from app.analysis.integration_checks import budget_note_for_a_write
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "intake.md").write_text(
+        "## Acceptance Criteria\n- Maximum 100 lines of code\n", encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text(
+        "\n".join(f"export const v{i} = {i};" for i in range(300)), encoding="utf-8"
+    )
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><html><body><script type="module" src="app.js"></script></body></html>',
+        encoding="utf-8",
+    )
+    (tmp_path / "app.test.mjs").write_text(
+        "import { test } from 'node:test';\ntest('a', () => {});\n", encoding="utf-8"
+    )
+
+    assert budget_note_for_a_write(str(tmp_path), "app.test.mjs") == ""
+
+
+def test_the_application_file_still_gets_it(tmp_path) -> None:
+    from app.analysis.integration_checks import budget_note_for_a_write
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "intake.md").write_text(
+        "## Acceptance Criteria\n- Maximum 100 lines of code\n", encoding="utf-8"
+    )
+    (tmp_path / "app.js").write_text(
+        "\n".join(f"export const v{i} = {i};" for i in range(300)), encoding="utf-8"
+    )
+    (tmp_path / "index.html").write_text(
+        '<!doctype html><html><body><script type="module" src="app.js"></script></body></html>',
+        encoding="utf-8",
+    )
+
+    note = budget_note_for_a_write(str(tmp_path), "app.js")
+
+    assert "over" in note
+    assert "application code" in note

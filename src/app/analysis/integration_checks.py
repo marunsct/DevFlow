@@ -2559,6 +2559,17 @@ def budget_note_for_a_write(repo_root, relative_path: str) -> str:
         # as a complaint about the wrong file.
         if Path(relative_path).suffix.lower() not in _COUNTED_SUFFIXES:
             return ""
+        # Not on a test file. The number below is application code only - the
+        # docstring's whole point - but a note is delivered to whoever is
+        # writing *this* file, and a testing specialist told "you are 80 lines
+        # over" while holding `app.test.mjs` has one obvious way to comply,
+        # which is to cut the file in its hand. That is the reaction this
+        # note's own comment warns about, arriving through the addressee
+        # rather than through the total.
+        #
+        # 7 of its 27 firings across the stored runs landed on a test file.
+        if is_test(relative_path):
+            return ""
         root = Path(repo_root).resolve()
         budget = _declared_line_budget(root)
         if not budget:

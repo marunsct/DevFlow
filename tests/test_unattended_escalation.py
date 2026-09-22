@@ -56,6 +56,19 @@ def test_neither_escalation_routes_there_unconditionally() -> None:
     from app.graph import workflow
 
     source = inspect.getsource(workflow)
-    # The only place that may name the stage directly is the helper itself.
+    # The invariant, not the census: the only place that may name the stage
+    # directly is the helper itself, so every escalation goes through the
+    # check that asks whether a human is watching.
     assert source.count('stage="user_review_sprint"') == 1
-    assert source.count("_escalate_to_a_human(") == 3  # helper + two call sites
+
+    # And every escalation really is a call to it. A fixed total was pinned
+    # here and broke the moment a third escalation was added - the last sprint
+    # checking the brief before a run may finish - which told us nothing about
+    # whether the new one was correct. What matters is that none of them names
+    # the stage themselves, which the assertion above covers, and that the
+    # helper is called rather than reimplemented.
+    definition = source.count("def _escalate_to_a_human(")
+    calls = source.count("_escalate_to_a_human(") - definition
+
+    assert definition == 1
+    assert calls >= 3, f"expected every escalation to go through the helper, found {calls}"

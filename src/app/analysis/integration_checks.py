@@ -2873,6 +2873,19 @@ _BREAKS_BEHAVIOUR = (
     # -marker failure this file is most exposed to - see
     # `test_every_blocking_check_is_classified_as_blocking`.
     "does not parse TypeScript or JSX",
+    # The third way to the same false green, and the one that reached a live
+    # review as tidiness. Run b6436e36 shipped a three-file suite in which
+    # `task-manager/ui.pw.test.mjs` is a Playwright spec and `scripts.test` is
+    # `node --test`, which throws on another runner's spec rather than running
+    # it. No gate in this pipeline ran that file once, and the finding whose
+    # own words are "no script that runs" it was filed under "untidy rather
+    # than broken - dead rules, unused files".
+    #
+    # That is the stale-marker failure the comment above predicts, caught in
+    # production rather than by the test that exists to catch it - which
+    # checks that every marker matches some message, and cannot check that
+    # every breaking message matches some marker.
+    "has no script that runs",
     "starts an HTTP server, and this run's",  # a server a browser-only stack forbids
     "does not exist from",               # a manifest script naming a bad path
     "parses it as a classic script",     # ESM behind a plain <script> tag

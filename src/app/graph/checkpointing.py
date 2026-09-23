@@ -96,7 +96,10 @@ CHECKPOINTED_TYPES = (
 """Every type this workflow may store in a LangGraph checkpoint."""
 
 
-from app.server.schema_lock import lock_schema
+from app.server.schema_lock import (
+    lock_schema_for_the_session,
+    unlock_schema,
+)
 
 
 def build_serializer() -> JsonPlusSerializer:
@@ -144,14 +147,37 @@ def build_checkpointer():
         # taken on a connection of our own and held across `setup()`, which is
         # what makes the two processes take turns.
         #
-        # An explicit transaction because this pool is built with
-        # `autocommit=True`: without one, each statement commits on its own and
-        # `pg_advisory_xact_lock` is released the instant it is taken, which
-        # would serialise nothing.
+        # A SESSION-scoped lock, not a transaction-scoped one, and the
+        # difference is the whole of this comment.
+        #
+        # `setup()` issues three `CREATE INDEX CONCURRENTLY` statements. That
+        # statement cannot run inside a transaction block, so it runs on
+        # another connection, and before it can finish it waits for every
+        # transaction overlapping it to end. Holding `pg_advisory_xact_lock`
+        # here made this connection exactly such a transaction - one that is
+        # waiting for `setup()` to return. Neither side could move.
+        #
+        # Observed on 2026-09-23, a suite stopped for thirty minutes at
+        # `tests/test_api_contract.py`:
+        #
+        #   pid 77 | idle in transaction | SELECT pg_advisory_xact_lock($1)
+        #   pid 78 | active | Lock | virtualxid | CREATE INDEX CONCURRENTLY
+        #
+        # It fires only when the indexes do not exist yet - a fresh database
+        # always, an established one never - which is why it looked like an
+        # occasional slow start rather than a deadlock.
+        #
+        # The pool is built with `autocommit=True`, so `pg_advisory_lock`
+        # holds at session level with no transaction open: two processes
+        # still take turns and nothing blocks the index build. It is not
+        # released for us, hence the `finally`.
         with pool.connection() as guard:
-            with guard.transaction():
-                lock_schema(guard.cursor())
+            cursor = guard.cursor()
+            lock_schema_for_the_session(cursor)
+            try:
                 saver.setup()
+            finally:
+                unlock_schema(cursor)
         return saver
     else:
         # Default to memory

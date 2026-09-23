@@ -44,6 +44,13 @@ _TEST = re.compile(
     r"|\.(test|spec)\.([cm]?[jt]s|[jt]sx)$"
     r"|[-_](test|spec)\.([cm]?[jt]s|[jt]sx)$"
     r"|(^|/)test[-_][^/]*\.([cm]?[jt]s|[jt]sx)$"
+    # The bare name, which every form above assumed would never be used on
+    # its own. Measured across the stored workspaces: `simple-to-do-list-app
+    # /test.js` was classified as APPLICATION, so the size budget counted a
+    # suite as product, and the requirement checks - which exist precisely so
+    # that "a suite naming a feature is not the product having one" - could
+    # read it as evidence the feature was built.
+    r"|(^|/)(test|spec|tests|specs)\.([cm]?[jt]s|[jt]sx)$"
     # Python: pytest and unittest both look for these.
     r"|(^|/)test_[^/]*\.py$"
     r"|_test\.py$"

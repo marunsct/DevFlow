@@ -4264,3 +4264,168 @@ only the browser is both enormous and identical between runs.
 contains the install and that it runs after `USER appuser`. The preference
 existed in the code for as long as the fallback did; what was missing was
 the line in the image, which is exactly the shape of bug that comes back.
+
+---
+
+## Picking the branch back up, 2026-09-23
+
+`harness-hardening-session` arrived with 51 commits on top of `96a38ea`,
+nothing of this branch's own work missing, and
+`docs/harness-hardening-session-changes.md` describing the first 41 of them.
+The review below is of that work; the findings after it are new.
+
+**The most important change verified against data it was not written on.**
+`56faee7` - check the product against the operator's brief rather than the
+run's restatement of it - was run here against run-ed05e20e's workspace, a
+run that completed on 19 September before any of that code existed:
+
+```
+actions the brief requires: ['add', 'delete', 'edit']
+FINDING: This project's own documents require that a user can `edit` ...
+         and also defer it: technical_specification.md: - Edit
+         Interpretation: The acceptance criteria say 'Users can add, edit,
+         delete tasks' but core workflows define updates only as sta...
+```
+
+It finds the defect, quotes the deferral, and names the document that made
+it. The wiring is real, not the dead-parameter shape that bit `a13b2ef`:
+`state["document"].text` reaches `summarise_integration` through
+`build_milestone_review_request`, and 25 tests cover the false-positive
+direction.
+
+### 4bd. The audit script ran the brief checks with no brief
+
+`summarise_integration` takes the operator's brief because two of its checks
+compare the product against it. The milestone reviewer passes it.
+`scripts/audit_run.py` did not - it called `summarise_integration(workspace,
+stack)` and stopped.
+
+So the audit tool and the gate disagreed about the same workspace, silently
+and in the dangerous direction: the audit would report a product clean that
+the reviewer would have blocked, because with no brief those two checks fall
+back to the run's own documents - which is exactly what a run that redefined
+a requirement out of existence has already edited.
+
+The script now takes the brief as a third argument, and when it is absent it
+says so in the report rather than quietly running a weaker check.
+
+### 4be. `test.js` was product code to every check in this harness
+
+`classify_file` recognises `app.test.js`, `test_crud.py`, `tests/x.js`,
+`foo_test.go` and a dozen more. It did not recognise the plainest spelling of
+all: a file named exactly `test.js`, `spec.js` or `tests.mjs` at the top of a
+project directory. **Seven stored products contain one, and every one was
+classified as `application`.**
+
+That is not a misfiling, it is three defects:
+
+* the size budget counted a whole suite as product code;
+* the requirement checks read product files as evidence a feature exists, so
+  a suite sitting under that name could vouch for a feature the product does
+  not have - which is precisely what `eef6f55` was written to stop, reached
+  by a different route;
+* every check that skips tests examined a suite as though it were the
+  product.
+
+Fixed in `file_kinds._TEST`. The risk of widening a name pattern is the other
+direction, so the near misses are pinned by test: `contest.js`, `latest.js`,
+`manifest.js`, `protest.ts` and `testimonials/page.js` are application files
+and stay that way.
+
+### 4bf. Stored data parsed with nothing to catch the parse failing
+
+Open item 5 from the other machine's list. Measured here across the stored
+workspaces: of **73 product files that parse JSON, 17 contain no error
+handling of any kind.** Two of them read:
+
+```js
+const stored = getLocalStorage().getItem('tasks');
+return stored ? JSON.parse(stored) : [];
+```
+
+The ternary guards `null`, which is the case that cannot happen twice. It
+does not guard the case that can: storage holding something that is not
+JSON, after a half-written write, a schema change between versions, another
+tab, or a user with developer tools. `JSON.parse` raises, and a page whose
+whole state comes from that call renders nothing.
+
+The new check is deliberately whole-file - a file that handles an error
+anywhere is left alone - because answering it per call site needs the
+enclosing block, which no regex gets right across six languages. It
+under-reports on purpose. Graded `untidy`, not blocking: the product works,
+and works until its storage is damaged.
+
+### 4bg. A suite that hangs is worse than a suite that fails
+
+Two suite runs here sat for 32 and 11 minutes having used four and three
+seconds of CPU between them. Blocked, not computing, and producing no output
+at all, because `-q` writes its summary only at the end and the command was
+piped to `tail`.
+
+Three things made that expensive, and all three are fixed or recorded:
+
+1. **No deadline.** `conftest` now arms `faulthandler.dump_traceback_later`
+   around every test, so a hang becomes a stack trace naming the test rather
+   than an unbounded wait. No new dependency, and it prints every thread.
+   `TEST_TIMEOUT_SECONDS=0` switches it off.
+2. **No visible progress.** Piping `pytest -q` to `tail` buffers everything
+   until the end, so a running suite and a hung one look identical. Redirect
+   to a file and read the file.
+3. **Two suites at once.** The second run was started to compare against the
+   first, and both share one testcontainers Postgres. That is the instinct a
+   silent hang produces and it is the wrong one; the deadline above removes
+   the reason for it.
+
+The suspected cause - `7653ad7`'s advisory lock - turned out to be the cause
+after all, by a route its docstring does not cover. See §4bh.
+
+### 4bh. The schema lock deadlocked against LangGraph's own index build
+
+`7653ad7` serialised schema creation behind `pg_advisory_xact_lock`. That is
+the right lock for `CREATE TABLE` and the wrong one for anything that runs
+`CREATE INDEX CONCURRENTLY`, and `PostgresSaver.setup()` runs three.
+
+`CREATE INDEX CONCURRENTLY` cannot run inside a transaction block, so
+PostgreSQL executes it on another connection, and before it can finish it
+waits for every transaction overlapping it to end. A caller holding a
+transaction-scoped advisory lock is exactly such a transaction - and it is
+waiting for the index build to return.
+
+Caught in `pg_stat_activity` while the suite sat at
+`tests/test_api_contract.py`:
+
+```
+pid 77 | idle in transaction | SELECT pg_advisory_xact_lock($1)
+pid 78 | active | Lock | virtualxid |
+         CREATE INDEX CONCURRENTLY IF NOT EXISTS checkpoints_thread_id_idx
+```
+
+`checkpointing.build_checkpointer` held the lock across `saver.setup()`
+deliberately - the comment there explains that it is what makes two processes
+take turns, and that reasoning is sound. What it could not know is that the
+library it wraps issues a statement that cannot be held inside a transaction
+at all.
+
+**Why it looked like anything but a deadlock.** The indexes are created with
+`IF NOT EXISTS`, so it fires on a fresh database and never on an established
+one. In production that is a cold start, which the `7653ad7` docstring itself
+describes as "a service that took two goes to start, which reads as a slow
+database rather than a failure". In the suite it is every session, because
+testcontainers gives each one a new database. And `tests/test_api_contract.py`
+run **on its own passes in six seconds** - it needs an earlier test to have
+left a connection holding the lock, which is why bisecting by file would
+never have found it.
+
+**Fixed** with a session-scoped lock, `pg_advisory_lock`, taken on a
+connection of the pool with `autocommit=True` so no transaction is open. Two
+processes still take turns; nothing held blocks an index build. It is not
+released for you, so it is released in a `finally`, and a process that dies
+releases it anyway because the lock dies with the connection.
+
+The transaction-scoped form stays exactly as it was for table creation, where
+it is correct and where the docstring's reasoning about a dying process
+holding a session lock still applies. One key covers both, so a table
+creation and an index build cannot run at once.
+
+**Measured:** the suite ran to 14% and stopped, twice, for 32 and 30 minutes.
+With the session lock it passes that point and keeps going.

@@ -7,11 +7,47 @@ import time; exporting late would leave them bound to a default that points at
 whatever happens to be listening on localhost.
 """
 
+import faulthandler
 import os
 
 import pytest
 from testcontainers.postgres import PostgresContainer
 from testcontainers.redis import RedisContainer
+
+
+#: How long one test may take before the suite is treated as hung. Generous:
+#: the slowest legitimate tests here start a container or drive a real agent
+#: graph. Set `TEST_TIMEOUT_SECONDS=0` to switch it off.
+DEFAULT_TEST_TIMEOUT_SECONDS = 180
+
+
+@pytest.fixture(autouse=True)
+def _fail_a_hung_test():
+    """Turn a hang into a stack trace that names the test.
+
+    Two suite runs on 2026-09-23 sat for 32 and 11 minutes having used four
+    and three seconds of CPU between them - blocked, not computing - and
+    produced no output at all, because `-q` writes its summary only at the
+    end. There was nothing to read and nothing to act on but a process id.
+
+    A hang with no deadline is the worst shape a test failure can take. It
+    stops the fix-test-deploy loop entirely, it looks identical to "slow", and
+    the usual instinct - start another run to compare - is what turned one
+    stuck suite into two.
+
+    `faulthandler` rather than a plugin, because it needs no dependency and
+    prints every thread's stack at the moment of the timeout, which is
+    precisely what was missing. `exit=True` ends the process: a suite that has
+    hung is not going to recover, and a named stack beats a silent wait.
+    """
+    seconds = int(os.environ.get("TEST_TIMEOUT_SECONDS", DEFAULT_TEST_TIMEOUT_SECONDS))
+    if seconds > 0:
+        faulthandler.dump_traceback_later(seconds, exit=True)
+    try:
+        yield
+    finally:
+        if seconds > 0:
+            faulthandler.cancel_dump_traceback_later()
 
 
 @pytest.fixture(scope="session", autouse=True)

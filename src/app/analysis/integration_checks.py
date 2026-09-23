@@ -4463,9 +4463,98 @@ def _a_required_action_no_test_covers(
     return problems
 
 
+#: Turning stored bytes back into values, in the languages this harness
+#: builds in. Every one of these raises on input it cannot parse.
+_DESERIALISES = re.compile(
+    r"(?<![\w.$])(?:JSON\.parse|json\.loads|json\.load|yaml\.safe_load|yaml\.load"
+    r"|pickle\.loads|toml\.loads|plist\.loads|Marshal\.load|JSON\.parse!"
+    r"|serde_json::from_str|json\.Unmarshal|JsonSerializer\.Deserialize)\s*[(<]"
+)
+
+#: Reading something that outlived the process, and therefore something a
+#: user, another program or a previous version of this one could have left in
+#: any state at all.
+_READS_PERSISTED_DATA = re.compile(
+    r"(?<![\w.$])(?:localStorage|sessionStorage)\s*\.\s*getItem\s*\("
+    r"|(?<![\w.$])indexedDB\b"
+    r"|(?<![\w.$])readFileSync\s*\(|(?<![\w.$])readFile\s*\("
+    r"|(?<![\w.$])read_text\s*\(|(?<![\w.$])\bopen\s*\([^)]*['\"]r"
+    r"|(?<![\w.$])os\.ReadFile\s*\(|(?<![\w.$])File\.read\s*\("
+)
+
+#: Any error handling at all, in any of those languages. A file that has one
+#: is left alone: this check asks whether the author thought about failure,
+#: not whether every call site is individually wrapped.
+_HANDLES_AN_ERROR = re.compile(
+    r"(?<![\w.$])(?:try\s*[{:]|catch\s*[({]|except\b|rescue\b|recover\s*\("
+    r"|\.catch\s*\(|if\s+err\s*!=\s*nil|match\s+.*\{)"
+)
+
+
+def _persisted_data_parsed_without_a_guard(files: list[Path], root: Path) -> list[str]:
+    """Product code that deserialises stored data and handles no failure.
+
+    Stored data is the one input a product cannot vouch for. It outlived the
+    process that wrote it, and a half-written write, a schema change between
+    versions, another tab, a quota error or a user with developer tools can
+    each leave it as something the parser will not accept. Every parser named
+    in `_DESERIALISES` raises on that input rather than returning a default.
+
+    Measured across the stored workspaces: of 73 product files that parse
+    JSON, **17 contain no error handling of any kind**. Two of them read as:
+
+        const stored = getLocalStorage().getItem('tasks');
+        return stored ? JSON.parse(stored) : [];
+
+    The ternary guards `null`, which is the case that cannot happen twice, and
+    not the case that can - storage holding something that is not JSON. When
+    it does, load throws, and a page whose whole state comes from that call
+    renders nothing at all.
+
+    Deliberately whole-file, not per-call-site. A file that handles an error
+    anywhere is left alone, even if this particular call is bare: the question
+    is whether failure was considered, and answering it per call site needs
+    the enclosing block, which no regex gets right across six languages. It
+    under-reports on purpose - a new check that is wrong costs a sprint, and
+    this one has to earn a reviewer's attention 17 times before it spends any.
+
+    Not blocking. The product works; it works until its storage is damaged.
+    """
+    problems: list[str] = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        if path.suffix.lower() not in _COUNTED_SUFFIXES:
+            continue
+        if is_test(relative) or not is_application(relative):
+            continue
+        text = _read(path)
+        if not text:
+            continue
+        parse = _DESERIALISES.search(text)
+        if not parse or not _READS_PERSISTED_DATA.search(text):
+            continue
+        if _HANDLES_AN_ERROR.search(text):
+            continue
+        line = text[: parse.start()].count("\n") + 1
+        problems.append(
+            f"{relative} reads stored data and parses it at line {line} with no "
+            "error handling anywhere in the file. Stored data outlived the "
+            "process that wrote it, so a half-written write, a schema change "
+            "between versions or anything a user put there by hand leaves it "
+            "as something the parser rejects - and the parser raises rather "
+            "than returning a default. A null check does not cover that: null "
+            "is the case that cannot happen twice. Wrap the parse, and decide "
+            "what the product does with damaged storage - start empty, or say "
+            "so - because today it stops loading entirely."
+        )
+    return problems
+
+
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("names a page calls against the import clause that should bind them",
      lambda files, root, stack, brief: _called_without_being_imported(files, root)),
+    ("stored data a product parses without handling a parse failure",
+     lambda files, root, stack, brief: _persisted_data_parsed_without_a_guard(files, root)),
     ("required arguments the suite supplies and the product does not",
      lambda files, root, stack, brief: _required_arguments_only_the_tests_supply(files, root)),
     ("actions the run's own acceptance criteria require against what it built",

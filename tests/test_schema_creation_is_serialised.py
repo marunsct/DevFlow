@@ -261,10 +261,11 @@ class TestTheCheckpointerMigrationIsGuardedToo:
         assert "lock_schema" in source, "setup() is called without the schema lock"
 
     def test_the_lock_is_held_across_setup_not_merely_taken(self):
-        """Taking the lock and then calling setup outside the block does nothing.
+        """Taking the lock and then calling setup outside it does nothing.
 
         The lock has to still be held while the migration runs, or the two
         processes serialise on the lock and then race on the migration anyway.
+        Still true; what changed is which lock. See the class below.
         """
         import inspect
 
@@ -273,21 +274,50 @@ class TestTheCheckpointerMigrationIsGuardedToo:
         lines = [
             line.strip()
             for line in inspect.getsource(build_checkpointer).splitlines()
-            if "lock_schema(" in line or "saver.setup()" in line
+            if "lock_schema_for_the_session(" in line or "saver.setup()" in line
         ]
-        postgres_pair = [line for line in lines if "lock_schema" in line or "setup" in line]
-        assert postgres_pair[-2].startswith("lock_schema"), postgres_pair
-        assert postgres_pair[-1] == "saver.setup()", postgres_pair
+        assert lines[-2].startswith("lock_schema_for_the_session"), lines
+        assert lines[-1] == "saver.setup()", lines
 
-    def test_an_explicit_transaction_is_used(self):
-        """The pool is built with `autocommit=True`.
+    def test_no_transaction_is_opened_around_setup(self):
+        """The opposite of what this file asserted until 2026-09-23.
 
-        Without an explicit transaction each statement commits on its own and
-        `pg_advisory_xact_lock` is released the instant it is taken, which would
-        serialise nothing at all.
+        An explicit transaction was used here deliberately, because the pool
+        is built with `autocommit=True` and a transaction-scoped advisory lock
+        taken outside one is released instantly, serialising nothing.
+
+        The reasoning was right and the lock was wrong. `setup()` issues three
+        `CREATE INDEX CONCURRENTLY` statements; that statement cannot run
+        inside a transaction block, so it runs on another connection and waits
+        for every overlapping transaction to end - including the one holding
+        the lock, which is waiting for `setup()` to return.
+
+        Caught in `pg_stat_activity` with the suite stopped for thirty
+        minutes:
+
+            pid 77 | idle in transaction | SELECT pg_advisory_xact_lock($1)
+            pid 78 | active | Lock | virtualxid | CREATE INDEX CONCURRENTLY
+
+        A session-scoped lock serialises the two processes without holding a
+        transaction, which is what both properties need at once.
         """
         import inspect
 
         from app.graph.checkpointing import build_checkpointer
 
-        assert ".transaction()" in inspect.getsource(build_checkpointer)
+        source = inspect.getsource(build_checkpointer)
+        setup = source.rindex("saver.setup()")
+        # Comments stripped: the explanation above this code quotes the old
+        # statement, and an assertion that reads its own rationale as the
+        # thing it forbids is the "reached twelve of thirteen" mistake in
+        # miniature.
+        window = "\n".join(
+            line for line in source[max(0, setup - 1400):setup].splitlines()
+            if not line.strip().startswith("#")
+        )
+
+        assert ".transaction()" not in window, (
+            "an open transaction here deadlocks against CREATE INDEX CONCURRENTLY"
+        )
+        assert "pg_advisory_xact_lock" not in window
+        assert "lock_schema_for_the_session" in window

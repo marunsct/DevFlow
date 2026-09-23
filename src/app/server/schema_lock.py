@@ -64,6 +64,44 @@ def lock_schema(cursor) -> None:
     cursor.execute("SELECT pg_advisory_xact_lock(%s)", (SCHEMA_INIT_LOCK_KEY,))
 
 
+def lock_schema_for_the_session(cursor) -> None:
+    """Take the same lock without holding a transaction open.
+
+    `lock_schema` is transaction-scoped, which is right for creating tables
+    and wrong for anything that runs `CREATE INDEX CONCURRENTLY`. That
+    statement cannot run inside a transaction block, so it executes on
+    another connection, and before it can finish it waits for every
+    transaction that overlaps it to end. A caller holding
+    `pg_advisory_xact_lock` is exactly such a transaction, and it is waiting
+    for the index build to return. Neither side can move.
+
+    Observed on 2026-09-23 while a suite sat for thirty minutes at
+    `tests/test_api_contract.py`:
+
+        pid 77 | idle in transaction | SELECT pg_advisory_xact_lock($1)
+        pid 78 | active | Lock | virtualxid |
+                 CREATE INDEX CONCURRENTLY IF NOT EXISTS checkpoints_...
+
+    LangGraph's `PostgresSaver.setup()` issues three of those indexes, and it
+    is third-party code this project calls rather than owns. It fires only
+    when the index does not already exist - so a fresh database always, an
+    established one never, which is why it reads as an occasional slow start.
+
+    Session-scoped instead. The lock is held by the connection rather than by
+    a transaction, so nothing this holds blocks a concurrent index build, and
+    two processes still take turns. Release it with `unlock_schema` in a
+    `finally`: unlike the transaction-scoped form it is not released for you.
+    A process that dies releases it anyway, because the lock dies with the
+    connection.
+    """
+    cursor.execute("SELECT pg_advisory_lock(%s)", (SCHEMA_INIT_LOCK_KEY,))
+
+
+def unlock_schema(cursor) -> None:
+    """Release `lock_schema_for_the_session`. Safe to call when not held."""
+    cursor.execute("SELECT pg_advisory_unlock(%s)", (SCHEMA_INIT_LOCK_KEY,))
+
+
 def ensure_table(cursor, table: str, create_sql: str) -> None:
     """Create `table` if it is missing, without serialising the common case.
 
@@ -98,4 +136,10 @@ def ensure_table(cursor, table: str, create_sql: str) -> None:
     cursor.execute(create_sql)
 
 
-__all__ = ["SCHEMA_INIT_LOCK_KEY", "ensure_table", "lock_schema"]
+__all__ = [
+    "SCHEMA_INIT_LOCK_KEY",
+    "ensure_table",
+    "lock_schema",
+    "lock_schema_for_the_session",
+    "unlock_schema",
+]

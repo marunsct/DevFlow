@@ -4534,3 +4534,40 @@ added to one reaches the other.
 
 Suite after both: 4,687 passing, 3 failing, 6 skipped, in 2m45s. The three are
 the known environmental ones.
+
+### 4bk. The gitignore fix verified, and the same hole one directory over
+
+Run-fbe23618's first sprint, on the same brief, is the before-and-after for
+§4bj's second finding. `git ls-files` on its workspace now lists exactly one
+dotfile:
+
+```
+.gitignore
+```
+
+Down from four. `.project-directory`, `.project-stack` and
+`.project-memory.json` are gone from the product's history.
+
+**And the same sprint committed `todo-app/test-results/.last-run.json`.**
+That is Playwright's own runner output, not the work, and a reviewer reading
+that diff has to work out for itself that it is not part of the product.
+
+This is the identical shape as the finding it appeared beside, one directory
+over: `sandbox._RUNNER_OUTPUT_DIRECTORIES` lists ten such directories, and
+`repository._iter_repo_files` already prunes every one of them from every
+listing and every digest. Git was, again, the one place nobody had looked.
+
+Both lists are now tied to the generated `.gitignore` by test - the harness
+files by `HARNESS_FILES` and the runner output by
+`_RUNNER_OUTPUT_DIRECTORIES` - so a directory added to either reaches git
+without anyone remembering to do it. A second test pins the other direction:
+`tests/`, `e2e/`, `spec/`, `src/` and the product's own files must never
+appear in that list, because they are what the run delivers.
+
+**Also verified on this run: the image-level browser cache.**
+`npx playwright install chromium` returned in **0.5 seconds having downloaded
+nothing**, against roughly 650 MB and a minute or two per run before §4bc.
+The cache is intact at 658 MB in the image.
+
+Suite: 4,697 passing, 3 failing (the known environmental three), 6 skipped, in
+2m48s.

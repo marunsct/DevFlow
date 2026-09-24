@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 
 from app.tools.repository import HARNESS_FILES
+from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
 from app.tools.version_control import _IGNORED
 
 
@@ -31,10 +32,28 @@ def test_every_harness_file_is_ignored_by_the_sprint_history(name: str):
     )
 
 
+@pytest.mark.parametrize("directory", sorted(_RUNNER_OUTPUT_DIRECTORIES))
+def test_every_runner_output_directory_is_ignored_too(directory: str):
+    """A test runner's output is not the work either.
+
+    Measured on run-fbe23618's first sprint:
+    `todo-app/test-results/.last-run.json` was committed alongside the
+    product, and a reviewer reading that diff has to work out for itself that
+    it is not part of the work.
+
+    `repository._iter_repo_files` already prunes this exact list from every
+    listing and digest, so git was again the one place nobody had looked.
+    """
+    assert f"{directory}/" in _IGNORED, (
+        f"{directory} is pruned from every listing and still committed"
+    )
+
+
 def test_the_product_is_not_ignored_with_it():
     """The list must not grow into anything the run actually delivers."""
-    for kept in ("app.js", "index.html", "package.json", "styles.css", "app.test.mjs"):
-        assert kept not in _IGNORED
+    for kept in ("app.js", "index.html", "package.json", "styles.css", "app.test.mjs",
+                 "tests/", "e2e/", "src/", "spec/"):
+        assert kept not in _IGNORED, f"{kept} is part of what the run delivers"
 
 
 def test_the_dependency_directories_are_still_ignored():

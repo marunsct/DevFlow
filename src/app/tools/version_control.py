@@ -47,6 +47,16 @@ build/
 .project-directory
 .project-stack
 .project-memory.json
+test-results/
+playwright-report/
+blob-report/
+coverage/
+.nyc_output/
+htmlcov/
+.turbo/
+.parcel-cache/
+.vite/
+.cache/
 """
 """The last three are the harness's own bookkeeping, not the product's.
 
@@ -61,6 +71,15 @@ costs nothing and stops a delivered repository carrying three files that mean
 nothing to whoever receives it. `HARNESS_FILES` in `tools/repository.py`
 already hides the same three from every listing, digest and cross-file check;
 this is the fourth place they should never appear.
+
+The directories after them are a test runner's own output, and they are here
+for the same reason. Measured on run-fbe23618's first sprint:
+`todo-app/test-results/.last-run.json` was committed alongside the product,
+and a reviewer reading that diff has to work out that it is not part of the
+work. The list is `sandbox._RUNNER_OUTPUT_DIRECTORIES`, which
+`repository._iter_repo_files` already prunes from every listing and digest -
+so, again, git was the one place nobody had looked. A test ties the two lists
+together.
 """
 
 _TIMEOUT_SECONDS = 30

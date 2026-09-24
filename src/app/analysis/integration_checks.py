@@ -1075,7 +1075,7 @@ def _exports_no_test_mentions(files: list[Path], root: Path) -> list[str]:
         problems.append(
             f"{path.relative_to(root)} exports {len(exported)} name(s) and no "
             f"test mentions {', '.join(untested)}. A passing suite says nothing "
-            "about those."
+            "about those." + _but_a_browser_test_may_reach_them(tests, root)
         )
     return problems
 
@@ -1149,6 +1149,45 @@ def _how_the_product_is_run(root: Path) -> str:
     except OSError:
         return ""
     return "\n".join(texts)
+
+
+#: A suite that drives the product through a page rather than importing it.
+#: Its tests name buttons and selectors, never the functions behind them.
+_A_BROWSER_SPEC = re.compile(
+    r"@playwright/test|from\s+['\"]playwright|cy\.(?:visit|get)\s*\(|"
+    r"browser\.url\s*\(|page\.(?:goto|locator|click)\s*\("
+)
+
+
+def _but_a_browser_test_may_reach_them(tests: list[Path], root: Path) -> str:
+    """The caveat this finding's own docstring holds and its message did not.
+
+    "A passing suite says nothing about those" is true of a suite that imports
+    the module and false of one that drives the page. A browser spec names
+    `.edit-btn` and `page.locator`, never `editTask`, so every export a page
+    reaches is missing from it by construction.
+
+    Measured on run-07cd52ae, which shipped `editTask` and a Playwright test
+    `test('edits a task title')` that clicks the edit button, asserts the
+    input appears and checks the new title. The finding said no test mentions
+    `editTask` - correct - and that a passing suite says nothing about it,
+    which was wrong, and it said it to a reviewer whose job is to act on it.
+
+    The other machine's §3.3 records the cost of this shape in one sentence:
+    a check two consecutive reviewers have to overrule is the check's problem.
+    So the message now says what it knows and what it does not, and lets the
+    reviewer look. Deliberately no inference from a selector to a function:
+    that guess would be wrong often enough to be worse than the caveat.
+    """
+    if not any(_A_BROWSER_SPEC.search(_read(path)) for path in tests):
+        return ""
+    return (
+        " A browser test is present in this suite, and a browser test drives "
+        "the page rather than importing the module - it names buttons and "
+        "selectors, never the functions behind them. So a name missing here "
+        "may still be covered end to end. Check whether a browser test "
+        "exercises it before treating this as a gap."
+    )
 
 
 def _orphaned_scripts(files: list[Path], root: Path) -> list[str]:

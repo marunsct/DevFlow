@@ -4476,3 +4476,61 @@ withholdings, unchanged from their measurement. Those 12 calls did not reach
 the refusal rung, which fires at twelve repeated reads in one stage. That is
 the ladder being deliberately conservative, and it is the next thing to
 measure rather than to change.
+
+### 4bj. run-07cd52ae completed, and the two findings it left
+
+Two sprints, both accepted, no stage restarts.
+
+| | |
+| --- | --- |
+| model calls | 272 |
+| tool calls | 393 |
+| **failures that cost the run** | **2, or 0.5%** |
+| refusals that prevented damage | 20 |
+| identical repeats in a stage | 5, or 1.8% |
+| `npx playwright test` | 9 passed, 0 failed |
+| `npm test` | 20 passed, 0 failed |
+| application code | 312 lines, against a 500 cap |
+| blocking cross-file problems | none |
+
+0.5% matches the best figure the other machine reached, against a corpus
+average of 11.8%. Sprint one delivered add, edit and delete; sprint two
+delivered filtering. The brief-based check caught the missing `edit` in the
+**first** milestone review, at major severity, quoting the brief's own
+wording - one revision round earlier than run-977eedf8, where the same defect
+took until a later sprint.
+
+**Finding one: a check told a reviewer something untrue.** The one remaining
+finding on the product read:
+
+> `todo-app/app.js` exports 9 name(s) and no test mentions `editTask`. A
+> passing suite says nothing about those.
+
+The first sentence is correct. The second is not: `index.spec.mjs` holds
+`test('edits a task title')`, which clicks the edit button, waits for the
+input and checks the new title. A browser spec names `.edit-btn` and
+`page.locator` and never the function behind them, so **every export a page
+reaches is missing from it by construction.**
+
+`_exports_no_test_mentions`'s own docstring is careful about exactly this -
+"reported as evidence rather than as a fault ... this cannot tell the
+difference" - and the message a reviewer reads did not carry it. The message
+now says what it knows and what it does not, when a browser spec is present.
+Deliberately no inference from a selector to a function: that guess would be
+wrong often enough to be worse than the caveat.
+
+This is the shape the other machine names in one sentence: *a check two
+consecutive reviewers have to overrule is the check's problem.*
+
+**Finding two: the product's git history carried the harness's bookkeeping.**
+`git ls-files` on the workspace listed `.project-directory`, `.project-stack`
+and `.project-memory.json` alongside the product, so every sprint commit
+carried all three and a delivered repository would hand its recipient three
+files that mean nothing to them. `HARNESS_FILES` already hides the same three
+from every listing, digest and cross-file check; the generated `.gitignore`
+was the fourth place they should never appear and was the one place nobody had
+looked. A test now ties the two lists together, so a fourth bookkeeping file
+added to one reaches the other.
+
+Suite after both: 4,687 passing, 3 failing, 6 skipped, in 2m45s. The three are
+the known environmental ones.

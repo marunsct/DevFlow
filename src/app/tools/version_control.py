@@ -44,6 +44,23 @@ __pycache__/
 dist/
 build/
 .DS_Store
+.project-directory
+.project-stack
+.project-memory.json
+"""
+"""The last three are the harness's own bookkeeping, not the product's.
+
+`.project-directory` pins which folder the project lives in, `.project-stack`
+records the toolchain the run chose, and `.project-memory.json` holds which
+stage last wrote each file. All three sit at the workspace root beside the
+work and all three were being committed into the sprint history: `git
+ls-files` on run-07cd52ae listed every one of them.
+
+Nothing reads them through git - they are read from disk - so ignoring them
+costs nothing and stops a delivered repository carrying three files that mean
+nothing to whoever receives it. `HARNESS_FILES` in `tools/repository.py`
+already hides the same three from every listing, digest and cross-file check;
+this is the fourth place they should never appear.
 """
 
 _TIMEOUT_SECONDS = 30

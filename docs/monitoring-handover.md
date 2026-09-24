@@ -464,7 +464,20 @@ refusals fired twice on `977eedf8` and 18 withholdings.
 6. **The task list is built and switched off.** `HARNESS_TASK_LIST=true`
    enables `TodoListMiddleware`. No measurement supports it yet; §25 of the
    hardening plan records the experiment that would decide it.
-7. **Part I items 3, 4, 5, 6, 10, 11, 13-16** of the hardening plan, and
+7. **`mkdir` is the one doubled-path shape the guard cannot catch.**
+   `strip_a_doubled_working_directory` rewrites an argument that repeats its
+   own `working_directory`, but only when the path as given does not exist
+   and the stripped one does - which is what makes it safe rather than
+   clever. A command that *creates* a path defeats that test, because
+   neither path exists yet. Measured across every stored transcript: 972
+   commands ran with a `working_directory`, 60 repeated it, and the guard
+   silently corrected 59 of them. The one it could not was
+   `mkdir -p todo-app/e2e` with the working directory already `todo-app`, on
+   run `07cd52ae`, which left an empty `todo-app/todo-app/e2e` in the
+   delivered product. Cost is clutter, not breakage, and at one occurrence
+   in 972 it is recorded rather than fixed. If it is fixed, the test to use
+   is the *parent* directory's existence, not the target's.
+8. **Part I items 3, 4, 5, 6, 10, 11, 13-16** of the hardening plan, and
    Part III item 5 - wiring the `deploy/` generators, whose security defects
    are fixed but which nothing calls.
 

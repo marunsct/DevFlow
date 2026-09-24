@@ -4429,3 +4429,50 @@ creation and an index build cannot run at once.
 
 **Measured:** the suite ran to 14% and stopped, twice, for 32 and 30 minutes.
 With the session lock it passes that point and keeps going.
+
+### 4bi. The read ladder now produces work four times as often
+
+The other machine measured every rung of the read ladder by what the stage did
+on its very next tool call, and the result was the argument for making a
+redundant read *fail* rather than merely be noticed:
+
+| after | read the same file | read a different file | did any work |
+|---|---|---|---|
+| a note | 27.3% | 42.0% | 31% |
+| a withholding | 30.0% | **61.5%** | **8%** |
+
+Withholding moved a stage to a different file rather than to work. Measured
+again on run-07cd52ae, mid-run, same brief, same method:
+
+| after | read the same file | read a different file | did any work |
+|---|---|---|---|
+| a note (n=18) | 22% | 17% | **39%** |
+| a withholding (n=40) | 30% | 28% | **35%** |
+
+**Work after a withholding went from 8% to 35%, and "read a different file"
+from 61.5% to 28%.** The stage now edits or writes after more than a third of
+withholdings instead of one in twelve.
+
+Three changes stand between the two measurements and any of them could be
+responsible: `db23018` (a narrower window of lines already served is not a new
+read, which closed the hole that returned a full file after ten withholdings),
+`2ef623a` (a provably redundant read fails rather than succeeding quietly),
+and the anchor added to the withholding message - the file's length and its
+first and last three lines, so a stage whose earlier results were compacted
+away can still recognise the file and ask for the range it needs.
+
+The anchor is the most likely of the three, because the failure mode it
+removes is exactly the one the old numbers show: a model told "you already
+have it" about text it cannot see has nothing to act on, so it reads
+something else.
+
+**Read this as a signal, not a result.** n=40 and n=18 on one run of one
+brief. The number to watch is "did any work" after a withholding; if it holds
+above 30% across two more runs, the ladder is finished and the remaining read
+volume is a context problem rather than a discipline problem.
+
+**What has not moved:** the same file is still read again after 30% of
+withholdings, unchanged from their measurement. Those 12 calls did not reach
+the refusal rung, which fires at twelve repeated reads in one stage. That is
+the ladder being deliberately conservative, and it is the next thing to
+measure rather than to change.

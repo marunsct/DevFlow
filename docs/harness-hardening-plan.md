@@ -4609,3 +4609,64 @@ like the budget warning, so three log lines are one event.
 **Small measurement, one stage.** Worth repeating on the next two runs before
 treating it as settled, and worth remembering as the counter-example to the
 escalation-ladder finding rather than a refutation of it.
+
+### 4bm. run-fbe23618 failed after 3h23m, and the harness guessed at why
+
+The run failed at `defect_fix_2_4` having taken **3 hours 23 minutes**, against
+41 minutes for run-07cd52ae on the same brief. 415 model calls against 272.
+
+**The cause, from the transcript.** Across the run, **14 model responses came
+back with `finish_reason: length`, no text and no tool call** - nine of them in
+`defect_fix_2_4` alone, and the rest spread over `defect_fix_1_1`,
+`defect_fix_1_2` and `defect_fix_2_3`. Every one of those calls produced
+literally nothing. The run's settings were `model_max_output_tokens = 20000`
+with `thinking_effort = high`, and the defect-fix stages are where reasoning
+runs longest.
+
+So the model spent its whole reply budget thinking and never got to the
+answer, nine times in the stage that ended the run.
+
+**What the operator was told:**
+
+> Agent 'defect_fix_2_4' finished without returning its structured response.
+> It produced no final message at all. This was tried 3 times, each on a fresh
+> conversation.
+> Common causes, in the order worth checking:
+> - The model answered in prose rather than calling the response schema ...
+> - The reply was cut off by MODEL_MAX_OUTPUT_TOKENS. Raise it if the last
+>   message ends mid-sentence.
+> - The conversation outgrew the window ...
+
+Four guesses; the right one second; and the test it offers - *does the last
+message end mid-sentence* - cannot be applied, because there was no last
+message. `_missing_structured_response`'s own docstring says "the last message
+is the evidence", and it is not: the evidence is `finish_reason`, which sits on
+that same message and says which guess is correct.
+
+**Fixed.** The message now reads the flag, from either `response_metadata` or
+`additional_kwargs`, and when it is `length` with no content it states the
+cause instead of listing causes. It also says the thing that would have saved
+an hour:
+
+> A FRESH CONVERSATION CANNOT FIX THIS. The ceiling is per reply, not per
+> conversation, so a restart reasons from the beginning and reaches the same
+> limit.
+
+Which is what the harness did next, three times.
+
+**The second defect, recorded and not fixed.** The retry is not merely
+unhelpful here, it is guaranteed to fail: `_restart_on_a_fresh_conversation`
+makes three attempts at a per-reply ceiling. A retry after a length-truncation
+should change something - lower the thinking effort, raise the budget, or
+decline to retry at all - and that is a behaviour change with its own risks,
+so it is written down rather than built. The diagnosis has to come first
+anyway: nothing could decide to retry differently while nothing knew why the
+stage failed.
+
+**What this says about the other results in this document.** The read-ladder
+and tool-withholding observations from this run stand - they were measured on
+stages that did resolve - but the run as a whole is the counter-example to
+"the harness is converging". A harness can stop every loop it knows about and
+still lose three hours to a model that reasons past its own reply budget.
+
+Suite: 4,711 passing, 3 failing (environmental), 6 skipped.

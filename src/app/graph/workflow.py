@@ -1188,6 +1188,73 @@ def _nudge_for_the_structured_response(
     return None
 
 
+def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
+    """Whether the model hit its output ceiling having emitted nothing.
+
+    The provider says so: `finish_reason` is `length` when the reply was
+    truncated at `max_tokens`, and it arrives on the message in
+    `response_metadata`. With no content and no tool call beside it, the whole
+    budget went on reasoning the model never got to summarise.
+
+    `_missing_structured_response` guessed at four causes and asked the reader
+    to tell them apart by the shape of the last message - while this flag sat
+    on that same message, saying which one it was.
+    """
+    for holder in ("response_metadata", "additional_kwargs"):
+        data = getattr(message, holder, None)
+        if isinstance(data, dict) and str(data.get("finish_reason") or "") == "length":
+            return True
+    return False
+
+
+def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
+    """The message for a stage that reasoned until its reply was truncated.
+
+    Measured on run-fbe23618, which failed after 3 hours 23 minutes at
+    `defect_fix_2_4`. Fourteen model responses across the run came back with
+    `finish_reason: length`, no text and no tool call - nine of them in that
+    one stage. The run's settings were `model_max_output_tokens = 20000` with
+    `thinking_effort = high`, and the defect-fix stages are where reasoning
+    runs longest, so those nine calls produced literally nothing.
+
+    The generic message named `MODEL_MAX_OUTPUT_TOKENS` second of four causes
+    and told the reader to check whether the last message ends mid-sentence.
+    There was no last message to check. An operator reading it would go
+    looking for a prompt problem.
+
+    It also says plainly that a fresh conversation cannot help, because the
+    ceiling is per reply rather than per conversation. That is what the
+    harness did next, three times, for over an hour.
+    """
+    import os
+
+    configured = os.environ.get("MODEL_MAX_OUTPUT_TOKENS", "").strip()
+    budget = f"{configured} output tokens" if configured else "its configured output limit"
+    tried = (
+        f" The stage was retried {attempts} times on fresh conversations and "
+        "hit the same ceiling each time."
+        if attempts > 1
+        else ""
+    )
+    return (
+        f"Agent '{stage_name}' spent its entire output budget before writing "
+        "anything. The provider reported `finish_reason: length` with no text "
+        f"and no tool call, which means the reply was cut off at "
+        f"{budget} while the model was still reasoning."
+        f"{tried}\n\n"
+        "The work it did is not lost - artifacts it wrote are on disk.\n"
+        "A FRESH CONVERSATION CANNOT FIX THIS. The ceiling is per reply, not "
+        "per conversation, so a restart reasons from the beginning and reaches "
+        "the same limit. Change one of these instead:\n"
+        "- Raise MODEL_MAX_OUTPUT_TOKENS, or `model_max_output_tokens` in the "
+        "runtime settings. This is the direct fix and costs only tokens.\n"
+        "- Lower `thinking_effort` from `high`. Reasoning is what consumes the "
+        "budget here, and the defect-fix stages are where it runs longest.\n"
+        "- Use a model that stops reasoning to answer. A model that reasons "
+        "past its own reply budget will do this on any long task."
+    )
+
+
 def _missing_structured_response(
     stage_name: str, result: dict[str, Any], *, attempts: int = 1
 ) -> str:
@@ -1210,11 +1277,14 @@ def _missing_structured_response(
     )
     text = str(getattr(last, "content", "") or "")
 
+    ran_out = _the_reply_was_cut_off_before_it_began(last)
     detail = (
         f"Its last message was {len(text):,} characters."
         if text
         else "It produced no final message at all."
     )
+    if ran_out:
+        return _it_spent_its_whole_output_budget(stage_name, attempts)
     if "structured response" in text.lower():
         detail += (
             " That message mentions a structured response, so the model most "

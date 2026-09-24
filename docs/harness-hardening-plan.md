@@ -4571,3 +4571,41 @@ The cache is intact at 658 MB in the image.
 
 Suite: 4,697 passing, 3 failing (the known environmental three), 6 skipped, in
 2m48s.
+
+### 4bl. The top rung of the read ladder, seen working for the first time
+
+`986031a` takes the read tool away from a stage that has been refused three
+redundant reads. It is the harshest rung this harness has, and the measured
+history of this codebase says harsher rungs do worse: across fifty
+transcripts every notice that takes something away was obeyed less often than
+the note above it, in an order inverse to harshness.
+
+Seen firing for the first time on run-fbe23618's `specialist_backend_0`, and
+it did not follow that pattern. Tracing each refusal by what the stage called
+next:
+
+| | next calls in that stage |
+| --- | --- |
+| refusal 1 | `read_file`, `edit_artifact`, ... |
+| refusal 2 | `read_file`, `edit_artifact`, ... |
+| **refusal 3 - the tool is removed** | **`edit_artifact`, `read_command_output`, `grep`** |
+
+After the third refusal the stage stopped trying to read, edited the file, and
+then used exactly the two alternatives the withholding message names -
+`read_command_output` and `grep`. It did not stall, it did not spend calls
+arguing, and it did not need the tool back.
+
+Why this rung may escape the inverse-harshness rule: it does not merely refuse
+an action, it **names two tools that still work and one that does not**. Every
+other harsh rung in this codebase says what the model may not do; this one
+also says what it may. That is the same property that made the withholding
+message four times more effective once it carried an anchor (§4bi), and it is
+the strongest evidence yet for the working explanation there - what fails is
+taking something away without leaving the model able to act.
+
+The warning logs on every subsequent model call while the condition holds,
+like the budget warning, so three log lines are one event.
+
+**Small measurement, one stage.** Worth repeating on the next two runs before
+treating it as settled, and worth remembering as the counter-example to the
+escalation-ladder finding rather than a refutation of it.

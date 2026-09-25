@@ -46,6 +46,12 @@
     </div>
 </div>
 
+<!-- Sprint Milestones -->
+<div class="card" id="sprint-milestones-card" style="display: none;">
+    <h2>🚀 Sprint Milestones</h2>
+    <div id="sprint-milestones" style="margin-top: 0.5rem;"></div>
+</div>
+
 <!-- Event log -->
 <div class="card">
     <h2>Event Log</h2>
@@ -236,6 +242,46 @@
             alert('Error: ' + err.message);
         }
     }
+
+    // ---- Sprint Milestones ----
+    async function loadSprintSummaries() {
+        const container = document.getElementById('sprint-milestones');
+        const card = document.getElementById('sprint-milestones-card');
+        let html = '';
+        for (let i = 1; i <= 20; i++) {
+            try {
+                const resp = await fetch(`/api/runs/${RUN_ID}/artifacts/download?path=docs/sprint_${i}_summary.md`, { headers: { 'Accept': 'text/plain' } });
+                if (!resp.ok) break;
+                const text = await resp.text();
+                const goal = (text.match(/\*\*Goal:\*\* (.+)/) || [])[1] || 'Unknown';
+                const status = (text.match(/\*\*Status:\*\* (.+)/) || [])[1] || 'Unknown';
+                const rounds = (text.match(/\*\*Rounds Completed:\*\* (\d+)/) || [])[1] || '0';
+                const bugs = (text.match(/\*\*Total Bugs Found:\*\* (\d+)/) || [])[1] || '0';
+                const fixed = (text.match(/\*\*Bugs Fixed:\*\* (\d+)/) || [])[1] || '0';
+                const passed = status.toLowerCase() === 'completed';
+                const badge = passed
+                    ? '<span class="status-badge status-completed">Completed</span>'
+                    : '<span class="status-badge status-failed">Failed</span>';
+                html += `<div style="padding: 0.75rem 0; border-bottom: 1px solid #f0f0f0;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <strong>Sprint ${i}</strong> ${badge}
+                    </div>
+                    <p style="color: var(--muted); font-size: 0.85rem; margin-top: 0.25rem;">${goal}</p>
+                    <div style="display: flex; gap: 1.5rem; font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem;">
+                        <span>🧪 ${rounds} test cycles</span>
+                        <span>🐛 ${bugs} bugs (${fixed} fixed)</span>
+                    </div>
+                </div>`;
+            } catch { break; }
+        }
+        if (html) {
+            container.innerHTML = html;
+            card.style.display = 'block';
+        }
+    }
+    // Poll sprint summaries every 15 seconds
+    loadSprintSummaries();
+    setInterval(loadSprintSummaries, 15000);
 
     // ---- Initialize ----
     connectSSE();

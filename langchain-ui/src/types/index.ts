@@ -207,6 +207,8 @@ export interface SettingsView {
   openai_api_key_configured: boolean;
   anthropic_api_key_configured: boolean;
   google_api_key_configured: boolean;
+  /** 'linear' runs stages serially; 'parallel' fans out specialist tasks concurrently. */
+  execution_mode: 'linear' | 'parallel';
 }
 
 export interface ApprovalPayload {

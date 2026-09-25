@@ -43,6 +43,7 @@ class Settings:
     checkpointer_type: str  # Type of checkpointer to use: 'memory' or 'sqlite'
     thinking_mode: str  # "default" (leave the server alone), "on", or "off".
     thinking_effort: str  # How much of the reply budget thinking may use: low, medium, high.
+    execution_mode: str  # "linear" or "parallel"
 
 
 def _read_bool(environment: Mapping[str, str], name: str, default: bool) -> bool:
@@ -114,4 +115,5 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         # existing deployment behaves - see `app.agents.thinking.ThinkingMode`.
         thinking_mode=values.get("MODEL_THINKING_MODE", "default").strip().lower(),
         thinking_effort=values.get("MODEL_THINKING_EFFORT", "medium").strip().lower(),
+        execution_mode=values.get("EXECUTION_MODE", "linear").strip().lower(),
     )

@@ -18,6 +18,7 @@ interface ProviderForm {
   model_max_output_tokens: number;
   thinking_mode: 'default' | 'on' | 'off';
   thinking_effort: 'low' | 'medium' | 'high';
+  execution_mode: 'linear' | 'parallel';
   openai_api_key?: string;
   anthropic_api_key?: string;
   google_api_key?: string;
@@ -120,6 +121,7 @@ export const Settings: React.FC = () => {
         model_max_output_tokens: settings.model_max_output_tokens ?? 0,
         thinking_mode: settings.thinking_mode ?? 'default',
         thinking_effort: settings.thinking_effort ?? 'medium',
+        execution_mode: settings.execution_mode ?? 'linear',
       };
       // Only send a credential the operator actually typed into. An untouched
       // box must not clear a key that is already working.
@@ -352,6 +354,41 @@ export const Settings: React.FC = () => {
                     </p>
                   </dl>
                 )}
+              </div>
+
+              {/* Execution Mode */}
+              <div className="mt-4 rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+                <label className="block text-sm font-medium text-text-secondary mb-1">Execution Mode</label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, execution_mode: 'linear' })}
+                    className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
+                      settings.execution_mode === 'linear'
+                        ? 'border-primary bg-primary/15 text-primary'
+                        : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
+                    }`}
+                  >
+                    🔗 Linear
+                    <span className="block text-[11px] font-normal mt-0.5 opacity-70">Stages run one at a time</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSettings({ ...settings, execution_mode: 'parallel' })}
+                    className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
+                      settings.execution_mode === 'parallel'
+                        ? 'border-primary bg-primary/15 text-primary'
+                        : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
+                    }`}
+                  >
+                    ⚡ Parallel
+                    <span className="block text-[11px] font-normal mt-0.5 opacity-70">Specialist tasks fan out concurrently</span>
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-text-muted leading-relaxed">
+                  Linear is safer with models that have limited context or rate limits.
+                  Parallel is faster when the model can handle concurrent requests.
+                </p>
               </div>
 
               <div>

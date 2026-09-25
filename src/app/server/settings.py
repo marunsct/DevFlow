@@ -78,6 +78,7 @@ class SettingsView(BaseModel):
     openai_api_key_configured: bool = False
     anthropic_api_key_configured: bool = False
     google_api_key_configured: bool = False
+    execution_mode: str = "linear"
 
 
 class SettingsUpdate(BaseModel):
@@ -145,6 +146,13 @@ class SettingsUpdate(BaseModel):
     openai_api_key: str | None = Field(default=None, max_length=512, repr=False)
     anthropic_api_key: str | None = Field(default=None, max_length=512, repr=False)
     google_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    execution_mode: Literal["linear", "parallel"] = Field(
+        default="linear",
+        description=(
+            "'linear' runs sprint stages one at a time; 'parallel' fans out "
+            "specialist tasks using LangGraph's Send API for concurrent execution."
+        ),
+    )
 
     @field_validator("openai_api_key", "anthropic_api_key", "google_api_key")
     @classmethod
@@ -227,6 +235,7 @@ def _current_view() -> SettingsView:
         openai_api_key_configured=bool(s.openai_api_key),
         anthropic_api_key_configured=bool(s.anthropic_api_key),
         google_api_key_configured=bool(s.google_api_key),
+        execution_mode=getattr(s, "execution_mode", "linear") or "linear",
     )
 
 
@@ -310,6 +319,7 @@ async def update_settings(
             # out of the environment does.
             "thinking_mode": payload.thinking_mode,
             "thinking_effort": payload.thinking_effort,
+            "execution_mode": payload.execution_mode,
         },
         actor=user.username,
     )

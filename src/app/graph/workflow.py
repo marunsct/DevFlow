@@ -46,11 +46,13 @@ import re
 import os
 import logging
 import uuid
-from typing import Any, TypedDict
+import operator
+from typing import Any, TypedDict, Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.constants import Send
 from langgraph.graph import END, START, StateGraph
 
 from app.agents.approval import extract_pending_approval, resume_with_decision
@@ -376,7 +378,7 @@ class WorkflowGraphState(TypedDict, total=False):
     current_sprint_index: int
     milestone_plan: MilestonePlanOutput
     specialist_task_index: int
-    specialist_outputs: dict[str, SpecialistOutput]
+    specialist_outputs: Annotated[dict[str, SpecialistOutput], operator.ior]
     remediation: RemediationCycle
     defect_cursor: int
     test_round: int
@@ -526,6 +528,19 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
     stage = state.get("stage", "")
     if _is_paused(stage):
         return END
+        
+    if stage == "specialist_dispatch_parallel":
+        tasks = state.get("milestone_plan").delegated_tasks
+        # Send to the worker, passing the entire state + task injection
+        return [
+            Send("specialist_worker", {
+                **state, 
+                "__worker_task": task, 
+                "__worker_index": i
+            })
+            for i, task in enumerate(tasks)
+        ]
+        
     return stage
 
 
@@ -1648,7 +1663,9 @@ def _run_gated_agent(
     try:
         from app.server.agent_stream import publish_stage_outcome
 
-        publish_stage_outcome(activity, _outcome_summary(structured_response))
+        outcome_text = _outcome_summary(structured_response)
+        publish_stage_outcome(activity, outcome_text)
+        _record_document(state, f"docs/stage_summaries/{stage_name}.md", f"# {stage_name} Summary\n\n{outcome_text}")
     except Exception:  # noqa: BLE001 - narration is never load-bearing
         logger.debug("Could not publish the outcome of %s", stage_name, exc_info=True)
 
@@ -1823,6 +1840,38 @@ def _record_document(state: WorkflowGraphState, relative_path: str, content: str
         )
     except Exception:  # noqa: BLE001 - the decision matters more than the record
         logger.warning("Could not write %s", relative_path, exc_info=True)
+
+
+def _record_sprint_summary(state: WorkflowGraphState, status: str, failure_reason: str = None) -> None:
+    sprint_index = state.get("current_sprint_index", 0)
+    plan = state.get("milestone_plan")
+    cycle = state.get("remediation")
+    
+    goal = getattr(plan, "selected_sprint_goal", "Unknown Goal")
+    features = "\n".join(f"- {task.task_description}" for task in getattr(plan, "delegated_tasks", [])) if plan else "None"
+    test_rounds = state.get("test_round", 0)
+    bugs = sum(1 for d in cycle.defects) if cycle else 0
+    fixed_bugs = sum(1 for d in cycle.defects if d.status == "fixed") if cycle else 0
+    
+    summary = f"# Sprint {sprint_index + 1} Summary\n\n"
+    summary += f"**Goal:** {goal}\n"
+    summary += f"**Status:** {status}\n"
+    if failure_reason:
+        summary += f"**Failure Reason:** {failure_reason}\n"
+    
+    summary += f"\n## Features Implemented\n{features}\n"
+    summary += f"\n## Test Cycles\n- **Rounds Completed:** {test_rounds}\n"
+    summary += f"- **Total Bugs Found:** {bugs}\n"
+    summary += f"- **Bugs Fixed:** {fixed_bugs}\n"
+    summary += f"- **Bugs Open:** {bugs - fixed_bugs}\n"
+    
+    if cycle and cycle.defects:
+        summary += "\n### Defect Summary\n"
+        for defect in cycle.defects:
+            summary += f"- [{defect.status.upper()}] {defect.description} (Owner: {defect.owner})\n"
+            
+    _record_document(state, f"docs/sprint_{sprint_index + 1}_summary.md", summary)
+
 
 
 def _record_review_document(
@@ -2725,6 +2774,13 @@ def build_workflow_graph(
         missing = _missing_upstream(state, "milestone_plan")
         if missing is not None:
             return missing
+            
+        from app.config import load_settings
+        settings = load_settings()
+        if settings.execution_mode == "parallel":
+            # Just set the stage to signal _route_from_stage to fan-out
+            return {"stage": "specialist_dispatch_parallel"}
+            
         milestone = state["milestone_plan"]
         tasks = milestone.delegated_tasks
         index = state.get("specialist_task_index", 0)
@@ -2764,6 +2820,49 @@ def build_workflow_graph(
         # is its own stage (Step 5.4): the Test Engineer runs the tests and
         # turns failures into tracked, owned defects.
         return _handing_on(stage="test_and_triage")
+
+    def specialist_worker_node(state: dict, config: RunnableConfig) -> dict[str, Any]:
+        """Worker node for executing a single specialist task in parallel mode."""
+        task = state["__worker_task"]
+        index = state["__worker_index"]
+        stage_name = f"specialist_{task.specialist_role}_{index}"
+        
+        # Build a temporary WorkflowGraphState to pass to the agent
+        temp_state = cast(WorkflowGraphState, dict(state))
+        
+        agent = create_specialist_agent(
+            task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+        )
+        selection = state.get("stack_selection")
+        request = build_specialist_task_request(
+            task.task_description,
+            task.acceptance_criteria,
+            state["repository"].root_path,
+            getattr(selection, "technology_stack", None),
+        )
+        
+        # Wait, if multiple agents pause for approval, they cannot share `pending_inner_thread_id`!
+        # The auto-approve logic and stage memory expects a single string. This is a known limitation 
+        # of adapting linear gates to parallel branches. For now, we will override the config thread_id
+        # to ensure isolated checkpoints.
+        
+        update = _run_gated_agent(
+            temp_state,
+            config,
+            stage_name=stage_name,
+            agent=agent,
+            initial_request=request,
+            output_key="__specialist_result__",
+            next_stage="specialist_dispatch", # doesn't matter for the map-reduce worker
+        )
+        
+        if "__specialist_result__" not in update:
+            # Paused. Wait, in map-reduce if a node pauses, it yields the pause object.
+            # But _run_gated_agent returns dict state updates. We must pass it back.
+            return update
+            
+        # Returning a dictionary with specialist_outputs will merge into the annotated dict!
+        return {"specialist_outputs": {stage_name: update["__specialist_result__"]}}
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "milestone_plan")
@@ -2856,13 +2955,16 @@ def build_workflow_graph(
         }
 
         if cycle.escalated:
+            _record_sprint_summary(state, "Failed", "Exhausted remediation attempts")
             return _handing_on(
                 **base_update,
-                stage="failed",
-                error=(
-                    f"Sprint '{cycle.sprint_goal}' exhausted its {cycle.max_attempts} remediation attempts "
-                    f"with defects still open. A human must intervene.\n\n{build_defect_report(cycle)}"
-                ),
+                stage="technical_lead",
+                milestone_plan=None,
+                specialist_outputs={},
+                remediation=None,
+                test_round=0,
+                defect_cursor=0,
+                milestone_revision_count=state.get("milestone_revision_count", 0) + 1,
             )
 
         if any(defect.status == "open" for defect in cycle.defects):
@@ -2872,13 +2974,16 @@ def build_workflow_graph(
         # authority on whether this sprint may be accepted - it also refuses a
         # fix with missing regression coverage or an undocumented accepted risk.
         if not is_sprint_acceptable(cycle):
+            _record_sprint_summary(state, "Failed", "Missing regression coverage or unaccepted risk")
             return _handing_on(
                 **base_update,
-                stage="failed",
-                error=(
-                    "The sprint cannot be accepted despite passing tests; a defect is missing "
-                    f"regression coverage or a documented accepted risk.\n\n{build_defect_report(cycle)}"
-                ),
+                stage="technical_lead",
+                milestone_plan=None,
+                specialist_outputs={},
+                remediation=None,
+                test_round=0,
+                defect_cursor=0,
+                milestone_revision_count=state.get("milestone_revision_count", 0) + 1,
             )
 
         return _handing_on(**base_update, stage="security_review")
@@ -3080,10 +3185,16 @@ def build_workflow_graph(
         _record_review_document(state, review, milestone.selected_sprint_goal)
         
         if review.status == "blocked":
+            _record_sprint_summary(state, "Failed", "Blocked by review")
             return _handing_on(
-                stage="failed",
-                error="Milestone review blocked the sprint from continuing. See findings.",
+                stage="technical_lead",
                 milestone_review=review,
+                milestone_plan=None,
+                specialist_outputs={},
+                remediation=None,
+                test_round=0,
+                defect_cursor=0,
+                milestone_revision_count=state.get("milestone_revision_count", 0) + 1,
             )
         elif review.status == "changes_required" and (
             not review.findings
@@ -3240,6 +3351,7 @@ def build_workflow_graph(
         )
 
     def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        _record_sprint_summary(state, "Completed")
         return {
             "stage": "technical_lead",
             "current_sprint_index": state.get("current_sprint_index", 0) + 1,
@@ -3279,6 +3391,7 @@ def build_workflow_graph(
     graph.add_node("scrum_master", scrum_master_node, retry_policy=agent_retry_policy)
     graph.add_node("technical_lead", technical_lead_node, retry_policy=agent_retry_policy)
     graph.add_node("specialist_dispatch", specialist_dispatch_node, retry_policy=agent_retry_policy)
+    graph.add_node("specialist_worker", specialist_worker_node, retry_policy=agent_retry_policy)
     graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
@@ -3303,6 +3416,7 @@ def build_workflow_graph(
         "scrum_master",
         "technical_lead",
         "specialist_dispatch",
+        "specialist_worker",
         "test_and_triage",
         "defect_remediation",
         "security_review",

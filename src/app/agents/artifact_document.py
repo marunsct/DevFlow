@@ -6,14 +6,12 @@ were generated separately from one understanding and nothing reconciled them.
 
 That cost three things, all measured:
 
-- **Divergence.** On run-0b55ad49 a 1 KB `docs/spec.md` sat beside a 51 KB
+- **Divergence.** md` sat beside a 51 KB
   `docs/technical_specification.md`; the reviewer read the thin one and blocked
   a sprint for detail that was in the other file.
 - **Double generation.** The specification is ~40 KB of prose. Asking for it
   twice doubles the most expensive call in the pipeline.
-- **Confusion about what "done" means.** On run-0edfcd33 the architect wrote
-  the document and then reported in prose - "The technical specification has
-  been written to `docs/technical_specification.md`" - on three fresh
+- **Confusion about what "done" means.** md`" - on three fresh
   conversations, each ending in a ~100,000 character message, and the run
   failed. From where it stood the schema was redundant; it had already
   delivered the work.
@@ -106,9 +104,7 @@ def _record_lines(record: Any, depth: int = 0) -> list[str]:
 def _json_in_a_prose_field(text: str) -> list[str] | None:
     """A string field holding JSON, rendered readably instead of as a blob.
 
-    Models put structure into string fields. Measured on run-78804673, the
-    architect's `product_scope` - a prose field - arrived as
-    `{"in_scope": [...], "deferred_scope": [...]}`, and rendering it verbatim
+    Models put structure into string fields. ..], "deferred_scope": [...]}`, and rendering it verbatim
     produced a single 1,200-character line no reader would read.
 
     The content is right; only its container is wrong. Unpacking it is better

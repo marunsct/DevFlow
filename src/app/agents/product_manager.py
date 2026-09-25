@@ -158,7 +158,6 @@ def build_intake_request(
         # safe where the path was not. It is not: the stored name carries an
         # upload suffix (`brief_low_aa06a786.md`) and names nothing that exists
         # in a workspace rooted at "/". Measured on runs 2b5def74, da6c5e19,
-        # 5d83e946 and again on run-36eb1260 - `product_manager` spends its
         # first two calls on `read_file` and then `glob` for that exact string,
         # and gets an error for both.
         #
@@ -172,7 +171,6 @@ def build_intake_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"

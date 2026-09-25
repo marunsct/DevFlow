@@ -48,7 +48,6 @@ _STAGE = "implementation"
 #: Each of those is a "MUST" that outranks the stack in the same conversation,
 #: and the harness has been paying for all four:
 #:
-#: - run-bb1ee9bb: a "Web LocalStorage" product whose spec said "no server-side
 #:   infrastructure" four times got a 3,696-byte `server.js`, and the milestone
 #:   reviewer accepted it as the product. `_a_server_in_a_browser_only_product`
 #:   catches that at review; this is where it came from.
@@ -102,10 +101,11 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "run unit, integration, contract, end-to-end, accessibility, and "
         "security regression tests for the delegated task. Use the testing "
         "approach this run's stack chose, and the validation tool to actually "
-        "run the tests rather than only describing them. Do NOT introduce a "
-        "different test runner: one the stack did not choose fails on its own "
-        "setup rather than on the product. If the stack names none, verify with "
-        "what the stack can run natively (e.g. `node --test`). "
+        "run the tests rather than only describing them. If the stack names none, "
+        "you may introduce an appropriate test runner (e.g., Playwright, Jest, etc.) as "
+        "permitted by your testing dependency rules. "
+        "ALWAYS ensure test state (like localStorage, DOM, or global variables) is completely "
+        "cleared between tests using appropriate before/after hooks to avoid test pollution. "
         "CRITICAL: Do NOT remove, disable, or 'separate' core application logic or "
         "UI logic to satisfy test environment limitations (e.g. headless test errors "
         "or lack of a DOM). You must test the real UI logic end-to-end, usually "
@@ -147,7 +147,7 @@ class ReportedDefect(BaseModel):
 
     `ignore` rather than `forbid`, and aliases on `description` - for the
     reason spelled out on `VerificationRun` below, measured again on
-    run-0deeb8bf's `defect_fix_2_0`. The Testing specialist wrote a real,
+     The Testing specialist wrote a real,
     well-described defect as
 
         {"name": "LocalStorage Integration Failure in Unit Tests",
@@ -217,7 +217,6 @@ class VerificationRun(BaseModel):
     # "the command you ran with its exit code" pastes that record back, and
     # `forbid` then rejected every key of it.
     #
-    # run-3ddd443f died of exactly that. `specialist_testing_5` was refused
     # three times over `verification.0.exit_code`, `.exitCode`, `.returncode`,
     # `.stdout`, `.category` and `.working_directory`, could not produce a
     # valid answer, and so `settled_answer` could not recognise one and end the
@@ -308,7 +307,7 @@ so three of its four suggestions were dead ends. Measured 2026-09-16 with
 `shutil.which` inside the worker; see B2 in `docs/harness-hardening-plan.md`
 for the full list. Advice has to name something that is there.
 
-Measured on run-130deeef. The technical specification called for a shell build
+ The technical specification called for a shell build
 script, so `simple-to-do-list-app/build.sh` became the most-written file of the
 entire run - 22 writes and edits across several stages - for a file the sandbox
 can never execute. `specialist_backend_0` then sent `sh ./build.sh` five times,
@@ -372,9 +371,7 @@ def describe_stack(stack: Any) -> str:
     A specialist used to be given its task, its acceptance criteria and nothing
     about the technology. Each one then guessed, and reasonable guesses differ.
 
-    Measured on run-64df2b20, whose stack selection was Python / FastAPI /
-    PostgreSQL / pytest / React: the project directory ended up holding two
-    complete, incompatible backends. One specialist wrote `package.json` with
+     One specialist wrote `package.json` with
     express, jsonwebtoken and mongoose plus `src/routes/auth.js` and a jest
     suite; another wrote `main.py` with FastAPI and a `requirements.txt`. Both
     were sensible answers to "build the authentication endpoints". Neither was
@@ -422,8 +419,7 @@ def _task_names_a_workflow_document(task_description: str, criteria: list[str]) 
     """Warn a specialist whose task asks it to change a file it cannot, or "".
 
     `PROJECT_LAYOUT` tells the Technical Lead these documents are the
-    workflow's and must not be written. run-01f03ed9 shows a prompt is not
-    enough: the lead delegated "update `docs/milestone_review.md` with the test
+    workflow's and must not be written. md` with the test
     results", and `specialist_documentation_1` spent twelve model calls on it -
     writing a `# Task Status` note four times, byte-identical, explaining that
     the task requires updating a file the tool refuses, and rewriting the
@@ -502,11 +498,6 @@ def build_test_run_request(
         "Run the unit, integration, contract, end-to-end, accessibility, and security "
         "tests that apply to this increment, using the testing approach this project "
         "already chose. Use the run_validation tool to actually execute them.\n\n"
-        "Do not install a test framework or add a dependency. If the stack above names "
-        "no testing framework, that was a decision - the product is meant to be "
-        "verified the way the stack says, and `npm init` or `pip install` here creates "
-        "the very dependency the brief ruled out. If you cannot run a check without "
-        "new tooling, report that as a blocker instead of installing it.\n\n"
         "Report EVERY failure in the `defects` field, each with a severity, reproduction "
         "steps, expected behavior, actual behavior, affected files, and the specialist "
         "role that must fix it. If everything passes, return an empty `defects` list."
@@ -551,8 +542,7 @@ def build_defect_fix_request(
     `observed` is what the last failing command actually printed, from
     `app.observability.transcript.last_failing_command`. Everything above it in
     this brief is the *reporting* specialist's prose reading of a failure, and
-    prose drifts: on run-d3965815 `defect_fix_2_1` was briefed to find a
-    "Syntax error in createElementFallback ... Unexpected token '}'" in a file
+    prose drifts: on .. Unexpected token '}'" in a file
     that had no syntax error, while the suite was failing on a different line
     for a different reason. Both belong in the brief - the prose carries the
     judgement about which failure matters, the output carries the facts.
@@ -588,7 +578,6 @@ def build_defect_fix_request(
 #:
 #: The shared responsibilities used to say "use `run_terminal_command` (or
 #: `run_validation`)" to all six, so four of them were pointed at a tool they
-#: do not hold. That is the run-db3a4a0b fault - the scrum master spent a stage
 #: reporting "I don't have a `write_artifact` tool" instead of answering - and
 #: the reason `role_agent` withholds the writing rules from a read-only agent.
 _VALIDATION_NOTE = (

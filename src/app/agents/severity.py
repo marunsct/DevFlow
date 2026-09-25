@@ -13,7 +13,7 @@ validation error now. `app.graph.workflow._GATING_SEVERITIES` already carries
 the scar - it gates on `{"blocking", "major", "critical", "high"}`, a union of
 two vocabularies, because by the time findings reach it they are in both.
 
-Measured on run-0deeb8bf's `defect_fix_2_0`. The Testing specialist wrote a
+ The Testing specialist wrote a
 complete, correct defect report and typed `"severity": "High"`. `High` is not
 in `Literal["blocking", "major", "minor"]`, so the whole answer was rejected,
 so `settled_answer` could not recognise it as an answer, so the stage wrote it

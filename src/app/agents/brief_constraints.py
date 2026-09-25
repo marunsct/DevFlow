@@ -248,7 +248,7 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     `file_kinds` classifies it as `config` rather than `test` - correctly, it is
     not a test - so a check that asked only `is_test` saw the runner's config as
     product code and reported the package as a shipped dependency. Measured on
-    run-519a9d8a, whose milestone review then filed "package.json declares
+    json declares
     @playwright/test, violating the brief" as BLOCKING and ended the run, three
     remediation rounds later, over a devDependency that ships to nobody. The
     config belongs to the suite, not the product: nothing in `dependencies`
@@ -304,10 +304,7 @@ def what_the_brief_forbids_that_is_there(
     Only the product's dependencies are reported. `devDependencies` are not
     shipped - `npm ci --omit=dev` in a production image installs none of them -
     so a test runner sitting there breaks no constraint, and a package imported
-    only by test files is treated the same way. Measured on run-2d9066e2, which
-    spent all three of its remediation attempts on `@playwright/test` in
-    devDependencies against a brief reading "No external dependencies beyond
-    basic HTML/CSS/JS" and failed without a product defect in it. The
+    only by test files is treated the same way.  The
     constraint was never aimed at the test suite; this check no longer reads it
     as though it were. See `app.agents.testing_dependency_rule`.
     """
@@ -330,7 +327,6 @@ def what_the_brief_forbids_that_is_there(
             # The brief constrains what ships, and only that. `devDependencies`
             # are the developer's: they are not installed by `npm ci --omit=dev`
             # in a production image and never reach the user, so a test runner
-            # sitting there violates nothing. Measured on run-2d9066e2, which
             # spent all three remediation attempts on `@playwright/test` in
             # devDependencies against a brief reading "No external dependencies
             # beyond basic HTML/CSS/JS" and failed without a product defect.

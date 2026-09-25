@@ -4,8 +4,7 @@ A chat template wraps a turn in delimiters. They are not supposed to reach
 content, and across five models in one session they reached it three ways:
 
 - `<|END_THINKING|><|START_ACTION|>` written into `Task.test.mjs`, a syntax
-  error on line 963 that broke a 963-line suite (finding 93, run-44653bd2)
-- `<tools>{"name": ...}</tools>` returned as message *content* with
+  error on line 963 that broke a 963-line suite (finding 93, ..}</tools>` returned as message *content* with
   `tool_calls` empty, so the harness saw no tool call at all (run 40)
 - a trailing `</tool_call>` on an otherwise valid structured answer (run 31)
 

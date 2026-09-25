@@ -8,11 +8,10 @@ not the last message.
 
 Measured twice in one afternoon, on two different agents:
 
-- run-c826ae90, product_manager: wrote `docs/product_intake.md`, then said
+- md`, then said
   "**Product intake complete.** Here is the structured summary:" and stopped.
   The next stage died on `KeyError: 'product_intake'`.
-- run-c826ae90, architecture_reviewer: printed `{"status": "approved",
-  "findings": [...]}` as a message, wrote its document again, printed it
+- ..]}` as a message, wrote its document again, printed it
   again - five times - until the repeat guard stopped the stage.
 
 Both agents already had some form of "return the structured response" in their

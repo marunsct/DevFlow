@@ -4,19 +4,16 @@ Each stage builds its own agent and none can see what an earlier one chose, so
 without a stated convention each invents a layout and they disagree. Measured
 across this project's runs:
 
-- run-64df2b20 put `test_auth.py` and `auth.test.js` in one `tests/` directory,
+- py` and `auth.test.js` in one `tests/` directory,
   beside an `__init__.py` and a `requirements.txt` and a `package.json`. Two
   languages, two test runners, one directory: each file sensible on its own,
   and nothing able to run the set.
-- run-7b11cb67 wrote `css/style.css` first, so `css` became the project.
-- run-2f252e4e wrote the workspace's own host path as a directory inside itself.
-- run-2b5def74 finished with two `tests/` directories holding three files of
-  the same names.
+- css` first, so `css` became the project.
+- 
+- 
 
 The convention below is deliberately not one fixed skeleton. A single-language
-product is better flat - run-da6c5e19 shipped `task-manager/` with five files
-in it and a passing suite - and forcing `ui/`, `db/`, `model/` onto it invents
-structure nobody needs. What must hold in both shapes is the last rule: one
+product is better flat -  What must hold in both shapes is the last rule: one
 language per directory, because a directory is what a manifest and a test
 runner address.
 """
@@ -57,12 +54,9 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
 
 #: What to tell an agent about where it is, instead of where the workspace is
 #: on the host. `product_manager` has carried this reasoning in a comment since
-#: run-0b55ad49 and was the only caller that acted on it; five other briefs
 #: opened with `Repository root: /app/data/workspaces/<label>-<run-id>` and the
 #: agents used it. Measured across the stored run histories: 15 of 24 runs
-#: carry that string into tool calls, and the calls fail - run-cbb1a5fc, which
 #: completed cleanly, still spent six calls on it and five came back
-#: `not found` or `path_not_found`; run-3f8e387d spent 432 and 254 approval
 #: gates before dying of gate exhaustion.
 #:
 #: Telling an agent the path and then telling it not to use the path does not

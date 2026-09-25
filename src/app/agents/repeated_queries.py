@@ -1,8 +1,7 @@
 """Say when a listing or a search comes back exactly as it did before.
 
 `read_file` has had this since finding 59, and after finding 80 keyed it on the
-bytes returned it catches almost everything: on run-fa7b7286 only 1 of 50 reads
-returned content the stage had already been given. The tools beside it never
+bytes returned it catches almost everything: on  The tools beside it never
 had it, and the same waste simply moved there - 4 of 10 `ls` calls and 4 of 12
 `grep` calls in that run returned byte-identical results, with
 `ls {'path': 'task-manager'}` run five times in one stage.
@@ -41,14 +40,12 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: of that machinery - no repeat notice, no span tracking, nothing. So a model
 #: that used it paid for every re-read in silence, and a model that alternated
 #: between the two escaped even `read_file`'s counter. Measured on
-#: run-84e05d4b: `specialist_testing_6` read
 #: `simple-to-do-list-app/app.test.js` through this tool five times with
 #: identical arguments, and `specialist_backend_1` read
 #: `docs/architecture_review.md` through it four times while reading the same
 #: file through `read_file` eleven more.
 #:
 #: `inspect_repository` takes no arguments at all and returns a listing, so a
-#: repeat of it is always a repeat. run-0deeb8bf called it seven times in one
 #: stage.
 QUERY_TOOLS = frozenset({
     "ls", "grep", "glob", "read_repository_file", "inspect_repository"
@@ -58,7 +55,6 @@ QUERY_TOOLS = frozenset({
 #: write is already answered by `write_artifact`'s "unchanged" status and by the
 #: no-op edit refusal; a repeated failing edit had nothing at all.
 #:
-#: run-36eb1260 died on it: `specialist_backend_2` sent the same failing
 #: `edit_artifact` over and over against a five-line file and was stopped as a
 #: loop at 1,137 events. The command notices cover `run_terminal_command` and
 #: the query notice covers listings and searches; mutations were the member of
@@ -74,10 +70,8 @@ MUTATING_TOOLS = frozenset({
 #: tool already answers the second with "This file already contained exactly
 #: this content ... Do not write it again; continue with your response".
 #:
-#: run-5f4cdd55 shows what that is worth on its own: `specialist_backend_1`
 #: wrote docs/technical_specification.md, was told "unchanged" with that
 #: sentence, and wrote it three more times until the run-level guard ended the
-#: run at 728 events. run-2bcdc19b did the same with final_output.json.
 #:
 #: A note the model has ignored twice is not a note that needs rewording. The
 #: escalation this codebase keeps arriving at is hint, note, rewrite, refuse -
@@ -149,7 +143,6 @@ _WHY_REFUSED = re.compile(r"""(?:Refusing to \w+|Cannot \w+)[^:]*:\s*([^.]{0,60}
 #: opening - path included - is the stable shape. A stage that keeps guessing
 #: at the passage varies `find` on every retry, and keying the repeat guard on
 #: the arguments let all ten of those retries count as ten first attempts.
-#: Measured on run-519a9d8a: `specialist_testing_2` sent a different failing
 #: `find` for the same file seven times, and `test_round_1` ten times.
 _EDIT_NOT_FOUND = re.compile(r"(Could not find that text in '[^']*')")
 
@@ -187,7 +180,6 @@ def _the_same_refusal(content: str) -> str:
 #: about another. It is wrong for a refusal about a class of file, because the
 #: lesson does not belong to the path.
 #:
-#: Measured on run-cac07d52's `test_round_0`: it was refused a write to
 #: `docs/technical_specification.md`, then to `docs/milestone_review.md`, then
 #: to `docs/technical_specification.md` again - the same refusal, in the same
 #: words, three times in one stage - and no notice ever fired, because two of
@@ -336,7 +328,6 @@ def build_repeated_query_middleware() -> Any:
                 return ""
             if _looks_like_a_failure(content):
                 # The repeated case is usually this one. Measured on
-                # run-9506d3ab's `specialist_ui_ux_0`: three identical
                 # `ls {'path': 'task-manager'}` in four seconds, every one
                 # `path_not_found`. Calling that "returned exactly what it
                 # returned" is true and reads as though something came back;

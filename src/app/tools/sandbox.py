@@ -1216,6 +1216,12 @@ def validate_command(
         raise CommandNotAllowed("Command cannot be empty.")
 
     executable = os.path.basename(argv[0])
+
+    if executable.endswith(".sh") or executable == "sh" or executable == "bash":
+        raise CommandNotAllowed(
+            "Shell scripts (.sh) cannot be executed because there is no shell available in this environment. "
+            "Use standard tooling (e.g. node, python, playwright, jest) instead."
+        )
     permitted = allowed_executables(role_name, repo_root)
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing

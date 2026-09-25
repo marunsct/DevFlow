@@ -65,15 +65,7 @@ class SpecialistTask(BaseModel):
         """Refuse a task that says there is nothing to do.
 
         A specialist with no work should not be on the list. Measured on
-        run-bb1ee9bb, whose milestone plan read
-
-            #### backend — N/A
-            #### database — N/A
-            #### documentation — N/A
-
-        The lead was right that those roles had nothing to do - the technical
-        specification says "no server-side infrastructure", "no server-side
-        storage or transmission" and "No server side needed". But a task was
+         But a task was
         delegated anyway, so `specialist_backend_1` was dispatched with the
         description "N/A", spent thirty model calls, and wrote a 3,696-byte
         `server.js` that contradicts all of it.
@@ -210,9 +202,7 @@ class MilestonePlanOutput(BaseModel):
     def _a_plan_assigns_something(self) -> "MilestonePlanOutput":
         """A milestone with scope and no tasks is not a plan.
 
-        Measured on run-a7150a6c, whose fifth plan named a full scope - "Add
-        event handlers and UI rendering for add, edit, delete, toggle in
-        app.js; unit tests; documentation; encrypt data before saving" - and
+        js; unit tests; documentation; encrypt data before saving" - and
         delegated nothing, with no blockers. The workflow accepted it, found no
         specialists to dispatch, and ran a test round, a security review and a
         milestone review on a milestone where nothing had been built: thirteen
@@ -243,10 +233,7 @@ def build_milestone_revision_request(
 
     The generic revision prompt asks the agent to "address every requested
     change", and for a *plan* there is a way to do that which changes nothing:
-    write it down. Measured on run-0b55ad49 - a review named the exact file,
-    line and fix for a test-suite failure, the lead reproduced it verbatim under
-    `## Integration Notes`, no delegated task mentioned it, and eighty minutes
-    later the file was byte-for-byte unchanged. The relay worked; the assignment
+    write it down.  The relay worked; the assignment
     never happened.
 
     So the instruction here is not "address" but "assign": every requested
@@ -346,9 +333,7 @@ Responsibilities:
   notice. Creating directories, copying files and writing documentation are
   not deliverable work: the workspace and its project directory already exist,
   `docs/` is written by the workflow, and a milestone spent on them ships
-  nothing. Measured on run-84e05d4b, where an entire milestone was "create the
-  project directory", "copy the docs folder into it" and "initialise
-  package.json" - 163 model calls, a test round, a security review and a
+  nothing. json" - 163 model calls, a test round, a security review and a
   milestone review, and the product had no application file at the end of it.
   The tests written for that milestone asserted that README.md contained a
   heading.

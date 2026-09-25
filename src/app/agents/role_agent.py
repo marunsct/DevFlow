@@ -40,6 +40,7 @@ from app.agents.task_list import build_task_list_middleware
 from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
+from app.plugins.middleware import build_plugin_instructions_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
     FilesystemMiddleware,
@@ -184,9 +185,7 @@ def writing_tools(
 
     Create, change and remove belong together. Handed the first two and told
     scratch files must not be kept, an agent improvises the third: on
-    run-61c5a5b6 the UI specialist wrote nine generations of cleanup script,
-    each one a new file it then wanted gone, and spent about fifty approval
-    gates never converging. A named list is here so the invariant is one thing
+     A named list is here so the invariant is one thing
     to test rather than one call site to remember.
     """
     return [
@@ -210,7 +209,7 @@ def _disable_the_general_purpose_subagent() -> None:
     narrowed to `ls`, `read_file`, `glob` and `grep` a few lines below, and
     every mutating call is gated. `task` arrived with none of that.
 
-    What it cost, measured on run-d6369866's `scrum_master`. The stage produced
+    What it cost, measured on  The stage produced
     a valid sprint plan at 15:23:30, then in the same turn called `task`, and
     the subagent it spawned ran `glob {'pattern': '**/*'}` 835 times over
     eleven and a half minutes - 802 tool calls in one stage, against 21
@@ -587,7 +586,6 @@ def create_role_agent(
     selected_model = model if model is not None else build_default_chat_model()
 
     # A role whose document the workflow generates has no reason to hold a
-    # write tool, and holding one is not neutral. Measured on run-c826ae90:
     # the architecture reviewer was told "do not write a review document",
     # kept `write_artifact`, and wrote `docs/architecture_review.md` five times
     # in a row - printing its structured response as prose between each write
@@ -604,7 +602,6 @@ def create_role_agent(
     ]
 
     # The directory and write-tool rules are only true for an agent that has
-    # those tools. On run-db3a4a0b the scrum master - whose document the
     # workflow now renders - was handed "CRITICAL DIRECTORY RULES: Write all
     # document artifacts ... inside `docs/`" alongside "Do not write a
     # document", went looking for the tool, and reported "I don't have a
@@ -634,6 +631,7 @@ def create_role_agent(
         build_workspace_path_middleware(resolved_repo_root),
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),
+        build_plugin_instructions_middleware(resolved_repo_root),
         _workspace_filesystem_middleware(resolved_repo_root),
         # After the filesystem middleware, so it sees the tool results the
         # model will. `read_file` has its own, better notice in the backend;

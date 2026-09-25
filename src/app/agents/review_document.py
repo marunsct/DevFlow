@@ -4,8 +4,7 @@ Every reviewer used to be asked for the same information twice: once as a
 Markdown artifact for a person to read, and once as a structured response for
 the workflow to route on. Nothing reconciled them.
 
-Observed on run-95ca3f72: the milestone reviewer wrote a complete four-row
-findings table into `docs/milestone_review.md` - the root `package.json`
+Observed on md` - the root `package.json`
 overriding the test script, duplicate CI installs, a wrong line-count path, a
 README citing a script that does not exist - and returned
 `MilestoneReviewOutput.findings == []`. The workflow routes on the structured
@@ -80,7 +79,6 @@ def render_milestone_review(review: Any, milestone_goal: str) -> str:
         )
     else:
         # Said plainly rather than left blank. A review that requires changes
-        # and records no findings is the exact shape that failed run-95ca3f72,
         # and a reader should be able to see it in the document.
         parts.append(
             "No structured findings were recorded."
@@ -119,9 +117,7 @@ def render_architecture_review(review: Any) -> str:
 
     The architecture reviewer has the same two-copy structure the milestone
     reviewer had - a prose artifact and a schema, asked for separately. On
-    run-c4f17841 the two happened to agree, which is luck rather than a
-    property: nothing reconciles them, and the milestone reviewer's copies
-    disagreed on run-95ca3f72 badly enough to fail the run.
+    
 
     Its findings carry `evidence` - the spec section or ADR - where a milestone
     finding carries `category`, so the table's middle column differs.

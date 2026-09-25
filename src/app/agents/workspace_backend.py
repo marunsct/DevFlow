@@ -6,7 +6,7 @@ container mode that placement is not a choice: only the workspace is mounted,
 so anything a command writes has to be inside it.
 
 The cost is that it is also inside everything an agent looks at. Measured on
-run-61c5a5b6: 42 tool results across ten stages carried `.agent-home`, every
+agent-home`, every
 `ls /` opened with it, and one `npm install` had left 26 cache blobs with
 sha512 filenames. `list_repository_files` was taught to skip it; `ls`, `glob`
 and `grep` come from the deep-agent filesystem backend and were not.
@@ -49,9 +49,7 @@ class _Suggesting:
     invented and nothing else, so it guesses again. Measured across the stored
     runs, the guesses are `/home/user/...`, `/workspace/...`, the project
     directory at the root, and the host path; and the file it wants almost
-    always exists. On run-3f8e387d - the run that died of gate exhaustion -
-    72 reads failed and 56 of them (77%) named a file that was in the
-    workspace under a different path.
+    always exists. 
 
     The lookup is by basename, which is the part an agent gets right. It costs
     one directory walk on a path that has already failed, and nothing at all
@@ -63,9 +61,7 @@ class _Suggesting:
 
         A model that reads a directory is asking what is in it. Answering "that
         is a directory" is true and is not the answer - measured on
-        run-130deeef, where `specialist_backend_3` read
-        `/simple-to-do-list-app/tests` four times and was told four times that
-        a directory of that name existed there. Listing it costs one `iterdir`
+         Listing it costs one `iterdir`
         on a call that has already failed.
         """
         root = getattr(self, "cwd", None)
@@ -130,7 +126,6 @@ class _Suggesting:
         if not root or not name:
             return ""
         # A name with no extension is a directory name, which is what `ls`
-        # misses: run-2eb3aa24 asked for `/simple-to-do-list-app` four times.
         want_file = "." in name
         try:
             found = [
@@ -223,9 +218,7 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: After this many, stop returning the bytes and say where they already are.
 #:
 #: The note above is the right first response and it is not always the last
-#: one. Measured on run-84e05d4b's `specialist_backend_1`: eleven reads of
 #: `/docs/architecture_review.md`, byte-identical, in one stage, each answered
-#: with a note saying so and each followed by another. run-44e9fc83 did
 #: seventeen of `app.js`.
 #:
 #: This codebase's escalation everywhere else is hint, note, refuse, and the
@@ -264,7 +257,6 @@ READS_BEFORE_WITHHOLDING = 3
 #: about the file and starts being about the stage.
 #:
 #: Both rungs above are per file, and a stage that cycles three files reaches
-#: neither quickly. Measured live on run-cac07d52: `specialist_ui_ux_0`,
 #: restarted on a fresh conversation, made 55 reads of which 50 were files the
 #: previous attempt had already read, cycling `index.html`, `app.js` and
 #: `styles.css` about a dozen times. Both per-file rungs fired - 24 notes and
@@ -295,7 +287,6 @@ REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
 #:     notice above
 #:
 #: The exit notice fired 515 times across 29 stages, and
-#: `run-b0db10b1`'s `specialist_ui_ux_0` received it 115 times. Withholding
 #: the bytes reduces what a redundant read costs and moves the stage to a
 #: different file rather than to work; naming the exit is ignored outright.
 #:
@@ -369,8 +360,7 @@ def _an_anchor_to_what_was_withheld(text: str) -> str:
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
 
-    Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
-    them the same `read_file` of `app.js` at the same range, in runs of six,
+    js` at the same range, in runs of six,
     five and four, two to three seconds apart, with no write between them.
     That is 16 model turns spent re-reading 400 lines the model already had.
 
@@ -382,8 +372,7 @@ class _NoticingRepeats:
     The content is always returned. A note that withheld it would strand a
     model that had genuinely lost the text - and while compaction is not
     firing on these stages today (it triggers at 70,200 tokens and the largest
-    stage of run-1d1b6c9c carried about 22,600), a fix whose failure mode is
-    "the agent cannot get its file back" is not worth the tokens it saves.
+    stage of 
 
     The note is delivered in the result the model just asked for, which is
     where correction has been shown to work on this pipeline: the "there is a
@@ -409,8 +398,7 @@ class _NoticingRepeats:
         """Whether this stage has already been served these exact lines.
 
         Finding 59 caught a byte-identical call. This catches the same waste
-        wearing different arguments. Measured on run-6412366b's
-        `specialist_ui_ux_0`, reading a 984-line `index.html` that had not
+        wearing different arguments. html` that had not
         changed since it was written:
 
             offset=  0 limit=100   100 new lines
@@ -459,7 +447,6 @@ class _NoticingRepeats:
         self._repeated_reads = getattr(self, "_repeated_reads", 0) + 1
         if nothing_new >= READS_BEFORE_WITHHOLDING:
             # The same rung the byte-identical ladder reaches, on the same
-            # count, because they are the same waste. Measured on run-d483f554's
             # `specialist_ui_ux_0`, reading a 391-line `app.js` it had just
             # written:
             #
@@ -508,8 +495,7 @@ class _NoticingRepeats:
             ae4b717e 16   37476645 11   304add54 8
             db3a4a0b  8   2eb3aa24  5   d6369866 5
 
-        run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times
-        and `task-manager` - the real one - four. The digest already lists the
+         The digest already lists the
         files, and it guessed anyway; what changes this model's behaviour is
         being told at the point of failure, which is where the "there is a file
         of that name at ..." hint corrects a path on the very next call.
@@ -550,9 +536,7 @@ class _NoticingRepeats:
         Measured on run 0afef410's `specialist_backend_2`, asked to create
         `app.js`: two identical `read_file` calls for `/task-manager/app.js`,
         two identical `Error: File '/task-manager/app.js' not found`, no notice
-        of any kind. `edit_artifact` has had this note since run-9506d3ab -
-        "failed the same way the N previous times you ran it in this stage" -
-        and a read deserves the same.
+        of any kind. `edit_artifact` has had this note since 
 
         Keyed on the path as the model spelled it and on the error text, so a
         different failure at the same path still reads as new information.
@@ -589,8 +573,7 @@ class _NoticingRepeats:
         bytes look unrelated, and the model does not repeat itself that
         tidily.
 
-        Measured on run-f0630b10's `specialist_ui_ux_0`, 54 reads of one
-        `index.html`:
+        html`:
 
         - It alternated between `task-manager/index.html` (36 reads) and
           `/task-manager/index.html` (17). Same file, two keys, two
@@ -808,7 +791,6 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             return result
         # Ahead of the content, not after it. A file of any size puts an
         # appended note thousands of characters into the payload, and
-        # run-3c0c31d2's `technical_lead` read one 3,847-character
         # `milestone_plan.md` seven times with the notice firing from the
         # second read onward. Being told at the end of what you are reading is
         # not being told: the notice exists to change the *next* call, so it

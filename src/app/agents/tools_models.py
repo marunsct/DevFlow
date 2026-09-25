@@ -69,8 +69,7 @@ class TechnologyStack(BaseModel):
 
         Stated in the stack selector's prompt first, including the sentence
         "'Manual browser testing' cannot be carried out here by anyone". On
-        run-78804673 the selector read that and chose "Manual browser testing"
-        anyway. An instruction that has failed twice is not made truer by
+         An instruction that has failed twice is not made truer by
         repetition; this removes the option instead.
 
         The message names what to do, because a validation error is what the
@@ -110,7 +109,6 @@ class TechnologyStack(BaseModel):
         # "None" is the same answer wearing a shorter word, and the previous
         # version of this message licensed it outright: it ended "'none' is
         # valid only if the product genuinely needs no verification". On
-        # run-2f252e4e the selector answered "None", citing the size guidance
         # that warns against *installed* runners, and shipped a human checklist
         # instead of a test suite. A built-in runner costs nothing, so there is
         # no product here that needs no verification.
@@ -219,7 +217,6 @@ def build_tools_models_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"

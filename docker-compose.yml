@@ -16,6 +16,7 @@
 # Nothing can start insecurely; only `build` stops needing secrets it never used.
 x-app-env: &app-env
   ENV: ${ENV:-production}
+  MODEL_REQUEST_TIMEOUT_SECONDS: 1800
   JWT_SECRET_KEY: "${JWT_SECRET_KEY:-}"
   ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
   AUTH_DB_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@db:5432/${POSTGRES_DB:-langchain}"

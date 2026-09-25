@@ -175,6 +175,10 @@ class RunStore:
             conn.rollback()
             raise
         finally:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             self._pool.putconn(conn)
 
     # ------------------------------------------------------------------

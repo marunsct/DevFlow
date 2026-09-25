@@ -4,8 +4,7 @@ A stage that produces no structured response is restarted on a fresh
 conversation. That is the right move - `_restart_on_a_fresh_conversation`
 explains why - but until now it threw away everything the attempt had learned,
 and the comment in `workflow.py` said so. Each of three attempts re-read the
-same files and re-ran the same commands: run-37476645 spent 170 tool calls
-across three attempts of one stage.
+same files and re-ran the same commands: 
 
 Measured again on run b0db10b1, where the two stages that spun cost 100 and 80
 model calls across their attempts while the fifteen that finished averaged

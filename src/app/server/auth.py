@@ -134,6 +134,10 @@ def get_db_connection():
         conn.rollback()
         raise
     finally:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         _db_pool.putconn(conn)
 
 

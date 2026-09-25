@@ -32,3 +32,5 @@ coverage.xml
 # Handover archive - contains env-secrets.txt with real credentials.
 harness-handover-*.zip
 harness-handover/
+audit_output.txt
+run-fd891220-3fb2-4959-a511-f42c29f957ad.jsonl

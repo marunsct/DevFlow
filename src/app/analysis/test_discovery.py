@@ -857,6 +857,7 @@ def a_suite_calling_a_global_node_does_not_define(
             _DEFINES_ITS_OWN,
             _IMPORTS_FROM_NODE_TEST,
             _PROVIDES_TEST_GLOBALS,
+            _imports_the_name,
         )
     except Exception:  # noqa: BLE001
         return None
@@ -866,6 +867,21 @@ def a_suite_calling_a_global_node_does_not_define(
     if not called or _IMPORTS_FROM_NODE_TEST.search(content):
         return None
     if _DEFINES_ITS_OWN.search(content):
+        return None
+    # Imported from anywhere at all, not only `node:test`. The question is
+    # whether the name is bound when the file runs, and which module bound it
+    # does not change the answer.
+    #
+    # The cross-file check gained this guard and this one did not, although
+    # the docstring above says the two cannot drift - they shared the regex,
+    # which is what the guard replaced, so sharing it no longer meant sharing
+    # the behaviour. Everything `_imports_the_name` was written for therefore
+    # went on happening at the write: run-ac04a164's testing specialist was
+    # told its `@playwright/test` suite calls `test(...)` with "nothing
+    # imports `test`" at sequences 118, 130 and 144, while the import sat on
+    # line 3. Its remedy would have added a second binding of `test` and made
+    # the file a SyntaxError.
+    if _imports_the_name(content, called.group(1)):
         return None
     # A project whose runner does provide the globals is not affected, so this
     # can only speak where it is true. The manifest is rarely beside the suite

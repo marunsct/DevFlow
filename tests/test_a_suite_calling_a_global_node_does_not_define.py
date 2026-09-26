@@ -146,3 +146,94 @@ def test_the_two_readings_of_a_suite_global_agree(tmp_path):
         a_suite_calling_a_global_node_does_not_define("app.test.mjs", imported, project)
         is None
     )
+
+
+PLAYWRIGHT_SUITE = (
+    "import { test, expect } from '@playwright/test';\n"
+    "test('adds a task', async ({ page }) => {\n"
+    "  await page.goto('/');\n"
+    "  await expect(page.locator('#task-list')).toContainText('Test Task');\n"
+    "});\n"
+)
+
+
+def test_a_playwright_suite_is_not_told_its_import_is_missing(tmp_path) -> None:
+    """The import is on line 1 and names `test`. Saying "nothing imports
+    `test`" here is false, and the remedy it offers - a second
+    `import { test } from 'node:test'` - makes the file a SyntaxError.
+
+    run-ac04a164's testing specialist was given this note at sequences 118,
+    130 and 144 while writing a `@playwright/test` suite, and rewrote the file
+    after each one.
+    """
+    project = tmp_path / "proj"
+    project.mkdir()
+
+    assert (
+        a_suite_calling_a_global_node_does_not_define(
+            "proj/app.test.js", PLAYWRIGHT_SUITE, project
+        )
+        is None
+    )
+
+
+def test_the_two_readings_agree_on_a_playwright_suite(tmp_path) -> None:
+    """The drift this missed once already.
+
+    `test_the_two_readings_of_a_suite_global_agree` pins the two checks on a
+    `node:test` suite, which both read the same way through the shared regex.
+    The cross-file check then grew a second guard, `_imports_the_name`, for
+    exactly this input - and the write-time check kept only the regex, so the
+    two agreed on the case that was tested and disagreed on the case the guard
+    was added for.
+    """
+    from app.analysis.integration_checks import (
+        _suites_calling_a_global_node_does_not_define,
+    )
+
+    project = tmp_path / "proj"
+    project.mkdir()
+    suite = project / "app.test.js"
+    suite.write_text(PLAYWRIGHT_SUITE)
+
+    from_review = _suites_calling_a_global_node_does_not_define([suite], project)
+    from_write = a_suite_calling_a_global_node_does_not_define(
+        "app.test.js", PLAYWRIGHT_SUITE, project
+    )
+
+    assert not from_review, "the cross-file check already reads this correctly"
+    assert from_write is None, "and the write-time check must read it the same way"
+
+
+@pytest.mark.parametrize(
+    "importer",
+    [
+        "import { test } from '@playwright/test';",
+        "import { test as check } from 'vitest';",
+        "import test from 'ava';",
+        "const { test } = require('node:test');",
+    ],
+)
+def test_the_name_is_bound_whichever_module_bound_it(tmp_path, importer: str) -> None:
+    """Which module binds `test` does not change whether it is defined."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    called = "check" if " as check" in importer else "test"
+    content = f"{importer}\n{called}('a case', () => {{}});\n"
+
+    assert (
+        a_suite_calling_a_global_node_does_not_define("app.test.js", content, project)
+        is None
+    )
+
+
+def test_a_suite_that_really_has_no_import_is_still_caught(tmp_path) -> None:
+    """The check must keep doing its job: this is the failure it exists for."""
+    project = tmp_path / "proj"
+    project.mkdir()
+    content = "test('a case', () => {});\n"
+
+    note = a_suite_calling_a_global_node_does_not_define("app.test.js", content, project)
+
+    assert note is not None
+    assert "ReferenceError: test is not defined" in note

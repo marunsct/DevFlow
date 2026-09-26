@@ -2483,6 +2483,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     from app.analysis.test_discovery import (
         a_call_the_signature_does_not_accept,
         a_dom_built_by_hand,
+        a_playwright_test_the_runner_will_not_collect,
         a_name_this_test_defines_instead_of_importing,
         a_suite_calling_a_global_node_does_not_define,
         a_suite_that_only_checks_things_exist,
@@ -2497,6 +2498,9 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
     try:
         notes = [
             undiscoverable_test(relative_path, content),
+            a_playwright_test_the_runner_will_not_collect(
+                relative_path, content, target.parent if target else None
+            ),
             tests_nothing_of_the_project(relative_path, content),
             assertions_called_on_the_test_module(relative_path, content),
             a_test_that_asserts_nothing(relative_path, content),

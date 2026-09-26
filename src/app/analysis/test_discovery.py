@@ -106,6 +106,129 @@ def undiscoverable_test(relative_path: str, content: str) -> str | None:
     )
 
 
+#: Playwright's own default, as a basename: `**/*.@(spec|test).?(c|m)[jt]s?(x)`.
+#: The separator before `spec`/`test` is a DOT and nothing else; the extension
+#: may carry a `c` or `m`; and something must precede the dot.
+#: https://playwright.dev/docs/test-configuration
+#:
+#: Verified by running `npx playwright test --list` (1.63.0) over a directory
+#: of named files rather than by reading the glob. Collected:
+#:
+#:     a.spec.js  a.spec.jsx  a.spec.mjs  a.spec.cjs  a.Spec.js
+#:     a.spec.ts  a.spec.tsx  a.spec.mts  a.spec.cts  a.test.cjs
+#:     sub.dir.spec.js  nested/deep.spec.js
+#:
+#: Not collected: `a_test.js`, `a-test.js`, `test-a.js`, and the bare `spec.js`
+#: and `test.js`. Matching is case-insensitive - `a.Spec.js` is collected.
+#:
+#: `.cjs` IS collected, which this first had wrong from the documented glob;
+#: running it is what corrected that.
+_PLAYWRIGHT_TEST_NAME = re.compile(
+    r"^.+\.(?:spec|test)\.[cm]?[jt]sx?$",
+    re.IGNORECASE,
+)
+
+#: What makes this Playwright's problem rather than Node's: the file imports
+#: `@playwright/test`. A file that imports both is Playwright's - the fixtures
+#: it destructures (`{ page }`) only exist under that runner.
+_DECLARES_PLAYWRIGHT_TESTS = re.compile(
+    r"""from\s+['"]@playwright/test['"]|require\(\s*['"]@playwright/test['"]"""
+)
+
+#: Where a project states its own discovery rule. If one of these sets
+#: `testMatch`, the default above no longer applies and this cannot evaluate
+#: the replacement, so it says nothing.
+_PLAYWRIGHT_CONFIG_NAMES = tuple(
+    f"playwright.config.{suffix}" for suffix in ("js", "mjs", "cjs", "ts", "mts", "cts")
+)
+
+
+def a_playwright_test_the_runner_will_not_collect(
+    relative_path: str, content: str, project: "Path | None" = None
+) -> str | None:
+    """Why `npx playwright test` will skip this file, or None if it will not.
+
+    `undiscoverable_test` asks the same question of Node's runner and answers
+    it only for Node: it returns early unless the file imports `node:test`, so
+    a Playwright suite passes through it unexamined. That was harmless while
+    Playwright was the exception. It is not any more - the stack selector now
+    tells a UI product it needs both runners, and the image ships Chromium, so
+    a project routinely holds suites for each, and the two runners do not
+    agree on names.
+
+    Measured, both ways, on Node 22.22.2 and Playwright 1.63.0:
+
+        name           node --test   npx playwright test
+        a.spec.js          --                ok
+        a.test.js          ok                ok
+        a_test.js          ok                --
+        a-test.js          ok                --
+        test-a.js          ok                --
+
+    So `.spec.` is the only form that is Playwright's alone, and that is what
+    this offers. `.test.` is worse than it looks: both runners collect it, and
+    a Playwright suite run under `node --test` fails rather than skips - the
+    `{ page }` fixture does not exist there - so the name buys a red suite in
+    the other runner.
+
+    run-ac04a164 is the cost. Its testing specialist wrote
+    `task-manager/playwright_test.js` - a name `node --test` collects, so every
+    discovery check in this module passed it - and `npx playwright test`
+    answered "No tests found" with exit code 1 at sequence 114 and again at
+    159. The stage read that as a failing suite rather than an absent one,
+    rewrote the file four more times, and the run ended in the loop.
+
+    The fix is the name, and nothing else in the file has to change.
+    """
+    name = relative_path.replace("\\", "/").rsplit("/", 1)[-1]
+    if not content or not _DECLARES_PLAYWRIGHT_TESTS.search(content):
+        return None
+    if _PLAYWRIGHT_TEST_NAME.match(name):
+        return None
+    if _a_config_sets_its_own_pattern(project):
+        return None
+    stem, _, suffix = name.rpartition(".")
+    return (
+        f"This file imports `@playwright/test`, and `npx playwright test` will "
+        f"not collect it: the name '{name}' does not match its default "
+        f"`**/*.@(spec|test).?(c|m)[jt]s?(x)`, which wants a DOT before `spec` "
+        f"or `test` - `a.spec.js` and `a.test.js`, not `a_test.js` or "
+        f"`a-test.js`. It does not fail with a test failure; it reports "
+        f'"No tests found" and exits 1, which reads downstream as a broken '
+        f"suite rather than an absent one. Rename it to "
+        f"'{_renamed(stem)}.spec.{suffix or 'js'}'. Use `.spec.` and not "
+        f"`.test.`: `node --test` collects `.test.` too, and a Playwright "
+        f"suite run under it fails rather than skips, because the `{{ page }}` "
+        f"fixture does not exist there. Nothing inside the file needs to "
+        f"change."
+    )
+
+
+def _a_config_sets_its_own_pattern(project: "Path | None") -> bool:
+    """Whether a Playwright config near this file replaces the default match.
+
+    Same conservatism as the rest of the module: a project is allowed its own
+    discovery rule, and a wrong warning about a file that runs perfectly well
+    is worse than no warning.
+    """
+    from pathlib import Path
+
+    if project is None:
+        return False
+    try:
+        here = Path(project)
+        for folder in (here, *here.parents):
+            for candidate in _PLAYWRIGHT_CONFIG_NAMES:
+                config = folder / candidate
+                if not config.is_file():
+                    continue
+                if "testMatch" in config.read_text(encoding="utf-8", errors="replace"):
+                    return True
+    except (OSError, ValueError):  # never warn off the back of a failed read
+        return False
+    return False
+
+
 #: A relative import - `./app.js`, `../src/store.mjs`. The one thing a test of
 #: this project's code always has and a test of its documentation never does.
 _RELATIVE_IMPORT = re.compile(
@@ -326,6 +449,7 @@ def _is_test_name(relative_path: str) -> bool:
 
 __all__ = [
     "a_dom_built_by_hand",
+    "a_playwright_test_the_runner_will_not_collect",
     "a_test_that_needs_a_dom",
     "a_suite_that_only_checks_things_exist",
     "tests_nothing_of_the_project",

@@ -1130,7 +1130,21 @@ _INSTEAD_OF: dict[str, str] = {
 
 
 def _what_to_do_instead(executable: str) -> str:
-    """The tool that does what this refused command was trying to do, or ""."""
+    """The tool that does what this refused command was trying to do, or "".
+
+    A script invoked by path - `./build.sh`, `scripts/setup.sh` - is refused by
+    the allowlist like any other unknown program, and the refusal used to name
+    only the programs that are permitted. The agent's next move is then to try
+    `sh ./build.sh`, which is refused again for a different reason. Both are
+    the same mistake and both have the same answer, so a `.sh` basename gets
+    the answer already written for `sh`.
+
+    The check is on the name, not on the file: a name ending in `.sh` that is
+    on no allowlist is a script whichever way it was reached, and a name that
+    *is* permitted never arrives here.
+    """
+    if executable.endswith(".sh"):
+        return f" {_INSTEAD_OF['sh']}"
     suggestion = _INSTEAD_OF.get(executable)
     return f" {suggestion}" if suggestion else ""
 
@@ -1217,11 +1231,6 @@ def validate_command(
 
     executable = os.path.basename(argv[0])
 
-    if executable.endswith(".sh") or executable == "sh" or executable == "bash":
-        raise CommandNotAllowed(
-            "Shell scripts (.sh) cannot be executed because there is no shell available in this environment. "
-            "Use standard tooling (e.g. node, python, playwright, jest) instead."
-        )
     permitted = allowed_executables(role_name, repo_root)
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing

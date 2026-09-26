@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import threading
 import time
+import tomllib
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2676,6 +2677,327 @@ def _where_the_files_it_named_actually_are(
     return " ".join(parts)
 
 
+#: How many task names one note lists. A project with fifty make targets does
+#: not need all of them to answer "which one runs the tests".
+MAX_TASKS_NAMED = 12
+
+#: Task names that read as "run this project's suite". Only for these does the
+#: note add that the gates measure the suite by this command - said about a
+#: `build` script it would be false.
+_A_TEST_TASK = frozenset({"test", "tests", "check", "checks", "spec", "specs",
+                          "verify", "unit", "ci"})
+
+#: A package manager's own subcommands, which are never a task the project
+#: defined. Without these, a failed `pnpm install` would be reported as an
+#: undefined script.
+_NOT_A_TASK = frozenset({
+    "install", "i", "ci", "add", "remove", "rm", "uninstall", "update", "up",
+    "upgrade", "outdated", "audit", "list", "ls", "link", "unlink", "why",
+    "exec", "dlx", "create", "init", "publish", "pack", "login", "logout",
+    "whoami", "config", "cache", "help", "version", "view", "info", "search",
+    "prune", "dedupe", "fund", "doctor", "rebuild", "explain", "import",
+    "licenses", "set", "get", "store", "patch", "deploy", "env", "x", "run",
+    "task", "workspace", "workspaces", "bin", "root", "ping", "access", "team",
+    "owner", "star", "unstar", "token", "adduser", "hook", "org", "profile",
+    "shrinkwrap", "completion", "edit", "docs", "repo", "bugs", "diff",
+})
+
+
+def _keys_of_a_json_table(text: str, *tables: str) -> list[str]:
+    """The keys of the first of `tables` this JSON document has as an object.
+
+    Raises for a document that is not an object at all, so that "this manifest
+    cannot be read" stays distinct from "it declares nothing": a manifest that
+    is a JSON array is its own reported problem, and saying it declares no
+    scripts would be describing it as valid.
+    """
+    document = json.loads(text)
+    if not isinstance(document, dict):
+        raise ValueError("a manifest is an object")
+    for table in tables:
+        section = document.get(table)
+        if isinstance(section, dict):
+            return [str(key) for key in section]
+    return []
+
+
+def _scripts_in_a_package_json(text: str) -> list[str]:
+    return _keys_of_a_json_table(text, "scripts")
+
+
+def _a_task_declared_at_the_top_level(text: str, task: str) -> bool:
+    """Whether a manifest declares `task` outside its `scripts` table.
+
+    A manifest of `{"test": "node --test ./tests"}` is answered by `npm test`
+    with `Missing script: "test"`, which is true and reads as though the name
+    were absent. It is present, one level too high, and that is a different
+    correction from adding it. Seen in the stored workspaces of run-130deeef.
+    """
+    try:
+        document = json.loads(text)
+    except ValueError:
+        return False
+    return isinstance(document, dict) and isinstance(document.get(task), str)
+
+
+def _tasks_in_a_deno_manifest(text: str) -> list[str]:
+    return _keys_of_a_json_table(text, "tasks")
+
+
+#: A make target: a name at the start of a line followed by a colon. `:=` is an
+#: assignment and `.PHONY` and friends are directives, not targets.
+_A_MAKE_TARGET = re.compile(r"^([A-Za-z0-9][\w.%/-]*)\s*:(?!=)", re.MULTILINE)
+
+#: A just recipe, which may declare parameters before its colon.
+_A_JUST_RECIPE = re.compile(r"^([a-zA-Z0-9][\w-]*)(?:\s+[^:\n]*)?:(?!=)", re.MULTILINE)
+
+#: A rake task, in either quoting style, with or without a dependency list.
+_A_RAKE_TASK = re.compile(r"^\s*(?:task|multitask)\s+[:\'\"]([\w:-]+)", re.MULTILINE)
+
+#: A tox environment or a nox session.
+_A_TOX_ENV = re.compile(r"^\[testenv:([^\]]+)\]", re.MULTILINE)
+_A_NOX_SESSION = re.compile(r"^def\s+(\w+)\s*\(", re.MULTILINE)
+
+
+def _targets_in_a_makefile(text: str) -> list[str]:
+    return [name for name in _A_MAKE_TARGET.findall(text) if not name.startswith(".")]
+
+
+def _recipes_in_a_justfile(text: str) -> list[str]:
+    return list(_A_JUST_RECIPE.findall(text))
+
+
+def _tasks_in_a_rakefile(text: str) -> list[str]:
+    return list(_A_RAKE_TASK.findall(text))
+
+
+def _envs_in_a_tox_config(text: str) -> list[str]:
+    return [name.strip() for name in _A_TOX_ENV.findall(text)]
+
+
+def _sessions_in_a_noxfile(text: str) -> list[str]:
+    return list(_A_NOX_SESSION.findall(text))
+
+
+def _scripts_in_a_pyproject(text: str) -> list[str]:
+    """Every script table pyproject is used to declare tasks in."""
+    document = tomllib.loads(text)
+    tool = document.get("tool") or {}
+    names: list[str] = []
+    for table in (
+        document.get("project", {}).get("scripts"),
+        (tool.get("poetry") or {}).get("scripts"),
+        (tool.get("pdm") or {}).get("scripts"),
+        (tool.get("taskipy") or {}).get("tasks"),
+        (tool.get("rye") or {}).get("scripts"),
+        (tool.get("uv") or {}).get("scripts"),
+    ):
+        if isinstance(table, dict):
+            names.extend(str(key) for key in table)
+    environments = ((tool.get("hatch") or {}).get("envs") or {})
+    if isinstance(environments, dict):
+        for environment in environments.values():
+            scripts = (environment or {}).get("scripts")
+            if isinstance(scripts, dict):
+                names.extend(str(key) for key in scripts)
+    return names
+
+
+#: The manifests a runner consults for the names it accepts, and how to read
+#: the names out. Several runners share one manifest, and one runner can be
+#: satisfied by more than one, so this is keyed by the file.
+_WHERE_TASKS_ARE_DECLARED: tuple[tuple[tuple[str, ...], Any, str], ...] = (
+    (("package.json",), _scripts_in_a_package_json, "scripts"),
+    (("deno.json", "deno.jsonc"), _tasks_in_a_deno_manifest, "tasks"),
+    (("composer.json",), _scripts_in_a_package_json, "scripts"),
+    (("Makefile", "makefile", "GNUmakefile"), _targets_in_a_makefile, "targets"),
+    (("justfile", "Justfile", ".justfile"), _recipes_in_a_justfile, "recipes"),
+    (("Rakefile", "rakefile"), _tasks_in_a_rakefile, "tasks"),
+    (("pyproject.toml",), _scripts_in_a_pyproject, "scripts"),
+    (("tox.ini",), _envs_in_a_tox_config, "environments"),
+    (("noxfile.py",), _sessions_in_a_noxfile, "sessions"),
+)
+
+#: Which manifests each runner would accept a name from, and how it is asked.
+#: `after` are the subcommands whose next argument is a task name; a runner with
+#: `bare` also takes one as its first argument.
+_TASK_RUNNERS: tuple[tuple[str, tuple[str, ...], bool, tuple[str, ...]], ...] = (
+    ("npm", ("run", "run-script"), True, ("package.json",)),
+    ("yarn", ("run",), True, ("package.json",)),
+    ("pnpm", ("run",), True, ("package.json",)),
+    ("bun", ("run",), True, ("package.json",)),
+    ("deno", ("task",), False, ("deno.json", "deno.jsonc")),
+    ("composer", ("run", "run-script"), True, ("composer.json",)),
+    ("make", (), True, ("Makefile", "makefile", "GNUmakefile")),
+    ("gmake", (), True, ("Makefile", "makefile", "GNUmakefile")),
+    ("just", (), True, ("justfile", "Justfile", ".justfile")),
+    ("rake", (), True, ("Rakefile", "rakefile")),
+    ("pdm", ("run",), False, ("pyproject.toml",)),
+    ("rye", ("run",), False, ("pyproject.toml",)),
+    ("hatch", ("run",), False, ("pyproject.toml",)),
+    ("poetry", ("run",), False, ("pyproject.toml",)),
+    ("tox", ("-e",), False, ("tox.ini", "pyproject.toml")),
+    ("nox", ("-s", "--session"), False, ("noxfile.py",)),
+)
+
+
+def _the_task_a_command_asked_for(
+    command: Sequence[str],
+) -> tuple[str, tuple[str, ...]] | None:
+    """The task name a command asked a runner to run, and where it is declared.
+
+    Returns None for anything that is not that shape, which is most commands:
+    `node --test x.js` names no task, and neither does `pnpm install`.
+    """
+    parts = [str(part) for part in command]
+    if not parts:
+        return None
+    runner = os.path.basename(parts[0])
+    if runner.endswith(".cmd") or runner.endswith(".exe"):
+        runner = runner.rsplit(".", 1)[0]
+    # `./gradlew`, `npx`, `yarn dlx` and friends delegate, and what they
+    # delegate to is not decidable from the argv alone.
+    for name, after, bare, manifests in _TASK_RUNNERS:
+        if runner != name:
+            continue
+        arguments = parts[1:]
+        for index, argument in enumerate(arguments):
+            if argument in after and index + 1 < len(arguments):
+                return arguments[index + 1], manifests
+            # `-e py311` and `-epy311` are the same request.
+            for flag in after:
+                if flag.startswith("-") and argument.startswith(flag) and len(argument) > len(flag):
+                    return argument[len(flag):].lstrip("="), manifests
+        if not bare:
+            return None
+        for argument in arguments:
+            if argument.startswith("-"):
+                continue
+            if argument in _NOT_A_TASK:
+                return None
+            return argument, manifests
+        return None
+    return None
+
+
+def _the_tasks_this_project_defines(
+    repo_root: str,
+    command: Sequence[str],
+    working_directory: str | None = None,
+) -> str:
+    """For a command that asked for a task that is not declared, what is, or "".
+
+    A runner asked for a name its manifest does not define answers with its own
+    vocabulary and nothing else. The names it *would* accept are in a file in
+    the workspace, and nothing put the two together, so a stage that guessed the
+    command wrong got the runner's complaint instead of the answer.
+
+    Measured on run-e980310b, which failed its first sprint. `package.json` was
+    written as `{"type": "module"}` - no `scripts` table at all - and the test
+    rounds ran the project's gating command three times:
+
+        test_round_0  npm test  ->  npm error Missing script: "test"
+        test_round_1  npm test  ->  npm error Missing script: "test"
+        test_round_2  npm test  ->  npm error Missing script: "test"
+
+    Eighteen model turns across the three rounds, and not one of them added the
+    script. `npm error Missing script: "test"` does not say that the manifest
+    declares nothing, does not say which file it read, and does not say that the
+    fix is a line in that file.
+
+    Reads the manifest rather than the runner's error text, so it is not about
+    any one runner or language: `npm run build`, `make test`, `just check`,
+    `rake spec`, `composer run lint`, `deno task start`, `pdm run test`,
+    `tox -e py311` and `nox -s lint` all name a task the same way, and the file
+    that declares the accepted names is in the workspace in every case.
+
+    Says nothing when it cannot read a manifest, when the name is defined, or
+    when the command names no task - which is most commands. Never raises.
+    """
+    try:
+        asked = _the_task_a_command_asked_for(command)
+        if asked is None:
+            return ""
+        task, manifests = asked
+
+        base = _resolve_a_working_directory(repo_root, working_directory)
+        root = os.path.abspath(repo_root)
+        readers = {
+            name: (reader, noun)
+            for names, reader, noun in _WHERE_TASKS_ARE_DECLARED
+            for name in names
+        }
+
+        # Up from the directory it ran in to the workspace root, which is how
+        # every one of these runners looks for its own manifest.
+        directory = os.path.abspath(base)
+        while True:
+            for name in manifests:
+                candidate = os.path.join(directory, name)
+                if not os.path.isfile(candidate):
+                    continue
+                reader, noun = readers[name]
+                relative = os.path.relpath(candidate, root)
+                try:
+                    with open(candidate, "r", encoding="utf-8", errors="replace") as handle:
+                        text = handle.read()
+                    declared = [str(found) for found in reader(text)]
+                except Exception:  # noqa: BLE001 - an unreadable manifest is its own problem
+                    return ""
+                if task in declared:
+                    return ""
+                return _what_to_say_about_a_missing_task(
+                    task, relative, noun, declared,
+                    misplaced=_a_task_declared_at_the_top_level(text, task),
+                )
+            if directory == root or os.path.dirname(directory) == directory:
+                return ""
+            directory = os.path.dirname(directory)
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return ""
+
+
+def _what_to_say_about_a_missing_task(
+    task: str,
+    manifest: str,
+    noun: str,
+    declared: Sequence[str],
+    misplaced: bool = False,
+) -> str:
+    """The note for a task a manifest does not declare."""
+    gating = ""
+    if task.lower() in _A_TEST_TASK:
+        gating = (
+            " Every gate in this pipeline measures the suite by the project's own "
+            "test command, so until that name resolves to something, no number it "
+            "reads comes from your tests."
+        )
+    if misplaced:
+        return (
+            f"`{manifest}` does declare `{task}`, but at the top level of the "
+            f"manifest rather than inside its `{noun}` table, which is the only "
+            f"place the runner looks - so the name is there and unreachable. "
+            f"Move it into `{noun}`."
+            + gating
+        )
+    if not declared:
+        return (
+            f"`{manifest}` declares no {noun} at all, so `{task}` cannot resolve "
+            f"to anything - the runner is not refusing your command, it has "
+            f"nothing to look it up in. Add a `{task}` entry there that runs it."
+            + gating
+        )
+    names = sorted(set(declared))
+    shown = ", ".join(f"`{name}`" for name in names[:MAX_TASKS_NAMED])
+    if len(names) > MAX_TASKS_NAMED:
+        shown += f" and {len(names) - MAX_TASKS_NAMED} more"
+    return (
+        f"`{task}` is not one of the {noun} `{manifest}` declares. It declares "
+        f"{shown}. Either use one of those or add `{task}` to that file."
+        + gating
+    )
+
+
 def _note_about_running_this_again(
     repo_root: str,
     command: Sequence[str],
@@ -3049,13 +3371,22 @@ class SandboxExecutor:
         # learn the answer: by then the call has been paid for twice. What the
         # command was looking for is decidable at the first failure.
         if _as_exit_code(outcome.get("returncode")) not in (None, 0):
-            where = _where_the_files_it_named_actually_are(
-                repo_root, command, working_directory
-            )
-            if where:
+            for hint in (
+                _where_the_files_it_named_actually_are(
+                    repo_root, command, working_directory
+                ),
+                # The other half of the same question. A failed command either
+                # named something the workspace does not have where it looked,
+                # or asked a runner for a name the project never declared.
+                _the_tasks_this_project_defines(
+                    repo_root, command, working_directory
+                ),
+            ):
+                if not hint:
+                    continue
                 outcome = {
                     **outcome,
-                    "note": f"{outcome['note']} {where}" if outcome.get("note") else where,
+                    "note": f"{outcome['note']} {hint}" if outcome.get("note") else hint,
                 }
         _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,

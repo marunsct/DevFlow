@@ -533,12 +533,14 @@ because a build's real error is almost always in the last lines.
 JOURNAL_TOOL_MAX_MATCHES = 200
 
 
-def build_journal_read_tool() -> BaseTool:
+def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
     """Return the read-back tool for output an earlier command had truncated.
 
-    Takes no repository root: journalled output lives under `DATA_DIR`, not in
-    the workspace, and `app.tools.journal.read_entry` sanitises the reference to
-    a single path segment, so there is nothing for a caller to escape.
+    `repo_root` is used for one thing: naming which run's entries to suggest when
+    a reference is not found. Reads still resolve exactly as before -
+    `app.tools.journal.read_entry` sanitises the reference to a single path
+    segment under `DATA_DIR`, so there is nothing for a caller to escape, and
+    passing a root does not widen that.
 
     Not in `HUMAN_APPROVAL_TOOLS`: this reads back bytes this same agent already
     produced, under a directory it cannot write to by any other means. Gating it
@@ -569,10 +571,39 @@ def build_journal_read_tool() -> BaseTool:
 
         content = read_entry(reference)
         if content is None:
+            # What the refusal used to be: "use the exact reference from the
+            # truncation pointer". A reference ends in eight random hex
+            # characters, so an agent that no longer has the pointer cannot
+            # construct one however well it remembers the command - and it tries.
+            # Measured on run-fd891220: eight failed calls on invented names like
+            # `5-backend-specialist-pytest-stdout-a1b2c3d4.log`, with seven of
+            # them identical repeats. Naming what exists turns a dead end into one
+            # more call.
+            #
+            # Scoped to this run. The journal is one shared directory kept for
+            # three days and the worker runs two runs at once, so an unscoped list
+            # would offer another run's build log - and reading another run's
+            # passing tests as your own is worse than the error it replaced.
+            from app.tools.journal import list_entries, scope_of
+
+            available = list_entries(scope=scope_of(repo_root))
+            if available:
+                listed = "\n".join(f"  {name}" for name in available)
+                return {
+                    "error": (
+                        f"No journalled output named '{reference}'. These are this "
+                        f"run's journalled outputs, newest first:\n{listed}\n\n"
+                        "Pass one of those names exactly. The reference ends in "
+                        "eight random characters and cannot be guessed from the "
+                        "command that produced it."
+                    )
+                }
             return {
                 "error": (
-                    f"No journalled output named '{reference}'. Use the exact reference "
-                    "from the truncation pointer; entries are deleted after the "
+                    f"No journalled output named '{reference}', and this run has "
+                    "nothing journalled: output is only saved when it was too "
+                    "large for the conversation, and a command whose output fitted "
+                    "has nothing more to read. Entries are also deleted after the "
                     "configured retention window."
                 )
             }

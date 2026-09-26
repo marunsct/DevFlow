@@ -109,7 +109,31 @@ def _prune_if_due() -> None:
     prune(now)
 
 
-def write_entry(label: str, content: str) -> str | None:
+def scope_of(repo_root: str | Path | None) -> str:
+    """A tag naming the run a workspace belongs to, or "".
+
+    The journal is one directory under `DATA_DIR`, shared by every run and kept
+    for `DEFAULT_RETENTION_HOURS`, and an entry's name said nothing about which
+    run produced it. Two things followed. An agent that had lost its pointer had
+    no list to recover from - the name ends in eight random hex characters, so it
+    cannot be reconstructed from the command, however well the agent remembers
+    running it. And had a list been offered, it would have offered another run's
+    build log as readily as this run's, on a worker that runs two at a time - and
+    reading another run's passing test output as your own is a worse outcome than
+    an error.
+    """
+    if not repo_root:
+        return ""
+    name = Path(str(repo_root)).name
+    match = re.search(r"run-[0-9a-f-]{8,}", name)
+    if match:
+        # Just the first block of the uuid: enough to distinguish runs, short
+        # enough to leave the label readable in a file name.
+        return "-".join(match.group(0).split("-")[:2])[:20]
+    return _UNSAFE.sub("-", name).strip("-")[:20]
+
+
+def write_entry(label: str, content: str, scope: str = "") -> str | None:
     """Store `content` and return a short reference, or None if it could not be.
 
     Never raises. Losing a log copy must not fail the command that produced it.
@@ -119,14 +143,37 @@ def write_entry(label: str, content: str) -> str | None:
     _prune_if_due()
     try:
         safe = _UNSAFE.sub("-", label).strip("-")[:60] or "output"
+        tag = _UNSAFE.sub("-", scope).strip("-")[:20]
         directory = journal_root()
         directory.mkdir(parents=True, exist_ok=True)
-        name = f"{int(time.time())}-{safe}-{uuid.uuid4().hex[:8]}.log"
+        stem = f"{safe}-{uuid.uuid4().hex[:8]}"
+        name = f"{int(time.time())}-{tag}-{stem}.log" if tag else f"{int(time.time())}-{stem}.log"
         (directory / name).write_text(content, encoding="utf-8")
         return name
     except OSError:
         logger.warning("Could not write journal entry for %s", label, exc_info=True)
         return None
+
+
+def list_entries(scope: str = "", limit: int = 10) -> list[str]:
+    """Entries that exist now, newest first, restricted to `scope` when given.
+
+    What the refusal had to offer instead of "use the exact reference": the
+    references that are actually there. Never raises - this runs inside an error
+    path, and an unreadable directory means there is nothing to suggest, not a
+    second failure.
+    """
+    tag = _UNSAFE.sub("-", scope).strip("-")[:20]
+    try:
+        entries = [path for path in journal_root().iterdir() if path.is_file()]
+    except OSError:
+        return []
+    if tag:
+        entries = [path for path in entries if f"-{tag}-" in path.name]
+    # By mtime, not by name: the name begins with a unix timestamp, which sorts
+    # lexically only until its digit count changes.
+    entries.sort(key=lambda path: path.stat().st_mtime if path.exists() else 0, reverse=True)
+    return [path.name for path in entries[: max(limit, 0)]]
 
 
 def read_entry(name: str) -> str | None:
@@ -140,6 +187,8 @@ def read_entry(name: str) -> str | None:
 
 
 __all__ = [
+    "list_entries",
+    "scope_of",
     "DEFAULT_RETENTION_HOURS",
     "journal_root",
     "prune",

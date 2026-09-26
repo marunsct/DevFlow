@@ -1902,18 +1902,22 @@ def _as_workspace_relative(text: str, workspace: str) -> str:
     return text.replace(f"{root}/", "").replace(root, ".")
 
 
-def _truncate(text: str, label: str = "output") -> str:
+def _truncate(text: str, label: str = "output", workspace: str | None = None) -> str:
     """Cap output for the model, keeping the whole of it on disk.
 
     The tail is kept as well as the head: a build's actual error is almost
     always in the last lines, and a head-only cut reliably discards it.
+
+    `workspace` only tags the entry with the run it came from. The journal is one
+    shared directory, so without the tag `read_command_output` could neither list
+    a run's own entries nor keep from offering another run's.
     """
     if len(text) <= MAX_OUTPUT_SIZE:
         return text
 
-    from app.tools.journal import write_entry
+    from app.tools.journal import scope_of, write_entry
 
-    reference = write_entry(label, text)
+    reference = write_entry(label, text, scope=scope_of(workspace))
     head = text[: int(MAX_OUTPUT_SIZE * 0.4)]
     tail = text[-int(MAX_OUTPUT_SIZE * 0.4):]
     pointer = (
@@ -2792,16 +2796,16 @@ class SandboxExecutor:
         except subprocess.TimeoutExpired as expired:
             return {
                 "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in),
-                "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout"), workspace),
-                "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr"), workspace),
+                "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
+                "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
 
         return {
-            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"), workspace),
-            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"), workspace),
+            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
+            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", workspace), workspace),
             "returncode": str(result.returncode),
         }
 
@@ -3054,8 +3058,8 @@ class SandboxExecutor:
             return {"error": f"Could not start the sandbox: {exc}"}
 
         return {
-            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout"), repo_root),
-            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr"), repo_root),
+            "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", repo_root), repo_root),
+            "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", repo_root), repo_root),
             "returncode": str(result.returncode),
         }
 

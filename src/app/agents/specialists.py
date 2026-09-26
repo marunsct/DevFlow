@@ -678,8 +678,9 @@ def create_specialist_agent(
     extra_tools = [
         build_terminal_command_tool(resolved_repo_root, role_name=f"{role}_specialist"),
         # Paired with the command tool, never on its own: only a command can
-        # produce the truncation pointer this reads back.
-        build_journal_read_tool(),
+        # produce the truncation pointer this reads back. The root is passed so a
+        # lost pointer can be answered with this run's own entries.
+        build_journal_read_tool(resolved_repo_root),
     ]
 
     if role == "testing":

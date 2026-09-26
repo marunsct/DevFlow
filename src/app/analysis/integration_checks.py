@@ -397,6 +397,100 @@ _ANOTHER_RUNNERS_IMPORT = re.compile(
 )
 
 
+#: A suite written for Node's own runner. `node:test` is the only import that
+#: settles it - a file using bare `describe` could belong to any of four
+#: runners, and guessing would strand a suite that runs perfectly well.
+_IMPORTS_NODE_TEST = re.compile(r"""(?:from|require\()\s*['"]node:test['"]""")
+
+
+def _node_suites_nothing_runs(files: list[Path], root: Path) -> list[str]:
+    """`node:test` suites in a project whose scripts never invoke `node --test`.
+
+    `_tests_the_project_never_runs` asks this question only of a manifest whose
+    `scripts.test` already contains `node --test`, for a good reason it states:
+    Jest, Vitest and Playwright decide discovery in their own configuration,
+    which it cannot read, so a claim about them could be wrong.
+
+    The effect is that the check gets weaker the worse the problem gets.
+    Changing the runner does not answer it - it exempts the manifest from being
+    asked.
+
+    Measured live on run-df4dc6f5. `scripts.test` was
+    `node --test main.test.js storage.test.js`, and this harness refused that
+    write, correctly, because it left `main.crud.test.js` unrun. The next write
+    made `scripts.test` be `npx playwright test`, which runs none of the three,
+    and every check fell silent - `_tests_the_project_never_runs` and
+    `_manifest_defects` both returned nothing against that workspace. The
+    ledger shows the suite the gates measured going 13 tests to 1:
+
+        09:21:25  npm test       tests=13  passed=6   failed=7
+        09:26:50  npm test       tests=13  passed=9   failed=4
+        09:39:18  npm test       tests=13  passed=9   failed=4
+        09:40:21  playwright     tests=1   passed=0   failed=1
+        09:41:05  npm run test   tests=1   passed=0   failed=1
+
+    Ten test cases dropped out of what the gates measured and nothing said so.
+    Later in the same run, with `scripts.test` still `npx playwright test`, the
+    two commands disagreed outright:
+
+        09:54:09  node --test    tests=17  passed=10  failed=7
+        09:59:34  npm run test   tests=3   passed=2   failed=1
+
+    Fourteen cases outside the only number any gate reads. The claim here is
+    that disagreement and not a stronger one: Playwright's default `testMatch`
+    does pick these filenames up, so some of their assertions do run, and
+    "never executed" would be false. A blocking finding that is false is the
+    worst shape a check can take - see `_belongs_to_another_runner` - so this
+    says what is certain, which is that the count the gates measure is not the
+    count these files hold.
+
+    The same false green as run-b6436e36 and run-cac07d52 reached from the
+    opposite direction, and it borrows their words.
+
+    Decided without reading any runner's configuration. A file importing
+    `node:test` needs `node --test`; if no script in the manifest invokes it,
+    that file is not run by anything, whatever Playwright's `testMatch` happens
+    to say. Every script is consulted, not only `test`, so a suite reachable
+    through `npm run unit` is not reported as unreachable.
+    """
+    problems: list[str] = []
+    for manifest in files:
+        if manifest.name != "package.json":
+            continue
+        try:
+            scripts = (json.loads(_read(manifest)) or {}).get("scripts") or {}
+        except Exception:  # noqa: BLE001 - a broken manifest is reported elsewhere
+            continue
+        if any("node --test" in str(body) for body in scripts.values()):
+            continue
+        command = str(scripts.get("test") or "")
+        if not command:
+            continue
+        project = manifest.parent
+        orphans = sorted(
+            str(path.relative_to(root))
+            for path in files
+            if path.suffix.lower() in {".js", ".mjs", ".cjs"}
+            and is_test(str(path.relative_to(root)))
+            and _is_within(path, project)
+            and _IMPORTS_NODE_TEST.search(_read(path))
+        )
+        if not orphans:
+            continue
+        names = ", ".join(orphans)
+        problems.append(
+            f"{manifest.relative_to(root)} has no script that runs {names} - "
+            f"they import `node:test`, which needs `node --test`, and no script "
+            f"in this manifest invokes it. `scripts.test` is `{command}`, which "
+            "is the one command every gate in this pipeline measures the suite "
+            "by, and whatever it collects from these files is not what Node's "
+            "runner would: the number the gates read is not the number of "
+            "assertions these files hold. Add `node --test` to `test`, or have "
+            "`test` run both suites, so one command proves the whole product."
+        )
+    return problems
+
+
 def _belongs_to_another_runner(path: Path) -> str:
     """The runner that owns this test file, or "" for a plain `node --test` one.
 
@@ -4625,6 +4719,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _hooks_javascript_reaches_for(files, root)),
     ("test files against the project's own test command",
      lambda files, root, stack, brief: _tests_the_project_never_runs(files, root)),
+    ("node:test suites against a manifest that never invokes node --test",
+     lambda files, root, stack, brief: _node_suites_nothing_runs(files, root)),
     ("module syntax against the script tag that loads it",
      lambda files, root, stack, brief: _modules_loaded_as_plain_scripts(files, root)),
     ("paths in package.json scripts against where npm runs them",

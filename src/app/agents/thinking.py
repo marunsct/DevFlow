@@ -39,7 +39,10 @@ deployment's llama-server is launched with
 `--chat-template-kwargs {"enable_thinking": true}` - so sending nothing is
 "whatever the server was configured to do", which is a third answer.
 
- The product manager wrote its artifact, then returned its
+Measured on run-c826ae90, the first run after this feature shipped with a
+two-state `enabled: bool` defaulting to False: the client began sending
+`enable_thinking: False` explicitly, turning off reasoning the model had been
+using all along. The product manager wrote its artifact, then returned its
 summary as prose instead of the structured response, and the next stage died
 on `KeyError: 'product_intake'`.
 

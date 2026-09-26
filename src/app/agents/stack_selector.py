@@ -59,6 +59,7 @@ def build_stack_selector_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -128,7 +129,10 @@ def describe_execution_environment() -> str:
     """What the sandbox can actually run, derived from the allowlist itself.
 
     The stack selector used to choose testing approaches the pipeline cannot
-    perform.  Unable
+    perform. Measured on run-3da8dd91: it selected "Manual (browser DevTools)"
+    for a client-side app, the technical lead faithfully delegated "execute all
+    Sprint 1 test cases manually in a browser", and the testing specialist found
+    no browser - none is installed and none is on any role's allowlist. Unable
     to do the task and told not to substitute, it began improvising an
     automated harness with npm instead.
 
@@ -174,7 +178,9 @@ def describe_execution_environment() -> str:
         "  runner if the product has a page.\n"
         "  `node --test` and Python's `unittest` ship with their\n"
         "  runtimes and cost nothing to add; jest, vitest and their peers pull in\n"
-        "  tens of thousands of files.  Reach for\n"
+        "  tens of thousands of files. Measured on run-cbd22a34: choosing vitest\n"
+        "  over `node --test` for a to-do list took the workspace from 46 MB to\n"
+        "  221 MB, against a brief reading \"no external dependencies\". Reach for\n"
         "  an installed framework when the product's size or risk earns it.\n"
         "- THAT IS AN ARGUMENT FOR THE BUILT-IN RUNNER, NOT AGAINST TESTING. A\n"
         "  built-in runner installs nothing, adds no dependency and costs no\n"
@@ -182,7 +188,10 @@ def describe_execution_environment() -> str:
         "  'None' and 'manual testing' are the same answer and both are refused:\n"
         "  they mean nothing will ever answer 'did this work?', and every later\n"
         "  stage has to.\n"
-        "   There was nothing to install and no budget to\n"
+        "  Measured on run-2f252e4e, which read the paragraph above and chose\n"
+        "  'Testing Framework: None - manual browser testing via DevTools is\n"
+        "  adequate for a 500-line app; installing a test runner would consume the\n"
+        "  entire code budget'. There was nothing to install and no budget to\n"
         "  consume; the run shipped a checklist for a human who does not exist.\n"
         ""
     )
@@ -217,7 +226,9 @@ A constraint in the intake is a boundary, not a preference:
   lines does not carry the same tooling as a system with a team behind it, and
   every dependency you add is one the builders must install, configure and
   debug before they write any of the product.
-- Observed on  Configuring them consumed the entire sprint
+- Observed on run-95ca3f72: an intake reading "single-page application using
+  only HTML/CSS/JavaScript" and "code size capped at 500 lines" produced a
+  stack with two test frameworks. Configuring them consumed the entire sprint
   and all three of its remediation attempts; the application itself was never
   started. A stack that cannot be stood up is worse than a plainer one that
   can.
@@ -262,6 +273,7 @@ def create_stack_selector_agent(
         repo_root=repo_root,
         allow_subdirectories=allow_subdirectories,
         # The workflow renders `docs/technology_stack.md` from the selection.
+        # Holding a write tool as well is what ended run-0b18e403 at stage
         # three: the stage printed its answer into the conversation, wrote the
         # document, printed it again, wrote again - five identical writes
         # before the repeat guard stopped it. Taking the tool away settles it;

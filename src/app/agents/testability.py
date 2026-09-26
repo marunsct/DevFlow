@@ -7,10 +7,14 @@ means reconstructing a DOM first.
 
 Measured across four runs of the same brief. The app entry point called
 `document.getElementById(...)` and `form.addEventListener(...)` at the top
-level, so on  
+level, so on run-61c5a5b6 the testing specialist loaded it through `node:vm`
+with a hand-written DOM: five rewrites of the test file to get
+`addEventListener`, then `classList`, then element identity right, and a
+defect-fix round afterwards. run-304add54 failed outright on the same problem.
+run-cbd22a34 paid for it in dependencies instead - vitest and jsdom took the
+workspace from 46 MB to 221 MB against a brief that asked for none.
 
-
- Its technical
+run-2b5def74 traced it to the decision that causes it. Its technical
 specification said, in as many words, "No module system (no ES modules, no
 CommonJS) - single global scope", and two lines later "Tests run with a single
 command: node --test tests/". Those cannot both hold: a runner can only test
@@ -20,10 +24,14 @@ reviews accepted it. The specialists were not careless - they were building to
 a specification that had already ruled testing out, to honour a "no external
 dependencies" constraint that native modules never breached.
 
-html` - "No external files, no build step, no module system". Getting
+run-2f252e4e reached the same dead end from the other direction, one run
+later, with the structural half of this rule already in force: its
+specification correctly described pure functions, a storage adapter and an
+`init()`, and then put all of it inside a `<script>` tag in a single
+`index.html` - "No external files, no build step, no module system". Getting
 the shape right does not help if nothing can open the file.
 
- Its
+run-da6c5e19 got everything else right and still could not be tested. Its
 specification asked for ES modules and a guarded bootstrap; its `app.js`
 delivered both - `export { logic, storage, ui }` under
 `if (typeof document !== "undefined") init();`. No `package.json` declared the
@@ -32,7 +40,7 @@ invisible, and the testing specialist wrote "we can't directly import app.js",
 copied the logic, and passed. Every part correct except the one line that tells
 the runtime what kind of file it is reading.
 
- With this
+run-2b5def74 also shows why the second half matters as much as the first. With this
 rule in force the application came back correctly shaped - pure functions
 taking their arguments, a storage adapter, every DOM reference inside `init()`.
 But `init()` was still called bare at module scope and nothing was exported, so
@@ -41,7 +49,8 @@ the module still could not be imported, and the testing specialist wrote:
 test file defines the same pure logic functions inline." Six tests passed
 against a copy of the code. `analysis.integration_checks` now detects that.
 
- `script.js` exported eight functions under a guarded bootstrap, a
+run-5d83e946 had every structural part of this rule right and copied the code
+anyway. `script.js` exported eight functions under a guarded bootstrap, a
 `package.json` declared `{"type": "module"}`, and `script.test.mjs` imported
 the real module nine times - to assert `typeof mod.addTask === 'function'` and
 nothing else. Above those, under the heading "Inline copies of the pure
@@ -74,7 +83,8 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   requests are only supported for protocol schemes: ... http, https" - so the
   page loads, the script never runs, and the test times out waiting for a
   global the module never set. The page is not broken and neither is the test;
-  the URL scheme is. addTask` over `file://` and failed on every run of it.  Load the page over `http://localhost:<port>` instead, and let Playwright
+  the URL scheme is. Measured on run-519a9d8a, whose suite waited for
+  `window.addTask` over `file://` and failed on every run of it.  Load the page over `http://localhost:<port>` instead, and let Playwright
   manage the server itself - declare a `webServer` in `playwright.config.ts`
   and it starts the server, runs the suite, and stops it again, all inside the
   one `npx playwright test` command that terminates on its own:
@@ -111,7 +121,10 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
 - "IT DID NOT THROW" IS NOT A RESULT. `assert.doesNotThrow(() => saveTasks(x))`
   passes whether the function saves anything or nothing at all; so does a test
   that only checks `typeof`. Assert on what the function RETURNED, or on the
-  state it changed - read it back and compare.  Persistence was an acceptance
+  state it changed - read it back and compare. Measured on run-44e9fc83:
+  `saveTasks` was covered only by `doesNotThrow`, inside a block named
+  "saveTasks + loadTasks round-trip", and replacing the whole function body
+  with `return tasks` left all 33 tests passing. Persistence was an acceptance
   criterion of that brief.
 - THE TEST FOR THIS: if you replaced the body of the function with
   `return <its first argument>`, would any test fail? If not, that function is
@@ -145,7 +158,9 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   machine that builds it. "Static-only deployment, so no Node runtime, so no
   automated tests" is three steps of correct reasoning ending somewhere false:
   the runtime the tests need is the developer's, and it is already here.
-   Deployment
+  Measured on run-37476645, whose ADR-04 decided against a test framework on
+  exactly that ground and cost two architecture revisions; and on
+  run-cbb1a5fc, which argued the same and was caught in review. Deployment
   constrains what you SHIP. It does not constrain what you can RUN while
   building it.
 - A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and

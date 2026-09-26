@@ -6,7 +6,9 @@ after the schema, or after the idea of an answer:
     {"SpecialistOutput": {"changed_files": [...], "decisions": [...], ...}}
     {"response": {"status": "accepted", ...}}
 
- Every one was rejected, so `settled_answer` could not
+Measured on run-454adf22's `specialist_testing`, which sent exactly the first
+shape at 16:34:00, again at 16:34:16, and was still sending it at 16:34:33
+after three corrections. Every one was rejected, so `settled_answer` could not
 recognise an answer, so the stage went on. The log for it reads
 
     Stage specialist_testing sent an answer that does not satisfy its schema

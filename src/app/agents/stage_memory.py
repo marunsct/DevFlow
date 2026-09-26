@@ -12,7 +12,16 @@ graph, and the workflow node then runs again from the top on resume, calling
 backend, and an empty counter. So a stage that writes a file between two reads
 - which is what a working stage does - starts every counter from zero again.
 
- Everything held in memory reported nothing at all, not
+Measured on run-454adf22, which had 73 byte-identical repeated tool calls,
+32% of its model calls:
+
+    middleware query-repeat notes:      0
+    middleware no-op write refusals:    0
+    read withheld after five repeats:   0
+    ledger command notices:             9
+
+Nine, and all nine from the execution ledger - the one mechanism that keeps
+its count in a file. Everything held in memory reported nothing at all, not
 because the checks were wrong but because they were counting to one over and
 over.
 

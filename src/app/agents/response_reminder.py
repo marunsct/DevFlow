@@ -15,7 +15,9 @@ observed. A model repeatedly told "return your answer now" while it is still
 working may announce an answer it has not formed - which is exactly the failure
 shape in the logs: "Here is my structured response:" followed by nothing.
 
-Measured, as far as it can be:   That is not proof - different work, small numbers - but there is no
+Measured, as far as it can be: run-61c5a5b6 ran without this and retried twice
+in 17 stage entries (12%). run-2b5def74 ran with it and retried five times in
+26 (19%). That is not proof - different work, small numbers - but there is no
 evidence of benefit on either side of it, and a change carries the burden of
 justifying itself.
 
@@ -31,7 +33,9 @@ Original docstring follows.
 
 Keep the response schema in view in a conversation that has grown long.
 
- Both
+Measured on run-61c5a5b6: two stages of about twenty-five produced no
+structured response, and both were among the longest in the run -
+`test_round_0` after 38 file reads, `specialist_ui_ux_1` after 203 events. Both
 wrote the answer into the conversation as prose, one of them opening with
 "Here's my structured response:" and then not returning one. The instruction to
 use the schema is in the system prompt, hundreds of messages earlier.

@@ -4,11 +4,14 @@ The architect used to produce the specification twice: once as Markdown
 written to disk, and once as the structured response the pipeline routes on.
 The two were generated separately from the same understanding, and nothing
 reconciled them - the same shape that let a 1 KB `docs/spec.md` sit beside a
-51 KB `docs/technical_specification.md` on 
+51 KB `docs/technical_specification.md` on run-0b55ad49, with the reviewer
+reading whichever it found first.
 
 The cost is not only divergence. A full specification is roughly 40 KB of
 prose; asking for it twice doubles the most expensive generation in the
-pipeline. md`" - on three fresh conversations in a row,
+pipeline. Measured on run-0edfcd33, the architect wrote the document, then
+reported in prose - "The technical specification has been written to
+`docs/technical_specification.md`" - on three fresh conversations in a row,
 each ending in a ~100,000 character message. It had spent itself on the
 document and treated the schema as redundant, which from its side it was.
 
@@ -53,7 +56,7 @@ def _as_lines(value: Any) -> list[str]:
 
     Delegates to the general renderer so both share one behaviour - in
     particular the unpacking of JSON a model has put into a prose field, which
-    `product_scope` arrived as on 
+    `product_scope` arrived as on run-78804673.
     """
     from app.agents.artifact_document import _value_lines
 

@@ -204,6 +204,7 @@ def build_architecture_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -261,6 +262,7 @@ def build_architecture_revision_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
+        # run-0b55ad49, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -288,7 +290,10 @@ def build_architecture_revision_request(
         "not asked for: a revision resolves the listed findings and changes "
         "nothing else. New sections, new features and new behaviours added "
         "here arrive unreviewed and under-specified, and the next review finds "
-        "them. \n\n"
+        "them. On run-37476645 four consecutive reviews returned "
+        "changes_required with 5, then 4, then 6, then 8 findings, escalating "
+        "from minor to blocking, each round raising subjects the round before "
+        "had not mentioned.\n\n"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

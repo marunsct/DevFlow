@@ -211,6 +211,7 @@ def create_security_reviewer_agent(
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         # The workflow renders `docs/security_review.md` from the decision.
         # A reviewer holding a write tool it is not asked to use is the shape
+        # that cost run-78804673, run-c826ae90 and run-0b18e403 a stage each.
         can_write=False,
     )
 

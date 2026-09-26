@@ -9,7 +9,8 @@ information, spelled for a reader.
 Refusing it is expensive out of all proportion. `ReportedDefect.owner` is a
 required field, so an unreadable spelling loses the entire defect - and with it
 the description, the reproduction steps and the routing the model was trying to
-provide. 
+provide. Measured on run-0deeb8bf, where the Testing specialist named itself
+"Testing Specialist" and its whole answer was rejected.
 
 What the strict type protects is that a defect is *routable*: the gate refuses
 a sprint whose defects are owned by "the team" or "backend service". That still

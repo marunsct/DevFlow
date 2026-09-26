@@ -78,7 +78,8 @@ class ArchitectureReviewOutput(BaseModel):
         review that lists its findings has already decided; it has only failed
         to write the word down.
 
-        ..]}` with no `status` four times in one stage, which
+        Measured on run-6412366b: the reviewer answered
+        `{"findings": [...]}` with no `status` four times in one stage, which
         cost two stage restarts and reached "attempt 3 of 3", the last retry
         before the stage fails outright. Across all stored runs, 8 of 74
         answers carrying findings omit the field.
@@ -183,7 +184,7 @@ a Dockerfile. If your remediation begins "Create", "Add" or "Implement" a file,
 you are reviewing the wrong artifact; rewrite it as what the specification
 should say.
 
-7 KB specification six
+Measured on run-c4f17841: this review rejected an 11.7 KB specification six
 times and ended the run, on five findings all of this shape - missing
 Dockerfiles, missing Helm charts, a missing CI workflow, missing Prometheus
 middleware, missing pgcrypto migrations. It had run a glob for `alembic`, found

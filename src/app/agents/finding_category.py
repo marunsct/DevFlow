@@ -5,7 +5,10 @@ The exact shape `app.agents.severity` was written for, one field along.
 vocabulary; `category` is a bare `Literal` and is not, so one unrecognised
 word throws away the whole review.
 
-4.category); returning the validation errors
+Measured live on run-cac07d52 at 05:36, on a model swapped in mid-run:
+
+    Stage milestone_reviewer sent an answer that does not satisfy its
+    schema (findings.4.category); returning the validation errors
 
 It cost that review three and a half minutes and a full re-generation. Across
 the same run the model wrote `code_quality` 24 times and `test` for `testing`

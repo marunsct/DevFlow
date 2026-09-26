@@ -4,7 +4,10 @@ Every stage begins the same way: `ls /`, `ls /project`, then a read of each
 file it might care about. It has to, because an agent is built per stage and
 none of them can see what an earlier one learned.
 
-js`, read `index.html`, read the tests. Each of those is
+Measured on run-61c5a5b6: 257 `read_file` calls over 22 distinct files, and the
+opening moves of `technical_lead`, `test_round_0`, `milestone_review`,
+`security_review` and every specialist are near-identical - list the root, list
+the project, read `app.js`, read `index.html`, read the tests. Each of those is
 a model turn carrying the whole conversation, and the answer was the same every
 time.
 
@@ -99,6 +102,7 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
             head += f" - written by {changed_by}"
         # Not for the nine. Every stage already knows what
         # `docs/milestone_plan.md` is, and its first heading is whatever that
+        # stage's model happened to write: on run-ed05e20e it was "Milestone
         # Plan - The layout adapts cleanly to both mobile (<600px) and
         # desktop (1280px) viewports", which describes one bullet inside it.
         purpose = "" if _is_a_rendered_document(name) else project_memory.purpose_of(text, name)
@@ -136,7 +140,8 @@ def _in_reading_order(root: Path, names: list[str]) -> list[str]:
     """The project first, then documents, then everything else.
 
     Alphabetical order put dotfiles at the top, so the cut at `max_files` fell
-    on the application: on md` and stopped, hiding `app.js` behind
+    on the application: on run-61c5a5b6's workspace the listing reached
+    `simple-to-do-list-app/README.md` and stopped, hiding `app.js` behind
     "... and 13 more". The files a stage came here for must survive the cut.
     """
     try:
@@ -305,7 +310,10 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
     On EVERY call, not just the first. Injected once, the listing is in the
     opening request and nowhere afterwards - `override` does not write it to
     stored history - so from the second call the agent has no map and goes
-    looking again.  It is also why the listing count fell only 43% (46 to 26) when
+    looking again. Measured on run-2eb3aa24's `principal_architect`: six
+    identical `ls {'path': '/'}` and four `ls` of a project directory that did
+    not exist yet, in one stage, against a digest that had already said what
+    was there. It is also why the listing count fell only 43% (46 to 26) when
     this middleware shipped rather than to nearly nothing.
 
     Re-injecting costs one copy per request and accumulates nothing, because
@@ -315,7 +323,8 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
 
     This does not address a re-READ of a file's contents; a listing is not
     content. Those were measured separately and are not eviction: compaction
-    triggers at 70,200 tokens and the largest stage of 
+    triggers at 70,200 tokens and the largest stage of run-1d1b6c9c carried
+    about 22,600, with no compaction in the logs at all.
     """
     from langchain.agents.middleware import AgentMiddleware
 

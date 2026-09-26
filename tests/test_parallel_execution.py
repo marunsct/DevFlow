@@ -189,6 +189,56 @@ class TestPausingInsideAFanOut:
         assert state["stage"] == "complete"
 
 
+class TestTheToggleIsHonoured:
+    """Saving the setting is not the same as the dispatcher reading it.
+
+    Three things had to line up and none of them did. `execution_mode` was
+    missing from `runtime_settings.SETTABLE_KEYS`, so a write raised
+    `ValueError: Not a settable key`. Once that was fixed the value was stored
+    and displayed - and the dispatcher called bare `load_settings()`, which is a
+    pure function of the environment it is handed and reads this container's own
+    when handed nothing. The store is layered in by `effective_environment`, so
+    without that step the toggle read `linear` on every dispatch no matter what
+    the settings page said.
+    """
+
+    def test_execution_mode_is_a_settable_key(self):
+        from app.server.runtime_settings import SETTABLE_KEYS
+
+        assert SETTABLE_KEYS.get("execution_mode") == "EXECUTION_MODE"
+
+    def test_the_stored_setting_is_what_the_dispatcher_dispatches_on(
+        self, agents: ScriptedAgents, monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    ) -> None:
+        """Set through the store's own layering, not by patching `load_settings`.
+
+        Patching `load_settings` is what every other test here does, and it
+        cannot catch this: it replaces the function the dispatcher was wrongly
+        calling, so the wrong call site passes. This one leaves the call site
+        alone and puts the value where an administrator's write puts it.
+        """
+        from app.server import runtime_settings
+
+        monkeypatch.setattr(runtime_settings, "overrides",
+                            lambda refresh=False: {"execution_mode": "parallel"})
+        monkeypatch.setattr(runtime_settings, "secrets", lambda refresh=False: {})
+
+        _script_a_parallel_sprint(agents, "backend", "database", "ui_ux")
+        state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-toggle")
+
+        if state["stage"] == "failed":
+            print("ERROR:", state.get("error"))
+        assert state["stage"] == "complete"
+        assert set(state["specialist_outputs"]) == {
+            "specialist_backend_0", "specialist_database_1", "specialist_ui_ux_2",
+        }
+        # Which path ran, not just that some path did. Both modes finish three
+        # tasks, so the outputs alone cannot tell them apart: `specialist_task_index`
+        # is the linear dispatcher's counter and reaches the task count, and the
+        # fan-out never touches it.
+        assert state.get("specialist_task_index", 0) == 0, "the fan-out ran, not the counter"
+
+
 class TestTheModesAgree:
     def test_linear_mode_is_unchanged_by_any_of_this(
         self, agents: ScriptedAgents, tmp_path: Any

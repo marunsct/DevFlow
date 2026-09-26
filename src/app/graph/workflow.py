@@ -2956,10 +2956,26 @@ def build_workflow_graph(
         if missing is not None:
             return missing
             
-        from app.config import load_settings
-        settings = load_settings()
+        # `effective_settings`, not `load_settings`. `load_settings` is a pure
+        # function of the environment it is handed, and bare it reads this
+        # container's own - which never carries anything an administrator
+        # changed. The settings page writes `execution_mode` to the store, and
+        # the store is layered in by `effective_environment`; without that step
+        # the toggle saved correctly, displayed correctly and was read as
+        # `linear` on every dispatch. `_effective_base_environment` is the same
+        # source the model overrides above are layered on.
+        from app.server.runtime_settings import effective_settings
+
+        try:
+            settings = effective_settings()
+        except Exception:  # noqa: BLE001 - an unreachable store is the deployed config
+            from app.config import load_settings
+
+            logger.warning("Could not read the settings store; dispatching linearly", exc_info=True)
+            settings = load_settings()
         if settings.execution_mode == "parallel":
-            # Just set the stage to signal _route_from_stage to fan-out
+            # A stage no node is named after. `_route_from_stage` turns it into
+            # one `Send` per unfinished task; `specialist_gather` joins them.
             return {"stage": "specialist_dispatch_parallel"}
             
         milestone = state["milestone_plan"]

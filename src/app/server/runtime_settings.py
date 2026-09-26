@@ -99,6 +99,15 @@ SETTABLE_KEYS: dict[str, str] = {
     "model_max_output_tokens": "MODEL_MAX_OUTPUT_TOKENS",
     "thinking_mode": "MODEL_THINKING_MODE",
     "thinking_effort": "MODEL_THINKING_EFFORT",
+    # Whether a sprint's specialists run one after another or all at once.
+    # `specialist_dispatch_node` reads it through `load_settings()`, the
+    # settings page offers it as a toggle, and `SettingsPayload` carries it -
+    # and it was missing from here, which is the one list that decides whether
+    # a write is allowed at all. `save()` raised
+    # `ValueError: Not a settable key: execution_mode` for every attempt, so
+    # the toggle could not be turned on and fourteen settings tests that post
+    # a whole payload failed with it.
+    "execution_mode": "EXECUTION_MODE",
 }
 
 CACHE_TTL_SECONDS = float(os.environ.get("SETTINGS_CACHE_TTL", "5"))

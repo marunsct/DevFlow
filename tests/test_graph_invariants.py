@@ -72,10 +72,62 @@ def test_sprint_advance_is_routable():
     assert "sprint_advance" in _NODE_NAMES
 
 
+#: Stage values that are instructions to the router rather than node names.
+#:
+#: `specialist_dispatch_parallel` is the only one. In parallel execution mode
+#: the dispatcher sets it and `_route_from_stage` turns it into one `Send` per
+#: delegated task, so there is deliberately no node of that name - and a test
+#: that only checked `_NODE_NAMES` called the feature a bug.
+#:
+#: Each entry is checked below against the router itself, so an entry here can
+#: only excuse a stage the router demonstrably handles.
+_ROUTER_SENTINELS = frozenset({"specialist_dispatch_parallel"})
+
+
 def test_every_stage_a_node_assigns_is_a_known_target():
     """Any literal assigned to `stage` must be somewhere the router can go."""
-    unknown = _assigned_stage_values() - set(_NODE_NAMES)
+    unknown = _assigned_stage_values() - set(_NODE_NAMES) - _ROUTER_SENTINELS
     assert not unknown, f"Nodes assign stage values with no matching node: {sorted(unknown)}"
+
+
+@pytest.mark.parametrize("sentinel", sorted(_ROUTER_SENTINELS))
+def test_a_sentinel_stage_is_actually_handled_by_the_router(sentinel):
+    """Being on the exemption list is not enough; the router must answer for it.
+
+    Otherwise this list becomes the place a genuinely unroutable stage goes to
+    silence the test above.
+    """
+    from langgraph.types import Send
+
+    destination = _route_from_stage({"stage": sentinel})
+
+    if isinstance(destination, list):
+        assert destination, f"{sentinel} routed to an empty fan-out"
+        assert all(isinstance(send, Send) for send in destination)
+        assert all(send.node in _NODE_NAMES for send in destination)
+    else:
+        assert destination in _NODE_NAMES, (
+            f"{sentinel} is exempt from the node-name check but the router sends "
+            f"it to {destination!r}, which is not a node either"
+        )
+
+
+def test_the_parallel_sentinel_falls_back_when_there_is_nothing_to_fan_out():
+    """An empty plan must not fan out to nobody and strand the run.
+
+    `Send` with an empty list is not a route: LangGraph has nothing to run, the
+    superstep ends, and the run stops between stages with no error. A milestone
+    with no delegated tasks is uncommon but it is a shape a model produces, so
+    the dispatcher's own fallback is the safety net rather than the schema.
+
+    It falls back to the join node rather than straight to the tests, because
+    the join is the one place allowed to set `stage` after a fan-out and the one
+    place that looks for a worker that paused.
+    """
+    assert _route_from_stage({"stage": "specialist_dispatch_parallel"}) == "specialist_gather"
+    assert _route_from_stage(
+        {"stage": "specialist_dispatch_parallel", "milestone_plan": None}
+    ) == "specialist_gather"
 
 
 # ---------------------------------------------------------------------------

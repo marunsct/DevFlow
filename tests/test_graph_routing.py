@@ -626,13 +626,27 @@ def test_specialist_dispatch_runs_every_delegated_task(agents: ScriptedAgents, t
 def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:
-    """A defect the owner cannot fix consumes attempts and then escalates."""
+    """A defect the owner cannot fix consumes attempts and then escalates.
+
+    A sprint that exhausts its remediation attempts is now re-planned rather
+    than failing the run outright, so "escalates instead of looping" means
+    something stronger than it did: the re-plan is itself bounded, by the same
+    `MAX_MILESTONE_REVISIONS` as every other revision. An unfixable defect
+    therefore costs one plan plus that many re-plans and then reaches a human,
+    instead of exhausting a fresh remediation cycle forever.
+
+    The scripts are sized for every attempt the bound allows. They are
+    deliberately longer than the run needs: a script that runs dry fails with
+    "no scripted response left", which says nothing about whether the routing
+    was right.
+    """
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
-    agents.script("technical_lead", [responds_with(_milestone("backend"))])
-    agents.script("specialist_backend", [responds_with(_specialist())] * 8)
+    attempts_allowed = workflow_module.MAX_MILESTONE_REVISIONS + 1
+    agents.script("technical_lead", [responds_with(_milestone("backend"))] * (attempts_allowed + 2))
+    agents.script("specialist_backend", [responds_with(_specialist())] * 60)
     # Every verification round keeps finding the same failure.
-    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 8)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-blocked")
 
@@ -641,6 +655,10 @@ def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     assert state["remediation"].attempt == workflow_module.MAX_REMEDIATION_ATTEMPTS
     assert "remediation attempts" in state["error"]
     assert "Booking API returns 500" in state["error"], "the defect report is the sprint evidence"
+    assert len(agents.requests["technical_lead"]) == attempts_allowed, (
+        "the sprint is re-planned up to the revision limit and then escalated, "
+        "not re-planned indefinitely"
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1085,12 +1103,19 @@ def test_sprint_review_changes_replan_the_milestone_with_the_comment(
 
 
 def test_a_blocked_sprint_never_reaches_its_optional_review(agents: ScriptedAgents, tmp_path: Any) -> None:
-    """An optional review cannot rubber-stamp a sprint whose tests never passed."""
+    """An optional review cannot rubber-stamp a sprint whose tests never passed.
+
+    Scripted for every re-plan the revision limit allows, because a sprint that
+    exhausts its remediation attempts is re-planned before it escalates.
+    """
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
-    agents.script("technical_lead", [responds_with(_milestone("backend"))])
-    agents.script("specialist_backend", [responds_with(_specialist())] * 8)
-    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 8)
+    agents.script(
+        "technical_lead",
+        [responds_with(_milestone("backend"))] * (workflow_module.MAX_MILESTONE_REVISIONS + 3),
+    )
+    agents.script("specialist_backend", [responds_with(_specialist())] * 60)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
 
     state = start_workflow(
         _graph(),
@@ -1202,13 +1227,20 @@ def test_a_defect_is_routed_to_its_owner_not_to_the_reporter(agents: ScriptedAge
 def test_a_fix_without_a_regression_test_does_not_close_the_defect(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:
-    """The plan's gate forbids accepting a sprint with missing regression coverage."""
+    """The plan's gate forbids accepting a sprint with missing regression coverage.
+
+    Scripted for every re-plan the revision limit allows; see
+    `test_a_defect_that_never_gets_fixed_escalates_instead_of_looping`.
+    """
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
-    agents.script("technical_lead", [responds_with(_milestone("backend"))])
+    agents.script(
+        "technical_lead",
+        [responds_with(_milestone("backend"))] * (workflow_module.MAX_MILESTONE_REVISIONS + 3),
+    )
     # The backend specialist claims to have fixed it but names no test.
-    agents.script("specialist_backend", [responds_with(_specialist(tests=[]))] * 8)
-    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 8)
+    agents.script("specialist_backend", [responds_with(_specialist(tests=[]))] * 60)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-no-regression")
 

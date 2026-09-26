@@ -30,15 +30,24 @@ interface SprintSummaryPanelProps {
 
 interface ParsedSprint {
   number: number;
+  /** How many sprints the plan has, read from this document's own heading. */
+  plannedTotal: number;
   goal: string;
   status: string;
   failureReason?: string;
+  /** How many times this one sprint was attempted. More than one means a re-run. */
+  attempts: number;
+  planned: string[];
   features: string[];
+  testCases: number | null;
+  casesPassed: number;
+  casesFailed: number;
   testRounds: number;
   totalBugs: number;
   fixedBugs: number;
   openBugs: number;
   defects: { status: string; description: string; owner: string }[];
+  attemptHistory: string[];
 }
 
 /** Parse a sprint summary markdown file into structured data. */
@@ -49,6 +58,27 @@ function parseSummary(raw: string, sprintNum: number): ParsedSprint {
     const line = lines.find((l) => l.startsWith(prefix));
     return line ? line.replace(prefix, '').trim() : '';
   };
+
+  const section = (heading: string) => {
+    const start = lines.findIndex((l) => l.trim() === heading);
+    if (start < 0) return [];
+    const end = lines.findIndex((l, i) => i > start && l.startsWith('#'));
+    return lines
+      .slice(start + 1, end > 0 ? end : lines.length)
+      .filter((l) => l.startsWith('- '))
+      .map((l) => l.replace(/^- /, ''));
+  };
+
+  // "# Sprint 2 of 3 Summary" - the plan's size, stated by every sprint so the
+  // count does not have to be inferred from how many documents exist. Those
+  // differ exactly when a sprint is re-run, which is what made a three-sprint
+  // plan look like it had grown extra sprints.
+  const plannedTotal = parseInt((raw.match(/^# Sprint \d+ of (\d+)/m) || [])[1] || '0', 10);
+  const attempts = parseInt((getField('**Attempts:**').match(/^(\d+)/) || [])[1] || '1', 10);
+  const rawCases = getField('**Test Cases:**');
+  const testCases = /^\d+$/.test(rawCases) ? parseInt(rawCases, 10) : null;
+  const casesPassed = parseInt(getField('- **Passed:**') || '0', 10);
+  const casesFailed = parseInt(getField('- **Failed:**') || '0', 10);
 
   const goal = getField('**Goal:**');
   const status = getField('**Status:**');
@@ -76,7 +106,13 @@ function parseSummary(raw: string, sprintNum: number): ParsedSprint {
     }
   }
 
-  return { number: sprintNum, goal, status, failureReason, features, testRounds, totalBugs, fixedBugs, openBugs, defects };
+  return {
+    number: sprintNum, plannedTotal, goal, status, failureReason, attempts,
+    planned: section('## Planned for This Sprint'), features,
+    testCases, casesPassed, casesFailed,
+    testRounds, totalBugs, fixedBugs, openBugs, defects,
+    attemptHistory: section('## Attempt History'),
+  };
 }
 
 export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, maxSprints = 10 }) => {
@@ -129,13 +165,20 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
 
   if (sprints.length === 0) return null;
 
+  const plannedTotal = Math.max(0, ...sprints.map((s) => s.plannedTotal));
+  const reruns = sprints.filter((s) => s.attempts > 1).length;
+
   return (
     <div className="glass-card rounded-2xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-border/40 flex items-center gap-2">
         <Rocket className="h-4.5 w-4.5 text-primary" />
         <h3 className="text-sm font-semibold text-white">Sprint Milestones</h3>
         <span className="ml-auto text-[11px] text-text-muted tabular-nums">
-          {sprints.length} sprint{sprints.length !== 1 ? 's' : ''}
+          {/* The plan's own count, so a re-run cannot read as an extra sprint. */}
+          {plannedTotal > 0
+            ? `${sprints.length} of ${plannedTotal} planned`
+            : `${sprints.length} sprint${sprints.length !== 1 ? 's' : ''}`}
+          {reruns > 0 && `  ·  ${reruns} re-run${reruns !== 1 ? 's' : ''}`}
         </span>
       </div>
 
@@ -161,14 +204,23 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                     <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${statusBg} ${statusColor}`}>
                       {sprint.status}
                     </span>
+                    {sprint.attempts > 1 && (
+                      <span
+                        className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-warning/10 text-warning"
+                        title="This sprint was attempted more than once. It is one sprint, not several."
+                      >
+                        re-run ×{sprint.attempts}
+                      </span>
+                    )}
                   </div>
                   <p className="text-[12px] text-text-secondary truncate mt-0.5">{sprint.goal}</p>
                 </div>
 
                 {/* Quick stats */}
                 <div className="hidden sm:flex items-center gap-4 text-[11px] text-text-muted tabular-nums flex-none">
-                  <span className="flex items-center gap-1" title="Test cycles">
-                    <FlaskConical className="h-3.5 w-3.5" /> {sprint.testRounds}
+                  <span className="flex items-center gap-1" title="Test cases passed / total">
+                    <FlaskConical className="h-3.5 w-3.5" />
+                    {sprint.testCases === null ? '—' : `${sprint.casesPassed}/${sprint.testCases}`}
                   </span>
                   <span className="flex items-center gap-1" title="Bugs found">
                     <Bug className="h-3.5 w-3.5" /> {sprint.totalBugs}
@@ -196,6 +248,9 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Stat cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {[
+                      { label: 'Test Cases', value: sprint.testCases ?? '—', icon: FlaskConical, color: 'text-primary' },
+                      { label: 'Passed', value: sprint.casesPassed, icon: CheckCircle2, color: 'text-success' },
+                      { label: 'Failed', value: sprint.casesFailed, icon: XCircle, color: 'text-danger' },
                       { label: 'Test Cycles', value: sprint.testRounds, icon: FlaskConical, color: 'text-primary' },
                       { label: 'Bugs Found', value: sprint.totalBugs, icon: Bug, color: 'text-warning' },
                       { label: 'Bugs Fixed', value: sprint.fixedBugs, icon: CheckCircle2, color: 'text-success' },
@@ -208,6 +263,42 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                       </div>
                     ))}
                   </div>
+
+                  {/* What the sprint plan promised - separate from what was built */}
+                  {sprint.planned.length > 0 && (
+                    <div>
+                      <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                        Planned for This Sprint
+                      </h4>
+                      <ul className="space-y-1">
+                        {sprint.planned.map((item, i) => (
+                          <li key={i} className="flex items-start gap-2 text-[12px] text-text-secondary">
+                            <ListChecks className="h-3.5 w-3.5 text-primary flex-none mt-0.5" />
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Every attempt at this one sprint, including the failed ones */}
+                  {sprint.attemptHistory.length > 0 && (
+                    <div>
+                      <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                        Attempt History
+                      </h4>
+                      <ul className="space-y-1">
+                        {sprint.attemptHistory.map((item, i) => (
+                          <li key={i} className="text-[12px] text-text-secondary">
+                            {/* Plain text: this line comes from a document an
+                                agent's own output fed into, so it is never
+                                inserted as markup. */}
+                            {item.replace(/\*\*/g, '')}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   {/* Features */}
                   {sprint.features.length > 0 && (

@@ -47,6 +47,7 @@ import os
 import logging
 import uuid
 import operator
+from datetime import datetime, timezone
 from typing import Any, TypedDict, Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -89,6 +90,7 @@ from app.agents.product_manager import (
 )
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import SprintPlanOutput, build_sprint_planning_request, create_scrum_master_agent
+from app.agents.sprint_summary import count_test_cases, render_sprint_summary
 from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
 from app.agents.specialists import (
     ReportedDefect,
@@ -316,6 +318,12 @@ _NODE_NAMES = frozenset(
         "scrum_master",
         "technical_lead",
         "specialist_dispatch",
+        # Parallel mode's fan-out target. `graph.add_node` registers it and
+        # routers reference it, but it was absent here - and every conditional
+        # edge map, including the entry router's, is built from this set. So no
+        # edge map contained it and a resume parked on it had no target.
+        "specialist_worker",
+        "specialist_gather",
         "test_and_triage",
         "defect_remediation",
         "security_review",
@@ -347,6 +355,30 @@ approval the entry router uses this map to re-enter the node that owns the loop.
 """
 
 
+def _merge_or_reset(
+    current: dict[str, Any] | None, update: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Merge per-task entries, treating an empty update as "start again".
+
+    `operator.ior` cannot express a reset. `current |= {}` leaves the dictionary
+    exactly as it was, so the four places that hand on `specialist_outputs={}`
+    to begin a sprint, a re-plan, a fresh milestone or a blocked review with a
+    clean slate were keeping every earlier milestone's output instead of
+    dropping it. `test_and_triage` builds `changed_files` from those outputs and
+    hands them to the Test Engineer as the work to verify, so a later sprint was
+    asked to test files an earlier sprint had changed and this one had not
+    touched - and `milestone_review` read the same set as the milestone's work.
+
+    Merging is still the behaviour that matters: the parallel fan-out has every
+    worker writing one key of this dictionary in the same superstep, and a
+    last-write-wins channel would keep one specialist's output and discard the
+    rest.
+    """
+    if not update:
+        return {}
+    return {**(current or {}), **update}
+
+
 class WorkflowGraphState(TypedDict, total=False):
     """Working memory for the top-level workflow graph.
 
@@ -376,9 +408,22 @@ class WorkflowGraphState(TypedDict, total=False):
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
     current_sprint_index: int
+    # Every attempt at every sprint, oldest first, each one a mapping of the
+    # shape `sprint_summary.render_sprint_summary` documents. A sprint that
+    # fails is re-planned and attempted again, and without this the second
+    # attempt's summary overwrote the first - so the failure that caused the
+    # re-run left no record, and the extra milestone it cost looked like an
+    # extra sprint. Appended to, never rewritten.
+    sprint_attempts: list[dict[str, Any]]
     milestone_plan: MilestonePlanOutput
     specialist_task_index: int
-    specialist_outputs: Annotated[dict[str, SpecialistOutput], operator.ior]
+    specialist_outputs: Annotated[dict[str, SpecialistOutput], _merge_or_reset]
+    # A parallel worker that paused, keyed by its stage name. Written by the
+    # workers, drained by `specialist_gather`. It exists because `stage` cannot
+    # be written from a fan-out: every worker writes the same superstep and
+    # `stage` has no reducer, so two workers pausing is an `InvalidUpdateError`
+    # rather than a pause.
+    specialist_pauses: Annotated[dict[str, dict[str, Any]], _merge_or_reset]
     remediation: RemediationCycle
     defect_cursor: int
     test_round: int
@@ -516,6 +561,17 @@ def _is_awaiting_approval_for(state: WorkflowGraphState, stage_name: str) -> boo
     return state.get("stage", "") == f"{APPROVAL_PAUSE_PREFIX}{stage_name}"
 
 
+def _specialist_stage_name(task: Any, index: int) -> str:
+    """The stage name one delegated task runs under.
+
+    Shared by linear dispatch, the parallel router and the parallel worker.
+    Three copies of one f-string is how a fan-out comes to record its results
+    under names the dispatcher does not recognise, which would make every task
+    look unfinished forever.
+    """
+    return f"specialist_{getattr(task, 'specialist_role', 'unknown')}_{index}"
+
+
 def _route_from_stage(state: WorkflowGraphState) -> str:
     """Shared conditional-edge router used after every gated node.
 
@@ -530,18 +586,55 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         return END
         
     if stage == "specialist_dispatch_parallel":
-        tasks = state.get("milestone_plan").delegated_tasks
-        # Send to the worker, passing the entire state + task injection
-        return [
-            Send("specialist_worker", {
-                **state, 
-                "__worker_task": task, 
-                "__worker_index": i
-            })
-            for i, task in enumerate(tasks)
+        # `getattr` with a default, like every other reader of this field.
+        # `state.get(...)` returns None when no plan has been stored, and
+        # `None.delegated_tasks` is an AttributeError inside a router - which
+        # takes the run down rather than routing it anywhere.
+        tasks = getattr(state.get("milestone_plan"), "delegated_tasks", None) or []
+        # Only the tasks that have not already produced an output. A run that
+        # paused inside the fan-out resumes at the dispatcher - the paused stage
+        # name maps there, exactly as it does in linear mode - and re-deriving
+        # the whole fan-out would run every task that had already finished a
+        # second time, re-applying its edits. Linear mode is kept honest by
+        # `specialist_task_index`; this is the parallel equivalent, and it reads
+        # the outputs themselves rather than a counter because a fan-out has no
+        # order to count through.
+        done = set(state.get("specialist_outputs") or {})
+        pending = [
+            (index, task)
+            for index, task in enumerate(tasks)
+            if _specialist_stage_name(task, index) not in done
         ]
-        
+        if not pending:
+            # Not straight to the tests: `specialist_gather` is the one writer
+            # that may set `stage` after a fan-out, and it is also what surfaces
+            # a worker that paused. An empty milestone reaches it with nothing
+            # recorded and moves on, which is what an empty fan-out needs.
+            return "specialist_gather"
+        return [
+            Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
+            for index, task in pending
+        ]
+
     return stage
+
+
+#: Stages that exist only inside one invoke of the parallel fan-out, and so
+#: must re-enter the dispatcher rather than themselves when a run resumes.
+#:
+#: `specialist_dispatch_node` returns `{"stage": "specialist_dispatch_parallel"}`
+#: in parallel mode, and `_route_from_stage` turns that into a `Send` to each
+#: worker. Both names are then on the checkpoint. Re-entering `specialist_worker`
+#: directly cannot work: its task arrives in the `Send` payload as
+#: `__worker_task`, which a resumed state does not carry, so it would fail on a
+#: missing key. Re-entering the dispatcher re-derives the fan-out from the plan,
+#: which is exactly what the linear path already does - `specialist_ui_ux_0`
+#: resumes at `specialist_dispatch` too.
+_RESUME_AT_THE_DISPATCHER = frozenset({
+    "specialist_dispatch_parallel",
+    "specialist_worker",
+    "specialist_gather",
+})
 
 
 def _entry_router(state: WorkflowGraphState) -> str:
@@ -563,7 +656,15 @@ def _entry_router(state: WorkflowGraphState) -> str:
     if stage.startswith(APPROVAL_PAUSE_PREFIX):
         inner_stage_name = stage.split(":", 1)[1]
         return _owning_node(inner_stage_name)
-    return stage
+    if stage in _RESUME_AT_THE_DISPATCHER:
+        return "specialist_dispatch"
+    # Through `_owning_node`, not verbatim. The conditional-edge map here is
+    # built from `_NODE_NAMES`, so returning a stage that is not a node hands
+    # LangGraph a target it has no edge for - which is how a parallel-mode
+    # resume died. `_owning_node` passes a node through unchanged, maps an
+    # iterated stage to the node that runs it, and answers `failed` for
+    # anything it does not know, which is a stop rather than a crash.
+    return _owning_node(stage)
 
 
 #: State belonging to a stage's pause, which must not outlive that stage.
@@ -1842,36 +1943,116 @@ def _record_document(state: WorkflowGraphState, relative_path: str, content: str
         logger.warning("Could not write %s", relative_path, exc_info=True)
 
 
-def _record_sprint_summary(state: WorkflowGraphState, status: str, failure_reason: str = None) -> None:
+def _record_sprint_summary(
+    state: WorkflowGraphState, status: str, failure_reason: str | None = None
+) -> dict[str, Any]:
+    """Record one attempt at the current sprint and re-render its document.
+
+    Returns the `sprint_attempts` update, which every caller must merge into
+    what it returns - the attempt list is what makes a re-run appendable rather
+    than overwriting, and an attempt that is not checkpointed is an attempt the
+    next one cannot see.
+
+    Never raises. It runs at the end of a sprint whose outcome has already been
+    decided, and a document that could not be written must not change that
+    outcome.
+    """
     sprint_index = state.get("current_sprint_index", 0)
     plan = state.get("milestone_plan")
     cycle = state.get("remediation")
-    
-    goal = getattr(plan, "selected_sprint_goal", "Unknown Goal")
-    features = "\n".join(f"- {task.task_description}" for task in getattr(plan, "delegated_tasks", [])) if plan else "None"
-    test_rounds = state.get("test_round", 0)
-    bugs = sum(1 for d in cycle.defects) if cycle else 0
-    fixed_bugs = sum(1 for d in cycle.defects if d.status == "fixed") if cycle else 0
-    
-    summary = f"# Sprint {sprint_index + 1} Summary\n\n"
-    summary += f"**Goal:** {goal}\n"
-    summary += f"**Status:** {status}\n"
-    if failure_reason:
-        summary += f"**Failure Reason:** {failure_reason}\n"
-    
-    summary += f"\n## Features Implemented\n{features}\n"
-    summary += f"\n## Test Cycles\n- **Rounds Completed:** {test_rounds}\n"
-    summary += f"- **Total Bugs Found:** {bugs}\n"
-    summary += f"- **Bugs Fixed:** {fixed_bugs}\n"
-    summary += f"- **Bugs Open:** {bugs - fixed_bugs}\n"
-    
-    if cycle and cycle.defects:
-        summary += "\n### Defect Summary\n"
-        for defect in cycle.defects:
-            summary += f"- [{defect.status.upper()}] {defect.description} (Owner: {defect.owner})\n"
-            
-    _record_document(state, f"docs/sprint_{sprint_index + 1}_summary.md", summary)
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    definition = sprints[sprint_index] if sprint_index < len(sprints) else None
 
+    goal = (
+        getattr(plan, "selected_sprint_goal", "")
+        or getattr(definition, "goal", "")
+        or "Unknown goal"
+    )
+    # What the sprint *promised*, from the plan - not what the milestone chose
+    # to delegate. "Features planned for the sprint" is a question about the
+    # plan, and answering it from the delegated tasks answered a different one.
+    planned = [str(item) for item in (getattr(definition, "in_scope", None) or [])]
+    if not planned:
+        planned = [str(item) for item in (getattr(definition, "acceptance_criteria", None) or [])]
+    if not planned and goal:
+        planned = [goal]
+
+    features = [
+        getattr(task, "task_description", str(task))
+        for task in (getattr(plan, "delegated_tasks", None) or [])
+    ]
+    defects = [
+        {
+            "status": getattr(defect, "status", "open"),
+            "description": getattr(defect, "description", ""),
+            "owner": getattr(defect, "owner", "unassigned"),
+        }
+        for defect in (getattr(cycle, "defects", None) or [])
+    ]
+
+    recorded = [dict(entry) for entry in (state.get("sprint_attempts") or [])]
+    already = [entry for entry in recorded if entry.get("sprint_index") == sprint_index]
+    # Counts belong to this attempt alone, so the window opens where the last
+    # recorded attempt closed. Summing every test run in the sprint would count
+    # one suite once per round.
+    since = max((str(entry.get("ended_at")) for entry in recorded if entry.get("ended_at")), default=None)
+
+    cases = None
+    try:
+        from app.tools.sandbox import read_execution_ledger
+
+        cases = count_test_cases(
+            read_execution_ledger(state["repository"].root_path, limit=1000), since=since
+        )
+    except Exception:  # noqa: BLE001 - a summary without counts beats no summary
+        logger.debug("Could not read test counts for the sprint summary", exc_info=True)
+
+    attempt = {
+        "sprint_index": sprint_index,
+        "number": len(already) + 1,
+        "status": status,
+        "reason": failure_reason or "",
+        "cases": cases,
+        "rounds": state.get("test_round", 0),
+        "features": features,
+        "defects": defects,
+        "ended_at": datetime.now(timezone.utc).isoformat(),
+    }
+    attempts = recorded + [attempt]
+
+    try:
+        _record_document(
+            state,
+            f"docs/sprint_{sprint_index + 1}_summary.md",
+            render_sprint_summary(
+                sprint_number=sprint_index + 1,
+                total_sprints=len(sprints),
+                goal=goal,
+                planned=planned,
+                attempts=[
+                    entry for entry in attempts if entry.get("sprint_index") == sprint_index
+                ],
+            ),
+        )
+    except Exception:  # noqa: BLE001 - as above
+        logger.warning("Could not render the sprint summary", exc_info=True)
+    return {"sprint_attempts": attempts}
+
+
+def _sprint_already_summarised(state: WorkflowGraphState) -> bool:
+    """Whether the current sprint already has a completed attempt recorded.
+
+    `complete_node` records the final sprint, because the run reaches it instead
+    of `sprint_advance_node` and the last sprint therefore had no summary at
+    all - a three-sprint plan produced two documents. With a sprint review
+    switched on the run can pass through both, so the guard is here rather than
+    a second copy of the reasoning in each node.
+    """
+    sprint_index = state.get("current_sprint_index", 0)
+    return any(
+        entry.get("sprint_index") == sprint_index and entry.get("status") == "Completed"
+        for entry in (state.get("sprint_attempts") or [])
+    )
 
 
 def _record_review_document(
@@ -2825,10 +3006,13 @@ def build_workflow_graph(
         """Worker node for executing a single specialist task in parallel mode."""
         task = state["__worker_task"]
         index = state["__worker_index"]
-        stage_name = f"specialist_{task.specialist_role}_{index}"
-        
-        # Build a temporary WorkflowGraphState to pass to the agent
-        temp_state = cast(WorkflowGraphState, dict(state))
+        stage_name = _specialist_stage_name(task, index)
+
+        # `dict(state)`, with no `cast`: `cast` was never imported, so the first
+        # parallel worker to run raised `NameError` before it reached its agent.
+        # The annotation it was borrowing is not needed - this dictionary is
+        # handed to helpers that read it with `.get`.
+        temp_state: Any = dict(state)
         
         agent = create_specialist_agent(
             task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
@@ -2857,12 +3041,42 @@ def build_workflow_graph(
         )
         
         if "__specialist_result__" not in update:
-            # Paused. Wait, in map-reduce if a node pauses, it yields the pause object.
-            # But _run_gated_agent returns dict state updates. We must pass it back.
-            return update
-            
-        # Returning a dictionary with specialist_outputs will merge into the annotated dict!
+            # Paused, waiting on a human for one of this task's writes. The pause
+            # is recorded rather than returned: a pause update carries `stage`,
+            # and `stage` has no reducer, so two workers pausing in one superstep
+            # is `InvalidUpdateError: Can receive only one value per step` - the
+            # fan-out dying instead of pausing. `specialist_gather` reads these
+            # and surfaces them one at a time.
+            return {"specialist_pauses": {stage_name: dict(update)}}
+
+        # One key of a merged dictionary, so every worker's result survives the
+        # superstep. Returning `stage` here instead is what made the fan-out
+        # loop: the dispatcher left `stage` as `specialist_dispatch_parallel`,
+        # the worker did not change it, and the router fanned the same tasks out
+        # again on every pass until the recursion limit ended the run.
         return {"specialist_outputs": {stage_name: update["__specialist_result__"]}}
+
+    def specialist_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+        """Where the parallel fan-out joins, and the only writer of `stage` in it.
+
+        Every worker converges here by a static edge, so this runs once after
+        the whole fan-out regardless of how many tasks there were - which is
+        what makes it safe to set `stage` at all.
+
+        A worker that paused left its pause here instead of on `stage`. They are
+        surfaced one at a time, oldest task first: the run pauses, a human
+        answers, the dispatcher re-derives the fan-out, and the tasks that
+        already have outputs are not re-sent. Several pauses therefore drain one
+        after another rather than racing each other for one `stage` value.
+        """
+        pauses = state.get("specialist_pauses") or {}
+        if pauses:
+            first = sorted(pauses)[0]
+            # The pause update verbatim - not through `_handing_on`, which
+            # clears exactly the pause fields this has to carry - with the queue
+            # emptied so the resumed run is not seen as still paused.
+            return {**pauses[first], "specialist_pauses": {}}
+        return _handing_on(stage="test_and_triage", specialist_pauses={})
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "milestone_plan")
@@ -2955,16 +3169,8 @@ def build_workflow_graph(
         }
 
         if cycle.escalated:
-            _record_sprint_summary(state, "Failed", "Exhausted remediation attempts")
-            return _handing_on(
-                **base_update,
-                stage="technical_lead",
-                milestone_plan=None,
-                specialist_outputs={},
-                remediation=None,
-                test_round=0,
-                defect_cursor=0,
-                milestone_revision_count=state.get("milestone_revision_count", 0) + 1,
+            return _replan_or_escalate(
+                state, base_update, cycle, "exhausted remediation attempts"
             )
 
         if any(defect.status == "open" for defect in cycle.defects):
@@ -2974,19 +3180,78 @@ def build_workflow_graph(
         # authority on whether this sprint may be accepted - it also refuses a
         # fix with missing regression coverage or an undocumented accepted risk.
         if not is_sprint_acceptable(cycle):
-            _record_sprint_summary(state, "Failed", "Missing regression coverage or unaccepted risk")
-            return _handing_on(
-                **base_update,
-                stage="technical_lead",
-                milestone_plan=None,
-                specialist_outputs={},
-                remediation=None,
-                test_round=0,
-                defect_cursor=0,
-                milestone_revision_count=state.get("milestone_revision_count", 0) + 1,
+            return _replan_or_escalate(
+                state, base_update, cycle,
+                "missing regression coverage or an unaccepted risk",
             )
 
         return _handing_on(**base_update, stage="security_review")
+
+    def _replan_or_escalate(
+        state: WorkflowGraphState,
+        base_update: dict[str, Any],
+        cycle: Any,
+        why: str,
+    ) -> dict[str, Any]:
+        """Hand a failed sprint back to be planned again, but only so often.
+
+        `baf753d` changed both of these paths from `stage="failed"` to
+        `stage="technical_lead"`, so a sprint that exhausts its remediation
+        attempts is planned again instead of ending the run. That is a better
+        default and it is kept.
+
+        What it did not add is a bound. `milestone_revision_count` was
+        incremented on the way out, and the only place that compares it to
+        `MAX_MILESTONE_REVISIONS` is `milestone_review_node` - which this path
+        never reaches: `technical_lead` leads to `specialist_dispatch` and back
+        to `test_and_triage`, and an unfixable defect exhausts a fresh cycle
+        every time. `test_a_defect_that_never_gets_fixed_escalates_instead_of_looping`
+        is the test that says so, and it is right.
+
+        So the re-plan is bounded by the same limit as every other revision, and
+        past it the run escalates to a human carrying the defect report - which
+        is what it did before the feature, at the first failure instead of the
+        last.
+        """
+        revision_count = state.get("milestone_revision_count", 0) + 1
+        if revision_count > MAX_MILESTONE_REVISIONS:
+            summary = _record_sprint_summary(
+                state, "Failed", f"{why}; revision limit reached"
+            )
+            # Failed, not parked at the sprint review. `_escalate_to_a_human`
+            # sends a run to `user_review_sprint` when that review is switched
+            # on, and that gate asks one question - accept this sprint? - whose
+            # approve path is `sprint_advance`. Offering it a sprint whose tests
+            # never passed invites a human to accept, in one click, work that
+            # was never shown to work; it also drops `error` on that branch, so
+            # the reviewer is asked without being told what is unresolved.
+            # `test_a_blocked_sprint_never_reaches_its_optional_review` is the
+            # test that says so. The cycle stays on the state either way: it is
+            # the evidence for whoever reads the failure. Only the re-plan below
+            # clears it, because the next attempt needs a fresh one.
+            return _handing_on(
+                **{**base_update, **summary},
+                stage="failed",
+                error=(
+                    f"Sprint '{getattr(cycle, 'sprint_goal', '?')}' was re-planned "
+                    f"{MAX_MILESTONE_REVISIONS} times and still could not be "
+                    f"accepted: {why}.\n\n{build_defect_report(cycle)}"
+                ),
+            )
+        summary = _record_sprint_summary(state, "Failed", why)
+        # Merged, not passed twice. `base_update` already carries
+        # `remediation` and `test_round`, and naming them again beside
+        # `**base_update` is a TypeError - "got multiple values for keyword
+        # argument 'remediation'" - raised inside the node, which took the run
+        # down on the one path that exists to rescue it.
+        return _handing_on(
+            **{**base_update, **summary, "remediation": None, "test_round": 0},
+            stage="technical_lead",
+            milestone_plan=None,
+            specialist_outputs={},
+            defect_cursor=0,
+            milestone_revision_count=revision_count,
+        )
 
     def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Route one open defect to the specialist who owns it, then re-test.
@@ -3185,8 +3450,9 @@ def build_workflow_graph(
         _record_review_document(state, review, milestone.selected_sprint_goal)
         
         if review.status == "blocked":
-            _record_sprint_summary(state, "Failed", "Blocked by review")
+            summary = _record_sprint_summary(state, "Failed", "Blocked by review")
             return _handing_on(
+                **summary,
                 stage="technical_lead",
                 milestone_review=review,
                 milestone_plan=None,
@@ -3351,8 +3617,9 @@ def build_workflow_graph(
         )
 
     def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        _record_sprint_summary(state, "Completed")
+        summary = _record_sprint_summary(state, "Completed")
         return {
+            **summary,
             "stage": "technical_lead",
             "current_sprint_index": state.get("current_sprint_index", 0) + 1,
             # clear previous sprint's milestone state so it doesn't pollute the next sprint
@@ -3366,7 +3633,16 @@ def build_workflow_graph(
         }
 
     def complete_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
-        return {"stage": "complete"}
+        """The run is done - and the sprint that finished it needs its summary.
+
+        Only `sprint_advance_node` recorded one, and the last sprint never
+        advances: it routes straight here. So a three-sprint plan wrote
+        `sprint_1` and `sprint_2` and stopped, and the sprint that actually
+        delivered the product was the one with nothing to show for it.
+        """
+        if _sprint_already_summarised(state):
+            return {"stage": "complete"}
+        return {**_record_sprint_summary(state, "Completed"), "stage": "complete"}
 
     def failed_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
         return {"stage": "failed"}
@@ -3392,6 +3668,11 @@ def build_workflow_graph(
     graph.add_node("technical_lead", technical_lead_node, retry_policy=agent_retry_policy)
     graph.add_node("specialist_dispatch", specialist_dispatch_node, retry_policy=agent_retry_policy)
     graph.add_node("specialist_worker", specialist_worker_node, retry_policy=agent_retry_policy)
+    graph.add_node("specialist_gather", specialist_gather_node)
+    # A static edge, not the shared router: every `Send` branch converges
+    # here and LangGraph runs the target once for the whole superstep,
+    # which is what gives the fan-out a single writer for `stage`.
+    graph.add_edge("specialist_worker", "specialist_gather")
     graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
@@ -3416,7 +3697,7 @@ def build_workflow_graph(
         "scrum_master",
         "technical_lead",
         "specialist_dispatch",
-        "specialist_worker",
+        "specialist_gather",
         "test_and_triage",
         "defect_remediation",
         "security_review",

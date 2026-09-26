@@ -11,6 +11,7 @@ from __future__ import annotations
 from app.agents.severity import validator_for as severity_in
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -545,11 +546,88 @@ def create_milestone_reviewer_agent(
     )
 
 
+#: How many proven problems become findings at once. A lead handed more than
+#: this cannot act on them in one revision, and the rest return on the next
+#: review because the checks that found them are still there.
+MAX_PROVEN_FINDINGS = 6
+
+
+def findings_for_what_the_checks_proved(
+    repository_root: str | Path, stack: Any = None, brief: str = ""
+) -> list[MilestoneReviewFinding]:
+    """Findings the harness raises itself, for defects it can demonstrate.
+
+    A review that asks for changes and records `findings: []` leaves the
+    workflow nothing to route on and the lead nothing to assign. The existing
+    answer is to re-review on a fresh conversation, and when that still returns
+    nothing, to hand the lead the reviewer's prose instead. Prose is not a task.
+
+    Measured on run-5696a52d: `index.html` linked a `style.css` that was not in
+    the workspace, `_broken_local_references` proved it, `summarise_integration`
+    put it in front of the reviewer under the heading that calls it a blocking
+    finding, and the reviewer wrote it out in prose with an empty `findings`
+    list. Three revisions later the run failed and the stylesheet was still
+    missing. Two other proven defects went the same way in the same review.
+
+    So the harness stops asking. These problems are decided by reading the
+    files - a reference either resolves or it does not - and nothing about that
+    needs a model's agreement to be true. `blocking` because
+    `summarise_integration` already tells the reviewer this tier "means a
+    feature DOES NOT WORK"; `correctness` because that is what a feature which
+    does not work is.
+
+    Only ever consulted where the reviewer has already said changes are needed,
+    so this can neither fail a sprint the reviewer accepted nor invent a reason
+    to revise one.
+    """
+    from app.analysis.integration_checks import problems_that_break_the_product
+
+    findings: list[MilestoneReviewFinding] = []
+    for problem in problems_that_break_the_product(repository_root, stack, brief)[
+        :MAX_PROVEN_FINDINGS
+    ]:
+        findings.append(
+            MilestoneReviewFinding(
+                severity="blocking",
+                category="correctness",
+                description=problem,
+                # Named from the problem text so the lead can delegate it
+                # without guessing. `affected_files` is what the task list
+                # reads to scope a specialist's work.
+                affected_files=_files_named_in(problem),
+                required_remediation=(
+                    "Fix this in the files named. It was found by reading the "
+                    "workspace, not by judgement, so it is still true until "
+                    "the files change - re-stating it as acceptable will not "
+                    "clear it."
+                ),
+            )
+        )
+    return findings
+
+
+#: A workspace-relative path in a problem sentence: `docs/x.md`, `app.js`,
+#: `src/main.jsx`. Bare words and sentence punctuation are not paths, so a
+#: dot and an extension of one to six letters are both required.
+_A_PATH_IN_A_SENTENCE = re.compile(r"(?<![\w/.-])([\w./-]+\.[A-Za-z]{1,6})\b")
+
+
+def _files_named_in(problem: str) -> list[str]:
+    """The files a problem sentence names, in the order it names them."""
+    seen: list[str] = []
+    for candidate in _A_PATH_IN_A_SENTENCE.findall(problem):
+        if candidate not in seen:
+            seen.append(candidate)
+    return seen
+
+
 __all__ = [
+    "MAX_PROVEN_FINDINGS",
     "MilestoneReviewFinding",
     "MilestoneReviewOutput",
     "build_milestone_review_request",
     "create_milestone_reviewer_agent",
+    "findings_for_what_the_checks_proved",
     "what_the_specialists_reported",
     "what_you_said_last_time",
 ]

@@ -4846,4 +4846,40 @@ def summarise_integration(
     )
 
 
-__all__ = ["summarise_integration"]
+def problems_that_break_the_product(
+    repository_root: str | Path, stack: Any = None, brief: str = ""
+) -> list[str]:
+    """The `BREAKS` tier of `summarise_integration`, as separate problems.
+
+    `summarise_integration` grades every problem and tells the reviewer, in its
+    own words, that each one in this tier "means a feature DOES NOT WORK" and
+    "is a blocking finding unless you can show it is not". Then it renders them
+    into a paragraph and relies on the reviewer to turn them back into findings.
+    Nothing checked that it did.
+
+    Measured on run-5696a52d. The checks proved three of these, this text
+    reached the reviewer, and the reviewer restated one of them in prose while
+    recording `findings: []`. An empty `findings` list is what the workflow
+    routes on, so none of the three became a task, and the run spent its three
+    revisions and failed with the missing stylesheet still missing.
+
+    Returned as a list rather than prose because the caller needs them one at a
+    time: a finding is per defect, and a paragraph cannot be turned back into
+    one. Never raises - a caller reaching for this is already on an error path.
+    """
+    try:
+        root = Path(repository_root).resolve()
+        if not root.is_dir():
+            return []
+        files = _source_files(root)
+        if not files:
+            return []
+        problems: list[str] = []
+        for _describe, check in _CHECKS:
+            problems.extend(check(files, root, stack, brief))
+    except Exception:  # noqa: BLE001 - proof that cannot be gathered is not proof
+        return []
+    return [problem for problem in problems if _severity_of(problem) == "BREAKS"]
+
+
+__all__ = ["problems_that_break_the_product", "summarise_integration"]

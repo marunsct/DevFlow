@@ -73,6 +73,7 @@ from app.agents.milestone_reviewer import (
     MilestoneReviewOutput,
     build_milestone_review_request,
     create_milestone_reviewer_agent,
+    findings_for_what_the_checks_proved,
 )
 from app.agents.security_reviewer import (
     SecurityReviewOutput,
@@ -3529,9 +3530,41 @@ def build_workflow_graph(
                     )
                 logger.warning(
                     "Milestone review still has no structured findings after %d "
-                    "attempts; falling back to the recorded evidence",
+                    "attempts; raising the ones the checks can prove",
                     attempted,
                 )
+                # Two fresh conversations have now declined to structure this
+                # review, so stop asking a model for something the workspace
+                # already answers. The cross-file checks decide these by reading
+                # the files, and `summarise_integration` has already told this
+                # reviewer that each one "means a feature DOES NOT WORK".
+                #
+                # Measured on run-5696a52d: three proven defects, including an
+                # `index.html` linking a `style.css` that was not there, went in
+                # as evidence and came back as prose with `findings: []`. Prose
+                # is not a task, so the lead was handed a paragraph three times
+                # and the run failed with all three defects still in place.
+                proven = findings_for_what_the_checks_proved(
+                    state["repository"].root_path,
+                    getattr(state.get("stack_selection"), "technology_stack", None),
+                    getattr(state.get("document"), "text", "") or "",
+                )
+                if proven:
+                    logger.info(
+                        "Raising %d milestone finding(s) the cross-file checks "
+                        "proved: %s",
+                        len(proven),
+                        "; ".join(finding.description[:80] for finding in proven),
+                    )
+                    review = review.model_copy(update={"findings": proven})
+                    # Re-rendered so the revision request the lead receives names
+                    # the findings rather than the prose they replaced.
+                    findings_text = _milestone_changes_requested(review) or findings_text
+                else:
+                    logger.warning(
+                        "Nothing the checks can prove either; falling back to the "
+                        "recorded evidence"
+                    )
             revision_count = state.get("milestone_revision_count", 0) + 1
             if revision_count >= MAX_MILESTONE_REVISIONS:
                 # This sprint ends here, so it gets a summary like every other

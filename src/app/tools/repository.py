@@ -188,6 +188,30 @@ HARNESS_FILES = frozenset({
     ".project-directory", ".project-stack", ".project-memory.json",
 })
 
+#: Directories, relative to the workspace root, holding the harness's own
+#: records rather than the product's files.
+#:
+#: `docs/stage_summaries/` gets one file per gated stage, so a run accumulates
+#: dozens: every specialist task, every test round, every defect fix. They exist
+#: for the dashboard, and they were landing in the digest that is prepended to
+#: every model call - sorted first, because `docs/` sorts before the project
+#: directory, against a cap of `workspace_digest.MAX_FILES` files. A run far
+#: enough along filled the digest with its own bookkeeping and pushed out the
+#: product files the digest exists to show.
+#:
+#: Same reasoning as `HARNESS_FILES`, one level up. Written, served to the UI,
+#: and invisible to the agents.
+HARNESS_DIRECTORIES = frozenset({"docs/stage_summaries"})
+
+
+def _is_harness_directory(repo_root: Path, directory: Path) -> bool:
+    """Whether this directory holds the harness's records rather than the product's."""
+    try:
+        relative = directory.relative_to(repo_root).as_posix()
+    except ValueError:
+        return False
+    return relative in HARNESS_DIRECTORIES
+
 
 def is_harness_bookkeeping(path: Path) -> bool:
     """Whether this file is the harness's own, not the product's."""
@@ -220,13 +244,14 @@ def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list
         # set `sandbox._written_since` already excludes.
         from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
 
+        current = Path(dirpath)
         dirnames[:] = sorted(
             d for d in dirnames
             if d not in IGNORED_DIRECTORIES
             and d not in _RUNNER_OUTPUT_DIRECTORIES
             and not d.startswith(".cache")
+            and not _is_harness_directory(repo_root, current / d)
         )
-        current = Path(dirpath)
         for filename in sorted(filenames):
             candidate = current / filename
             if is_secret_path(candidate) or is_harness_bookkeeping(candidate):

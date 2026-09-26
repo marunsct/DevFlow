@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.tools.repository import HARNESS_FILES
+from app.tools.repository import HARNESS_DIRECTORIES, HARNESS_FILES
 from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
 from app.tools.version_control import _IGNORED
 
@@ -46,6 +46,46 @@ def test_every_runner_output_directory_is_ignored_too(directory: str):
     """
     assert f"{directory}/" in _IGNORED, (
         f"{directory} is pruned from every listing and still committed"
+    )
+
+
+@pytest.mark.parametrize("directory", sorted(HARNESS_DIRECTORIES))
+def test_every_harness_directory_is_ignored_too(directory: str):
+    """`docs/stage_summaries/` is written for the dashboard, not for delivery.
+
+    One file per gated stage, so a run leaves dozens - every specialist task,
+    test round and defect fix. They were reaching the agents twice over: the
+    digest prepended to every model call listed them, sorted ahead of the
+    project because `docs/` sorts first, against a forty-file cap; and git
+    committed them into the sprint history a reviewer reads as the work.
+    """
+    assert f"{directory}/" in _IGNORED, (
+        f"{directory} holds the harness's own records and is still committed"
+    )
+
+
+def test_a_harness_directory_is_pruned_from_every_listing(tmp_path):
+    """Hidden from the agents, not only from git.
+
+    The digest is the expensive one: it is rebuilt and prepended on every model
+    call, so bookkeeping there is paid for once per call for the rest of the run.
+    """
+    from app.agents.workspace_digest import render_workspace_digest
+    from app.tools.repository import list_repository_files
+
+    (tmp_path / "docs" / "stage_summaries").mkdir(parents=True)
+    (tmp_path / "docs" / "stage_summaries" / "product_manager.md").write_text("# s\n")
+    (tmp_path / "docs" / "technical_specification.md").write_text("# spec\n")
+    (tmp_path / "app.js").write_text("console.log(1)\n")
+
+    listed = list_repository_files(str(tmp_path))
+    digest = render_workspace_digest(str(tmp_path))
+
+    assert not [name for name in listed if "stage_summaries" in name]
+    assert "stage_summaries" not in digest
+    assert any("app.js" in name for name in listed), "the product is still listed"
+    assert any("technical_specification" in name for name in listed), (
+        "the workflow's own documents are not bookkeeping - agents read them"
     )
 
 

@@ -47,6 +47,7 @@ build/
 .project-directory
 .project-stack
 .project-memory.json
+docs/stage_summaries/
 test-results/
 playwright-report/
 blob-report/

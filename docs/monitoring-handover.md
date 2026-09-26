@@ -289,6 +289,23 @@ That filter is deliberate. It covers the *failure* signatures as well as the
 happy path, because a filter that greps only for success stays silent through
 a crash and silence looks identical to "still running".
 
+### 4.1.1 After a run dies, ask what the worker recorded
+
+A task that fails permanently is written to a Redis dead-letter list, and for
+most of this harness's life nothing read it. Nine entries had accumulated over
+thirteen days before anything reported them, including two runs killed by a
+`SyntaxError` in `sandbox.py` and two by SIGKILL:
+
+```sh
+docker exec langchain-worker-1 python3 -m app.server.manage failed-tasks
+```
+
+It reports and changes nothing. `--clear` forgets them, and is worth passing
+once a batch has been dealt with, so the next report is only new failures.
+
+This is the first place to look when a run's own `error` field says nothing
+useful, because a task killed by the pool never got to write one.
+
 ### 4.2 Telling slow from stuck
 
 This is the single most useful diagnostic skill here, because on a 35-billion

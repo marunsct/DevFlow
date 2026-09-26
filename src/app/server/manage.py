@@ -20,6 +20,8 @@ import logging
 import os
 
 import argparse
+import json
+from collections import Counter
 from typing import Any, Callable
 import secrets
 import sys
@@ -890,6 +892,108 @@ def list_users() -> int:
     return 0
 
 
+#: The Redis list `tasks.handle_task_failure` writes to. Named here so this
+#: reader and that writer cannot drift apart.
+DEAD_LETTER_KEY = "celery_dlq"
+
+#: How many entries one report prints in full. The list is trimmed to 1,000 by
+#: the writer, and a report nobody finishes reading is the problem this fixes.
+MAX_FAILURES_LISTED = 20
+
+
+def failed_tasks(clear: bool = False, limit: int = MAX_FAILURES_LISTED) -> int:
+    """Report the tasks that died permanently, and optionally forget them.
+
+    `handle_task_failure` has written every permanently failed task to a Redis
+    list since it was added. Nothing in the product reads that list. Two writes,
+    no readers, so a worker crash was recorded and then not reported to anybody -
+    which is the shape of failure this harness keeps finding in its own gates.
+
+    Nine entries were sitting in it when this was written, and each one is
+    something an operator would have wanted to know the same day:
+
+        x2  'WorkflowRunner' object has no attribute '_run_loop'
+        x2  unexpected character after line continuation character (sandbox...)
+        x2  Worker exited prematurely: signal 9 (SIGKILL)
+        x1  SoftTimeLimitExceeded()
+        x1  connection already closed
+        x1  -241
+
+    The two `SyntaxError`s are the harness's own module, so two runs died
+    because `sandbox.py` was briefly unparseable. The two SIGKILLs are the
+    worker being killed, which `_worker_ran_out_of_memory` exists to explain.
+    None of it reached a log anybody reads.
+
+    Grouped by exception first, because the count is the thing that says whether
+    a crash is a one-off or a pattern, and then listed newest first with the run
+    each belonged to, because that is what makes one investigable.
+
+    `--clear` empties the list, which is how a report stops repeating what has
+    already been dealt with. Reporting is the default, as with every other
+    command here.
+    """
+    from app.server.redis_client import get_redis_client
+
+    try:
+        client = get_redis_client()
+        raw = client.lrange(DEAD_LETTER_KEY, 0, -1)
+    except Exception as error:  # noqa: BLE001 - an unreachable Redis is the answer
+        print(f"Could not read the dead-letter list: {error}")
+        return 1
+
+    entries = []
+    unreadable = 0
+    for item in raw or []:
+        if isinstance(item, bytes):
+            item = item.decode("utf-8", "replace")
+        try:
+            parsed = json.loads(item)
+        except Exception:  # noqa: BLE001 - a malformed entry is still a failure
+            unreadable += 1
+            continue
+        if isinstance(parsed, dict):
+            entries.append(parsed)
+        else:
+            unreadable += 1
+
+    if not entries and not unreadable:
+        print("No permanently failed tasks recorded.")
+        return 0
+
+    counts: Counter[str] = Counter(
+        str(entry.get("exception") or "(no exception recorded)") for entry in entries
+    )
+    print(f"{len(entries)} permanently failed task(s) recorded"
+          + (f", and {unreadable} entr(y/ies) that could not be parsed" if unreadable else "")
+          + ".\n")
+    print("By exception:")
+    for exception, count in counts.most_common():
+        print(f"  x{count:<4} {exception[:96]}")
+
+    # Newest first: the writer uses LPUSH, so the list is already in that order.
+    print(f"\n{'FAILED AT':<21} {'RUN':<20} {'RESUME':<7} EXCEPTION")
+    for entry in entries[:limit]:
+        kwargs = entry.get("kwargs") if isinstance(entry.get("kwargs"), dict) else {}
+        run_id = str((kwargs or {}).get("run_id") or "-")
+        resume = str((kwargs or {}).get("resume"))
+        when = str(entry.get("failed_at") or "")[:19]
+        print(f"{when:<21} {run_id[:20]:<20} {resume:<7} "
+              f"{str(entry.get('exception'))[:60]}")
+    if len(entries) > limit:
+        print(f"... and {len(entries) - limit} more; pass --limit to see them.")
+
+    if clear:
+        try:
+            client.delete(DEAD_LETTER_KEY)
+        except Exception as error:  # noqa: BLE001
+            print(f"\nCould not clear the list: {error}")
+            return 1
+        print(f"\nCleared {len(raw or [])} entr(y/ies).")
+    else:
+        print("\nNothing was changed. Pass --clear once these have been dealt with.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.server.manage", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -958,6 +1062,22 @@ def main(argv: list[str] | None = None) -> int:
         help="Actually remove them; without this the command only reports",
     )
 
+    dead = sub.add_parser(
+        "failed-tasks",
+        help="Report the tasks that died permanently, from the dead-letter list",
+    )
+    dead.add_argument(
+        "--clear",
+        action="store_true",
+        help="Forget them once dealt with; without this the command only reports",
+    )
+    dead.add_argument(
+        "--limit",
+        type=int,
+        default=MAX_FAILURES_LISTED,
+        help=f"How many to list individually (default {MAX_FAILURES_LISTED})",
+    )
+
     disable = sub.add_parser("disable-user", help="Disable an account")
     disable.add_argument("username")
 
@@ -973,6 +1093,8 @@ def main(argv: list[str] | None = None) -> int:
         return create_user(args.username, args.password, args.role, args.tenant)
     if args.command == "set-role":
         return set_role(args.username, args.role)
+    if args.command == "failed-tasks":
+        return failed_tasks(clear=args.clear, limit=args.limit)
     if args.command == "list-users":
         return list_users()
     if args.command == "recover-orphans":

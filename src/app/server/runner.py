@@ -1139,7 +1139,16 @@ class WorkflowRunner:
 
             if stage in ("complete", "failed"):
                 record.status = "completed" if stage == "complete" else "failed"
-                record.error = state.get("error")
+                # A failed run must never be recorded with nothing to say. The
+                # graph's `failed_node` names the route it came from, and this is
+                # the second line of defence for any path that reaches here
+                # without one - run-0ea9181d was stored with a null error, and
+                # nothing in the row, the events or the log said why.
+                record.error = state.get("error") or (
+                    None if stage == "complete" else
+                    "The run failed and no reason reached the run record. Its last "
+                    "stage and its transcript are what remain to go on."
+                )
                 record.updated_at = datetime.now(timezone.utc).isoformat()
                 self._persist(record)
                 await asyncio.to_thread(self._archive_artifacts, record)

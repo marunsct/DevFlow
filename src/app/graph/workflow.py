@@ -3661,7 +3661,48 @@ def build_workflow_graph(
         return {**_record_sprint_summary(state, "Completed"), "stage": "complete"}
 
     def failed_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
-        return {"stage": "failed"}
+        """Terminal failure - always with a reason, even when nothing set one.
+
+        Every deliberate route to this node carries an `error`. One route does
+        not, and cannot: `_owning_node` answers `"failed"` for a stage no node
+        owns, which is what stops an unrecognised stage raising `KeyError` inside
+        LangGraph and taking the run down. It is a router. It has no state to
+        write a reason to.
+
+        So the run arrived here with `error` unset, and the runner records
+        `record.error = state.get("error")` - leaving a row that says `failed`
+        and nothing else. run-0ea9181d is one of those: 73 minutes of work,
+        approvals answered every 30 seconds, then `failed` at 11:53 with a null
+        error, no event and no way to tell what had happened. Diagnosing it
+        started by ruling out the three causes it was not.
+
+        `stage` still holds whatever routed here - nothing has overwritten it yet
+        - so the reason can name it.
+        """
+        if str(state.get("error") or "").strip():
+            return {"stage": "failed"}
+
+        routed_from = str(state.get("stage") or "").strip()
+        if routed_from and routed_from != "failed":
+            reason = (
+                f"The run was routed to failure from stage '{routed_from}', which no "
+                "node owns, so nothing recorded why.\n\n"
+                "A stage value is set either by a node handing on or by a resume "
+                "reading the checkpoint. One that no node answers for means a stage "
+                "name was written that the graph has no node for - check "
+                "`_NODE_NAMES`, `_ITERATED_STAGE_OWNERS` and whatever last set "
+                "`stage`. The work already done is on disk and the checkpoint is "
+                "intact."
+            )
+        else:
+            reason = (
+                "The run reached its failure state without recording a reason. "
+                "Every deliberate failure names one, so this is a route that does "
+                "not - the stage it came from is in the run's events and its "
+                "transcript."
+            )
+        logger.error("Run failed with no reason recorded; routed from %r", routed_from)
+        return {"stage": "failed", "error": reason}
 
     graph = StateGraph(WorkflowGraphState)
     from langgraph.types import RetryPolicy

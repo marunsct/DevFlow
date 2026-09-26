@@ -329,6 +329,22 @@ READ_REFUSED_MARKER = "Refusing to read"
 ANCHOR_LINES = 3
 
 
+def _times(count: int) -> str:
+    """"21st", not "21th".
+
+    Both notices that count a repeat built the ordinal by appending "th", so a
+    stage on its 21st, 22nd or 23rd read was told "21th", "22th", "23th" - as
+    were the first three of anything. Seen through run-2ac28a2f, whose
+    `specialist_ui_ux_0` reached "22th". These strings are read by a language
+    model, and a sentence that cannot count is a poor argument that it has read
+    something enough times.
+    """
+    if count % 100 in (11, 12, 13):
+        return f"{count}th"
+    suffix = {1: "st", 2: "nd", 3: "rd"}.get(count % 10, "th")
+    return f"{count}{suffix}"
+
+
 def _an_anchor_to_what_was_withheld(text: str) -> str:
     """The shape of the file whose content was not repeated.
 
@@ -481,7 +497,7 @@ class _NoticingRepeats:
             return (
                 f"[Lines {first}-{last} are ones this stage has already been "
                 f"given, and the file has not changed since. This is the "
-                f"{nothing_new}th read of it that returned nothing new, so the "
+                f"{_times(nothing_new)} read of it that returned nothing new, so the "
                 "content is not repeated here - scroll back to any earlier "
                 "result. A narrower or wider window of the same lines is still "
                 "the same lines; if there is a part you have not seen, ask for "
@@ -720,7 +736,7 @@ class _NoticingRepeats:
         return (
             f"{READ_REFUSED_MARKER} '{file_path}' again: this returns nothing you "
             f"have not already been given, and it is the "
-            f"{self._repeated_reads_so_far()}th time this stage has asked for "
+            f"{_times(self._repeated_reads_so_far())} time this stage has asked for "
             f"content "
             "it already has. The file has not changed since you last saw it, "
             "so nothing here can tell you anything new.\n"

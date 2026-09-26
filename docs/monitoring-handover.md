@@ -97,6 +97,47 @@ Four ordering rules, each of which has cost a stage or an hour when broken:
    deliberately a pure function of the environment handed to it, so a bare
    call anywhere in the product is this bug.
 
+6. **A dashboard that is down looks exactly like a harness with nothing to
+   report.** `/metrics` returned HTTP 500 for an unknown length of time, and
+   every `STAGE_DURATION` recording in the worker failed with it - 17 per run,
+   one per stage. The cause was a single file:
+
+   ```
+   RuntimeError: Read beyond file size detected, file is corrupted.
+   ```
+
+   `prometheus_client` names each process's mmap file after `os.getpid()`,
+   `PROMETHEUS_MULTIPROC_DIR` is inside the persistent volume, and a
+   container's PIDs start from 1 again on every restart - so a fresh process
+   opened `histogram_9.db` written by a different PID 9 days earlier. One of
+   49 files, and it took out every metric in both containers.
+
+   The fix names files per process generation, and removes unreadable ones at
+   startup. Nothing stops it happening again through some other route, so
+   check the endpoint itself rather than trusting that a quiet dashboard is a
+   quiet harness:
+
+   ```sh
+   curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8000/metrics
+   curl -s http://localhost:8000/metrics | grep -c stage_duration_seconds
+   ```
+
+   A 500, or a zero count while a run is executing, means the multiprocess
+   directory - not the harness. List it and read each file:
+
+   ```sh
+   docker exec langchain-worker-1 python3 -c "
+   from pathlib import Path
+   from prometheus_client.mmap_dict import MmapedDict
+   for f in sorted(Path('/app/data/prometheus').glob('*.db')):
+       try: list(MmapedDict.read_all_values_from_file(str(f)))
+       except Exception as e: print('unreadable:', f.name, e)"
+   ```
+
+   `read_all_values_from_file` returns a generator, so it must be consumed.
+   Calling it without `list(...)` reads nothing and every corrupt file looks
+   fine - which is a mistake made once already, inside the fix for this.
+
 ---
 
 ## 2. Running the suite

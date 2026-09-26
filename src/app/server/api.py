@@ -266,6 +266,11 @@ def _mount_metrics(application: FastAPI) -> None:
     unauthenticated, which is the normal posture for a metrics port that is not
     routed publicly.
     """
+    # Before the instrumentator, which creates its own metrics: importing this
+    # is what names this process's mmap files uniquely, and a metric created
+    # ahead of it keeps the `os.getpid()` name that collides across container
+    # restarts. See `app.observability.metrics`.
+    import app.observability.metrics  # noqa: F401 - imported for its side effect
     from prometheus_fastapi_instrumentator import Instrumentator
 
     scrape_token = os.environ.get("METRICS_SCRAPE_TOKEN", "").strip()

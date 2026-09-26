@@ -166,7 +166,7 @@ def parse_error(path: Path, content: str) -> str | None:
         f"Node cannot parse this file{where}: {detail}. "
         "This is `node --check`, the same parser that loads the file, so the "
         "error is certain - it is not a guess about style."
-        + _the_other_half(detail, content)
+        + _the_other_half(detail, content, path)
         + _around_the_failure(line.group(1) if line else None, content)
     )
 
@@ -222,12 +222,11 @@ def _declarations_of(name: str, content: str) -> list[int]:
     return [content.count("\n", 0, m.start()) + 1 for m in pattern.finditer(content)]
 
 
-def _the_other_half(detail: str, content: str) -> str:
+def _the_other_half(detail: str, content: str, path: Path | None = None) -> str:
     """The fact the parser's own message is missing, or "".
 
-    Node names one end of the problem. For the two errors this harness
-    actually produces, the other end is what the agent needs and is cheap to
-    find.
+    Node names one end of the problem. For the errors this harness actually
+    produces, the other end is what the agent needs and is cheap to find.
 
     Measured on run-04576307's `specialist_backend_2`: five consecutive edits
     refused, three of them `Unexpected token '}'` and one `Identifier
@@ -246,6 +245,19 @@ def _the_other_half(detail: str, content: str) -> str:
             )
         return ""
     if "Unexpected token" in detail or "Unexpected end of input" in detail:
+        # Before the bracket guess: a keyword bound as a name is certain, and
+        # `Unexpected token 'delete'` is otherwise indistinguishable from a
+        # misplaced brace. Run-df4dc6f5 took five edits to five different line
+        # numbers on one such name - see `app.analysis.reserved_words`.
+        if path is not None:
+            try:
+                from app.analysis.reserved_words import why_the_name_cannot_work
+
+                reserved = why_the_name_cannot_work(path.name, content)
+            except Exception:  # noqa: BLE001 - a hint on a hint must not fail
+                reserved = ""
+            if reserved:
+                return reserved
         try:
             from app.analysis.syntax_balance import _confidently_unbalanced
 

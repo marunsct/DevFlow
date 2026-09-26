@@ -327,7 +327,17 @@ def structural_problem(relative_path: str, content: str) -> str | None:
             ast.parse(content)
         except SyntaxError as failure:
             where = f" on line {failure.lineno}" if failure.lineno else ""
-            return f"Python cannot parse this file{where}: {failure.msg}."
+            # `def class(x)` reports "invalid syntax" and names a line, which is
+            # the JavaScript failure in `app.analysis.reserved_words` with a
+            # vaguer message: the line is legal everywhere the word is not
+            # reserved, so the line is not the thing to look at.
+            try:
+                from app.analysis.reserved_words import why_the_name_cannot_work
+
+                reserved = why_the_name_cannot_work(relative_path, content)
+            except Exception:  # noqa: BLE001 - a hint on a hint must not fail
+                reserved = ""
+            return f"Python cannot parse this file{where}: {failure.msg}.{reserved}"
         except ValueError:
             # Null bytes and similar; not a syntax question.
             return None

@@ -3208,6 +3208,16 @@ def build_workflow_graph(
             changed_files,
             state["repository"].root_path,
             getattr(state.get("stack_selection"), "technology_stack", None),
+            # The plan's own prose, so a file it named and nobody wrote is found
+            # here rather than at the milestone review, where it costs a
+            # revision. Both of the last two runs ended that way.
+            planned=[
+                *(getattr(milestone, "milestone_scope", None) or ()),
+                *(
+                    getattr(task, "task_description", "")
+                    for task in (getattr(milestone, "delegated_tasks", None) or ())
+                ),
+            ],
         )
         update = _run_gated_agent(
             state,

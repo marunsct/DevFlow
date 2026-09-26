@@ -1,0 +1,273 @@
+"""A file the plan named and nobody wrote is invisible to every other check.
+
+Every cross-file check in `integration_checks` decides by comparing two files
+that exist. A file that was planned and simply never written is referenced by
+nothing, so there is no inconsistency on disk to find - there is nothing on disk
+at all. The plan is the other half of the comparison, and nothing was reading it.
+
+Two consecutive runs ended on exactly that.
+
+run-e980310b delegated "Create style.css with basic responsive CSS rules" and
+`index.html` linked it. That one is provable from the workspace, because the
+link is a second file naming the first, and `_broken_local_references` finds it.
+
+run-2ac28a2f is the version nothing could prove. Its plan named
+
+    index.html with semantic HTML5 structure: <header>, form (#add-form) for
+    task creation, unordered list container for tasks, embedded CSS
+
+and the sprint finished with `app.js`, `app.test.js`, `package.json`,
+`jest.config.cjs` and no HTML file - a "single-page application" with no page.
+34 tests passed, 0 failed, 0 bugs found across three test rounds, and the
+milestone reviewer raised it three times until the run hit the revision limit:
+
+    [major] correctness: No HTML file exists for the single-page application.
+    A glob search of simple-to-do-list/**/*.html returned zero results.
+
+Language-agnostic by construction: it reads path-like tokens out of prose and
+asks the filesystem, so a plan naming `Cargo.toml`, `main.go`, `pom.xml` or
+`index.html` is checked the same way.
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from app.analysis.planned_files import (
+    files_the_plan_named_that_are_missing,
+    paths_a_plan_named,
+)
+
+#: run-2ac28a2f's plan, verbatim from `sprint_1_summary.md`.
+THE_PLAN_THAT_FAILED = [
+    'Create simple-to-do-list/ project directory with package.json ("type": '
+    '"module", jest test script, devDependencies for Jest + jsdom only)',
+    "index.html with semantic HTML5 structure: <header>, form (#add-form) for task "
+    "creation, unordered list container for tasks, embedded CSS within <style>",
+    "app.js ES module exporting pure functions: loadTasks(), saveTasks(), addTask(), "
+    "deleteTask()",
+    "Jest test suite (app.test.js) with unit tests for addTask, deleteTask, "
+    "loadTasks, saveTasks using mock storage adapters",
+]
+
+
+@pytest.fixture
+def the_workspace_it_left(tmp_path):
+    """Exactly what run-2ac28a2f finished with: everything but the page."""
+    project = tmp_path / "simple-to-do-list"
+    project.mkdir()
+    (project / "package.json").write_text('{"type": "module"}\n')
+    (project / "app.js").write_text("export const addTask = () => {};\n")
+    (project / "app.test.js").write_text("test('x', () => {});\n")
+    (project / "jest.config.cjs").write_text("module.exports = {};\n")
+    return tmp_path
+
+
+class TestTheRunThatFailed:
+    def test_the_missing_page_is_reported(self, the_workspace_it_left):
+        problems = files_the_plan_named_that_are_missing(
+            THE_PLAN_THAT_FAILED, str(the_workspace_it_left)
+        )
+
+        assert any("index.html" in problem for problem in problems), problems
+
+    def test_the_files_that_were_written_are_not(self, the_workspace_it_left):
+        """Three of the four planned files landed, and must not be reported."""
+        problems = " ".join(
+            files_the_plan_named_that_are_missing(
+                THE_PLAN_THAT_FAILED, str(the_workspace_it_left)
+            )
+        )
+
+        assert "app.js" not in problems
+        assert "app.test.js" not in problems
+        assert "package.json" not in problems
+
+    def test_it_says_a_passing_suite_does_not_clear_it(self, the_workspace_it_left):
+        """34 tests passed while the deliverable did not exist. That is the point."""
+        problems = files_the_plan_named_that_are_missing(
+            THE_PLAN_THAT_FAILED, str(the_workspace_it_left)
+        )
+
+        assert any("passing suite says nothing about it" in p for p in problems)
+
+    def test_it_allows_the_plan_to_have_changed(self, the_workspace_it_left):
+        """A plan may be revised. What it may not be is silently not done."""
+        problems = files_the_plan_named_that_are_missing(
+            THE_PLAN_THAT_FAILED, str(the_workspace_it_left)
+        )
+
+        assert any("why the plan no longer needs it" in p for p in problems)
+
+    def test_the_page_appearing_settles_it(self, the_workspace_it_left):
+        (the_workspace_it_left / "simple-to-do-list" / "index.html").write_text(
+            "<!doctype html><html></html>"
+        )
+
+        assert files_the_plan_named_that_are_missing(
+            THE_PLAN_THAT_FAILED, str(the_workspace_it_left)
+        ) == []
+
+
+class TestTheProjectDirectoryIsNotThePlansToKnow:
+    def test_a_bare_name_matches_a_file_inside_the_project(self, tmp_path):
+        """The plan writes `index.html`; the workspace holds `todo-app/index.html`."""
+        (tmp_path / "todo-app").mkdir()
+        (tmp_path / "todo-app" / "index.html").write_text("<html></html>")
+
+        assert files_the_plan_named_that_are_missing(["index.html"], str(tmp_path)) == []
+
+    def test_a_full_path_matches_too(self, tmp_path):
+        (tmp_path / "todo-app").mkdir()
+        (tmp_path / "todo-app" / "index.html").write_text("<html></html>")
+
+        assert files_the_plan_named_that_are_missing(
+            ["todo-app/index.html"], str(tmp_path)
+        ) == []
+
+
+class TestEveryLanguageIsReadTheSameWay:
+    @pytest.mark.parametrize(
+        "planned,written,missing",
+        [
+            (["Add Cargo.toml and src/main.rs"], ["Cargo.toml"], "main.rs"),
+            (["Create go.mod and main.go for the service"], ["go.mod"], "main.go"),
+            (["pom.xml plus App.java under src"], ["pom.xml"], "App.java"),
+            (["pyproject.toml and app/__init__.py"], ["pyproject.toml"], "__init__.py"),
+            (["Gemfile and config.ru for rack"], ["Gemfile"], "config.ru"),
+            (["index.html, styles.scss"], ["index.html"], "styles.scss"),
+            (["composer.json and public/index.php"], ["composer.json"], "index.php"),
+        ],
+    )
+    def test_the_missing_one_is_named(self, tmp_path, planned, written, missing):
+        for name in written:
+            (tmp_path / name).write_text("x")
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        problems = " ".join(files_the_plan_named_that_are_missing(planned, str(tmp_path)))
+
+        assert missing in problems, problems
+        for name in written:
+            assert f"`{name}`" not in problems
+
+
+class TestNotReadingProseAsAFilename:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Use jsdom for the DOM, e.g. for the render test",
+            "Follow ADR-05 and section 3.2 of the specification",
+            "Version 1.0.0 of the package",
+            "The localStorage key is 'todo-tasks'",
+            "Semantic HTML5 structure with a header",
+            "Persist after every mutation i.e. on add and delete",
+            "Target 80% coverage",
+        ],
+    )
+    def test_nothing_is_reported(self, tmp_path, text):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing([text], str(tmp_path)) == [], text
+
+    def test_a_dotfile_with_an_extension_is_read_as_a_file(self, tmp_path):
+        """The stoplist is for abbreviations, not for a file with a leading dot."""
+        assert paths_a_plan_named(["Write the .eslintrc.json config"]) == [
+            ".eslintrc.json"
+        ]
+        assert paths_a_plan_named(["Add .env.example for the keys"]) == [".env.example"]
+
+    def test_a_dotfile_with_no_extension_is_not_matched(self):
+        """A documented limit: there is nothing to anchor on but the word itself,
+        and matching a bare dotted word would read half a sentence as a path."""
+        assert paths_a_plan_named(["Add a .gitignore for node_modules"]) == []
+
+
+class TestNeverGettingInTheWay:
+    def test_a_plan_naming_no_file_reports_nothing(self, tmp_path):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing(
+            ["Users can create and delete tasks"], str(tmp_path)
+        ) == []
+
+    def test_no_plan_reports_nothing(self, tmp_path):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing([], str(tmp_path)) == []
+
+    def test_an_unreadable_workspace_reports_nothing(self, tmp_path):
+        """A check that cannot see the files cannot say one is absent."""
+        assert files_the_plan_named_that_are_missing(
+            ["index.html"], str(tmp_path / "gone")
+        ) == []
+
+    def test_an_empty_workspace_reports_nothing(self, tmp_path):
+        """Before any stage has written, every planned file is legitimately absent."""
+        assert files_the_plan_named_that_are_missing(["index.html"], str(tmp_path)) == []
+
+    def test_the_list_is_capped(self, tmp_path):
+        (tmp_path / "placeholder.txt").write_text("x")
+        planned = [f"Create file{index}.ts for the module" for index in range(12)]
+
+        assert len(files_the_plan_named_that_are_missing(planned, str(tmp_path))) <= 4
+
+    def test_none_of_it_raises_on_junk(self, tmp_path):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing(
+            [None, "", 123, "index.html"], str(tmp_path)  # type: ignore[list-item]
+        ) != []
+
+    def test_a_node_modules_file_does_not_satisfy_a_plan(self, tmp_path):
+        """A dependency's `index.html` is not the product's page."""
+        vendored = tmp_path / "app" / "node_modules" / "thing"
+        vendored.mkdir(parents=True)
+        (vendored / "index.html").write_text("<html></html>")
+        (tmp_path / "app" / "app.js").write_text("x")
+
+        assert files_the_plan_named_that_are_missing(["index.html"], str(tmp_path)) != []
+
+
+class TestItReachesTheTestRound:
+    def test_the_brief_carries_the_missing_file(self, the_workspace_it_left):
+        """The stage whose job is finding defects, inside the sprint."""
+        from app.agents.specialists import build_test_run_request
+
+        brief = build_test_run_request(
+            "Users can create and delete tasks",
+            ["app.js"],
+            str(the_workspace_it_left),
+            "javascript",
+            planned=THE_PLAN_THAT_FAILED,
+        )["messages"][0]["content"]
+
+        assert "index.html" in brief
+        assert "Already proven by reading the files" in brief
+
+    def test_a_brief_without_a_plan_is_unchanged(self, the_workspace_it_left):
+        """Every existing caller passes no plan and must get what it always got."""
+        from app.agents.specialists import build_test_run_request
+
+        brief = build_test_run_request(
+            "Users can create and delete tasks",
+            ["app.js"],
+            str(the_workspace_it_left),
+            "javascript",
+        )["messages"][0]["content"]
+
+        assert "index.html" not in brief
+        assert "Run the unit, integration" in brief
+
+    def test_the_workflow_passes_the_plan(self):
+        """Checked on the source: the node is a closure over the compiled graph."""
+        import inspect
+
+        from app.graph import workflow
+
+        source = inspect.getsource(workflow)
+        call = source.index("request = build_test_run_request(")
+        block = source[call : call + 900]
+
+        assert "planned=" in block
+        assert "milestone_scope" in block
+        assert "task_description" in block

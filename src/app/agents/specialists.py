@@ -13,7 +13,7 @@ without a human approval (see `app.agents.role_agent`).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -483,6 +483,7 @@ def build_test_run_request(
     changed_files: list[str],
     repository_root: str,
     stack: Any = None,
+    planned: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Testing specialist's input for one verification round (Step 5.4).
 
@@ -523,6 +524,17 @@ def build_test_run_request(
         proven = problems_that_break_the_product(repository_root, stack)
     except Exception:  # noqa: BLE001 - a brief is better without them than absent
         proven = []
+    try:
+        from app.analysis.planned_files import files_the_plan_named_that_are_missing
+
+        # The one comparison the workspace cannot make against itself. A file
+        # planned and never written is referenced by nothing, so nothing on disk
+        # is inconsistent and no check that reads only the workspace can see it.
+        # run-2ac28a2f finished a "single-page application" with no HTML file,
+        # 34 tests passing, and three test rounds reporting no defect.
+        proven = proven + files_the_plan_named_that_are_missing(planned, repository_root)
+    except Exception:  # noqa: BLE001 - same reason
+        pass
     proven_text = ""
     if proven:
         proven_text = (

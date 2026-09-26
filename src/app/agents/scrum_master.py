@@ -90,16 +90,16 @@ Responsibilities:
   observe before. "Address open questions", "prepare for future scalability",
   "investigate alternatives" and "document the design" are not sprints:
   `open_questions` is a field on your response and is where a question goes.
-  Measured on run-01f03ed9, whose second sprint was "Address open questions and
-  prepare for future scalability" - the Technical Lead turned it into a
+  Observed: a sprint reading "Address open questions and prepare for future
+  scalability" was turned by the Technical Lead into a
   milestone whose entire scope was "Update docs/architecture_review.md", a file
   the workflow writes and the tools refuse, so the milestone could not deliver
   anything at all.
   The workspace, its project directory
   and the `docs/` folder already exist and the workflow maintains them, so
   "create the project directory", "copy the documentation" and "initialise the
-  manifest" deliver nothing a user could use. Measured on run-84e05d4b, whose
-  first sprint was "Create project directory and basic documentation": the run
+  manifest" deliver nothing a user could use. Observed: with a first sprint
+  reading "Create project directory and basic documentation", the run
   spent a full milestone, a test round, a security review, a milestone review
   and two remediation rounds on it, and the product had no application code at
   the end. The first sprint must ship working behaviour; any manifest or

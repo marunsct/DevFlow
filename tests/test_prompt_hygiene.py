@@ -85,3 +85,68 @@ def test_the_stack_selector_treats_a_stated_constraint_as_binding():
     assert "boundary, not a preference" in lowered
     assert "size the stack to the product" in lowered
     assert "may not select something" in lowered
+
+
+#: A run identifier as this harness writes them: `run-` and a hex prefix.
+RUN_IDENTIFIER = re.compile(r"run-[0-9a-f]{6,}")
+
+
+def _prompt_strings():
+    """Every string an agent module exposes as a value, with where it came from.
+
+    A module docstring is excluded, and nothing else is. The docstrings in this
+    repository are its evidence log - which run showed a rule was needed, and
+    what it cost - and that record is for whoever changes the rule next. It is
+    never sent anywhere. A string bound to a name can be, and several are
+    re-exported through three modules before reaching a system prompt, so the
+    check is on the value rather than on the file it is written in.
+    """
+    import importlib
+    import pkgutil
+
+    import app
+
+    for module in pkgutil.walk_packages(app.__path__, "app."):
+        try:
+            loaded = importlib.import_module(module.name)
+        except Exception:  # noqa: BLE001 - a module that will not import is another test's problem
+            continue
+        for attribute in dir(loaded):
+            if attribute == "__doc__":
+                continue
+            try:
+                value = getattr(loaded, attribute)
+            except Exception:  # noqa: BLE001 - a property that raises is not a prompt
+                continue
+            if isinstance(value, str):
+                yield f"{module.name}.{attribute}", value
+
+
+def test_no_prompt_cites_a_run_identifier():
+    """`run-519a9d8a` means nothing to the model reading it.
+
+    The rules in these prompts were each written against a run that went wrong,
+    and the citation went into the prompt beside the rule. It cannot be looked
+    up from inside a run, it is not evidence to an agent the way it is to a
+    reader of this repository, and it spends context on a token the model can
+    only ignore.
+
+    It also drags the run's technology in with it. A citation is always a
+    citation of one particular product in one particular language, and the
+    sentence around it names that product's files - so a rule that should hold
+    for any stack arrives sounding like a rule about the last JavaScript app
+    this harness built. The evidence belongs in the docstring, where it is
+    already kept; the prompt keeps the observation without the identifier.
+    """
+    cited = {
+        name: sorted(set(RUN_IDENTIFIER.findall(value)))
+        for name, value in _prompt_strings()
+        if RUN_IDENTIFIER.search(value)
+    }
+
+    assert not cited, (
+        "these strings cite run identifiers: "
+        + "; ".join(f"{name} {ids}" for name, ids in sorted(cited.items()))
+        + ". Keep the observation, drop the identifier - it is unlookupable "
+        "from inside a run and ties a general rule to one run's stack."
+    )

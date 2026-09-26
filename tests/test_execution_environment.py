@@ -230,7 +230,11 @@ def test_the_selector_prefers_a_runner_the_runtime_provides():
 
     assert "Prefer a runner the runtime already provides" in flat
     assert "node --test" in flat
-    assert "run-cbd22a34" in flat
+    # The measurement stays; the run id does not. It cannot be looked up from
+    # inside a run, and the docstring above is where it is kept for whoever
+    # changes this rule next.
+    assert "46 MB to 221 MB" in flat
+    assert not __import__("re").search(r"run-[0-9a-f]{6,}", flat)
 
 
 def test_a_runtime_runner_still_passes_the_validator():

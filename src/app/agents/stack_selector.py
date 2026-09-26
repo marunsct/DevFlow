@@ -178,9 +178,10 @@ def describe_execution_environment() -> str:
         "  runner if the product has a page.\n"
         "  `node --test` and Python's `unittest` ship with their\n"
         "  runtimes and cost nothing to add; jest, vitest and their peers pull in\n"
-        "  tens of thousands of files. Measured on run-cbd22a34: choosing vitest\n"
-        "  over `node --test` for a to-do list took the workspace from 46 MB to\n"
-        "  221 MB, against a brief reading \"no external dependencies\". Reach for\n"
+        "  tens of thousands of files. Observed: choosing an installed runner\n"
+        "  over the runtime's built-in one for a small app took the workspace\n"
+        "  from 46 MB to 221 MB, against a brief reading \"no external\n"
+        "  dependencies\". Reach for\n"
         "  an installed framework when the product's size or risk earns it.\n"
         "- THAT IS AN ARGUMENT FOR THE BUILT-IN RUNNER, NOT AGAINST TESTING. A\n"
         "  built-in runner installs nothing, adds no dependency and costs no\n"
@@ -188,7 +189,7 @@ def describe_execution_environment() -> str:
         "  'None' and 'manual testing' are the same answer and both are refused:\n"
         "  they mean nothing will ever answer 'did this work?', and every later\n"
         "  stage has to.\n"
-        "  Measured on run-2f252e4e, which read the paragraph above and chose\n"
+        "  Observed: a selection that read the paragraph above still chose\n"
         "  'Testing Framework: None - manual browser testing via DevTools is\n"
         "  adequate for a 500-line app; installing a test runner would consume the\n"
         "  entire code budget'. There was nothing to install and no budget to\n"
@@ -226,9 +227,9 @@ A constraint in the intake is a boundary, not a preference:
   lines does not carry the same tooling as a system with a team behind it, and
   every dependency you add is one the builders must install, configure and
   debug before they write any of the product.
-- Observed on run-95ca3f72: an intake reading "single-page application using
-  only HTML/CSS/JavaScript" and "code size capped at 500 lines" produced a
-  stack with two test frameworks. Configuring them consumed the entire sprint
+- Observed: an intake asking for a single page built with only the platform's
+  built-in languages, and "code size capped at 500 lines", produced a stack
+  with two test frameworks. Configuring them consumed the entire sprint
   and all three of its remediation attempts; the application itself was never
   started. A stack that cannot be stood up is worse than a plainer one that
   can.

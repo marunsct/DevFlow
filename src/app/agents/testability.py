@@ -83,8 +83,8 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   requests are only supported for protocol schemes: ... http, https" - so the
   page loads, the script never runs, and the test times out waiting for a
   global the module never set. The page is not broken and neither is the test;
-  the URL scheme is. Measured on run-519a9d8a, whose suite waited for
-  `window.addTask` over `file://` and failed on every run of it.  Load the page over `http://localhost:<port>` instead, and let Playwright
+  the URL scheme is. A suite that waited on a global set by such a module,
+  served over `file://`, failed on every run of it.  Load the page over `http://localhost:<port>` instead, and let Playwright
   manage the server itself - declare a `webServer` in `playwright.config.ts`
   and it starts the server, runs the suite, and stops it again, all inside the
   one `npx playwright test` command that terminates on its own:
@@ -121,11 +121,10 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
 - "IT DID NOT THROW" IS NOT A RESULT. `assert.doesNotThrow(() => saveTasks(x))`
   passes whether the function saves anything or nothing at all; so does a test
   that only checks `typeof`. Assert on what the function RETURNED, or on the
-  state it changed - read it back and compare. Measured on run-44e9fc83:
-  `saveTasks` was covered only by `doesNotThrow`, inside a block named
-  "saveTasks + loadTasks round-trip", and replacing the whole function body
-  with `return tasks` left all 33 tests passing. Persistence was an acceptance
-  criterion of that brief.
+  state it changed - read it back and compare. Observed: a save function was
+  covered only by a "does not throw" assertion, inside a block named for a
+  round-trip, and replacing its whole body with `return <its argument>` left
+  all 33 tests passing. Persistence was an acceptance criterion of that brief.
 - THE TEST FOR THIS: if you replaced the body of the function with
   `return <its first argument>`, would any test fail? If not, that function is
   not tested, however many tests name it.
@@ -158,9 +157,9 @@ TESTABILITY_RULE = """Testability - this decides whether the tests can run at al
   machine that builds it. "Static-only deployment, so no Node runtime, so no
   automated tests" is three steps of correct reasoning ending somewhere false:
   the runtime the tests need is the developer's, and it is already here.
-  Measured on run-37476645, whose ADR-04 decided against a test framework on
-  exactly that ground and cost two architecture revisions; and on
-  run-cbb1a5fc, which argued the same and was caught in review. Deployment
+  Observed: an ADR that decided against a test framework on exactly that
+  ground cost two architecture revisions, and the same argument made again was
+  caught in review. Deployment
   constrains what you SHIP. It does not constrain what you can RUN while
   building it.
 - A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and

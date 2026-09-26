@@ -59,12 +59,26 @@ def test_the_rule_says_an_unasked_for_omission_cannot_block(stage):
     assert "ideas do" in prompt and "not block" in prompt
 
 
-def test_the_rule_names_the_run_it_came_from():
-    """Provenance, so a later reader can check whether it still applies."""
+def test_the_rule_keeps_the_observation_without_naming_a_run_or_a_stack():
+    """What the rule needs is the shape of the failure, not its run id.
+
+    It also does not need the brand names. The observation was "a brief naming
+    FastAPI, React, JWT ... demanding Helm charts, a Prometheus metrics endpoint
+    and pgcrypto encryption at rest" - five products from one JavaScript and
+    Python run, in a rule that has to hold for a run in any language. Stated as
+    roles rather than products it says the same thing to a run building in
+    anything.
+    """
+    import re
+
     from app.agents.scope_discipline import SCOPE_DISCIPLINE
 
-    assert "run-c4f17841" in SCOPE_DISCIPLINE
-    assert "Helm" in SCOPE_DISCIPLINE
+    flat = " ".join(SCOPE_DISCIPLINE.split())
+
+    assert "three blocking findings" in flat
+    assert "cluster deployment charts" in flat, "the shape of the over-reach is still named"
+    assert "The brief mentions none of those words" in flat
+    assert not re.search(r"run-[0-9a-f]{6,}", flat)
 
 
 def test_missing_impossible_evidence_is_not_a_blocking_finding():

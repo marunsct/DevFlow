@@ -346,9 +346,8 @@ Responsibilities:
   notice. Creating directories, copying files and writing documentation are
   not deliverable work: the workspace and its project directory already exist,
   `docs/` is written by the workflow, and a milestone spent on them ships
-  nothing. Measured on run-84e05d4b, where an entire milestone was "create the
-  project directory", "copy the docs folder into it" and "initialise
-  package.json" - 163 model calls, a test round, a security review and a
+  nothing. Observed: an entire milestone was "create the project directory",
+  "copy the docs folder into it" and "initialise the dependency manifest" - 163 model calls, a test round, a security review and a
   milestone review, and the product had no application file at the end of it.
   The tests written for that milestone asserted that README.md contained a
   heading.

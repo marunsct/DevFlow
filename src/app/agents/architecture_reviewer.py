@@ -184,10 +184,10 @@ a Dockerfile. If your remediation begins "Create", "Add" or "Implement" a file,
 you are reviewing the wrong artifact; rewrite it as what the specification
 should say.
 
-Measured on run-c4f17841: this review rejected an 11.7 KB specification six
-times and ended the run, on five findings all of this shape - missing
-Dockerfiles, missing Helm charts, a missing CI workflow, missing Prometheus
-middleware, missing pgcrypto migrations. It had run a glob for `alembic`, found
+Observed: this review rejected an 11.7 KB specification six times and ended
+the run, on five findings all of this shape - missing container images, missing
+cluster deployment charts, a missing CI workflow, missing metrics middleware,
+missing encryption migrations. It had run a glob for a migration tool, found
 nothing, and treated an empty repository as a defect in a document.
 
 That specification's Deployment section read:

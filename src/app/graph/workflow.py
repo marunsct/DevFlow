@@ -3530,6 +3530,21 @@ def build_workflow_graph(
                 )
             revision_count = state.get("milestone_revision_count", 0) + 1
             if revision_count >= MAX_MILESTONE_REVISIONS:
+                # This sprint ends here, so it gets a summary like every other
+                # ending. Measured on run-5696a52d, which failed exactly here:
+                # `docs/` held the plan, the review and the specification, and no
+                # `sprint_1_summary.md` at all - the one document a reader opens
+                # to ask what the sprint did and why it stopped. The four paths
+                # that record a summary are the ones that go through
+                # `_replan_or_escalate`, a blocked review, a sprint advance or
+                # completion; a review that runs out of revisions is a fifth, and
+                # it is the one this run took.
+                summary = _record_sprint_summary(
+                    state,
+                    "Failed",
+                    f"the milestone review still required changes after "
+                    f"{MAX_MILESTONE_REVISIONS} revisions",
+                )
                 return _escalate_to_a_human(
                     state,
                     error=(
@@ -3539,6 +3554,7 @@ def build_workflow_graph(
                     ),
                     milestone_revision_count=revision_count,
                     milestone_review=review,
+                    **summary,
                 )
             return _handing_on(
                 stage="technical_lead",

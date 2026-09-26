@@ -203,3 +203,68 @@ class TestRendering:
 
         assert "# Sprint 1 Summary" in document
         assert "Unknown goal" in document
+
+
+class TestEverySprintEndingIsRecorded:
+    """A sprint that ends must leave a summary, whichever way it ended.
+
+    The summary is written at each ending rather than in one place, because the
+    figures it needs - the attempt's defects, its rounds, the plan it was
+    working to - are on the state at that moment. The cost of that is one more
+    ending to forget, and `run-5696a52d` found the one that was: the milestone
+    review ran out of revisions, the run stopped, and `docs/` held the plan, the
+    review and the specification with no `sprint_1_summary.md` beside them.
+
+    This counts the endings in the source instead of trusting that list, so a
+    seventh ending has to be added here too.
+    """
+
+    def _workflow_source(self) -> str:
+        import inspect
+
+        from app.graph import workflow
+
+        return inspect.getsource(workflow)
+
+    def test_the_review_revision_limit_records_one(self):
+        """The ending run-5696a52d took."""
+        source = self._workflow_source()
+        limit_block = source[source.index("revision_count >= MAX_MILESTONE_REVISIONS"):]
+        limit_block = limit_block[: limit_block.index("return _handing_on(")]
+
+        assert "_record_sprint_summary(" in limit_block, (
+            "a sprint that ends because the review ran out of revisions leaves no summary"
+        )
+
+    def test_completion_records_the_final_sprint(self):
+        source = self._workflow_source()
+        complete = source[source.index("def complete_node("):]
+        complete = complete[: complete.index("def failed_node(")]
+
+        assert "_record_sprint_summary(" in complete, (
+            "the last sprint never advances, so completion is where its summary comes from"
+        )
+
+    def test_every_recorded_summary_is_carried_into_the_state(self):
+        """A summary that is not returned is a summary the next attempt cannot see.
+
+        `_record_sprint_summary` returns the `sprint_attempts` update, and an
+        attempt that is not checkpointed is one the re-run cannot append to - it
+        would overwrite the document instead, which is the fault the attempt list
+        exists to fix.
+        """
+        import re
+
+        source = self._workflow_source()
+        calls = [
+            line.strip()
+            for line in source.splitlines()
+            if "_record_sprint_summary(" in line and "def " not in line
+        ]
+        # Each call must bind its result; a bare call throws the update away.
+        unbound = [
+            line for line in calls
+            if not re.match(r"^(summary\s*=|return \{\*\*_record_sprint_summary)", line)
+        ]
+
+        assert not unbound, f"these calls discard the attempt list: {unbound}"

@@ -41,7 +41,10 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
+import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NamedTuple
@@ -324,6 +327,18 @@ def _memory_path(root: Path) -> Path:
     return Path(root) / MEMORY_FILE
 
 
+#: Held across the read-modify-write in `record`.
+#:
+#: One entry is written by reading the whole file, changing one key and writing
+#: the whole file back. With one stage running at a time that is sound. Parallel
+#: execution mode fans a milestone's specialists out to run at once, and two of
+#: them recording a write together means each reads the file before the other's
+#: change lands, so one entry is silently dropped - and `write_text` truncates
+#: before it writes, so a reader arriving mid-write sees invalid JSON and
+#: `_load` starts the memory over from empty.
+_WRITING = threading.Lock()
+
+
 def _load(root: Path) -> dict[str, dict]:
     try:
         raw = _memory_path(root).read_text(encoding="utf-8")
@@ -348,16 +363,41 @@ def record(root: str | Path, relative_path: str, stage: str = "") -> None:
         if not path:
             return
         root = Path(root)
-        held = _load(root)
-        held[path] = {
-            "changed_by": str(stage or "") or held.get(path, {}).get("changed_by", ""),
-            "changed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        }
-        _memory_path(root).write_text(
-            json.dumps(held, indent=1, sort_keys=True), encoding="utf-8"
-        )
+        with _WRITING:
+            held = _load(root)
+            held[path] = {
+                "changed_by": str(stage or "") or held.get(path, {}).get("changed_by", ""),
+                "changed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            _write_atomically(_memory_path(root), json.dumps(held, indent=1, sort_keys=True))
     except Exception:  # noqa: BLE001 - a memory that fails a write is worse than none
         logger.debug("Could not record %s in the project memory", relative_path, exc_info=True)
+
+
+def _write_atomically(path: Path, content: str) -> None:
+    """Replace `path`'s contents in one step, or leave them as they were.
+
+    `write_text` opens for truncation first, so there is a window in which the
+    file on disk is empty or half written. Every reader of this file treats
+    unreadable as "no memory at all", which is the worst possible reading of a
+    write in progress. A temporary file in the same directory followed by
+    `os.replace` has no such window: readers see either the old contents or the
+    new ones.
+    """
+    handle = tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", dir=str(path.parent),
+        prefix=f".{path.name}.", suffix=".tmp", delete=False,
+    )
+    try:
+        with handle:
+            handle.write(content)
+        os.replace(handle.name, path)
+    except Exception:
+        try:
+            os.unlink(handle.name)
+        except OSError:
+            pass
+        raise
 
 
 def who_changed(root: str | Path, relative_path: str) -> str:

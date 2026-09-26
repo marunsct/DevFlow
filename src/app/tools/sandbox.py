@@ -2583,6 +2583,99 @@ def _the_lock_for(repo_root: str) -> threading.Lock:
         return lock
 
 
+#: How many places one note names a file of the same name. Past a handful the
+#: note is longer than the correction it is asking for.
+MAX_PLACES_NAMED = 3
+
+#: An argument that names a file: a last segment with a short extension. A flag
+#: is never a path, and a bare directory or a glob cannot be resolved this way.
+_NAMES_A_FILE = re.compile(r"^[^-][\w./+-]*\.[A-Za-z0-9]{1,6}$")
+
+
+def _where_the_files_it_named_actually_are(
+    repo_root: str,
+    command: Sequence[str],
+    working_directory: str | None = None,
+) -> str:
+    """For a command that failed, where the files it named are, or "".
+
+    A failed command's own arguments say what it was looking for, and the
+    workspace says where that is. Nothing put the two together, so a command
+    run from the wrong directory got advice about the command instead of the
+    location.
+
+    Measured live on run-df4dc6f5's `specialist_ui_ux_4`, four calls in 36
+    seconds:
+
+        09:00:16  node --test main.test.js storage.test.js   wd=(none)  exit 1
+        09:00:19  node --test main.test.js storage.test.js   wd=the project  exit 1
+        09:00:38  node --test main.test.js                   wd=(none)  exit 1
+        09:00:44  node --test main.test.js                   wd=(none)  exit 1
+        09:00:52  node --test main.test.js                   wd=(none)  exit 1
+
+    Every one of the wd-less calls answered `Could not find 'main.test.js'`,
+    and the repeat note fired correctly on the last two - "already failed 1
+    time(s) ... change the command, or change the file it runs". Both of those
+    are the wrong move: the command was right and the file was fine. It was in
+    the project directory, which the second call had already used and which the
+    workspace could have named at the first failure.
+
+    Reads the command's arguments rather than the runner's error text, so it is
+    not about any one runner: `node --test x.test.js`, `pytest tests/x.py`,
+    `go test ./x_test.go`, `javac Main.java` and `ruby spec/x_spec.rb` all name
+    what they could not find in the same place, as an argument.
+
+    Never raises, and says nothing at all unless it can name somewhere real.
+    """
+    try:
+        base = _resolve_a_working_directory(repo_root, working_directory)
+        wanted: list[str] = []
+        for argument in [str(part) for part in command][1:]:
+            if not _NAMES_A_FILE.match(argument):
+                continue
+            if os.path.exists(os.path.join(base, argument)):
+                continue
+            if argument not in wanted:
+                wanted.append(argument)
+        if not wanted:
+            return ""
+
+        # One walk for every missing argument, pruning as it descends. A failed
+        # command is a bad moment to pay for a full `node_modules` listing.
+        by_name: dict[str, list[str]] = {name: [] for name in wanted}
+        basenames = {os.path.basename(name): name for name in wanted}
+        for directory, subdirectories, files in os.walk(repo_root):
+            subdirectories[:] = [
+                name
+                for name in subdirectories
+                if name not in IGNORED_DIRECTORIES
+                and name not in _RUNNER_OUTPUT_DIRECTORIES
+            ]
+            for name in files:
+                argument = basenames.get(name)
+                if argument is None:
+                    continue
+                found = by_name[argument]
+                if len(found) < MAX_PLACES_NAMED:
+                    found.append(
+                        os.path.relpath(os.path.join(directory, name), repo_root)
+                    )
+    except Exception:  # noqa: BLE001 - a hint must never fail the command
+        return ""
+
+    parts: list[str] = []
+    for argument, places in by_name.items():
+        if not places:
+            continue
+        where = ", ".join(sorted(places))
+        parts.append(
+            f"`{argument}` is not in the directory this ran in, but a file of "
+            f"that name is at {where}. Either pass that path or set "
+            f"`working_directory` to the directory holding it."
+        )
+    return " ".join(parts)
+
+
 def _note_about_running_this_again(
     repo_root: str,
     command: Sequence[str],
@@ -2951,6 +3044,19 @@ class SandboxExecutor:
                 **outcome,
                 "note": f"{outcome['note']} {note}" if outcome.get("note") else note,
             }
+        # On the first failure, not only on a repeat. The repeat note is the
+        # cheapest place to notice a wasted call and the most expensive place to
+        # learn the answer: by then the call has been paid for twice. What the
+        # command was looking for is decidable at the first failure.
+        if _as_exit_code(outcome.get("returncode")) not in (None, 0):
+            where = _where_the_files_it_named_actually_are(
+                repo_root, command, working_directory
+            )
+            if where:
+                outcome = {
+                    **outcome,
+                    "note": f"{outcome['note']} {where}" if outcome.get("note") else where,
+                }
         _record_execution(
             repo_root, role_name, command, outcome, working_directory, category,
             duration_seconds=time.monotonic() - started,

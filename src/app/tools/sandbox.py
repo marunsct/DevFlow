@@ -31,6 +31,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -2533,6 +2534,51 @@ def _is_a_standing_refusal(
     return False
 
 
+#: One command at a time per workspace.
+#:
+#: Parallel execution mode fans a milestone's specialists out to run at once,
+#: and they share one workspace. Measured on run-5696a52d, the first parallel
+#: run: three specialists issued `npm install` in `simple-to-do-list-app` at
+#: 04:54:23, to the second, and npm tore its own tree apart -
+#:
+#:     npm error code ENOTEMPTY
+#:     npm error syscall rmdir
+#:     npm error path simple-to-do-list-app/node_modules/playwright-core/lib/vit...
+#:
+#: - then two of them ran `npm test` together at 04:55:29, where a Playwright
+#: `webServer` binds one port and a runner writes one `test-results/`.
+#:
+#: Linear mode could not produce this: one stage ran at a time, which is the
+#: assumption every tool in this package was written under. Nothing about the
+#: commands is wrong, and no allowlist or category can fix it - the fault is two
+#: of them at once in one directory.
+#:
+#: Serialising *every* command rather than only the ones known to collide, for
+#: two reasons. The set that collides is not knowable up front: installs tear at
+#: `node_modules`, test runners bind ports and share output directories, builds
+#: write one `dist/`, and a formatter rewrites files another command is reading.
+#: And it costs almost nothing here - what parallel mode is for is the model
+#: calls, which take 9 to 13 seconds each and number in the hundreds, against a
+#: handful of commands per milestone.
+#:
+#: Held across the checks as well as the run, which is what turns the collision
+#: into saved work: the second `npm install` now sees the first one's ledger
+#: entry and `succeeded_this_way_before` withholds it instead of repeating it.
+_WORKSPACE_COMMAND_LOCKS: dict[str, threading.Lock] = {}
+_LOCK_REGISTRY = threading.Lock()
+
+
+def _the_lock_for(repo_root: str) -> threading.Lock:
+    """The one lock for this workspace, created on first use."""
+    key = os.path.realpath(str(repo_root))
+    with _LOCK_REGISTRY:
+        lock = _WORKSPACE_COMMAND_LOCKS.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _WORKSPACE_COMMAND_LOCKS[key] = lock
+        return lock
+
+
 def _note_about_running_this_again(
     repo_root: str,
     command: Sequence[str],
@@ -2788,6 +2834,28 @@ class SandboxExecutor:
         # left alone either way: it has said where it means, including when
         # that is the root.
         started = time.monotonic()
+        with _the_lock_for(repo_root):
+            return cls._execute_serialised(
+                command, repo_root, role_name, category, extra_env, working_directory, started
+            )
+
+    @classmethod
+    def _execute_serialised(
+        cls,
+        command: Sequence[str],
+        repo_root: str,
+        role_name: str,
+        category: str,
+        extra_env: Dict[str, str] | None,
+        working_directory: str | None,
+        started: float,
+    ) -> Dict[str, Any]:
+        """`execute`'s body, with this workspace's command lock held.
+
+        Split out so the lock is taken in exactly one place and cannot be
+        skipped by an early return - there are several, and a refusal that
+        returns before the lock is released would deadlock every other worker.
+        """
         belongs_in = (
             None if working_directory else the_project_this_command_belongs_in(command, repo_root)
         )

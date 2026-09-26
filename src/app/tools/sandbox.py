@@ -1218,6 +1218,112 @@ def allowed_executables(
     return base
 
 
+#: A quoted literal inside a code snippet. The snippet is not parsed - every
+#: language quotes a path the same way, and a path is all this needs.
+#:
+#: One character up, not two: a minimum of two makes a one-character literal
+#: unmatchable, so the scan slides past its quotes and swallows the next
+#: literal with them. `open(F, '<', 'app.js')` yielded `', '` and no path.
+_A_QUOTED_LITERAL = re.compile(r"""['"]([^'"\n]{1,200})['"]""")
+
+#: A literal that could be a path: a short extension, optionally with
+#: directories before it. `utf8`, `Exports:` and `, ` are none of those.
+_COULD_BE_A_PATH = re.compile(r"^[\w./@+-]*[\w-]\.[A-Za-z0-9]{1,6}$")
+
+#: How many files one note names. Past a couple the snippet was doing something
+#: else and this is guessing.
+MAX_FILES_A_SNIPPET_NAMED = 3
+
+
+def _what_that_snippet_was_reading(argv: Sequence[str], repo_root: str | Path | None) -> str:
+    """The workspace files an inline snippet names, or "".
+
+    A snippet refused for executing arbitrary code is told to "put the code in
+    a file inside the project folder, run the file, then remove it" - three
+    calls, and a scratch file written into the product. Across the current
+    generation of runs that refusal fired 31 times in 10 of 24 runs, and almost
+    every snippet was reading a file and printing part of it:
+
+        node -e "const pkg = JSON.parse(require('fs').readFileSync('todo-app/package.json','utf8')); ..."
+        node -e "const css = fs.readFileSync('/simple-to-do-list-app/style.css', 'utf8'); ..."
+        node -e "import('./todo-app/app.js').then(m => console.log(Object.keys(m)))"
+
+    Most of those need to execute nothing: `read_file` returns the file and
+    `grep` finds a name inside it. Some do - a snippet that requires the module
+    and exercises it against a mock is not reading - so the note offers the
+    cheaper route rather than asserting the snippet only reads, and repeats that
+    the file-then-delete route is there for one that really must run.
+
+    The refusal stands either way. What a snippet can do is why it is refused,
+    and that does not depend on what this one happened to be for; only the
+    advice after it changes.
+
+    Reads quoted literals rather than any language's syntax, so it is not about
+    any one runtime: `node -e`, `python -c`, `ruby -e`, `php -r` and `perl -e`
+    all quote a path the same way, and the workspace decides whether it is one.
+
+    Never raises, and says nothing unless it can name a file that exists.
+    """
+    if not repo_root:
+        return ""
+    try:
+        root = os.path.abspath(str(repo_root))
+        wanted: list[str] = []
+        for part in argv[1:]:
+            for literal in _A_QUOTED_LITERAL.findall(str(part)):
+                candidate = literal.strip()
+                if not _COULD_BE_A_PATH.match(candidate):
+                    continue
+                if candidate not in wanted:
+                    wanted.append(candidate)
+        if not wanted:
+            return ""
+
+        found: list[str] = []
+        for name in wanted:
+            direct = os.path.join(root, name.lstrip("./"))
+            if os.path.isfile(direct):
+                relative = os.path.relpath(direct, root)
+                if relative not in found:
+                    found.append(relative)
+        if len(found) < len(wanted):
+            # One pruned walk for whatever a direct join did not settle, which
+            # is how `./app.mjs` inside a project folder is found at all.
+            basenames = {os.path.basename(name) for name in wanted}
+            for directory, subdirectories, files in os.walk(root):
+                subdirectories[:] = [
+                    entry for entry in subdirectories
+                    if entry not in IGNORED_DIRECTORIES
+                    and entry not in _RUNNER_OUTPUT_DIRECTORIES
+                ]
+                for entry in files:
+                    if entry not in basenames:
+                        continue
+                    relative = os.path.relpath(os.path.join(directory, entry), root)
+                    if relative not in found:
+                        found.append(relative)
+                if len(found) >= MAX_FILES_A_SNIPPET_NAMED:
+                    break
+    except Exception:  # noqa: BLE001 - a hint must never change a refusal
+        return ""
+
+    if not found:
+        return ""
+    shown = sorted(found)[:MAX_FILES_A_SNIPPET_NAMED]
+    named = ", ".join(f"`{name}`" for name in shown)
+    it = "it" if len(shown) == 1 else "them"
+    # Offered, not asserted. Some of these snippets require the module and
+    # exercise it, which is not reading, and a note that told them otherwise
+    # would be wrong about the one thing it is for.
+    return (
+        f" Before you do: this snippet names {named}, already in the workspace. "
+        f"If what you need is what is in {it}, `read_file` returns that without "
+        "running anything and `grep` finds a name inside without reading all of "
+        f"{it} - one call rather than three, and nothing left to delete. If you "
+        "do need to execute it, the route above is the way."
+    )
+
+
 def validate_command(
     command: Sequence[str], role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -1265,6 +1371,7 @@ def validate_command(
                 f"'{executable} {arg}' is not permitted: it can execute arbitrary code. "
                 "Put the code in a file inside the project folder, run the file, then "
                 "remove it with `delete_artifact`."
+                + _what_that_snippet_was_reading(argv, repo_root)
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""

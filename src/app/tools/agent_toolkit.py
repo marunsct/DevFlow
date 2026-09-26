@@ -11,6 +11,7 @@ build its tools from here instead of redefining its own wrappers.
 from __future__ import annotations
 
 import json
+import re
 
 from typing import Any
 
@@ -533,6 +534,32 @@ because a build's real error is almost always in the last lines.
 JOURNAL_TOOL_MAX_MATCHES = 200
 
 
+#: A reference the journal could have produced: a name ending in the eight
+#: random characters `journal` appends. Anything else was constructed or is a
+#: path, and neither can ever be found.
+_A_JOURNAL_REFERENCE = re.compile(r"-[0-9a-f]{8}\.[A-Za-z0-9]{1,6}$")
+
+
+def _and_a_path_is_read_with_read_file(reference: str) -> str:
+    """The sentence for a reference that is really a workspace path, or "".
+
+    6 of the 28 failed calls across the current generation of runs passed a path
+    - `todo-app/app.js`, `todo-app/index.html` - which is this tool being
+    mistaken for `read_file`. The refusal explained the journal at a stage that
+    was not asking about the journal.
+    """
+    candidate = str(reference or "")
+    if not candidate or _A_JOURNAL_REFERENCE.search(candidate):
+        return ""
+    if "/" not in candidate and "." not in candidate:
+        return ""
+    return (
+        f" '{candidate}' looks like a path rather than a journal reference: a "
+        "reference ends in eight random characters. To read a file in the "
+        "workspace, use `read_file`."
+    )
+
+
 def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
     """Return the read-back tool for output an earlier command had truncated.
 
@@ -557,9 +584,16 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
         `...[N bytes omitted; full output saved as <reference>]...`. Pass that
         `<reference>` here to see what was cut.
 
+        This is not a way to read a file. A path in the workspace is read with
+        `read_file`; this reads only output a command produced and this
+        conversation had to cut.
+
         Args:
-            reference: the name from the truncation pointer, e.g.
-                `1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log`.
+            reference: the name copied from a truncation pointer you were
+                actually shown. It ends in eight random characters, so there is
+                no way to write one from the command that produced it - if you
+                have no pointer, there is nothing here to read. Do not construct
+                a reference, and do not pass a file path.
             search: optional substring. When given, returns only the matching
                 lines, each prefixed with its line number - use this to find an
                 error in a long build log. When omitted, returns the tail.
@@ -580,6 +614,15 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
             # them identical repeats. Naming what exists turns a dead end into one
             # more call.
             #
+            # That fix left the cause in place. The `Args:` description above
+            # carried a complete, copyable example reference, and across the
+            # current generation of runs that exact string was the single
+            # most-passed value: 9 of 28 failures, from stages that had never
+            # been shown a pointer. A worked example of an identifier that cannot
+            # be constructed is an invitation to construct one, so the
+            # description now gives the shape and says not to. Another 6 of the
+            # 28 passed a workspace path, which both refusals now redirect.
+            #
             # Scoped to this run. The journal is one shared directory kept for
             # three days and the worker runs two runs at once, so an unscoped list
             # would offer another run's build log - and reading another run's
@@ -596,6 +639,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                         "Pass one of those names exactly. The reference ends in "
                         "eight random characters and cannot be guessed from the "
                         "command that produced it."
+                        + _and_a_path_is_read_with_read_file(reference)
                     )
                 }
             return {
@@ -605,6 +649,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                     "large for the conversation, and a command whose output fitted "
                     "has nothing more to read. Entries are also deleted after the "
                     "configured retention window."
+                    + _and_a_path_is_read_with_read_file(reference)
                 )
             }
 

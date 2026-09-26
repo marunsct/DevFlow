@@ -14,7 +14,12 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents.sprint_summary import count_test_cases, render_sprint_summary
+from app.agents.sprint_summary import (
+    LONGEST_FEATURE_LINE,
+    _one_line,
+    count_test_cases,
+    render_sprint_summary,
+)
 
 
 def _run(at: str, tests: int, passed: int, failed: int) -> dict:
@@ -268,3 +273,105 @@ class TestEverySprintEndingIsRecorded:
         ]
 
         assert not unbound, f"these calls discard the attempt list: {unbound}"
+
+
+class TestFeaturesReadAsAList:
+    """`features` is the delegated task text, and a task is not a feature line.
+
+    Measured on run-df4dc6f5's `sprint_1_summary.md`, live. Two delegated tasks
+    rendered as an 18-line "Features Implemented" section in which the second
+    task began inside the first one's acceptance-criteria list, because that
+    list is written with `-` and Markdown had no reason to think otherwise.
+    Nothing was wrong with the data; a reader could not see two features in it.
+    """
+
+    A_TASK = """Modify index.html: add a viewport meta tag before the CSP meta tag. Ensure the existing CSP meta tag remains unchanged.
+
+Modify style.css: add media queries for screen widths under 600px.
+
+Acceptance criteria:
+- index.html contains the viewport meta tag as specified.
+- style.css includes at least one media query for max-width 600px."""
+
+    def test_a_multi_paragraph_task_becomes_one_line(self):
+        line = _one_line(self.A_TASK)
+
+        assert "\n" not in line
+        assert line.startswith("Modify index.html:")
+
+    def test_the_acceptance_criteria_list_is_left_out(self):
+        """It is what turned two features into one bullet."""
+        line = _one_line(self.A_TASK)
+
+        assert "Acceptance criteria" not in line
+        assert "max-width 600px" not in line
+
+    def test_two_tasks_render_as_two_bullets(self):
+        document = render_sprint_summary(
+            sprint_number=1,
+            total_sprints=6,
+            goal="Set up the project",
+            planned=["Create the project directory"],
+            attempts=[{
+                "sprint_index": 0,
+                "number": 1,
+                "status": "Completed",
+                "reason": "",
+                "cases": {"tests": 3, "passed": 3, "failed": 0},
+                "rounds": 2,
+                "features": [self.A_TASK, "In main.js, implement add(), edit() and delete()."],
+                "defects": [],
+                "ended_at": "2026-09-26T09:00:00+00:00",
+            }],
+        )
+        section = document.split("## Features Implemented", 1)[1].split("##", 1)[0]
+        bullets = [line for line in section.splitlines() if line.startswith("- ")]
+
+        assert len(bullets) == 2, section
+
+    def test_a_short_task_is_left_exactly_as_it_is(self):
+        assert _one_line("Add a filter for completed tasks.") == (
+            "Add a filter for completed tasks."
+        )
+
+    def test_a_long_line_is_cut_at_the_last_sentence_end_that_fits(self):
+        """A whole thought, and as many of them as the line holds."""
+        first = "Implement the add, edit and delete handlers in the main module."
+        second = "Keep the existing storage helpers untouched while doing it."
+        line = _one_line(f"{first} {second} " + "and a trailing clause " * 12)
+
+        assert line == f"{first} {second}"
+        assert not line.endswith("\u2026"), "a clean sentence cut needs no marker"
+
+    def test_a_first_sentence_too_short_to_carry_the_line_does_not_win(self):
+        """Cutting to "Fix it." would lose everything a reader needed.
+
+        The line is filled and marked instead. Marked, because it no longer ends
+        where the sentence did.
+        """
+        line = _one_line("Fix it. " + "and then a much longer clause " * 12)
+
+        assert line.startswith("Fix it. and then")
+        assert line.endswith("\u2026")
+
+    def test_a_cut_is_always_marked(self):
+        """A truncation with no marker reads as the whole text."""
+        line = _one_line(" ".join(["word"] * 200))
+
+        assert line.endswith("\u2026")
+        assert len(line) <= LONGEST_FEATURE_LINE + 1
+
+    def test_an_unbroken_string_is_still_cut_and_marked(self):
+        """No spaces means no word boundary, and it must still not run on."""
+        line = _one_line("x" * 500)
+
+        assert line.endswith("\u2026")
+        assert len(line) <= LONGEST_FEATURE_LINE + 2
+
+    def test_leading_blank_lines_are_skipped(self):
+        assert _one_line("\n\n   Real content here.  ") == "Real content here."
+
+    def test_nothing_at_all_stays_nothing(self):
+        """`_bullets` drops empties, so this must not become a bullet of its own."""
+        assert _one_line("") == ""
+        assert _one_line("   \n  \n ") == ""

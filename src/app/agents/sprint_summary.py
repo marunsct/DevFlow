@@ -88,6 +88,48 @@ def _bullets(items: Sequence[str], *, empty: str) -> str:
     return "\n".join(f"- {item}" for item in kept) if kept else f"- {empty}"
 
 
+#: How long one feature line may be before it is cut at a sentence end.
+LONGEST_FEATURE_LINE = 160
+
+
+def _one_line(text: str) -> str:
+    """The first thing a delegated task says, as one line.
+
+    `features` is each delegated task's `task_description`, which the technical
+    lead writes as an instruction to a specialist: several paragraphs, usually
+    ending in an "Acceptance criteria:" list of its own. Rendered as a bullet,
+    one of those is not a feature line, it is the whole task.
+
+    Measured on run-df4dc6f5's `sprint_1_summary.md`, live. Two delegated tasks
+    produced a "Features Implemented" section of 18 lines in which the second
+    task began inside the first one's criteria list, because that list is
+    written with `-` and Markdown had no reason to think otherwise. Nothing was
+    wrong with the data; a reader simply could not see two features in it.
+
+    The full text is not lost - it is what `docs/milestone_plan.md` is for. This
+    document answers "what did this sprint do", and that is a list.
+    """
+    first = ""
+    for line in str(text).splitlines():
+        stripped = line.strip()
+        if stripped:
+            first = " ".join(stripped.split())
+            break
+    if len(first) <= LONGEST_FEATURE_LINE:
+        return first
+    # At a sentence end if there is one in range, so the line is a whole
+    # thought rather than a word count.
+    window = first[: LONGEST_FEATURE_LINE + 1]
+    cut = max(window.rfind(". "), window.rfind("? "), window.rfind("! "))
+    if cut > LONGEST_FEATURE_LINE // 3:
+        return first[: cut + 1]
+    # No sentence end in range: cut on a word boundary if there is one, and mark
+    # the cut either way. A truncation with no marker reads as the whole text.
+    if " " in window:
+        window = window[: window.rfind(" ")]
+    return window.rstrip(" ,;:") + "\u2026"
+
+
 def render_sprint_summary(
     *,
     sprint_number: int,
@@ -141,7 +183,10 @@ def render_sprint_summary(
 
     lines += ["", "## Planned for This Sprint", _bullets(planned, empty="Nothing recorded from the sprint plan.")]
     lines += ["", "## Features Implemented",
-              _bullets(latest.get("features") or (), empty="No delegated work recorded.")]
+              _bullets(
+                  [_one_line(feature) for feature in (latest.get("features") or ())],
+                  empty="No delegated work recorded.",
+              )]
 
     lines += ["", "## Test Cycles",
               f"- **Rounds Completed:** {latest.get('rounds', 0)}",

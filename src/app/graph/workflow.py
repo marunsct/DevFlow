@@ -53,8 +53,12 @@ from typing import Any, TypedDict, Annotated
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langgraph.constants import Send
 from langgraph.graph import END, START, StateGraph
+# `langgraph.constants` is where this lived and still re-exports it, with a
+# `LangGraphDeprecatedSinceV10` warning and a stated removal in V2. The
+# supported path is `langgraph.types`, confirmed against the API reference for
+# `langgraph.types.Send`.
+from langgraph.types import Send
 
 from app.agents.approval import extract_pending_approval, resume_with_decision
 from app.agents.architecture_reviewer import (

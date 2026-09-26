@@ -1795,6 +1795,7 @@ def edit_approved_artifact(
                 "and send it again, or - simpler - call `replace_lines` with the "
                 "line numbers of the one you meant. A position is never "
                 "ambiguous, and the numbers are in the list above."
+                f"{_a_collision_on_one_line(original, find)}"
                 f"{_what_sits_around_each_match(original, find)}"
             )
 
@@ -1989,6 +1990,55 @@ def _edited(
     return result
 
 
+def _each_match_starts_at(text: str, find: str) -> list[int]:
+    """The offset of every match, counted as `str.count` counts them.
+
+    The two helpers below each scanned for themselves, advancing one character
+    at a time, while the sentence that quotes them says `original.count(find)`.
+    `str.count` does not count overlapping matches, so the two disagreed
+    whenever a match could overlap itself: `find: "aa"` against `aaaa` was
+    reported as "appears 2 times ... It starts at lines 1, 1 and 1".
+    """
+    if not find:
+        return []
+    positions: list[int] = []
+    start = 0
+    while True:
+        at = text.find(find, start)
+        if at < 0:
+            return positions
+        positions.append(at)
+        start = at + len(find)
+
+
+def _matches_by_line(text: str, find: str) -> dict[int, int]:
+    """How many matches each 1-based line holds, in the order they appear."""
+    counts: dict[int, int] = {}
+    for at in _each_match_starts_at(text, find):
+        line = text.count("\n", 0, at) + 1
+        counts[line] = counts.get(line, 0) + 1
+    return counts
+
+
+def _a_collision_on_one_line(text: str, find: str) -> str:
+    """The extra sentence for copies that share a line, or "".
+
+    The advice to "call `replace_lines` with the line numbers of the one you
+    meant" is right for copies on separate lines and cannot be followed for
+    copies on the same one: a position identifies a line, and a line holding
+    three copies of the passage does not say which.
+    """
+    crowded = sorted(line for line, count in _matches_by_line(text, find).items() if count > 1)
+    if not crowded:
+        return ""
+    where = ", ".join(str(line) for line in crowded)
+    return (
+        f" Note that more than one copy is on the same line ({where}), and a line "
+        "number cannot pick between those - for them, either extend your `find` "
+        "along the line, or send the whole corrected line with `replace_lines`."
+    )
+
+
 def _what_sits_around_each_match(text: str, find: str) -> str:
     """The line before and after each copy, so the agent can tell them apart.
 
@@ -2004,12 +2054,22 @@ def _what_sits_around_each_match(text: str, find: str) -> str:
     """
     lines = text.splitlines()
     blocks: list[str] = []
-    start = 0
-    while len(blocks) < _MAX_AMBIGUOUS_MATCHES_SHOWN:
-        at = text.find(find, start)
-        if at < 0:
-            break
-        first = text.count("\n", 0, at)
+    # One block per line, not per match. Several copies on one line have the
+    # same line above and below them by definition, so quoting the surroundings
+    # once per copy printed the same three lines three times - in the helper
+    # whose whole purpose is to show what differs.
+    for line, copies in list(_matches_by_line(text, find).items())[
+        :_MAX_AMBIGUOUS_MATCHES_SHOWN
+    ]:
+        first = line - 1
+        if copies > 1:
+            blocks.append(
+                f"  {copies} copies are on line {line} itself:\n"
+                f"  {line:>5} | {_clip(lines[first])}\n"
+                f"  ({copies} times on this line - the lines around it are the same "
+                f"for every one of them, so extend your `find` along the line.)"
+            )
+            continue
         last = first + find.rstrip("\n").count("\n")
         before = f"{first:>5} | {_clip(lines[first - 1])}" if first > 0 else "      | (start of file)"
         after = (
@@ -2018,12 +2078,11 @@ def _what_sits_around_each_match(text: str, find: str) -> str:
             else "      | (end of file)"
         )
         blocks.append(
-            f"  the copy at line {first + 1}:\n"
+            f"  the copy at line {line}:\n"
             f"  {before}\n"
             f"  {'':>5} | ... your passage ...\n"
             f"  {after}"
         )
-        start = at + 1
     if not blocks:
         return ""
     return "\n\n" + "\n\n".join(blocks)
@@ -2041,20 +2100,20 @@ def _where_each_match_starts(text: str, find: str) -> str:
     test file whose blocks the model had duplicated - exactly the case where
     knowing which lines differ is the whole problem.
     """
-    lines: list[int] = []
-    start = 0
-    while True:
-        at = text.find(find, start)
-        if at < 0:
-            break
-        lines.append(text.count("\n", 0, at) + 1)
-        start = at + 1
-    if not lines:
+    counts = _matches_by_line(text, find)
+    if not counts:
         return "several places"
-    if len(lines) == 1:
-        return f"line {lines[0]}"
-    listed = ", ".join(str(n) for n in lines[:-1])
-    return f"lines {listed} and {lines[-1]}"
+    # A line that holds several copies is named once, with how many. Listing it
+    # per copy produced "lines 7, 12, 12, 12, 13, ..." on run-e980310b, in a
+    # message that then points at those numbers as the way to pick one.
+    parts = [
+        f"{line} ({count} times)" if count > 1 else str(line)
+        for line, count in counts.items()
+    ]
+    if len(parts) == 1:
+        return f"line {parts[0]}"
+    listed = ", ".join(parts[:-1])
+    return f"lines {listed} and {parts[-1]}"
 
 
 def _content_a_model_escaped_twice(relative_path: str, content: str) -> tuple[str, str] | None:

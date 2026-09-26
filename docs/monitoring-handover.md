@@ -55,10 +55,47 @@ Four ordering rules, each of which has cost a stage or an hour when broken:
    produces.
 
 4. **Deploy before starting the run you intend to observe**, or you are
-   measuring the previous build. `./src` is bind-mounted read-only into the
-   containers, so the source is live, but the *running process* holds the
-   modules it imported at start. A restart is required; a rebuild is required
-   only when the image itself changes (the Dockerfile, dependencies).
+   measuring the previous build. **Check first whether the source is actually
+   mounted**, because it decides what "deploy" means:
+
+   ```sh
+   docker inspect langchain-worker-1 \
+     --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}'
+   ```
+
+   - A `./src -> /app/src` line means the dev overlay is up and the source is
+     live. A `docker compose restart worker app` is then enough, because the
+     only stale thing is the modules the running process imported at start.
+   - **No such line means the stack was started from the base file alone and
+     `/app/src` is baked into the image.** A restart then deploys nothing at
+     all: `docker compose build app worker` followed by `up -d app worker`.
+
+   On 2026-09-26 the stack was up without the overlay, and only the base file
+   had been used. A restart would have looked like a deploy and changed
+   nothing - the worker would have kept running the previous commit while
+   every later measurement was attributed to the new one.
+
+5. **A setting that saves is not a setting that is read.** Deploying
+   `execution_mode` exposed three independent breakages in one toggle: it was
+   missing from `runtime_settings.SETTABLE_KEYS` so a write raised
+   `ValueError`; the mode it selected crashed and then looped; and the
+   dispatcher called bare `load_settings()`, which reads the container's own
+   environment, so the stored value was never consulted. The store row said
+   `parallel` while the worker said `linear`.
+
+   After changing a setting, check the value where the code reads it, in the
+   container that reads it:
+
+   ```sh
+   docker exec langchain-worker-1 python3 -c "
+   import sys; sys.path.insert(0,'/app/src')
+   from app.server.runtime_settings import effective_settings
+   print(effective_settings().execution_mode)"
+   ```
+
+   `effective_settings()` is the store-aware one. `load_settings()` is
+   deliberately a pure function of the environment handed to it, so a bare
+   call anywhere in the product is this bug.
 
 ---
 

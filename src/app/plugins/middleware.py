@@ -184,6 +184,14 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
 
     with _CACHE_LOCK:
         _CACHE[key] = list(keywords)
+    # One line per distinct stack document, which is what makes the caching
+    # checkable in a deployed run rather than only in a test. If this appears
+    # once per stage - or once per model call, as it did before the cache - the
+    # extraction is being repeated and each repetition is a model call.
+    logger.info(
+        "Framework instructions resolved for this stack: %s",
+        ", ".join(keywords) or "none",
+    )
     return keywords
 
 

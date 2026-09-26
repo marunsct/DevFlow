@@ -456,7 +456,7 @@ class _NoticingRepeats:
             return ""
         nothing_new += 1
         seen[path] = (digest, covered if len(covered) < 100_000 else set(), nothing_new)
-        self._repeated_reads = getattr(self, "_repeated_reads", 0) + 1
+        self._count_a_repeated_read()
         if nothing_new >= READS_BEFORE_WITHHOLDING:
             # The same rung the byte-identical ladder reaches, on the same
             # count, because they are the same waste. Measured on run-d483f554's
@@ -644,7 +644,7 @@ class _NoticingRepeats:
         counts[digest] = count + 1
         seen[where] = (identity, counts)
         if count >= REPEATS_BEFORE_SAYING_SO:
-            self._repeated_reads = getattr(self, "_repeated_reads", 0) + 1
+            self._count_a_repeated_read()
         if count >= READS_BEFORE_WITHHOLDING:
             self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
             return (
@@ -667,6 +667,44 @@ class _NoticingRepeats:
             )
         return ""
 
+    def _the_repeated_read_tally(self) -> dict:
+        """This stage's count of reads that returned nothing new.
+
+        In `stage_memory`, not on `self`, because the two rungs above the
+        withholding one claim to measure the stage - "the {n}th time this stage
+        has asked for content it already has" - and a plain attribute measures
+        this backend object instead. The digest maps beside this already go
+        through `store` for exactly that reason.
+
+        Measured on run-df4dc6f5: 110 reads had their content withheld and the
+        two rungs above it fired zero times. Every one of those 110 calls
+        `_the_way_out`, which returns text once the tally reaches
+        `REPEATED_READS_BEFORE_NAMING_THE_EXIT` (6). `specialist_testing_2`
+        alone read one `package.json` fifteen times and was withheld thirteen
+        of them. A tally that survived those thirteen would have passed 6 and
+        then 12; it never passed 5, so it was being reset under them and both
+        upper rungs were unreachable in practice.
+
+        `store` returns the fallback dict when there is no stage to key on, so
+        outside a graph run the behaviour is what it was.
+        """
+        from app.agents.stage_memory import store
+
+        own = getattr(self, "_repeated_read_tally", None)
+        if own is None:
+            own = {}
+            self._repeated_read_tally = own  # noqa: SLF001 - own attribute
+        return store("repeated_reads", own)
+
+    def _count_a_repeated_read(self) -> int:
+        """Add one to this stage's tally and return the new total."""
+        tally = self._the_repeated_read_tally()
+        tally["count"] = tally.get("count", 0) + 1
+        return tally["count"]
+
+    def _repeated_reads_so_far(self) -> int:
+        return self._the_repeated_read_tally().get("count", 0)
+
     def _refuse_a_read_that_returns_nothing_new(self, file_path: str) -> str:
         """Why this read failed, or "" while it should still succeed.
 
@@ -677,12 +715,13 @@ class _NoticingRepeats:
         `REPEATED_READS_BEFORE_REFUSING` for the measurement that says notices
         stop working long before this.
         """
-        if getattr(self, "_repeated_reads", 0) < REPEATED_READS_BEFORE_REFUSING:
+        if self._repeated_reads_so_far() < REPEATED_READS_BEFORE_REFUSING:
             return ""
         return (
             f"{READ_REFUSED_MARKER} '{file_path}' again: this returns nothing you "
             f"have not already been given, and it is the "
-            f"{self._repeated_reads}th time this stage has asked for content "
+            f"{self._repeated_reads_so_far()}th time this stage has asked for "
+            f"content "
             "it already has. The file has not changed since you last saw it, "
             "so nothing here can tell you anything new.\n"
             "A range you have NOT read still works, and so does `grep` for "
@@ -702,11 +741,12 @@ class _NoticingRepeats:
         run this was measured on and why it adds information rather than
         taking more away.
         """
-        if getattr(self, "_repeated_reads", 0) < REPEATED_READS_BEFORE_NAMING_THE_EXIT:
+        if self._repeated_reads_so_far() < REPEATED_READS_BEFORE_NAMING_THE_EXIT:
             return ""
         return (
             "\n\n[You have now re-read files this stage had already been given "
-            f"{self._repeated_reads} times, and written nothing between them. "
+            f"{self._repeated_reads_so_far()} times, and written nothing between "
+            f"them. "
             "Reading again cannot tell you anything new: nothing has changed "
             "these files since you last saw them. There are two ways out and "
             "both end this stage. If you have what you need, return your "

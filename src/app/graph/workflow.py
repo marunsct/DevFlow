@@ -2309,6 +2309,85 @@ def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     )
 
 
+def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] | None:
+    """The last test run this sprint recorded, from the execution ledger.
+
+    The same window and the same reading `_record_sprint_summary` uses, so the
+    number this gate acts on and the number the sprint summary prints cannot
+    disagree. Returns None when no runner reported counts, which is not evidence
+    of anything and must not gate.
+    """
+    try:
+        from app.tools.sandbox import read_execution_ledger
+
+        recorded = [dict(entry) for entry in (state.get("sprint_attempts") or [])]
+        since = max(
+            (str(entry.get("ended_at")) for entry in recorded if entry.get("ended_at")),
+            default=None,
+        )
+        return count_test_cases(
+            read_execution_ledger(state["repository"].root_path, limit=1000), since=since
+        )
+    except Exception:  # noqa: BLE001 - a gate that cannot read must not stop a run
+        logger.warning("Could not read the measured suite for this sprint", exc_info=True)
+        return None
+
+
+def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
+    """Why this sprint cannot be accepted on the review's word, or "".
+
+    The milestone review decides whether a sprint is delivered, and it decides
+    it by reading. The harness does not have to read: every command whose runner
+    printed a summary line is in the execution ledger with its own `tests`,
+    `passed` and `failed`.
+
+    Measured on run-df4dc6f5's third sprint. The ledger recorded `npm test` -
+    the project's own gating command - eight times in the four minutes before
+    the review:
+
+        10:23:50  npm test   tests=21  passed=15  failed=6
+        10:24:57  npm test   tests=21  passed=15  failed=6
+        ...
+        10:26:56  npm test   tests=21  passed=15  failed=6
+
+    and the review returned:
+
+        Executed npm run test successfully; all tests passed.
+        No blocking or major violations found.
+        Status: accepted
+
+    Three minor findings, none of them the six failures, and the sprint was
+    marked Completed. `app.analysis.verification_claims` was written for this
+    exact fault one layer down - "do not claim to have done what was not done" -
+    and checks a specialist's claimed commands against the ledger. Nothing
+    checked the reviewer's.
+
+    A reviewer may legitimately accept a sprint with known failures deferred.
+    What it may not do is accept one while reporting that the suite passed, and
+    the remedy names the numbers rather than arguing about judgement: the lead
+    is sent the measurement.
+
+    Nothing here names a language or a runner. The counts come from
+    `sandbox._RUNNER_TOTALS`, which reads TAP, jest, vitest, pytest, cargo and
+    go, and a sprint built in something it cannot parse reports no counts and is
+    not gated - the same rule `_record_sprint_summary` follows.
+    """
+    cases = _the_suite_the_ledger_measured(state)
+    if not cases or cases.get("failed", 0) <= 0:
+        return ""
+    return (
+        f"MUST FIX - the suite this sprint is measured by is failing. The "
+        f"execution ledger's last recorded test run is {cases['tests']} case(s), "
+        f"{cases['passed']} passed and {cases['failed']} failed. That is the "
+        "measurement, not a reading of the code, and it is the number the sprint "
+        "summary reports and every later stage inherits. A sprint accepted over a "
+        "failing suite is the one outcome no later gate can recover from, because "
+        "every stage after it reads the pass as evidence the product works. Fix "
+        "the failing cases, or if they cannot be fixed in this sprint, say so as "
+        "a blocking finding naming them - do not report the suite as passing."
+    )
+
+
 def _escalate_to_a_human(
     state: WorkflowGraphState, error: str, **fields: Any
 ) -> dict[str, Any]:
@@ -3606,6 +3685,43 @@ def build_workflow_graph(
                 "above %s; recorded and continuing",
                 len(review.findings),
                 "/".join(sorted(_GATING_SEVERITIES)),
+            )
+
+        # Before anything is accepted: the ledger's own count of the suite. A
+        # review that reports a passing suite over a measured failing one is the
+        # worst outcome in this pipeline, because nothing after it looks again.
+        # See `_a_red_suite_the_review_called_green` for the run this is measured
+        # on. Bounded by the same revision limit as every other send-back, so a
+        # suite that cannot be made to pass ends the run rather than looping.
+        red = _a_red_suite_the_review_called_green(state)
+        if red:
+            revision_count = state.get("milestone_revision_count", 0) + 1
+            if revision_count < MAX_MILESTONE_REVISIONS:
+                logger.warning(
+                    "Milestone review accepted a sprint whose measured suite is "
+                    "failing; sending it back: %s",
+                    red[:160],
+                )
+                return _handing_on(
+                    stage="technical_lead",
+                    revision_comments=state.get("revision_comments", []) + [red],
+                    milestone_revision_count=revision_count,
+                    milestone_review=review,
+                )
+            summary = _record_sprint_summary(
+                state,
+                "Failed",
+                f"the suite was still failing after {MAX_MILESTONE_REVISIONS} revisions",
+            )
+            return _escalate_to_a_human(
+                state,
+                error=(
+                    f"The sprint's own test suite was still failing after "
+                    f"{MAX_MILESTONE_REVISIONS} revisions.\n\n{red}"
+                ),
+                milestone_revision_count=revision_count,
+                milestone_review=review,
+                **summary,
             )
 
         sprint_index = state.get("current_sprint_index", 0)

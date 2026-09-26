@@ -460,8 +460,22 @@ def test_nothing_is_refused_before_a_project_exists(tmp_path):
     assert guard(["npm", "init", "-y"], str(tmp_path)) is None
 
 
-def test_the_refusal_reaches_the_agent_as_a_tool_result(tmp_path):
-    """A guard that raises would crash the stage instead of correcting it."""
+def test_the_refusal_reaches_the_agent_as_a_tool_result(tmp_path, monkeypatch):
+    """A guard that raises would crash the stage instead of correcting it.
+
+    Execution is enabled explicitly. Without that this test passed only when
+    some earlier test in the session had called `load_settings()`, which runs
+    `load_dotenv` and puts the developer's `.env` into `os.environ` for the rest
+    of the process - `ALLOW_COMMAND_EXECUTION` among it. So the assertion held in
+    a full-suite run and failed when this file was run on its own, where
+    `execute` returns "Command execution is disabled" before reaching any guard.
+
+    A test whose result depends on which tests ran before it, and on a file that
+    is not in the repository, is not testing what it says. What it means to check
+    is that the guard's refusal comes back as a tool result, which requires
+    getting as far as the guard.
+    """
+    monkeypatch.setenv("ALLOW_COMMAND_EXECUTION", "true")
     from app.tools.sandbox import SandboxExecutor
 
     result = SandboxExecutor.execute(

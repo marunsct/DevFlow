@@ -1292,6 +1292,45 @@ def _guard_a_targeted_change(
     return root, target
 
 
+def _the_one_line_it_pins(expected: str) -> str:
+    """`expect_start`/`expect_end` reduced to the single line they name.
+
+    Both parameters pin one line - the tool's own docstring says "the LAST line
+    of the range as you read it" - and a caller that sends two cannot match
+    anything, because the comparison is against one line of the file.
+
+    Measured on run-df4dc6f5's `specialist_ui_ux_0`, twice in the same second.
+    It sent `expect_start` as two lines of `package.json`:
+
+        {
+          "name": "simple-to-do-list-app"
+
+    Line 1 of the file is `{`, so the call was right about where it was. The
+    refusal read:
+
+        Line 1 of 'package.json' is not what you expected, so the numbering has
+        moved since you read it.
+          you expected: {
+            "name": "simple-to-do-list-app"
+          line 1 is:  {
+        That line is not in the file at all now.
+
+    Three statements that contradict each other: it prints the line, prints the
+    same line back, and then says the line is not in the file. Nothing in it
+    could lead a reader to the newline that caused it.
+
+    Forgiven rather than refused, which is what this module does with every
+    other unambiguous transcription fault - line numbers, doubled backslashes,
+    JSON escaping, indentation and blank lines are all already forgiven here.
+    The first line is not a guess at what was meant: it is what the parameter
+    is defined to carry.
+    """
+    for line in expected.splitlines():
+        if line.strip():
+            return line
+    return expected
+
+
 def _the_same_range_somewhere_else(
     lines: list[str],
     expect_start: str,
@@ -1324,8 +1363,8 @@ def _the_same_range_somewhere_else(
     if not expect_end.strip():
         return None
 
-    wanted_start = expect_start.strip()
-    wanted_end = expect_end.strip()
+    wanted_start = _the_one_line_it_pins(expect_start).strip()
+    wanted_end = _the_one_line_it_pins(expect_end).strip()
     if not wanted_start:
         return None
 
@@ -1508,6 +1547,17 @@ def replace_approved_lines(
         shifted_note = ""
         if expect_start:
             actual_first = lines[start_line - 1]
+            # One line, whatever arrived. A caller that sent two could not match
+            # anything and was told the line was not in the file while the
+            # message printed it - see `_the_one_line_it_pins`.
+            pinned = _the_one_line_it_pins(expect_start)
+            if pinned.strip() != expect_start.strip():
+                shifted_note = (
+                    " `expect_start` pins one line and this call sent "
+                    f"{len(expect_start.strip().splitlines())}; only its first "
+                    "line was compared."
+                )
+            expect_start = pinned
             if expect_start.strip() != actual_first.strip():
                 moved = _the_same_range_somewhere_else(
                     lines, expect_start, expect_end, start_line, end_line
@@ -1522,7 +1572,7 @@ def replace_approved_lines(
                     )
                 new_start, new_end = moved
                 shift = new_start - start_line
-                shifted_note = (
+                shifted_note += (
                     f" The numbering had moved: lines {start_line}-{end_line} are "
                     f"now {new_start}-{new_end}, "
                     f"{abs(shift)} line{'s' if abs(shift) != 1 else ''} "

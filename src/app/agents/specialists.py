@@ -492,13 +492,54 @@ def build_test_run_request(
     finds must come back as a structured `ReportedDefect` so the controller can
     track and route it, rather than as prose in `blockers` that nothing can act
     on.
+
+    The cross-file checks are handed over with the brief, which they were not
+    before. `summarise_integration` ran in one place - as evidence for the
+    milestone reviewer - so a defect it proves could only be raised after the
+    test rounds had finished and a green suite had already been reported, and
+    fixing it then costs a whole milestone revision.
+
+    Measured on run-e980310b, which failed its first sprint in eight minutes.
+    Its plan delegated "Create style.css with basic responsive CSS rules",
+    `index.html` linked that file, no tool call in the run ever touched it, and
+    `_broken_local_references` proves that by reading the two files. The suite
+    was green, the test rounds reported nothing, and the milestone reviewer
+    raised it as blocking three times until the run hit the revision limit.
+
+    This stage is where a defect is supposed to be found, and it was the one
+    stage not told. A problem here enters the remediation cycle that already
+    exists for defects, inside the sprint, instead of costing a revision of it.
+
+    Only the tier `summarise_integration` itself calls breaking. The judgement
+    ones - a dead CSS rule, an export no test mentions - are not defects and
+    would turn this stage's report into a style review.
     """
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
+
+    proven = []
+    try:
+        from app.analysis.integration_checks import problems_that_break_the_product
+
+        proven = problems_that_break_the_product(repository_root, stack)
+    except Exception:  # noqa: BLE001 - a brief is better without them than absent
+        proven = []
+    proven_text = ""
+    if proven:
+        proven_text = (
+            "--- Already proven by reading the files, before you run anything ---\n"
+            "Each of these was decided by comparing two files in this workspace, "
+            "not by judgement, so none of them depends on your agreement and none "
+            "will be fixed by a passing suite. Report every one as a defect, with "
+            "the role that must fix it:\n"
+            + "\n".join(f"- {problem}" for problem in proven)
+            + "\n\n"
+        )
     brief = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"{describe_stack(stack)}"
         f"--- Milestone under test ---\n{milestone_goal}\n\n"
         f"--- Files changed in this milestone ---\n{files_text}\n\n"
+        f"{proven_text}"
         "Run the unit, integration, contract, end-to-end, accessibility, and security "
         "tests that apply to this increment, using the testing approach this project "
         "already chose. Use the run_validation tool to actually execute them.\n\n"

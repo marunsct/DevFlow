@@ -329,6 +329,68 @@ Acceptance criteria:
 
         assert len(bullets) == 2, section
 
+    def test_a_failed_sprint_does_not_claim_the_work_was_implemented(self):
+        """`features` is what the milestone delegated, not what passed.
+
+        Measured on run-e980310b, which failed its first sprint with
+        `index.html references style.css which does not exist` as a blocking
+        finding, while this section read "Create style.css with basic
+        responsive CSS rules". Nothing in the state records per-task
+        completion, so the honest move is to say what the list is.
+
+        The heading stays: it is the one `SprintSummaryPanel` parses and it
+        came with the feature. The qualification goes in the body, and not as a
+        bullet, because the UI keeps only lines that start with one.
+        """
+        document = render_sprint_summary(
+            sprint_number=1,
+            total_sprints=6,
+            goal="Implement CRUD",
+            planned=["Add index.html, style.css, app.js"],
+            attempts=[{
+                "sprint_index": 0,
+                "number": 1,
+                "status": "Failed",
+                "reason": "the milestone review still required changes after 3 revisions",
+                "cases": {"tests": 1, "passed": 0, "failed": 1},
+                "rounds": 3,
+                "features": ["Create style.css with basic responsive CSS rules."],
+                "defects": [],
+                "ended_at": "2026-09-27T01:00:00+00:00",
+            }],
+        )
+        section = document.split("## Features Implemented", 1)[1].split("##", 1)[0]
+
+        assert "not a record of what passed" in section
+        assert "Create style.css" in section, "the tasks are still listed"
+        assert not any(
+            line.startswith("- ") and "not a record" in line
+            for line in section.splitlines()
+        ), "the qualifier must not be a bullet, or the UI lists it as a feature"
+
+    def test_a_completed_sprint_is_not_qualified(self):
+        """A sprint that passed its review needs no caveat on its own work."""
+        document = render_sprint_summary(
+            sprint_number=1,
+            total_sprints=6,
+            goal="Implement CRUD",
+            planned=["Add index.html"],
+            attempts=[{
+                "sprint_index": 0,
+                "number": 1,
+                "status": "Completed",
+                "reason": "",
+                "cases": {"tests": 6, "passed": 6, "failed": 0},
+                "rounds": 2,
+                "features": ["Create index.html."],
+                "defects": [],
+                "ended_at": "2026-09-27T01:00:00+00:00",
+            }],
+        )
+        section = document.split("## Features Implemented", 1)[1].split("##", 1)[0]
+
+        assert "not a record of what passed" not in section
+
     def test_a_short_task_is_left_exactly_as_it_is(self):
         assert _one_line("Add a filter for completed tasks.") == (
             "Add a filter for completed tasks."

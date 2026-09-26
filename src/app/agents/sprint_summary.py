@@ -182,11 +182,30 @@ def render_sprint_summary(
     lines.append(f"- **Failed:** {cases['failed'] if cases else 0}")
 
     lines += ["", "## Planned for This Sprint", _bullets(planned, empty="Nothing recorded from the sprint plan.")]
-    lines += ["", "## Features Implemented",
-              _bullets(
-                  [_one_line(feature) for feature in (latest.get("features") or ())],
-                  empty="No delegated work recorded.",
-              )]
+    lines += ["", "## Features Implemented"]
+    # These are the tasks the milestone delegated, which is what the state
+    # carries; nothing records per-task completion. On a sprint that passed its
+    # review that reads correctly enough. On one that failed it does not, and
+    # this is the document a reader opens to find out what happened.
+    #
+    # Measured on run-e980310b, which failed its first sprint with
+    # `index.html references style.css which does not exist` as a blocking
+    # finding, while this section read "Create style.css with basic responsive
+    # CSS rules". The heading is the one the dashboards parse, so the
+    # qualification goes in the body rather than the heading, and not as a
+    # bullet - the UI keeps only the lines that start with one.
+    if str(latest.get("status", "")).strip().lower() != "completed":
+        lines.append(
+            "These are the tasks this sprint delegated, not a record of what "
+            "passed: the sprint did not pass its review, so read them as what "
+            "was attempted."
+        )
+    lines.append(
+        _bullets(
+            [_one_line(feature) for feature in (latest.get("features") or ())],
+            empty="No delegated work recorded.",
+        )
+    )
 
     lines += ["", "## Test Cycles",
               f"- **Rounds Completed:** {latest.get('rounds', 0)}",

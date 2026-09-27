@@ -270,29 +270,69 @@ def _dangling_class_selectors(files: list[Path], root: Path) -> list[str]:
     return problems
 
 
-def _dangling_id_selectors(files: list[Path], root: Path) -> list[str]:
-    """Stylesheet rules that target an element id no page contains.
+#: The ways a script gives an element an id. None of them contains a `#`, which
+#: is what the CSS selector pattern matches - so reading script text with
+#: `_ID_SELECTOR` found only ids the script *queries*, never one it *creates*,
+#: and every dynamically built element read as undeclared.
+#:
+#: Demonstrated on four normal spellings, all of which were flagged: `n.id =
+#: 'error-notice'`, `n.setAttribute('id', 'error-notice')`, an `id="..."` inside
+#: a template literal, and the genuine case of an id nothing creates. Only the
+#: last should be reported.
+_JS_ASSIGNS_AN_ID = re.compile(r"""\.id\s*=\s*["'`]([A-Za-z][\w-]*)["'`]""")
+_JS_SETS_AN_ID = re.compile(
+    r"""setAttribute\s*\(\s*["']id["']\s*,\s*["']([A-Za-z][\w-]*)["']"""
+)
 
-    Ids only. A class may legitimately be added at runtime by script, but an id
-    selector that matches nothing is dead in every case.
+
+def _dangling_id_selectors(files: list[Path], root: Path) -> list[str]:
+    """Stylesheet rules that target an element id nothing ever creates.
+
+    Ids only. A class may legitimately be added at runtime by script, and
+    `_dangling_class_selectors` above reasons about those separately.
+
+    An id a script creates counts as declared. That was the intent from the
+    start - the comment said so - but the pattern used to look for it was
+    `_ID_SELECTOR`, which matches CSS `#name`. A script writes `n.id = 'name'`,
+    `setAttribute('id', 'name')` or `id="name"` inside markup it builds, and none
+    of those contains a `#`, so the only thing that ever counted was an id the
+    script *queried* by selector. Every element built at runtime read as
+    undeclared.
+
+    Latent rather than realised: across the 77 stored workspaces this check
+    produces 2 findings and both are genuine, because those products happen to
+    put every styled id in their markup. A product that renders its UI from
+    script - which is most of what this harness is asked to build - would have
+    been told its live rules were dead.
+
+    TypeScript and the component suffixes are read too. The class check beside
+    this one already read them; this one listed only `.js`, `.mjs` and `.cjs`, so
+    a product whose logic is in `.ts` had none of its ids counted at all.
     """
     declared: set[str] = set()
     for path in files:
-        if path.suffix.lower() in {".html", ".htm"}:
+        suffix = path.suffix.lower()
+        if suffix in {".html", ".htm"}:
             declared.update(_HTML_ID.findall(_read(path)))
-        elif path.suffix.lower() in {".js", ".mjs", ".cjs"}:
-            # An id the script creates counts as declared.
-            declared.update(_ID_SELECTOR.findall(_read(path)))
+        elif suffix in _CLIENT_LOGIC_SUFFIXES:
+            text = _read(path)
+            # Queried, assigned, set, or written into markup the script builds.
+            declared.update(_ID_SELECTOR.findall(text))
+            declared.update(_JS_ASSIGNS_AN_ID.findall(text))
+            declared.update(_JS_SETS_AN_ID.findall(text))
+            declared.update(_HTML_ID.findall(text))
 
     problems = []
     for path in files:
-        if path.suffix.lower() != ".css":
+        if path.suffix.lower() not in {".css", ".scss", ".sass"}:
             continue
         targeted = set(_ID_SELECTOR.findall(_css_selectors_only(_read(path))))
         for identifier in sorted(targeted - declared):
             problems.append(
-                f"{path.relative_to(root)} styles `#{identifier}`, which no HTML "
-                "element declares. The rule never applies."
+                f"{path.relative_to(root)} styles `#{identifier}`, and no page "
+                "declares it and no script creates it. The rule never applies - "
+                "either it is dead, or the element it was written for was never "
+                "built."
             )
     return problems
 

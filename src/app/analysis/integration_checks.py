@@ -285,6 +285,148 @@ _JS_SETS_AN_ID = re.compile(
 )
 
 
+#: DOM events that do not bubble, and the bubbling event to use instead. A
+#: handler attached to a container for one of these never fires for a child, so
+#: event delegation with it is dead code that throws nothing.
+_DOES_NOT_BUBBLE = {
+    "blur": "focusout",
+    "focus": "focusin",
+    "mouseenter": "mouseover",
+    "mouseleave": "mouseout",
+}
+
+#: `container.addEventListener('blur', ...`, capturing the target and the event.
+_A_LISTENER = re.compile(
+    r"""(\w+)\s*\.addEventListener\s*\(\s*['"](\w+)['"]""",
+)
+
+#: How far past the call to look for the delegation tell. A handler longer than
+#: this is not the shape this reads.
+_HANDLER_WINDOW = 900
+
+#: What says a handler is delegating rather than handling its own element:
+#: it looks at what the event came from.
+_DELEGATES = re.compile(r"""\.target\b""")
+
+
+def _a_delegated_handler_for_an_event_that_does_not_bubble(
+    files: list[Path], root: Path
+) -> list[str]:
+    """A container listening for an event that never reaches it, or [].
+
+    Event delegation works because the event bubbles from the child to the
+    container. `blur`, `focus`, `mouseenter` and `mouseleave` do not bubble, so a
+    delegated handler for one of them is never called - and nothing throws, no
+    test fails, and the feature is simply dead.
+
+    Measured on run-f05d8d47, which failed at the milestone revision limit. Its
+    `task-manager/app.js` line 151 held
+
+        listContainer.addEventListener('blur', e => { ... e.target ... })
+
+    for inline editing, and the reviewer found it:
+
+        [blocking] correctness: The blur-based save for inline editing is still
+        broken ... the `blur` event does not bubble in the DOM event flow. When a
+        user clicks outside or tabs away from the inline edit input, the blur
+        fires on the input element itself and never reaches `listContainer`, so
+        the handler never executes and changes are silently lost.
+
+    Three revisions later the run stopped. The reviewer read it correctly; nothing
+    in the harness could.
+
+    Reported only when the handler looks at `event.target`, which is what says it
+    is delegating rather than handling its own element. A `blur` handler attached
+    to the input itself is correct and common, and must stay silent.
+    """
+    problems: list[str] = []
+    for path in files:
+        if path.suffix.lower() not in _CLIENT_LOGIC_SUFFIXES:
+            continue
+        relative = str(path.relative_to(root))
+        if is_test(relative):
+            continue
+        text = _read(path)
+        for match in _A_LISTENER.finditer(text):
+            target, event = match.group(1), match.group(2).lower()
+            instead = _DOES_NOT_BUBBLE.get(event)
+            if not instead:
+                continue
+            handler = text[match.end() : match.end() + _HANDLER_WINDOW]
+            # Only as far as the next listener, so one handler's body is not read
+            # as another's.
+            following = handler.find(".addEventListener")
+            if following > 0:
+                handler = handler[:following]
+            if not _DELEGATES.search(handler):
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"{relative} line {line} attaches a `{event}` handler to "
+                f"`{target}` and the handler reads `event.target`, so it is "
+                f"delegating - but `{event}` does not bubble. The event fires on "
+                f"the child and never reaches `{target}`, so this handler never "
+                f"runs: nothing throws, no test fails, and the feature is simply "
+                f"dead. Use `{instead}`, which is the bubbling counterpart, or "
+                f"attach the `{event}` handler to the element itself when it is "
+                f"created."
+            )
+    return problems
+
+
+#: `describe('name'`, `test('name'` and `it('name'` at a test file's top level.
+#: `[ \t]*`, not `\s*`: `\s` matches a newline, so the match could start on the
+#: line before and every reported line number came out one too low. The message
+#: tells a reader which block to delete, so the number has to be the real one.
+_A_SUITE_NAME = re.compile(
+    r"""^[ \t]*(?:test\s*\.\s*)?(describe|suite)\s*\(\s*['"`]([^'"`]+)['"`]""", re.M
+)
+
+
+def _a_suite_registered_twice(files: list[Path], root: Path) -> list[str]:
+    """A test file registering the same suite name twice, or [].
+
+    Both copies run. The count the gates read is inflated by the duplicate, and a
+    reader comparing "tests passed" against the suite cannot reconcile them.
+
+    Measured on run-f05d8d47, whose `task-manager/app.test.mjs` declares
+    `describe('editTask', ...)` at line 167 and again at line 245. Its milestone
+    review found it:
+
+        [minor] code_quality: Duplicate test describe block in app.test.mjs. The
+        `describe('editTask', ...)` block appears twice, causing the same set of
+        unit tests to be registered and run twice by node:test, wasting CI time
+        and cluttering test output.
+
+    Named because it is the kind of thing a whole-file rewrite produces - a block
+    appended rather than replaced - and the run had six specialists writing that
+    project.
+    """
+    problems: list[str] = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        if not is_test(relative):
+            continue
+        if path.suffix.lower() not in _CLIENT_LOGIC_SUFFIXES:
+            continue
+        seen: dict[str, list[int]] = {}
+        text = _read(path)
+        for match in _A_SUITE_NAME.finditer(text):
+            name = match.group(2).strip()
+            seen.setdefault(name, []).append(text.count("\n", 0, match.start()) + 1)
+        for name, lines in seen.items():
+            if len(lines) < 2:
+                continue
+            where = ", ".join(str(line) for line in lines)
+            problems.append(
+                f"{relative} registers the suite `{name}` {len(lines)} times, at "
+                f"lines {where}. Every copy runs, so the case count every gate in "
+                f"this pipeline reads is inflated by the duplicates and no reader "
+                f"can reconcile it with the suite. Keep one and delete the rest."
+            )
+    return problems
+
+
 def _dangling_id_selectors(files: list[Path], root: Path) -> list[str]:
     """Stylesheet rules that target an element id nothing ever creates.
 
@@ -4848,6 +4990,10 @@ def _persisted_data_parsed_without_a_guard(files: list[Path], root: Path) -> lis
 #: instead.
 _FLOORS: dict[str, str] = {
     "clickable controls against the scripts that should operate them": "BREAKS",
+    # A handler that never runs is a feature that does not work, which is this
+    # bucket's own heading. run-f05d8d47's reviewer graded the same finding
+    # blocking and the run died on it.
+    "delegated handlers against the events that do not bubble to them": "BREAKS",
 }
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
@@ -4869,6 +5015,10 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _a_required_action_nothing_implements(files, root, brief)),
     ("clickable controls against the scripts that should operate them",
      lambda files, root, stack, brief: _a_control_group_no_script_operates(files, root)),
+    ("delegated handlers against the events that do not bubble to them",
+     lambda files, root, stack, brief: _a_delegated_handler_for_an_event_that_does_not_bubble(files, root)),
+    ("suites a test file registers more than once",
+     lambda files, root, stack, brief: _a_suite_registered_twice(files, root)),
     ("actions the documents require against the tests that should cover them",
      lambda files, root, stack, brief: _a_required_action_no_test_covers(files, root, brief)),
     ("the chosen stack against what is on disk",

@@ -77,43 +77,47 @@ def test_the_fixture_matches_what_a_transcript_really_holds() -> None:
 
 class TestCountingTheRepeats:
     def test_a_tool_repeated_to_the_threshold_is_named(self) -> None:
-        note = _refusal_note(
-            "edit_artifact", IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL - 1
-        )
+        notes = [
+            _refusal_note("edit_artifact", n)
+            for n in range(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL)
+        ]
 
-        assert _a_tool_refused_identically([note]) == (
+        assert _a_tool_refused_identically(notes) == (
             "edit_artifact",
             IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
         )
 
     def test_one_short_of_the_threshold_is_left_alone(self) -> None:
         """The note is what lets a stage correct nearly-right arguments itself."""
-        note = _refusal_note(
-            "replace_lines", IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL - 3
-        )
+        notes = [
+            _refusal_note("replace_lines", n)
+            for n in range(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL - 1)
+        ]
 
-        assert _a_tool_refused_identically([note]) is None
+        assert _a_tool_refused_identically(notes) is None
 
-    def test_one_note_carrying_a_high_count_is_enough(self) -> None:
-        """The decisive case: the repeats need not be in this conversation.
+    def test_the_number_the_note_quotes_is_not_trusted(self) -> None:
+        """It counts the run, not the stage, so it must not stand in for a tally.
 
-        The guard's tally lives in middleware state and survives a stage pausing
-        for approval; the conversation a request carries does not. Counting the
-        notes instead of reading their number is what left `_refused_reads`
-        seeing 3 where run-1bdbc08a's transcript held 20.
+        Measured on run-1bdbc08a: `specialist_ui_ux_0` made one `edit_artifact`
+        call and was told it had failed the same way the 3 previous times;
+        `specialist_testing_4` made two and was told 5. The count lives on the
+        middleware instance, which outlives the stage. Believing it would take a
+        tool away from a stage on its first use of it.
         """
-        named = _a_tool_refused_identically([_refusal_note("replace_lines", 12)])
-
-        assert named == ("replace_lines", 13)
+        assert _a_tool_refused_identically([_refusal_note("replace_lines", 12)]) is None
 
     def test_a_note_without_a_number_still_counts_as_one(self) -> None:
-        """Wording may change; a missing number must not read as many."""
+        """Each note is one call this stage really made, number or not."""
         message = _ToolMessage(
-            f"{{\"error\": \"nope\"}}\n\n[This `edit_artifact` "
-            f"{REPEATED_FAILURE_MARKER} before.]"
+            f"[This `edit_artifact` {REPEATED_FAILURE_MARKER} before.]"
         )
+        enough = [message] * IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL
 
-        assert _a_tool_refused_identically([message]) is None
+        assert _a_tool_refused_identically(enough) == (
+            "edit_artifact",
+            IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
+        )
 
     def test_an_ordinary_conversation_withholds_nothing(self) -> None:
         messages = [
@@ -145,7 +149,10 @@ class TestCountingTheRepeats:
         assert _a_tool_refused_identically(messages) is None
 
     def test_the_busiest_offender_is_the_one_named(self) -> None:
-        messages = [_refusal_note("replace_lines", 8), _refusal_note("ls", 1)]
+        messages = [
+            *[_refusal_note("replace_lines", n) for n in range(5)],
+            _refusal_note("ls", 1),
+        ]
         named = _a_tool_refused_identically(messages)
 
         assert named is not None and named[0] == "replace_lines"
@@ -211,14 +218,22 @@ def test_the_threshold_leaves_room_for_the_note_to_work() -> None:
     assert IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL > REPEATS_BEFORE_SAYING_SO
 
 
-class TestTheReadTallyIsTheStagesNotTheConversations:
-    """The same blind spot, in the counter this one was modelled on.
+class TestTheReadOrdinalIsNotTheStages:
+    """The refusal quotes a number that looks like the stage's tally and is not.
 
-    `_refused_reads` counted messages, and a stage that pauses for approval
-    resumes with a shorter list while the backend's tally carries on. Measured on
-    run-1bdbc08a: `specialist_backend_2` was refused twenty redundant reads of
-    one file, each refusal saying so, against a threshold of three that never
-    fired because no one invocation held more than a few.
+    "it is the 34th time this stage has asked for content it already has" counts
+    the run. Measured on run-1bdbc08a: `specialist_testing_5` made 11 read calls
+    in total and was told 34; `specialist_ui_ux_1` made 14 and was told 29;
+    `specialist_ui_ux_0` was refused once and told 33.
+
+    `workspace_backend._the_repeated_read_tally` keeps the count in
+    `stage_memory.store("repeated_reads", own)`, and `store` hands back the
+    per-instance fallback whenever `current_stage_key()` cannot resolve a thread.
+    That instance outlives the stage, so the tally is the run's.
+
+    This is a guard against using it. A withholding keyed on that number would
+    take a stage's read tool away on its first refusal, as soon as any earlier
+    stage in the run had pushed the shared count past three.
     """
 
     @staticmethod
@@ -228,45 +243,29 @@ class TestTheReadTallyIsTheStagesNotTheConversations:
         return _ToolMessage(
             f"{READ_REFUSED_MARKER} 'app.js' again: this returns nothing you have "
             f"not already been given, and it is the {ordinal} time this stage has "
-            "asked for content it already has. The file has not changed since you "
-            "last saw it, so nothing here can tell you anything new."
+            "asked for content it already has."
         )
 
-    def test_one_refusal_reporting_a_high_tally_reaches_the_threshold(self) -> None:
+    def test_a_single_refusal_quoting_a_high_ordinal_counts_as_one(self) -> None:
         from app.agents.settled_answer import (
             READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL,
             _refused_reads,
         )
 
-        counted = _refused_reads([self._refusal("20th")])
+        counted = _refused_reads([self._refusal("34th")])
 
-        assert counted == 20
-        assert counted >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
-
-    def test_a_first_offence_is_still_only_one(self) -> None:
-        """The exit that was declined before: a fresh invocation reading a file
-        it has never read must not be punished for the stage's history."""
-        from app.agents.settled_answer import (
-            READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL,
-            _refused_reads,
+        assert counted == 1, (
+            "the ordinal counts the run, not the stage, so one refusal must not "
+            "read as thirty-four"
         )
-
-        counted = _refused_reads([self._refusal("1st")])
-
-        assert counted == 1
         assert counted < READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
 
+    def test_refusals_actually_present_are_what_counts(self) -> None:
+        from app.agents.settled_answer import _refused_reads
+
+        assert _refused_reads([self._refusal("2nd")] * 5) == 5
+
     def test_a_conversation_with_no_refusal_is_untouched(self) -> None:
-        """The tally is only consulted once a refusal is in this conversation."""
         from app.agents.settled_answer import _refused_reads
 
         assert _refused_reads([_ToolMessage("@@ lines 1-20 of 20 @@\nconst a = 1;")]) == 0
-
-    def test_counting_never_falls_below_the_messages_present(self) -> None:
-        """A refusal whose wording loses the ordinal must still be counted."""
-        from app.agents.workspace_backend import READ_REFUSED_MARKER
-        from app.agents.settled_answer import _refused_reads
-
-        plain = _ToolMessage(f"{READ_REFUSED_MARKER} 'app.js' again: nothing new.")
-
-        assert _refused_reads([plain] * 5) == 5

@@ -785,39 +785,35 @@ def _refused_reads(messages: list[Any]) -> int:
     """How many redundant reads this stage has been refused.
 
     Counted from the conversation rather than from shared state, so the two
-    modules need agree on nothing but the marker the backend writes - and then
-    raised to the tally the refusal itself reports, because the conversation is
-    not the whole stage. A stage that pauses for approval and resumes comes back
-    with a shorter message list while the backend's count carries on, so
-    counting messages alone saw a handful where the stage had done far more.
+    modules need agree on nothing but the marker the backend writes.
 
-    Measured on run-1bdbc08a: `specialist_backend_2` was refused twenty
-    redundant reads of one file, every one of them saying so - "it is the 20th
-    time this stage has asked for content it already has" - against a threshold
-    of three that never fired, because no single invocation held more than a
-    few of them.
+    The ordinal the refusal quotes - "it is the 34th time this stage has asked
+    for content it already has" - is deliberately NOT used, though it looks like
+    exactly the tally this wants. It does not count the stage. Measured on
+    run-1bdbc08a: `specialist_testing_5` made 11 read calls in total and was told
+    it was on its 34th, `specialist_ui_ux_1` made 14 and was told 29, and
+    `specialist_ui_ux_0` was refused once and told 33.
 
-    This is not the blanket carry-over declined earlier, which would have let a
-    fresh invocation be refused a file it had never read. The tally is only
-    consulted when a refusal is already in *this* conversation: the stage has to
-    ask for content it already has here and now, and what the history then
-    decides is whether that is a first mistake or the twentieth.
+    The cause is `workspace_backend._the_repeated_read_tally`, which keeps the
+    count in `stage_memory.store("repeated_reads", own)`. `store` returns the
+    per-instance fallback whenever `current_stage_key()` cannot resolve a thread,
+    and that instance outlives the stage - so the number is the run's, not the
+    stage's, and the sentence carrying it is wrong about whose it is.
+
+    Trusting it would withhold a stage's read tool on its first refusal, once any
+    earlier stage in the run had pushed the shared count past three. Until that
+    tally is really per stage, counting the refusals in front of us understates
+    a stage that paused and resumed, and understating is the safe direction.
     """
     from app.agents.workspace_backend import READ_REFUSED_MARKER
 
     refused = 0
-    reported = 0
     for message in messages:
         if getattr(message, "type", None) != "tool":
             continue
-        content = str(getattr(message, "content", "") or "")
-        if READ_REFUSED_MARKER not in content:
-            continue
-        refused += 1
-        said = re.search(r"the (\d+)(?:st|nd|rd|th) time this stage", content)
-        if said:
-            reported = max(reported, int(said.group(1)))
-    return max(refused, reported)
+        if READ_REFUSED_MARKER in str(getattr(message, "content", "") or ""):
+            refused += 1
+    return refused
 
 
 def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
@@ -838,15 +834,20 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     succeed had no such step, so the only thing bounding it was the stage's
     model-call budget.
 
-    Read from the note's own number rather than by counting the notes. The guard
-    keeps its tally in middleware state that survives a stage pausing for
-    approval and resuming, and it prints that tally - "the 13 previous times" -
-    so the number in the newest note is the authoritative one. Counting the
-    messages instead would miss every repeat that fell outside the conversation
-    this request carries, which is what leaves `_refused_reads` beside it
-    reporting 3 while the transcript holds 20: measured on run-1bdbc08a, whose
-    `specialist_backend_2` was refused twenty redundant reads of one file across
-    several invocations, each of them under a threshold of three.
+    Counted by the notes in front of us, not by the number one of them quotes.
+    "the 13 previous times you ran it in this stage" looks like exactly the tally
+    this wants and does not count the stage: measured on run-1bdbc08a,
+    `specialist_ui_ux_0` made one `edit_artifact` call and was told it had failed
+    the same way the 3 previous times, `specialist_testing_4` made two and was
+    told 5, `specialist_backend_3` made four and was told 6. The count lives on
+    the middleware instance, which outlives the stage, so it is the run's.
+    `_refused_reads` below has the same trap for the same reason.
+
+    So a note is worth one, and each note is attached to a call this stage really
+    made. Across a stage that pauses for approval and resumes this undercounts,
+    which is the safe direction: the cost of undercounting is a few more refused
+    calls, and the cost of overcounting is taking a tool away from a stage on its
+    first use of it.
 
     The name comes out of the note's own backticks. The read guard writes the
     same phrase without a name, and is left to the read path, which says more
@@ -854,7 +855,7 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     """
     from app.agents.repeated_queries import REPEATED_FAILURE_MARKER
 
-    worst: dict[str, int] = {}
+    seen: dict[str, int] = {}
     for message in messages:
         if getattr(message, "type", None) != "tool":
             continue
@@ -865,18 +866,14 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
         quoted = re.findall(r"`([a-z_]+)`", content[:marker])
         if not quoted:
             continue
-        said = re.search(r"the (\d+) previous times", content[marker:])
-        # The note counts the calls *before* this one, so the call that carried
-        # it is the (n+1)th.
-        repeats = int(said.group(1)) + 1 if said else 1
         name = quoted[-1]
-        worst[name] = max(worst.get(name, 0), repeats)
-    if not worst:
+        seen[name] = seen.get(name, 0) + 1
+    if not seen:
         return None
-    name = max(worst, key=lambda key: worst[key])
-    if worst[name] < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
+    name = max(seen, key=lambda key: seen[key])
+    if seen[name] < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
         return None
-    return name, worst[name]
+    return name, seen[name]
 
 
 def _without_that_tool(request: Any, name: str) -> list[Any] | None:

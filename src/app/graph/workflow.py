@@ -1076,6 +1076,76 @@ def _outcome_summary(structured_response: Any) -> str:
     return "\n".join(parts)
 
 
+#: How many items of one kind a stage summary lists. A stage that changed thirty
+#: files is described by the first few and a count, not by all thirty.
+MOST_ITEMS_IN_A_STAGE_SUMMARY = 6
+
+#: The fields of `SpecialistOutput` worth a line, in the order a reader wants
+#: them: what changed, then what was decided, then what was proven, then what is
+#: in the way.
+_WORTH_RECORDING = (
+    ("changed_files", "Files changed"),
+    ("decisions", "Decisions"),
+    ("tests", "Tests"),
+    ("documentation", "Documentation"),
+    ("risks", "Risks"),
+    ("blockers", "Blockers"),
+)
+
+
+def _what_this_stage_reported(structured_response: Any) -> str:
+    """The body of a stage's summary document, or "".
+
+    `_outcome_summary` returns "" for a stage whose schema has neither a status
+    nor findings, and says in its own docstring that this is "the right amount of
+    narration for it" - which is a decision about the live activity stream, where
+    publishing nothing is correct.
+
+    The same empty string was also written to `docs/stage_summaries/<stage>.md`.
+    Across the stored runs that is 204 of 229 summary documents holding 25 bytes:
+    a heading and nothing else. Every `defect_fix`, every `test_round`, and every
+    specialist. Only the three reviewing stages, which have a status, said
+    anything.
+
+    So the stream keeps its silence and the document gets what the stage actually
+    returned. A specialist reports changed files, decisions, tests, documentation,
+    risks and blockers, and all of it is already on the object.
+
+    Returns "" when the response really carries nothing, and the caller then
+    writes no document rather than an empty one.
+    """
+    lines: list[str] = []
+    for field, label in _WORTH_RECORDING:
+        items = [str(item).strip() for item in (getattr(structured_response, field, None) or ())]
+        items = [item for item in items if item]
+        if not items:
+            continue
+        shown = items[:MOST_ITEMS_IN_A_STAGE_SUMMARY]
+        lines.append(f"{label} ({len(items)}):")
+        lines.extend(f"- {item}" for item in shown)
+        if len(items) > len(shown):
+            lines.append(f"- ... and {len(items) - len(shown)} more")
+        lines.append("")
+    runs = list(getattr(structured_response, "verification", None) or ())
+    if runs:
+        lines.append(f"Commands run ({len(runs)}):")
+        for entry in runs[:MOST_ITEMS_IN_A_STAGE_SUMMARY]:
+            # `command` is the argv list, which is how every execution tool in
+            # this harness passes one. `str()` on it renders "['npm', 'test']",
+            # so it is joined back into the command a reader would type.
+            raw = getattr(entry, "command", "") or ""
+            command = (
+                " ".join(str(part) for part in raw) if isinstance(raw, (list, tuple))
+                else str(raw)
+            ).strip()
+            code = getattr(entry, "exit_code", getattr(entry, "returncode", None))
+            if command:
+                lines.append(f"- {command}" + (f" -> exit {code}" if code is not None else ""))
+        if len(runs) > MOST_ITEMS_IN_A_STAGE_SUMMARY:
+            lines.append(f"- ... and {len(runs) - MOST_ITEMS_IN_A_STAGE_SUMMARY} more")
+    return "\n".join(lines).strip()
+
+
 def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     """Explain a stage that hit its superstep ceiling, or None if it did not.
 
@@ -1776,7 +1846,16 @@ def _run_gated_agent(
 
         outcome_text = _outcome_summary(structured_response)
         publish_stage_outcome(activity, outcome_text)
-        _record_document(state, f"docs/stage_summaries/{stage_name}.md", f"# {stage_name} Summary\n\n{outcome_text}")
+        # The document says more than the stream. A reviewing stage's verdict is
+        # the whole story for it; a specialist's is what it changed and found,
+        # and writing "" left 204 of 229 summaries holding only a heading.
+        recorded = outcome_text or _what_this_stage_reported(structured_response)
+        if recorded:
+            _record_document(
+                state,
+                f"docs/stage_summaries/{stage_name}.md",
+                f"# {stage_name} Summary\n\n{recorded}",
+            )
     except Exception:  # noqa: BLE001 - narration is never load-bearing
         logger.debug("Could not publish the outcome of %s", stage_name, exc_info=True)
 

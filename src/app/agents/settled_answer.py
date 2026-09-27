@@ -785,17 +785,39 @@ def _refused_reads(messages: list[Any]) -> int:
     """How many redundant reads this stage has been refused.
 
     Counted from the conversation rather than from shared state, so the two
-    modules need agree on nothing but the marker the backend writes.
+    modules need agree on nothing but the marker the backend writes - and then
+    raised to the tally the refusal itself reports, because the conversation is
+    not the whole stage. A stage that pauses for approval and resumes comes back
+    with a shorter message list while the backend's count carries on, so
+    counting messages alone saw a handful where the stage had done far more.
+
+    Measured on run-1bdbc08a: `specialist_backend_2` was refused twenty
+    redundant reads of one file, every one of them saying so - "it is the 20th
+    time this stage has asked for content it already has" - against a threshold
+    of three that never fired, because no single invocation held more than a
+    few of them.
+
+    This is not the blanket carry-over declined earlier, which would have let a
+    fresh invocation be refused a file it had never read. The tally is only
+    consulted when a refusal is already in *this* conversation: the stage has to
+    ask for content it already has here and now, and what the history then
+    decides is whether that is a first mistake or the twentieth.
     """
     from app.agents.workspace_backend import READ_REFUSED_MARKER
 
     refused = 0
+    reported = 0
     for message in messages:
         if getattr(message, "type", None) != "tool":
             continue
-        if READ_REFUSED_MARKER in str(getattr(message, "content", "") or ""):
-            refused += 1
-    return refused
+        content = str(getattr(message, "content", "") or "")
+        if READ_REFUSED_MARKER not in content:
+            continue
+        refused += 1
+        said = re.search(r"the (\d+)(?:st|nd|rd|th) time this stage", content)
+        if said:
+            reported = max(reported, int(said.group(1)))
+    return max(refused, reported)
 
 
 def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
@@ -816,32 +838,45 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     succeed had no such step, so the only thing bounding it was the stage's
     model-call budget.
 
-    Counted from the conversation, like `_refused_reads`, so nothing has to be
-    shared but the marker. The name comes out of the note's own backticks; the
-    read guard writes the same phrase without a name and is left to the read
-    path, which handles it better.
+    Read from the note's own number rather than by counting the notes. The guard
+    keeps its tally in middleware state that survives a stage pausing for
+    approval and resuming, and it prints that tally - "the 13 previous times" -
+    so the number in the newest note is the authoritative one. Counting the
+    messages instead would miss every repeat that fell outside the conversation
+    this request carries, which is what leaves `_refused_reads` beside it
+    reporting 3 while the transcript holds 20: measured on run-1bdbc08a, whose
+    `specialist_backend_2` was refused twenty redundant reads of one file across
+    several invocations, each of them under a threshold of three.
+
+    The name comes out of the note's own backticks. The read guard writes the
+    same phrase without a name, and is left to the read path, which says more
+    about the file than this could.
     """
     from app.agents.repeated_queries import REPEATED_FAILURE_MARKER
 
-    seen: dict[str, int] = {}
+    worst: dict[str, int] = {}
     for message in messages:
         if getattr(message, "type", None) != "tool":
             continue
         content = str(getattr(message, "content", "") or "")
-        if REPEATED_FAILURE_MARKER not in content:
-            continue
         marker = content.find(REPEATED_FAILURE_MARKER)
+        if marker < 0:
+            continue
         quoted = re.findall(r"`([a-z_]+)`", content[:marker])
         if not quoted:
             continue
+        said = re.search(r"the (\d+) previous times", content[marker:])
+        # The note counts the calls *before* this one, so the call that carried
+        # it is the (n+1)th.
+        repeats = int(said.group(1)) + 1 if said else 1
         name = quoted[-1]
-        seen[name] = seen.get(name, 0) + 1
-    if not seen:
+        worst[name] = max(worst.get(name, 0), repeats)
+    if not worst:
         return None
-    name = max(seen, key=lambda key: seen[key])
-    if seen[name] < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
+    name = max(worst, key=lambda key: worst[key])
+    if worst[name] < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
         return None
-    return name, seen[name]
+    return name, worst[name]
 
 
 def _without_that_tool(request: Any, name: str) -> list[Any] | None:

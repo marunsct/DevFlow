@@ -560,6 +560,73 @@ def _and_a_path_is_read_with_read_file(reference: str) -> str:
     )
 
 
+#: Failed lookups of one reference before the note says so, and before the
+#: refusal. The same two rungs `run_terminal_command` and `read_file` use: one
+#: miss is ordinary, the second is worth mentioning, the third is not worth
+#: paying for.
+_MISSES_BEFORE_SAYING_SO = 2
+_MISSES_BEFORE_REFUSING = 3
+
+#: Per-instance fallback, for a lookup outside a graph run.
+_MISSES_OUTSIDE_A_RUN: dict[str, int] = {}
+
+
+def _count_a_missing_reference(reference: str) -> int:
+    """How many times this exact reference has now failed for this stage.
+
+    Kept in `stage_memory`, like the repeated-read tally: the toolkit is rebuilt
+    with the agent on every approval resume, and a counter on the closure would
+    start again from zero each time.
+
+    Every other tool that can fail the same way twice says so - measured across
+    the current generation of runs, results that mention a repeat number 132 for
+    `read_file`, 93 for `edit_artifact`, 90 for `run_terminal_command`, 36 for
+    `write_artifact`, and 0 for this one. It was the only tool with no rung at
+    all, and the second-biggest waster: 19 repeated identical failures, with
+    single stages sending one invented reference 8, 6 and 5 times.
+    """
+    from app.agents.stage_memory import store
+
+    seen = store("missing_journal_references", _MISSES_OUTSIDE_A_RUN)
+    seen[reference] = seen.get(reference, 0) + 1
+    return seen[reference]
+
+
+def _and_you_have_asked_for_this_before(reference: str, misses: int) -> str:
+    """The repeat note for a reference that has already failed, or "".
+
+    A reference that did not resolve cannot start resolving: entries are created
+    under fresh random names, so no later command can produce the name that was
+    guessed. That is what makes refusing safe here rather than merely cheaper.
+    """
+    if misses < _MISSES_BEFORE_SAYING_SO:
+        return ""
+    return (
+        f" You have asked for '{reference}' {misses} times now and it has not "
+        "existed any of them. A reference that does not resolve never will: "
+        "entries are created under fresh random names, so nothing you run later "
+        "can produce this one."
+    )
+
+
+def _refuse_a_reference_already_missed(reference: str, misses: int) -> str:
+    """The refusal once the note has been ignored, or "".
+
+    Says what to do instead rather than only that it will not look again, which
+    is what every other refusal in this harness does.
+    """
+    if misses < _MISSES_BEFORE_REFUSING:
+        return ""
+    return (
+        f"Not looking for '{reference}' again: it has failed {misses} times in "
+        "this stage and a reference that does not resolve never will, because "
+        "entries are created under fresh random names. If you want a file in the "
+        "workspace, use `read_file`. If you want a command's full output, run the "
+        "command and use the reference from the truncation pointer it gives you. "
+        "If you have what you need, return your structured response."
+    )
+
+
 def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
     """Return the read-back tool for output an earlier command had truncated.
 
@@ -605,6 +672,13 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
 
         content = read_entry(reference)
         if content is None:
+            # Counted before the message is built, so the note and the refusal
+            # both read from one tally.
+            misses = _count_a_missing_reference(str(reference))
+            refusal = _refuse_a_reference_already_missed(str(reference), misses)
+            if refusal:
+                return {"error": refusal}
+            repeated = _and_you_have_asked_for_this_before(str(reference), misses)
             # What the refusal used to be: "use the exact reference from the
             # truncation pointer". A reference ends in eight random hex
             # characters, so an agent that no longer has the pointer cannot
@@ -640,6 +714,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                         "eight random characters and cannot be guessed from the "
                         "command that produced it."
                         + _and_a_path_is_read_with_read_file(reference)
+                        + repeated
                     )
                 }
             return {
@@ -650,6 +725,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                     "has nothing more to read. Entries are also deleted after the "
                     "configured retention window."
                     + _and_a_path_is_read_with_read_file(reference)
+                    + repeated
                 )
             }
 

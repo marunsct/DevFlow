@@ -59,6 +59,26 @@ _NOT_A_FILENAME = frozenset({
     "e.g", "i.e", "etc.al", "et.al", "vs.the", "a.k.a", "no.1",
 })
 
+#: A JavaScript library or platform, not a file: a capitalised single-word stem
+#: followed by `.js`.
+#:
+#: The convention is what makes this decidable. JavaScript libraries are written
+#: `Node.js`, `Vue.js`, `React.js`, `Next.js`, `D3.js`, `Three.js`, `Chart.js`,
+#: `Backbone.js`; JavaScript *files* in a project are lowercase or kebab-case -
+#: `app.js`, `main.js`, `task-list.js`. Nothing else is affected: `App.java`,
+#: `Program.cs`, `Cargo.toml`, `Dockerfile` and `README.md` are all capitalised
+#: files with other extensions, and a lowercase `d3.js` still reads as a file.
+#:
+#: Found by sweeping the stored sprint plans: 25 read, and a plan saying "Use
+#: Node.js built-in test runner" had `Node.js` reported as a file the sprint
+#: planned and nobody wrote - at the breaking tier, handed to the test round as a
+#: proven defect. `Vue.js`, `Next.js`, `D3.js` and `Backbone.js` all did the same.
+#:
+#: The cost of being wrong the other way is small: a genuinely planned
+#: `Widget.js` goes unreported, and a workspace that does contain the file is
+#: silent either way, because only a missing path is ever reported.
+_A_JAVASCRIPT_LIBRARY = re.compile(r"^[A-Z][A-Za-z0-9]*\.js$")
+
 #: Extensions that name a language or a format in prose far more often than a
 #: file: "ES2015.js" is not a file, and neither is "HTML5.md".
 _MAX_PATHS_REPORTED = 4
@@ -80,6 +100,8 @@ def paths_a_plan_named(texts: Iterable[str]) -> list[str]:
             # `rstrip`, not `strip`: the leading dot is part of a dotfile's name.
             candidate = token.strip().rstrip(".,;:)")
             if not candidate or candidate.lower() in _NOT_A_FILENAME:
+                continue
+            if _A_JAVASCRIPT_LIBRARY.match(candidate):
                 continue
             if candidate not in found:
                 found.append(candidate)

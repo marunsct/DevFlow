@@ -271,3 +271,71 @@ class TestItReachesTheTestRound:
         assert "planned=" in block
         assert "milestone_scope" in block
         assert "task_description" in block
+
+
+class TestAJavaScriptLibraryIsNotAPlannedFile:
+    """`Node.js` is a platform, and this check reported it as a missing file.
+
+    Found by sweeping the 25 stored sprint plans. A plan saying "Use Node.js
+    built-in test runner for unit tests" had `Node.js` reported as
+
+        This sprint's plan names `Node.js` and the workspace has no file of that
+        name anywhere.
+
+    at the breaking tier, and the breaking tier is what `build_test_run_request`
+    hands the test round as already proven - so a bogus blocking defect, costing a
+    remediation cycle. `Vue.js`, `Next.js`, `D3.js` and `Backbone.js` all did the
+    same.
+
+    The convention is what makes it decidable: libraries are written `Node.js`,
+    files are written `app.js` or `task-list.js`.
+    """
+
+    @pytest.mark.parametrize(
+        "planned",
+        [
+            "Use Node.js built-in test runner for unit tests",
+            "Target Node.js 20 and the ES2022 standard",
+            "Build the view layer with Vue.js",
+            "Use React.js with no build step",
+            "Use Next.js for routing",
+            "Render the chart with D3.js",
+            "Three.js for the scene graph",
+            "Chart.js for the dashboard",
+            "Backbone.js is explicitly ruled out",
+        ],
+    )
+    def test_a_library_is_not_reported_as_missing(self, tmp_path, planned):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing([planned], str(tmp_path)) == [], planned
+
+    @pytest.mark.parametrize(
+        "planned,expected",
+        [
+            ("Create task-list.js for rendering", "task-list.js"),
+            ("Write app.js exporting the pure functions", "app.js"),
+            ("Vendor d3.js into the project", "d3.js"),
+            ("Add App.java under src/main", "App.java"),
+            ("Add Program.cs to the project", "Program.cs"),
+            ("Add Cargo.toml and main.rs", "Cargo.toml"),
+            ("Add README.md describing the setup", "README.md"),
+            ("Create Widget.vue for the panel", "Widget.vue"),
+        ],
+    )
+    def test_a_real_file_is_still_reported(self, tmp_path, planned, expected):
+        """Only a capitalised stem with `.js` is excluded; nothing else changes."""
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        problems = " ".join(files_the_plan_named_that_are_missing([planned], str(tmp_path)))
+
+        assert expected in problems, planned
+
+    def test_a_library_that_is_vendored_stays_silent(self, tmp_path):
+        """A workspace that has the file was always silent, and still is."""
+        (tmp_path / "vendor").mkdir()
+        (tmp_path / "vendor" / "Chart.js").write_text("x")
+
+        assert files_the_plan_named_that_are_missing(
+            ["Bundle Chart.js into vendor/"], str(tmp_path)
+        ) == []

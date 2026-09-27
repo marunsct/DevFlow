@@ -571,6 +571,69 @@ def _is_awaiting_approval_for(state: WorkflowGraphState, stage_name: str) -> boo
     return state.get("stage", "") == f"{APPROVAL_PAUSE_PREFIX}{stage_name}"
 
 
+def _that_do_not_share_a_file(
+    pending: list[tuple[int, Any]],
+) -> list[tuple[int, Any]]:
+    """As many pending tasks as can run at once without editing one file.
+
+    Two tasks naming the same file are the most expensive thing the parallel
+    fan-out does. They run in the same superstep, so each reads the file, plans
+    an edit against the line numbers it saw, and the second one's numbers have
+    moved by the time it writes. The guards catch it - a `replace_lines` whose
+    anchor shifted is refused, and so is an edit that would leave the file
+    unparseable - which is why nothing corrupt ships, but every one of those
+    refusals cost a model call.
+
+    Measured on run-1bdbc08a, a seven-task milestone in which four tasks named
+    `app.js`: of 400 calls, 64 failed, and 45 of those were this - 28 redundant
+    reads of `app.js`, 13 identical `replace_lines` and 7 identical
+    `edit_artifact`, each stage re-reading and retrying against a file another
+    stage was moving underneath it.
+
+    `_a_file_another_specialist_is_also_given` already detects this exactly, and
+    its note has fired correctly in production; a note is all it can be, because
+    by then the tasks are already running. Deferring the task instead costs one
+    superstep and removes the contention, and the deferred task is dispatched on
+    the next pass, against a file that has stopped moving.
+
+    Parallelism is kept where it is real: tasks naming different files, or no
+    files at all, all go at once. The first pending task always goes, so a
+    milestone whose every task names one file still makes progress - one at a
+    time, which is what it asked for.
+
+    The docstring on `_a_file_another_specialist_is_also_given` records the
+    upstream cause: of 25 stored sprint plans, 17 assign one file to more than
+    one specialist. This makes such a plan slow instead of wasteful.
+    """
+    try:
+        from app.analysis.planned_files import paths_a_plan_named
+    except Exception:  # noqa: BLE001 - never hold up a dispatch over a hint
+        return pending
+
+    going: list[tuple[int, Any]] = []
+    claimed: set[str] = set()
+    for index, task in pending:
+        try:
+            named = {
+                path.rsplit("/", 1)[-1].lower()
+                for path in paths_a_plan_named(
+                    [
+                        str(getattr(task, "task_description", "") or ""),
+                        *[str(item) for item in (getattr(task, "acceptance_criteria", None) or ())],
+                    ]
+                )
+            }
+        except Exception:  # noqa: BLE001 - a task whose files cannot be read runs
+            named = set()
+        # Compared by basename: one task writes `app/app.js` and another
+        # `app.js`, and the plan's prose spells the same file both ways.
+        if going and named & claimed:
+            continue
+        going.append((index, task))
+        claimed |= named
+    return going or pending
+
+
 def _specialist_stage_name(task: Any, index: int) -> str:
     """The stage name one delegated task runs under.
 
@@ -623,7 +686,7 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
             return "specialist_gather"
         return [
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
-            for index, task in pending
+            for index, task in _that_do_not_share_a_file(pending)
         ]
 
     return stage

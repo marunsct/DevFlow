@@ -4038,18 +4038,69 @@ def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:
     return required
 
 
+#: The workflow documents that state what the product must do. The other four -
+#: `architecture_review`, `security_review`, `milestone_review` and the sprint
+#: summaries - exist to comment on the work, and a comment is not a requirement.
+#:
+#: Every `*.md` under `docs/` used to be read, which put a reviewer's own prose
+#: into the requirement set. Measured on run-5696a52d, whose blocking finding was
+#:
+#:     This project's own documents require that a user can `edit`: "- The test
+#:     suite `app.test.mjs` only clears local storage and lacks tests for core
+#:     CRUD operations (add, edit, delete) or filtering tasks, failing to meet
+#:     the a[cceptance criteria]"
+#:
+#: The quoted line is a review finding about missing *tests*. The word `edit`
+#: inside it was read as the documents requiring that a user can edit, and the
+#: result graded BREAKS.
+#:
+#: Worse than one false positive: it is a loop. A review's text becomes the next
+#: round's requirements, so each revision can manufacture blocking findings from
+#: the previous review's complaints, and the run reaches its revision limit
+#: having been told to implement things nobody asked for. Across the 76 stored
+#: workspaces these two checks produce 111 of about 190 breaking findings, which
+#: is where that pressure comes from.
+#:
+#: `sprint_plan` and `milestone_plan` are kept: they say what the run will build,
+#: which is a statement of intent about the product, and a plan naming a feature
+#: nothing implements is the finding these checks exist for.
+_DOCUMENTS_THAT_STATE_REQUIREMENTS = (
+    "product_intake.md",
+    "technical_specification.md",
+    "technology_stack.md",
+    "tools_and_models.md",
+    "milestone_plan.md",
+    "sprint_plan.md",
+)
+
+
 def _actions_the_documents_require(root: Path) -> dict[str, str]:
-    """Every user action this project's own acceptance criteria enumerate."""
+    """Every user action this project's own acceptance criteria enumerate.
+
+    Read from the documents that state requirements, not from the ones that
+    review the work - see `_DOCUMENTS_THAT_STATE_REQUIREMENTS`.
+
+    A `.md` in the workspace root is still read whatever it is called: that is
+    where an operator's own brief lands when a run is given one, and the brief
+    outranks everything here.
+    """
     required: dict[str, str] = {}
-    for folder in (root / "docs", root):
-        if not folder.is_dir():
+    documents: list[Path] = []
+    folder = root / "docs"
+    if folder.is_dir():
+        documents.extend(
+            folder / name
+            for name in _DOCUMENTS_THAT_STATE_REQUIREMENTS
+            if (folder / name).is_file()
+        )
+    if root.is_dir():
+        documents.extend(sorted(root.glob("*.md")))
+    for document in documents:
+        try:
+            text = _read(document)
+        except Exception:  # noqa: BLE001 - a missing document requires nothing
             continue
-        for document in sorted(folder.glob("*.md")):
-            try:
-                text = _read(document)
-            except Exception:  # noqa: BLE001 - a missing document requires nothing
-                continue
-            _actions_required_in(text, required)
+        _actions_required_in(text, required)
     return required
 
 

@@ -141,6 +141,15 @@ _CLASS_SELECTOR = re.compile(r"\.([A-Za-z_][\w-]*)")
 _HTML_CLASS = re.compile(r"""\bclass\s*=\s*["']([^"']+)["']""")
 
 
+#: Where a test runner writes markdown of its own. A Playwright failure leaves
+#: `test-results/<case>/error-context.md`, which records a run rather than
+#: telling anybody to do anything.
+_RUNNER_OUTPUT_OF_A_TEST = frozenset({
+    "test-results", "playwright-report", "coverage", "htmlcov",
+    ".pytest_cache", "allure-results", "cypress",
+})
+
+
 _DOC_COMMAND = re.compile(
     r"`(?:node|python3?|bash|sh)\s+([\w./-]+\.(?:js|mjs|cjs|py|sh))`"
 )
@@ -161,13 +170,42 @@ def _documented_commands_that_cannot_run(files: list[Path], root: Path, docs: Pa
 
     Only a bare filename in a code span, so prose about a hypothetical server
     and a command with a real path elsewhere are both left alone.
+
+    Every markdown file in the workspace, not only `docs/*.md`. It scanned
+    `root/docs` alone, which is the *workflow's* directory - the nine documents
+    it renders from structured responses, and the one directory every agent is
+    refused a write to, with the writing rules telling them documentation that
+    ships with the product "goes inside the project folder beside the code it
+    describes". So a product README was the one place this could never look, and
+    a README is what its own evidence is about: run-3da8dd91 "shipped the same
+    shape - a README citing `npm run build-static`".
+
+    It had no test and fired on none of the 76 stored workspaces. Those hold
+    `workspace-run-3faaa89b/README.md`, `.../task-manager/README.md` and
+    `.../simple-to-do-list-app/README.md`, none of which it read.
+
+    Test output is skipped: a Playwright failure writes
+    `test-results/<case>/error-context.md`, which is a record of a run rather
+    than an instruction to anybody.
     """
-    if not docs.is_dir():
-        return []
     present = {p.name for p in files} | {str(p.relative_to(root)) for p in files}
 
+    documents: list[Path] = []
+    try:
+        for path in sorted(root.rglob("*.md")):
+            if not path.is_file():
+                continue
+            parts = path.relative_to(root).parts
+            if any(part in _SKIP for part in parts):
+                continue
+            if any(part in _RUNNER_OUTPUT_OF_A_TEST for part in parts):
+                continue
+            documents.append(path)
+    except Exception:  # noqa: BLE001 - a workspace that cannot be walked says nothing
+        return []
+
     problems = []
-    for document in sorted(docs.glob("*.md")):
+    for document in documents:
         text = _read(document)
         missing = sorted({
             name for name in _DOC_COMMAND.findall(text)
@@ -177,10 +215,10 @@ def _documented_commands_that_cannot_run(files: list[Path], root: Path, docs: Pa
             continue
         listed = ", ".join(f"`{name}`" for name in missing[:3])
         problems.append(
-            f"docs/{document.name} tells a reader to run {listed}, and no such "
-            "file exists in this project. A document is the one artefact nobody "
-            "executes, so the instruction survives every test round and reaches "
-            "whoever tries to use the product."
+            f"{document.relative_to(root)} tells a reader to run {listed}, and no "
+            "such file exists in this project. A document is the one artefact "
+            "nobody executes, so the instruction survives every test round and "
+            "reaches whoever tries to use the product."
         )
     return problems
 

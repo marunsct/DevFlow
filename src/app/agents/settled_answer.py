@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -441,6 +442,14 @@ READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL = 3
 #: and nothing else.
 _READ_TOOLS = frozenset({"read_file", "read_repository_file"})
 
+#: Identical refusals of one tool before it is taken away, rather than described
+#: again. The repeat note starts at `REPEATS_BEFORE_SAYING_SO` (2), so a stage is
+#: told twice before this, which is proportionate: the arguments that fail are
+#: sometimes nearly right, and the note is what lets a stage correct them itself.
+#: Higher than the read threshold of 3 for the same reason - a refused write is
+#: work the stage still has to land, where a refused read is work already done.
+IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL = 4
+
 #: How far back to look for an answer the stage already wrote. Bounded so an
 #: answer from the very start of a long stage, superseded by the work since,
 #: does not stop it.
@@ -789,6 +798,95 @@ def _refused_reads(messages: list[Any]) -> int:
     return refused
 
 
+def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
+    """The tool this stage keeps calling to the same failure, and how often.
+
+    Telling a stage it is repeating a dead call is not enough on its own. The
+    note already says "It will fail this way again. Change the arguments, create
+    what is missing, or carry on without it", and measured across two runs a
+    stage read that and carried straight on:
+
+      run-83bd156a  `specialist_backend_0`  15 identical `edit_artifact` calls,
+                    every one refused because the file would not parse
+      run-1bdbc08a  `specialist_backend_3`   7 identical `replace_lines` calls,
+                    the same refusal each time
+
+    The first was the largest single class of failed calls in its run. Reads
+    already escalate from a note to withholding the tool; a mutation that cannot
+    succeed had no such step, so the only thing bounding it was the stage's
+    model-call budget.
+
+    Counted from the conversation, like `_refused_reads`, so nothing has to be
+    shared but the marker. The name comes out of the note's own backticks; the
+    read guard writes the same phrase without a name and is left to the read
+    path, which handles it better.
+    """
+    from app.agents.repeated_queries import REPEATED_FAILURE_MARKER
+
+    seen: dict[str, int] = {}
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        content = str(getattr(message, "content", "") or "")
+        if REPEATED_FAILURE_MARKER not in content:
+            continue
+        marker = content.find(REPEATED_FAILURE_MARKER)
+        quoted = re.findall(r"`([a-z_]+)`", content[:marker])
+        if not quoted:
+            continue
+        name = quoted[-1]
+        seen[name] = seen.get(name, 0) + 1
+    if not seen:
+        return None
+    name = max(seen, key=lambda key: seen[key])
+    if seen[name] < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
+        return None
+    return name, seen[name]
+
+
+def _without_that_tool(request: Any, name: str) -> list[Any] | None:
+    """The request's tools with one named tool removed, or None.
+
+    None when it is not there or nothing would be left, so a request already
+    narrowed is not narrowed into something the model cannot act with.
+    """
+    tools = list(getattr(request, "tools", None) or [])
+    if not tools:
+        return None
+    kept = [
+        tool
+        for tool in tools
+        if str(
+            getattr(tool, "name", "")
+            or (tool.get("name") if isinstance(tool, dict) else "")
+        )
+        != name
+    ]
+    if len(kept) == len(tools) or not kept:
+        return None
+    return kept
+
+
+def _a_tool_withheld_notice(name: str, refusals: int) -> str:
+    """Why that one tool is gone, and what is left to do the work with.
+
+    Only the repeated tool is taken, never the whole set: the same edit usually
+    goes through as a whole-file `write_artifact`, and a stage left with no way
+    to change a file at all could only give up.
+    """
+    return (
+        f"`{name}` has been withheld for the rest of this stage. You have called "
+        f"it {refusals} times with the same arguments and it has been refused "
+        "the same way every time, so the next identical call would be refused "
+        "too. Nothing about the file has changed in between.\n"
+        "Everything else still works. If the change is still needed, reach it "
+        "another way - write the whole file with `write_artifact`, or fix "
+        "whatever the refusal named first. If it is not needed, or something is "
+        "genuinely in the way, say so in `blockers` and return your structured "
+        "response."
+    )
+
+
 def _without_the_read_tools(request: Any) -> list[Any] | None:
     """The request's tools with the file readers removed, or None.
 
@@ -907,6 +1005,12 @@ def build_settled_answer_middleware(
                     READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
                 ):
                     correction = _READ_TOOL_WITHHELD_NOTICE
+                # After the read check, so a stage doing both loses the reads
+                # first - they are the cheaper thing to take, and the write may
+                # still be the work this stage exists to do.
+                repeated = None if correction else _a_tool_refused_identically(messages)
+                if repeated is not None:
+                    correction = _a_tool_withheld_notice(*repeated)
                 if not correction:
                     return handler(request)
                 overrides: dict[str, Any] = {}
@@ -925,6 +1029,21 @@ def build_settled_answer_middleware(
                             "withholding the read tool for the rest of it",
                             stage_name or "?", reading_nothing_new,
                         )
+                elif repeated is not None:
+                    kept = _without_that_tool(request, repeated[0])
+                    if kept is not None:
+                        overrides["tools"] = kept
+                        logger.warning(
+                            "Stage %s has called `%s` %d times to the same "
+                            "refusal; withholding that one tool for the rest "
+                            "of it",
+                            stage_name or "?", repeated[0], repeated[1],
+                        )
+                    else:
+                        # Nothing was removed, so the notice would describe a
+                        # tool the model can still see and call. Pass the call
+                        # through rather than say something untrue about it.
+                        return handler(request)
                 request = request.override(
                     messages=[*messages, {"role": "user", "content": correction}],
                     **overrides,

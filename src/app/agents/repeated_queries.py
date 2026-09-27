@@ -33,6 +33,13 @@ from app.agents.workspace_paths import the_same_place
 #: two notices should not disagree about what counts as circling.
 REPEATS_BEFORE_SAYING_SO = 2
 
+#: The phrase that says a call failed the same way it failed before. Named so
+#: `settled_answer` can count these without the two modules agreeing on
+#: anything but the string, exactly as `READ_REFUSED_MARKER` is used - telling a
+#: stage it is repeating a dead call turned out not to be enough on its own, and
+#: what escalates it needs a way to see the notes.
+REPEATED_FAILURE_MARKER = "failed the same way"
+
 #: Read-only queries with no note of their own. `read_file` is excluded because
 #: the backend already gives it a better one, keyed on the file's identity as
 #: well as the bytes, and two notices on one result would just be noise.
@@ -343,10 +350,10 @@ def build_repeated_query_middleware() -> Any:
                 # what the agent needs to hear is that it failed identically
                 # and that repeating it cannot help.
                 return (
-                    f"\n\n[This `{name}` failed the same way the {count} previous "
-                    "times you ran it in this stage, and nothing has changed it "
-                    "since. It will fail this way again. Change the arguments, "
-                    "create what is missing, or carry on without it.]"
+                    f"\n\n[This `{name}` {REPEATED_FAILURE_MARKER} the {count} "
+                    "previous times you ran it in this stage, and nothing has "
+                    "changed it since. It will fail this way again. Change the "
+                    "arguments, create what is missing, or carry on without it.]"
                 )
             return (
                 f"\n\n[This `{name}` returned exactly what it returned the {count} "

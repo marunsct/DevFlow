@@ -48,7 +48,7 @@ import logging
 import uuid
 import operator
 from datetime import datetime, timezone
-from typing import Any, TypedDict, Annotated
+from typing import Any, Mapping, TypedDict, Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
@@ -2314,6 +2314,54 @@ def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     )
 
 
+def _the_files_this_milestone_changed(
+    state: WorkflowGraphState, outputs: Mapping[str, Any]
+) -> list[str]:
+    """Every product file this milestone touched, reported or not.
+
+    `changed_files` comes from each specialist's structured response, and a stage
+    under-reports it. Measured across the 28 current-generation runs: 82 stages
+    wrote a file and did not name it - every role, about three per run.
+
+        run-0322d658  test_round_0         wrote 5 files, reported none
+        run-0322d658  specialist_ui_ux_1   wrote app.js, index.html,
+                                           package.json, server.mjs; reported app.js
+        run-1a0d3610  specialist_ui_ux_0   wrote app.js, app.test.mjs,
+                                           package.json; reported app.test.mjs
+
+    Three stages read that list - the test round, the security review and the
+    milestone review - and all three were told "Files changed in this milestone"
+    from it. A round can be told nothing changed after five files did.
+
+    Git is the record that cannot under-report. The previous sprint's tag is the
+    boundary, and `git diff --name-only` against it includes uncommitted work,
+    which is what a sprint in progress has. `docs/` is dropped: those are the
+    workflow's own documents, rendered from structured responses, and naming
+    `docs/milestone_plan.md` as a file this milestone changed sends a reviewer to
+    read the plan as if it were product code.
+
+    Falls back to the reported list alone in the first sprint, which has no
+    earlier tag and where everything is new, and on any failure - a list that
+    cannot be gathered must never be the thing that fails a stage.
+    """
+    reported = {name for output in outputs.values() for name in output.changed_files}
+    try:
+        from app.tools.version_control import changed_since, is_repository
+
+        index = int(state.get("current_sprint_index", 0) or 0)
+        root = state["repository"].root_path
+        if index >= 1 and is_repository(root):
+            observed = {
+                name.strip()
+                for name in changed_since(root, f"sprint-{index}")
+                if name.strip() and not name.strip().startswith("docs/")
+            }
+            reported |= observed
+    except Exception:  # noqa: BLE001 - evidence is best-effort, never fatal
+        logger.warning("Could not read what this sprint changed", exc_info=True)
+    return sorted(reported)
+
+
 def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] | None:
     """The last test run this sprint recorded, from the execution ledger.
 
@@ -3231,7 +3279,7 @@ def build_workflow_graph(
         milestone = state["milestone_plan"]
         test_round = state.get("test_round", 0)
         outputs = state.get("specialist_outputs", {})
-        changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
+        changed_files = _the_files_this_milestone_changed(state, outputs)
 
         agent = create_specialist_agent(
             "testing", model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
@@ -3492,7 +3540,7 @@ def build_workflow_graph(
 
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
-        changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
+        changed_files = _the_files_this_milestone_changed(state, outputs)
         agent = create_security_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_security_review_request(
             changed_files,
@@ -3531,7 +3579,7 @@ def build_workflow_graph(
             return missing
         milestone = state["milestone_plan"]
         outputs = state.get("specialist_outputs", {})
-        changed_files = sorted({name for output in outputs.values() for name in output.changed_files})
+        changed_files = _the_files_this_milestone_changed(state, outputs)
         test_evidence = "\n".join(test for output in outputs.values() for test in output.tests) or "(none recorded)"
         cycle = state.get("remediation")
         defect_report = build_defect_report(cycle) if cycle else "No remediation cycle data."

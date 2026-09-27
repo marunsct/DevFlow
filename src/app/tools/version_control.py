@@ -202,11 +202,31 @@ def changed_since(repo_root: str | Path, reference: str) -> list[str]:
 
     What a later stage needs to know about an earlier one, without re-reading
     the workspace to work it out.
+
+    Includes files that are new since `reference` and not yet tracked.
+    `git diff --name-only` lists only tracked paths, so a file the sprint created
+    and never committed was invisible - and a file the sprint created is the
+    commonest thing a later stage needs to know about. Caught by a test of
+    `_the_files_this_milestone_changed`, which used this to find what a stage had
+    written and did not report: a new `index.html` was missing from the answer.
     """
-    result = _git(Path(repo_root), "diff", "--name-only", reference)
+    root = Path(repo_root)
+    result = _git(root, "diff", "--name-only", reference)
     if result is None or result.returncode != 0:
         return []
-    return [line for line in result.stdout.splitlines() if line.strip()]
+    found = [line for line in result.stdout.splitlines() if line.strip()]
+    new = _git(root, "ls-files", "--others", "--exclude-standard")
+    if new is not None and new.returncode == 0:
+        found.extend(line for line in new.stdout.splitlines() if line.strip())
+    # Deduplicated in order, because a path can be both staged and reported new
+    # by some git versions and a caller should not have to know that.
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for name in found:
+        if name not in seen:
+            seen.add(name)
+            ordered.append(name)
+    return ordered
 
 
 __all__ = [

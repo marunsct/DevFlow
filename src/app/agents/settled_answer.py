@@ -450,6 +450,15 @@ _READ_TOOLS = frozenset({"read_file", "read_repository_file"})
 #: work the stage still has to land, where a refused read is work already done.
 IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL = 4
 
+#: A tool result that is a refusal rather than an answer. Every guard in this
+#: harness opens one of these ways, and the bracketed group is the repeat note
+#: some of them prepend - an anchored match without it stopped counting a call
+#: exactly when it started repeating, which is how the audit script came to
+#: report 15 failures on a run that had 29.
+_REFUSED = re.compile(
+    r'^\s*(?:\[[^\]]*\]\s*)?(?:\{"error"|Error:|Refusing|Not running|Not looking|No journalled)',
+)
+
 #: How far back to look for an answer the stage already wrote. Bounded so an
 #: answer from the very start of a long stage, superseded by the work since,
 #: does not stop it.
@@ -834,46 +843,54 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     succeed had no such step, so the only thing bounding it was the stage's
     model-call budget.
 
-    Counted by the notes in front of us, not by the number one of them quotes.
-    "the 13 previous times you ran it in this stage" looks like exactly the tally
-    this wants and does not count the stage: measured on run-1bdbc08a,
-    `specialist_ui_ux_0` made one `edit_artifact` call and was told it had failed
-    the same way the 3 previous times, `specialist_testing_4` made two and was
-    told 5, `specialist_backend_3` made four and was told 6. The count lives on
-    the middleware instance, which outlives the stage, so it is the run's.
-    `_refused_reads` below has the same trap for the same reason.
+    Counted by pairing each refusal with the call that earned it, through
+    `tool_call_id`, and tallying identical `(name, arguments)`. Nothing here reads
+    the wording of a guard, which matters twice over.
 
-    So a note is worth one, and each note is attached to a call this stage really
-    made. Across a stage that pauses for approval and resumes this undercounts,
-    which is the safe direction: the cost of undercounting is a few more refused
-    calls, and the cost of overcounting is taking a tool away from a stage on its
-    first use of it.
+    The first version matched one phrase, "failed the same way", which is
+    `repeated_queries`' wording. Measured on run-be25a68e: `specialist_testing_2`
+    called `read_command_output` seven times with a workspace path where a journal
+    reference belongs. Its guard answered perfectly - "looks like a path rather
+    than a journal reference ... read it with `read_file`", then refused outright
+    - in its own words, which that phrase does not match, so nothing escalated. A
+    loop is a loop whoever describes it.
 
-    The name comes out of the note's own backticks. The read guard writes the
-    same phrase without a name, and is left to the read path, which says more
-    about the file than this could.
+    The second version read the number a note quotes, and that number counts the
+    run rather than the stage: `specialist_ui_ux_0` made one `edit_artifact` call
+    on run-1bdbc08a and was told it had failed the same way the 3 previous times.
+    Believing it would disarm a stage on its first call. `_refused_reads` below
+    still carries that trap, deliberately, with the measurement in its docstring.
+
+    Across a stage that pauses for approval and resumes this undercounts, because
+    the conversation is shorter than the stage. Undercounting costs a few more
+    refused calls; overcounting takes a tool away from a stage that has done
+    nothing wrong.
     """
-    from app.agents.repeated_queries import REPEATED_FAILURE_MARKER
-
-    seen: dict[str, int] = {}
+    asked: dict[str, tuple[str, str]] = {}
+    failures: dict[tuple[str, str], int] = {}
     for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = str((call or {}).get("name") or "")
+            if not name:
+                continue
+            identity = json.dumps((call or {}).get("args") or {}, sort_keys=True, default=str)
+            called = str((call or {}).get("id") or "")
+            if called:
+                asked[called] = (name, identity)
         if getattr(message, "type", None) != "tool":
             continue
-        content = str(getattr(message, "content", "") or "")
-        marker = content.find(REPEATED_FAILURE_MARKER)
-        if marker < 0:
+        pair = asked.get(str(getattr(message, "tool_call_id", "") or ""))
+        if pair is None:
             continue
-        quoted = re.findall(r"`([a-z_]+)`", content[:marker])
-        if not quoted:
+        if not _REFUSED.match(str(getattr(message, "content", "") or "")):
             continue
-        name = quoted[-1]
-        seen[name] = seen.get(name, 0) + 1
-    if not seen:
+        failures[pair] = failures.get(pair, 0) + 1
+    if not failures:
         return None
-    name = max(seen, key=lambda key: seen[key])
-    if seen[name] < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
+    (name, _identity), count = max(failures.items(), key=lambda item: item[1])
+    if count < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
         return None
-    return name, seen[name]
+    return name, count
 
 
 def _without_that_tool(request: Any, name: str) -> list[Any] | None:

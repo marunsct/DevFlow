@@ -26,7 +26,6 @@ from typing import Any
 
 import pytest
 
-from app.agents.repeated_queries import REPEATED_FAILURE_MARKER
 from app.agents.settled_answer import (
     IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
     _a_tool_refused_identically,
@@ -38,124 +37,125 @@ from app.agents.settled_answer import (
 class _ToolMessage:
     type = "tool"
 
-    def __init__(self, content: str) -> None:
+    def __init__(self, content: str, call_id: str = "") -> None:
         self.content = content
+        self.tool_call_id = call_id
 
 
-def _refusal_note(tool: str, count: int) -> _ToolMessage:
-    """A refusal carrying the repeat note, in the order a transcript holds it.
+class _AiMessage:
+    type = "ai"
+    content = ""
 
-    Note first, then the error. Copied from run-1bdbc08a rather than composed:
-    `repeated_queries` returns the note as a suffix, and what reaches the model
-    has it in front, so a fixture built from the returning code would have tested
-    the wrong string.
-    """
-    return _ToolMessage(
-        f"[This `{tool}` {REPEATED_FAILURE_MARKER} the {count} previous times you "
-        "ran it in this stage, and nothing has changed it since. It will fail this "
-        "way again. Change the arguments, create what is missing, or carry on "
-        "without it.]\n\n"
-        '{"error": "Refusing to change \'simple-to-do-list-app/app.js\': Node '
-        'cannot parse this file on line 92: SyntaxError: Unexpected token"}'
-    )
+    def __init__(self, calls: list[dict]) -> None:
+        self.tool_calls = calls
 
 
-def test_the_fixture_matches_what_a_transcript_really_holds() -> None:
-    """Guards the fixture above against drifting from production.
-
-    The tool name has to sit before the marker for the name to be found, and the
-    count has to read as "the N previous times".
-    """
-    content = _refusal_note("replace_lines", 12).content
-    marker = content.find(REPEATED_FAILURE_MARKER)
-
-    assert marker > 0
-    assert "`replace_lines`" in content[:marker]
-    assert "the 12 previous times" in content[marker:]
-    assert content.lstrip().startswith("[This ")
+def _conversation(
+    times: int,
+    *,
+    tool: str = "replace_lines",
+    args: dict | None = None,
+    result: str = '{"error": "Refusing to change \'app.js\': Node cannot parse this file"}',
+    vary: bool = False,
+) -> list[object]:
+    """`times` turns of one tool call and its result, as a transcript holds them."""
+    messages: list[object] = []
+    for n in range(times):
+        call_args = dict(args or {"relative_path": "app.js", "start_line": 78})
+        if vary:
+            call_args["start_line"] = 78 + n
+        messages.append(_AiMessage([{"name": tool, "args": call_args, "id": f"c{n}"}]))
+        messages.append(_ToolMessage(result, f"c{n}"))
+    return messages
 
 
 class TestCountingTheRepeats:
-    def test_a_tool_repeated_to_the_threshold_is_named(self) -> None:
-        notes = [
-            _refusal_note("edit_artifact", n)
-            for n in range(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL)
-        ]
+    def test_a_call_repeated_to_the_threshold_is_named(self) -> None:
+        enough = _conversation(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL)
 
-        assert _a_tool_refused_identically(notes) == (
-            "edit_artifact",
+        assert _a_tool_refused_identically(enough) == (
+            "replace_lines",
             IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
         )
 
     def test_one_short_of_the_threshold_is_left_alone(self) -> None:
-        """The note is what lets a stage correct nearly-right arguments itself."""
-        notes = [
-            _refusal_note("replace_lines", n)
-            for n in range(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL - 1)
-        ]
+        """The guard's own note is what lets a stage fix nearly-right arguments."""
+        nearly = _conversation(IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL - 1)
 
-        assert _a_tool_refused_identically(notes) is None
+        assert _a_tool_refused_identically(nearly) is None
 
-    def test_the_number_the_note_quotes_is_not_trusted(self) -> None:
-        """It counts the run, not the stage, so it must not stand in for a tally.
+    def test_any_guard_s_wording_counts(self) -> None:
+        """The first version matched one phrase and missed every other guard.
 
-        Measured on run-1bdbc08a: `specialist_ui_ux_0` made one `edit_artifact`
-        call and was told it had failed the same way the 3 previous times;
-        `specialist_testing_4` made two and was told 5. The count lives on the
-        middleware instance, which outlives the stage. Believing it would take a
-        tool away from a stage on its first use of it.
+        Measured on run-be25a68e: `specialist_testing_2` called
+        `read_command_output` seven times with a workspace path where a journal
+        reference belongs. Its guard answered well - "looks like a path rather
+        than a journal reference ... read it with `read_file`" - in its own
+        words, so a matcher keyed on `repeated_queries`' phrasing escalated
+        nothing.
         """
-        assert _a_tool_refused_identically([_refusal_note("replace_lines", 12)]) is None
-
-    def test_a_note_without_a_number_still_counts_as_one(self) -> None:
-        """Each note is one call this stage really made, number or not."""
-        message = _ToolMessage(
-            f"[This `edit_artifact` {REPEATED_FAILURE_MARKER} before.]"
+        journal = _conversation(
+            7,
+            tool="read_command_output",
+            args={"reference": "task-manager/package.json"},
+            result=(
+                '{"error": "No journalled output named '
+                "'task-manager/package.json'"
+                ', and this run has nothing journalled"}'
+            ),
         )
-        enough = [message] * IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL
 
-        assert _a_tool_refused_identically(enough) == (
-            "edit_artifact",
+        assert _a_tool_refused_identically(journal) == ("read_command_output", 7)
+
+    def test_a_repeat_note_in_front_of_the_error_still_counts(self) -> None:
+        """A transcript carries the note first; an anchored match lost the error."""
+        noted = _conversation(
             IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
+            result=(
+                "[This `replace_lines` failed the same way the 2 previous times]"
+                '\n\n{"error": "Refusing to change this file"}'
+            ),
         )
+
+        assert _a_tool_refused_identically(noted) is not None
+
+    def test_the_same_tool_with_different_arguments_is_not_a_loop(self) -> None:
+        """A stage working through a file calls one tool many times, legitimately."""
+        working = _conversation(7, vary=True)
+
+        assert _a_tool_refused_identically(working) is None
+
+    def test_calls_that_succeeded_are_not_counted(self) -> None:
+        answered = _conversation(7, result="@@ lines 1-20 of 20 @@\nconst a = 1;")
+
+        assert _a_tool_refused_identically(answered) is None
 
     def test_an_ordinary_conversation_withholds_nothing(self) -> None:
-        messages = [
-            _ToolMessage("@@ lines 1-20 of 20 @@\nconst a = 1;"),
-            _ToolMessage('{"path": "app.js", "status": "edited"}'),
-        ]
-
-        assert _a_tool_refused_identically(messages) is None
-
-    def test_the_read_guard_s_own_phrase_is_not_claimed(self) -> None:
-        """The backend writes the same words for a read, with no tool named.
-
-        Reads have their own escalation, which says more about the file than
-        this one can, so this must not take that path over.
-        """
-        messages = [
-            _ToolMessage(
-                f"This read {REPEATED_FAILURE_MARKER} the {n} previous times."
-            )
-            for n in range(2, 9)
-        ]
-
-        assert _a_tool_refused_identically(messages) is None
+        assert _a_tool_refused_identically([_ToolMessage("@@ lines 1-3 of 3 @@")]) is None
 
     def test_two_different_tools_do_not_add_up(self) -> None:
-        """Each tool is counted on its own; a stage using two is not looping."""
-        messages = [_refusal_note("edit_artifact", 1), _refusal_note("ls", 1)] * 3
+        """Each call is counted on its own; a stage using two is not looping."""
+        messages = [
+            *_conversation(2),
+            *_conversation(2, tool="ls", args={"path": "app"}, result="Error: Path 'app': path_not_found"),
+        ]
 
         assert _a_tool_refused_identically(messages) is None
 
     def test_the_busiest_offender_is_the_one_named(self) -> None:
         messages = [
-            *[_refusal_note("replace_lines", n) for n in range(5)],
-            _refusal_note("ls", 1),
+            *_conversation(5),
+            *_conversation(1, tool="ls", args={"path": "app"}, result="Error: Path 'app': path_not_found"),
         ]
         named = _a_tool_refused_identically(messages)
 
         assert named is not None and named[0] == "replace_lines"
+
+    def test_a_result_with_no_call_to_pair_with_is_ignored(self) -> None:
+        """A trimmed conversation can open on a result whose call is gone."""
+        orphan = [_ToolMessage('{"error": "nope"}', "missing")] * 9
+
+        assert _a_tool_refused_identically(orphan) is None
 
 
 class TestWhatIsTakenAway:

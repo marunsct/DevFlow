@@ -437,3 +437,86 @@ Acceptance criteria:
         """`_bullets` drops empties, so this must not become a bullet of its own."""
         assert _one_line("") == ""
         assert _one_line("   \n  \n ") == ""
+
+
+class TestTheAttemptsLineCountsWhatCameBefore:
+    """"re-run after N failed attempts" means N attempts came first.
+
+    `failures` counted every attempt whose status is not Completed, and `latest`
+    is `attempts[-1]` - so the current attempt was counted among the failures
+    that preceded it. Wrong exactly when this attempt also failed, which is the
+    case a reader most needs right.
+
+    run-6e50b630's sprint 1, its second and final attempt, read
+
+        **Attempts:** 2 (re-run after 2 failed attempts at this same sprint)
+
+    with one attempt behind it.
+    """
+
+    def _attempts_line(self, attempts):
+        from app.agents.sprint_summary import render_sprint_summary
+
+        text = render_sprint_summary(
+            sprint_number=1, total_sprints=2, goal="g", planned=["a"], attempts=attempts
+        )
+        return next(l for l in text.splitlines() if l.startswith("**Attempts:"))
+
+    def test_the_line_run_6e50b630_got(self):
+        """Two attempts, both failed: one failure came before this one."""
+        line = self._attempts_line(
+            [{"number": 1, "status": "Failed"}, {"number": 2, "status": "Failed"}]
+        )
+
+        assert line == (
+            "**Attempts:** 2 (re-run after 1 failed attempt at this same sprint)"
+        )
+
+    def test_three_attempts_all_failed(self):
+        line = self._attempts_line([{"number": n, "status": "Failed"} for n in (1, 2, 3)])
+
+        assert "re-run after 2 failed attempts" in line
+
+    def test_a_re_run_that_succeeded_is_unchanged(self):
+        """This case was already right and must stay right."""
+        line = self._attempts_line(
+            [{"number": 1, "status": "Failed"}, {"number": 2, "status": "Completed"}]
+        )
+
+        assert "re-run after 1 failed attempt" in line
+
+    def test_three_attempts_ending_in_success(self):
+        line = self._attempts_line(
+            [
+                {"number": 1, "status": "Failed"},
+                {"number": 2, "status": "Failed"},
+                {"number": 3, "status": "Completed"},
+            ]
+        )
+
+        assert "re-run after 2 failed attempts" in line
+
+    def test_the_singular_is_used_for_one(self):
+        line = self._attempts_line(
+            [{"number": 1, "status": "Failed"}, {"number": 2, "status": "Failed"}]
+        )
+
+        assert "1 failed attempt at" in line
+        assert "attempts at" not in line
+
+    def test_a_single_attempt_still_says_no_re_run(self):
+        assert self._attempts_line([{"number": 1, "status": "Failed"}]) == (
+            "**Attempts:** 1 (no re-run)"
+        )
+
+    def test_the_count_itself_is_every_attempt(self):
+        """The headline number is all of them, including this one."""
+        line = self._attempts_line([{"number": n, "status": "Failed"} for n in (1, 2, 3)])
+
+        assert line.startswith("**Attempts:** 3 ")
+
+    def test_an_earlier_attempt_with_no_status_counts_as_a_failure(self):
+        """An attempt that recorded nothing did not complete."""
+        line = self._attempts_line([{"number": 1}, {"number": 2, "status": "Failed"}])
+
+        assert "re-run after 1 failed attempt" in line

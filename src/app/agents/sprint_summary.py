@@ -209,7 +209,15 @@ def render_sprint_summary(
     # its absence never has to be interpreted.
     attempt_count = len(attempts) or 1
     if attempt_count > 1:
-        failures = sum(1 for attempt in attempts if attempt.get("status") != "Completed")
+        # The attempts *before* this one. `latest` is `attempts[-1]`, so counting
+        # every non-Completed attempt counted the current one among the failures
+        # that preceded it - and "re-run after N failed attempts" means N came
+        # first. Wrong exactly when this attempt also failed, which is the case a
+        # reader most needs right: run-6e50b630's second and final attempt read
+        # "Attempts: 2 (re-run after 2 failed attempts at this same sprint)" with
+        # one attempt behind it.
+        earlier = attempts[:-1]
+        failures = sum(1 for attempt in earlier if attempt.get("status") != "Completed")
         lines.append(
             f"**Attempts:** {attempt_count} (re-run after {failures} failed "
             f"attempt{'s' if failures != 1 else ''} at this same sprint)"

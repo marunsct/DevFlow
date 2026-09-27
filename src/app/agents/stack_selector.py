@@ -6,6 +6,7 @@ output, and produces a single unified TechnologyStack choice.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -283,8 +284,70 @@ def create_stack_selector_agent(
     )
 
 
+
+#: A browser runner named in `testing_framework`. Matched on word boundaries so
+#: "playwright" inside a longer word does not count.
+_NAMES_A_BROWSER_RUNNER = re.compile(
+    r"(?<![a-z0-9])(playwright|cypress|puppeteer|selenium|webdriver|testcafe|nightwatch)"
+    r"(?![a-z0-9])",
+    re.I,
+)
+
+#: What a stack says about itself when the product runs in a browser. Read from
+#: the stage's own answer rather than from the brief: the model has just decided
+#: what this product is, and its own words for that are a better signal than
+#: keyword-matching a document it was summarising.
+_A_BROWSER_PRODUCT = re.compile(
+    r"(?<![a-z0-9])(html|css|dom|browser|localstorage|sessionstorage|indexeddb|spa"
+    r"|single[-\s]page|react|vue|angular|svelte|frontend|front[-\s]end)(?![a-z0-9])",
+    re.I,
+)
+
+
+def the_browser_runner_this_stack_forgot(stack: Any) -> str | None:
+    """`testing_framework` with the browser runner added, or None if fine.
+
+    The prompt above already says this, in capitals and with the measurement
+    behind it: "A PRODUCT WITH A USER INTERFACE NEEDS BOTH RUNNERS, AND NAMING
+    BOTH IS THE RIGHT ANSWER ... write both into `testing_framework`". This
+    enforces it, because saying it was not enough.
+
+    Measured on run-1bdbc08a, whose brief asked for a "Simple web-based
+    interface with HTML/CSS/JavaScript". The stack came back with
+    `testing_framework: node --test` and a rationale ending "adequately verified
+    by testing its core logic and manual browser verification" - a method the
+    same prompt calls impossible twice over, because there is no display and
+    nobody to look at one.
+
+    Its specialists then did the right thing: `package.json` ran
+    `test:unit && test:e2e` with `@playwright/test` declared. So the delivered
+    product was correct and the stack document disagreed with it, which is a
+    blocking finding - `_a_test_runner_the_stack_did_not_choose` reports a
+    package the stack did not name. That fires against every UI run whose
+    specialists behave well, and the fix is for the stack to say what the
+    environment actually provides.
+
+    Keyed on the stack's own description of the product, not on the brief. A
+    stack that already names any browser runner is left exactly as it is, and so
+    is one for a product with no browser in it.
+    """
+    declared = str(getattr(stack, "testing_framework", "") or "").strip()
+    if not declared or _NAMES_A_BROWSER_RUNNER.search(declared):
+        return None
+    about = " ".join(
+        str(getattr(stack, field, "") or "")
+        for field in ("framework", "frontend_framework", "database", "language")
+    )
+    if not _A_BROWSER_PRODUCT.search(about):
+        return None
+    # The example the prompt itself gives, so the document reads the way the
+    # instruction asked for.
+    return f"{declared} for the logic, Playwright for the page"
+
+
 __all__ = [
     "StackSelectorOutput",
     "build_stack_selector_request",
     "create_stack_selector_agent",
+    "the_browser_runner_this_stack_forgot",
 ]

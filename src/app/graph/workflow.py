@@ -62,6 +62,7 @@ from langgraph.types import Send
 
 from app.agents.approval import extract_pending_approval, resume_with_decision
 from app.agents.stage_memory import remembering
+from app.agents.stack_selector import the_browser_runner_this_stack_forgot
 from app.agents.architecture_reviewer import (
     ArchitectureReviewOutput,
     build_architecture_review_request,
@@ -2995,6 +2996,35 @@ def build_workflow_graph(
         )
         if _hand_back(update, "stack_selection"):
             return update
+
+        # The prompt tells this stage, in capitals, that a product with a user
+        # interface needs both a logic runner and a browser runner and must name
+        # both. run-1bdbc08a named only `node --test`, for a brief asking for a
+        # "web-based interface with HTML/CSS/JavaScript", and justified it with
+        # "manual browser verification" - which the same prompt calls impossible
+        # twice, there being no display and nobody to look at one. Its
+        # specialists installed Playwright anyway, correctly, and the stack
+        # document then disagreed with the product: a package the stack did not
+        # name is a blocking finding. Enforced here because saying it was not
+        # enough, and because the corrected value is derivable from the answer
+        # the stage just gave.
+        chosen = update.get("stack_selection")
+        stack = getattr(chosen, "technology_stack", None)
+        corrected = the_browser_runner_this_stack_forgot(stack)
+        if corrected is not None:
+            logger.warning(
+                "Stack selection named '%s' for a product that runs in a "
+                "browser; recording '%s' so the stack matches what the "
+                "environment provides",
+                getattr(stack, "testing_framework", ""), corrected,
+            )
+            update["stack_selection"] = chosen.model_copy(
+                update={
+                    "technology_stack": stack.model_copy(
+                        update={"testing_framework": corrected}
+                    )
+                }
+            )
 
         # Rendered from the decision, like every other document the workflow
         # keeps. On run-0b18e403 this stage still wrote its own: it printed the

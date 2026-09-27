@@ -3283,6 +3283,16 @@ def build_workflow_graph(
             task.acceptance_criteria,
             state["repository"].root_path,
             getattr(selection, "technology_stack", None),
+            # The sibling tasks, from the plan rather than a local list: this node
+            # is handed one task at a time. Wiring only the linear site left this
+            # one without them, and this is the parallel site - the mode where
+            # specialists really do run at once, so the one where a file two tasks
+            # share matters most. Measured on run-a6b28314, whose plan named
+            # `app.js` in four of six tasks and whose `app.js` was written by five
+            # stages, with no brief mentioning the overlap.
+            other_tasks=list(
+                getattr(state.get("milestone_plan"), "delegated_tasks", None) or ()
+            ),
         )
         
         # Wait, if multiple agents pause for approval, they cannot share `pending_inner_thread_id`!

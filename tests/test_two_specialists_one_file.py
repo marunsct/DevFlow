@@ -209,3 +209,54 @@ class TestTheLeadIsAskedToPreventIt:
         call = source.index("request = build_specialist_task_request(")
 
         assert "other_tasks=tasks" in source[call : call + 700]
+
+
+class TestBothCallSitesAreWired:
+    """There are two `build_specialist_task_request` call sites, and wiring one
+    left the fix dead in the mode that needs it.
+
+    `specialist_node` runs tasks one at a time; `specialist_worker_node` is the
+    parallel path, and parallel is the mode where specialists genuinely run at
+    once - so it is the one where a file two tasks share matters most. It was the
+    unwired one.
+
+    Caught by auditing run-a6b28314 rather than by a test: its plan named
+    `app.js` in four of six delegated tasks, five stages wrote `app.js`, and not
+    one brief mentioned the overlap. The helper passed its own tests the whole
+    time.
+    """
+
+    def test_every_call_site_passes_the_siblings(self):
+        import ast
+        import inspect
+
+        from app.graph import workflow
+
+        tree = ast.parse(inspect.getsource(workflow))
+        sites = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and getattr(node.func, "id", "") == "build_specialist_task_request"
+        ]
+
+        assert len(sites) == 2, f"expected two call sites, found {len(sites)}"
+        for site in sites:
+            keywords = {keyword.arg for keyword in site.keywords}
+            assert "other_tasks" in keywords, (
+                "a call site does not pass other_tasks, so the shared-file note "
+                "cannot fire from it"
+            )
+
+    def test_the_parallel_site_reads_the_plan(self):
+        """It is handed one task at a time, so the siblings come from the plan."""
+        import inspect
+
+        from app.graph import workflow
+
+        source = inspect.getsource(workflow.build_graph) if hasattr(workflow, "build_graph") else inspect.getsource(workflow)
+        at = source.index("def specialist_worker_node")
+        block = source[at : at + 2600]
+
+        assert "other_tasks=" in block
+        assert "delegated_tasks" in block

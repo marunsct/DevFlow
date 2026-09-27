@@ -152,12 +152,26 @@ def _one_line(text: str) -> str:
     The full text is not lost - it is what `docs/milestone_plan.md` is for. This
     document answers "what did this sprint do", and that is a list.
     """
-    first = ""
-    for line in str(text).splitlines():
-        stripped = line.strip()
-        if stripped:
-            first = " ".join(stripped.split())
-            break
+    meaningful = [
+        " ".join(stripped.split())
+        for line in str(text).splitlines()
+        if (stripped := line.strip())
+    ]
+    first = meaningful[0] if meaningful else ""
+    # A line ending in a colon announces a list instead of naming anything, so
+    # on its own it is not a feature. Carry on into what it introduces.
+    #
+    # Measured on run-83bd156a's `sprint_1_summary.md`, live: two of its three
+    # "Features Implemented" bullets read "Create the following changes in two
+    # files:" and "Create changes to two files:". Both were the first non-blank
+    # line of a task, and neither said which files or what changed.
+    #
+    # Appended rather than skipped, because a colon does not always mean an
+    # empty preamble - "Wire filter buttons in init():" names the thing it is
+    # about. Joining keeps that one whole and repairs the other, and the length
+    # rules below then apply to the result exactly as before.
+    if first.endswith(":") and len(meaningful) > 1:
+        first = f"{first} {meaningful[1]}"
     if len(first) <= LONGEST_FEATURE_LINE:
         return first
     # At a sentence end if there is one in range, so the line is a whole

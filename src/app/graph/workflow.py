@@ -2052,9 +2052,24 @@ def _record_sprint_summary(
     sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
     definition = sprints[sprint_index] if sprint_index < len(sprints) else None
 
+    # The sprint plan's own goal for this index, ahead of the milestone's. Both
+    # name a goal and only one of them names *this sprint's*: a milestone plan
+    # is re-stored on every revision, and the lead is free to restate the goal
+    # each time - so after a sprint is sent back, `selected_sprint_goal`
+    # describes the latest revision rather than the sprint being summarised.
+    #
+    # Measured on run-83bd156a's `sprint_1_summary.md`, live. Its header read
+    # "Wire filter button functionality and inline edit UI ...", which was the
+    # third milestone plan's goal, while "Planned for This Sprint" underneath
+    # correctly listed sprint 1's scope - create the project directory, build
+    # index.html, style.css and the pure logic in app.js. The document
+    # contradicted itself, and the goal it showed belonged to the next sprint.
+    #
+    # This is the rule `planned` below already follows for the same reason: what
+    # the sprint promised is a question about the sprint plan.
     goal = (
-        getattr(plan, "selected_sprint_goal", "")
-        or getattr(definition, "goal", "")
+        getattr(definition, "goal", "")
+        or getattr(plan, "selected_sprint_goal", "")
         or "Unknown goal"
     )
     # What the sprint *promised*, from the plan - not what the milestone chose

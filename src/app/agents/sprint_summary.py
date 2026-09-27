@@ -42,6 +42,56 @@ def _is_a_test_run(entry: Mapping[str, Any]) -> bool:
     return all(isinstance(entry.get(field), int) for field in _COUNT_FIELDS)
 
 
+def last_test_run(
+    entries: Iterable[Mapping[str, Any]], *, since: str | None = None
+) -> Mapping[str, Any] | None:
+    """The last ledger entry in the window whose runner reported counts.
+
+    One selection rule, shared. `count_test_cases` returns only the three counts,
+    which is all the summary prints - but a caller that has to decide whether the
+    suite passed also needs the exit code, and two separate searches for "the
+    last test run" is how a gate and a report start disagreeing about which run
+    they are talking about.
+    """
+    latest: Mapping[str, Any] | None = None
+    for entry in entries or ():
+        if not _is_a_test_run(entry):
+            continue
+        at = entry.get("at")
+        if since and isinstance(at, str) and at < since:
+            continue
+        latest = entry
+    return latest
+
+
+def a_suite_that_did_not_pass(entry: Mapping[str, Any] | None) -> bool:
+    """Whether a recorded test run failed, by the only evidence that cannot lie.
+
+    `failed > 0` is not the whole question. A composite test command runs more
+    than one runner - `npm test` chaining `node --test` and `playwright test` is
+    the shape this harness sees most - and `_RUNNER_TOTALS` parses the summary
+    line it recognises, which is the first runner's. If a later runner fails, the
+    counts say the suite is green and the exit code says the command failed.
+
+    Measured on run-b3cb2d80, which completed. Its ledger holds six entries with
+    counts and a non-zero exit code, five of them reading
+
+        npm test   tests=27  passed=27  failed=0  returncode=1
+
+    A gate that reads `failed` alone is silent on all five, which is the false
+    green it exists to prevent reached by another route.
+
+    An entry with no exit code recorded is not evidence of failure: older entries
+    predate the field, and a run nobody measured must not be failed for it.
+    """
+    if not entry:
+        return False
+    if int(entry.get("failed") or 0) > 0:
+        return True
+    code = entry.get("returncode")
+    return isinstance(code, int) and code != 0
+
+
 def count_test_cases(
     entries: Iterable[Mapping[str, Any]], *, since: str | None = None
 ) -> dict[str, int] | None:
@@ -58,14 +108,7 @@ def count_test_cases(
     evidence that the entry belongs to an earlier attempt, and dropping it
     would silently lose the only test run of a sprint.
     """
-    latest: Mapping[str, Any] | None = None
-    for entry in entries or ():
-        if not _is_a_test_run(entry):
-            continue
-        at = entry.get("at")
-        if since and isinstance(at, str) and at < since:
-            continue
-        latest = entry
+    latest = last_test_run(entries, since=since)
     if latest is None:
         return None
     return {field: int(latest[field]) for field in _COUNT_FIELDS}
@@ -242,4 +285,9 @@ def render_sprint_summary(
     return "\n".join(lines) + "\n"
 
 
-__all__ = ["count_test_cases", "render_sprint_summary"]
+__all__ = [
+    "a_suite_that_did_not_pass",
+    "count_test_cases",
+    "last_test_run",
+    "render_sprint_summary",
+]

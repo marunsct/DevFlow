@@ -95,7 +95,12 @@ from app.agents.product_manager import (
 )
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import SprintPlanOutput, build_sprint_planning_request, create_scrum_master_agent
-from app.agents.sprint_summary import count_test_cases, render_sprint_summary
+from app.agents.sprint_summary import (
+    a_suite_that_did_not_pass,
+    count_test_cases,
+    last_test_run,
+    render_sprint_summary,
+)
 from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
 from app.agents.specialists import (
     ReportedDefect,
@@ -2325,9 +2330,17 @@ def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] 
             (str(entry.get("ended_at")) for entry in recorded if entry.get("ended_at")),
             default=None,
         )
-        return count_test_cases(
-            read_execution_ledger(state["repository"].root_path, limit=1000), since=since
-        )
+        entries = read_execution_ledger(state["repository"].root_path, limit=1000)
+        counts = count_test_cases(entries, since=since)
+        if counts is None:
+            return None
+        # The exit code of the same run, because the counts alone can say a suite
+        # passed when the command did not - see `a_suite_that_did_not_pass`.
+        entry = last_test_run(entries, since=since) or {}
+        code = entry.get("returncode")
+        # The ledger's own field name, so `a_suite_that_did_not_pass` reads one
+        # spelling wherever it is called from.
+        return {**counts, "returncode": int(code) if isinstance(code, int) else 0}
     except Exception:  # noqa: BLE001 - a gate that cannot read must not stop a run
         logger.warning("Could not read the measured suite for this sprint", exc_info=True)
         return None
@@ -2373,8 +2386,25 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     not gated - the same rule `_record_sprint_summary` follows.
     """
     cases = _the_suite_the_ledger_measured(state)
-    if not cases or cases.get("failed", 0) <= 0:
+    if not cases or not a_suite_that_did_not_pass(cases):
         return ""
+    # A failure the counts cannot show. A composite command - `npm test` chaining
+    # `node --test` and `playwright test` - has its first runner's summary parsed,
+    # so a later runner's failure leaves `failed: 0` beside a non-zero exit code.
+    # Measured on run-b3cb2d80: five ledger entries reading 27 passed, 0 failed,
+    # returncode 1. Reading `failed` alone was silent on every one of them.
+    if cases.get("failed", 0) <= 0:
+        return (
+            f"MUST FIX - the command this sprint's suite is measured by failed. "
+            f"The execution ledger's last recorded test run exited "
+            f"{cases.get('returncode')} while reporting {cases['tests']} case(s), "
+            f"{cases['passed']} passed and 0 failed. Those two cannot both be the "
+            "whole story: a test command that chains runners has only the first "
+            "one's summary counted, so a later runner failed and its cases were "
+            "never added up. Run the parts separately to see which, fix it, and do "
+            "not report this suite as passing - the exit code is what a CI system "
+            "will read."
+        )
     return (
         f"MUST FIX - the suite this sprint is measured by is failing. The "
         f"execution ledger's last recorded test run is {cases['tests']} case(s), "

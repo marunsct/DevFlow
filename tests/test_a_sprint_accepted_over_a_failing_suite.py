@@ -185,12 +185,25 @@ class TestTheWindowIsThisAttempt:
         assert _a_red_suite_the_review_called_green(state) != ""
 
     def test_the_gate_and_the_summary_read_the_same_number(self, a_ledger):
-        """Two readings of one suite is how a report starts contradicting a gate."""
+        """Two readings of one suite is how a report starts contradicting a gate.
+
+        The counts, field by field, rather than the whole dict: the gate also
+        carries the run's exit code, which the summary does not print, and
+        pinning the shape would make adding that a failure rather than a change.
+        """
+        from app.agents.sprint_summary import count_test_cases
+        from app.tools.sandbox import read_execution_ledger
+
         state = a_ledger(AN_INSTALL, THE_MEASUREMENT)
 
-        assert _the_suite_the_ledger_measured(state) == {
-            "tests": 21, "passed": 15, "failed": 6
-        }
+        measured = _the_suite_the_ledger_measured(state)
+        printed = count_test_cases(
+            read_execution_ledger(state["repository"].root_path, limit=1000)
+        )
+
+        assert printed == {"tests": 21, "passed": 15, "failed": 6}
+        for field in ("tests", "passed", "failed"):
+            assert measured[field] == printed[field], field
 
 
 class TestItIsWiredIntoTheReview:

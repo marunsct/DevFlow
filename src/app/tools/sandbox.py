@@ -1911,6 +1911,30 @@ def strip_a_doubled_working_directory(
     DOES. That is what makes this safe rather than clever: a project that
     genuinely contains a directory of its own name still resolves as written,
     because then the original exists and nothing is touched.
+
+    That test cannot decide a command that *creates* the path, because then
+    neither version exists yet - and such a command succeeds, so no failure and
+    no hint ever follows it. Measured live on run-f05d8d47:
+
+        06:29:00  test_round_0  wd='task-manager'  mkdir -p task-manager/e2e
+
+    which made `task-manager/task-manager/e2e`, an empty directory that is still
+    in the shipped workspace. The stage then wrote
+    `task-manager/e2e/todo.spec.ts` - `write_artifact` paths are workspace-
+    relative - so the file landed in the right place and the run carried a stray
+    directory, and two later `ls /task-manager/e2e` calls were answered with a
+    hint pointing at the doubled path.
+
+    So for a command whose whole purpose is to create a directory, the prefix is
+    stripped even when the stripped path does not exist yet. That is safe
+    because it only applies when neither path exists - nothing is being shadowed
+    - and creating `X/X/...` from inside `X` is not a thing anyone intends. The
+    agent's own model is workspace-relative throughout, which is what stripping
+    produces.
+
+    Across the 27 current-generation runs, 42 commands name a path that repeats
+    their working directory. Most fail, and the failure hint already names where
+    the file really is; these are the ones that silently succeed.
     """
     # A string, not a list, is refused downstream with a message that says so.
     # `list()` on it would split it into characters and the refusal would name
@@ -1925,8 +1949,13 @@ def strip_a_doubled_working_directory(
     except Exception:  # noqa: BLE001 - a guard must not fail the command
         return list(command), None
 
+    # A command that makes a directory rather than reading one. `install` is
+    # here for `install -d`, which is the same intent spelled differently.
+    creates_the_path = os.path.basename(str(command[0])) in {"mkdir", "install"} if command else False
+
     rewritten: list[str] = []
     changed: list[str] = []
+    created: list[str] = []
     for part in command:
         argument = str(part)
         # `./project/app.test.mjs` and `/project/app.test.mjs` mean the same
@@ -1945,18 +1974,43 @@ def strip_a_doubled_working_directory(
                     rewritten.append(shortened)
                     changed.append(f"{argument} -> {shortened}")
                     continue
+                # Neither exists, and this command is about to make one of
+                # them. Declined when a directory of the same name really is
+                # nested here - then the layout is genuine and the agent may
+                # mean it, which is the case the original rule protects.
+                if (
+                    creates_the_path
+                    and shortened
+                    and not (base / bare).exists()
+                    and not (base / prefix).is_dir()
+                ):
+                    rewritten.append(shortened)
+                    created.append(f"{argument} -> {shortened}")
+                    continue
             except OSError:
                 pass
         rewritten.append(argument)
-    if not changed:
+    if not changed and not created:
         return list(command), None
+    reasons = []
+    if changed:
+        reasons.append(
+            ", ".join(changed)
+            + " (the path as given does not exist; the shortened one does)"
+        )
+    if created:
+        reasons.append(
+            ", ".join(created)
+            + " (this command creates the path, and creating it under the "
+            "directory of the same name would have made "
+            f"'{prefix}/{prefix}/...', which nothing else would then find)"
+        )
     return rewritten, (
         "Note: the working directory is already '"
         + prefix
         + "', so "
-        + ", ".join(changed)
-        + " (the path as given does not exist; the shortened one does). Paths "
-        "in a command are relative to the working directory."
+        + "; ".join(reasons)
+        + ". Paths in a command are relative to the working directory."
     )
 
 

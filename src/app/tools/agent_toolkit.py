@@ -11,6 +11,7 @@ build its tools from here instead of redefining its own wrappers.
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from typing import Any
@@ -540,23 +541,68 @@ JOURNAL_TOOL_MAX_MATCHES = 200
 _A_JOURNAL_REFERENCE = re.compile(r"-[0-9a-f]{8}\.[A-Za-z0-9]{1,6}$")
 
 
-def _and_a_path_is_read_with_read_file(reference: str) -> str:
+def _somewhere_in_the_workspace(repo_root: str | None, candidate: str) -> str:
+    """Where a named file is in the workspace, by basename, or "". Never raises.
+
+    A reference that is really a path is usually missing its directory, which is
+    why naming the whole path is worth more than naming the tool.
+    """
+    if not repo_root:
+        return ""
+    wanted = os.path.basename(candidate.strip("/"))
+    if not wanted:
+        return ""
+    try:
+        root = os.path.abspath(str(repo_root))
+        for directory, subdirectories, files in os.walk(root):
+            subdirectories[:] = [
+                name for name in subdirectories
+                if not name.startswith(".") and name != "node_modules"
+            ]
+            if wanted in files:
+                return os.path.relpath(os.path.join(directory, wanted), root)
+    except Exception:  # noqa: BLE001 - a hint must not decide a tool result
+        return ""
+    return ""
+
+
+def _and_a_path_is_read_with_read_file(reference: str, repo_root: str | None = None) -> str:
     """The sentence for a reference that is really a workspace path, or "".
 
     6 of the 28 failed calls across the current generation of runs passed a path
     - `todo-app/app.js`, `todo-app/index.html` - which is this tool being
     mistaken for `read_file`. The refusal explained the journal at a stage that
     was not asking about the journal.
+
+    Says whether the file is there, and where, rather than only naming the tool.
+    Measured live on run-f05d8d47, whose `test_round_0` asked 16 times for
+
+        todo-toggling-checkbox-app-da256-kethrough-and-checked-state/error-context.md
+
+    a Playwright per-case artefact. It was told to use `read_file` every time,
+    and `read_file` would have failed too: Playwright had already cleared the
+    directory, and no `error-context.md` exists anywhere in that workspace.
+    Suggesting a tool that cannot work is one more round trip, which is what this
+    message was added to stop.
     """
     candidate = str(reference or "")
     if not candidate or _A_JOURNAL_REFERENCE.search(candidate):
         return ""
     if "/" not in candidate and "." not in candidate:
         return ""
+    where = _somewhere_in_the_workspace(repo_root, candidate)
+    if where:
+        return (
+            f" '{candidate}' looks like a path rather than a journal reference: a "
+            f"reference ends in eight random characters. That file is in the "
+            f"workspace at '{where}' - read it with `read_file`."
+        )
     return (
         f" '{candidate}' looks like a path rather than a journal reference: a "
-        "reference ends in eight random characters. To read a file in the "
-        "workspace, use `read_file`."
+        "reference ends in eight random characters - and there is no file of that "
+        "name anywhere in the workspace either, so no tool can read it. If a "
+        "command wrote it and then removed it, it is gone; run the command again "
+        "if you need it."
     )
 
 
@@ -713,7 +759,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                         "Pass one of those names exactly. The reference ends in "
                         "eight random characters and cannot be guessed from the "
                         "command that produced it."
-                        + _and_a_path_is_read_with_read_file(reference)
+                        + _and_a_path_is_read_with_read_file(reference, repo_root)
                         + repeated
                     )
                 }
@@ -724,7 +770,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                     "large for the conversation, and a command whose output fitted "
                     "has nothing more to read. Entries are also deleted after the "
                     "configured retention window."
-                    + _and_a_path_is_read_with_read_file(reference)
+                    + _and_a_path_is_read_with_read_file(reference, repo_root)
                     + repeated
                 )
             }

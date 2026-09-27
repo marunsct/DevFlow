@@ -66,11 +66,41 @@ class TestRedirectingAPath:
             "170a88bbee3c48e6b5ee1315580e3ed7.md",
         ],
     )
-    def test_a_path_is_sent_to_read_file(self, reference):
-        note = _and_a_path_is_read_with_read_file(reference)
+    def test_a_path_that_is_there_is_sent_to_read_file(self, tmp_path, reference):
+        """With the file present, the note names where it is and which tool reads it."""
+        import os
+
+        target = tmp_path / reference
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x")
+
+        note = _and_a_path_is_read_with_read_file(reference, str(tmp_path))
 
         assert "`read_file`" in note
         assert reference in note
+        assert os.path.basename(reference) in note
+
+    @pytest.mark.parametrize(
+        "reference",
+        [
+            "todo-app/app.js",
+            "case/error-context.md",
+        ],
+    )
+    def test_a_path_that_is_not_there_is_not_sent_anywhere(self, tmp_path, reference):
+        """Measured on run-f05d8d47: told to use `read_file` 14 times for a
+        Playwright artefact Playwright had already deleted. Suggesting a tool
+        that cannot work is one more round trip."""
+        note = _and_a_path_is_read_with_read_file(reference, str(tmp_path))
+
+        assert "no file of that name anywhere in the workspace" in note
+        assert "`read_file`" not in note
+
+    def test_with_no_workspace_it_still_names_the_tool(self):
+        """A caller without a root cannot look, and the old advice is the best left."""
+        note = _and_a_path_is_read_with_read_file("todo-app/app.js")
+
+        assert "looks like a path" in note
 
     def test_a_real_reference_is_left_alone(self):
         """The eight random characters are what says a reference is one."""
@@ -100,6 +130,8 @@ class TestTheRefusalsCarryIt:
     def test_an_empty_journal_redirects_a_path(self, tmp_path, monkeypatch):
         from app.tools import agent_toolkit, journal
 
+        (tmp_path / "todo-app").mkdir()
+        (tmp_path / "todo-app" / "app.js").write_text("x")
         monkeypatch.setattr(journal, "read_entry", lambda name: None)
         monkeypatch.setattr(journal, "list_entries", lambda scope="", limit=10: [])
         tool = agent_toolkit.build_journal_read_tool(str(tmp_path))
@@ -107,6 +139,18 @@ class TestTheRefusalsCarryIt:
         result = tool.invoke({"reference": "todo-app/app.js"})
 
         assert "`read_file`" in result["error"]
+        assert "todo-app/app.js" in result["error"]
+
+    def test_an_empty_journal_says_when_the_file_is_gone_too(self, tmp_path, monkeypatch):
+        from app.tools import agent_toolkit, journal
+
+        monkeypatch.setattr(journal, "read_entry", lambda name: None)
+        monkeypatch.setattr(journal, "list_entries", lambda scope="", limit=10: [])
+        tool = agent_toolkit.build_journal_read_tool(str(tmp_path))
+
+        result = tool.invoke({"reference": "case/error-context.md"})
+
+        assert "no file of that name anywhere in the workspace" in result["error"]
 
     def test_a_populated_journal_redirects_a_path(self, tmp_path, monkeypatch):
         from app.tools import agent_toolkit, journal
@@ -118,6 +162,9 @@ class TestTheRefusalsCarryIt:
             lambda scope="", limit=10: ["1790418892-run-x-npm-stdout-43b36066.log"],
         )
         tool = agent_toolkit.build_journal_read_tool(str(tmp_path))
+
+        (tmp_path / "todo-app").mkdir()
+        (tmp_path / "todo-app" / "app.js").write_text("x")
 
         result = tool.invoke({"reference": "todo-app/app.js"})
 

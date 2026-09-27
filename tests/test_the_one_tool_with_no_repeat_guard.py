@@ -212,10 +212,15 @@ class TestTheToolStillWorks:
         assert "1790474922-run-x-npm-stdout-42c95e2d.log" in result["error"]
 
     def test_the_path_redirect_survives(self, a_journal_with_nothing_in_it):
-        """Added earlier this session, and it must still reach the second miss."""
+        """Added earlier this session, and it must still reach the second miss.
+
+        The workspace here is empty, so the redirect takes its "and there is no
+        file of that name either" form - which is the form run-f05d8d47 needed.
+        """
         for _ in range(_MISSES_BEFORE_SAYING_SO):
             result = a_journal_with_nothing_in_it.invoke(
                 {"reference": THE_REFERENCE_IT_KEPT_SENDING}
             )
 
-        assert "`read_file`" in result["error"]
+        assert "looks like a path rather than a journal reference" in result["error"]
+        assert "no file of that name anywhere in the workspace" in result["error"]

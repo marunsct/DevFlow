@@ -721,7 +721,79 @@ class _NoticingRepeats:
     def _repeated_reads_so_far(self) -> int:
         return self._the_repeated_read_tally().get("count", 0)
 
-    def _refuse_a_read_that_returns_nothing_new(self, file_path: str) -> str:
+    #: How many ranges one sentence names. A file read in a dozen scattered
+    #: slices is described by the first few and a count.
+    MOST_RANGES_NAMED = 4
+
+    def _as_ranges(self, numbers: set[int]) -> list[tuple[int, int]]:
+        """Consecutive line numbers collapsed into (first, last) pairs."""
+        ordered = sorted(n for n in numbers if isinstance(n, int) and n > 0)
+        spans: list[list[int]] = []
+        for number in ordered:
+            if spans and number == spans[-1][1] + 1:
+                spans[-1][1] = number
+            else:
+                spans.append([number, number])
+        return [(first, last) for first, last in spans]
+
+    def _which_lines_are_left(self, path: str, total: int) -> str:
+        """The lines this stage has and has not been given, or "".
+
+        The refusal says "a range you have NOT read still works" and named
+        neither the ranges already served nor the length of the file, so there
+        was no way to choose one except by guessing - and a stage that guesses
+        asks for the same range again.
+
+        Measured on run-a6b28314, whose `specialist_documentation_5` sent
+        `offset=50 limit=50` against `task-manager/app.js` 28 times and was
+        refused every time after the twelfth. The harness knew both halves: the
+        served line numbers are in `read_spans` in stage memory, and the length
+        is the file in front of it.
+
+        Says nothing when it cannot work out either, because a sentence naming
+        no range is worse than the general advice it would replace.
+        """
+        try:
+            from app.agents.stage_memory import store
+
+            own = getattr(self, "_read_spans", None) or {}
+            seen = store("read_spans", own)
+            entry = seen.get(path)
+            if not entry:
+                return ""
+            covered = (*entry, 0)[1]
+            if not isinstance(covered, set) or not covered:
+                return ""
+            read = self._as_ranges(covered)
+            if not read:
+                return ""
+            unread = self._as_ranges(set(range(1, total + 1)) - covered) if total else []
+        except Exception:  # noqa: BLE001 - a hint must never change a refusal
+            return ""
+
+        def describe(spans: list[tuple[int, int]]) -> str:
+            shown = spans[: self.MOST_RANGES_NAMED]
+            text = ", ".join(
+                f"{first}-{last}" if first != last else str(first) for first, last in shown
+            )
+            if len(spans) > len(shown):
+                text += f" and {len(spans) - len(shown)} more"
+            return text
+
+        if not unread:
+            return (
+                f" You have been given lines {describe(read)}, which is the whole "
+                f"file ({total} lines). There is no range of it left to read."
+            )
+        return (
+            f" You have been given lines {describe(read)} of {total}. The lines you "
+            f"have NOT been given are {describe(unread)} - ask for those, or use "
+            "`grep`."
+        )
+
+    def _refuse_a_read_that_returns_nothing_new(
+        self, file_path: str, total_lines: int = 0
+    ) -> str:
         """Why this read failed, or "" while it should still succeed.
 
         The last rung of the ladder, and the first one that is not a notice.
@@ -741,10 +813,12 @@ class _NoticingRepeats:
             "it already has. The file has not changed since you last saw it, "
             "so nothing here can tell you anything new.\n"
             "A range you have NOT read still works, and so does `grep` for "
-            "something specific. If you have what you need, return your "
-            "structured response now. If something is stopping you, return it "
-            "in `blockers` and say what you would need - a blocker is a "
-            "complete answer and the workflow acts on it."
+            "something specific."
+            + self._which_lines_are_left(str(file_path), total_lines)
+            + " If you have what you need, return your structured response now. "
+            "If something is stopping you, return it in `blockers` and say what "
+            "you would need - a blocker is a complete answer and the workflow "
+            "acts on it."
         )
 
     def _the_way_out(self) -> str:
@@ -838,7 +912,9 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         self._withheld = False  # noqa: SLF001 - own attribute
         note = self._note_if_repeated(file_path, content)
         if self._withheld:
-            refusal = self._refuse_a_read_that_returns_nothing_new(file_path)
+            refusal = self._refuse_a_read_that_returns_nothing_new(
+                file_path, len(content.splitlines())
+            )
             if refusal:
                 return replace(result, error=refusal)
             # The bytes are replaced, not prefixed. Repeating them is the whole
@@ -854,7 +930,9 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                     str(file_path), self._file_identity(file_path), first, last, content
                 )
                 if self._withheld:
-                    refusal = self._refuse_a_read_that_returns_nothing_new(file_path)
+                    refusal = self._refuse_a_read_that_returns_nothing_new(
+                file_path, len(content.splitlines())
+            )
                     if refusal:
                         return replace(result, error=refusal)
                     # Same as the byte-identical rung above: the bytes are

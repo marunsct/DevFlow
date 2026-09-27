@@ -57,7 +57,31 @@ _MOST_FRAMEWORKS = 12
 #: right key: a run that rewrites its stack gets a fresh extraction, and a run
 #: that does not pays once however many calls its agents make.
 _CACHE: dict[str, List[str]] = {}
+
+#: Failed attempts per stack document. Only successes were cached, so a model
+#: endpoint that is down was dialled again on every model call of every stage -
+#: 142 attempts in one worker, every one of them the same refused connection.
+_FAILURES: dict[str, int] = {}
+
+#: How many times one stack document is tried before this gives up on it. Two,
+#: so a single blip is survived and a host that is down costs two calls rather
+#: than one per model call for the rest of the run.
+_ATTEMPTS_BEFORE_GIVING_UP = 2
+
 _CACHE_LOCK = threading.Lock()
+
+
+def _where_the_extraction_model_points() -> str:
+    """The endpoint this would call, for a log line that names the real fault.
+
+    Never raises: it is only ever used to describe a failure.
+    """
+    try:
+        from app.models import _runtime_settings
+
+        return str(_runtime_settings().openai_base_url or "the default endpoint")
+    except Exception:  # noqa: BLE001 - a description must not fail a stage
+        return "an endpoint that could not be resolved"
 
 
 def _text_of(response: Any) -> str:
@@ -83,12 +107,34 @@ def _text_of(response: Any) -> str:
 
 
 def _extraction_model() -> Any:
-    """The configured chat model, for the two auxiliary calls this makes."""
+    """The chat model the run is actually using, for the two auxiliary calls.
+
+    Built from `_runtime_settings`, not `load_settings`. `load_settings` is a pure
+    function of the environment and does not see what an administrator has
+    changed, and `effective_settings` says so in its own docstring: "This is what
+    every model-building path should call."
+
+    This path did not, and the two disagreed in production. The operator's
+    runtime settings pointed at `http://host.docker.internal:8888/v1`, which was
+    serving; the environment still held `http://host.docker.internal:1234/v1`,
+    which answered `ECONNREFUSED`. So every agent call worked and every call from
+    here failed. Across the worker's whole lifetime:
+
+        142  Could not resolve framework instructions for this stack
+          0  Framework instructions resolved for this stack
+
+    Dynamic framework instructions had therefore never once been injected in this
+    deployment - not degraded, inert - and nothing said so except a warning that
+    named a stack rather than a host.
+
+    Reuses `app.models._runtime_settings`, which already falls back to the
+    environment when there is no database, so the CLI and the tests are unchanged.
+    """
     from langchain_openai import ChatOpenAI
 
-    from app.config import load_settings
+    from app.models import _runtime_settings
 
-    settings = load_settings()
+    settings = _runtime_settings()
     return ChatOpenAI(
         model=settings.model_name,
         api_key=settings.openai_api_key,
@@ -131,8 +177,14 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
     key = hashlib.sha256(content.encode("utf-8", "replace")).hexdigest()
     with _CACHE_LOCK:
         cached = _CACHE.get(key)
+        failures = _FAILURES.get(key, 0)
     if cached is not None:
         return list(cached)
+    if failures >= _ATTEMPTS_BEFORE_GIVING_UP:
+        # No model call. This is the rung that was missing: the cache held only
+        # successes, so an endpoint that is down was dialled again for every
+        # model call of every stage for the rest of the run.
+        return []
 
     keywords: List[str] = []
     try:
@@ -179,7 +231,28 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
                     continue
             keywords.append(framework)
     except Exception:  # noqa: BLE001 - an absent hint beats a failed stage
-        logger.warning("Could not resolve framework instructions for this stack", exc_info=True)
+        # Counted, and given up on. Only successes were cached, so a failure was
+        # retried on every model call of the run - which is how one unreachable
+        # host produced 142 attempts and 142 tracebacks in a single worker.
+        # Two tries per stack document survives a blip and ends the storm.
+        with _CACHE_LOCK:
+            _FAILURES[key] = _FAILURES.get(key, 0) + 1
+            attempts = _FAILURES[key]
+        if attempts >= _ATTEMPTS_BEFORE_GIVING_UP:
+            # Names the endpoint. The old line named the stack, so an
+            # unreachable host read as a problem with the document.
+            logger.warning(
+                "Could not resolve framework instructions after %d attempts at "
+                "%s; they will be absent for this stack for the rest of the run.",
+                attempts, _where_the_extraction_model_points(),
+                exc_info=True,
+            )
+        else:
+            logger.warning(
+                "Could not resolve framework instructions for this stack "
+                "(attempt %d of %d)", attempts, _ATTEMPTS_BEFORE_GIVING_UP,
+                exc_info=True,
+            )
         return []
 
     with _CACHE_LOCK:

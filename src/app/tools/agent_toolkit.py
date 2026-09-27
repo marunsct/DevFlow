@@ -541,15 +541,45 @@ JOURNAL_TOOL_MAX_MATCHES = 200
 _A_JOURNAL_REFERENCE = re.compile(r"-[0-9a-f]{8}\.[A-Za-z0-9]{1,6}$")
 
 
+#: A filename inside a longer string: a stem, a dot, a short extension. The
+#: reference is not always just a path - it is often a path the harness printed
+#: with something after it.
+_A_FILENAME_IN_IT = re.compile(r"[\w./-]*[\w-]\.[A-Za-z0-9]{1,6}\b")
+
+
+def _the_files_a_reference_names(candidate: str) -> list[str]:
+    """Every filename the reference mentions, longest first.
+
+    A bare `os.path.basename` was not enough. The commonest failing reference is
+    the harness's own workspace listing copied verbatim - `task-manager/app.js
+    (188 lines)`, whose basename is `(188` - and the next commonest is a
+    description like `app.spec.js lines 315-340`, whose basename is `315-340`.
+    Across the stored runs those two shapes are 21 of the 56 references that did
+    not resolve.
+    """
+    found = _A_FILENAME_IN_IT.findall(candidate or "")
+    return sorted({os.path.basename(name) for name in found if name}, key=len, reverse=True)
+
+
 def _somewhere_in_the_workspace(repo_root: str | None, candidate: str) -> str:
-    """Where a named file is in the workspace, by basename, or "". Never raises.
+    """Where a named file is in the workspace, or "". Never raises.
 
     A reference that is really a path is usually missing its directory, which is
     why naming the whole path is worth more than naming the tool.
     """
     if not repo_root:
         return ""
-    wanted = os.path.basename(candidate.strip("/"))
+    for wanted in _the_files_a_reference_names(candidate) or [
+        os.path.basename(candidate.strip("/"))
+    ]:
+        found = _the_first_file_named(repo_root, wanted)
+        if found:
+            return found
+    return ""
+
+
+def _the_first_file_named(repo_root: str, wanted: str) -> str:
+    """The first path in the workspace whose basename is `wanted`, or ""."""
     if not wanted:
         return ""
     try:
@@ -564,6 +594,7 @@ def _somewhere_in_the_workspace(repo_root: str | None, candidate: str) -> str:
     except Exception:  # noqa: BLE001 - a hint must not decide a tool result
         return ""
     return ""
+
 
 
 def _and_a_path_is_read_with_read_file(reference: str, repo_root: str | None = None) -> str:

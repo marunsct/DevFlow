@@ -197,3 +197,71 @@ class TestTheRefusalsCarryIt:
         tool = agent_toolkit.build_journal_read_tool(str(tmp_path))
 
         assert "error" in tool.invoke({"reference": "whatever"})
+
+
+class TestAReferenceThatIsAPathWithSomethingAfterIt:
+    """The commonest failing reference is the harness's own listing, copied.
+
+    Splitting every `read_command_output` error across the stored runs by kind:
+
+        56  reference not found
+        14  refused as a repeat
+         5  the search term was not in the file
+
+    and of those 56, the dominant shapes are the harness's own workspace listing
+    copied verbatim - `task-manager/app.js (188 lines)`, 18 occurrences - and a
+    description like `app.spec.js lines 315-340`. `os.path.basename` reads those
+    as `(188` and `315-340`, so the file was never found and the note said no such
+    file existed while `task-manager/app.js` sat right there.
+
+    The harness prints `path (N lines)` itself, in the workspace listing it injects
+    with "This is what is there - you do not need to list the directories to find
+    out". An agent copying that string back is using the format it was given.
+    """
+
+    @pytest.fixture
+    def a_project(self, tmp_path):
+        (tmp_path / "task-manager" / "e2e").mkdir(parents=True)
+        (tmp_path / "task-manager" / "app.js").write_text("x")
+        (tmp_path / "task-manager" / "e2e" / "app.spec.js").write_text("x")
+        return tmp_path
+
+    @pytest.mark.parametrize(
+        "reference,expected",
+        [
+            ("task-manager/app.js (188 lines)", "task-manager/app.js"),
+            ("task-manager/app.js (299 lines)", "task-manager/app.js"),
+            ("app.spec.js lines 315-340", "task-manager/e2e/app.spec.js"),
+            ("task-manager/app.js", "task-manager/app.js"),
+            ("see app.js for the handler", "task-manager/app.js"),
+        ],
+    )
+    def test_the_real_path_is_named(self, a_project, reference, expected):
+        note = _and_a_path_is_read_with_read_file(reference, str(a_project))
+
+        assert expected in note, note
+        assert "`read_file`" in note
+
+    def test_a_filename_that_is_not_there_still_says_so(self, a_project):
+        note = _and_a_path_is_read_with_read_file(
+            "case/error-context.md", str(a_project)
+        )
+
+        assert "no file of that name anywhere in the workspace" in note
+
+    def test_a_reference_naming_no_file_stays_silent(self, a_project):
+        """`npm-test-output` is neither a path nor a reference, and guessing is worse."""
+        assert _and_a_path_is_read_with_read_file("npm-test-output", str(a_project)) == ""
+
+    def test_a_real_journal_reference_is_still_left_alone(self, a_project):
+        assert _and_a_path_is_read_with_read_file(
+            "1790497387-run-1a0d3610-testing_specialist-npx-stdout-328ba6e2.log",
+            str(a_project),
+        ) == ""
+
+    def test_the_filenames_are_pulled_out_of_the_string(self):
+        from app.tools.agent_toolkit import _the_files_a_reference_names
+
+        assert _the_files_a_reference_names("task-manager/app.js (188 lines)") == ["app.js"]
+        assert _the_files_a_reference_names("app.spec.js lines 315-340") == ["app.spec.js"]
+        assert _the_files_a_reference_names("nothing here") == []

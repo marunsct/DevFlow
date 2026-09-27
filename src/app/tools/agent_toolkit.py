@@ -590,6 +590,16 @@ def _and_a_path_is_read_with_read_file(reference: str, repo_root: str | None = N
         return ""
     if "/" not in candidate and "." not in candidate:
         return ""
+    if not repo_root:
+        # Nothing to look in, so neither of the sentences below can be said
+        # honestly - "there is no file of that name anywhere in the workspace"
+        # would be a claim about a workspace this never saw. Caught by the deploy
+        # check, which calls this with no root.
+        return (
+            f" '{candidate}' looks like a path rather than a journal reference: a "
+            "reference ends in eight random characters. To read a file in the "
+            "workspace, use `read_file`."
+        )
     where = _somewhere_in_the_workspace(repo_root, candidate)
     if where:
         return (

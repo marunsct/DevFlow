@@ -97,10 +97,16 @@ class TestRedirectingAPath:
         assert "`read_file`" not in note
 
     def test_with_no_workspace_it_still_names_the_tool(self):
-        """A caller without a root cannot look, and the old advice is the best left."""
+        """A caller without a root cannot look, and the old advice is the best left.
+
+        It must not say "there is no file of that name anywhere in the workspace":
+        that is a claim about a workspace it never saw.
+        """
         note = _and_a_path_is_read_with_read_file("todo-app/app.js")
 
         assert "looks like a path" in note
+        assert "`read_file`" in note
+        assert "no file of that name anywhere" not in note
 
     def test_a_real_reference_is_left_alone(self):
         """The eight random characters are what says a reference is one."""

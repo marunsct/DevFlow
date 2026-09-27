@@ -140,6 +140,52 @@ class TestARePlannedSprintDoesTheWork:
                 "plans: the revision was planned and never dispatched"
             )
 
+    def test_a_revision_that_moves_one_role_still_dispatches_the_others(
+        self, agents: ScriptedAgents, parallel: None, tmp_path: Any
+    ) -> None:
+        """The shape this actually takes in a run: partial dispatch.
+
+        A collision is per task, not per plan, so a revision runs exactly the
+        tasks whose `(role, index)` pair is new and silently skips the rest. That
+        is worse than skipping the sprint outright, because the sprint looks like
+        it did work.
+
+        Measured on the second sprint of run-83bd156a. Its first plan ran
+        `specialist_ui_ux_0` and `specialist_testing_1`; the revision's index-1
+        task was `backend`, so `specialist_backend_1` did not collide and ran,
+        while `specialist_ui_ux_0` - unchanged in the new plan and still needed -
+        did not.
+        """
+        first = ("ui_ux", "testing")
+        revised = ("ui_ux", "backend")
+        _script_through_architecture(agents, _approved_review())
+        agents.script("scrum_master", [responds_with(_sprint_plan())])
+        agents.script(
+            "technical_lead",
+            [responds_with(_milestone(*first)), responds_with(_milestone(*revised))],
+        )
+        for role in {*first, *revised}:
+            agents.script(f"specialist_{role}", [responds_with(_specialist())] * 4)
+        agents.script(
+            "milestone_reviewer",
+            [
+                responds_with(_review_asking_for_changes()),
+                responds_with(_milestone_review()),
+            ],
+        )
+        agents.script("security_reviewer", [responds_with(_security_review())] * 2)
+
+        state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-partial")
+
+        assert state["stage"] != "failed", state.get("error")
+        # `specialist_ui_ux_0` is the collision: index 0 and role ui_ux in both
+        # plans. It must run for the revision as well as the first plan.
+        assert len(agents.requests["specialist_ui_ux"]) >= 2, (
+            "the revision kept the ui_ux task at index 0, so its stage name "
+            "matched the first plan's and the task was treated as already done"
+        )
+        assert len(agents.requests["specialist_backend"]) >= 1
+
     def test_linear_mode_dispatches_the_second_plan(
         self, agents: ScriptedAgents, tmp_path: Any
     ) -> None:

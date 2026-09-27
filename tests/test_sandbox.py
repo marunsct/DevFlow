@@ -6,6 +6,7 @@ container runtime is present on the machine running the tests.
 """
 
 import os
+import re
 from unittest import mock
 
 import pytest
@@ -83,18 +84,31 @@ def test_shell_metacharacters_are_inert(argv):
 
 
 @pytest.mark.parametrize(
-    ("argv", "role"),
+    ("argv", "role", "because"),
     [
-        (["python", "-c", "import os; os.system('id')"], "backend_specialist"),
-        (["python3", "-m", "http.server"], "backend_specialist"),
-        (["node", "-e", "require('child_process').exec('id')"], "ui_ux_specialist"),
-        (["npm", "exec", "--", "sh"], "ui_ux_specialist"),
-        (["git", "-c", "core.pager=sh"], "ui_ux_specialist"),
+        (
+            ["python", "-c", "import os; os.system('id')"],
+            "backend_specialist",
+            "arbitrary code",
+        ),
+        (["python3", "-m", "http.server"], "backend_specialist", "arbitrary code"),
+        (
+            ["node", "-e", "require('child_process').exec('id')"],
+            "ui_ux_specialist",
+            "arbitrary code",
+        ),
+        # These two are refused for what they each are, rather than under one
+        # borrowed phrase. `npm exec -- sh` has no snippet to put in a file, and
+        # the advice that came with "arbitrary code" told it to write one; `git
+        # -c` alters git rather than the workspace. Both are still refused - the
+        # reason is asserted so the refusal cannot stop explaining itself.
+        (["npm", "exec", "--", "sh"], "ui_ux_specialist", "has not cleared"),
+        (["git", "-c", "core.pager=sh"], "ui_ux_specialist", "changes how `git`"),
     ],
 )
-def test_interpreter_escape_hatches_are_rejected(argv, role):
+def test_interpreter_escape_hatches_are_rejected(argv, role, because):
     """Allowed interpreters must not be usable as general shells."""
-    with pytest.raises(CommandNotAllowed, match="arbitrary code"):
+    with pytest.raises(CommandNotAllowed, match=re.escape(because)):
         validate_command(argv, role)
 
 

@@ -322,6 +322,66 @@ written, the task delegated and the script authored.
 """
 
 
+def _no_code_on_the_command_line(stack: Any) -> str:
+    """The inline-code refusal this stack's own toolchain will hand back, or "".
+
+    Measured on run-83bd156a: `specialist_backend_1`, `specialist_testing_2`
+    and `specialist_ui_ux_0` each sent the byte-identical
+    `node -e "import('./simple-to-do-list/app.js').then(...)"`, and each was
+    refused. Three of the run's seven failed calls were that one command.
+
+    The run-scoped counter did its job - the second and third were told "already
+    refused 1/2 time(s) ... it will be refused every time" - and it could not
+    possibly have helped: those three stages run in parallel, so stage two had
+    already formed its command before stage one's refusal existed. No reactive
+    message reaches a stage that has not made its call yet. Only the brief does.
+
+    This is the shape `NO_SHELL_NOTE` exists for, whose docstring names the
+    problem exactly: the allowlist says so, "but only once a command has already
+    been refused". The same was true of every inline-eval flag.
+
+    Derived from `_FORBIDDEN_ARGS` rather than spelled out here, so a language
+    added to the boundary is named in the brief without a second edit, and
+    filtered through `_installed` so it cannot warn against a program this image
+    does not have.
+    """
+    from app.tools.sandbox import (
+        _FORBIDDEN_ARGS,
+        _WHY_THE_ARGUMENT_IS_REFUSED,
+        TOOLCHAINS,
+        _installed,
+        _toolchain_key,
+    )
+
+    programs: set[str] = set()
+    for attribute in ("language", "framework", "frontend_framework", "testing_framework"):
+        key = _toolchain_key(str(getattr(stack, attribute, "") or ""))
+        if key:
+            programs |= TOOLCHAINS.get(key, frozenset())
+    evaluators = {
+        name
+        for name in programs & set(_FORBIDDEN_ARGS)
+        if _WHY_THE_ARGUMENT_IS_REFUSED.get(name) == "eval"
+    }
+    present, _absent = _installed(evaluators)
+    if not present:
+        return ""
+    spellings = [
+        f"`{name} {flag}`"
+        for name in present
+        for flag in sorted(_FORBIDDEN_ARGS[name])
+    ]
+    return (
+        "Code cannot be handed to a program as an argument. This is refused "
+        "every time, for what it is, and no edit to any file changes that: "
+        + ", ".join(spellings)
+        + ". To execute something once, write it to a file in the project "
+        "folder, run the file, then remove it with `delete_artifact`. If what "
+        "you actually need is what is already in a file, `read_file` and `grep` "
+        "answer that in one call without running anything.\n"
+    )
+
+
 #: Languages where a module system is a choice the files must share.
 _HAS_A_MODULE_SYSTEM = ("javascript", "typescript")
 
@@ -414,6 +474,7 @@ def describe_stack(stack: Any) -> str:
         "rather than switching.\n"
         + _how_the_pieces_load(stack)
         + NO_SHELL_NOTE
+        + _no_code_on_the_command_line(stack)
         + "\n"
     )
 

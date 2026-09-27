@@ -392,6 +392,28 @@ COMMON_EXECUTABLES = frozenset({
 })
 
 # Argument forms that would turn an allowed interpreter back into a general one.
+#
+# `TOOLCHAINS` pins seventeen languages and the inline-eval half of this table
+# covered two of them. Measured 2026-09-27 by calling `validate_command` once
+# per toolchain with the stack marker set to that language: `node -e` and
+# `python3 -c` were refused, and `ruby -e`, `php -r`, `elixir -e`, `scala -e`,
+# `rake -e`, `mix run -e` and `gradle -I` were all permitted. The policy was
+# never JavaScript-and-Python-only; only its enforcement was.
+#
+# `go run .` and `cargo run` stay permitted deliberately. They compile and run
+# the project in front of them, which is a build step, not code in an argument.
+#
+# `bundle exec`, `poetry run`, `uv run` and `composer exec` were added here in
+# the same pass and then taken back out, which is worth recording because the
+# argument for them looks sound. They run a program the allowlist never cleared,
+# exactly as the `npm exec` entry below does - but blocking `npm exec` never
+# closed that hole, because `npx <anything>` is permitted and does the same
+# thing. So refusing the others would not have made the boundary tighter; it
+# would only have made every non-JavaScript language stricter than JavaScript.
+# It also took away ordinary work with no replacement: `bundle exec rspec`,
+# `bundle exec rake db:migrate` and `poetry run pytest` are how a Ruby or Python
+# project reaches the tools inside its own bundle or virtualenv.
+# `test_a_real_build_step_still_runs` pins them.
 _FORBIDDEN_ARGS: dict[str, frozenset[str]] = {
     "python": frozenset({"-c"}),
     "python3": frozenset({"-c"}),
@@ -405,6 +427,48 @@ _FORBIDDEN_ARGS: dict[str, frozenset[str]] = {
     # command line. Both turn `make` into a general interpreter pointed at
     # something the workspace does not contain.
     "make": frozenset({"-f", "--file", "--makefile", "--eval", "-e"}),
+    # `-e` means "here is the program" to every interpreter that has it, so the
+    # same refusal applies for the same reason. A flag a given interpreter does
+    # not actually accept costs nothing to list: the only command it can refuse
+    # is one that was trying to evaluate a snippet anyway.
+    "ruby": frozenset({"-e"}),
+    "php": frozenset({"-r", "-a"}),
+    "elixir": frozenset({"-e", "--eval"}),
+    "scala": frozenset({"-e"}),
+    "rake": frozenset({"-e", "--execute"}),
+    "mix": frozenset({"-e", "--eval"}),
+    # An injected or redirected build script, exactly as `make -f` is. `gradle
+    # test` and `gradle build` are untouched; only "use this build file instead"
+    # is refused.
+    "gradle": frozenset({"-I", "--init-script", "-b", "--build-file"}),
+}
+
+#: Why each program's arguments above are refused, which decides what the
+#: refusal tells the agent to do instead. Advice that does not fit the command
+#: is worse than none: "put the code in a file" is the right answer for
+#: `ruby -e` and nonsense for `bundle exec rspec`, whose answer is "run
+#: `rspec`". Keyed by program so a new entry above cannot silently inherit
+#: advice meant for a different shape; pinned by
+#: `test_every_refused_argument_says_what_to_do_instead`.
+_WHY_THE_ARGUMENT_IS_REFUSED: dict[str, str] = {
+    "python": "eval",
+    "python3": "eval",
+    "node": "eval",
+    "ruby": "eval",
+    "php": "eval",
+    "elixir": "eval",
+    "scala": "eval",
+    "rake": "eval",
+    "mix": "eval",
+    # `make` holds both shapes - `-f` redirects the build, `--eval` supplies a
+    # rule inline - and the build-file answer covers each of them.
+    "make": "foreign_build_file",
+    "npm": "any_program",
+    "npx": "any_program",
+    "yarn": "any_program",
+    "pnpm": "any_program",
+    "gradle": "foreign_build_file",
+    "git": "reconfigures_the_tool",
 }
 
 _ALLOWED_PYTHON_MODULES = frozenset({"venv", "pip", "pytest", "unittest"})
@@ -1324,6 +1388,51 @@ def _what_that_snippet_was_reading(argv: Sequence[str], repo_root: str | Path | 
     )
 
 
+def _what_to_do_with_that_argument(
+    executable: str,
+    argv: Sequence[str],
+    repo_root: str | Path | None,
+    permitted: frozenset[str] | set[str],
+) -> str:
+    """Why this argument is refused and what to send instead.
+
+    One sentence used to cover every entry in `_FORBIDDEN_ARGS`: "it can
+    execute arbitrary code. Put the code in a file inside the project folder,
+    run the file, then remove it with `delete_artifact`." That is exactly right
+    for `ruby -e` and wrong for the other three shapes the table holds.
+    `npm exec -- sh` has no code to put in a file, and `gradle -b other.gradle`
+    has no snippet either. An agent handed the file-and-delete route for those
+    writes a file it did not need, and the refusal it gets for the next attempt
+    looks identical, so nothing tells it the advice never applied.
+    """
+    kind = _WHY_THE_ARGUMENT_IS_REFUSED.get(executable, "eval")
+    if kind == "any_program":
+        return (
+            "it runs a program the allowlist has not cleared, so it is refused "
+            "whatever follows it. There is nothing to put in a file: run the "
+            "program directly as the first item of `command`, and it is checked "
+            f"on its own name. {_what_can_actually_run(permitted)}"
+        )
+    if kind == "foreign_build_file":
+        return (
+            "the build has to come from the project's own build file. This "
+            "either points it at a different file or supplies a rule on the "
+            "command line, and neither is reproducible for the next stage. Put "
+            "the step in the build file the project already has, then run the "
+            "target by name."
+        )
+    if kind == "reconfigures_the_tool":
+        return (
+            f"it changes how `{executable}` itself runs rather than doing "
+            "anything in the workspace. Send the plain command without it."
+        )
+    return (
+        "it can execute arbitrary code. Put the code in a file inside the "
+        "project folder, run the file, then remove it with `delete_artifact`."
+        + _what_that_snippet_was_reading(argv, repo_root)
+    )
+
+
 def validate_command(
     command: Sequence[str], role_name: str, repo_root: str | Path | None = None
 ) -> list[str]:
@@ -1368,10 +1477,8 @@ def validate_command(
     for index, arg in enumerate(argv[1:], start=1):
         if arg in forbidden:
             raise CommandNotAllowed(
-                f"'{executable} {arg}' is not permitted: it can execute arbitrary code. "
-                "Put the code in a file inside the project folder, run the file, then "
-                "remove it with `delete_artifact`."
-                + _what_that_snippet_was_reading(argv, repo_root)
+                f"'{executable} {arg}' is not permitted: "
+                + _what_to_do_with_that_argument(executable, argv, repo_root, permitted)
             )
         if arg == "-m" and executable in {"python", "python3"}:
             module = argv[index + 1] if index + 1 < len(argv) else ""

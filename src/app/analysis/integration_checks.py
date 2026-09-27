@@ -4832,6 +4832,38 @@ def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> lis
     Left as a finding rather than dropped, because the case it was written for
     is real - a product whose UI logic is only ever unit-tested has no
     evidence it works in a browser, and `TESTABILITY_RULE` requires one.
+
+    A fourth condition, added after run-6e50b630: the run's own stack must not
+    have chosen a different testing framework. Without it this check and
+    `_a_test_runner_the_stack_did_not_choose` contradict each other, and both
+    grade BREAKS, so no state of the workspace satisfies both. Demonstrated on
+    one project whose stack chose `node --test with JSDOM`:
+
+        without @playwright/test -> "Playwright is not installed ... You MUST
+                                     install `@playwright/test`"          BREAKS
+        with @playwright/test    -> "installs '@playwright/test', but this run's
+                                     stack chose 'node --test with JSDOM'" BREAKS
+
+    run-6e50b630 hit the second horn and failed at the revision limit with
+
+        [major] contracts: @playwright/test is declared as a devDependency in
+        todo-app/package.json, but technology_stack.md explicitly chose
+        'node --test with JSDOM' as the testing framework.
+
+    while earlier runs hit the first. A reviewer cannot accept either, because
+    the remedy for each is the thing the other forbids.
+
+    Resolved towards the run's own decision rather than by muting a severity.
+    `stack_selector` chooses the testing framework and writes it to
+    `technology_stack.md`, and `_a_test_runner_the_stack_did_not_choose` already
+    enforces the project against that choice. Two authorities on one question is
+    what produced the loop; this check hard-codes one vendor's tool, which is
+    also the narrower thing to be - the harness has to build products in every
+    framework and language, and a check that names a product cannot do that.
+
+    So: when the stack has named a testing framework that is not Playwright, the
+    choice governs and this stays quiet. When the stack named Playwright, or
+    named nothing at all, the finding stands.
     """
     has_html = any(f.suffix == ".html" for f in files)
     if not has_html:
@@ -4839,6 +4871,9 @@ def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> lis
     if not any(f.suffix.lower() in _CLIENT_LOGIC_SUFFIXES for f in files):
         return []
     if not any(f.name == "package.json" for f in files):
+        return []
+    chosen = str(getattr(stack, "testing_framework", "") or "").strip().lower()
+    if chosen and not re.search(r"(?<![a-z0-9])playwright(?![a-z0-9])", chosen):
         return []
 
     packages = _manifest_packages(files, "package.json")

@@ -3828,6 +3828,130 @@ corrupted artifact nobody can see is corrupted.
 """
 
 
+#: A top-level definition, in the languages a whole-file rewrite is most often
+#: sent for. Deliberately shallow: this only has to notice that a name the file
+#: used to define is no longer defined, not parse anything.
+_A_DEFINITION = (
+    re.compile(r"^\s*(?:export\s+)?(?:default\s+)?(?:async\s+)?function\s+(\w+)", re.M),
+    re.compile(r"^\s*(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=", re.M),
+    re.compile(r"^\s*(?:export\s+)?class\s+(\w+)", re.M),
+    re.compile(r"^\s*(?:async\s+)?def\s+(\w+)", re.M),
+    re.compile(r"^\s*(?:pub\s+)?fn\s+(\w+)", re.M),
+    re.compile(r"^\s*func\s+(\w+)", re.M),
+)
+
+#: How many lost names one message lists.
+MAX_LOST_DEFINITIONS_NAMED = 6
+
+#: Warnings before the write is refused. The same two rungs as
+#: `_refuse_an_edit_that_goes_backwards_again` and the no-op write refusal: a
+#: rewrite that drops a definition is sometimes a deliberate refactor, and twice
+#: is enough to establish it was not a slip.
+LOSSES_BEFORE_REFUSING_A_REWRITE = 2
+
+#: Per-instance fallback, for a write outside a graph run.
+_LOSSES_OUTSIDE_A_RUN: dict[str, int] = {}
+
+
+def _what_a_file_defines(content: str) -> set[str]:
+    """The top-level names a file defines, by the shallowest reading that works."""
+    found: set[str] = set()
+    for pattern in _A_DEFINITION:
+        found.update(pattern.findall(content or ""))
+    return found
+
+
+def _what_this_rewrite_would_drop(target: Path, content: str) -> list[str]:
+    """Names the file defines now and would not after this write."""
+    try:
+        if not target.is_file():
+            return []
+        existing = target.read_text(encoding="utf-8")
+    except OSError:
+        return []
+    if not existing.strip():
+        return []
+    return sorted(_what_a_file_defines(existing) - _what_a_file_defines(content))
+
+
+def _who_has_it_now(root: Path, relative_path: str) -> str:
+    """" (last written by specialist_testing_4)", or "". Never raises."""
+    try:
+        from app.analysis import project_memory
+
+        stage = str(project_memory.who_changed(root, relative_path) or "").strip()
+    except Exception:  # noqa: BLE001 - a description must not decide a write
+        return ""
+    return f" (last written by {stage})" if stage else ""
+
+
+def _a_rewrite_that_drops_what_the_file_defines(
+    root: Path, target: Path, relative_path: str, content: str
+) -> str:
+    """The note for a whole-file write that would remove a definition, or "".
+
+    Nothing compared a whole-file write against the file it replaces, so a
+    rewrite that dropped a function removed it silently - no note, no refusal,
+    and the next stage to look found the behaviour missing with no record of
+    where it went.
+
+    Measured on run-6e50b630, which failed at the milestone revision limit. Its
+    `todo-app/app.js`, by successful whole-file write, paired strictly by
+    tool_call_id:
+
+        16:42:39  specialist_ui_ux_1     4748B  18 definitions
+        16:53:43  defect_fix_1_0         6906B  28
+        16:59:45  defect_fix_1_2         8101B  33
+        21:26:29  specialist_backend_0   5322B  28   deleteTask, handleTaskActions gone
+
+    2,779 bytes and five definitions removed by one write from a different stage,
+    among them `handleTaskActions` - the event-delegation handler - and
+    `deleteTask`. The reviewer then reported, three times until the run died,
+
+        [blocking] correctness: Checkbox toggle handler is missing from init()'s
+        event delegation block ... clicking them has no effect
+        [blocking] correctness: Filter functionality is entirely missing despite
+        UI elements existing
+
+    In parallel mode six specialists were writing that one file.
+
+    Two rungs, as elsewhere in this module: the loss is named on the first write
+    and the second is refused, because a rewrite that drops a definition is
+    sometimes a deliberate refactor and twice is enough to show it was not a slip.
+    """
+    dropped = _what_this_rewrite_would_drop(target, content)
+    if not dropped:
+        return ""
+    listed = ", ".join(f"`{name}`" for name in dropped[:MAX_LOST_DEFINITIONS_NAMED])
+    more = f" and {len(dropped) - MAX_LOST_DEFINITIONS_NAMED} more" if len(dropped) > MAX_LOST_DEFINITIONS_NAMED else ""
+    try:
+        from app.agents.stage_memory import store
+
+        seen = store("rewrites_that_dropped_definitions", _LOSSES_OUTSIDE_A_RUN)
+        seen[relative_path] = seen.get(relative_path, 0) + 1
+        losses = seen[relative_path]
+    except Exception:  # noqa: BLE001 - bookkeeping must not decide a write
+        losses = 1
+    whose = _who_has_it_now(root, relative_path)
+    if losses >= LOSSES_BEFORE_REFUSING_A_REWRITE:
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}'{whose}: it would remove {listed}{more}, "
+            f"which the file defines now, and this is the {losses}{'nd' if losses == 2 else 'th'} "
+            "rewrite of it in this stage that would. Nothing was written. Another "
+            "task in this sprint may own the part you are dropping - in parallel "
+            "mode it may have been written minutes ago. Change only your own part "
+            "with `edit_artifact` or `replace_lines`. If those names really should "
+            "go, delete them one at a time so the change is visible, or say in "
+            "your structured response why the file should be replaced whole."
+        )
+    return (
+        f" This write removes {listed}{more}, which the file{whose} defines now. If "
+        "that was not deliberate, another task may own that code - in parallel mode "
+        "it may have been written minutes ago - and a targeted `edit_artifact` keeps "
+        "it. Nothing else in this pipeline will tell you it is gone."
+    )
+
+
 def _refuse_control_tokens(relative_path: str, content: str) -> None:
     """Refuse content carrying the model's own turn delimiters."""
     # Imported here, not at module scope: `app.agents` imports the role agent,
@@ -3995,6 +4119,11 @@ def write_approved_artifact(
     _refuse_if_broken(relative_path, content)
     _refuse_if_node_cannot_parse(target, relative_path, content)
     _refuse_a_hand_built_dom_again(relative_path, content)
+    # Before the write, because it compares against the file being replaced. The
+    # note it returns is reported with the others once the write has landed.
+    dropped_note = _a_rewrite_that_drops_what_the_file_defines(
+        root, target, relative_path, content
+    )
 
     if target.name == "package.json":
         _refuse_a_script_path_that_repeats_its_own_directory(target, content)
@@ -4144,6 +4273,7 @@ def write_approved_artifact(
         _the_module_type_this_declares_breaks_files_here(target, content),
         _the_module_type_here_rejects_this_file(target, content),
         _the_page_and_this_module_disagree_on_how_it_loads(root, target, content),
+        dropped_note,
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     joined = " ".join(n for n in notes if n)

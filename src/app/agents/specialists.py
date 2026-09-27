@@ -382,6 +382,48 @@ def _no_code_on_the_command_line(stack: Any) -> str:
     )
 
 
+_THE_UNIT_RUNNER_IS_NOT_THE_ONLY_ONE = (
+    "The testing framework above is the unit suite's. If this product has a web "
+    "UI, the end-to-end runner that the testability rule requires is ADDITIONAL "
+    "to it, not a competing choice: both belong in the project, the end-to-end "
+    "runner belongs in the manifest's development dependencies, and its presence "
+    "there is not a deviation from this stack. Do not remove it and do not "
+    "report it as a stack violation. What IS a defect is a test file nothing in "
+    "the project can run, so the manifest's test command must run both suites.\n"
+)
+"""Reconciles the two rules in this brief that told a stage opposite things.
+
+`describe_stack` says "Do not introduce a different language, framework,
+database or test runner". `TESTABILITY_RULE`, in the same brief, says "FOR
+FRONTEND WEB UI CODE ONLY: YOU MUST USE Playwright (`@playwright/test`) ...
+Install it using `npm i -D @playwright/test`". For a UI product whose stack
+names a unit runner - which is every UI product, because a stack records one
+testing framework - those cannot both be satisfied, and nothing said which won.
+
+Measured on run-83bd156a, which oscillated and then shipped the wreckage.
+`defect_fix_4_6` added a `test:e2e` script; `specialist_backend_1` then made
+`test` run both suites, which is exactly what the cross-file check asks for.
+The next test round raised "@playwright/test installed despite stack choosing
+node --test - Playwright tests should use the chosen stack or be removed", and
+`defect_fix_2_0` obeyed it: out went the script, the `test:e2e` entry and both
+devDependencies.
+
+It could not finish the job. `delete_artifact` refuses a test file - "tests are
+part of what this run delivers" - so the 396-line spec and its config stayed.
+Every action left a check firing, and the run completed with "Nothing in the
+project runs them at all" outstanding as a blocking-grade finding against the
+delivered product.
+
+Stated here because all three request builders take `describe_stack` - the
+specialist task, the test round that raised the defect, and the defect fix that
+acted on it - so one place reaches every stage in that loop.
+
+Worded without naming a tool. The testability rule names it, and for a stack
+whose UI is not JavaScript the runner is a different program; what has to be
+said is that an end-to-end runner and a unit runner are not rivals.
+"""
+
+
 #: Languages where a module system is a choice the files must share.
 _HAS_A_MODULE_SYSTEM = ("javascript", "typescript")
 
@@ -472,6 +514,7 @@ def describe_stack(stack: Any) -> str:
         "the stack above, and a second one in the same directory means neither "
         "works. If your task cannot be done on this stack, say so as a blocker "
         "rather than switching.\n"
+        + _THE_UNIT_RUNNER_IS_NOT_THE_ONLY_ONE
         + _how_the_pieces_load(stack)
         + NO_SHELL_NOTE
         + _no_code_on_the_command_line(stack)

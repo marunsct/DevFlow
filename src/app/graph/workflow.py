@@ -3189,6 +3189,27 @@ def build_workflow_graph(
 
         update["remediation"] = start_remediation(milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS)
         update["specialist_task_index"] = 0
+        # The parallel twin of the line above, and for the same reason: a plan
+        # just stored has had no specialist run against it. Linear dispatch
+        # counts through the tasks, so zeroing the counter is enough; the
+        # parallel router instead subtracts the stage names that already produced
+        # output, and a stage name is `specialist_{role}_{index}` - it carries no
+        # plan identity. Leaving the previous plan's outputs in place therefore
+        # told the router that this plan's tasks were done.
+        #
+        # Measured on run-83bd156a, whose three plans produced the identical
+        # names `specialist_ui_ux_0`, `specialist_backend_1`,
+        # `specialist_testing_2`, because the lead assigns those roles in that
+        # order every time. Sprint 1 ran all three; the two revisions the
+        # milestone review asked for fanned out nothing and reached a test round
+        # 174ms after the plan was stored. One of those plans was 16,959 output
+        # tokens, and the work it described was eventually done by nine
+        # `defect_fix` stages instead.
+        #
+        # Here rather than on the reviewer's `changes_required` edge, which is
+        # where the omission was: its sibling `blocked` branch cleared this and
+        # it did not. This is the one place every inbound path passes through.
+        update["specialist_outputs"] = {}
         update["revision_comments"] = []
         return update
 

@@ -9,6 +9,8 @@ should import from here instead of re-implementing the same dict shapes.
 
 from __future__ import annotations
 
+import logging
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +18,8 @@ from typing import Any
 from langgraph.types import Command
 
 from app.state import ApprovalDecision, HumanApprovalRequest
+
+logger = logging.getLogger(__name__)
 
 
 def approve_write_decision() -> dict[str, Any]:
@@ -108,6 +112,30 @@ def decisions_for(decision: dict[str, Any], action_count: int) -> list[dict[str,
     return [dict(decision) for _ in range(action_count)]
 
 
+#: The number LangGraph says it is holding, out of its own refusal. Read from the
+#: message because the count is not on the exception in any other form.
+_HANGING_CALLS = re.compile(
+    r"human decisions \((\d+)\) does not match number of hanging tool calls \((\d+)\)",
+    re.I,
+)
+
+
+def _the_count_it_wanted(error: Exception, offered: int) -> int | None:
+    """How many decisions the middleware is holding out for, or None.
+
+    None when this is some other `ValueError`, when the message cannot be read,
+    when the number it wants is the number already sent - which would make the
+    retry an identical call - or when it wants none at all.
+    """
+    found = _HANGING_CALLS.search(str(error))
+    if not found:
+        return None
+    said, wanted = int(found.group(1)), int(found.group(2))
+    if said != offered or wanted < 1 or wanted == offered:
+        return None
+    return wanted
+
+
 def resume_with_decision(
     agent: Any,
     thread_id: str,
@@ -161,7 +189,37 @@ def resume_with_decision(
         config["recursion_limit"] = recursion_limit
     pending = pending_action_requests(agent, thread_id)
     decisions = decisions_for(decision, len(pending))
-    return agent.invoke(Command(resume={"decisions": decisions}), config=config)
+    try:
+        return agent.invoke(Command(resume={"decisions": decisions}), config=config)
+    except ValueError as mismatch:
+        wanted = _the_count_it_wanted(mismatch, len(decisions))
+        if wanted is None or decision.get("type") == "edit":
+            raise
+        # Answer the number it actually has. `decisions_for` counts the actions
+        # the checkpoint records and the middleware counts the tool calls still
+        # hanging when the resume arrives; run-b7f7d183 ended with those two
+        # disagreeing inside a parallel worker - "Number of human decisions (2)
+        # does not match number of hanging tool calls (1)" - and run-c4a30293 on
+        # 2026-09-11 the same way, so it is rare and it is not new.
+        #
+        # Why the counts differ is not established, so this recovers rather than
+        # claiming a cure: the stage's work is done and waiting on a yes, and
+        # ending the whole run over the bookkeeping loses every stage before it.
+        #
+        # Only for `approve` and `reject`, which carry no per-action payload and
+        # mean the same thing however many calls they answer. An `edit` names one
+        # replacement, and `decisions_for` has a docstring about what happened
+        # last time someone replicated one to clear this crash: the wrong content
+        # gets written to every other call. It re-raises instead.
+        logger.warning(
+            "Resuming thread %s was refused %d decisions and wants %d; "
+            "answering %d instead",
+            thread_id, len(decisions), wanted, wanted,
+        )
+        return agent.invoke(
+            Command(resume={"decisions": [dict(decision) for _ in range(wanted)]}),
+            config=config,
+        )
 
 
 def _clip(text: str, limit: int = 80) -> str:

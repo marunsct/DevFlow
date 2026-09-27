@@ -686,9 +686,21 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
             # a worker that paused. An empty milestone reaches it with nothing
             # recorded and moves on, which is what an empty fan-out needs.
             return "specialist_gather"
+        # Staggered only while nothing is mid-approval. A run that paused inside
+        # the fan-out resumes here carrying a decision for the worker that
+        # paused, and that decision is delivered by re-dispatching it; deferring
+        # it instead leaves the decision with no hanging call to answer, which
+        # is `ValueError: Number of human decisions (2) does not match number of
+        # hanging tool calls (1)`. That failure predates this filter - it ended
+        # run-c4a30293 on 2026-09-11 - but the filter is a new way to reach it,
+        # so on the resume path the whole pending set goes, exactly as before.
+        resuming = bool(state.get("pending_decision")) or bool(
+            state.get("pending_inner_thread_id")
+        )
+        going = pending if resuming else _that_do_not_share_a_file(pending)
         return [
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
-            for index, task in _that_do_not_share_a_file(pending)
+            for index, task in going
         ]
 
     return stage

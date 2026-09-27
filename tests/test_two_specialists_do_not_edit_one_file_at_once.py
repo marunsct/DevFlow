@@ -155,3 +155,53 @@ class TestItNeverBlocksADispatch:
         )
 
         assert len(_that_do_not_share_a_file(pending)) == 1
+
+
+class TestAResumeIsNotStaggered:
+    """A pause inside the fan-out must get every pending task back.
+
+    The resume carries a decision for the worker that paused, and that decision
+    is delivered by re-dispatching it. Deferring it leaves the decision with no
+    hanging call to answer: "ValueError: Number of human decisions (2) does not
+    match number of hanging tool calls (1)". That failure predates this filter -
+    it ended run-c4a30293 on 2026-09-11 - and staggering is a new way to reach
+    it, so the resume path keeps the old behaviour.
+    """
+
+    @staticmethod
+    def _route(state: dict) -> object:
+        from app.graph.workflow import _route_from_stage
+
+        return _route_from_stage(state)
+
+    @staticmethod
+    def _state(**extra) -> dict:
+        class Plan:
+            delegated_tasks = [
+                Task("backend", "Create app.js with the pure functions."),
+                Task("testing", "Add the wiring tests to app.js."),
+            ]
+
+        return {
+            "stage": "specialist_dispatch_parallel",
+            "milestone_plan": Plan(),
+            "specialist_outputs": {},
+            **extra,
+        }
+
+    def test_a_clean_fan_out_is_staggered(self) -> None:
+        sent = self._route(self._state())
+
+        assert isinstance(sent, list) and len(sent) == 1
+
+    def test_a_resume_with_a_decision_dispatches_everything(self) -> None:
+        sent = self._route(self._state(pending_decision={"kind": "approve"}))
+
+        assert isinstance(sent, list) and len(sent) == 2, (
+            "the paused worker must be among them or its decision answers nothing"
+        )
+
+    def test_a_resume_with_a_pending_thread_dispatches_everything(self) -> None:
+        sent = self._route(self._state(pending_inner_thread_id="t:specialist_backend_0:ab"))
+
+        assert isinstance(sent, list) and len(sent) == 2

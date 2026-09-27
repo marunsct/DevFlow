@@ -57,6 +57,13 @@ _A_PATH_IN_PROSE = re.compile(r"(?<![\w/.-])(\.?[\w-][\w./-]*\.[A-Za-z]{1,8})\b"
 #: whole token, so a real `e.g.js` would still be read as a path.
 _NOT_A_FILENAME = frozenset({
     "e.g", "i.e", "etc.al", "et.al", "vs.the", "a.k.a", "no.1",
+    # Suffix patterns a plan names when it means "files ending in this". Found on
+    # run-a6b28314, whose plan asked for `.spec.ts` files and had `.spec.ts`
+    # reported as a file nobody wrote. Structurally identical to `.env.example`,
+    # which is a real file, so this is a list rather than a rule.
+    ".spec.ts", ".spec.js", ".spec.mjs", ".spec.cjs", ".spec.jsx", ".spec.tsx",
+    ".test.ts", ".test.js", ".test.mjs", ".test.cjs", ".test.jsx", ".test.tsx",
+    ".d.ts", ".min.js", ".min.css",
 })
 
 #: A JavaScript library or platform, not a file: a capitalised single-word stem
@@ -156,6 +163,45 @@ def paths_a_plan_named(texts: Iterable[str]) -> list[str]:
     return found
 
 
+#: Extensions that name the same thing. A plan that asks for `app.test.js` is
+#: satisfied by `app.test.mjs`: the module is there, under the extension its own
+#: module system requires.
+#:
+#: Measured on run-a6b28314. Its plan named `app.test.js`, the project built
+#: `app.test.mjs`, and this check reported the planned file as never written -
+#: eight times, at the breaking tier, which is the tier handed to the test round
+#: as already proven. A `defect_fix` stage then tried to fix the finding by
+#: rewriting `docs/sprint_plan.md` with a `python3 -c` snippet, which is refused
+#: twice over: for executing code, and for writing into the workflow's own
+#: directory. A false finding does not just waste a call, it aims a stage at the
+#: wrong file.
+#:
+#: Only extensions that are interchangeable for one language. `main.js` and
+#: `main.py` share a stem and are not the same file, and a plan that asked for one
+#: is not answered by the other.
+_THE_SAME_KIND_OF_FILE: tuple[frozenset[str], ...] = (
+    frozenset({"js", "mjs", "cjs"}),
+    frozenset({"ts", "mts", "cts"}),
+    frozenset({"jsx", "tsx"}),
+    frozenset({"yml", "yaml"}),
+    frozenset({"htm", "html"}),
+    frozenset({"md", "markdown"}),
+)
+
+
+def _interchangeable_names(candidate: str) -> set[str]:
+    """Every filename that would satisfy a plan asking for `candidate`."""
+    name = os.path.basename(candidate)
+    if "." not in name:
+        return {name}
+    stem, _, extension = name.rpartition(".")
+    extension = extension.lower()
+    for family in _THE_SAME_KIND_OF_FILE:
+        if extension in family:
+            return {f"{stem}.{other}" for other in family}
+    return {name}
+
+
 def _every_file_in(repository_root: str) -> tuple[set[str], set[str]]:
     """Every relative path in the workspace, and every basename in it."""
     paths: set[str] = set()
@@ -202,7 +248,8 @@ def files_the_plan_named_that_are_missing(
 
     missing: list[str] = []
     for candidate in wanted:
-        if os.path.basename(candidate) in basenames:
+        # Any extension that means the same thing counts as delivered.
+        if _interchangeable_names(candidate) & basenames:
             continue
         if any(path == candidate or path.endswith("/" + candidate) for path in paths):
             continue

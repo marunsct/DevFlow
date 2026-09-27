@@ -426,3 +426,89 @@ class TestOnlySomethingWithARealExtension:
         collected = {suffix.lstrip(".") for suffix in _COLLECTED_SUFFIXES}
 
         assert collected <= _REALLY_AN_EXTENSION, sorted(collected - _REALLY_AN_EXTENSION)
+
+
+class TestAnExtensionThatMeansTheSameThing:
+    """A plan asking for `app.test.js` is satisfied by `app.test.mjs`.
+
+    Measured on run-a6b28314. Its plan named `app.test.js`, the project built
+    `app.test.mjs` - the extension its own module system requires - and this check
+    reported the planned file as never written, eight times, at the breaking tier.
+
+    That tier is handed to the test round as already proven, and a `defect_fix`
+    stage tried to clear the finding by rewriting `docs/sprint_plan.md` with a
+    `python3 -c` snippet: refused twice over, for executing code and for writing
+    into the workflow's own directory. A false finding does not only waste a call,
+    it aims a stage at the wrong file.
+    """
+
+    @pytest.fixture
+    def a_project(self, tmp_path):
+        project = tmp_path / "task-manager"
+        project.mkdir()
+        (project / "app.test.mjs").write_text("x")
+        (project / "index.html").write_text("x")
+        (project / "config.yaml").write_text("x")
+        (project / "main.js").write_text("x")
+        return tmp_path
+
+    @pytest.mark.parametrize(
+        "planned",
+        [
+            "Build app.test.js with unit tests",
+            "Build app.test.cjs with unit tests",
+            "Create index.htm for the page",
+            "Add config.yml for the settings",
+            "Build app.test.mjs with unit tests",
+        ],
+    )
+    def test_an_interchangeable_extension_counts_as_delivered(self, a_project, planned):
+        assert files_the_plan_named_that_are_missing([planned], str(a_project)) == [], planned
+
+    def test_a_different_language_is_not_the_same_file(self, a_project):
+        """`main.js` exists; a plan asking for `main.py` is not answered by it."""
+        problems = files_the_plan_named_that_are_missing(
+            ["Add main.py for the service"], str(a_project)
+        )
+
+        assert any("main.py" in problem for problem in problems)
+
+    def test_a_genuinely_absent_file_is_still_reported(self, a_project):
+        problems = files_the_plan_named_that_are_missing(
+            ["Create style.css for the layout"], str(a_project)
+        )
+
+        assert any("style.css" in problem for problem in problems)
+
+
+class TestASuffixPatternIsNotAFile:
+    """A plan naming `.spec.ts` means "files ending in this", not a file.
+
+    Found on run-a6b28314, alongside the extension case above. Structurally
+    identical to `.env.example`, which is a real file, so this is a list rather
+    than a rule - the same mechanism the prose abbreviations use.
+    """
+
+    @pytest.mark.parametrize(
+        "planned",
+        [
+            "Add Playwright tests in .spec.ts files",
+            "Name unit tests with the .test.mjs suffix",
+            "Ship type declarations as .d.ts",
+            "Serve the bundle as .min.js",
+        ],
+    )
+    def test_a_suffix_pattern_is_not_reported(self, tmp_path, planned):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing([planned], str(tmp_path)) == [], planned
+
+    def test_a_real_dotfile_is_still_read(self, tmp_path):
+        """`.env.example` has the same shape and is a file."""
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        problems = files_the_plan_named_that_are_missing(
+            ["Add .env.example listing the keys"], str(tmp_path)
+        )
+
+        assert any(".env.example" in problem for problem in problems)

@@ -456,11 +456,76 @@ def _task_names_a_workflow_document(task_description: str, criteria: list[str]) 
     )
 
 
+#: How many shared files one note names. Past a couple the two tasks are the same
+#: task and the lead's plan is the thing to fix, not the wording of a note.
+MAX_SHARED_FILES_NAMED = 3
+
+
+def _a_file_another_specialist_is_also_given(
+    task_description: str,
+    acceptance_criteria: Sequence[str],
+    other_tasks: Sequence[Any],
+) -> str:
+    """The note for a file this task shares with another specialist's, or "".
+
+    In parallel mode these specialists run at the same time, so a whole-file
+    `write_artifact` from one discards whatever the other has just written. The
+    workspace lock serialises the writes; it cannot make them agree.
+
+    Measured across the 27 current-generation runs: 157 writes were one stage
+    writing content byte-identical to what a *different* stage had already
+    written. run-2ac28a2f is the clearest - three specialists each wrote the same
+    `package.json`, the same `app.js`, the same test file and the same
+    `jest.config.cjs`. Two of each three produced nothing, having each paid a
+    model call to generate it.
+
+    The cause is upstream: of 25 stored sprint plans, 17 assign the same file to
+    more than one specialist. `_SYSTEM_PROMPT` in `technical_lead` now asks for one
+    owner per file, and this is what the specialist is told when the plan does it
+    anyway - a note rather than a refusal, because two tasks touching one file is
+    sometimes the right plan and never this stage's fault.
+    """
+    try:
+        from app.analysis.planned_files import paths_a_plan_named
+
+        mine = set(paths_a_plan_named([task_description, *acceptance_criteria]))
+        if not mine:
+            return ""
+        theirs: set[str] = set()
+        for other in other_tasks or ():
+            description = str(getattr(other, "task_description", "") or "")
+            if description and description == task_description:
+                continue  # this task itself
+            theirs.update(
+                paths_a_plan_named(
+                    [description, *(getattr(other, "acceptance_criteria", None) or ())]
+                )
+            )
+        shared = sorted(mine & theirs)
+    except Exception:  # noqa: BLE001 - a brief is better without this than absent
+        return ""
+    if not shared:
+        return ""
+    named = ", ".join(f"`{name}`" for name in shared[:MAX_SHARED_FILES_NAMED])
+    return (
+        f"--- A file another specialist is also working on ---\n"
+        f"{named} is named by another task in this sprint, and that specialist may "
+        "be running right now. Change only the part of it your task covers, with "
+        "`edit_artifact` or `replace_lines`. A whole-file `write_artifact` would "
+        "discard their work, and it is the most common wasted call in this "
+        "pipeline: across the stored runs 157 writes were one stage writing "
+        "byte-for-byte what another had already written. If your task cannot be "
+        "done without rewriting the file, say so in your structured response "
+        "rather than doing it.\n\n"
+    )
+
+
 def build_specialist_task_request(
     task_description: str,
     acceptance_criteria: list[str],
     repository_root: str,
     stack: Any = None,
+    other_tasks: Sequence[Any] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for one delegated specialist task."""
     criteria_text = "\n".join(f"- {criterion}" for criterion in acceptance_criteria)
@@ -473,6 +538,7 @@ def build_specialist_task_request(
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
+        f"{_a_file_another_specialist_is_also_given(task_description, acceptance_criteria, other_tasks)}"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}

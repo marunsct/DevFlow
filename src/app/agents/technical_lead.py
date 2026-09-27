@@ -334,6 +334,14 @@ Responsibilities:
   backend at all. On run d6297b2f that stage ran 47 model calls, wrote its
   tests in a different module system from the suite already in the project,
   and the testing specialist spent the next stage undoing it.
+- One file, one owner. Two tasks that both write the same file are two
+  specialists running at the same time on one file, and the second whole-file
+  write discards the first. Measured across the stored runs: 17 of 25 sprint
+  plans assign one file to more than one specialist, and 157 writes were one
+  stage writing byte-for-byte what a different stage had already written - three
+  specialists each wrote the same `package.json`, `app.js` and test file on one
+  run. If two roles genuinely need the same file, say in each task which part of
+  it that task owns, so neither has to rewrite the whole thing.
 - A role whose part of the product does not exist has nothing to delegate. A
   product the stack builds on vanilla JavaScript and browser storage has no
   backend and no database: do not invent a task for those roles to justify

@@ -3108,6 +3108,9 @@ def build_workflow_graph(
                 task.acceptance_criteria,
                 state["repository"].root_path,
                 getattr(selection, "technology_stack", None),
+                # The sibling tasks, so a specialist sharing a file with another
+                # is told before it rewrites the file wholesale.
+                other_tasks=tasks,
             )
             update = _run_gated_agent(
                 state,

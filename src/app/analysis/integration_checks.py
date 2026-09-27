@@ -4683,6 +4683,52 @@ def _persisted_data_parsed_without_a_guard(files: list[Path], root: Path) -> lis
     return problems
 
 
+#: Checks whose finding is a broken feature whatever their message happens to
+#: say, keyed by the function. `_severity_of` grades a *string*, by matching a
+#: phrase against `_BREAKS_BEHAVIOUR`, so rewording a message silently
+#: downgrades it to "untidy rather than broken - dead rules, unused files. Worth
+#: a minor finding, not a blocking one". This file's own comments record that
+#: happening three times, and call it "the stale-marker failure this file is
+#: most exposed to"; the test that guards it checks every marker matches some
+#: message and, as its comment says, "cannot check that every breaking message
+#: matches some marker".
+#:
+#: A floor declared here cannot be lost to an edit of the prose, because it is
+#: attached to the check rather than to its words.
+#:
+#: Run-6e50b630 is the fourth instance. `_a_control_group_no_script_operates`
+#: found `todo-app/index.html`'s three `data-filter` buttons, reported that they
+#: "render, respond to hover and do nothing when clicked", and was graded untidy
+#: - the marker is "does nothing when a user", and this message says "do nothing
+#: when clicked". `problems_that_break_the_product` therefore returned nothing,
+#: so the test round was never told, and the milestone reviewer raised the same
+#: thing itself as
+#:
+#:     [blocking] correctness: Filter functionality is entirely missing despite
+#:     UI elements existing. Users see clickable filter buttons that do nothing.
+#:
+#: three times, until the run hit the revision limit. The harness proved the
+#: defect and then talked itself out of it.
+#: Keyed on the registry description, which is this registry's own identifier -
+#: seven test files assert against these strings, so it is a maintained contract
+#: rather than incidental prose. Every check is registered as a lambda, so there
+#: is no function name to key on.
+#:
+#: A rename would drop a floor silently, which is the failure this mechanism
+#: exists to end, so `test_every_declared_floor_names_a_real_check` fails loudly
+#: instead.
+_FLOORS: dict[str, str] = {
+    "clickable controls against the scripts that should operate them": "BREAKS",
+}
+
+BREAKS_WHATEVER_IT_SAYS = "BREAKS"
+
+
+def _floor_of(entry: tuple) -> str:
+    """The severity a registry entry declares, or "" to grade it by its message."""
+    return _FLOORS.get(entry[0], "")
+
+
 _CHECKS: tuple[tuple[str, Any], ...] = (
     ("names a page calls against the import clause that should bind them",
      lambda files, root, stack, brief: _called_without_being_imported(files, root)),
@@ -4882,15 +4928,21 @@ def summarise_integration(
         return "No HTML, CSS or JavaScript files were found to cross-check."
 
     try:
-        problems = []
-        for describe, check in _CHECKS:  # noqa: B007 - the description is used below
-            problems.extend(check(files, root, stack, brief))
+        # Each problem is kept with the floor its own check declares, so the
+        # bucketing below cannot put a declared-breaking finding under "untidy
+        # rather than broken" because of how its sentence happens to read.
+        graded_problems: list[tuple[str, str]] = []
+        for entry in _CHECKS:
+            floor = _floor_of(entry)
+            for problem in entry[1](files, root, stack, brief):
+                graded_problems.append((problem, floor or _severity_of(problem)))
+        problems = [problem for problem, _ in graded_problems]
     except Exception:  # noqa: BLE001
         return "The cross-file checks could not complete on this workspace."
 
     checked = (
         f"Cross-file checks ran over {len(files)} files: "
-        + ", ".join(describe for describe, _ in _CHECKS)
+        + ", ".join(entry[0] for entry in _CHECKS)
         + "."
     )
 
@@ -4903,10 +4955,9 @@ def summarise_integration(
     sizes = _size_report(files, root, orphans)
     if not problems:
         return checked + "\n\nNo cross-file problems found." + sizes
-    graded = [(p, _severity_of(p)) for p in problems]
-    breaking = [p for p, g in graded if g == "BREAKS"]
-    criterion = [p for p, g in graded if g == "CRITERION"]
-    untidy = [p for p, g in graded if g == "untidy"]
+    breaking = [p for p, g in graded_problems if g == "BREAKS"]
+    criterion = [p for p, g in graded_problems if g == "CRITERION"]
+    untidy = [p for p, g in graded_problems if g == "untidy"]
     sections = []
     if breaking:
         sections.append(
@@ -4970,12 +5021,18 @@ def problems_that_break_the_product(
         files = _source_files(root)
         if not files:
             return []
-        problems: list[str] = []
-        for _describe, check in _CHECKS:
-            problems.extend(check(files, root, stack, brief))
+        breaking: list[str] = []
+        for entry in _CHECKS:
+            found = entry[1](files, root, stack, brief)
+            # The floor first. A check that declares itself breaking is breaking
+            # however its message is worded, which is the point of declaring it.
+            floor = _floor_of(entry)
+            for problem in found:
+                if floor == "BREAKS" or _severity_of(problem) == "BREAKS":
+                    breaking.append(problem)
     except Exception:  # noqa: BLE001 - proof that cannot be gathered is not proof
         return []
-    return [problem for problem in problems if _severity_of(problem) == "BREAKS"]
+    return breaking
 
 
 __all__ = ["problems_that_break_the_product", "summarise_integration"]

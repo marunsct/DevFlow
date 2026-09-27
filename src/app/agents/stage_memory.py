@@ -52,8 +52,78 @@ MAX_STAGES_REMEMBERED = 64
 _MEMORY: OrderedDict[tuple[str, str], dict] = OrderedDict()
 
 
+#: The key the workflow has declared for the agent it is running, if any. Set
+#: around each inner agent invocation and preferred over `get_config`, because
+#: under a parallel fan-out `get_config` does not answer per worker.
+#:
+#: Measured on run-1bdbc08a's first milestone, a seven-task parallel sprint. The
+#: redundant-read refusals carry an ordinal, and across six concurrent
+#: specialists they formed one interleaved sequence:
+#:
+#:   specialist_backend_2 12, specialist_testing_5 13, specialist_testing_4 14,
+#:   specialist_backend_2 15, specialist_testing_6 16, specialist_testing_5 17,
+#:   ... specialist_ui_ux_0 33, specialist_testing_5 34
+#:
+#: while the sequential stages after them each restarted at 12 - `test_round_0`
+#: 12-17, `defect_fix_1_0` 12-14. So the key resolved per stage when stages ran
+#: one at a time and collapsed to one shared slot when they ran at once: every
+#: `Send` in a superstep sees the parent's config, not its own.
+#:
+#: The cost is not only a wrong number. This memory holds which lines of which
+#: files a stage has been given, so a pooled slot means one specialist is
+#: refused a read because another specialist read that file, and is told it has
+#: "already been given" content it has never seen.
+_DECLARED: Any = None
+
+
+def _declared_key_holder() -> Any:
+    """The context variable holding `_DECLARED`, created on first use."""
+    global _DECLARED
+    if _DECLARED is None:
+        import contextvars
+
+        _DECLARED = contextvars.ContextVar("stage_memory_declared_key", default=None)
+    return _DECLARED
+
+
+def remembering(key: str) -> Any:
+    """Declare the stage key for everything called inside this block.
+
+    A context manager. `contextvars` copy into the thread or task a fan-out
+    starts, so a worker that sets this before invoking its agent is read
+    correctly by the tools that agent runs, whichever thread they run on.
+
+    Falls back to nothing if the key is empty, so a caller without one leaves
+    the previous behaviour exactly as it was.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _scope():
+        if not key:
+            yield
+            return
+        holder = _declared_key_holder()
+        token = holder.set(str(key))
+        try:
+            yield
+        finally:
+            holder.reset(token)
+
+    return _scope()
+
+
 def current_stage_key() -> str | None:
-    """The running stage's stable identity, or None outside a graph run."""
+    """The running stage's stable identity, or None outside a graph run.
+
+    The declared key wins. `get_config` is kept behind it because it is right
+    whenever a stage runs alone, and because a caller that never declares one -
+    every test, and any path that reaches a tool outside `_run_gated_agent` -
+    must keep working as before.
+    """
+    declared = _declared_key_holder().get()
+    if declared:
+        return str(declared)
     try:
         from langgraph.config import get_config
 
@@ -89,7 +159,13 @@ def forget_everything() -> None:
     _MEMORY.clear()
 
 
-__all__ = ["MAX_STAGES_REMEMBERED", "current_stage_key", "forget_everything", "store"]
+__all__ = [
+    "MAX_STAGES_REMEMBERED",
+    "current_stage_key",
+    "forget_everything",
+    "remembering",
+    "store",
+]
 
 
 def recall(thread_id: str, purpose: str) -> dict:

@@ -61,6 +61,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from app.agents.approval import extract_pending_approval, resume_with_decision
+from app.agents.stage_memory import remembering
 from app.agents.architecture_reviewer import (
     ArchitectureReviewOutput,
     build_architecture_review_request,
@@ -1407,10 +1408,11 @@ def _nudge_for_the_structured_response(
     nothing and the caller should fall through to the restart.
     """
     try:
-        result = agent.invoke(
-            {"messages": [{"role": "user", "content": _nudge_text(previous, schema)}]},
-            config=_inner_agent_config(inner_thread_id, run_id, callbacks, stage=stage),
-        )
+        with remembering(inner_thread_id):
+            result = agent.invoke(
+                {"messages": [{"role": "user", "content": _nudge_text(previous, schema)}]},
+                config=_inner_agent_config(inner_thread_id, run_id, callbacks, stage=stage),
+            )
     except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
         # Whatever went wrong here, the restart below is still available and is
         # the path this code took before the nudge existed.
@@ -1743,16 +1745,22 @@ def _run_gated_agent(
                 ],
             }
         try:
-            result = agent.invoke(
-                initial_request,
-                config=_inner_agent_config(
-                    inner_thread_id,
-                    config["configurable"].get(APP_RUN_ID_KEY),
-                    activity,
-                    stage=stage_name,
-                    recursion_limit=INNER_AGENT_RECURSION_LIMIT,
-                ),
-            )
+            # `remembering`, so the per-stage memory is keyed by the thread this
+            # invocation owns rather than by whatever config a fan-out reports.
+            # Every `Send` in a superstep sees the parent's config, so six
+            # concurrent specialists shared one slot - and that memory holds
+            # which lines of which files a stage has been given.
+            with remembering(inner_thread_id):
+                result = agent.invoke(
+                    initial_request,
+                    config=_inner_agent_config(
+                        inner_thread_id,
+                        config["configurable"].get(APP_RUN_ID_KEY),
+                        activity,
+                        stage=stage_name,
+                        recursion_limit=INNER_AGENT_RECURSION_LIMIT,
+                    ),
+                )
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             if _is_context_overflow(exc):
                 return _context_overflow_update(stage_name, exc)

@@ -1659,13 +1659,51 @@ def _how_to_serve_the_page_instead(repo_root: str) -> str:
     )
 
 
+#: Programs that look something up and exit. No argument can make one of these
+#: run forever, so a server's name among their arguments is a subject, not a
+#: command - `which serve` asks where `serve` is, it does not start it.
+#:
+#: `tail` is deliberately absent: `tail -f` does run until it is stopped.
+_ONLY_INSPECTS = frozenset({
+    "which", "type", "whereis", "command", "ls", "cat", "head", "grep", "egrep",
+    "fgrep", "rg", "find", "wc", "stat", "file", "echo", "test", "diff", "cmp",
+    "sort", "uniq", "basename", "dirname", "realpath", "readlink", "du", "df",
+    "tree", "pwd", "printenv", "env",
+})
+
+#: Runners that execute whatever follows them, so the program to judge is the
+#: next word rather than the runner. `npx which serve` is still an inspection.
+_DELEGATES_TO_THE_NEXT_WORD = frozenset({"npx", "bunx", "pnpx", "dlx", "exec"})
+
+
+def _the_program_this_would_run(parts: Sequence[str]) -> str:
+    """The program a command actually runs, past any delegating runner."""
+    for part in parts:
+        if part in _DELEGATES_TO_THE_NEXT_WORD or part.startswith("-"):
+            continue
+        if part in {"npm", "pnpm", "yarn", "bun"}:
+            continue
+        return part
+    return parts[0] if parts else ""
+
+
 def _starts_a_server(argv: Sequence[str]) -> str | None:
     """The name of the server this command would start, or None.
 
     Matched on the argument rather than the executable because these arrive as
     `npx serve` and `npx --yes serve`, never as `serve` alone.
+
+    That is why a program whose whole job is to look something up needed
+    excluding. Measured on the stored runs: `which serve` and
+    `ls -la node_modules/serve` were both refused with "it runs until it is
+    stopped, and nothing here will stop it" - said about a path lookup and a
+    directory listing. `grep serve package.json` and `npx which serve` do the
+    same. The install carve-out below is the same shape of mistake, found
+    earlier; this is the other half of it.
     """
     parts = [os.path.basename(str(part)) for part in argv]
+    if _the_program_this_would_run(parts) in _ONLY_INSPECTS:
+        return None
     # Installing a server is not running one. `npm install -D serve` names
     # `serve` as the package to add, and every word-matching check here sees
     # a server.

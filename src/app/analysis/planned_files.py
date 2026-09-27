@@ -79,6 +79,52 @@ _NOT_A_FILENAME = frozenset({
 #: silent either way, because only a missing path is ever reported.
 _A_JAVASCRIPT_LIBRARY = re.compile(r"^[A-Z][A-Za-z0-9]*\.js$")
 
+#: Extensions a planned file really has. Checked as an allowlist rather than by
+#: excluding things that are not files, because the shapes that are not files are
+#: unbounded and this set is not.
+#:
+#: The first version matched any short alphabetic tail, which read a CSS selector
+#: as a filename. Found live in run-1a0d3610, where `div.error` was reported as
+#:
+#:     This sprint's plan names `div.error` and the workspace has no file of that
+#:     name anywhere.
+#:
+#: at the breaking tier - the tier handed to the test round as already proven. A
+#: plan describing `div.error`, `span.task-title` or `input.checkbox` would have
+#: produced a blocking defect for a selector.
+#:
+#: Grown from `integration_checks._COLLECTED_SUFFIXES`, which is the set this
+#: harness already maintains across every language it builds in, plus the
+#: configuration, documentation and asset extensions a plan names and no check
+#: reads. Missing an unusual extension costs a missed detection, which is the
+#: safe direction: the alternative is a blocking defect for something that was
+#: never a file.
+_REALLY_AN_EXTENSION = frozenset({
+    # Everything the cross-file checks collect.
+    "html", "htm", "css", "js", "mjs", "cjs", "json", "py", "rb", "go", "rs",
+    "java", "cs", "php", "ts", "tsx", "jsx", "scss", "sass", "vue", "svelte",
+    "toml", "cfg", "kt", "kts", "scala", "swift", "dart", "ex", "exs", "c", "h",
+    "cpp", "cc", "hpp", "m", "mm", "pl", "lua", "sql", "sh", "bash", "less",
+    "pyi",
+    # Configuration and metadata a plan names.
+    "yml", "yaml", "ini", "env", "lock", "properties", "conf", "editorconfig",
+    "gradle", "xml", "csproj", "sln", "mod", "sum", "gemspec", "cabal", "nix",
+    "tf", "tfvars", "proto", "graphql", "gql", "prisma", "dockerfile",
+    # Documentation.
+    "md", "mdx", "rst", "txt", "adoc", "example", "template", "sample",
+    # Assets a plan asks for by name.
+    "svg", "png", "jpg", "jpeg", "gif", "webp", "ico", "avif", "woff", "woff2",
+    "ttf", "otf", "eot", "map", "csv", "tsv", "webmanifest",
+    # Languages and template formats the collected set does not reach. `ru` is
+    # here because `config.ru` is a real Rack entry point and the parametrised
+    # language cases caught its absence.
+    "ru", "erb", "haml", "slim", "hbs", "ejs", "pug", "twig", "mustache",
+    "razor", "cshtml", "vb", "fs", "fsx", "clj", "cljs", "cljc", "edn", "hs",
+    "elm", "zig", "nim", "cr", "jl", "r", "groovy", "gvy", "tcl", "f90", "for",
+    "pas", "ada", "asm", "s", "bat", "ps1", "psm1", "fish", "zsh", "make", "mk",
+    "cmake", "bzl", "bazel", "sbt", "mill", "podspec", "gemfile", "rake",
+})
+
 #: Extensions that name a language or a format in prose far more often than a
 #: file: "ES2015.js" is not a file, and neither is "HTML5.md".
 _MAX_PATHS_REPORTED = 4
@@ -102,6 +148,8 @@ def paths_a_plan_named(texts: Iterable[str]) -> list[str]:
             if not candidate or candidate.lower() in _NOT_A_FILENAME:
                 continue
             if _A_JAVASCRIPT_LIBRARY.match(candidate):
+                continue
+            if candidate.rsplit(".", 1)[-1].lower() not in _REALLY_AN_EXTENSION:
                 continue
             if candidate not in found:
                 found.append(candidate)

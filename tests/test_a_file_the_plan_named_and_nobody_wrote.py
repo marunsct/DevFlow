@@ -339,3 +339,90 @@ class TestAJavaScriptLibraryIsNotAPlannedFile:
         assert files_the_plan_named_that_are_missing(
             ["Bundle Chart.js into vendor/"], str(tmp_path)
         ) == []
+
+
+class TestOnlySomethingWithARealExtension:
+    """A CSS selector is not a filename, and this reported one as a missing file.
+
+    Found live in run-1a0d3610, where the plan described an error banner and the
+    check reported
+
+        This sprint's plan names `div.error` and the workspace has no file of that
+        name anywhere.
+
+    at the breaking tier - the tier `build_test_run_request` hands the test round
+    as already proven. `div.error`, `span.task-title`, `input.checkbox` and
+    `li.completed` all matched, because the pattern accepted any short alphabetic
+    tail as an extension.
+
+    Checked against an allowlist now, grown from the suffix set
+    `integration_checks` already maintains across every language this harness
+    builds in, plus the configuration, documentation and asset extensions a plan
+    names. Missing an unusual extension costs a missed detection, which is the
+    safe direction: the alternative is a blocking defect for something that was
+    never a file.
+    """
+
+    @pytest.mark.parametrize(
+        "planned",
+        [
+            "Show a div.error banner when storage is unavailable",
+            "Style span.task-title with a strikethrough when completed",
+            "Add input.checkbox to each task item",
+            "Toggle the li.completed class on the list item",
+            "Give the form a button.primary submit control",
+            "Target ul.task-list in the stylesheet",
+        ],
+    )
+    def test_a_selector_is_not_reported(self, tmp_path, planned):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        assert files_the_plan_named_that_are_missing([planned], str(tmp_path)) == [], planned
+
+    @pytest.mark.parametrize(
+        "planned,expected",
+        [
+            ("Create index.html with the form", "index.html"),
+            ("Add Cargo.toml and main.rs", "Cargo.toml"),
+            ("Write docker-compose.yml for the services", "docker-compose.yml"),
+            ("Add .env.example listing the keys", ".env.example"),
+            ("Add schema.prisma and the migrations", "schema.prisma"),
+            ("Create logo.svg for the header", "logo.svg"),
+            ("Add openapi.yaml describing the routes", "openapi.yaml"),
+            ("Add Program.cs to the project", "Program.cs"),
+            ("Add a Makefile target in build.gradle", "build.gradle"),
+            ("Write notes.md for the maintainer", "notes.md"),
+        ],
+    )
+    def test_a_real_extension_is_still_read(self, tmp_path, planned, expected):
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        problems = " ".join(files_the_plan_named_that_are_missing([planned], str(tmp_path)))
+
+        assert expected in problems, planned
+
+    def test_the_two_findings_that_matter_survive(self, tmp_path):
+        """`index.html` on run-2ac28a2f and `style.css` on run-e980310b."""
+        (tmp_path / "placeholder.txt").write_text("x")
+
+        problems = " ".join(
+            files_the_plan_named_that_are_missing(
+                [
+                    "index.html with semantic HTML5 structure and a form",
+                    "Create style.css with basic responsive CSS rules",
+                ],
+                str(tmp_path),
+            )
+        )
+
+        assert "index.html" in problems
+        assert "style.css" in problems
+
+    def test_the_allowlist_covers_what_the_checks_collect(self):
+        """A language the cross-file checks read must not be a language this drops."""
+        from app.analysis.integration_checks import _COLLECTED_SUFFIXES
+        from app.analysis.planned_files import _REALLY_AN_EXTENSION
+
+        collected = {suffix.lstrip(".") for suffix in _COLLECTED_SUFFIXES}
+
+        assert collected <= _REALLY_AN_EXTENSION, sorted(collected - _REALLY_AN_EXTENSION)

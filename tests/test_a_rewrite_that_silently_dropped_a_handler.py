@@ -269,3 +269,78 @@ class TestItNamesWhoHadIt:
         assert write_approved_artifact(
             str(a_project), "todo-app/app.js", WITHOUT_THEM
         )["status"] == "written"
+
+
+class TestATestFileIsNotGuardedThisWay:
+    """Every test body has locals, so rewriting a suite reads as losing a dozen
+    definitions - and rewriting a suite is ordinary work.
+
+    Measured in production on run-a6b28314, this guard's first firing:
+    `specialist_backend_2` rewrote `task-manager/app.test.mjs` and was told it was
+    removing
+
+        `__dirname`, `__filename`, `after`, `err`, `exactTitle`, `longTitle`
+        and 4 more
+
+    - module-scope consts, a `node:test` import, and locals inside test bodies.
+    None of it is an interface anything depends on. One firing, one false
+    positive.
+
+    Nested definitions are still counted for product code, because run-6e50b630's
+    lost handler lived inside `init()`. A test file is the one place the two
+    diverge. A suite that really disappears is caught by
+    `_a_suite_registered_twice` and by the case counts in the execution ledger.
+    """
+
+    @pytest.mark.parametrize(
+        "name",
+        ["app.test.mjs", "app.test.js", "app.spec.ts", "index.spec.mjs",
+         "tests/app.test.js"],
+    )
+    def test_a_test_file_gets_no_note(self, tmp_path, name):
+        (tmp_path / "todo-app").mkdir(exist_ok=True)
+        target = tmp_path / "todo-app" / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        write_approved_artifact(str(tmp_path), f"todo-app/{name}", WITH_THE_HANDLERS)
+
+        result = write_approved_artifact(str(tmp_path), f"todo-app/{name}", WITHOUT_THEM)
+
+        assert "This write removes" not in (result.get("note") or ""), name
+
+    def test_a_test_file_is_never_refused_for_it(self, tmp_path):
+        """Two rewrites of a suite must both land."""
+        (tmp_path / "todo-app").mkdir()
+        for content in (WITH_THE_HANDLERS, WITHOUT_THEM, WITH_THE_HANDLERS, WITHOUT_THEM):
+            result = write_approved_artifact(
+                str(tmp_path), "todo-app/app.test.mjs", content
+            )
+
+        assert result["status"] == "written"
+
+    def test_product_code_is_still_guarded(self, a_project):
+        """The case the guard exists for, unchanged."""
+        result = write_approved_artifact(str(a_project), "todo-app/app.js", WITHOUT_THEM)
+
+        assert "`deleteTask`" in (result.get("note") or "")
+
+    def test_the_locals_that_caused_this_are_not_reported(self, tmp_path):
+        """The exact names run-a6b28314 was told it was losing."""
+        (tmp_path / "todo-app").mkdir()
+        suite = (
+            "import { describe, it, after } from 'node:test';\n"
+            "const __dirname = '.';\n"
+            "const __filename = 'x';\n"
+            "describe('a', () => {\n"
+            "  it('b', () => { const exactTitle = 'x'; const longTitle = 'y'; });\n"
+            "});\n"
+        )
+        write_approved_artifact(str(tmp_path), "todo-app/app.test.mjs", suite)
+
+        result = write_approved_artifact(
+            str(tmp_path), "todo-app/app.test.mjs",
+            "import { describe, it } from 'node:test';\ndescribe('a', () => {});\n",
+        )
+
+        note = result.get("note") or ""
+        for name in ("__dirname", "__filename", "exactTitle", "longTitle"):
+            assert name not in note, name

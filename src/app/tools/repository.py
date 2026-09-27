@@ -3919,6 +3919,24 @@ def _a_rewrite_that_drops_what_the_file_defines(
     and the second is refused, because a rewrite that drops a definition is
     sometimes a deliberate refactor and twice is enough to show it was not a slip.
     """
+    # Not a test file. Every test body has locals, so rewriting a suite reads as
+    # losing a dozen definitions - and rewriting a suite is ordinary work.
+    #
+    # Measured in production on run-a6b28314, the first firing this guard had:
+    # `specialist_backend_2` rewrote `task-manager/app.test.mjs` and was told it
+    # was removing `__dirname`, `__filename`, `after`, `err`, `exactTitle`,
+    # `longTitle` and four more - module-scope consts, a `node:test` import and
+    # locals inside test bodies. None of it is an interface anything depends on.
+    #
+    # Nested definitions are counted deliberately, because run-6e50b630's lost
+    # handler lived inside `init()`. That is right for product code and wrong
+    # here, and a test file is the one place the two diverge. A suite that really
+    # disappears is caught by `_a_suite_registered_twice` and by the case counts
+    # in the execution ledger.
+    from app.analysis.file_kinds import is_test
+
+    if is_test(relative_path):
+        return ""
     dropped = _what_this_rewrite_would_drop(target, content)
     if not dropped:
         return ""

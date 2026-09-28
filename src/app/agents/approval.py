@@ -17,6 +17,7 @@ from typing import Any
 
 from langgraph.types import Command
 
+from app.agents.stage_memory import remembering
 from app.state import ApprovalDecision, HumanApprovalRequest
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,25 @@ def resume_with_decision(
         config["recursion_limit"] = recursion_limit
     pending = pending_action_requests(agent, thread_id)
     decisions = decisions_for(decision, len(pending))
+    # `remembering`, exactly as the first invoke does. With `auto_approve` every
+    # gated tool interrupts, so after the first one a stage does the rest of its
+    # work - its reads included - inside this call rather than the one that
+    # started it. Leaving this unwrapped left the per-stage memory keyed by
+    # whatever config a fan-out reports, which is the parent's, so six concurrent
+    # specialists went on sharing one slot: measured on run-ad4815da, whose
+    # redundant-read ordinals still ran 12-20 across six different stages.
+    with remembering(thread_id):
+        return _resumed(agent, decision, decisions, config, thread_id)
+
+
+def _resumed(
+    agent: Any,
+    decision: dict[str, Any],
+    decisions: list[dict[str, Any]],
+    config: dict[str, Any],
+    thread_id: str,
+) -> dict[str, Any]:
+    """The resume itself, retried once when the decisions were counted wrong."""
     try:
         return agent.invoke(Command(resume={"decisions": decisions}), config=config)
     except ValueError as mismatch:

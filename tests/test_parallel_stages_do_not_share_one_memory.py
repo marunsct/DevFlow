@@ -149,21 +149,80 @@ class TestItChangesNothingWhereItWasAlreadyRight:
         assert store("repeated_reads", own) is own
 
 
-def test_both_inner_agent_invocations_declare_their_thread() -> None:
-    """Either invoke site missing this leaves that path pooled.
+def test_every_function_that_invokes_an_agent_declares_a_stage() -> None:
+    """Checked per function, because scope is not a matter of line counts.
 
-    The nudge path re-enters the same thread as the invocation it is rescuing,
-    so it has to declare the same key or the rescue counts as a different stage.
+    The first version of this counted `agent.invoke(` against `with remembering(`
+    inside `workflow` alone, and passed while the invocation that matters sat in
+    `approval`: with `auto_approve` every gated tool interrupts, so after the
+    first one a stage does the rest of its work - reads included - inside
+    `resume_with_decision`. Leaving that unwrapped left six concurrent
+    specialists sharing one slot, which run-ad4815da showed by reporting
+    redundant-read ordinals of 12 to 20 across six different stages after the
+    first attempt at this fix was deployed.
+
+    The second version counted both modules and failed on `_resumed`, whose two
+    invocations are both inside the scope its caller opens. So this asks the
+    question properly: every function containing an invocation either opens the
+    scope itself or is named here as one that runs inside a caller's.
+    """
+    import ast
+    import inspect
+
+    from app.agents import approval
+    from app.graph import workflow
+
+    #: Functions whose caller opens the scope. Each is private, and the
+    #: assertion below re-checks that the named caller still exists.
+    called_within_a_scope = {"_resumed": "resume_with_decision"}
+
+    def invokes_an_agent(node: ast.AST) -> bool:
+        """A real `agent.invoke(...)` call, not the words in a docstring."""
+        for inner in ast.walk(node):
+            if not isinstance(inner, ast.Call):
+                continue
+            func = inner.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == "invoke"
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "agent"
+            ):
+                return True
+        return False
+
+    for module in (workflow, approval):
+        source = inspect.getsource(module)
+        for node in ast.walk(ast.parse(source)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if not invokes_an_agent(node):
+                continue
+            body = ast.get_source_segment(source, node) or ""
+            if "with remembering(" in body:
+                continue
+            caller = called_within_a_scope.get(node.name)
+            assert caller is not None, (
+                f"{module.__name__}.{node.name} invokes an agent without "
+                "declaring a stage key, so its tools run against whatever key a "
+                "fan-out reports"
+            )
+            assert f"{node.name}(" in source.split(f"def {caller}(", 1)[-1], (
+                f"{node.name} is recorded as running inside {caller}'s scope, "
+                "and that caller no longer calls it"
+            )
+
+
+def test_the_resume_path_declares_the_thread_it_resumes() -> None:
+    """Specifically, and with the key that identifies the stage.
+
+    `resume_with_decision` is handed the inner thread id, which is the stage's
+    identity, so it has the right key already.
     """
     import inspect
 
-    from app.graph import workflow
+    from app.agents.approval import resume_with_decision
 
-    source = inspect.getsource(workflow)
-    invocations = source.count("agent.invoke(")
-    declared = source.count("with remembering(inner_thread_id):")
+    source = inspect.getsource(resume_with_decision)
 
-    assert invocations == declared, (
-        f"{invocations} inner agent invocations and {declared} of them declare "
-        "their stage key"
-    )
+    assert "with remembering(thread_id):" in source

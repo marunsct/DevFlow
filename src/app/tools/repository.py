@@ -1523,6 +1523,36 @@ def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> st
     )
 
 
+#: Lines of a replaced range quoted back when the edit is refused.
+MOST_REPLACED_LINES_QUOTED = 8
+
+
+def _what_the_range_held(lines: list[str], start: int, last: int, expect_start: str) -> str:
+    """The lines a refused `replace_lines` would have removed, numbered.
+
+    A refusal quoted the text the edit would produce, and never the text it
+    would remove - which is the half that shows a stale range. Measured on one
+    run's `specialist_documentation_3`, in parallel mode: lines 127-130 had
+    moved under it since it read them, the range now ended on the first line
+    of `filterTasks`, and the refusal said "Illegal return statement" at a body
+    whose function header had been replaced by a comment block.
+    """
+    held = lines[start - 1:last]
+    shown = held[:MOST_REPLACED_LINES_QUOTED]
+    quoted = "".join(
+        f"  {number:>4} | {text.rstrip()}\n" for number, text in enumerate(shown, start)
+    )
+    more = f"  ... and {len(held) - len(shown)} more\n" if len(held) > len(shown) else ""
+    advice = (
+        "If those are not the lines you meant, the file changed since you read it: "
+        "read that part again, or send `expect_start` and `expect_end` so the edit "
+        "follows the text wherever it has moved."
+        if not expect_start
+        else "Check those against what you meant to replace."
+    )
+    return f"\n\nThe lines this edit would have replaced, {start}-{last}, hold:\n{quoted}{more}{advice}"
+
+
 def replace_approved_lines(
     repo_root: str | Path,
     relative_path: str,
@@ -1644,9 +1674,18 @@ def replace_approved_lines(
         # refusals at lines 22, 59, 83 and 72 of one file, the moving line
         # number showing the model was getting closer each time. See the same
         # rule in `_write_unless_it_changes_nothing`.
-        if _what_is_structurally_wrong(target, relative_path, original) is None:
-            _refuse_if_broken(relative_path, updated)
-        _write_unless_it_changes_nothing(target, original, updated, relative_path)
+        try:
+            if _what_is_structurally_wrong(target, relative_path, original) is None:
+                _refuse_if_broken(relative_path, updated)
+            _write_unless_it_changes_nothing(target, original, updated, relative_path)
+        except RepositoryToolError as exc:
+            # Only a refusal about the file's syntax. A refusal that the edit
+            # changes nothing, or undoes a recent one, is not about the range.
+            if "parse" not in str(exc).lower():
+                raise
+            raise RepositoryToolError(
+                f"{exc}{_what_the_range_held(lines, start_line, last, expect_start)}"
+            ) from exc
         note = (
             f"Replaced lines {start_line}-{last} of {total}. "
             f"The file now has {len(updated.splitlines())} lines."

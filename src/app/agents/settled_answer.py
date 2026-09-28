@@ -777,6 +777,59 @@ def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -
     return _most_recent_answer(messages, schema) is None
 
 
+def _the_last_reply_was_all_reasoning(messages: list[Any]) -> bool:
+    """True when the previous reply spent the whole output budget on nothing.
+
+    `finish_reason: length` with no content and no tool call means the model
+    reasoned until its reply was truncated. Measured on run-be25a68e: 7 of 543
+    responses did this, each burning the full 30,000-token budget, and the run
+    died when `test_round_2` ended that way three times over.
+
+    It is not an input problem, so trimming context does not address it and a
+    larger budget only makes the same spiral more expensive: those seven replies
+    had inputs of 34k-66k tokens, while the largest input of the run, 77k,
+    answered in 361 tokens.
+
+    What it is, is a reply with no room left to think in. So the next call gets
+    the tools taken away and is asked for the answer - the same remedy this
+    module already applies at the end of the call budget, for the same reason.
+    One spiral then costs one call instead of the stage.
+    """
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "ai":
+            continue
+        truncated = any(
+            isinstance(holder, dict)
+            and str(holder.get("finish_reason") or "") == "length"
+            for holder in (
+                getattr(message, "response_metadata", None),
+                getattr(message, "additional_kwargs", None),
+            )
+        )
+        if not truncated:
+            return False
+        if str(getattr(message, "content", "") or "").strip():
+            return False
+        return not (getattr(message, "tool_calls", None) or ())
+    return False
+
+
+#: Sent when the previous reply reasoned past its own output budget. Separate
+#: from `TOOLS_WITHHELD_NOTICE`, which is about the call budget: this stage has
+#: calls left and the last reply simply had nowhere to land.
+_REASONED_PAST_THE_BUDGET_NOTICE = (
+    "Your previous reply was cut off at its output limit while you were still "
+    "reasoning, so nothing of it survived - no text, no tool call. Reasoning "
+    "further will hit the same limit again: the limit is per reply, and the one "
+    "you just spent was the whole of it.\n"
+    "Your tools are withheld for this call. Answer now from what you already "
+    "know, briefly, and return your structured response. A short answer that "
+    "exists is worth more than a thorough one that is truncated. If you genuinely "
+    "cannot answer, say what is missing in `blockers` - that is a complete answer "
+    "too."
+)
+
+
 #: Sent on the calls where the tools are withheld. It says what was done rather
 #: than asking again, because asking is what the previous 263 calls did.
 TOOLS_WITHHELD_NOTICE = (
@@ -1036,8 +1089,26 @@ def build_settled_answer_middleware(
                 # the model is being asked to answer, and it should know why
                 # its last attempt was refused.
                 reading_nothing_new = _refused_reads(messages)
-                answer_only = _nothing_left_but_the_answer(messages, step_limit, schema)
-                if answer_only:
+                # Checked before the call-budget rung and folded into the same
+                # `answer_only` path, because the remedy is identical - no tools,
+                # answer now - and a stage can be in both states at once.
+                spiralled = _the_last_reply_was_all_reasoning(messages)
+                if spiralled:
+                    correction = (
+                        f"{correction}\n\n{_REASONED_PAST_THE_BUDGET_NOTICE}"
+                        if correction
+                        else _REASONED_PAST_THE_BUDGET_NOTICE
+                    )
+                    logger.warning(
+                        "Stage %s spent a whole reply's output budget on "
+                        "reasoning; withholding its tools for one call so it can "
+                        "answer from what it has",
+                        stage_name or "?",
+                    )
+                answer_only = spiralled or _nothing_left_but_the_answer(
+                    messages, step_limit, schema
+                )
+                if answer_only and not spiralled:
                     correction = (
                         f"{correction}\n\n{TOOLS_WITHHELD_NOTICE}"
                         if correction

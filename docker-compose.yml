@@ -73,8 +73,8 @@ x-app-env: &app-env
   # Durable storage for uploads and run artifacts. Unset OBJECT_STORE_BUCKET to
   # fall back to the local filesystem under DATA_DIR/objects; the code path is
   # the same either way, so this is a deployment choice rather than a code one.
-  OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-langchain-artifacts}
-  OBJECT_STORE_ENDPOINT: ${OBJECT_STORE_ENDPOINT:-http://minio:9000}
+  OBJECT_STORE_BUCKET: ${OBJECT_STORE_BUCKET:-}
+  OBJECT_STORE_ENDPOINT: ${OBJECT_STORE_ENDPOINT:-}
   OBJECT_STORE_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
   OBJECT_STORE_SECRET_KEY: "${MINIO_ROOT_PASSWORD:-}"
   # TLS terminates outside the compose network; MinIO is reached over http here.
@@ -125,7 +125,12 @@ services:
       POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-}"
       POSTGRES_DB: ${POSTGRES_DB:-langchain}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # A directory in this repository rather than a named volume, so the
+      # database survives the Docker volumes being removed or recreated - a
+      # rebuild that dropped `pgdata` took every account and run record with
+      # it. `data/` is gitignored, so none of this is ever committed. Set
+      # PGDATA_DIR to keep it somewhere else.
+      - ${PGDATA_DIR:-./data/postgres}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-langchain}"]
       interval: 10s
@@ -153,42 +158,6 @@ services:
         limits:
           memory: 768m
 
-  minio:
-    # quay.io, not Docker Hub. The `minio/minio` repository no longer exists on
-    # Hub at all - a pull returns "repository does not exist or may require
-    # 'docker login'", and the v2 API returns "object not found" for the
-    # repository as well as for this tag, so it is a withdrawal rather than a
-    # tag that aged out. quay.io is MinIO's own registry and carries this exact
-    # release, so the pinned version is unchanged and only its source moves.
-    image: quay.io/minio/minio:RELEASE.2024-09-13T20-26-02Z
-    restart: unless-stopped
-    command: server /data --console-address ":9001"
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      # No default. MinIO refuses to start without one, which is the check that
-      # matters - the same pattern as POSTGRES_PASSWORD above.
-      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:-}"
-    volumes:
-      - miniodata:/data
-    ports:
-      # The S3 API and the web console, bound to loopback: reaching them from
-      # outside the host should go through a reverse proxy. The host-side ports
-      # are configurable because 9000/9001 are popular and often already taken -
-      # nothing in the stack uses them, since app and worker reach MinIO by
-      # service name on the compose network.
-      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 10s
-    deploy:
-      resources:
-        limits:
-          memory: 1g
-
   app:
     build: .
     restart: unless-stopped
@@ -199,8 +168,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -228,8 +197,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      # minio:
+      #   condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -275,7 +244,8 @@ services:
           memory: 8g
 
 volumes:
-  pgdata:
+  # pgdata: replaced by ./data/postgres (see the `db` service). Not declared, so
+  # `docker compose down -v` cannot remove the old volume or the new directory.
   redisdata:
   appdata:
-  miniodata:
+  # miniodata:

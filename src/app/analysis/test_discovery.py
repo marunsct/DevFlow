@@ -260,6 +260,108 @@ _PROVIDES_A_DOM = re.compile(
 )
 
 
+#: `import { a, b as c } from './x'` - the braces and the specifier.
+_NAMED_IMPORT = re.compile(r"""import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]""")
+
+#: Where a module-level function starts: `function f(`, `const f = (...) =>`,
+#: `const f = function`, each optionally exported or async.
+_FUNCTION_START = re.compile(
+    r"""(?m)^[ \t]*(?:export\s+)?(?:async\s+)?function\s*\*?\s*([A-Za-z_$][\w$]*)\s*\("""
+    r"""|^[ \t]*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*"""
+    r"""(?:async\s+)?(?:function\b|\([^)]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)"""
+)
+
+
+def _imported_names(content: str, specifier: str) -> set[str] | None:
+    """The names this test imports from `specifier`, or None when it cannot tell.
+
+    None - a default or namespace import, or `require` - means "possibly all of
+    it", which is what the check assumed for every import before.
+    """
+    names: set[str] = set()
+    found = False
+    for match in _NAMED_IMPORT.finditer(content or ""):
+        if match.group(2) != specifier:
+            continue
+        found = True
+        for part in match.group(1).split(","):
+            name = part.strip().split(" as ")[0].strip()
+            if name:
+                names.add(name)
+    return names if found else None
+
+
+def _closing_brace(text: str, opening: int) -> int:
+    """The index of the brace closing the one at `opening`, skipping strings and comments."""
+    depth, i, n = 0, opening, len(text)
+    while i < n:
+        c = text[i]
+        if c in "'\"`":
+            i += 1
+            while i < n and text[i] != c:
+                i += 2 if text[i] == "\\" else 1
+        elif text.startswith("//", i):
+            i = text.find("\n", i)
+            if i < 0:
+                return n
+        elif text.startswith("/*", i):
+            i = text.find("*/", i)
+            if i < 0:
+                return n
+            i += 1
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return i
+        i += 1
+    return n
+
+
+def _function_bodies(module: str) -> dict[str, str]:
+    """Each module-level function's body, by name."""
+    bodies: dict[str, str] = {}
+    for match in _FUNCTION_START.finditer(module):
+        name = match.group(1) or match.group(2)
+        opening = module.find("{", match.end())
+        line_end = module.find("\n", match.end())
+        if match.group(2) and (opening < 0 or (0 <= line_end < opening and "{" not in module[match.end():line_end + 1])):
+            # An arrow function with an expression body: the rest of its line.
+            bodies[name] = module[match.end(): line_end if line_end >= 0 else len(module)]
+            continue
+        if opening < 0:
+            continue
+        bodies[name] = module[opening: _closing_brace(module, opening) + 1]
+    return bodies
+
+
+def _reaches_the_dom(module: str, names: set[str]) -> bool | None:
+    """Whether calling any of `names` can touch `document` or `window`.
+
+    Follows calls to other functions of the same module. None when a name is
+    not a function this can read - a class, an object - so the caller keeps
+    to what it did before rather than guessing.
+    """
+    bodies = _function_bodies(module)
+    if any(name not in bodies for name in names):
+        return None
+    pending, seen = list(names), set()
+    while pending:
+        name = pending.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        body = bodies[name]
+        if _UNGUARDED_DOM.search(body):
+            return True
+        pending += [
+            other for other in bodies
+            if other not in seen and re.search(rf"(?<![\w$.]){re.escape(other)}\s*\(", body)
+        ]
+    return False
+
+
 def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | None" = None) -> str | None:
     """Why this test will throw `document is not defined`, or None.
 
@@ -303,6 +405,15 @@ def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | N
             except (OSError, UnicodeDecodeError):
                 break
             if not _UNGUARDED_DOM.search(module):
+                break
+            # Only what the test takes from the module. One run's
+            # `logic.test.mjs` imported `createTask`, `editTask` and two
+            # serialisers - none of which touches the DOM - from an `app.js`
+            # whose render path does, and was told on every edit that it MUST
+            # be rewritten as a Playwright test, beside a Playwright suite that
+            # already existed.
+            imported = _imported_names(content, specifier)
+            if imported is not None and _reaches_the_dom(module, imported) is False:
                 break
             return (
                 f"`{specifier}` uses `document` or `window`, and this test sets up "

@@ -38,7 +38,10 @@ class _FakeModel:
         self.calls: list[str] = []
 
     def invoke(self, messages: list[Any]) -> _FakeReply:
-        prompt = str(getattr(messages[0], "content", ""))
+        # The whole request, not `messages[0]`: the generation prompt is a user
+        # message behind a system message, because a system message alone is
+        # refused by an OpenAI-compatible local server.
+        prompt = " ".join(str(getattr(m, "content", "")) for m in messages)
         self.calls.append(prompt)
         if "tech stack analyzer" in prompt:
             return _FakeReply(self.frameworks)

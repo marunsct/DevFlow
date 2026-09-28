@@ -215,13 +215,37 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
                 # that are not in the store get their instructions written now
                 # and kept. This is the call that made the uncached version
                 # expensive, and it is the whole point of the feature.
-                generated = _text_of(model.invoke([
-                    SystemMessage(content=(
-                        f"Generate 4 bullet points of strict software engineering best "
-                        f"practices for the '{framework}' framework or language. Focus on "
-                        f"concurrency, security and architecture. Output only the instructions."
-                    ))
-                ])).strip()
+                #
+                # The request carries a user message. It used to be a system
+                # message alone, and an OpenAI-compatible local server answers
+                # that with 400 "At least one non-system message is required" -
+                # so every stack naming a framework the seed does not cover, a
+                # vanilla JavaScript page included, failed here.
+                #
+                # And one framework's failure costs only that framework. The
+                # exception used to reach the outer handler, which discarded
+                # every framework found, counted an attempt, and after two gave
+                # up for the run: an unseeded `javascript` cost the run its
+                # instructions for every other framework in its stack as well.
+                try:
+                    generated = _text_of(model.invoke([
+                        SystemMessage(content=(
+                            "You write concise, strict engineering instructions for "
+                            "coding agents. Output only the instructions."
+                        )),
+                        HumanMessage(content=(
+                            f"Generate 4 bullet points of strict software engineering best "
+                            f"practices for the '{framework}' framework or language. Focus on "
+                            f"concurrency, security and architecture."
+                        )),
+                    ])).strip()
+                except Exception:  # noqa: BLE001 - one framework, not the stack
+                    logger.warning(
+                        "Could not generate instructions for '%s'; continuing without them",
+                        framework,
+                        exc_info=True,
+                    )
+                    continue
                 if generated:
                     store.update_instructions(framework, generated)
                 else:

@@ -3,11 +3,11 @@
 Two runs died at the revision limit because the reviewer had no record of its
 own previous findings:
 
-    run-35424714  round 2 minor    "init() ... no automated test exercises it"
+    One run  round 2 minor    "init() ... no automated test exercises it"
                   round 3 blocking "init() ... has no automated test coverage"
                   - the same unchanged file, re-weighted, on the last round.
 
-    run-8904f87b  round 1 evidence "Confirmed 447 code lines ... is under the
+    One run  round 1 evidence "Confirmed 447 code lines ... is under the
                                     500-line brief limit"
                   round 3 major    "Application source files total 631 lines
                                     ... exceeding the brief's constraint"
@@ -62,14 +62,14 @@ def test_the_previous_findings_come_back_verbatim() -> None:
 
 
 def test_an_optional_finding_stays_optional() -> None:
-    """The rule that would have saved run-35424714."""
+    """The rule that would have saved one run."""
     text = what_you_said_last_time(_review(THE_INIT_FINDING), 1, 3)
 
     assert "optional last round is optional this round" in text
 
 
 def test_the_last_round_says_what_requiring_changes_costs() -> None:
-    """The reviewer that failed run-35424714 raised its blocking finding on
+    """The reviewer that failed one run raised its blocking finding on
     round three, where `changes_required` is not another round of fixes."""
     last = what_you_said_last_time(_review(THE_INIT_FINDING), 2, 3)
 

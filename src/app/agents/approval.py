@@ -165,7 +165,7 @@ def resume_with_decision(
     gated tool - write_artifact, edit_artifact, run_terminal_command - executes
     on *this* invocation rather than the one that proposed it, so a config
     without the id makes exactly the tools that change something invisible.
-    Measured on run-c150cb2e: the event stream recorded 47 tool calls and the
+    Measured on one run: the event stream recorded 47 tool calls and the
     transcript 7, all of them read-only.
 
     `stage` travels beside it so the transcript files those calls under the
@@ -195,7 +195,7 @@ def resume_with_decision(
     # work - its reads included - inside this call rather than the one that
     # started it. Leaving this unwrapped left the per-stage memory keyed by
     # whatever config a fan-out reports, which is the parent's, so six concurrent
-    # specialists went on sharing one slot: measured on run-ad4815da, whose
+    # specialists went on sharing one slot: measured on one run, whose
     # redundant-read ordinals still ran 12-20 across six different stages.
     with remembering(thread_id):
         return _resumed(agent, decision, decisions, config, thread_id)
@@ -217,9 +217,9 @@ def _resumed(
             raise
         # Answer the number it actually has. `decisions_for` counts the actions
         # the checkpoint records and the middleware counts the tool calls still
-        # hanging when the resume arrives; run-b7f7d183 ended with those two
+        # hanging when the resume arrives; one run ended with those two
         # disagreeing inside a parallel worker - "Number of human decisions (2)
-        # does not match number of hanging tool calls (1)" - and run-c4a30293 on
+        # does not match number of hanging tool calls (1)" - and one run on
         # 2026-09-11 the same way, so it is rare and it is not new.
         #
         # Why the counts differ is not established, so this recovers rather than
@@ -259,7 +259,7 @@ _READ_ONLY_EXECUTABLES = frozenset({
 def is_read_only_command(request: dict) -> bool:
     """Whether this action only looks at the workspace.
 
-    Measured on run-3f8e387d: `specialist_testing_2` spent its whole 120-gate
+    Measured on one run: `specialist_testing_2` spent its whole 120-gate
     budget on `ls -la`, `find` and `cat` against the workspace - exploration it
     could have done with its ungated filesystem tools - and was stopped before
     finishing any work. The approval still happens and is still recorded; it

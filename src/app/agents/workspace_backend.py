@@ -6,7 +6,7 @@ container mode that placement is not a choice: only the workspace is mounted,
 so anything a command writes has to be inside it.
 
 The cost is that it is also inside everything an agent looks at. Measured on
-run-61c5a5b6: 42 tool results across ten stages carried `.agent-home`, every
+one run: 42 tool results across ten stages carried `.agent-home`, every
 `ls /` opened with it, and one `npm install` had left 26 cache blobs with
 sha512 filenames. `list_repository_files` was taught to skip it; `ls`, `glob`
 and `grep` come from the deep-agent filesystem backend and were not.
@@ -52,7 +52,7 @@ class _Suggesting:
     invented and nothing else, so it guesses again. Measured across the stored
     runs, the guesses are `/home/user/...`, `/workspace/...`, the project
     directory at the root, and the host path; and the file it wants almost
-    always exists. On run-3f8e387d - the run that died of gate exhaustion -
+    always exists. On one run - the run that died of gate exhaustion -
     72 reads failed and 56 of them (77%) named a file that was in the
     workspace under a different path.
 
@@ -66,7 +66,7 @@ class _Suggesting:
 
         A model that reads a directory is asking what is in it. Answering "that
         is a directory" is true and is not the answer - measured on
-        run-130deeef, where `specialist_backend_3` read
+        one run, where `specialist_backend_3` read
         `/simple-to-do-list-app/tests` four times and was told four times that
         a directory of that name existed there. Listing it costs one `iterdir`
         on a call that has already failed.
@@ -133,7 +133,7 @@ class _Suggesting:
         if not root or not name:
             return ""
         # A name with no extension is a directory name, which is what `ls`
-        # misses: run-2eb3aa24 asked for `/simple-to-do-list-app` four times.
+        # misses: one run asked for `/simple-to-do-list-app` four times.
         want_file = "." in name
         try:
             found = [
@@ -226,9 +226,9 @@ REPEATS_BEFORE_SAYING_SO = 2
 #: After this many, stop returning the bytes and say where they already are.
 #:
 #: The note above is the right first response and it is not always the last
-#: one. Measured on run-84e05d4b's `specialist_backend_1`: eleven reads of
+#: one. Measured on one run's `specialist_backend_1`: eleven reads of
 #: `/docs/architecture_review.md`, byte-identical, in one stage, each answered
-#: with a note saying so and each followed by another. run-44e9fc83 did
+#: with a note saying so and each followed by another. One run did
 #: seventeen of `app.js`.
 #:
 #: This codebase's escalation everywhere else is hint, note, refuse, and the
@@ -267,7 +267,7 @@ READS_BEFORE_WITHHOLDING = 3
 #: about the file and starts being about the stage.
 #:
 #: Both rungs above are per file, and a stage that cycles three files reaches
-#: neither quickly. Measured live on run-cac07d52: `specialist_ui_ux_0`,
+#: neither quickly. Measured live on one run: `specialist_ui_ux_0`,
 #: restarted on a fresh conversation, made 55 reads of which 50 were files the
 #: previous attempt had already read, cycling `index.html`, `app.js` and
 #: `styles.css` about a dozen times. Both per-file rungs fired - 24 notes and
@@ -298,7 +298,7 @@ REPEATED_READS_BEFORE_NAMING_THE_EXIT = 6
 #:     notice above
 #:
 #: The exit notice fired 515 times across 29 stages, and
-#: `run-b0db10b1`'s `specialist_ui_ux_0` received it 115 times. Withholding
+#: `one run`'s `specialist_ui_ux_0` received it 115 times. Withholding
 #: the bytes reduces what a redundant read costs and moves the stage to a
 #: different file rather than to work; naming the exit is ignored outright.
 #:
@@ -337,7 +337,7 @@ def _times(count: int) -> str:
 
     Both notices that count a repeat built the ordinal by appending "th", so a
     stage on its 21st, 22nd or 23rd read was told "21th", "22th", "23th" - as
-    were the first three of anything. Seen through run-2ac28a2f, whose
+    were the first three of anything. Seen through one run, whose
     `specialist_ui_ux_0` reached "22th". These strings are read by a language
     model, and a sentence that cannot count is a poor argument that it has read
     something enough times.
@@ -388,7 +388,7 @@ def _an_anchor_to_what_was_withheld(text: str) -> str:
 class _NoticingRepeats:
     """Say when a file comes back byte-identical to the last time it was read.
 
-    Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
+    Measured on one run's `specialist_backend_1`: 39 tool calls, 17 of
     them the same `read_file` of `app.js` at the same range, in runs of six,
     five and four, two to three seconds apart, with no write between them.
     That is 16 model turns spent re-reading 400 lines the model already had.
@@ -401,7 +401,7 @@ class _NoticingRepeats:
     The content is always returned. A note that withheld it would strand a
     model that had genuinely lost the text - and while compaction is not
     firing on these stages today (it triggers at 70,200 tokens and the largest
-    stage of run-1d1b6c9c carried about 22,600), a fix whose failure mode is
+    stage of one run carried about 22,600), a fix whose failure mode is
     "the agent cannot get its file back" is not worth the tokens it saves.
 
     The note is delivered in the result the model just asked for, which is
@@ -428,7 +428,7 @@ class _NoticingRepeats:
         """Whether this stage has already been served these exact lines.
 
         Finding 59 caught a byte-identical call. This catches the same waste
-        wearing different arguments. Measured on run-6412366b's
+        wearing different arguments. Measured on one run's
         `specialist_ui_ux_0`, reading a 984-line `index.html` that had not
         changed since it was written:
 
@@ -478,7 +478,7 @@ class _NoticingRepeats:
         self._count_a_repeated_read()
         if nothing_new >= READS_BEFORE_WITHHOLDING:
             # The same rung the byte-identical ladder reaches, on the same
-            # count, because they are the same waste. Measured on run-d483f554's
+            # count, because they are the same waste. Measured on one run's
             # `specialist_ui_ux_0`, reading a 391-line `app.js` it had just
             # written:
             #
@@ -527,7 +527,7 @@ class _NoticingRepeats:
             ae4b717e 16   37476645 11   304add54 8
             db3a4a0b  8   2eb3aa24  5   d6369866 5
 
-        run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times
+        One run's ui specialist asked for `task-manager-ui` eleven times
         and `task-manager` - the real one - four. The digest already lists the
         files, and it guessed anyway; what changes this model's behaviour is
         being told at the point of failure, which is where the "there is a file
@@ -566,10 +566,10 @@ class _NoticingRepeats:
         ask for a file that is not there as often as it likes and be told
         "not found" each time, in silence.
 
-        Measured on run 0afef410's `specialist_backend_2`, asked to create
+        Measured on one run's `specialist_backend_2`, asked to create
         `app.js`: two identical `read_file` calls for `/task-manager/app.js`,
         two identical `Error: File '/task-manager/app.js' not found`, no notice
-        of any kind. `edit_artifact` has had this note since run-9506d3ab -
+        of any kind. `edit_artifact` has had this note since one run -
         "failed the same way the N previous times you ran it in this stage" -
         and a read deserves the same.
 
@@ -608,7 +608,7 @@ class _NoticingRepeats:
         bytes look unrelated, and the model does not repeat itself that
         tidily.
 
-        Measured on run-f0630b10's `specialist_ui_ux_0`, 54 reads of one
+        Measured on one run's `specialist_ui_ux_0`, 54 reads of one
         `index.html`:
 
         - It alternated between `task-manager/index.html` (36 reads) and
@@ -695,7 +695,7 @@ class _NoticingRepeats:
         this backend object instead. The digest maps beside this already go
         through `store` for exactly that reason.
 
-        Measured on run-df4dc6f5: 110 reads had their content withheld and the
+        Measured on one run: 110 reads had their content withheld and the
         two rungs above it fired zero times. Every one of those 110 calls
         `_the_way_out`, which returns text once the tally reaches
         `REPEATED_READS_BEFORE_NAMING_THE_EXIT` (6). `specialist_testing_2`
@@ -720,7 +720,7 @@ class _NoticingRepeats:
         tally = self._the_repeated_read_tally()
         tally["count"] = tally.get("count", 0) + 1
         # Diagnostic, not a guard. Two attempts at making this tally per stage -
-        # 6bdbba1 and c6125b1 - both shipped and changed nothing: run-50d08fa7
+        # 6bdbba1 and c6125b1 - both shipped and changed nothing: one run
         # still reported one interleaved sequence, 12 to 17, across three
         # concurrent specialists while the sequential `test_round_0` after them
         # restarted at 12. The remaining question is what key the count is
@@ -761,7 +761,7 @@ class _NoticingRepeats:
         was no way to choose one except by guessing - and a stage that guesses
         asks for the same range again.
 
-        Measured on run-a6b28314, whose `specialist_documentation_5` sent
+        Measured on one run, whose `specialist_documentation_5` sent
         `offset=50 limit=50` against `task-manager/app.js` 28 times and was
         refused every time after the twelfth. The harness knew both halves: the
         served line numbers are in `read_spans` in stage memory, and the length
@@ -959,7 +959,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             return result
         # Ahead of the content, not after it. A file of any size puts an
         # appended note thousands of characters into the payload, and
-        # run-3c0c31d2's `technical_lead` read one 3,847-character
+        # one run's `technical_lead` read one 3,847-character
         # `milestone_plan.md` seven times with the notice firing from the
         # second read onward. Being told at the end of what you are reading is
         # not being told: the notice exists to change the *next* call, so it

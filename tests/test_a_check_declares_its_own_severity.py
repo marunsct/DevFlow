@@ -11,7 +11,7 @@ guards it checks every marker matches some message and, in its own words,
 "cannot check that every breaking message matches some marker" - so the gap is
 known and was not closeable from that direction.
 
-run-6e50b630 is the fourth instance, and the most expensive.
+One run is the fourth instance, and the most expensive.
 `_a_control_group_no_script_operates` found `todo-app/index.html`'s three
 `data-filter` buttons and reported that they
 
@@ -50,7 +50,7 @@ from app.analysis.integration_checks import (
     summarise_integration,
 )
 
-#: run-6e50b630's page, reduced to the shape that failed it: a wired page with
+#: One run's page, reduced to the shape that failed it: a wired page with
 #: one dead corner.
 A_PAGE_WITH_DEAD_FILTERS = """<!doctype html>
 <html><head><link rel="stylesheet" href="style.css"></head>

@@ -11,7 +11,7 @@ stage is `product_manager`, which is not a pause, so the node fell through to:
     update["stage"] = next_stage
 
 overwriting "go back and try again" with "carry on", and handing the next stage
-a state with no `product_intake` in it. That is how run-c826ae90 reached
+a state with no `product_intake` in it. That is how one run reached
 `KeyError: 'product_intake'` even though the retry fired correctly.
 
 Both hand-back shapes look identical from the caller's side - the output key is

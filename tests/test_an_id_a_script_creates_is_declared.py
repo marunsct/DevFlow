@@ -23,7 +23,7 @@ Latent rather than realised, and worth saying so: across the 77 stored workspace
 this check produces two findings and both are genuine, because those products
 happen to put every styled id in their markup. Both survive this change.
 
-The true positive comes from run-b3cb2d80, which completed. Sprint 2 planned a
+The true positive comes from one run, which completed. Sprint 2 planned a
 "non-blocking notice shown to user when storage is unavailable", `style.css` got
 `#error-notice`, and `error-notice` appears in no other file in the workspace -
 the feature was styled and never built.
@@ -108,7 +108,7 @@ class TestEveryWayAScriptGivesAnElementAnId:
 
 class TestTheFindingThatIsReal:
     def test_an_id_nothing_creates_is_still_reported(self, a_project):
-        """run-b3cb2d80's `#error-notice`: styled, and in no other file."""
+        """One run's `#error-notice`: styled, and in no other file."""
         root = a_project("document.getElementById('tasks').textContent = 'x';")
 
         assert _flags_the_notice(root)

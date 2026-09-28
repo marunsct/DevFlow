@@ -101,7 +101,7 @@ def test_a_command_runs_in_the_run_workspace(workspace):
 
     Command output has the host workspace path rewritten out of it, because a
     path the agent cannot use is worse than no path - it retried one four times
-    in a row on run-0b55ad49. The workspace root is therefore "." here, and a
+    in a row on one run. The workspace root is therefore "." here, and a
     file inside it is named relative to that.
     """
     assert run(workspace, ["pwd"])["stdout"].strip() == "."
@@ -177,7 +177,7 @@ def test_only_what_a_build_needs_is_passed(workspace):
 
     The second group is not passed *through* - it is computed by
     `_concurrency_environment` because a cgroup CPU quota is invisible to
-    `nproc`. On run-cbd22a34 Vitest forked one worker per host core (20) inside
+    `nproc`. On one run Vitest forked one worker per host core (20) inside
     a 2-CPU container and OOM-killed the worker twice.
     """
     passed_through = {

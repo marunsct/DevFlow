@@ -13,7 +13,7 @@ already made with run state.
 The classification matters more than the counts. A refusal is the harness
 stopping something bad, and counting it as a failure makes the number this
 exists to drive down rise whenever a guard works. `scripts/audit_run.py` had
-exactly that defect: six of run b0db10b1's eight "costly failures" were guards,
+exactly that defect: six of one run's eight "costly failures" were guards,
 and correcting it moved that run from 1.2% to 0.3%.
 """
 

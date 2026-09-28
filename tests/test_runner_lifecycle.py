@@ -840,7 +840,7 @@ def test_the_error_stays_short_enough_to_render() -> None:
 def test_a_task_time_limit_says_the_run_was_still_working() -> None:
     """`SoftTimeLimitExceeded: SoftTimeLimitExceeded()` tells the reader nothing.
 
-    Observed on run-0b55ad49: 54.3 minutes of healthy progress, from
+    Observed on one run: 54.3 minutes of healthy progress, from
     stack_selector through two architecture-review rounds to technical_lead,
     ended by a 3300-second ceiling. Nothing was wrong with the run and nothing
     was lost - but the message named a Celery class, not a clock, so the obvious
@@ -874,7 +874,7 @@ def test_the_task_time_limit_is_sized_for_a_whole_run() -> None:
 def test_a_loaded_but_different_model_is_explained_too() -> None:
     """The server may hold a model and still refuse the one that was asked for.
 
-    Observed on run-0b55ad49: settings named `unsloth/Qwen3.8-27B-GGUF` while
+    Observed on one run: settings named `unsloth/Qwen3.8-27B-GGUF` while
     the server had `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` loaded with
     'Switch model by request' off. Saying "no model loaded" would have sent the
     reader looking for a problem that was not there.
@@ -903,7 +903,7 @@ def test_a_loaded_but_different_model_is_explained_too() -> None:
 # nothing changed between attempts, and `write_approved_artifact` says so by
 # reporting `unchanged`. Applying the same rule to a command inverts it.
 #
-# On run-0b55ad49 `specialist_backend_1` ran `npm test`, read `app.js`, ran it
+# On one run `specialist_backend_1` ran `npm test`, read `app.js`, ran it
 # again, read four more files, ran it again - real diagnosis between every run,
 # with the tests passing - and was stopped after five as "asking to write the
 # same thing 5 times in a row". It had written nothing at all.
@@ -960,7 +960,7 @@ def test_the_approval_records_what_the_pause_would_do() -> None:
 def test_a_loop_is_answered_before_the_run_is_ended() -> None:
     """Ending the run was the harshest available response, and the only one.
 
-    run-130deeef's `specialist_backend_8` wrote `docs/blocker.md` five times - a
+    One run's `specialist_backend_8` wrote `docs/blocker.md` five times - a
     perfectly reasonable document, from a model that had correctly worked out it
     was blocked and had no other move - and that killed a run which had already
     completed a full sprint, a test round, a security review and a milestone
@@ -1010,7 +1010,7 @@ def test_a_repeated_command_reports_the_command_not_an_unknown_path() -> None:
 # "re-invoke to make progress" fallback returns identical state forever.
 #
 # Bounded only by MAX_GATES, that spun 1000 times in five seconds on
-# run-0b55ad49 and reported "Stopped after 1000 automatic approvals" when not
+# one run and reported "Stopped after 1000 automatic approvals" when not
 # one approval had happened.
 # ---------------------------------------------------------------------------
 
@@ -1074,7 +1074,7 @@ async def test_a_graph_with_nothing_to_resume_is_caught_quickly(runner, monkeypa
 def test_gate_exhaustion_reports_what_the_stage_kept_doing():
     """"Raise the ceiling" was the whole message, and it is often wrong advice.
 
-    Measured on run-db3a4a0b: `defect_fix_1_0` spent all 120 approvals running
+    Measured on one run: `defect_fix_1_0` spent all 120 approvals running
     `node test.js` against a test whose assertion could not be satisfied - the
     defect was "test.js AC-BE-1 regex was too strict, expected literal
     'todo_tasks' but code uses a constant". A larger budget would have bought

@@ -55,7 +55,7 @@ class MilestoneReviewFinding(BaseModel):
         "security",
         "regression",
         # A bucket of its own because it is none of the above, and this model
-        # reaches for it: `code_quality` 24 times in run-cac07d52 alone.
+        # reaches for it: `code_quality` 24 times in one run alone.
         "code_quality",
         # So an unrecognised category is preserved rather than guessed at.
         # No brief ever says "other", so `scope_attestation` caps such a
@@ -64,8 +64,8 @@ class MilestoneReviewFinding(BaseModel):
         "other",
     ] = Field(..., description="The type of issue found.")
 
-    # `severity` has been forgiven since run-0deeb8bf; `category` was a bare
-    # Literal and was not. Measured live on run-cac07d52 at 05:36: one
+    # `severity` has been forgiven since one run; `category` was a bare
+    # Literal and was not. Measured live on one run at 05:36: one
     # unrecognised word rejected a whole milestone review and cost three and a
     # half minutes re-generating it. See `app.agents.finding_category`.
     _known_category = field_validator("category", mode="before")(
@@ -120,7 +120,7 @@ class MilestoneReviewOutput(BaseModel):
         findings; `blocked` ends the run immediately with no attempt at any of
         them. Nothing told the reviewer that.
 
-        Measured on run e7ef79a2, which died sixteen minutes in. Its review was
+        Measured on one run, which died sixteen minutes in. Its review was
         good - `toggleTask` absent so every checkbox did nothing, filter buttons
         with no handlers, and no tests for either - and every finding carried a
         precise `required_remediation`. It chose "blocked" because its findings
@@ -178,7 +178,7 @@ def _integration_evidence(
     """What the files in this workspace say about each other. Never raises.
 
     Each specialist writes files that are defensible alone, and no stage checks
-    whether they connect. On run-95ca3f72 that let a stylesheet target an id no
+    whether they connect. On one run that let a stylesheet target an id no
     page declared, and a script no page loaded, through four review stages.
 
     `document_text` is the operator's brief, passed through because two of the
@@ -362,14 +362,14 @@ def what_you_said_last_time(previous: Any, revisions_used: int, revisions_allowe
 
     Measured on the two runs that failed at the revision limit:
 
-    run-35424714, milestone two, round 2 raised as **minor** - "init() is the
+    One run, milestone two, round 2 raised as **minor** - "init() is the
     main DOM wiring entry point exported from ui.js, but no automated test
     exercises it". Round 3 raised the same defect as **blocking** - "The init()
     function exported from ui.js has no automated test coverage" - and that
     round was the third, so the run ended there. Nothing about the file had
     changed to make it worse; the reviewer simply weighted it differently.
 
-    run-8904f87b, round 1 certified the size explicitly in its acceptance
+    One run, round 1 certified the size explicitly in its acceptance
     evidence: "Confirmed 447 code lines (non-blank, non-comment) is under the
     500-line brief limit". Round 3 raised **major** "Application source files
     total 631 lines ... exceeding the brief's stated constraint" - a fair
@@ -563,7 +563,7 @@ def findings_for_what_the_checks_proved(
     answer is to re-review on a fresh conversation, and when that still returns
     nothing, to hand the lead the reviewer's prose instead. Prose is not a task.
 
-    Measured on run-5696a52d: `index.html` linked a `style.css` that was not in
+    Measured on one run: `index.html` linked a `style.css` that was not in
     the workspace, `_broken_local_references` proved it, `summarise_integration`
     put it in front of the reviewer under the heading that calls it a blocking
     finding, and the reviewer wrote it out in prose with an empty `findings`

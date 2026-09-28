@@ -4,7 +4,7 @@
 same words twice and nothing tells it the measurement did not move. Round two
 then reads exactly like round one and gets answered the same way.
 
-Measured on run-ad4815da, which died on `MAX_MILESTONE_REVISIONS`. Its first two
+Measured on one run, which died on `MAX_MILESTONE_REVISIONS`. Its first two
 milestone reviews were byte-identical, both blocking on:
 
     The product exceeds the stated 500-line code limit. The cross-file check
@@ -61,7 +61,7 @@ class TestWhenItFires:
         assert _a_change_asked_for_twice([THE_LINE_LIMIT, moved_on]) == ""
 
     def test_a_reworded_finding_is_still_a_repeat(self) -> None:
-        """The shape that killed run-50d08fa7.
+        """The shape that killed one run.
 
         Its rounds 4 and 5 both blocked on the same missing responsive CSS, once
         as "the CSS in index.html" and once as "the <style> block in index.html".
@@ -91,7 +91,7 @@ class TestWhenItFires:
         assert _a_change_asked_for_twice([THE_LINE_LIMIT, later]) != ""
 
     def test_a_genuinely_different_finding_still_says_nothing(self) -> None:
-        """run-50d08fa7's rounds 3 and 4 overlapped 0.14 - a size limit and
+        """One run's rounds 3 and 4 overlapped 0.14 - a size limit and
         missing responsive CSS share almost no words."""
         responsive = (
             "The milestone requires 'use the app on any screen size from mobile "
@@ -116,7 +116,7 @@ class TestWhatItSays:
         assert "Name the file and the specific edit" in note
 
     def test_it_forbids_meeting_a_limit_by_deleting_behaviour(self) -> None:
-        """The remedy that ended run-ad4815da."""
+        """The remedy that ended one run."""
         note = _a_change_asked_for_twice([THE_LINE_LIMIT, THE_LINE_LIMIT])
 
         assert "Do NOT meet it by deleting" in note

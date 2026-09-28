@@ -1,6 +1,6 @@
 """Per-file guards redirect a reading loop. Taking the tool away ends it.
 
-Measured on run-b6436e36's `specialist_ui_ux_1`: 73 tool calls, 64 of them
+Measured on one run's `specialist_ui_ux_1`: 73 tool calls, 64 of them
 reads. The ladder worked exactly as designed - note, withhold, then refuse -
 and the stage read 30 more times after its first refusal:
 

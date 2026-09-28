@@ -1,6 +1,6 @@
 """A shell script in an environment that has no shell.
 
-run-130deeef's technical specification called for a shell build script, so
+One run's technical specification called for a shell build script, so
 `simple-to-do-list-app/build.sh` became the most-written file of the whole run
 - 22 writes and edits across several stages - for a file the sandbox can never
 execute. `specialist_backend_0` then sent `sh ./build.sh` five times, and

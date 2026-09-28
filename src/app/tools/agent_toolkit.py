@@ -95,7 +95,7 @@ def build_sprint_history_tool(repo_root: str) -> BaseTool:
     """Return a read-only tool answering "what did the last sprint change?".
 
     Every stage currently works that out by re-reading the workspace: 257
-    `read_file` calls over 22 distinct files on run-61c5a5b6, most of them
+    `read_file` calls over 22 distinct files on one run, most of them
     files an earlier sprint had not touched. The accepted-milestone commits
     (see `app.tools.version_control`) already hold the answer.
 
@@ -142,7 +142,7 @@ def _top_level_keys(text: str) -> list[str]:
     """Keys at the outermost level of a JSON object, parsed or not.
 
     Written as a scan rather than `json.loads` because the case that matters
-    most is the one that does not parse. run-9f617c73 wrote a 3,344-byte answer
+    most is the one that does not parse. One run wrote a 3,344-byte answer
     that ended `...}] }` - truncated, almost certainly against the output
     ceiling - so `json.loads` raised, the check returned "not the answer", and
     the write went through. A model that ran out of room mid-answer is exactly
@@ -194,7 +194,7 @@ def _is_the_stages_own_answer(content: str, answer_fields: frozenset[str]) -> bo
     finished its real work by then - so the write is followed by nothing, and
     the repeat guard ends the run.
 
-    Measured on run-2bcdc19b: `defect_fix_2_1` wrote `final_output.json`
+    Measured on one run: `defect_fix_2_1` wrote `final_output.json`
     containing `{"changed_files": [], "decisions": [...]}` - its own schema -
     five times in twenty seconds. The second and later writes were answered
     "This file already contained exactly this content ... Do not write it
@@ -606,7 +606,7 @@ def _and_a_path_is_read_with_read_file(reference: str, repo_root: str | None = N
     was not asking about the journal.
 
     Says whether the file is there, and where, rather than only naming the tool.
-    Measured live on run-f05d8d47, whose `test_round_0` asked 16 times for
+    Measured live on one run, whose `test_round_0` asked 16 times for
 
         todo-toggling-checkbox-app-da256-kethrough-and-checked-state/error-context.md
 
@@ -770,7 +770,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
             # truncation pointer". A reference ends in eight random hex
             # characters, so an agent that no longer has the pointer cannot
             # construct one however well it remembers the command - and it tries.
-            # Measured on run-fd891220: eight failed calls on invented names like
+            # Measured on one run: eight failed calls on invented names like
             # `5-backend-specialist-pytest-stdout-a1b2c3d4.log`, with seven of
             # them identical repeats. Naming what exists turns a dead end into one
             # more call.

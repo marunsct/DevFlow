@@ -1,12 +1,12 @@
 """The rule that stops a brief from outlawing its own test suite.
 
-run-2d9066e2's brief forbids external dependencies and `TESTABILITY_RULE`
+One run's brief forbids external dependencies and `TESTABILITY_RULE`
 mandates Playwright for browser UI. Both were read as binding, so the sprint
 spent all three remediation attempts on the contradiction and the run failed
 without a product defect in it. The constraint was never aimed at the test
 suite; nothing said it was, and nothing said it was not.
 
-run-551640d3 failed from the other side: it installed `jsdom` for its tests and
+One run failed from the other side: it installed `jsdom` for its tests and
 recorded the decision as a *risk* - "which would introduce an external
 dependency" - because the constraint it was reading did not distinguish the
 product's dependencies from its own.
@@ -133,7 +133,7 @@ def test_the_sandbox_does_not_refuse_a_test_scoped_install(tmp_path):
     """The rule tells an agent to `npm i -D @playwright/test`; the sandbox must
     not refuse the install it asks for.
 
-    Measured on run-519a9d8a: the refusal blocked the only suite that can
+    Measured on one run: the refusal blocked the only suite that can
     exercise a real DOM, the model installed the package *without* the flag to
     get past it, and the milestone reviewer then filed the undeclared package
     as a blocking defect from the other direction. Refusing the test-scoped

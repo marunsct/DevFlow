@@ -1,6 +1,6 @@
 """A malformed tool call is a bad attempt, not a reason to end a run.
 
-Measured on run-cbd22a34, at 2,333 events into Sprint 2:
+Measured on one run, at 2,333 events into Sprint 2:
 
     OpenAIAPIError: Error code: 500 - llama-server error:
       "Failed to parse tool call arguments as JSON:

@@ -5,7 +5,7 @@ reviewer. So a defect the cross-file checks can prove by reading two files could
 only be raised after the test rounds had finished and a green suite had already
 been reported, and fixing it then costs a whole milestone revision.
 
-Measured on run-e980310b, which failed its first sprint in eight minutes. Its
+Measured on one run, which failed its first sprint in eight minutes. Its
 plan delegated "Create style.css with basic responsive CSS rules", `index.html`
 linked that file, and no tool call in the entire run ever touched it - checked
 against the transcript, zero writes to that path. `_broken_local_references`
@@ -42,7 +42,7 @@ A_PAGE_MISSING_ITS_STYLESHEET = """<!doctype html>
 
 @pytest.fixture
 def a_workspace(tmp_path):
-    """run-e980310b's shape: a page linking a stylesheet nobody wrote."""
+    """One run's shape: a page linking a stylesheet nobody wrote."""
     project = tmp_path / "simple-to-do-list-app"
     project.mkdir()
     (project / "index.html").write_text(A_PAGE_MISSING_ITS_STYLESHEET)

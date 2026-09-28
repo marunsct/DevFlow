@@ -4,7 +4,7 @@ Every stage begins the same way: `ls /`, `ls /project`, then a read of each
 file it might care about. It has to, because an agent is built per stage and
 none of them can see what an earlier one learned.
 
-Measured on run-61c5a5b6: 257 `read_file` calls over 22 distinct files, and the
+Measured on one run: 257 `read_file` calls over 22 distinct files, and the
 opening moves of `technical_lead`, `test_round_0`, `milestone_review`,
 `security_review` and every specialist are near-identical - list the root, list
 the project, read `app.js`, read `index.html`, read the tests. Each of those is
@@ -102,7 +102,7 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
             head += f" - written by {changed_by}"
         # Not for the nine. Every stage already knows what
         # `docs/milestone_plan.md` is, and its first heading is whatever that
-        # stage's model happened to write: on run-ed05e20e it was "Milestone
+        # stage's model happened to write: on one run it was "Milestone
         # Plan - The layout adapts cleanly to both mobile (<600px) and
         # desktop (1280px) viewports", which describes one bullet inside it.
         purpose = "" if _is_a_rendered_document(name) else project_memory.purpose_of(text, name)
@@ -140,7 +140,7 @@ def _in_reading_order(root: Path, names: list[str]) -> list[str]:
     """The project first, then documents, then everything else.
 
     Alphabetical order put dotfiles at the top, so the cut at `max_files` fell
-    on the application: on run-61c5a5b6's workspace the listing reached
+    on the application: on one run's workspace the listing reached
     `simple-to-do-list-app/README.md` and stopped, hiding `app.js` behind
     "... and 13 more". The files a stage came here for must survive the cut.
     """
@@ -196,7 +196,7 @@ def _nothing_has_been_built(names: list[str]) -> bool:
 
     The state every stage before the first specialist is in, and the one that
     reads as "the product is missing" when it is only unwritten. Measured on
-    run 1c9854c7's `architecture_review`, whose digest was
+    one run's `architecture_review`, whose digest was
 
         docs/product_intake.md, docs/technical_specification.md,
         docs/technology_stack.md, docs/tools_and_models.md, .gitignore
@@ -332,7 +332,7 @@ def _a_refresh(messages: list[Any]) -> bool:
     model reads is the one it answers, and the old one ended "Read the files you
     actually need." After a tool result, that is an instruction to read.
 
-    It was obeyed. On run-ed19fdbb `specialist_backend_1` wrote `app.js` at
+    It was obeyed. On one run `specialist_backend_1` wrote `app.js` at
     06:26:02 and then opened seven of its next nine turns as though arriving for
     the first time - "Both files already exist from a prior run. Let me read...
     and verify" - re-issuing the same `read_file` pair, `wc -l`, `node --check`
@@ -365,7 +365,7 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
     On EVERY call, not just the first. Injected once, the listing is in the
     opening request and nowhere afterwards - `override` does not write it to
     stored history - so from the second call the agent has no map and goes
-    looking again. Measured on run-2eb3aa24's `principal_architect`: six
+    looking again. Measured on one run's `principal_architect`: six
     identical `ls {'path': '/'}` and four `ls` of a project directory that did
     not exist yet, in one stage, against a digest that had already said what
     was there. It is also why the listing count fell only 43% (46 to 26) when
@@ -378,7 +378,7 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
 
     This does not address a re-READ of a file's contents; a listing is not
     content. Those were measured separately and are not eviction: compaction
-    triggers at 70,200 tokens and the largest stage of run-1d1b6c9c carried
+    triggers at 70,200 tokens and the largest stage of one run carried
     about 22,600, with no compaction in the logs at all.
     """
     from langchain.agents.middleware import AgentMiddleware

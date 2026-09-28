@@ -3,7 +3,7 @@
 Both notices that tell a stage how many times it has re-read something built
 the ordinal by appending "th", so the first three of anything read "1th", "2th",
 "3th", and everything past twenty read "21th", "22th", "31th". Seen live through
-run-2ac28a2f, whose `specialist_ui_ux_0` was told it was the "22th time this
+one run, whose `specialist_ui_ux_0` was told it was the "22th time this
 stage has asked for content it already has".
 
 Cosmetic in isolation and not in aggregate: these strings are emitted dozens of
@@ -43,7 +43,7 @@ class TestTheOnesThatWereAlreadyRight:
 
 class TestTheNoticesThatUseIt:
     def test_the_refusal_says_the_ordinal_correctly(self, tmp_path, monkeypatch):
-        """The message run-2ac28a2f received, at the count it received it."""
+        """The message one run received, at the count it received it."""
         from app.agents import stage_memory
         from app.agents.workspace_backend import WorkspaceBackend
 

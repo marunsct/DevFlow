@@ -27,7 +27,7 @@ import pytest
 
 from app.tools.sandbox import summarise_executions
 
-#: The shape run 0afef410 produced, cut down to the part that misled.
+#: The shape one run produced, cut down to the part that misled.
 HISTORY = [
     ("testing_specialist", ["npm", "test"], 1),
     ("testing_specialist", ["npm", "test"], 1),

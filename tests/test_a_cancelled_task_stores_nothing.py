@@ -7,7 +7,7 @@ Celery tries to encode that exception as JSON and cannot:
     Pool callback raised exception: EncodeError(
         TypeError('Object of type SystemExit is not JSON serializable'))
 
-Measured on 2026-09-20 cancelling run 9c0fc48d, which produced that line and two
+Measured on 2026-09-20 cancelling one run, which produced that line and two
 full tracebacks for a cancellation the database had already recorded correctly.
 A concurrent run on the same worker was still healthy and looked like the cause.
 

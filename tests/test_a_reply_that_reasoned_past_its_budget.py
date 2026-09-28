@@ -3,11 +3,11 @@
 `_it_spent_its_whole_output_budget` tells the operator, in capitals, that a
 fresh conversation cannot fix a reply truncated at the output ceiling: the
 ceiling is per reply, so a restart reasons from the beginning and reaches it
-again. Its own docstring then records what happened next on run-fbe23618 -
+again. Its own docstring then records what happened next on one run -
 "That is what the harness did next, three times, for over an hour."
 
 The message was fixed there and the futile restart was left in, so
-run-be25a68e reproduced it: `test_round_2`, after four sprints of work and 747
+one run reproduced it: `test_round_2`, after four sprints of work and 747
 tool calls, was restarted three times on fresh conversations and hit the same
 ceiling each time. The run failed with an accurate diagnosis an hour after it
 could have been given.

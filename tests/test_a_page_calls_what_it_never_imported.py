@@ -4,7 +4,7 @@ An inline `<script type="module">` is a module. An identifier it neither
 imports nor declares is not a global lookup that might work: it is a
 `ReferenceError` on the line that reaches it.
 
-Found on run-9c0fc48d of 2026-09-20, against `tests/brief_low.md`. The page
+Found on one run of 2026-09-20, against `tests/brief_low.md`. The page
 imported six names from `./app-logic.mjs` and then called five different ones -
 `addTaskAndPersist`, `toggleTaskAndPersist`, `deleteTaskAndPersist`,
 `loadPersistedTasks` and `getFilteredTasksFromState` - every one of them an
@@ -20,7 +20,7 @@ Both reviewers did catch this one - the security review graded it `critical`
 and the milestone review `Blocking`, with the corrected import clause written
 out in full. The check earns its place by being deterministic rather than by
 being the only thing that looks: it fires when the file is written instead of
-at the end of a sprint, and a reviewer is a model, which is how run b598780b's
+at the end of a sprint, and a reviewer is a model, which is how one run's
 missing viewport tag passed a security review and five milestone reviews.
 """
 

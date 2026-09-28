@@ -212,7 +212,7 @@ def _the_brief_forbids_installing_anything(repo_root: str) -> str:
 
     Read from the workspace rather than passed in: the sandbox is below the
     agent layer and is handed a repository, not a brief. The intake document
-    is where the constraint lands - run 9bd3a091's `docs/product_intake.md`
+    is where the constraint lands - one run's `docs/product_intake.md`
     carries "No external dependencies beyond basic HTML/CSS/JS" twice.
     """
     try:
@@ -254,7 +254,7 @@ def _refuse_an_install_the_brief_rules_out(
     Not every install is the product's. A test-scoped one - `npm i -D` - lands
     in `devDependencies`, which ships to nobody, so the constraint on the
     shipped product has nothing to say about it and it is allowed through.
-    Measured on run-519a9d8a: `specialist_ui_ux_0` needed `@playwright/test`
+    Measured on one run: `specialist_ui_ux_0` needed `@playwright/test`
     for the only suite that can exercise a real DOM, this refusal blocked it,
     and the model installed the package *without* the flag to get past the
     refusal - leaving it in `node_modules` and absent from `package.json`,
@@ -306,7 +306,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # `f"{role}_specialist"` for each `SpecialistRole`. This read
     # `ui_specialist` while the role is `ui_ux`, so the key matched nothing and
     # the frontend specialist silently ran with the common set alone: on
-    # run-0b55ad49 it was refused `node` eight times while building a web page.
+    # one run it was refused `node` eight times while building a web page.
     # `test_every_specialist_role_has_an_allowlist` now pins the correspondence.
     "ui_ux_specialist": frozenset({
         "npm", "npx", "node", "yarn", "pnpm", "make", "python3", "jest", "vitest", "tsc",
@@ -316,7 +316,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     }),
     # `node` belongs here for the same reason `npx` already did: a JavaScript
     # backend's entry point is `node server.js`, and without it the role that
-    # wrote the file cannot run it. On run-95ca3f72 the backend specialist was
+    # wrote the file cannot run it. On one run the backend specialist was
     # refused `node -e "require('./todo-app/script.js').initTodoApp()"` - a
     # smoke test of code it had just written - while `npx` (which can run any
     # package at all) was permitted.
@@ -330,12 +330,12 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # made, and this was the only code-writing role still without it - even
     # `documentation_specialist`, which writes prose, had `node`. The stack is
     # chosen per run, so "database" does not mean SQL: on a browser-storage
-    # brief the persistence layer *is* JavaScript, and on run-414a621f this
+    # brief the persistence layer *is* JavaScript, and on one run this
     # role wrote `app.js`, `app.test.mjs` and a `package.json`, then could not
     # run any of them.
     #
     # Withholding it bought nothing, exactly as it bought nothing for
-    # `testing_specialist` on run-3da8dd91. Refused `node --test`, the agent
+    # `testing_specialist` on one run. Refused `node --test`, the agent
     # tried `python3 -c "subprocess.run(['node', ...])"` (refused), then wrote
     # `run-tests.py` to subprocess-launch node - which was permitted and ran.
     # What the refusal actually bought was 145 events of thrashing and
@@ -350,7 +350,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # running tests could run `pytest` and no JavaScript runner at all - on a
     # brief that is explicitly HTML/CSS/JavaScript. Worse, the refusal bought
     # nothing: `npx` was already permitted, so `npx jest` ran jest anyway. What
-    # it did buy, on run-95ca3f72, was the agent reasoning "We cannot run jest
+    # it did buy, on one run, was the agent reasoning "We cannot run jest
     # because not allowed... we can set package.json test script and run npm
     # test" - writing a manifest at the workspace root, which is the collision
     # that cost the previous run three remediation rounds.
@@ -361,7 +361,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
         "pytest", "python", "python3", "npm", "npx", "yarn", "pnpm", "go", "cargo", "make",
         "jest", "mocha", "vitest", "jasmine", "karma", "tsc", "playwright",
         # The role whose job is running tests must be able to run a test script.
-        # Measured on run-3da8dd91: the testing specialist wrote a plain
+        # Measured on one run: the testing specialist wrote a plain
         # `test-harness.js`, found `node` missing, and reasoned that it had
         # `npx` available - running it as `npx node test-harness.js`. That works
         # by accident, and `npx` can execute any package at all, so withholding
@@ -371,7 +371,7 @@ ROLE_EXECUTABLES: dict[str, frozenset[str]] = {
     # Writes prose, and checks it against the code it documents.
     "documentation_specialist": frozenset({"python3", "node", "npx"}),
     # Audits what the other roles built: it has to be able to run the project
-    # to test it. Refused `node` and `python3` on run-0b55ad49 while auditing a
+    # to test it. Refused `node` and `python3` on one run while auditing a
     # JavaScript application.
     "security_reliability_specialist": frozenset({
         "python", "python3", "pip", "pip3", "pytest", "node", "npm", "npx", "make",
@@ -386,7 +386,7 @@ COMMON_EXECUTABLES = frozenset({
     "ls", "cat", "echo", "mkdir", "touch", "git", "pwd", "find", "head", "tail", "wc",
     # Read-only inspection. Neither can modify a file or execute anything, and
     # both are what an agent reaches for by reflex: `grep` was the single most
-    # refused command on run-0b55ad49 (17 of 43 refusals), and every refusal
+    # refused command on one run (17 of 43 refusals), and every refusal
     # cost a model call to learn something the allowlist could have allowed.
     "grep", "which",
 })
@@ -655,7 +655,7 @@ def _concurrency_environment() -> Dict[str, str]:
     `app.tools.resources`, which reads what is free now rather than only what
     the configuration allows: a container already holding a large conversation
     hands out a smaller heap than an idle one, which is the case that killed
-    run-cbd22a34 twice.
+    one run twice.
     """
     from app.tools.resources import concurrency_environment
 
@@ -712,7 +712,7 @@ def _apply_limits() -> None:
     # runtime reserves far more of that than it ever uses: V8 and WebAssembly
     # reserve multi-gigabyte contiguous ranges up front as a bounds-check trick
     # and touch almost none of it. Against a 2 GB address-space cap every WASM
-    # instantiation fails - on run-0b55ad49, `WebAssembly.Instance(): Out of
+    # instantiation fails - on one run, `WebAssembly.Instance(): Out of
     # memory: Cannot allocate Wasm memory for new instance` appeared 24 times,
     # the milestone review concluded "no test commands succeeded in the
     # workspace", and agents had started writing `WebAssembly = null` stubs to
@@ -796,7 +796,7 @@ def manifest_written_outside_the_project(command: Sequence[str], repo_root: str)
     Commands always run with the workspace root as their working directory, so
     `npm install` there creates `package.json` and `node_modules` at the root -
     beside a project that already has its own. The two then disagree about
-    dependency versions and test configuration, which on run-0b55ad49 meant jest
+    dependency versions and test configuration, which on one run meant jest
     30 at the root running the project's jest-29 tests and three remediation
     rounds spent on "Identifier 'jest' has already been declared".
 
@@ -833,7 +833,7 @@ def resolve_working_directory(workspace: str, working_directory: str | None) -> 
     tried `cd todo-app && npx jest` was refused with no alternative to fall
     back on.
 
-    Measured on run-95ca3f72: eight commands were spent discovering `--prefix`,
+    Measured on one run: eight commands were spent discovering `--prefix`,
     and `./scripts/line_count_check.sh` inside the project was never runnable
     at all. Four of the refusals were `cd`, one was `bash -lc`; putting either
     on the allowlist would hand back the shell this sandbox exists to withhold.
@@ -852,7 +852,7 @@ def resolve_working_directory(workspace: str, working_directory: str | None) -> 
         # tool and the prompt all use it - and which means the subdirectory,
         # not a path at the filesystem root.
         #
-        # Only the first was accepted. On run-61c5a5b6 the UI specialist ran
+        # Only the first was accepted. On one run the UI specialist ran
         # its verifier with `working_directory="/simple-to-do-list-app"`, was
         # told the directory it was standing in was "outside the workspace",
         # and had to retry - a gate spent on a convention this codebase itself
@@ -892,7 +892,7 @@ def workspace_rooted_arguments(
     container where `/` is the container's own root, so `/todo-app/index.html`
     named nothing.
 
-    Measured on run-61c5a5b6: the documentation specialist ran
+    Measured on one run: the documentation specialist ran
     `wc -l /simple-to-do-list-app/index.html`, got "No such file", and spent six
     approval gates on `pwd`, `ls /`, `find` and two more `wc` spellings working
     out a convention it had been taught correctly everywhere else.
@@ -924,7 +924,7 @@ def workspace_rooted_arguments(
         # The path itself, or - for a path being created - its parent. A
         # `mkdir` target does not exist yet by definition, so requiring the
         # path itself to be there excluded exactly the case that needs this.
-        # Measured on run-2b5def74: the testing specialist spent five gates on
+        # Measured on one run: the testing specialist spent five gates on
         # `mkdir -p /simple-to-do-list-app/tests`, `mkdir -p /tests`, `ls`,
         # `pwd` and finally a relative path - and put the tests in the wrong
         # directory as a result.
@@ -951,7 +951,7 @@ the workspace the way the project directory already is.
 #: because a role that can write a file in a language and not run it has only
 #: bad options - and takes them.
 #:
-#: run-414a621f: the database specialist wrote app.js, app.test.mjs and a
+#: One run: the database specialist wrote app.js, app.test.mjs and a
 #: package.json, was refused `node`, wrote a Python script to subprocess-launch
 #: node (permitted), then tried `python3 app.test.mjs` and finally to `exec()` a
 #: JavaScript module as Python. That was the fourth time `node` was added to one
@@ -1006,7 +1006,7 @@ def _toolchain_key(language: str) -> str | None:
     "JavaScript (ES6+)", "Python 3.12" and "Go 1.22", and failed on anything
     with a qualifier in front of the name.
 
-    Measured live on run-cac07d52, whose stack selector answered "Plain
+    Measured live on one run, whose stack selector answered "Plain
     JavaScript (ES6+)": the head word was `plain`, nothing matched, and
     `.project-stack` was written empty. Every role then lost the JavaScript
     toolchain, so `tsc`, `vitest` and `playwright` were on no allowlist - in a
@@ -1149,7 +1149,7 @@ def project_stack(repo_root: str | Path | None) -> frozenset[str]:
 #: model handed a list of twenty-six programs reads it as "pick another one"
 #: rather than "use a different tool".
 #:
-#: Measured on run-130deeef: `sh ./simple-to-do-list-app/build.sh` refused five
+#: Measured on one run: `sh ./simple-to-do-list-app/build.sh` refused five
 #: times, `rm -rf simple-to-do-list-app/tests` once. Both had an obvious answer
 #: the refusal did not mention - `delete_artifact` exists, and a build script's
 #: commands can simply be run.
@@ -1229,7 +1229,7 @@ def _installed(names: frozenset[str] | set[str]) -> tuple[list[str], list[str]]:
     recommends, in the refusal that explains there is no shell. A specialist
     told "Allowed: ... make ..." tries it, is told "not found", and has been
     handed an environment fault it cannot fix - which is the shape that turned
-    run-130deeef into five identical `sh` attempts and then a blocker loop.
+    one run into five identical `sh` attempts and then a blocker loop.
 
     Re-evaluated on every refusal rather than cached, because `pip install
     pytest` and `npm install -D vitest` genuinely move a name from the second
@@ -1452,7 +1452,7 @@ def validate_command(
     if executable not in permitted:
         # A whole command line packed into the first element is not a missing
         # permission, and saying so sends the agent looking for the wrong fix.
-        # Measured on run-1c522244: `["wc -l", "todo-app/style.css"]` was
+        # Measured on one run: `["wc -l", "todo-app/style.css"]` was
         # answered with "'wc -l' is not permitted ... Allowed: ..., wc, ..." -
         # a refusal that lists the very program it is refusing. Three calls
         # went that way across two roles.
@@ -1552,7 +1552,7 @@ def _needs_root_the_sandbox_will_not_give(argv: list[str]) -> str | None:
     to `su` will fail here every time, whatever the agent changes about it.
 
     It is not needed. The Dockerfile already installs the browser system
-    libraries, for a reason it records: run-2d9066e2 spent all three of its
+    libraries, for a reason it records: one run spent all three of its
     remediation attempts on "Playwright regression tests fail due to missing
     system library libglib-2.0.so.0". They are present; nothing is missing.
 
@@ -1596,10 +1596,10 @@ def _needs_root_the_sandbox_will_not_give(argv: list[str]) -> str | None:
 #: kills it. Measured across the stored runs - every one of these is a 120s
 #: wait that returned nothing:
 #:
-#:   run-cbd22a34  npx serve . -p 8000        specialist_testing_1
-#:   run-cbd22a34  npx serve -p 8000          specialist_testing_1 (retried)
-#:   run-cbb1a5fc  npx http-server -p 8765    specialist_ui_ux_0
-#:   run-2eb3aa24  npx --yes serve -p 3000    specialist_ui_ux_0 (retried)
+#:   One run  npx serve . -p 8000        specialist_testing_1
+#:   one run  npx serve -p 8000          specialist_testing_1 (retried)
+#:   one run  npx http-server -p 8765    specialist_ui_ux_0
+#:   one run  npx --yes serve -p 3000    specialist_ui_ux_0 (retried)
 #:
 #: Half of all command timeouts on record. A refusal costs nothing and says
 #: what to do instead; a timeout costs two minutes and says nothing. This is
@@ -1610,7 +1610,7 @@ def _needs_root_the_sandbox_will_not_give(argv: list[str]) -> str | None:
 #: way of starting a server - `rails server`, `flask run`, `uvicorn`,
 #: `dotnet run`, `php -S`, `mix phx.server`, `ng serve` - ran until the
 #: timeout and returned nothing, and the agent then retried it. That is the
-#: pattern that cost run-e9e7f48f, and the timeout scaling added on
+#: pattern that cost one run, and the timeout scaling added on
 #: 2026-09-19 makes it cost more: on a Rust or Java stack the same hang now
 #: waits several times as long before saying anything.
 #:
@@ -1678,7 +1678,7 @@ def _uses_a_shell_operator(argv: Sequence[str]) -> str | None:
     It prints them, exits 0, and writes nothing - so the agent is told its
     command succeeded and believes the file exists.
 
-    Measured on run-fff9bf89: `specialist_backend_2` did exactly that twice,
+    Measured on one run: `specialist_backend_2` did exactly that twice,
     for `app.js` and `simple-to-do-list-app/app.js`. Both "succeeded". Neither
     file was written.
 
@@ -1703,7 +1703,7 @@ def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
     class as a policy refusal rather than an ordinary failure, and the
     write-gated "you already tried this" note is silent on it by design.
 
-    Measured on run-fa7b7286: `specialist_ui_ux_0` ran the identical
+    Measured on one run: `specialist_ui_ux_0` ran the identical
     `node --check task-manager/style.css` twice, two minutes apart, editing
     files in between - so the gate correctly saw a changed workspace and said
     nothing, twice, about a command that could not work either time.
@@ -1735,7 +1735,7 @@ def _how_to_serve_the_page_instead(repo_root: str) -> str:
 
     Both halves are false in a workspace with Playwright, which is the
     workspace the harness's own checks push every UI product toward. Measured
-    on run-35424714: `npx serve -p 3000 --cors` was refused with that sentence
+    on one run: `npx serve -p 3000 --cors` was refused with that sentence
     sixteen times, while the same run's `playwright.config.ts` carried
     `webServer: { command: 'npx serve .' }`, started it, logged "Accepting
     connections at http://localhost:3000" and ran 34 browser tests with real
@@ -1815,7 +1815,7 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
     # `serve` as the package to add, and every word-matching check here sees
     # a server.
     #
-    # Measured live on run-ed05e20e: `specialist_backend_2` was refused
+    # Measured live on one run: `specialist_backend_2` was refused
     # `npm install -D serve` twice, told "it runs until it is stopped, and
     # nothing here will stop it" about a command that would have exited in
     # seconds. `serve` has been in this list since before it was widened, so
@@ -1851,7 +1851,7 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
 #: What to say when a command hits the wall. "Command timed out" alone tells an
 #: agent nothing about why, and the commonest cause is not slowness: it is a
 #: command that was never going to exit. `_SERVER_COMMANDS` refuses the ones
-#: that can be recognised by name, but run-2eb3aa24's ui specialist wrote its
+#: that can be recognised by name, but one run's ui specialist wrote its
 #: own - `node serve-test.mjs` - and no name check can catch that.
 _TIMEOUT_ADVICE = (
     " A command that does not finish is usually one that was not meant to: a "
@@ -1866,7 +1866,7 @@ _TIMEOUT_ADVICE = (
 #: is false there, and it was being sent to the stages most likely to need the
 #: truth.
 #:
-#: Measured on run-35424714. `npx playwright test` timed out and was answered
+#: Measured on one run. `npx playwright test` timed out and was answered
 #: with "there is no browser to open a page with ... To check a page, read the
 #: file and assert on its contents from a test". Seven minutes later
 #: `npx playwright test --project=Desktop` ran 34 tests in this same sandbox,
@@ -2042,11 +2042,11 @@ def strip_a_doubled_working_directory(
     project into the path as well produces `todo-app/todo-app/app.test.mjs`,
     which exists nowhere. Seen in at least seven runs:
 
-        run-2b5def74  simple-to-do-list-app/simple-to-do-list-app/app.test.js
-        run-61c5a5b6  simple-to-do-list-app/simple-to-do-list-app/tests.test.js  (x6)
-        run-cbb1a5fc  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
-        run-da6c5e19  task-manager/task-manager/*.test.*
-        run-2eb3aa24  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
+        One run  simple-to-do-list-app/simple-to-do-list-app/app.test.js
+        one run  simple-to-do-list-app/simple-to-do-list-app/tests.test.js  (x6)
+        one run  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
+        one run  task-manager/task-manager/*.test.*
+        one run  simple-to-do-list-app/simple-to-do-list-app/app.test.mjs
 
     The ambiguity is real - nothing says whether a path argument resolves
     against the workspace root or against `working_directory` - so the agent
@@ -2059,7 +2059,7 @@ def strip_a_doubled_working_directory(
 
     That test cannot decide a command that *creates* the path, because then
     neither version exists yet - and such a command succeeds, so no failure and
-    no hint ever follows it. Measured live on run-f05d8d47:
+    no hint ever follows it. Measured live on one run:
 
         06:29:00  test_round_0  wd='task-manager'  mkdir -p task-manager/e2e
 
@@ -2105,7 +2105,7 @@ def strip_a_doubled_working_directory(
         argument = str(part)
         # `./project/app.test.mjs` and `/project/app.test.mjs` mean the same
         # thing to the model as `project/app.test.mjs`, and it writes all
-        # three. Comparing the raw string missed the first two: run-04576307
+        # three. Comparing the raw string missed the first two: one run
         # sent `["node", "--test", "./simple-to-do-list-app/app.test.mjs"]`
         # with `working_directory` already set to the project, and the guard
         # written for exactly that shape did not fire over one `.`.
@@ -2185,7 +2185,7 @@ def _as_workspace_relative(text: str, workspace: str) -> str:
     path. The agent reads it and uses it, and every filesystem tool it holds
     then fails, because inside the agent the workspace is rooted at "/".
 
-    Measured on run-0b55ad49: agents called `ls` against that exact string four
+    Measured on one run: agents called `ls` against that exact string four
     times in a row across two stages, every attempt returning `path_not_found`,
     and passed it to `node` and `read_file` besides. Removing it from the
     prompts is only half the fix - command output puts it back.
@@ -2195,7 +2195,7 @@ def _as_workspace_relative(text: str, workspace: str) -> str:
     workspace as their working directory - so `simple-todo-list-app/app.js`
     works there while `/simple-todo-list-app/app.js` does not. That second form
     is not hypothetical either: agents built shell commands from rooted paths
-    three times in one stage on run-0b55ad49, and every one failed. The artifact
+    three times in one stage on one run, and every one failed. The artifact
     tools accept a relative path too, so this form is the one that works
     everywhere the agent might paste it.
     """
@@ -2388,8 +2388,8 @@ def _fewer_pass_than_last_time(
     last edit caused.
 
     Thirteen of the twenty-three runs with two comparable results have at
-    least one: run d6297b2f's `defect_fix_1_0` went 6 passing to 0 over seven
-    tests, run 84e05d4b's `implementation` 4 to 0, run f81808a4's
+    least one: one run's `defect_fix_1_0` went 6 passing to 0 over seven
+    tests, one run's `implementation` 4 to 0, one run's
     `specialist_testing_3` 10 to 8 over twelve.
 
     Only against the same command in the same directory, and only when the
@@ -2458,7 +2458,7 @@ def _record_execution(
     can tell them apart.
 
     `working_directory` is part of the record because it is part of the
-    command. Without it, run-44653bd2's `node --test` under
+    command. Without it, one run's `node --test` under
     `/simple-to-do-list-app` and under `simple-to-do-list-app` were one entry,
     so "you already ran this" was answered from the wrong history. Keying on
     argv alone is the mistake finding 68 already made once.
@@ -2530,10 +2530,10 @@ def failed_this_way_before(
 ) -> int:
     """How many times this exact command has already failed in this run.
 
-    Measured twice on run-9ff00d5b's `specialist_backend_2`: the agent wrote a
+    Measured twice on one run's `specialist_backend_2`: the agent wrote a
     `verify.js`, hit `node:fs:448 ... binding.readFileUtf8` on a path that does
     not exist, and ran the identical command four times with the identical
-    failure. Earlier, run-e9e7f48f's `specialist_ui_ux_2` made 14 identical
+    failure. Earlier, one run's `specialist_ui_ux_2` made 14 identical
     `grep` calls and rode the stage into the recursion limit, failing the run.
 
     Nothing told either of them. A command that failed and is run again
@@ -2557,7 +2557,7 @@ def failed_this_way_before(
         if entry.get("command") == argv
         and _as_exit_code(entry.get("returncode")) not in (0, None)
         # A `grep` that matched nothing exited 1 and is not a failure. Counting
-        # it here told `specialist_ui_ux_1` on run-1c522244 that a working
+        # it here told `specialist_ui_ux_1` on one run that a working
         # command had "failed" and to "change the file it runs"; it ran the
         # same grep twelve times and the run died on the repeat guard.
         and not _ran_and_answered(argv, _as_exit_code(entry.get("returncode")))
@@ -2569,7 +2569,7 @@ def failed_this_way_before(
     # telling it "running it again unchanged will fail again" is both false and
     # discouraging exactly the right behaviour.
     #
-    # Caught on run-37476645's `specialist_testing_2`, live, in the first run
+    # Caught on one run's `specialist_testing_2`, live, in the first run
     # after this check shipped: the trace is EDIT, RUN, EDIT, RUN, EDIT, RUN -
     # a specialist debugging a suite properly - and it was told twenty-six
     # times that it had changed nothing. The settled-answer middleware and the
@@ -2592,7 +2592,7 @@ def failed_this_way_before(
 #: Deliberately NOT added to `IGNORED_DIRECTORIES`, which hides a directory
 #: from every listing and read. Playwright's `test-results/` holds
 #: `error-context.md`, which says why a browser test failed and which an agent
-#: read to good effect on run-cac07d52. Hiding it would remove the best
+#: read to good effect on one run. Hiding it would remove the best
 #: diagnostic the suite produces.
 #:
 #: They are excluded from one thing only: the "has anything changed since"
@@ -2623,7 +2623,7 @@ def _written_since(
     edited the file under test, so the only writes that should clear it are
     writes where the command runs. The workflow itself writes `docs/*.md`
     between every stage, and the old whole-workspace walk counted those: on
-    run-2bfa5e6e a `npm test` failing on a missing `package.json` was re-run
+    one run a `npm test` failing on a missing `package.json` was re-run
     three times in three different stages, each with only a rendered review
     document between them, and the "already failed N times" note never fired
     once. The agent was never told what the harness already knew.
@@ -2745,12 +2745,12 @@ def succeeded_this_way_before(
     wrong; a command that *passed* and is run again returns the identical
     output, and the agent reads that as new evidence and runs it once more.
 
-    Measured on run-ae4b717e's `specialist_ui_ux_1`: `node -c
+    Measured on one run's `specialist_ui_ux_1`: `node -c
     task-manager/app.js` run eleven times inside eight seconds, every one exit
     0 with empty stdout and stderr, and no write between any of them - eleven
     model round trips to learn the same nothing. The same run's
     `specialist_backend_0` ran `node task-manager/verify_main.mjs` four times
-    for four byte-identical reports. Worse on run-9ff00d5b, whose
+    for four byte-identical reports. Worse on one run, whose
     `test_round_0` ran one passing `node --test todo-app/app.test.mjs`
     twenty-eight times; that run died in the recursion limit.
 
@@ -2799,7 +2799,7 @@ def refused_this_way_before(
     a command the allowlist refuses is refused for what it *is*, and no edit
     anywhere in the workspace will change that.
 
-    Measured on run-ae4b717e's `specialist_backend_0`: `node -e "const pkg =
+    Measured on one run's `specialist_backend_0`: `node -e "const pkg =
     require(...)"` refused at 23:44:29 with a message naming the way round
     (put the code in a file, run the file, remove it), and sent again
     unchanged at 23:44:41. The agent had edited and deleted files in between,
@@ -2848,7 +2848,7 @@ def _is_a_standing_refusal(
 #: One command at a time per workspace.
 #:
 #: Parallel execution mode fans a milestone's specialists out to run at once,
-#: and they share one workspace. Measured on run-5696a52d, the first parallel
+#: and they share one workspace. Measured on one run, the first parallel
 #: run: three specialists issued `npm install` in `simple-to-do-list-app` at
 #: 04:54:23, to the second, and npm tore its own tree apart -
 #:
@@ -2911,7 +2911,7 @@ def _where_the_files_it_named_actually_are(
     run from the wrong directory got advice about the command instead of the
     location.
 
-    Measured live on run-df4dc6f5's `specialist_ui_ux_4`, four calls in 36
+    Measured live on one run's `specialist_ui_ux_4`, four calls in 36
     seconds:
 
         09:00:16  node --test main.test.js storage.test.js   wd=(none)  exit 1
@@ -3037,7 +3037,7 @@ def _a_task_declared_at_the_top_level(text: str, task: str) -> bool:
     A manifest of `{"test": "node --test ./tests"}` is answered by `npm test`
     with `Missing script: "test"`, which is true and reads as though the name
     were absent. It is present, one level too high, and that is a different
-    correction from adding it. Seen in the stored workspaces of run-130deeef.
+    correction from adding it. Seen in the stored workspaces of one run.
     """
     try:
         document = json.loads(text)
@@ -3198,7 +3198,7 @@ def _the_tasks_this_project_defines(
     the workspace, and nothing put the two together, so a stage that guessed the
     command wrong got the runner's complaint instead of the answer.
 
-    Measured on run-e980310b, which failed its first sprint. `package.json` was
+    Measured on one run, which failed its first sprint. `package.json` was
     written as `{"type": "module"}` - no `scripts` table at all - and the test
     rounds ran the project's gating command three times:
 

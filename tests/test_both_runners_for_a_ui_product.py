@@ -6,7 +6,7 @@ stack selector chose the built-in runner alone while the architect, reading
 the same environment description, chose Playwright - and the architecture
 reviewer then reported the two documents as a contradiction.
 
-Seen live on run-83c41ea1, whose first architecture review opened with:
+Seen live on one run, whose first architecture review opened with:
 
     technology_stack.md selects 'node --test' as the testing framework. The
     technical_specification.md (testing section and ADR-003) selects
@@ -16,7 +16,7 @@ Neither stage was wrong. The environment description told the selector to
 prefer a runner the runtime provides, and told it that Playwright is the
 required way to test frontend UI - and never said how those combine. The
 answer is both, which is what the delivered products actually contain:
-run-ed05e20e shipped `app.test.mjs` under `node --test` and `app.spec.js`
+One run shipped `app.test.mjs` under `node --test` and `app.spec.js`
 under Playwright, and passed both.
 """
 

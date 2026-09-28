@@ -5,7 +5,7 @@ invoked inside a stage had none, so it ran on LangGraph's default.
 
 That matters because every guard the workflow has - the structured-response
 retry, the repeat guard, the approval ceiling - is checked when a stage *ends*.
-A stage that never ends meets none of them. Measured on run-2192f23b: the
+A stage that never ends meets none of them. Measured on one run: the
 principal architect spent twenty-two minutes and 184 events printing the same
 specification into the conversation and re-reading the same three documents,
 with zero restarts recorded. The only ceiling it would have met is the Celery
@@ -144,7 +144,7 @@ def test_the_answer_is_read_back_off_the_checkpoint():
     continues and only the ceiling ends it - while the answer sits in the
     conversation the whole time.
 
-    Measured on run-2192f23b: forty minutes, 266 events, every cycle containing
+    Measured on one run: forty minutes, 266 events, every cycle containing
     a complete specification object printed as a chat message.
     """
     agent = _Spun([

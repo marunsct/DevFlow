@@ -201,7 +201,7 @@ def test_the_resume_after_an_approval_carries_the_run_id_too() -> None:
 
     write_artifact, edit_artifact and run_terminal_command all pause for a
     decision and then run when the run resumes. A resume config without the run
-    id makes exactly the tools that change something invisible: on run-c150cb2e
+    id makes exactly the tools that change something invisible: on one run
     the event stream recorded 47 tool calls and the transcript 7, all read-only.
 
     The previous fix put both *inner* invocations behind one builder and a test

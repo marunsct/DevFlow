@@ -1,6 +1,6 @@
 """Test files the project's own `npm test` will not execute.
 
-run-04576307 reached its third milestone round with seven test files -
+One run reached its third milestone round with seven test files -
 `app.test.mjs` and six standalone assertion scripts named `test_add_task.mjs`,
 `test_delete_task.mjs`, `test_edit_task.mjs`, `test_filter_tasks.mjs`,
 `test_persistence.mjs` and `test_toggle_task.mjs`, 3,845 bytes of real

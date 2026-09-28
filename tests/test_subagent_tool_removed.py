@@ -5,7 +5,7 @@ one: each is a single stage with one structured answer, its filesystem tools
 are narrowed to `ls`, `read_file`, `glob` and `grep`, and every mutating call
 is gated. `task` arrived with none of that.
 
-Measured on run-d6369866's `scrum_master`. The stage produced a valid sprint
+Measured on one run's `scrum_master`. The stage produced a valid sprint
 plan at 15:23:30, then in the same turn called `task`, and the subagent it
 spawned ran `glob {'pattern': '**/*'}` 835 times over eleven and a half
 minutes - 802 tool calls in one stage against 21 assistant messages, with zero

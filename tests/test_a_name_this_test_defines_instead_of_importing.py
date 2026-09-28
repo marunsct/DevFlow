@@ -9,7 +9,7 @@ is why that is not enough - `crud.test.mjs` and `filter.test.mjs` each defined
 their own `loadTasks` beside an import of the module that exports it, the
 finding was reported at the end of two consecutive sprints, and both files
 still carried it at the end of the third. Five more workspaces end this way,
-run 1ae7671d with eight files.
+one run with eight files.
 
 Unlike the findings 4t says cannot move earlier, the evidence is all present
 at the write: the suite names a relative module, so that module is on disk.

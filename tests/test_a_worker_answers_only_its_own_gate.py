@@ -1,6 +1,6 @@
 """A parallel worker must not resume a sibling's paused inner thread.
 
-Measured on run-a8ad0ef0. One `call_id` appeared three times in the transcript
+Measured on one run. One `call_id` appeared three times in the transcript
 under three different stage names, with three `tool_result` records microseconds
 apart - `specialist_ui_ux_1` got `"status": "edited"` and the other two got
 "already contains the text you asked to put there", because the first execution
@@ -221,7 +221,7 @@ class TestTheStateAWorkerReallySees:
     the router fans out, so the `awaiting_approval:<name>` marker every fixture
     above carries is gone by the time a worker runs. The first version of the
     ownership check read that marker, matched nobody, and took the decision
-    away from its owner as well - the run-6c7721c4 livelock.
+    away from its owner as well - the one run livelock.
     """
 
     @staticmethod

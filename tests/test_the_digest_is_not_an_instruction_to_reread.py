@@ -5,7 +5,7 @@ is right for the prefix cache - everything before it is unchanged from call to
 call - but the last message is the one a model answers, and it ended "Read the
 files you actually need." After a tool result, that is an instruction to read.
 
-It was obeyed. On run-ed19fdbb `specialist_backend_1` wrote `app.js` at 06:26:02
+It was obeyed. On one run `specialist_backend_1` wrote `app.js` at 06:26:02
 and then opened seven of its next nine turns as though arriving for the first
 time - "Both files already exist from a prior run. Let me read ... and verify" -
 re-issuing the same `read_file` pair, `wc -l`, `node --check` and `grep

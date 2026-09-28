@@ -1,7 +1,7 @@
 """Files written separately have to refer to each other.
 
 Each specialist writes its own files and each is defensible alone. Nothing
-checked whether they connect, and that is where run-95ca3f72's milestone 1
+checked whether they connect, and that is where one run's milestone 1
 broke: a stylesheet targeting an id no page declared, and a module no page
 loaded, both passed four review stages.
 
@@ -24,7 +24,7 @@ def _workspace(tmp_path, files: dict[str, str]):
 
 
 def test_a_stylesheet_targeting_a_missing_id_is_reported(tmp_path):
-    """run-95ca3f72: `#app-placeholder` styled, `#app` written."""
+    """One run: `#app-placeholder` styled, `#app` written."""
     root = _workspace(
         tmp_path,
         {
@@ -56,7 +56,7 @@ def test_a_hex_colour_is_not_an_id_selector(tmp_path):
 
 
 def test_a_script_nothing_loads_is_reported(tmp_path):
-    """run-95ca3f72: `script.js` exported a function; no page had a script tag."""
+    """One run: `script.js` exported a function; no page had a script tag."""
     root = _workspace(
         tmp_path,
         {
@@ -116,7 +116,7 @@ def test_a_remote_reference_is_not_checked(tmp_path):
 
 
 def test_esm_source_under_a_commonjs_test_config_is_reported(tmp_path):
-    """run-95ca3f72: `export function` with `testEnvironment: 'node'`, no transform."""
+    """One run: `export function` with `testEnvironment: 'node'`, no transform."""
     root = _workspace(
         tmp_path,
         {
@@ -206,7 +206,7 @@ def test_the_reviewer_is_given_the_checks(tmp_path):
 # --- stack conformance ---------------------------------------------------
 #
 # Nothing downstream checked the code against the stack the run chose. On
-# run-64df2b20 the selection was Python / FastAPI / PostgreSQL / pytest, and
+# one run the selection was Python / FastAPI / PostgreSQL / pytest, and
 # the project directory held package.json with express and mongoose, a jest
 # suite, an index.ts and a FastAPI main.py. Three languages, a MongoDB driver
 # against a chosen PostgreSQL, and every test round running jest.
@@ -335,7 +335,7 @@ def test_the_reviewer_is_given_the_stack_conflicts(tmp_path):
 # --- size against the brief's cap ----------------------------------------
 #
 # A brief that caps the product - brief_low says "Maximum 500 lines of code" -
-# is a constraint no stage ever checked against what was built. run-18c0e34c
+# is a constraint no stage ever checked against what was built. One run
 # shipped 631 application lines, 391 of them CSS, and passed every review.
 # The reviewer holds the brief and can compare; it just needed someone to count.
 
@@ -406,12 +406,12 @@ def test_the_reviewer_receives_the_size(tmp_path):
 #
 # A manifest is read by tooling, by CI and by the next person. When it
 # disagrees with the project it sends all three somewhere wrong. Every case
-# below shipped in run-3da8dd91, which completed and passed every milestone
+# below shipped in one run, which completed and passed every milestone
 # review.
 
 
 def test_the_npm_placeholder_test_script_is_reported(tmp_path):
-    """The exact artefact that cost run-95ca3f72 its entire sprint."""
+    """The exact artefact that cost one run its entire sprint."""
     root = _workspace(
         tmp_path,
         {"package.json": '{"scripts": {"test": "echo \\"Error: no test specified\\" && exit 1"}}'},
@@ -445,7 +445,7 @@ def test_a_main_that_exists_is_not_reported(tmp_path):
 
 
 def test_a_test_package_declared_as_a_runtime_dependency_is_reported(tmp_path):
-    """run-3da8dd91 shipped jsdom under `dependencies` against a brief that
+    """One run shipped jsdom under `dependencies` against a brief that
     rules out external dependencies. The app loaded nothing; the manifest
     claimed otherwise."""
     root = _workspace(
@@ -491,7 +491,7 @@ def test_an_unparseable_manifest_is_reported_not_raised(tmp_path):
 def test_more_test_packages_are_recognised_as_dev_only(tmp_path, package):
     """A list of known names only covers the names on it.
 
-    run-cbd22a34's milestone reviewer found `linkedom` declared as a production
+    One run's milestone reviewer found `linkedom` declared as a production
     dependency and this check did not, because the name was not listed. The
     list grows when a run shows a gap.
     """
@@ -509,7 +509,7 @@ def test_more_test_packages_are_recognised_as_dev_only(tmp_path, package):
 def test_a_script_nothing_loads_is_not_counted_as_the_application(tmp_path):
     """The size report is the one number a reviewer judges the brief against.
 
-    Measured on run-61c5a5b6, against a brief capping the product at 500 lines:
+    Measured on one run, against a brief capping the product at 500 lines:
     the report said 901, of which 447 were `verify-milestone.mjs` and three
     abandoned cleanup scripts. The application was 454 - inside the cap. The
     reviewer would have been shown nearly double it.
@@ -573,7 +573,7 @@ def test_a_product_with_no_strays_reports_no_extra_bucket(tmp_path):
 def test_a_test_that_redefines_the_code_is_reported(tmp_path):
     """A green suite that proves nothing.
 
-    Measured on run-2b5def74: `app.js` called `init()` at module scope, so the
+    Measured on one run: `app.js` called `init()` at module scope, so the
     testing specialist wrote "it cannot be directly imported in a headless Node
     environment. Instead, this test file defines the same pure logic functions
     inline" - and six tests passed against a copy.
@@ -650,7 +650,7 @@ def test_the_report_separates_code_from_blank_and_comment(tmp_path):
     """A brief capping "lines of code" means the code lines.
 
     Reporting only the raw count left the reviewer comparing a number against a
-    limit that means something else: on run-2b5def74 nothing could say whether
+    limit that means something else: on one run nothing could say whether
     609 raw lines broke a 500-line cap. They did not - 315 of them were code.
     """
     from app.analysis.integration_checks import summarise_integration
@@ -726,7 +726,7 @@ def test_an_application_embedded_in_html_is_reported(tmp_path):
     suite reported elsewhere - one step earlier, and for a reason nobody can
     fix after the fact.
 
-    Measured on run-2f252e4e: a specification describing pure functions, a
+    Measured on one run: a specification describing pure functions, a
     storage adapter and an `init()` - correctly - with all of it placed in a
     single `index.html`, "No external files, no build step, no module system".
     """
@@ -779,7 +779,7 @@ def test_an_undeclared_module_type_is_not_a_finding_on_this_runtime(tmp_path):
     reports `# tests 1 # pass 1 # fail 0`. Node has detected module syntax in a
     typeless `.js` since 20.19.
 
-    The original evidence from run-da6c5e19 was the *agent's* note in its own
+    The original evidence from one run was the *agent's* note in its own
     test file, "we can't directly import app.js", recorded here as Node's
     behaviour. It was the agent's misdiagnosis, and the check enshrined it.
 
@@ -826,7 +826,7 @@ def test_an_mjs_test_is_a_test(name: str):
     exactly what a testable design produces - and the pattern matched only
     `.js`, so those files were reported as orphaned probes nothing runs.
 
-    Measured on run-da6c5e19: the two files that proved the copy-test fix had
+    Measured on one run: the two files that proved the copy-test fix had
     worked were the two the report told the reviewer to delete.
     """
     from app.analysis.file_kinds import is_application
@@ -845,7 +845,7 @@ def test_an_mjs_application_file_is_not_a_test(name: str):
 
 
 def test_a_class_nothing_applies_is_reported(tmp_path):
-    """Found on run-da6c5e19's second sprint by a reviewer reading three files
+    """Found on one run's second sprint by a reviewer reading three files
     against each other: `.task-text` and `.empty-message` were styled and used
     by nothing."""
     from app.analysis.integration_checks import summarise_integration
@@ -885,7 +885,7 @@ def test_a_class_added_at_runtime_is_not_reported(tmp_path):
 
 
 def test_the_check_is_conservative_about_common_words(tmp_path):
-    """A word used for another reason keeps its rule. On run-da6c5e19 `.active`
+    """A word used for another reason keeps its rule. On one run `.active`
     was genuinely dead, and this check correctly left it alone because "active"
     is one of that product's filter names - the reviewer caught it instead."""
     from app.analysis.integration_checks import summarise_integration
@@ -908,7 +908,7 @@ def test_a_document_naming_a_file_that_does_not_exist_is_reported(tmp_path):
     """A document is the one artefact nobody executes, so a wrong instruction
     survives every test round and reaches whoever tries to use the product.
 
-    Measured on run-cbb1a5fc: `docs/deployment.md` said "Run with
+    Measured on one run: `docs/deployment.md` said "Run with
     `node server.js`" for a project containing app.js, app.test.mjs,
     index.html, package.json and style.css. Four milestone reviews read that
     document and none tried the command.
@@ -1006,7 +1006,7 @@ def test_a_project_with_no_tests_is_not_asked_for_a_test_script(tmp_path):
 def test_importing_a_module_and_shadowing_its_exports_is_still_a_copy(tmp_path):
     """The defect wearing an import.
 
-    Measured on run-5d83e946: `script.test.mjs` opened with "Inline copies of
+    Measured on one run: `script.test.mjs` opened with "Inline copies of
     the pure functions (mirrors script.js exactly)", ran every behavioural
     assertion against those copies, and closed with nine tests that did import
     the real module - to assert `typeof mod.addTask === 'function'` and nothing
@@ -1087,7 +1087,7 @@ def test_a_renamed_import_binds_the_name_on_the_right(tmp_path):
 def test_a_product_over_its_declared_budget_is_reported(tmp_path):
     """The comparison the harness had both operands for and did not make.
 
-    Measured on run-1d1b6c9c: the milestone review was handed `550 of them
+    Measured on one run: the milestone review was handed `550 of them
     code`, directly under a sentence saying that is the number a cap means. The
     cap appears six times in that run's own documents, once as the acceptance
     criterion "Total source code stays within the 500-line limit". The review
@@ -1132,7 +1132,7 @@ def test_a_product_inside_its_budget_says_nothing(tmp_path):
 
 
 def test_tests_do_not_count_against_the_product_budget(tmp_path):
-    """A brief capping "lines of code" does not mean the suite. run-18c0e34c
+    """A brief capping "lines of code" does not mean the suite. One run
     was 631 lines of application and 1,558 of tests the round had installed."""
     from app.analysis.integration_checks import summarise_integration
 
@@ -1212,13 +1212,13 @@ def test_the_budget_check_and_the_size_report_count_the_same_lines(tmp_path):
 def test_a_test_that_opens_a_cwd_relative_path_is_reported(tmp_path):
     """The defect that passes every check the workflow makes.
 
-    On run-9ff00d5b the suite read `'./todo-app/index.html'`, and the test
+    On one run the suite read `'./todo-app/index.html'`, and the test
     round ran `node --test todo-app/app.test.mjs` from the workspace root,
     where that resolves. It passed eight times. From inside the project
     directory - which is where anyone handed the project runs it - every test
     fails with ENOENT.
 
-    run-5d83e946 hit the same shape with `path.resolve('./script.js')`, the
+    One run hit the same shape with `path.resolve('./script.js')`, the
     test round happened to run from the other directory, the tests failed, and
     a defect-fix round corrected it. The difference between a caught defect and
     a shipped one was which directory the command happened to use.
@@ -1285,7 +1285,7 @@ def test_a_referenced_file_that_is_empty_is_reported(tmp_path):
     loads an empty script does nothing. Both look correct to a check that only
     asks whether the file is there.
 
-    Measured on run-5f4cdd55: index.html linked `style.css` on line 6, the file
+    Measured on one run: index.html linked `style.css` on line 6, the file
     was zero bytes, the reference check passed, and the size report counted it
     as one line of the product.
     """
@@ -1399,7 +1399,7 @@ def test_a_ui_that_already_has_playwright_is_left_alone(tmp_path):
 # ---------------------------------------------------------------------------
 # A suite the gating command cannot run at all.
 #
-# Measured on run-cac07d52, which COMPLETED. Its `scripts.test` is
+# Measured on one run, which COMPLETED. Its `scripts.test` is
 # `node --test tests/` and collected 34 passing tests, while
 # `tests/app.test.ts` held five Playwright tests reachable only through
 # `scripts["test:e2e"]`. No stage in this pipeline runs anything but
@@ -1530,7 +1530,7 @@ def test_every_blocking_marker_still_appears_in_a_real_message():
 # A blocking finding against a suite that demonstrably passes, whose remedy
 # would have broken it.
 #
-# Measured live on run-ed05e20e. `task-manager/app.spec.js` opens
+# Measured live on one run. `task-manager/app.spec.js` opens
 #
 #     import { test, expect } from '@playwright/test';
 #
@@ -1673,7 +1673,7 @@ class TestABrowserHelperIsNotACopy:
 
     `addTask(page, title)` types into a form and clicks a button.
     `addTask(title, description)` returns an object. Importing the second in
-    place of the first would defeat the test, which is why run 35424714's
+    place of the first would defeat the test, which is why one run's
     milestone reviewer rebutted this finding in its own words: "importing the
     JS module would defeat the purpose of end-to-end verification and is not
     required or expected". Run 86a60de1 was reported for the same thing.

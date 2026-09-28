@@ -1,6 +1,6 @@
 """Asking for fewer lines of a file you have read is not a new read.
 
-Measured on run-d483f554's `specialist_ui_ux_0`, reading the 391-line
+Measured on one run's `specialist_ui_ux_0`, reading the 391-line
 `task-manager/app.js` it had written itself two minutes earlier:
 
     reads  2-11  whole file   withheld from the 4th on   1,111 bytes

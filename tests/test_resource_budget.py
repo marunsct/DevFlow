@@ -1,6 +1,6 @@
 """Refuse a command that would take the run down, instead of being killed.
 
-Run-cbd22a34 was OOM-killed twice. Neither ended as a failure: the kernel kills
+Run-a000000c was OOM-killed twice. Neither ended as a failure: the kernel kills
 the process that would have written the error, so the run was simply orphaned,
 and the second kill happened at 8 GiB after the limit had been raised from 4 -
 because the multiplier was wrong, not the ceiling. A test runner forked one

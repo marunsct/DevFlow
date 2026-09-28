@@ -5,7 +5,7 @@ say that the file declares nothing at all, and does not say that the fix is one
 line in it. The names the runner would have accepted are in the workspace, and
 nothing put the two together.
 
-Measured on run-e980310b, which failed its first sprint. `package.json` was
+Measured on one run, which failed its first sprint. `package.json` was
 written as `{"type": "module"}` - no `scripts` table - and the project's gating
 command ran in all three test rounds:
 
@@ -329,7 +329,7 @@ class TestANameInTheWrongPlace:
     """`{"test": "node --test"}` is answered `Missing script: "test"`.
 
     True, and it reads as though the name were absent. It is present, one level
-    too high. Found in the stored workspace of run-130deeef; the correction is
+    too high. Found in the stored workspace of one run; the correction is
     not the one the plain missing-name note asks for.
     """
 

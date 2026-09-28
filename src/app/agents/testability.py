@@ -7,14 +7,14 @@ means reconstructing a DOM first.
 
 Measured across four runs of the same brief. The app entry point called
 `document.getElementById(...)` and `form.addEventListener(...)` at the top
-level, so on run-61c5a5b6 the testing specialist loaded it through `node:vm`
+level, so on one run the testing specialist loaded it through `node:vm`
 with a hand-written DOM: five rewrites of the test file to get
 `addEventListener`, then `classList`, then element identity right, and a
-defect-fix round afterwards. run-304add54 failed outright on the same problem.
-run-cbd22a34 paid for it in dependencies instead - vitest and jsdom took the
+defect-fix round afterwards. One run failed outright on the same problem.
+One run paid for it in dependencies instead - vitest and jsdom took the
 workspace from 46 MB to 221 MB against a brief that asked for none.
 
-run-2b5def74 traced it to the decision that causes it. Its technical
+One run traced it to the decision that causes it. Its technical
 specification said, in as many words, "No module system (no ES modules, no
 CommonJS) - single global scope", and two lines later "Tests run with a single
 command: node --test tests/". Those cannot both hold: a runner can only test
@@ -24,14 +24,14 @@ reviews accepted it. The specialists were not careless - they were building to
 a specification that had already ruled testing out, to honour a "no external
 dependencies" constraint that native modules never breached.
 
-run-2f252e4e reached the same dead end from the other direction, one run
+One run reached the same dead end from the other direction, one run
 later, with the structural half of this rule already in force: its
 specification correctly described pure functions, a storage adapter and an
 `init()`, and then put all of it inside a `<script>` tag in a single
 `index.html` - "No external files, no build step, no module system". Getting
 the shape right does not help if nothing can open the file.
 
-run-da6c5e19 got everything else right and still could not be tested. Its
+One run got everything else right and still could not be tested. Its
 specification asked for ES modules and a guarded bootstrap; its `app.js`
 delivered both - `export { logic, storage, ui }` under
 `if (typeof document !== "undefined") init();`. No `package.json` declared the
@@ -40,7 +40,7 @@ invisible, and the testing specialist wrote "we can't directly import app.js",
 copied the logic, and passed. Every part correct except the one line that tells
 the runtime what kind of file it is reading.
 
-run-2b5def74 also shows why the second half matters as much as the first. With this
+One run also shows why the second half matters as much as the first. With this
 rule in force the application came back correctly shaped - pure functions
 taking their arguments, a storage adapter, every DOM reference inside `init()`.
 But `init()` was still called bare at module scope and nothing was exported, so
@@ -49,7 +49,7 @@ the module still could not be imported, and the testing specialist wrote:
 test file defines the same pure logic functions inline." Six tests passed
 against a copy of the code. `analysis.integration_checks` now detects that.
 
-run-5d83e946 had every structural part of this rule right and copied the code
+One run had every structural part of this rule right and copied the code
 anyway. `script.js` exported eight functions under a guarded bootstrap, a
 `package.json` declared `{"type": "module"}`, and `script.test.mjs` imported
 the real module nine times - to assert `typeof mod.addTask === 'function'` and

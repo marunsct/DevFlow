@@ -424,7 +424,7 @@ class TestASuiteIsNotTheProduct:
     notice if it stopped. They read different files on purpose, and neither may
     borrow the other's evidence.
 
-    The same mistake in a different check gave run b0db10b1's dead filter
+    The same mistake in a different check gave one run's dead filter
     buttons an alibi from the Playwright spec that located them.
     """
 

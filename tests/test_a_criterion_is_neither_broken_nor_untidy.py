@@ -9,7 +9,7 @@ not a blocking one" - in the same report whose size section says, of the same
 number, "This is a stated acceptance criterion and a reviewer should block on
 it". A reviewer reads both and is left to guess which the harness means.
 
-Seen on run-9f14d645 (538 against 500) and run-b6436e36 (580 against 500).
+Seen on one run (538 against 500) and one run (580 against 500).
 """
 
 from __future__ import annotations

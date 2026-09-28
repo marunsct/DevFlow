@@ -1,6 +1,6 @@
 """A test runner installed over the one the stack chose is a finding.
 
-Measured on run 8d28ee3f. `stack_selector` chose "Custom JS assert tests",
+Measured on one run. `stack_selector` chose "Custom JS assert tests",
 reasoning "no node test runners available, avoiding large dependencies".
 `specialist_ui_ux_0` installed jest anyway and spent four `npm test` calls on
 `TextEncoder is not defined` - a jsdom failure belonging to the runner it had

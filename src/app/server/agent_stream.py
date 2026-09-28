@@ -214,7 +214,7 @@ def publish_stage_outcome(
 
     A stage's answer reaches the run through its structured response, and the
     structured response is not a message - so nothing in the event stream
-    carries it. The effect on run-5d83e946 was that sprint 2's milestone was
+    carries it. The effect on one run was that sprint 2's milestone was
     rejected and the reasons appeared nowhere an operator could see: the sprint
     simply went round again. The reasons existed, in the next stage's prompt,
     which is not somewhere anyone can look.

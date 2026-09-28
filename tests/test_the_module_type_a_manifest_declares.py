@@ -10,7 +10,7 @@ product loaded under Node again.
 
 Seven of the fifty-one stored workspaces end the other way round - `"type":
 "module"` over a file still calling `require` - which is 8 of 56 manifests
-once run 9bd3a091 is counted.
+once one run is counted.
 
 A note and not a refusal: flipping the type is the legitimate first step of a
 conversion, and refusing it would leave no order in which the work could be

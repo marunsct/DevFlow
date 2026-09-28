@@ -80,7 +80,7 @@ def constraint_lines(document_text: str) -> list[str]:
 
     Sections first, because a brief that has a constraints heading has said
     where they are. The loose pattern then adds restrictions stated elsewhere -
-    run 0c5aabdb's brief also says "Single-page application" under a heading
+    one run's brief also says "Single-page application" under a heading
     this would find, but other briefs bury the same thing in an overview.
     """
     if not document_text:
@@ -207,7 +207,7 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     """Every package name the scripts under `project` import.
 
     A bare specifier that is not a Node builtin is a dependency whether or not
-    anything declared it - which is how run 9bd3a091 imported `jsdom` into
+    anything declared it - which is how one run imported `jsdom` into
     three test files under an empty `devDependencies`, a full `node_modules`
     and a lockfile of thirty-nine packages.
     """
@@ -248,7 +248,7 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     `file_kinds` classifies it as `config` rather than `test` - correctly, it is
     not a test - so a check that asked only `is_test` saw the runner's config as
     product code and reported the package as a shipped dependency. Measured on
-    run-519a9d8a, whose milestone review then filed "package.json declares
+    one run, whose milestone review then filed "package.json declares
     @playwright/test, violating the brief" as BLOCKING and ended the run, three
     remediation rounds later, over a devDependency that ships to nobody. The
     config belongs to the suite, not the product: nothing in `dependencies`
@@ -284,7 +284,7 @@ def what_the_brief_forbids_that_is_there(
 
     `what_the_brief_asked_for_that_is_missing` checks one direction - the
     brief asks for a page, the product has none. Nothing checked the other,
-    and it is the direction run 0c5aabdb failed in: a brief reading "No
+    and it is the direction one run failed in: a brief reading "No
     external dependencies beyond basic HTML/CSS/JS" against a product built on
     Express with a 32KB lockfile.
 
@@ -304,7 +304,7 @@ def what_the_brief_forbids_that_is_there(
     Only the product's dependencies are reported. `devDependencies` are not
     shipped - `npm ci --omit=dev` in a production image installs none of them -
     so a test runner sitting there breaks no constraint, and a package imported
-    only by test files is treated the same way. Measured on run-2d9066e2, which
+    only by test files is treated the same way. Measured on one run, which
     spent all three of its remediation attempts on `@playwright/test` in
     devDependencies against a brief reading "No external dependencies beyond
     basic HTML/CSS/JS" and failed without a product defect in it. The
@@ -330,7 +330,7 @@ def what_the_brief_forbids_that_is_there(
             # The brief constrains what ships, and only that. `devDependencies`
             # are the developer's: they are not installed by `npm ci --omit=dev`
             # in a production image and never reach the user, so a test runner
-            # sitting there violates nothing. Measured on run-2d9066e2, which
+            # sitting there violates nothing. Measured on one run, which
             # spent all three remediation attempts on `@playwright/test` in
             # devDependencies against a brief reading "No external dependencies
             # beyond basic HTML/CSS/JS" and failed without a product defect.

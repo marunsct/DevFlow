@@ -4,7 +4,7 @@ The sandbox points HOME at `.agent-home` inside the workspace so package caches
 land per-run. In container mode that is not a choice - only the workspace is
 mounted, so anything a command writes must be inside it.
 
-Measured on run-61c5a5b6: 42 tool results across ten stages carried
+Measured on one run: 42 tool results across ten stages carried
 `.agent-home`, every `ls /` opened with it, and one `npm install` left 26 cache
 blobs with sha512 filenames. `list_repository_files` skipped it; `ls`, `glob`
 and `grep` come from the deep-agent backend and did not.
@@ -134,7 +134,7 @@ def backend(tmp_path):
 def test_an_invented_prefix_is_served_not_refused(backend) -> None:
     """The guesses agents actually make, from the stored runs.
 
-    On run-3f8e387d - the run that died of gate exhaustion - 72 reads failed
+    On one run - the run that died of gate exhaustion - 72 reads failed
     and 56 of them (77%) named a file that was in the workspace under a
     different path. The error named only the path the agent had invented, so
     it invented another.
@@ -166,14 +166,14 @@ def test_an_invented_prefix_is_served_not_refused(backend) -> None:
 
 
 def test_a_project_file_named_at_the_root_is_located(backend) -> None:
-    """`/app.js` when the file is `todo-app/app.js` - run-2f252e4e made this
-    call 21 times and run-3f8e387d 87 times."""
+    """`/app.js` when the file is `todo-app/app.js` - one run made this
+    call 21 times and one run 87 times."""
     assert "/todo-app/app.js" in backend.read("/app.js").error
 
 
 def test_a_missing_directory_is_located_too(tmp_path) -> None:
     """`ls` misses directory names, which have no extension to match on:
-    run-2eb3aa24 asked for `/simple-to-do-list-app` four times."""
+    One run asked for `/simple-to-do-list-app` four times."""
     (tmp_path / "nested/todo-app").mkdir(parents=True)
     backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
 
@@ -211,7 +211,7 @@ def test_the_agent_s_own_cache_is_never_suggested(tmp_path) -> None:
 
 
 def test_an_unchanged_repeat_read_is_told_so(backend) -> None:
-    """Measured on run-44e9fc83's `specialist_backend_1`: 39 tool calls, 17 of
+    """Measured on one run's `specialist_backend_1`: 39 tool calls, 17 of
     them the same `read_file` of `app.js` at the same range, in runs of six,
     five and four, two to three seconds apart, with no write between them."""
     first = backend.read("/todo-app/app.js")
@@ -236,9 +236,9 @@ def test_the_content_comes_back_while_the_note_is_only_a_note(backend) -> None:
 def test_the_bytes_are_withheld_once_the_note_has_been_ignored(backend) -> None:
     """Hint, note, refuse - the escalation this codebase arrives at everywhere.
 
-    Measured on run-84e05d4b's `specialist_backend_1`: eleven byte-identical
+    Measured on one run's `specialist_backend_1`: eleven byte-identical
     reads of `/docs/architecture_review.md` in one stage, each answered with a
-    note saying so and each followed by another. run-44e9fc83 did seventeen of
+    note saying so and each followed by another. One run did seventeen of
     `app.js`.
     """
     from app.agents.workspace_backend import READS_BEFORE_WITHHOLDING
@@ -338,7 +338,7 @@ def test_different_ranges_of_one_file_are_counted_apart(tmp_path) -> None:
 
 
 def test_a_range_already_served_is_told_so(tmp_path) -> None:
-    """The exact sequence from run-6412366b's `specialist_ui_ux_0`, reading a
+    """The exact sequence from one run's `specialist_ui_ux_0`, reading a
     984-line index.html that had not changed since it was written:
 
         offset=  0 limit=100   100 new lines
@@ -418,7 +418,7 @@ def test_a_wrong_project_guess_is_told_the_real_name(tmp_path) -> None:
     Measured across six runs, 53 failed listings of a directory that never
     existed while the marker sat on disk the whole time: ae4b717e 16,
     37476645 11, 304add54 8, db3a4a0b 8, 2eb3aa24 5, d6369866 5.
-    run-ae4b717e's ui specialist asked for `task-manager-ui` eleven times and
+    One run's ui specialist asked for `task-manager-ui` eleven times and
     `task-manager` - the real one - four.
     """
     from app.tools.repository import PROJECT_MARKER
@@ -464,7 +464,7 @@ def test_the_real_name_is_never_hinted_at_itself(tmp_path) -> None:
 
 
 def test_the_same_file_under_two_spellings_shares_one_count(tmp_path) -> None:
-    """Measured on run-f0630b10's `specialist_ui_ux_0`.
+    """Measured on one run's `specialist_ui_ux_0`.
 
     It read one `index.html` 54 times, alternating between
     `task-manager/index.html` (36 reads) and `/task-manager/index.html` (17).
@@ -516,7 +516,7 @@ def test_a_file_it_cannot_stat_is_never_called_unchanged(tmp_path) -> None:
 def test_the_notice_comes_before_the_content(tmp_path) -> None:
     """A notice after the payload is read last or not at all.
 
-    Measured on run-3c0c31d2: `technical_lead` read one 3,847-character
+    Measured on one run: `technical_lead` read one 3,847-character
     `milestone_plan.md` seven times, and the notice fired from the second read
     onward - appended after all 3,847 characters. Six of those seven calls were
     made having already been told.

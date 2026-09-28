@@ -1,6 +1,6 @@
 """The ids and data attributes a script reaches for, against what pages declare.
 
-run-499c771a is the first run of this harness to reach `complete`. It shipped a
+One run is the first run of this harness to reach `complete`. It shipped a
 to-do app that could not add a task and rendered nothing:
 
     app.js:    document.getElementById("task-form")

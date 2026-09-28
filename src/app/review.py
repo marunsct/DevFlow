@@ -28,7 +28,7 @@ def _max_review_reruns() -> int:
     revision, so the workflow pauses for a human.
 
     Configurable because the limit counts *rejections*, not failures to improve,
-    and those are not always the same thing. On run-0b55ad49 all three were
+    and those are not always the same thing. On one run all three were
     spent on defects in the workflow itself - a sandbox limit that broke every
     test, a prompt example that built the project in the wrong directory, two
     competing npm projects - each fixed between rejections. The budget was

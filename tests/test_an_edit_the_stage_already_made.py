@@ -1,6 +1,6 @@
 """A `find` this stage already replaced is answered with what replaced it.
 
-Measured on run f81808a4, `specialist_testing_3`. It sent one `find` six
+Measured on one run, `specialist_testing_3`. It sent one `find` six
 times - `t.equal(initial.length, 0, 'initial list is empty')` - varying the
 `replace` each time as it worked out the node:test assertion API. The edit
 succeeded once; the other five were answered with a character diff comparing

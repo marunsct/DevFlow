@@ -5,7 +5,7 @@ an identifier, where it stopped is not useful: the token is legal everywhere
 else, so the message reads as a misplaced brace and the edit that follows moves
 the problem to a new line instead of removing it.
 
-Measured on run-df4dc6f5's `specialist_testing_1`, which was refused eight times
+Measured on one run's `specialist_testing_1`, which was refused eight times
 over four minutes writing `main.js`:
 
     08:49:06  edit_artifact   Unexpected token 'delete'  on line 57

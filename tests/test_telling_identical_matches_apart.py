@@ -4,7 +4,7 @@
 and what surrounds it, so the agent can extend its `find` or use
 `replace_lines` instead. Both halves assumed one match per line.
 
-Measured on run-e980310b, where two stages sent `find: "}"` against a 40-line
+Measured on one run, where two stages sent `find: "}"` against a 40-line
 file and were answered:
 
     That text appears 12 times in 'simple-to-do-list-app/app.js', so it is
@@ -38,7 +38,7 @@ from app.tools.repository import (
     _where_each_match_starts,
 )
 
-#: run-e980310b's shape, reduced: one line holding three copies of the `find`,
+#: One run's shape, reduced: one line holding three copies of the `find`,
 #: and a fourth on a line of its own.
 THREE_ON_ONE_LINE = (
     "function a() {\n"
@@ -149,7 +149,7 @@ class TestTheMessageTheStageReceives:
     def test_the_list_and_the_count_agree_on_the_file_that_broke_the_run(
         self, tmp_path
     ):
-        """End to end, through the tool, on run-e980310b's actual shape."""
+        """End to end, through the tool, on one run's actual shape."""
         from app.tools.repository import RepositoryToolError, edit_approved_artifact
 
         root = tmp_path / "workspace"

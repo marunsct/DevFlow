@@ -4,7 +4,7 @@ Both read notices are about one file and both say what not to do. A stage
 that cycles three files reaches neither quickly, and neither ever says what
 it should do instead.
 
-Measured live on run-cac07d52: `specialist_ui_ux_0`, restarted on a fresh
+Measured live on one run: `specialist_ui_ux_0`, restarted on a fresh
 conversation, made 55 reads of which 50 were files the previous attempt had
 already read, cycling `index.html`, `app.js` and `styles.css` about a dozen
 times. Both per-file rungs fired - 24 notes and 19 withholdings across the

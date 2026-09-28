@@ -1,6 +1,6 @@
 """What a timed-out command is told depends on what this workspace has.
 
-Measured on run-35424714. `npx playwright test` timed out and was answered
+Measured on one run. `npx playwright test` timed out and was answered
 with "there is no browser to open a page with ... To check a page, read the
 file and assert on its contents from a test". Seven minutes later
 `npx playwright test --project=Desktop` ran 34 tests in the same sandbox, with

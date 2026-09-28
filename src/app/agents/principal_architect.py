@@ -204,7 +204,7 @@ def build_architecture_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -212,7 +212,7 @@ def build_architecture_request(
         # The brief's own constraints, quoted, before anything derived from
         # them. The whole document appears below and that was not enough: run
         # 0c5aabdb's specification said "Backend: Express server" with the
-        # brief in front of it, and runs d6297b2f and 551640d3 wrote "Use
+        # brief in front of it, and two runs wrote "Use
         # Node's built-in test runner with jsdom for DOM simulation" into a
         # specification for a brief reading "No external dependencies beyond
         # basic HTML/CSS/JS". The specialists that installed jsdom were
@@ -262,7 +262,7 @@ def build_architecture_revision_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -270,7 +270,7 @@ def build_architecture_revision_request(
         # The brief's own constraints, quoted, before anything derived from
         # them. The whole document appears below and that was not enough: run
         # 0c5aabdb's specification said "Backend: Express server" with the
-        # brief in front of it, and runs d6297b2f and 551640d3 wrote "Use
+        # brief in front of it, and two runs wrote "Use
         # Node's built-in test runner with jsdom for DOM simulation" into a
         # specification for a brief reading "No external dependencies beyond
         # basic HTML/CSS/JS". The specialists that installed jsdom were
@@ -290,7 +290,7 @@ def build_architecture_revision_request(
         "not asked for: a revision resolves the listed findings and changes "
         "nothing else. New sections, new features and new behaviours added "
         "here arrive unreviewed and under-specified, and the next review finds "
-        "them. On run-37476645 four consecutive reviews returned "
+        "them. Four consecutive reviews of one specification returned "
         "changes_required with 5, then 4, then 6, then 8 findings, escalating "
         "from minor to blocking, each round raising subjects the round before "
         "had not mentioned.\n\n"

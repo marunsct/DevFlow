@@ -230,8 +230,8 @@ def _max_concurrent_runs() -> int:
     server shared that server's queue and neither could know its latency was
     being caused by the other.
 
-    Observed on 2026-09-20. Orphan recovery resumed run 9c0fc48d at the moment
-    run 8904f87b was started, and both executed - throughput halved and the 524
+    Observed on 2026-09-20. Orphan recovery resumed one run at the moment
+    one run was started, and both executed - throughput halved and the 524
     rate rose, on a deployment whose model server answers one request at a time.
 
     Why Part I's probe needs this. That item derives a request timeout from a
@@ -466,7 +466,7 @@ MAX_LOOPS_ANSWERED_BY_DENIAL = 4
 """How many times a looping stage is answered before the run is ended.
 
 Ending the whole run was the first and only response, and it is the harshest
-available. Measured on run-130deeef: `specialist_backend_8` wrote
+available. Measured on one run: `specialist_backend_8` wrote
 `docs/blocker.md` five times - a perfectly reasonable document, written by a
 model that had correctly worked out it was blocked and had no other move - and
 that killed a run which had already completed a full sprint, a test round, a
@@ -534,7 +534,7 @@ def _repeat_is_a_loop(approval: Any) -> bool:
     attempts - `write_approved_artifact` reports exactly that, as `unchanged`.
 
     Re-running an identical *command* is the opposite: it is the build/fix cycle
-    working. On run-0b55ad49 `specialist_backend_1` ran `npm test`, read
+    working. On one run `specialist_backend_1` ran `npm test`, read
     `app.js`, ran it again, read four more files, ran it again - real diagnosis
     between every run, with the tests passing - and was stopped as a loop after
     five. Commands stay bounded by `MAX_GATES_PER_STAGE`, which is the right
@@ -709,7 +709,7 @@ class WorkflowRunner:
         A model server that is not there and one that is merely slow produce
         the same symptom: the first call blocks and the run sits at `running`.
 
-        Measured on run-18c0e34c: Docker Desktop wedged, the worker died, and
+        Measured on one run: Docker Desktop wedged, the worker died, and
         the run reported `running` at the same stage for about ten hours.
         Telling the operator which address failed turns that into a one-line
         fix.
@@ -1142,7 +1142,7 @@ class WorkflowRunner:
                 # A failed run must never be recorded with nothing to say. The
                 # graph's `failed_node` names the route it came from, and this is
                 # the second line of defence for any path that reaches here
-                # without one - run-0ea9181d was stored with a null error, and
+                # without one - one run was stored with a null error, and
                 # nothing in the row, the events or the log said why.
                 record.error = state.get("error") or (
                     None if stage == "complete" else
@@ -1230,7 +1230,7 @@ class WorkflowRunner:
                     signature = _approval_signature(approval)
                     # A read-only look at the workspace is approved and
                     # recorded, but does not spend the budget meant for writes
-                    # and builds. On run-3f8e387d a testing specialist used all
+                    # and builds. On one run a testing specialist used all
                     # 120 gates on `ls -la`, `find` and `cat` - work its ungated
                     # filesystem tools could have done - and was stopped before
                     # writing anything.
@@ -1297,7 +1297,7 @@ class WorkflowRunner:
                         else:
                             # What it kept doing is the part worth reporting.
                             # "Raise the ceiling" alone was the whole message,
-                            # and on run-db3a4a0b that was the wrong advice: the
+                            # and on one run that was the wrong advice: the
                             # stage ran `node test.js` over and over against a
                             # test whose assertion could not be satisfied, so a
                             # larger budget would only have bought more of it.
@@ -1306,7 +1306,7 @@ class WorkflowRunner:
                             if busiest[0] and busiest[1] > 2:
                                 # A command approval carries no artifact path, so
                                 # the path half is a placeholder. Prefer whichever
-                                # half actually says something: on run-3f8e387d
+                                # half actually says something: on one run
                                 # this read "<unknown path>, 21 times", which
                                 # names the repetition without naming the thing.
                                 path, notes = busiest[0]

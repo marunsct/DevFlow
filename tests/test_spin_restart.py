@@ -5,7 +5,7 @@ defensible reason: a stage that RETURNED without a structured response got
 three fresh conversations, and a stage that SPUN until the recursion limit got
 none - it failed the whole run on its first attempt.
 
-run-e9e7f48f died that way in `specialist_ui_ux_2` after 14 identical `grep`
+One run died that way in `specialist_ui_ux_2` after 14 identical `grep`
 calls, with three restarts unused, while the error it raised said in as many
 words that "a resume re-runs it on a fresh conversation".
 """

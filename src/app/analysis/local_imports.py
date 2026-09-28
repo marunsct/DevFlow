@@ -5,7 +5,7 @@
 are knowable too - they are right there on disk - and getting them wrong is the
 single most common way a test file fails in this harness.
 
-Measured on run-454adf22, where two of five tests failed and neither failure was
+Measured on one run, where two of five tests failed and neither failure was
 about the product:
 
     SyntaxError: The requested module './app.js' does not provide an export
@@ -79,7 +79,7 @@ def _elsewhere(project: Path, specifier: str, target: Path | None = None) -> lis
     matched `app.test.mjs` as well as `app.js`, so a broken `./app.cjs` in
     `app.test.mjs` was answered "There is a file of that name at app.js,
     app.test.mjs" - naming a file that is not of that name, and telling the
-    file to import itself. Measured on run d6297b2f's `defect_fix_1_0`, which
+    file to import itself. Measured on one run's `defect_fix_1_0`, which
     got exactly that note.
     """
     name = specifier.rstrip("/").rsplit("/", 1)[-1]

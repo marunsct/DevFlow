@@ -301,15 +301,15 @@ def test_the_brief_shows_no_filename_for_the_document() -> None:
     (`/app/data/uploads/brief_low_752e3b83.md`). Inside the agent every path
     resolves against a workspace rooted at "/", so reading it answers "not
     found" and writing it would build a mirror of the host layout inside the
-    workspace - which is what run-2f252e4e actually did.
+    workspace - which is what one run actually did.
 
-    Measured across run-2b5def74, run-da6c5e19 and run-5d83e946: the product
+    Measured across three runs: the product
     manager opens by trying to read that exact string and gets an error for its
     first tool call of the run. The rule was already stated one line below, for
     the repository's path; the document's was left as it was.
 
     That fix showed the upload's *basename* instead, on the reasoning that a
-    name was safe where a path was not. run-36eb1260 shows it was not: the
+    name was safe where a path was not. One run shows it was not: the
     stored basename carries an upload suffix, names nothing in a workspace
     rooted at "/", and `product_manager` spent its first two calls on
     `read_file` and then `glob` for that exact string. So no filename is shown

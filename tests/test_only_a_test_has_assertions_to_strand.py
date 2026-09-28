@@ -4,7 +4,7 @@
 application file, the stylesheet and the manifest that "this one's assertions
 never execute" and to "Add it to the script".
 
-Counted across the twelve stored transcripts plus run-d483f554: it fired 215
+Counted across the twelve stored transcripts plus one run: it fired 215
 times on files that are not tests and 41 times on files that are. `app.js`
 alone was told 83 times - and doing what it said would put the application
 file into `node --test`. Four firings in five were false, in every run.

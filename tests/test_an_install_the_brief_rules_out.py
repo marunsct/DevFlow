@@ -7,7 +7,7 @@ review; the module-system findings arrive a sprint later still. It enters at
 
 Eight of the twenty-nine recorded install commands add a named package to a
 project whose brief says "No external dependencies beyond basic HTML/CSS/JS":
-jsdom four times across runs 551640d3, 740edb6b and 84e05d4b, plus
+jsdom four times across three runs, plus
 jest-environment-jsdom and text-encoding in 8d28ee3f, and jsdom then jest in
 9bd3a091. The other twenty-one are a bare `npm install`, which adds nothing.
 
@@ -74,7 +74,7 @@ def test_a_test_scoped_install_is_not_the_product_the_brief_describes(
 ):
     """The recorded installs that carried a test-scope flag.
 
-    These were refused, and the refusal is what made run-519a9d8a worse: the
+    These were refused, and the refusal is what made one run worse: the
     model needed `@playwright/test` for the only suite that can exercise a real
     DOM, the brief's constraint governs the shipped product, and being refused
     it installed the package *without* the flag - leaving it in `node_modules`

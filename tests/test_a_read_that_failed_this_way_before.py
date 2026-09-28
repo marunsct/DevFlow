@@ -5,10 +5,10 @@ workspace backend keeps a better record for it, keyed on the file's identity as
 well as its bytes. But that record is only kept for reads that succeed, so a
 stage could ask for a file that is not there as often as it liked.
 
-Measured on run 0afef410's `specialist_backend_2`, whose task was to create
+Measured on one run's `specialist_backend_2`, whose task was to create
 `app.js`: two identical `read_file` calls for `/task-manager/app.js`, two
 identical `Error: File '/task-manager/app.js' not found`, and no notice of any
-kind. `edit_artifact` has had this note since run-9506d3ab.
+kind. `edit_artifact` has had this note since one run.
 """
 
 from __future__ import annotations

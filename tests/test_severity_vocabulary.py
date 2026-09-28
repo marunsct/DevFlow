@@ -1,6 +1,6 @@
 """One severity ladder behind four disagreeing vocabularies.
 
-run-0deeb8bf's `defect_fix_2_0` wrote a complete, correct defect report and
+One run's `defect_fix_2_0` wrote a complete, correct defect report and
 typed `"severity": "High"`. `High` is not in the Testing specialist's
 `Literal["blocking", "major", "minor"]` - though it is in the security
 reviewer's, and the same model plays both roles in one run. The whole answer

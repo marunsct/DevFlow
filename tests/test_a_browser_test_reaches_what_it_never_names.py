@@ -9,7 +9,7 @@ reads was not: it said flatly that a passing suite says nothing about them.
 A browser spec names `.edit-btn` and `page.locator`, never `editTask`, so
 every export the page reaches is missing from it by construction.
 
-Measured on run-07cd52ae, which shipped `editTask` and a Playwright test
+Measured on one run, which shipped `editTask` and a Playwright test
 `test('edits a task title')` that clicks the edit button, waits for the input
 and checks the new title. The finding correctly said no test mentions
 `editTask`, and then told the reviewer a passing suite said nothing about it.

@@ -100,7 +100,7 @@ def test_another_runner_is_left_alone(project):
 
 
 def test_a_badly_named_test_is_still_caught_under_a_bare_command(tmp_path):
-    """The original finding, which must keep working: run-04576307's six files."""
+    """The original finding, which must keep working: one run's six files."""
     app = tmp_path / "app"
     app.mkdir()
     (app / "package.json").write_text(json.dumps({"scripts": {"test": "node --test"}}))

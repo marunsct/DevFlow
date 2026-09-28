@@ -1,7 +1,7 @@
 """Controls on the page, and nothing anywhere that operates them.
 
 `_page_hooks_that_do_not_exist` asks whether the ids a script reaches for
-exist. This asks the other direction, and run 0afef410 completed on it.
+exist. This asks the other direction, and one run completed on it.
 
 Its final sprint - "Finalize code, documentation, test coverage, and prepare
 for deployment" - reduced `app.js` from 6,388 bytes to 2,345 by removing every
@@ -37,7 +37,7 @@ PAGE = """<!DOCTYPE html>
 </body></html>
 """
 
-#: What run 0afef410 shipped: data functions, no DOM.
+#: What one run shipped: data functions, no DOM.
 PURE = """const STORAGE_KEY = "tasks";
 function getTasks() { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; }
 function addTask(text) { return { text }; }

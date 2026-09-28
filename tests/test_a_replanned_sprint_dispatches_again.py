@@ -15,7 +15,7 @@ stage name carries no plan identity - it is `specialist_{role}_{index}` - so the
 guard could not tell "already done in this fan-out" from "done in the sprint
 before".
 
-Measured on run-83bd156a, whose three milestone plans produced the identical
+Measured on one run, whose three milestone plans produced the identical
 three names, because the lead assigns ui_ux, backend and testing in that order
 every time:
 
@@ -150,7 +150,7 @@ class TestARePlannedSprintDoesTheWork:
         is worse than skipping the sprint outright, because the sprint looks like
         it did work.
 
-        Measured on the second sprint of run-83bd156a. Its first plan ran
+        Measured on the second sprint of one run. Its first plan ran
         `specialist_ui_ux_0` and `specialist_testing_1`; the revision's index-1
         task was `backend`, so `specialist_backend_1` did not collide and ran,
         while `specialist_ui_ux_0` - unchanged in the new plan and still needed -

@@ -128,7 +128,7 @@ def test_an_inline_script_counts_as_wiring(tmp_path):
 
 class TestWhatDoesNotCount:
     def test_a_suite_locating_the_control_is_not_an_alibi(self, site):
-        """The exact shape that hid run b0db10b1's dead buttons.
+        """The exact shape that hid one run's dead buttons.
 
         `app.pw.spec.ts` holds `filterNav.locator('[data-filter="all"]')` for
         three buttons the product never wires. Reading a test as wiring lets a

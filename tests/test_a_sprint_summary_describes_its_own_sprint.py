@@ -1,6 +1,6 @@
 """The sprint summary must describe the sprint it is named after.
 
-Two faults, both measured live on run-83bd156a's `sprint_1_summary.md`, in the
+Two faults, both measured live on one run's `sprint_1_summary.md`, in the
 one document a reader opens to find out what a sprint did.
 
 The header said:

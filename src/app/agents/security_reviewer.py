@@ -134,9 +134,9 @@ def _how_text_reaches_the_page(repository_root: str) -> str:
     """What the product uses to write to the DOM, stated rather than inferred.
 
     `how_the_page_receives_text` was built for the milestone reviewer, which
-    recorded a major XSS finding in run 1c9854c7 against a product whose only
+    recorded a major XSS finding in one run against a product whose only
     text write was `textContent`. The security reviewer is the stage whose job
-    this is, and it was never given the fact: run 08acb1ee's security review
+    this is, and it was never given the fact: one run's security review
     reported "renders task names using innerHTML without sanitization" against
     a product with no `innerHTML` assignment of any content at all - only
     `textContent`, three times over.
@@ -211,7 +211,7 @@ def create_security_reviewer_agent(
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         # The workflow renders `docs/security_review.md` from the decision.
         # A reviewer holding a write tool it is not asked to use is the shape
-        # that cost run-78804673, run-c826ae90 and run-0b18e403 a stage each.
+        # that cost three runs a stage each.
         can_write=False,
     )
 

@@ -331,7 +331,7 @@ def test_the_overflow_message_names_the_settings_that_apply():
 # ---------------------------------------------------------------------------
 # A stage that produced no structured response
 #
-# Observed on run-0b55ad49: `specialist_ui_ux_0` did its work, then wrote the
+# Observed on one run: `specialist_ui_ux_0` did its work, then wrote the
 # heading "## Structured Response" in prose and continued for 431,469
 # characters - about 108,000 tokens over 38 minutes - and the stage failed
 # because the schema was never called. The old message blamed the context
@@ -389,7 +389,7 @@ def test_the_message_never_asserts_a_cause_it_cannot_know() -> None:
 def test_a_failed_stage_retries_on_a_fresh_conversation() -> None:
     """The retry must abandon the conversation, not replay it.
 
-    On run-0b55ad49 the stage failed, the run was resumed, and the resume path
+    On one run the stage failed, the run was resumed, and the resume path
     re-entered the same inner thread - the one holding 431,441 characters of
     prose - and failed identically in four minutes. Clearing
     `pending_inner_thread_id` is what turns that loop into a retry.
@@ -445,7 +445,7 @@ def test_the_substring_fallback_still_applies() -> None:
 # `_run_gated_agent` - seeing a pending decision - resumes the inherited thread
 # instead of starting its own.
 #
-# Observed on run-0b55ad49 at 1833 events: `milestone_review` finished with
+# Observed on one run at 1833 events: `milestone_review` finished with
 # `changes_required` and handed back to `technical_lead`, which resumed the
 # reviewer's conversation, was handed a `MilestoneReviewOutput`, stored it under
 # `milestone_plan`, and died on
@@ -509,7 +509,7 @@ def test_no_node_returns_a_bare_dict_after_consuming_an_agent_result() -> None:
 def test_a_missing_product_intake_fails_with_an_explanation():
     """A stage that skipped its structured response must not raise a KeyError.
 
-    Observed on run-c826ae90: the product manager wrote
+    Observed on one run: the product manager wrote
     `docs/product_intake.md` and then reported "Product intake complete. Here
     is the structured summary:" as prose, so `product_intake` never entered
     state. `tools_models_node` read the key directly and the run died with
@@ -533,7 +533,7 @@ def test_a_missing_product_intake_fails_with_an_explanation():
     assert "without returning its structured" in body
     # Resuming re-enters this node, where the intake is still missing, so the
     # guard must route back to the stage that owes the output rather than tell
-    # the operator to resume. run-c826ae90 was resumed once and failed in the
+    # the operator to resume. One run was resumed once and failed in the
     # same place.
     assert 'stage="product_manager"' in body
     assert "structured_retries" in body

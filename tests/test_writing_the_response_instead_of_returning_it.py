@@ -6,7 +6,7 @@ Run d6297b2f died of this. `defect_fix_1_0` requested
     {"role":"Testing and Quality Engineering Specialist","output":{...}}
 
 as its content, and the loop guard stopped the run at 814 events. Twenty model
-calls in that run went into writing that file; run a7150a6c spent eight more on
+calls in that run went into writing that file; one run spent eight more on
 `structured_response.json`.
 
 Nothing refused it before, because nothing renders a file of that name - it

@@ -3,7 +3,7 @@
 The sibling of `_a_task_is_work`, and the same lesson: an agent handed a task
 it cannot complete does not stop, it finds something to do.
 
-Measured on run f81808a4. The lead delegated
+Measured on one run. The lead delegated
 
     Update docs/sprint_plan.md to include a new section detailing the
     filtering feature implementation.

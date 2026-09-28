@@ -145,7 +145,7 @@ def test_a_production_install_is_refused_in_every_ecosystem(
 #: The test-scoped twin of each ecosystem that has a dev scope. None may be
 #: refused: a dependency that ships to nobody breaks no constraint on the
 #: shipped product, and refusing it is what left `@playwright/test` installed
-#: into `node_modules` and missing from `package.json` on run-519a9d8a.
+#: into `node_modules` and missing from `package.json` on one run.
 TEST_ONLY_INSTALLS = [
     ["npm", "install", "-D", "@playwright/test"],
     ["npm", "i", "--save-dev", "jest"],

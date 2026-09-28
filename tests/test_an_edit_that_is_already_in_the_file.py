@@ -73,7 +73,7 @@ class TestItSucceeds:
             pytest.fail(f"an edit already in the file raised: {exc}")
 
     def test_a_third_and_fourth_send_answer_the_same_way(self, project: Path) -> None:
-        """run-0deeb8bf sent it four times; none of them should be a failure."""
+        """One run sent it four times; none of them should be a failure."""
         _edit(project)
 
         for _ in range(3):

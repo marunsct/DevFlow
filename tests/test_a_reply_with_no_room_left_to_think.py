@@ -1,6 +1,6 @@
 """A reply that spent its whole output budget reasoning gets one forced answer.
 
-Measured on run-be25a68e: 7 of 543 responses came back with
+Measured on one run: 7 of 543 responses came back with
 `finish_reason: length`, no text and no tool call, each having burned the full
 30,000-token output budget on reasoning nobody ever saw. The run died when
 `test_round_2` ended that way.

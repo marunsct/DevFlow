@@ -3,10 +3,10 @@
 A rewrite that dropped a function removed it silently - no note, no refusal - and
 the next stage to look found the behaviour missing with no record of where it went.
 In parallel mode that is not hypothetical: six specialists were writing one
-`app.js` in run-f05d8d47, and 17 of 25 stored sprint plans assign one file to
+`app.js` in one run, and 17 of 25 stored sprint plans assign one file to
 more than one specialist.
 
-Measured on run-6e50b630, which failed at the milestone revision limit. Its
+Measured on one run, which failed at the milestone revision limit. Its
 `todo-app/app.js`, by successful whole-file write, paired strictly by
 `tool_call_id` (1,098 calls, none unpaired):
 
@@ -40,7 +40,7 @@ from app.tools.repository import (
     write_approved_artifact,
 )
 
-#: run-6e50b630's shape, reduced to the definitions that disappeared.
+#: One run's shape, reduced to the definitions that disappeared.
 WITH_THE_HANDLERS = """export function loadTasks() { return []; }
 export function saveTasks(tasks) { return tasks; }
 export function deleteTask(id) { return id; }
@@ -211,7 +211,7 @@ class TestWhatCountsAsADefinition:
     def test_a_nested_definition_counts(self):
         """Deliberately, and the failure it was written for is why.
 
-        run-6e50b630's blocking finding was "Checkbox toggle handler is missing
+        One run's blocking finding was "Checkbox toggle handler is missing
         from init()'s event delegation block" - the handlers live *inside*
         `init()`, so a reading that only saw the file's top level would have
         missed exactly the definitions that disappeared.
@@ -275,7 +275,7 @@ class TestATestFileIsNotGuardedThisWay:
     """Every test body has locals, so rewriting a suite reads as losing a dozen
     definitions - and rewriting a suite is ordinary work.
 
-    Measured in production on run-a6b28314, this guard's first firing:
+    Measured in production on one run, this guard's first firing:
     `specialist_backend_2` rewrote `task-manager/app.test.mjs` and was told it was
     removing
 
@@ -286,7 +286,7 @@ class TestATestFileIsNotGuardedThisWay:
     None of it is an interface anything depends on. One firing, one false
     positive.
 
-    Nested definitions are still counted for product code, because run-6e50b630's
+    Nested definitions are still counted for product code, because one run's
     lost handler lived inside `init()`. A test file is the one place the two
     diverge. A suite that really disappears is caught by
     `_a_suite_registered_twice` and by the case counts in the execution ledger.
@@ -324,7 +324,7 @@ class TestATestFileIsNotGuardedThisWay:
         assert "`deleteTask`" in (result.get("note") or "")
 
     def test_the_locals_that_caused_this_are_not_reported(self, tmp_path):
-        """The exact names run-a6b28314 was told it was losing."""
+        """The exact names one run was told it was losing."""
         (tmp_path / "todo-app").mkdir()
         suite = (
             "import { describe, it, after } from 'node:test';\n"

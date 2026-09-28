@@ -5,10 +5,10 @@ that reviews the specification. The stage that *writes* it had the whole
 document under "Original uploaded documents" and not the constraints pulled out
 of it - and that was not enough:
 
-- run 0c5aabdb's specification said "Backend: Express server"
-- run d6297b2f's said "Tests run with Node's built-in test runner (node --test)
+- one run's specification said "Backend: Express server"
+- one run's said "Tests run with Node's built-in test runner (node --test)
   in a jsdom environment to simulate DOM interactions"
-- run 551640d3's said "Use Node's built-in test runner (node --test) with jsdom
+- one run's said "Use Node's built-in test runner (node --test) with jsdom
   for DOM simulation"
 
 all against a brief reading "No external dependencies beyond basic

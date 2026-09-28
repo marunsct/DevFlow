@@ -4,7 +4,7 @@
 asked for "the command you ran with its exit code" pastes that record back, and
 `extra="forbid"` with a required `exit_code` then rejected every key of it.
 
-run-3ddd443f died of it. `specialist_testing_5` was refused three times over
+One run died of it. `specialist_testing_5` was refused three times over
 verification.0.exit_code, .exitCode, .returncode, .stdout, .category and
 .working_directory. Because the answer never validated, `settled_answer` could
 not recognise one and end the stage, so the model wrote the same answer five

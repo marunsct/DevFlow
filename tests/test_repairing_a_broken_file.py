@@ -7,7 +7,7 @@ partial repair is refused, and the only move left is rewriting the whole file
 correctly in one call - which `write_artifact` also refuses if it is not
 perfect.
 
-Measured live on run-eb48de7a. `todo-app/main.js` had a duplicate `li`
+Measured live on one run. `todo-app/main.js` had a duplicate `li`
 declaration. `specialist_ui_ux_2` and `specialist_ui_ux_3` were refused four
 consecutive edits, reported at lines 22, 59, 83 and 72. The moving line number
 is the evidence: the model was getting closer each time and every step was

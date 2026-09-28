@@ -13,10 +13,10 @@ And it was the second-biggest waster of identical failing calls - 19 of them,
 with single stages sending one reference 8, 6 and 5 times:
 
     fd891220  specialist_ui_ux_1  x8  '1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log'
-    b3cb2d80  test_round_0        x6  'task-manager/app.js'
+    a000000b  test_round_0        x6  'task-manager/app.js'
     2ac28a2f  specialist_ui_ux_1  x5  'simple-to-do-list-jest-config-cjs-edit-artifact-stdout'
 
-run-b3cb2d80 is the one that shows the message was not the problem. Its
+One run is the one that shows the message was not the problem. Its
 `specialist_testing_2` was answered, correctly and in full,
 
     'task-manager/app.test.mjs' looks like a path rather than a journal
@@ -59,7 +59,7 @@ def a_journal_with_nothing_in_it(tmp_path, monkeypatch):
     return agent_toolkit.build_journal_read_tool(str(tmp_path))
 
 
-#: What run-b3cb2d80's `specialist_testing_2` sent eleven times.
+#: What one run's `specialist_testing_2` sent eleven times.
 THE_REFERENCE_IT_KEPT_SENDING = "task-manager/app.test.mjs"
 
 
@@ -113,7 +113,7 @@ class TestTheRungsItNeverHad:
     def test_a_refused_reference_stops_building_the_long_answer(
         self, tmp_path, monkeypatch
     ):
-        """run-b3cb2d80 sent eleven of these.
+        """One run sent eleven of these.
 
         The lookup itself stays: it is a local read, and a reference that somehow
         did resolve should still be served. What stops is the listing and the
@@ -215,7 +215,7 @@ class TestTheToolStillWorks:
         """Added earlier this session, and it must still reach the second miss.
 
         The workspace here is empty, so the redirect takes its "and there is no
-        file of that name either" form - which is the form run-f05d8d47 needed.
+        file of that name either" form - which is the form one run needed.
         """
         for _ in range(_MISSES_BEFORE_SAYING_SO):
             result = a_journal_with_nothing_in_it.invoke(

@@ -23,7 +23,7 @@ DEFAULT_MAX_OUTPUT_TOKENS = 32_000
 """Ceiling on what a model may emit in one turn.
 
 Unbounded, one confused turn can consume a whole run. Measured on
-run-0b55ad49: asked for its structured response, `specialist_ui_ux_0` instead
+one run: asked for its structured response, `specialist_ui_ux_0` instead
 wrote the heading `## Structured Response` in prose and kept going for 431,469
 characters - roughly 108,000 tokens - over 38 minutes, then failed the stage
 because no structured response was ever emitted. Nothing stopped it, because
@@ -97,10 +97,10 @@ def _tokens_per_second() -> float:
 #:
 #: Deliberately NOT `_max_output_tokens()`, which is 32,000. That number is a
 #: ceiling on pathology - it exists so one confused turn cannot emit 108,000
-#: tokens over 38 minutes, as `specialist_ui_ux_0` did on run-0b55ad49 - and
+#: tokens over 38 minutes, as `specialist_ui_ux_0` did on one run - and
 #: sizing the timeout from it means waiting for a ramble nobody wants.
 #:
-#: Measured on run-414a621f, 206 model calls: 185 finished inside 10 seconds,
+#: Measured on one run, 206 model calls: 185 finished inside 10 seconds,
 #: 11 more inside 60, 8 more inside 170, and the longest legitimate call was
 #: 141.7 seconds. Nothing at all landed between 170 and 800 seconds. The one
 #: call past 800s was a wedge, and its retry succeeded in 2.5 seconds.
@@ -139,10 +139,10 @@ def _request_timeout() -> float:
     server reported `llamacpp:requests_processing 1` with
     `prompt_tokens_total` AND `tokens_predicted_total` both frozen across a
     25-second sample, while the GPU sat at 88%. A slow generation still moves
-    those counters; a wedged one moves neither. run-6412366b lost 22 minutes to
-    that in `tools_models`, and run-caae7e32 never produced a single event.
+    those counters; a wedged one moves neither. One run lost 22 minutes to
+    that in `tools_models`, and one run never produced a single event.
 
-    The retry is the cheap part: on run-6412366b the identical request
+    The retry is the cheap part: on one run the identical request
     succeeded in 66 seconds once the first attempt was abandoned.
 
     300 seconds is roughly twice the longest legitimate call measured across
@@ -156,7 +156,7 @@ def _request_timeout() -> float:
     second, so 300 seconds cuts off every reply beyond roughly 12,000 tokens -
     including the 13,000-token specification the pipeline legitimately
     produces, and far short of the 32,000-token ceiling `max_tokens`
-    advertises. run-f0630b10 hit exactly that twice in its first hour, each
+    advertises. One run hit exactly that twice in its first hour, each
     costing 300 seconds and a retry that could only time out the same way.
 
     So the floor is raised to whatever a full-length answer actually needs -
@@ -177,7 +177,7 @@ def _request_timeout() -> float:
         ValueError: Unexpected response type from OpenAI-compatible endpoint.
         Expected a dict or openai.BaseModel, got Stream
 
-    That killed run-027f369c on its first model call. It passes when the model
+    That killed one run on its first model call. It passes when the model
     is built and invoked directly, which is why it reached a deploy; the agent
     invokes a bound model and takes a different path. Revisit only with a
     reproduction through `langchain.agents`, not through a bare model.

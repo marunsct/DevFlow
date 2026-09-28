@@ -1,7 +1,7 @@
 """The security reviewer gets the fact that settles a DOM-injection finding.
 
 `how_the_page_receives_text` was built for the milestone reviewer, which
-recorded a major XSS finding in run 1c9854c7 against a product whose only text
+recorded a major XSS finding in one run against a product whose only text
 write was `textSpan.textContent = task.text`, and the run was stopped after
 three revisions over a defect that did not exist.
 

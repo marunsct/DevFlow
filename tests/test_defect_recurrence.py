@@ -3,7 +3,7 @@
 Treating it as a new defect spends another remediation attempt on the same
 problem and tells the specialist nothing it does not already believe.
 
-Measured on run-95ca3f72, which exhausted all six remediation attempts and
+Measured on one run, which exhausted all six remediation attempts and
 never wrote a line of application code:
 
     fixed: Regression test fails due to missing y18n module import

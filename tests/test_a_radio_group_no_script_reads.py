@@ -3,7 +3,7 @@
 `_CLICKABLE_WITH_DATA` requires a `data-*` attribute, so it sees
 `<button data-filter="all">` and not `<input type="radio" name="filter">`.
 Run-b0db10b1's dead filter bar was caught only because that run happened to
-choose the first spelling; run-3c8e772e chose the second, and wired it, so
+choose the first spelling; one run chose the second, and wired it, so
 nothing was lost - but nothing would have reported it either.
 """
 

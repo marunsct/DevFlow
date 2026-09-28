@@ -8,12 +8,12 @@ rules tell them documentation that ships with the product "goes inside the
 project folder beside the code it describes".
 
 So a product README was the one place this could never look, and a README is what
-its own evidence is about: run-3da8dd91 "shipped the same shape - a README citing
+its own evidence is about: one run "shipped the same shape - a README citing
 `npm run build-static`".
 
 Found by sweeping all 37 checks over the 77 stored workspaces: this was the only
 check with no test that also fired on nothing. Those workspaces hold
-`workspace-run-3faaa89b/README.md`, `.../task-manager/README.md` and
+`workspace-one run/README.md`, `.../task-manager/README.md` and
 `.../simple-to-do-list-app/README.md`, none of which it read.
 
 Honest about what this buys: none of the 77 stored workspaces documents a command
@@ -33,7 +33,7 @@ from app.analysis.integration_checks import (
     _source_files,
 )
 
-#: run-cbb1a5fc's `docs/deployment.md`, which four milestone reviews read.
+#: One run's `docs/deployment.md`, which four milestone reviews read.
 A_DOCUMENT_NAMING_A_MISSING_FILE = (
     "## Running\n\nRun with `node server.js`, then open http://localhost:3000\n"
 )
@@ -41,7 +41,7 @@ A_DOCUMENT_NAMING_A_MISSING_FILE = (
 
 @pytest.fixture
 def a_project(tmp_path):
-    """A project whose files are the ones run-cbb1a5fc actually had."""
+    """A project whose files are the ones one run actually had."""
 
     def _build(document_at: str):
         project = tmp_path / "todo-app"

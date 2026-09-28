@@ -60,7 +60,7 @@ def build_stack_selector_request(
         # Deliberately not the repository's absolute path. That is the HOST's
         # path; inside the agent the workspace is rooted at "/". Quoting it here
         # and then telling the agent never to use it does not work - measured on
-        # run-0b55ad49, agents retried `ls` against that exact string four times
+        # one run, agents retried `ls` against that exact string four times
         # in a row, and fed it to shell commands, every attempt failing with
         # path_not_found. The reliable fix is not to show it.
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
@@ -131,7 +131,7 @@ def describe_execution_environment() -> str:
     """What the sandbox can actually run, derived from the allowlist itself.
 
     The stack selector used to choose testing approaches the pipeline cannot
-    perform. Measured on run-3da8dd91: it selected "Manual (browser DevTools)"
+    perform. Measured on one run: it selected "Manual (browser DevTools)"
     for a client-side app, the technical lead faithfully delegated "execute all
     Sprint 1 test cases manually in a browser", and the testing specialist found
     no browser - none is installed and none is on any role's allowlist. Unable
@@ -276,7 +276,7 @@ def create_stack_selector_agent(
         repo_root=repo_root,
         allow_subdirectories=allow_subdirectories,
         # The workflow renders `docs/technology_stack.md` from the selection.
-        # Holding a write tool as well is what ended run-0b18e403 at stage
+        # Holding a write tool as well is what ended one run at stage
         # three: the stage printed its answer into the conversation, wrote the
         # document, printed it again, wrote again - five identical writes
         # before the repeat guard stopped it. Taking the tool away settles it;
@@ -313,7 +313,7 @@ def the_browser_runner_this_stack_forgot(stack: Any) -> str | None:
     BOTH IS THE RIGHT ANSWER ... write both into `testing_framework`". This
     enforces it, because saying it was not enough.
 
-    Measured on run-1bdbc08a, whose brief asked for a "Simple web-based
+    Measured on one run, whose brief asked for a "Simple web-based
     interface with HTML/CSS/JavaScript". The stack came back with
     `testing_framework: node --test` and a rationale ending "adequately verified
     by testing its core logic and manual browser verification" - a method the

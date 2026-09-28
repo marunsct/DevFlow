@@ -1,6 +1,6 @@
 """Scope inflation compounds down the chain, so the rule is stated at each step.
 
-Measured on run-c4f17841 (brief_medium). Its brief names FastAPI or Express,
+Measured on one run (brief_medium). Its brief names FastAPI or Express,
 React or Vue, JWT, migrations and Docker, and contains the words Helm,
 Kubernetes, Prometheus, Grafana, Redis, Celery and encryption zero times.
 
@@ -23,7 +23,7 @@ import pytest
 #: Every stage that can add scope, or refuse to proceed for its absence.
 STAGES = [
     # The stage that decides which sprints exist at all. It was missed on the
-    # first pass: run-64df2b20's plan allocated "Sprint 6 - Observability &
+    # first pass: one run's plan allocated "Sprint 6 - Observability &
     # Health Checks" for a brief that never mentions observability, even though
     # the technical lead downstream had the rule.
     "scrum_master",

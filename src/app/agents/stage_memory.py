@@ -12,7 +12,7 @@ graph, and the workflow node then runs again from the top on resume, calling
 backend, and an empty counter. So a stage that writes a file between two reads
 - which is what a working stage does - starts every counter from zero again.
 
-Measured on run-454adf22, which had 73 byte-identical repeated tool calls,
+Measured on one run, which had 73 byte-identical repeated tool calls,
 32% of its model calls:
 
     middleware query-repeat notes:      0
@@ -56,7 +56,7 @@ _MEMORY: OrderedDict[tuple[str, str], dict] = OrderedDict()
 #: around each inner agent invocation and preferred over `get_config`, because
 #: under a parallel fan-out `get_config` does not answer per worker.
 #:
-#: Measured on run-1bdbc08a's first milestone, a seven-task parallel sprint. The
+#: Measured on one run's first milestone, a seven-task parallel sprint. The
 #: redundant-read refusals carry an ordinal, and across six concurrent
 #: specialists they formed one interleaved sequence:
 #:

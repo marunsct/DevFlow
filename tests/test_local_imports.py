@@ -1,6 +1,6 @@
 """Relative imports checked against the files they name.
 
-run-454adf22 had two of five tests fail, and neither failure was about the
+One run had two of five tests fail, and neither failure was about the
 product:
 
     SyntaxError: The requested module './app.js' does not provide an export

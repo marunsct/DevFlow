@@ -1,6 +1,6 @@
 """A run may defer a requirement. It may not define one out of existence.
 
-Measured on run-3c8e772e. `tests/brief_low.md` states "Users can add, edit,
+Measured on one run. `tests/brief_low.md` states "Users can add, edit,
 delete tasks". The run's technical specification records:
 
     Q3: Is inline editing of title/description desired beyond toggling
@@ -37,7 +37,7 @@ BRIEF = """# Product Brief: Simple To-Do List App
 - Tasks persist between page refreshes
 """
 
-#: The run's restatement, with `edit` reinterpreted away - run-3c8e772e's shape.
+#: The run's restatement, with `edit` reinterpreted away - one run's shape.
 RESTATED = """# Product Intake
 
 ## Acceptance Criteria

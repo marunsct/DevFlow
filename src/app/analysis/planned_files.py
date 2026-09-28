@@ -7,12 +7,12 @@ inconsistency on disk to find, because there is nothing on disk at all.
 
 Two consecutive runs ended on exactly that.
 
-run-e980310b delegated "Create style.css with basic responsive CSS rules",
+One run delegated "Create style.css with basic responsive CSS rules",
 `index.html` linked it, and no tool call in the run ever touched the path. That
 one `_broken_local_references` can prove, because the link is a second file
 naming the first.
 
-run-2ac28a2f is the version nothing could prove. Its plan named
+One run is the version nothing could prove. Its plan named
 
     index.html with semantic HTML5 structure: <header>, form (#add-form) for
     task creation, unordered list container for tasks, embedded CSS
@@ -58,7 +58,7 @@ _A_PATH_IN_PROSE = re.compile(r"(?<![\w/.-])(\.?[\w-][\w./-]*\.[A-Za-z]{1,8})\b"
 _NOT_A_FILENAME = frozenset({
     "e.g", "i.e", "etc.al", "et.al", "vs.the", "a.k.a", "no.1",
     # Suffix patterns a plan names when it means "files ending in this". Found on
-    # run-a6b28314, whose plan asked for `.spec.ts` files and had `.spec.ts`
+    # one run, whose plan asked for `.spec.ts` files and had `.spec.ts`
     # reported as a file nobody wrote. Structurally identical to `.env.example`,
     # which is a real file, so this is a list rather than a rule.
     ".spec.ts", ".spec.js", ".spec.mjs", ".spec.cjs", ".spec.jsx", ".spec.tsx",
@@ -91,7 +91,7 @@ _A_JAVASCRIPT_LIBRARY = re.compile(r"^[A-Z][A-Za-z0-9]*\.js$")
 #: unbounded and this set is not.
 #:
 #: The first version matched any short alphabetic tail, which read a CSS selector
-#: as a filename. Found live in run-1a0d3610, where `div.error` was reported as
+#: as a filename. Found live in one run, where `div.error` was reported as
 #:
 #:     This sprint's plan names `div.error` and the workspace has no file of that
 #:     name anywhere.
@@ -167,7 +167,7 @@ def paths_a_plan_named(texts: Iterable[str]) -> list[str]:
 #: satisfied by `app.test.mjs`: the module is there, under the extension its own
 #: module system requires.
 #:
-#: Measured on run-a6b28314. Its plan named `app.test.js`, the project built
+#: Measured on one run. Its plan named `app.test.js`, the project built
 #: `app.test.mjs`, and this check reported the planned file as never written -
 #: eight times, at the breaking tier, which is the tier handed to the test round
 #: as already proven. A `defect_fix` stage then tried to fix the finding by

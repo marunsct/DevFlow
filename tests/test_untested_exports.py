@@ -1,8 +1,8 @@
 """Exported functions that no test file names.
 
-The runs keep shipping a suite thinner than the product. run-740edb6b's
+The runs keep shipping a suite thinner than the product. One run's
 `npm test` reported `# tests 1` for an application exporting five functions;
-run-01f03ed9 reported three; run-04576307 had seven test files of which one
+one run reported three; one run had seven test files of which one
 ran. None of that is visible in a passing suite, and a reviewer reading "all
 tests passed" cannot tell a thorough suite from a token one.
 

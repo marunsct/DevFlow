@@ -1,6 +1,6 @@
 """The failing command's own output, in the brief that asks for a fix.
 
-run-d3965815's `defect_fix_2_1` was briefed to fix a "Syntax error in
+One run's `defect_fix_2_1` was briefed to fix a "Syntax error in
 createElementFallback causing renderTasks failure ... Observe stderr showing
 Unexpected token '}'". There was no syntax error in that file. The suite was
 failing with an assertion at `app.test.mjs:50` and, a round later, a

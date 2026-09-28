@@ -78,7 +78,7 @@ class ArchitectureReviewOutput(BaseModel):
         review that lists its findings has already decided; it has only failed
         to write the word down.
 
-        Measured on run-6412366b: the reviewer answered
+        Measured on one run: the reviewer answered
         `{"findings": [...]}` with no `status` four times in one stage, which
         cost two stage restarts and reached "attempt 3 of 3", the last retry
         before the stage fails outright. Across all stored runs, 8 of 74
@@ -125,7 +125,7 @@ def build_architecture_review_request(
 
     `document_text` is the product brief, and only its constraints are carried.
     This is the last gate before anything is built, and it could not do the one
-    job that would have saved run 0c5aabdb: the specification it approved
+    job that would have saved one run: the specification it approved
     proposed Express for a brief that says "No external dependencies beyond
     basic HTML/CSS/JS", and the reviewer had no way to know that, because it
     was given the specification and nothing else. See

@@ -4,11 +4,11 @@ Every specialist brief opens with `describe_stack`, so the role prompt and the
 stack are in the same conversation. Four of the six role prompts used to issue
 an unconditional MUST that outranked it, and the harness paid for all four:
 
-- run-bb1ee9bb: the backend specialist "MUST ... start the development server"
+- one run: the backend specialist "MUST ... start the development server"
   produced a 3,696-byte `server.js` in a "Web LocalStorage" product whose spec
   said "no server-side infrastructure" four times, and the milestone reviewer
   accepted it as the product.
-- run 8d28ee3f: `stack_selector` chose "Custom JS assert tests ... avoiding
+- one run: `stack_selector` chose "Custom JS assert tests ... avoiding
   large dependencies"; the UI specialist, told it MUST install NPM
   dependencies, installed jest and spent four `npm test` calls on
   `TextEncoder is not defined`.
@@ -41,7 +41,7 @@ def test_the_roles_that_build_things_defer_to_the_stack(role):
 
 
 def test_the_backend_is_told_what_a_serverless_stack_means():
-    """The run-bb1ee9bb `server.js` came from a MUST with no such exception."""
+    """The one run `server.js` came from a MUST with no such exception."""
     prompt = _ROLE_DESCRIPTIONS["backend"].lower()
     assert "no server" in prompt
     assert "second data layer" in prompt

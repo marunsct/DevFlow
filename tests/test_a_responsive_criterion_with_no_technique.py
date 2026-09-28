@@ -7,7 +7,7 @@ criteria in the brief these runs are given - could be satisfied on paper by a
 stylesheet that renders at one width and is scrolled sideways on a phone.
 
 Breakpoints are not the only technique, and this is the failure mode to avoid:
-run-d483f554's stylesheet has no `@media` in it and is fluid throughout, built
+One run's stylesheet has no `@media` in it and is fluid throughout, built
 from `clamp()`, `min()` and viewport units. A check that demanded `@media`
 would have filed a blocking finding against the best product this harness has
 produced.

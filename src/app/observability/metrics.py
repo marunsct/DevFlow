@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 #:
 #:     RuntimeError: Read beyond file size detected, file is corrupted.
 #:
-#: Measured on run-df4dc6f5: that exception 17 times, once per stage, so not one
+#: Measured on one run: that exception 17 times, once per stage, so not one
 #: stage duration in the run was recorded. The directory held 49 `.db` files
 #: going back three days, named `counter_1.db`, `counter_354.db`,
 #: `counter_2673.db` - PIDs from container generations that no longer exist.

@@ -4,7 +4,7 @@ Every agent prompt is read by a model that has no way to know which nouns in it
 are placeholders. A worked example naming a real product is therefore not an
 example - it is a name, in an emphatic instruction, that the model will use.
 
-Observed on run-0b55ad49: six prompts carried
+Observed on one run: six prompts carried
 `**CRITICAL INSTRUCTION**: ... a directory named after the app (e.g. `thehub/`
 for 'The Hub')`. `thehub` is the product from an unrelated earlier run. Building
 a to-do list application, an agent created `thehub/` at the workspace root and
@@ -42,7 +42,7 @@ def test_no_prompt_names_a_product_from_another_run(module):
 def test_no_prompt_offers_a_path_as_an_example(module):
     """In a prompt, an `e.g.` path is not an example. It is a filename.
 
-    Observed on run-0b55ad49: the shared prompt said "write document artifacts
+    Observed on one run: the shared prompt said "write document artifacts
     inside `docs/` (e.g., `docs/spec.md`)". An agent wrote a 1 KB `docs/spec.md`
     beside the real 51 KB `docs/technical_specification.md`; the milestone
     reviewer read the thin one and blocked the sprint for lacking detail that
@@ -69,7 +69,7 @@ def test_no_prompt_offers_a_path_as_an_example(module):
 def test_the_stack_selector_treats_a_stated_constraint_as_binding():
     """It had the constraint and selected past it anyway.
 
-    On run-95ca3f72 the product intake said "single-page application using only
+    On one run the product intake said "single-page application using only
     HTML/CSS/JavaScript" and "code size capped at 500 lines". The stack
     selector chose Jest and Cypress - 1.8 GB of binaries downloaded into the
     run workspace. Configuring them consumed the sprint and all three of its
@@ -123,7 +123,7 @@ def _prompt_strings():
 
 
 def test_no_prompt_cites_a_run_identifier():
-    """`run-519a9d8a` means nothing to the model reading it.
+    """`one run` means nothing to the model reading it.
 
     The rules in these prompts were each written against a run that went wrong,
     and the citation went into the prompt beside the rule. It cannot be looked

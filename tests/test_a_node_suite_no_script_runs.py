@@ -9,7 +9,7 @@ a claim about them could be wrong.
 The effect is that the check gets weaker the worse the problem gets. Changing the
 runner does not answer the question, it exempts the manifest from being asked.
 
-Measured live on run-df4dc6f5. `scripts.test` was
+Measured live on one run. `scripts.test` was
 `node --test main.test.js storage.test.js`, and this harness refused that write -
 correctly - because it left `main.crud.test.js` unrun. The next write made
 `scripts.test` be `npx playwright test`, which runs none of the three, and every
@@ -133,7 +133,7 @@ class TestTheRunDfWasMeasuredOn:
         Playwright's default `testMatch` is
         `**/*.@(spec|test).?(c|m)[jt]s?(x)`, which matches these filenames, so
         it does pick them up and some of their assertions do run - measured on
-        run-df4dc6f5, whose `npm run test` reported 2 of 3 passing out of files
+        one run, whose `npm run test` reported 2 of 3 passing out of files
         `node --test` counted 17 cases in. What is certain is the disagreement
         between the two counts, which is what the message claims.
 

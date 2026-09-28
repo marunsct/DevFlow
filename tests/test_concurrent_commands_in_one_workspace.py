@@ -5,7 +5,7 @@ they share one workspace. Every tool in `app.tools` was written under the
 assumption that one stage runs at a time, because until that mode existed it was
 true.
 
-Measured on run-5696a52d, the first parallel run, from its own transcript:
+Measured on one run, the first parallel run, from its own transcript:
 
     04:54:23 specialist_ui_ux_0     | install | npm install | wd=simple-to-do-list-app
     04:54:23 specialist_ui_ux_1     | install | npm install | wd=simple-to-do-list-app

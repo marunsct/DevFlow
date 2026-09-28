@@ -257,7 +257,7 @@ returns, so no workflow guard applies to it: not the structured-response retry,
 not the repeat guard, not the approval ceiling. All of those are checked when a
 stage *ends*.
 
-Measured on run-2192f23b, whose principal architect spent twenty-two minutes
+Measured on one run, whose principal architect spent twenty-two minutes
 and 184 events printing the same specification into the conversation and
 re-reading the same three documents, with zero restarts recorded because the
 stage never finished one.
@@ -268,7 +268,7 @@ that was counted in stages, not in supersteps, and a superstep is not a model
 call. At the measured 2.41 supersteps per call, 60 supersteps is about 25 model
 calls, while `MODEL_CALLS_PER_STAGE` is 40 and the largest stage that has ever
 finished used 36. So this ceiling could kill a stage the call budget says is
-healthy, and did: run 9f14d645's `specialist_ui_ux_0` spun out three times at
+healthy, and did: one run's `specialist_ui_ux_0` spun out three times at
 roughly 32 calls an attempt, never reached its call budget, and failed the run.
 
 Worse than stopping a healthy stage, it stopped the *better* guard from acting.

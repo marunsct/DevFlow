@@ -91,7 +91,7 @@ def test_another_file_is_counted_on_its_own(call):
 def test_a_policy_refusal_counts_across_files(call):
     """For a refusal about what a file IS, the path is not part of the event.
 
-    Measured on run-cac07d52's `test_round_0`: refused a write to
+    Measured on one run's `test_round_0`: refused a write to
     `docs/technical_specification.md`, then `docs/milestone_review.md`, then
     `docs/technical_specification.md` again - the same refusal in the same
     words, three times in one stage - and nothing ever fired, because two

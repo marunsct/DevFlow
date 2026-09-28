@@ -4,7 +4,7 @@ It runs before sprint planning and before any specialist writes a line, so the
 repository holds the specification and its supporting documents and nothing
 else. That is the expected state at this stage.
 
-Measured on run-c4f17841: the review rejected the specification six times and
+Measured on one run: the review rejected the specification six times and
 ended the run on five findings, every one of them "X is missing" for something
 that gets built later:
 
@@ -62,7 +62,7 @@ def test_the_observation_is_kept_but_the_run_identifier_is_not():
 
     This asserted the run id was *in* the prompt, for a reader who could check
     whether it still applied - and that reader reads this repository, not a
-    system prompt. To the model receiving it, `run-c4f17841` is a token it can
+    system prompt. To the model receiving it, `one run` is a token it can
     neither look up nor act on, and the sentence around it names one run's
     stack, so a rule meant for any stack arrives sounding like a rule about the
     last one. The observation is what carries the rule; the identifier stays in
@@ -79,7 +79,7 @@ def test_the_observation_is_kept_but_the_run_identifier_is_not():
 def test_the_prompt_records_that_the_remediation_restated_the_spec():
     """The sharpest evidence: the finding asked for what the document said.
 
-    run-c4f17841's specification, Deployment section:
+    One run's specification, Deployment section:
 
         Kubernetes: Helm charts (helm/charts/backend, helm/charts/database,
         helm/charts/redis, helm/charts/prometheus) with RBAC, secrets, ...

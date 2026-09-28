@@ -5,7 +5,7 @@ reading. The harness does not have to read: every command whose runner printed a
 summary line is in the execution ledger with its own `tests`, `passed` and
 `failed`.
 
-Measured on run-df4dc6f5's third sprint. The ledger recorded `npm test` - the
+Measured on one run's third sprint. The ledger recorded `npm test` - the
 project's own gating command - eight times in the four minutes before the review:
 
     10:23:50  npm test   tests=21  passed=15  failed=6
@@ -56,7 +56,7 @@ class _Repository:
 def a_ledger(tmp_path, monkeypatch):
     """A workspace whose execution ledger this test writes."""
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    root = tmp_path / "workspace-run-df4dc6f5-0000-0000"
+    root = tmp_path / "workspace-run-a000000f-0000-0000"
     root.mkdir()
 
     from app.tools.sandbox import _ledger_path
@@ -84,7 +84,7 @@ def _a_test_run(at: str, tests: int, passed: int, failed: int, command=("npm", "
 
 AN_INSTALL = {"at": "2026-09-26T10:20:00+00:00", "command": ["npm", "install"], "returncode": 0}
 
-#: What run-df4dc6f5's sprint 3 recorded, four minutes before it was accepted.
+#: What one run's sprint 3 recorded, four minutes before it was accepted.
 THE_MEASUREMENT = _a_test_run("2026-09-26T10:26:56+00:00", 21, 15, 6)
 
 

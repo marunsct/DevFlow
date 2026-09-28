@@ -3,7 +3,7 @@
 Nothing in a run could answer "what did the last sprint actually change?" or
 "what did this look like when it last worked?". Every stage re-read the whole
 workspace to find out - 257 `read_file` calls over 22 distinct files on
-run-61c5a5b6 - and a sprint that broke something had no state to fall back to.
+one run - and a sprint that broke something had no state to fall back to.
 
 The commit point is milestone *acceptance*, not sprint start. That is the only
 moment the workflow has an opinion that the work is sound: the tests ran, the
@@ -65,7 +65,7 @@ htmlcov/
 records the toolchain the run chose, and `.project-memory.json` holds which
 stage last wrote each file. All three sit at the workspace root beside the
 work and all three were being committed into the sprint history: `git
-ls-files` on run-07cd52ae listed every one of them.
+ls-files` on one run listed every one of them.
 
 Nothing reads them through git - they are read from disk - so ignoring them
 costs nothing and stops a delivered repository carrying three files that mean
@@ -74,7 +74,7 @@ already hides the same three from every listing, digest and cross-file check;
 this is the fourth place they should never appear.
 
 The directories after them are a test runner's own output, and they are here
-for the same reason. Measured on run-fbe23618's first sprint:
+for the same reason. Measured on one run's first sprint:
 `todo-app/test-results/.last-run.json` was committed alongside the product,
 and a reviewer reading that diff has to work out that it is not part of the
 work. The list is `sandbox._RUNNER_OUTPUT_DIRECTORIES`, which

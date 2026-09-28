@@ -5,7 +5,7 @@ nine workflow documents exist to comment on the work - `architecture_review`,
 `security_review`, `milestone_review` - along with the sprint summaries, and a
 comment is not a requirement.
 
-Measured on run-5696a52d, whose blocking finding was
+Measured on one run, whose blocking finding was
 
     This project's own documents require that a user can `edit`: "- The test
     suite `app.test.mjs` only clears local storage and lacks tests for core CRUD
@@ -44,7 +44,7 @@ from app.analysis.integration_checks import (
     _source_files,
 )
 
-#: The line from run-5696a52d's own milestone review that became a requirement.
+#: The line from one run's own milestone review that became a requirement.
 A_REVIEW_COMPLAINT = (
     "## Findings\n"
     "- The test suite `app.test.mjs` only clears local storage and lacks tests "
@@ -101,7 +101,7 @@ class TestTheReviewThatBecameARequirement:
         assert _actions_the_documents_require(root) == {}
 
     def test_a_rollback_plan_is_not_a_requirement(self, a_project):
-        """From run-db362501's stored documents."""
+        """From one run's stored documents."""
         root = a_project(
             milestone_review__md=(
                 "If edit/filter functionality introduces regressions, revert "

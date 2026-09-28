@@ -7,7 +7,7 @@ stored, rendered into reports, and never once compared with the ledger sitting
 beside it - so a specialist could name any command with any exit code and be
 believed.
 
-What that cost is visible in run-d3965815's final message to the human:
+What that cost is visible in one run's final message to the human:
 
     - Defect (fixed): renderTasks test fails due to listEl not having children
       property in the mock environment. [owner: testing]

@@ -15,7 +15,7 @@ that exists instead.
 **On the refusal counts.** A refusal is the harness stopping something bad, and
 counting it as a failure makes the number this exists to drive down rise
 whenever a guard works. `scripts/audit_run.py` learned that the hard way: six
-of run b0db10b1's eight "costly failures" were guards, and correcting the
+of one run's eight "costly failures" were guards, and correcting the
 classification moved it from 1.2% to 0.3%. The markers live in one place, here,
 and the script reads them rather than keeping a second copy.
 """

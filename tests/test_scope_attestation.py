@@ -16,7 +16,7 @@ findings of which 87 blocked:
 
 No brief in this repository contains "accessibility", "aria", "wcag",
 "screen reader" or "contrast", and `accessibility` appears in zero of
-run-519a9d8a's documents. Thirteen sprints were held up for a requirement
+one run's documents. Thirteen sprints were held up for a requirement
 nobody stated, while only 2 of the 174 findings were about correctness at
 all. Seven of the last sixty failures are runs that ended with "the milestone
 review still required changes after N revisions".
@@ -65,7 +65,7 @@ def test_a_category_nobody_asked_for_cannot_block(workspace):
 def test_the_word_accessible_does_not_attest_accessibility(tmp_path):
     """The false positive this check was nearly shipped with.
 
-    run-cac07d52's tools-and-models document says "files are accessible via
+    One run's tools-and-models document says "files are accessible via
     HTTPS" - a sentence about file access. A substring match on `accessib`
     took that as the brief asking for accessibility, which would have let the
     very findings this exists to cap go on blocking.

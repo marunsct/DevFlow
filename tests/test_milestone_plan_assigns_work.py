@@ -1,6 +1,6 @@
 """A milestone with scope and no tasks is not a plan.
 
-run-a7150a6c's fifth plan named a full scope - "Add event handlers and UI
+One run's fifth plan named a full scope - "Add event handlers and UI
 rendering for add, edit, delete, toggle in app.js; unit tests for these
 functions; documentation for CRUD functionality; encrypt data before saving to
 localStorage; sanitize..." - and delegated nothing, with no blockers.

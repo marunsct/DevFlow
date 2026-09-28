@@ -116,7 +116,7 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
     the fix did not work. Treating it as new spends another attempt on the same
     problem and tells the specialist nothing it does not already believe.
 
-    Measured on run-95ca3f72, which exhausted all six remediation attempts:
+    Measured on one run, which exhausted all six remediation attempts:
 
         fixed: Regression test fails due to missing y18n module import
         fixed: Regression test fails due to improper import of y18n module.
@@ -207,7 +207,7 @@ def record_test_run(
     it means knowing which files are tests, and that is not this module's
     business.
 
-    Measured on run-b6436e36, which failed after three attempts with a working
+    Measured on one run, which failed after three attempts with a working
     product: 43 of its 43 unit tests passed, all five features the brief names
     were built, and the cross-file checks found one stranded spec and a
     518-line product against a 500-line cap. Of the eleven defects it spent
@@ -366,7 +366,7 @@ def build_defect_report(cycle: RemediationCycle) -> str:
         outcome = "PASSED" if run.passed else "FAILED"
         lines.append(f"- {' '.join(run.command)}: {outcome} {run.summary}".rstrip())
     for defect in cycle.defects:
-        # "fixed" on its own was a claim, not a finding. run-d3965815's final
+        # "fixed" on its own was a claim, not a finding. One run's final
         # message reported two of three defects fixed while the same suite
         # failed from the first test round to the last, because "fixed" meant
         # the specialist had named a test. Say which fixes anything actually

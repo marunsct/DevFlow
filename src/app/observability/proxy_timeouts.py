@@ -209,7 +209,7 @@ def reply_budget_that_cannot_arrive(base_url: str) -> str:
     every full-length reply is cut off, retried on a fixed backoff, and cut off
     again. Nothing said so until it had happened.
 
-    Measured on run 35424714, 2026-09-21: 37 retries at a fixed 120 seconds
+    Measured on one run, 2026-09-21: 37 retries at a fixed 120 seconds
     each - 74 minutes of a 129.6-minute run spent waiting, 57% of the wall
     clock - against a reply ceiling of 8,000 tokens on a transport that allows
     about 7,800. The margin was negative by a couple of hundred tokens and the

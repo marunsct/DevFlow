@@ -1,6 +1,6 @@
 """End a stage once the model has answered and stopped making progress.
 
-Measured on run-5d83e946. `milestone_review` produced a complete verdict -
+Measured on one run. `milestone_review` produced a complete verdict -
 `{"status": "changes_required", ...}` carrying two blocking findings, one of
 them the copy-test defect that the static checks had missed - as the CONTENT of
 an assistant message that also carried a `read_file` call. It did that
@@ -66,7 +66,7 @@ def _call_signature(call: Any) -> str:
 def _repair_json(text: str) -> str | None:
     """Close the brackets and quotes a model left open, or None if hopeless.
 
-    Measured on run-91a18470: `specialist_testing` wrote its complete answer to
+    Measured on one run: `specialist_testing` wrote its complete answer to
     `docs/structured_response.json` fifty-nine times, and every copy was
     truncated one character short - `defects` missing its closing `]`, so the
     object is 3068 bytes long and fails at character 3067. The answer was
@@ -149,7 +149,7 @@ def was_stopped_by_the_budget(result: Any) -> bool:
     calls is the recovery that runs afterwards. `_nudge_for_the_structured_
     response` re-invokes the same inner thread, which re-enters at `__start__`
     and runs another `before_agent -> model -> after_model` cycle, so the model
-    makes one more call per gate. Measured on run-91a18470's `test_round_3`:
+    makes one more call per gate. Measured on one run's `test_round_3`:
     eighteen `__start__` writes and thirty-four `jump_to=end` writes on one
     inner thread, the model-call count climbing every gate until the run's
     repeat guard killed it.
@@ -244,10 +244,10 @@ def _answer_in_a_pending_write(pending: list[Any], schema: Any) -> Any | None:
     and no text at all. So the answer was on the screen, valid, five times
     over, and the stage had no way to accept it.
 
-    Three runs died exactly here - run-0deeb8bf on `final_response.json`,
-    run-130deeef on `final_output.json`, run-01f03ed9 on `docs/summary.json`,
+    Three runs died exactly here - one run on `final_response.json`,
+    one run on `final_output.json`, one run on `docs/summary.json`,
     each stopped by the run-level repeat guard after five identical requests.
-    run-01f03ed9 had already completed four milestones.
+    One run had already completed four milestones.
 
     Safe because of what the schema is: an artifact whose entire content
     validates as this stage's response model IS the structured response. That
@@ -322,7 +322,7 @@ def _results_by_call_id(history: list[Any]) -> dict[str, str]:
 def _actually_changed_something(call: Any, results: dict[str, str]) -> bool:
     """Whether this mutating call altered anything a later read would see.
 
-    Measured on run-0deeb8bf's `defect_fix_2_0`. The model wrote a complete,
+    Measured on one run's `defect_fix_2_0`. The model wrote a complete,
     valid answer as message content and, in the same turn, called
     `write_artifact('final_response.json', <that same answer>)`. The tool
     refuses that by design - a structured response reaches the workflow through
@@ -390,7 +390,7 @@ BUDGET_WARNING_FRACTION = 0.7
 #: stored transcripts the "you have NOT written a structured response yet"
 #: correction was sent on 276 model calls; 13 of those calls returned the
 #: answer and 263 went back to work - 132 `read_file`, 68
-#: `run_terminal_command`, 29 `edit_artifact`. On run-6b511391 the last
+#: `run_terminal_command`, 29 `edit_artifact`. On one run the last
 #: request of `specialist_testing_1` said "You have made about 39 of the 40
 #: model calls this stage is allowed ... Return your structured response now"
 #: and the model replied with an `edit_artifact` call. It did that on three
@@ -411,7 +411,7 @@ CALLS_RESERVED_FOR_THE_ANSWER = 2
 #: Redundant reads refused in one stage before the read tool itself is taken
 #: away for the rest of it.
 #:
-#: Measured on run-b6436e36's `specialist_ui_ux_1`. It made 73 tool calls, 64
+#: Measured on one run's `specialist_ui_ux_1`. It made 73 tool calls, 64
 #: of them reads. The read ladder worked exactly as designed - note, withhold,
 #: then refuse - and the stage read 30 more times after its first refusal, of
 #: which:
@@ -470,7 +470,7 @@ MAX_REPORTED_ERRORS = 6
 
 #: The field paths from the most recent diagnosis, for the log line only.
 #: Without them the log says a stage "sent an answer that does not satisfy its
-#: schema" and nothing about which part - which on run-44e9fc83 meant watching
+#: schema" and nothing about which part - which on one run meant watching
 #: `product_scope` get fixed and the stage keep failing, with no way to see
 #: what else was wrong. Diagnosing what you cannot see is finding 47 again.
 _LAST_FAILING_FIELDS: list[str] = []
@@ -482,7 +482,7 @@ _LAST_FAILING_FIELDS: list[str] = []
 #: Without this the log said "sent an answer that does not satisfy its schema
 #: (unknown)" for a stage that had answered in prose - a different fault, the
 #: same words, and a field list left over from whatever diagnosed last.
-#: Measured live on run-ed05e20e at 07:38, where each such call cost three and
+#: Measured live on one run at 07:38, where each such call cost three and
 #: a half minutes on a 35B model and the log could not say what to change.
 _LAST_FAILURE_KIND: str = ""
 
@@ -493,7 +493,7 @@ def _it_is_not_json_at_all(text: str) -> str:
     A model that answers in prose or Markdown gets no correction from the
     refusal it triggers, because the tool it called to write that prose refuses
     for a different reason - "a structured response is returned, not written to
-    a file". So it writes the document again. Measured on run-519a9d8a's
+    a file". So it writes the document again. Measured on one run's
     `specialist_testing_1`: twenty auto-approvals, each a write of the same
     Markdown to the same path.
 
@@ -523,7 +523,7 @@ def _it_is_not_json_at_all(text: str) -> str:
 def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     """Why the JSON in this message is not a valid answer, or "" if it is.
 
-    Measured on run-5c7d7d8d's `principal_architect`: twenty-one minutes,
+    Measured on one run's `principal_architect`: twenty-one minutes,
     fifteen answers, eight identical `ls {'path': '/'}` between them, no
     progress. The schema declares `product_scope: str` and the model emitted
     `"product_scope": {"covers": [...], "defers": [...]}` every time. Pydantic
@@ -547,7 +547,7 @@ def _why_it_was_not_accepted(message: Any, schema: Any) -> str:
     text = str(getattr(message, "content", "") or "")
     if "{" not in text:
         # Prose with no object in it at all. The model may have written its
-        # answer as a Markdown document instead - measured on run-519a9d8a's
+        # answer as a Markdown document instead - measured on one run's
         # `specialist_testing_1`, which wrote `## changed_files` to
         # `docs/structured_response.md` twenty times and was refused each time
         # by a message that never says what shape a right answer has.
@@ -622,7 +622,7 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
     """The newest assistant message that holds a valid answer, if any.
 
     Reading only the last message was the first version. It misses a stage that
-    answered and then kept talking - which is the shape that cost run-d6369866
+    answered and then kept talking - which is the shape that cost one run
     eleven and a half minutes, because the answer was several turns back by the
     time the repetition began.
 
@@ -640,7 +640,7 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
 
 
 #: Model calls a stage may make before the workflow's own guards would stop it.
-#: Measured across run-0deeb8bf and run-d3965815: the median stage costs 3 to 8
+#: Measured across two runs: the median stage costs 3 to 8
 #: calls, the ninetieth percentile 16 to 27, and the worst healthy stage seen is
 #: 37. A stage past forty is not working, it is circling.
 MODEL_CALLS_PER_STAGE = 40
@@ -677,7 +677,7 @@ def _model_calls_used(messages: list[Any]) -> int:
     This used to read `langgraph_step` from the running config and compare it
     to `recursion_limit`, on the reasoning that LangGraph publishes the real
     number so there is no need to convert. Both halves of that were wrong in
-    the same direction, and the error is visible in run-d3965815.
+    the same direction, and the error is visible in one run.
 
     `recursion_limit` bounds supersteps *per invoke*, and with `auto_approve`
     every gated tool interrupts and resumes through a fresh
@@ -711,7 +711,7 @@ def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) ->
     salvaged, restarted from an empty conversation - losing every file it
     reasoned about and every result it has seen.
 
-    Measured on run-37476645: `specialist_testing_2` spent all three of its
+    Measured on one run: `specialist_testing_2` spent all three of its
     attempts in an edit-run-edit-run loop on a failing suite, using 170 tool
     calls, and never returned its answer. `specialist_ui_ux_0` used 175 and
     needed a restart of its own. The limit's own docstring says "60 is roughly
@@ -781,7 +781,7 @@ def _the_last_reply_was_all_reasoning(messages: list[Any]) -> bool:
     """True when the previous reply spent the whole output budget on nothing.
 
     `finish_reason: length` with no content and no tool call means the model
-    reasoned until its reply was truncated. Measured on run-be25a68e: 7 of 543
+    reasoned until its reply was truncated. Measured on one run: 7 of 543
     responses did this, each burning the full 30,000-token budget, and the run
     died when `test_round_2` ended that way three times over.
 
@@ -852,7 +852,7 @@ def _refused_reads(messages: list[Any]) -> int:
     The ordinal the refusal quotes - "it is the 34th time this stage has asked
     for content it already has" - is deliberately NOT used, though it looks like
     exactly the tally this wants. It does not count the stage. Measured on
-    run-1bdbc08a: `specialist_testing_5` made 11 read calls in total and was told
+    one run: `specialist_testing_5` made 11 read calls in total and was told
     it was on its 34th, `specialist_ui_ux_1` made 14 and was told 29, and
     `specialist_ui_ux_0` was refused once and told 33.
 
@@ -886,9 +886,9 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     what is missing, or carry on without it", and measured across two runs a
     stage read that and carried straight on:
 
-      run-83bd156a  `specialist_backend_0`  15 identical `edit_artifact` calls,
+      One run  `specialist_backend_0`  15 identical `edit_artifact` calls,
                     every one refused because the file would not parse
-      run-1bdbc08a  `specialist_backend_3`   7 identical `replace_lines` calls,
+      one run  `specialist_backend_3`   7 identical `replace_lines` calls,
                     the same refusal each time
 
     The first was the largest single class of failed calls in its run. Reads
@@ -901,7 +901,7 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     the wording of a guard, which matters twice over.
 
     The first version matched one phrase, "failed the same way", which is
-    `repeated_queries`' wording. Measured on run-be25a68e: `specialist_testing_2`
+    `repeated_queries`' wording. Measured on one run: `specialist_testing_2`
     called `read_command_output` seven times with a workspace path where a journal
     reference belongs. Its guard answered perfectly - "looks like a path rather
     than a journal reference ... read it with `read_file`", then refused outright
@@ -910,7 +910,7 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
 
     The second version read the number a note quotes, and that number counts the
     run rather than the stage: `specialist_ui_ux_0` made one `edit_artifact` call
-    on run-1bdbc08a and was told it had failed the same way the 3 previous times.
+    on one run and was told it had failed the same way the 3 previous times.
     Believing it would disarm a stage on its first call. `_refused_reads` below
     still carries that trap, deliberately, with the measurement in its docstring.
 
@@ -1110,9 +1110,9 @@ def build_settled_answer_middleware(
                 # The two withholding rungs are independent. `repeated` used to
                 # be computed only when nothing else had produced a correction,
                 # and the read rung above produces one constantly - 114 times in
-                # run-be25a68e - so it starved this one completely: a stage that
+                # one run - so it starved this one completely: a stage that
                 # loops on `edit_artifact` loops on reads too, and the reads
-                # always won. Measured on run-ad4815da, which held an
+                # always won. Measured on one run, which held an
                 # `edit_artifact` repeated past the threshold and never withheld
                 # it once. Both can apply on one call, and the tool list below is
                 # narrowed by each in turn.
@@ -1192,13 +1192,13 @@ def build_settled_answer_middleware(
             if getattr(last, "type", None) != "ai":
                 return None
             pending = list(getattr(last, "tool_calls", None) or [])
-            # The answer need not be in the LAST message. run-d6369866's
+            # The answer need not be in the LAST message. One run's
             # `scrum_master` wrote a valid sprint plan at 15:23:30 and then
             # spent eleven minutes writing prose about creating files it has
             # no tools to create, so by the time it was circling, the last
             # message held no answer and this check was blind to it.
             # Past the budget, with an answer already written: end. The
-            # warning has said so from 70% onward, and on run-08acb1ee's
+            # warning has said so from 70% onward, and on one run's
             # `specialist_ui_ux_0` it said so on twelve consecutive calls -
             # 28, 29, 30 ... 39 - and the stage ignored every one and ended on
             # a `run_terminal_command` at 40.
@@ -1233,7 +1233,7 @@ def build_settled_answer_middleware(
                     }
                 # Past the budget with nothing written. The warning has said so
                 # on every call since 70% and been ignored each time - measured
-                # on run-1a7a62c2, where `specialist_testing` was told 71 times
+                # on one run, where `specialist_testing` was told 71 times
                 # and kept running `npm test` for over an hour and a half.
                 #
                 # Nothing else here can stop it. `_decide` only ends a stage it
@@ -1281,7 +1281,7 @@ def build_settled_answer_middleware(
                 }
 
             # The model answered in prose in THIS turn, with no tool call at
-            # all. Measured on run-519a9d8a's `specialist_testing_1`: the model
+            # all. Measured on one run's `specialist_testing_1`: the model
             # emitted `{"SpecialistOutput": {...}}` as an `agent_message` and
             # stopped calling tools, twenty times in a row. The answer was
             # complete and valid once unwrapped, but this middleware returned

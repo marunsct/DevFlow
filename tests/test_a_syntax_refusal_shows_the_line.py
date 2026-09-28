@@ -1,6 +1,6 @@
 """The parse refusal named a line number and never showed the line.
 
-Measured on run 1c9854c7's `test_round_0`: an `edit_artifact` refused with
+Measured on one run's `test_round_0`: an `edit_artifact` refused with
 "Node cannot parse this file on line 26: SyntaxError: Unexpected token '}'",
 sent again unchanged, and again, and again - four attempts, the last two
 answered only by the repeat guard, before the stage gave up and rewrote the

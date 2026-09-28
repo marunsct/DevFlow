@@ -6,7 +6,7 @@ RIGHT ANSWER ... write both into `testing_framework` - for example 'node --test
 for the logic, Playwright for the page'". It also says twice that there is no
 display and nobody to look at one, so manual browser checking is impossible.
 
-run-1bdbc08a did neither. For a brief asking for a "Simple web-based interface
+One run did neither. For a brief asking for a "Simple web-based interface
 with HTML/CSS/JavaScript" its stack came back:
 
     Testing framework: node --test
@@ -143,7 +143,7 @@ def test_the_corrected_stack_satisfies_both_checks(tmp_path) -> None:
         framework="None (vanilla HTML/CSS/JS)", testing_framework="node --test"
     )
     assert _a_test_runner_the_stack_did_not_choose(files, tmp_path, before), (
-        "this is the finding run-1bdbc08a shipped with"
+        "this is the finding a UI run shipped with"
     )
 
     after = Stack(

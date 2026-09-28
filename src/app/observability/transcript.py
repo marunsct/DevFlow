@@ -6,7 +6,7 @@ it, and it has never recorded the prompts at all. Those three gaps cost real
 diagnosis time in one session:
 
 - a repeat notice appended after 3,847 characters of file content sat past the
-  clip, so every audit of run-3c0c31d2 read "no note fired" when the notice had
+  clip, so every audit of one run read "no note fired" when the notice had
   fired on every call
 - notices appended by `wrap_tool_call` reach the model and not the events, so
   findings 86 and 87 were mis-measured until a live agent was driven by hand
@@ -174,7 +174,7 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
     defect handed to a fixer is the *reporting* specialist's prose reading of a
     failure, and prose drifts.
 
-    Measured on run-d3965815. `defect_fix_2_1` was briefed with "Syntax error
+    Measured on one run. `defect_fix_2_1` was briefed with "Syntax error
     in createElementFallback causing renderTasks failure ... Observe stderr
     showing Unexpected token '}'". By then the suite was failing with
     `ReferenceError: mockList is not defined` at `app.test.mjs:50:20`, and
@@ -334,7 +334,7 @@ def _only_what_is_new(
 
     A model request carries the whole conversation, and the transcript
     recorded all of it every time - so the file grows with the square of a
-    stage's length. Measured on run-ed05e20e mid-run: 36.6 MB, of which 279
+    stage's length. Measured on one run mid-run: 36.6 MB, of which 279
     `model_request` entries were 33.4 MB. 91% of the record was copies of
     text already in it, and the stored transcripts came to 490 MB.
 

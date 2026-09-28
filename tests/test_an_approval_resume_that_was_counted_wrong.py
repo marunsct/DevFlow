@@ -2,18 +2,18 @@
 
 `decisions_for` counts the actions the paused checkpoint records;
 `HumanInTheLoopMiddleware` counts the tool calls still hanging when the resume
-arrives. run-b7f7d183 ended because those two disagreed inside a parallel worker:
+arrives. One run ended because those two disagreed inside a parallel worker:
 
     ValueError: Number of human decisions (2) does not match number of hanging
     tool calls (1).
     During task with name 'HumanInTheLoopMiddleware.after_model'
     During task with name 'specialist_worker'
 
-It is rare and it is not new - run-c4a30293 ended the same way on 2026-09-11,
+It is rare and it is not new - one run ended the same way on 2026-09-11,
 before any of this session's changes - and why the counts differ is not
 established. So this recovers rather than claiming a cure: answer the number the
 middleware says it is holding. The alternative is losing every stage that came
-before over bookkeeping, and run-b7f7d183 had four sprints of work behind it.
+before over bookkeeping, and one run had four sprints of work behind it.
 
 Only for `approve` and `reject`. They carry no per-action payload and mean the
 same thing however many calls they answer. An `edit` names one specific

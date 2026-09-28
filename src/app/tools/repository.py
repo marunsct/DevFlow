@@ -117,7 +117,7 @@ def _repo_relative_path(repo_root: Path, relative_path: str | Path) -> Path:
     # slash and tries again, and `/app/data/workspaces/<run>/index.html` becomes
     # the relative `app/data/workspaces/<run>/index.html`. That is a real path
     # inside the workspace, so it was created - a mirror of the host layout,
-    # nested inside the workspace it describes. Measured on run-2f252e4e, where
+    # nested inside the workspace it describes. Measured on one run, where
     # it also pinned `app` as the project directory.
     # Any trailing portion of it, not only the whole thing: refused once, the
     # agent drops another leading component and retries, so
@@ -146,7 +146,7 @@ IGNORED_DIRECTORIES = frozenset({
     # The sandbox points HOME here so npm, pip and cargo caches land inside the
     # workspace instead of a directory shared by every run (see
     # `sandbox._child_environment`). That makes them ours, and they are not the
-    # product: on run-61c5a5b6 one `npm install` left 26 `_cacache` blobs with
+    # product: on one run one `npm install` left 26 `_cacache` blobs with
     # sha512 filenames, and a listing of the workspace was mostly those rather
     # than the application.
     ".agent-home",
@@ -239,7 +239,7 @@ def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list
         # Pruning in place is what stops os.walk descending further.
         # A test runner's own output goes with the dependency directories:
         # `test-results/.last-run.json` and `playwright-report/index.html`
-        # are not the product, and on run-ed05e20e the first appeared in the
+        # are not the product, and on one run the first appeared in the
         # digest every stage reads. `_RUNNER_OUTPUT_DIRECTORIES` is the same
         # set `sandbox._written_since` already excludes.
         from app.tools.sandbox import _RUNNER_OUTPUT_DIRECTORIES
@@ -348,13 +348,13 @@ _MAX_SUGGESTIONS = 4
 def _where_that_name_actually_is(root: Path, wanted: str) -> str:
     """" There is a file of that name at ...", or "". Never raises.
 
-    `read_file` has had this since run-3f8e387d, where 56 of 72 failed reads
+    `read_file` has had this since one run, where 56 of 72 failed reads
     named a file that was in the workspace under a different path. This is the
     other read tool, and it had none of it - the third piece of machinery
     `read_repository_file` turned out to be missing, after the repeat notice
     and the span tracking.
 
-    Measured across run-499c771a, run-454adf22 and run-04576307: each one
+    Measured across three runs: each one
     failed a `read_repository_file` of `README.md` at the workspace root while
     the project's README sat one directory down.
     """
@@ -493,7 +493,7 @@ def _without_read_line_numbers(wanted: str) -> str | None:
     first line is clean - the agent stripped the prefix it could see - and whose
     later lines each begin `27  `, `124      `, and so on.
 
-    Observed on run-0b55ad49 in three of four consecutive failed edits, against
+    Observed on one run in three of four consecutive failed edits, against
     `index.html`, `styles.css` and `app.js` alike. Nothing about the agent's
     intent was wrong; it was quoting our own output back at us.
 
@@ -521,7 +521,7 @@ def _without_double_escaping(wanted: str) -> str | None:
     `find` of `\\\\n` against a file holding `\\n` - three characters searched
     for where two exist.
 
-    Observed on run-0b55ad49 fixing the very corruption this describes: a test
+    Observed on one run fixing the very corruption this describes: a test
     file contained a literal backslash-n where a newline belonged, and the agent
     was stopped as a loop after five identical attempts to delete it, each one
     over-escaped the same way.
@@ -594,7 +594,7 @@ def _transcription_repairs(wanted: str) -> list[tuple[str, str]]:
         "`read_file`'s output and are not in the file - strip them before editing.",
     )
     # One stray quote at the end, from closing the JSON string a character
-    # late. Measured on run-eb48de7a: `specialist_ui_ux_0` sent an 85-line
+    # late. Measured on one run: `specialist_ui_ux_0` sent an 85-line
     # passage that matched the file exactly except for a trailing `"`, twice,
     # and the diff correctly reported `you sent: });"` against
     # `file has: });`. Every line but the last was right.
@@ -635,7 +635,7 @@ def _without_json_escaping(wanted: str) -> str | None:
     plain quote - a model that escaped its payload as if it were writing the
     JSON string by hand, one level too deep.
 
-    Observed on run-95ca3f72 at 10:28: the agent read `todo-app/package.json`,
+    Observed on one run at 10:28: the agent read `todo-app/package.json`,
     then issued the same edit three times, each with
     `'"devDependencies": {\\n    \\"jest\\": ...'` where the file holds a newline
     and unescaped quotes. Collapsing doubled backslashes does nothing for it -
@@ -677,7 +677,7 @@ def _indentation_insensitive_span(content: str, wanted: str) -> tuple[int, int] 
 
     Why this exists: indentation is the difference an agent gets wrong, because
     it is the part of a line it reconstructs rather than reads. Twice on
-    run-0b55ad49 a stage was stopped as a loop for re-issuing the same edit; the
+    one run a stage was stopped as a loop for re-issuing the same edit; the
     second time the file was indented with two spaces and every attempt used
     four, and the agent re-read the region four times without seeing it. Nothing
     else about those edits was wrong.
@@ -720,7 +720,7 @@ def _blank_line_insensitive_span(content: str, wanted: str) -> tuple[int, int] |
     Blank lines are the other part of a passage an agent reconstructs rather
     than reads: it remembers the statements and not the spacing between them.
 
-    Measured on run-499c771a's `specialist_testing_3`, four failed edits of
+    Measured on one run's `specialist_testing_3`, four failed edits of
     `app.test.mjs` in one stage. Two of them sent
 
           // Reset storage
@@ -748,7 +748,7 @@ def _blank_line_insensitive_span(content: str, wanted: str) -> tuple[int, int] |
         # below either way.
         #
         # The single-line case is here because blank lines around a passage are
-        # as easy to misremember as blank lines inside it: run-499c771a sent
+        # as easy to misremember as blank lines inside it: one run sent
         # `"\nconst { loadTasks } = await import('./app.js');\n"` against a file
         # whose line above is a comment, so the leading blank line it invented
         # was the only thing wrong.
@@ -789,7 +789,7 @@ def _closest_passage(content: str, wanted: str) -> str | None:
 
     An exact-match edit tool is only usable if a failure says *how* it failed.
     Without this the agent is told the text is absent and nothing else, so its
-    only move is to read again and guess again - measured on run-0b55ad49,
+    only move is to read again and guess again - measured on one run,
     `specialist_ui_ux_0` issued the identical failing edit five times, re-reading
     the file between each, and was stopped as a loop. Every one of those was a
     model call spent discovering a difference this function can simply show.
@@ -810,7 +810,7 @@ def _closest_passage(content: str, wanted: str) -> str | None:
     # file this size there is nowhere unrelated to send it, and the whole text
     # costs a few lines.
     #
-    # Measured on run-36eb1260: `specialist_backend_2` edited a five-line
+    # Measured on one run: `specialist_backend_2` edited a five-line
     # `test-json.cjs`, missed, and was told only "Read the section first and
     # copy the passage from what you read". It read the file twice more and
     # missed twice more, and the run was stopped as a loop at 1,137 events. The
@@ -1050,7 +1050,7 @@ def _how_it_differs(content: str, wanted: str) -> str:
 
     Quoting the nearest passage - which this tool already did - shows the model
     the right text and leaves it to spot what changed. Measured on
-    run-0deeb8bf's `defect_fix_2_0`, it does not. The model sent
+    one run's `defect_fix_2_0`, it does not. The model sent
 
         // function saveTasks() {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
@@ -1090,7 +1090,7 @@ def _how_it_differs(content: str, wanted: str) -> str:
 
     # Aligned, not zipped. Comparing line 1 to line 1, line 2 to line 2 and so
     # on is only true while the two texts stay in step: one inserted line makes
-    # every line after it look different. Measured on run d6297b2f,
+    # every line after it look different. Measured on one run,
     # `specialist_testing_1` sent a 31-line passage against a 29-line file that
     # had gained two import lines at the top and was told 21 lines differed. Two
     # of them did. It sent the same passage twice more.
@@ -1112,7 +1112,7 @@ def _how_it_differs(content: str, wanted: str) -> str:
                 range(file_from, file_to),
             ):
                 # A whitespace-only difference prints as two identical lines
-                # and teaches nothing. Measured on run-519a9d8a's
+                # and teaches nothing. Measured on one run's
                 # `test_round_1`, which was answered with
                 #
                 #   you sent:  const url = `file://...index.html`;
@@ -1180,7 +1180,7 @@ _REPLACE_LONG_ENOUGH_TO_RECOGNISE = 24
 def _already_applied(original: str, find: str, replace: str) -> int:
     """The message for an edit that has already been made, or "".
 
-    Measured on run-0deeb8bf's `defect_fix_2_0`. At 14:15:33 it edited
+    Measured on one run's `defect_fix_2_0`. At 14:15:33 it edited
     `saveTasks` to read `localStorage` through a `global` fallback, and the
     tool returned `"status": "edited"`. At 14:15:51, 14:16:19, 14:16:36 and
     14:16:46 it sent the byte-identical call again - same `find`, same
@@ -1345,7 +1345,7 @@ def _the_one_line_it_pins(expected: str) -> str:
     of the range as you read it" - and a caller that sends two cannot match
     anything, because the comparison is against one line of the file.
 
-    Measured on run-df4dc6f5's `specialist_ui_ux_0`, twice in the same second.
+    Measured on one run's `specialist_ui_ux_0`, twice in the same second.
     It sent `expect_start` as two lines of `package.json`:
 
         {
@@ -1482,7 +1482,7 @@ def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> st
     whole file and a second attempt, to rediscover something this function
     already has in its hands.
 
-    Measured on run-ed05e20e: three of the run's ten costly failures were
+    Measured on one run: three of the run's ten costly failures were
     this refusal, and in every one the expected line was two or three lines
     from where the caller looked - `specialist_testing_2` asked for
     `export function renderTaskList(...)` at line 195 twice, and it was at
@@ -1639,7 +1639,7 @@ def replace_approved_lines(
 
         # Only when the edit is what breaks it. A file that arrived broken is
         # being repaired, and refusing every step that has not yet finished
-        # the repair is the trap measured on run-eb48de7a - four consecutive
+        # the repair is the trap measured on one run - four consecutive
         # refusals at lines 22, 59, 83 and 72 of one file, the moving line
         # number showing the model was getting closer each time. See the same
         # rule in `_write_unless_it_changes_nothing`.
@@ -1710,7 +1710,7 @@ def edit_approved_artifact(
             # literal backslash-n and still not the newline the file holds, and
             # neither candidate ever matched.
             #
-            # Measured on run-519a9d8a's `test_round_1`, which sent
+            # Measured on one run's `test_round_1`, which sent
             # `...index.html`;\\n    await page.evaluate(...)` - double-escaped
             # around a JSON-escaped newline - and was answered with a quoted
             # near-miss it could not act on. Composing costs three extra string
@@ -1858,7 +1858,7 @@ def _where_it_landed(written: str, replace: str) -> str:
     """The edited passage in place, with line numbers, or "".
 
     A model that has just edited a file reads the whole file back to see what
-    it now says. Measured on run-a7150a6c's `specialist_testing_1`: five full
+    it now says. Measured on one run's `specialist_testing_1`: five full
     reads of a 96-line `app.test.mjs`, one after each single-line edit, in a
     stage of twenty-six calls. None of them is a repeat the notices can catch -
     the file genuinely changed each time, because the model had just changed
@@ -1958,7 +1958,7 @@ def _edited(
     numbers, JSON escaping or a different indent - and the notes were attached
     to the first only.
 
-    That cost run-3ddd443f. At 12:52:03 `test_round_0` removed a passage
+    That cost one run. At 12:52:03 `test_round_0` removed a passage
     through the forgiving path and got no structural note; the edit left a
     brace unclosed, and `node --test` then failed four times with
     "Unexpected end of input" before the next edit - through the exact path -
@@ -2091,7 +2091,7 @@ def _what_sits_around_each_match(text: str, find: str) -> str:
     near-identical or it would not have collided with both. So show the lines
     that differ.
 
-    Measured on run-d3965815, where the model wrote `app.test.mjs` with the
+    Measured on one run, where the model wrote `app.test.mjs` with the
     same three-line block at lines 52 and 73, tried to edit it, and sent the
     byte-identical failing call again rather than guess. Six of that run's
     thirteen edit failures were this.
@@ -2140,7 +2140,7 @@ def _where_each_match_starts(text: str, find: str) -> str:
     see where the copies are, so it guesses at more context and often collides
     with the other copy again.
 
-    Measured on run-e37a2bd8: 7 of 24 `edit_artifact` failures were this, on a
+    Measured on one run: 7 of 24 `edit_artifact` failures were this, on a
     test file whose blocks the model had duplicated - exactly the case where
     knowing which lines differ is the whole problem.
     """
@@ -2148,7 +2148,7 @@ def _where_each_match_starts(text: str, find: str) -> str:
     if not counts:
         return "several places"
     # A line that holds several copies is named once, with how many. Listing it
-    # per copy produced "lines 7, 12, 12, 12, 13, ..." on run-e980310b, in a
+    # per copy produced "lines 7, 12, 12, 12, 13, ..." on one run, in a
     # message that then points at those numbers as the way to pick one.
     parts = [
         f"{line} ({count} times)" if count > 1 else str(line)
@@ -2163,7 +2163,7 @@ def _where_each_match_starts(text: str, find: str) -> str:
 def _content_a_model_escaped_twice(relative_path: str, content: str) -> tuple[str, str] | None:
     """Content that only fails because its escapes were written twice, repaired.
 
-    Measured live on run-eb48de7a at 03:37. `test_round_0` sent
+    Measured live on one run at 03:37. `test_round_0` sent
 
         {"relative_path": "todo-app/package.json",
          "content": "{\\n  \"name\": \"todo-app\", ... }"}
@@ -2174,7 +2174,7 @@ def _content_a_model_escaped_twice(relative_path: str, content: str) -> tuple[st
     `package.json` breaks every module in its directory. The model sent the
     identical bytes three times and the stage made no progress.
 
-    The repairs that fix this have existed since run-95ca3f72 and run-0b55ad49.
+    The repairs that fix this have existed since two runs.
     They were reachable only from `edit_artifact`'s `find`. `write_artifact`
     had none, so the same transcription fault was forgiven on one path and
     fatal on the other - twelve of thirteen again, with the thirteenth being
@@ -2219,7 +2219,7 @@ def _structural_note(relative_path: str, content: str, *, editing: bool = False)
     missing semicolon - so it warns and lets the write stand.
 
     Either way the agent hears it while it is still looking at the edit it just
-    made. run-e37a2bd8 heard it two stages later, as "Syntax error in app.mjs
+    made. One run heard it two stages later, as "Syntax error in app.mjs
     at line 206", and spent three remediation attempts editing line 206 - which
     was where the parser gave up, not where the mistake was.
     """
@@ -2267,7 +2267,7 @@ def _refuse_if_node_cannot_parse(
 ) -> None:
     """Refuse a JavaScript file the parser that loads it cannot read.
 
-    run-454adf22 wrote `app.js` with a stray `try` and spent the whole of
+    One run wrote `app.js` with a stray `try` and spent the whole of
     `test_round_0` discovering `SyntaxError: Unexpected token 'try'` at line
     83, then a triage and a defect-fix stage routing it back - for something
     the parser names in seventeen milliseconds at the moment of the write.
@@ -2303,7 +2303,7 @@ def _what_is_structurally_wrong(
 def _refusal_for(relative_path: str, problem: str, *, editing: bool = False) -> str:
     """The refusal text for `problem`, in terms of the call that was made.
 
-    Two things went wrong here, both measured on run 8d28ee3f.
+    Two things went wrong here, both measured on one run.
 
     The instruction was said twice. Some checks end with the remedy already
     ("Send the file again as complete, valid JSON.") because they are also used
@@ -2354,7 +2354,7 @@ _UNRUNNABLE_SCRIPTS = (".sh", ".bash", ".zsh", ".command")
 def _unrunnable_script_note(relative_path: str) -> str:
     """Warn about a script this environment can never execute, or "".
 
-    Measured on run-130deeef, where `simple-to-do-list-app/build.sh` was the
+    Measured on one run, where `simple-to-do-list-app/build.sh` was the
     most-written file of the entire run - 22 writes and edits across several
     stages - for a file the sandbox cannot run. `specialist_backend_0` then
     sent `sh ./build.sh` five times, and `specialist_backend_8` wrote
@@ -2489,7 +2489,7 @@ def _the_response_it_should_be_returning(relative_parts: tuple[str, ...]) -> str
     `docs/structured_response.md` five times in a row, carrying
     `{"role":"Testing and Quality Engineering Specialist","output":{...}}` as
     its content, and the loop guard stopped the run. Twenty model calls in that
-    run went into writing that file; run a7150a6c spent eight more on
+    run went into writing that file; one run spent eight more on
     `structured_response.json`.
 
     Nothing refused it before, because nothing renders a file of that name -
@@ -2517,7 +2517,7 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
     canonical path is overwritten the next time the stage that produces it
     runs, so neither is worth a model call.
 
-    run-84e05d4b's `specialist_documentation_2` spent six consecutive calls
+    One run's `specialist_documentation_2` spent six consecutive calls
     and ninety seconds failing to edit `docs/tools_and_models.md` - a document
     rendered from the `tools_models` stage's structured response. Succeeding
     would have been no better than failing.
@@ -2528,11 +2528,11 @@ def _a_workflow_document(relative_parts: tuple[str, ...]) -> str | None:
     The message names the channel that does work, because the first version did
     not and the model found the worst way round it: refused the specification,
     `specialist_ui_ux_0` wrote `docs/specification_update.md` instead - in
-    run-04576307 and again in run-01f03ed9, written once each and never read by
+    one run and again in one run, written once each and never read by
     anything. A specialist's `decisions`, `risks` and `blockers` are read by the
     workflow; a sibling document is read by nobody.
 
-    Measured on run-84e05d4b: a specialist wrote
+    Measured on one run: a specialist wrote
     `simple-to-do-list-app/docs/architecture_review.md`, a copy of the review
     the workflow had already rendered to `docs/architecture_review.md` from the
     reviewer's structured decision. Two files with the same name and different
@@ -2585,7 +2585,7 @@ def _nearly_a_workflow_document(relative_parts: tuple[str, ...]) -> str:
 
     `_a_workflow_document` refuses the exact names and `_supersedes_existing`
     refuses an explicit `_v2`. Between them sits the near-miss spelling, which
-    run-454adf22 produced: `docs/tech_specification.md`, 470 bytes, beside the
+    one run produced: `docs/tech_specification.md`, 470 bytes, beside the
     workflow's own `docs/technical_specification.md`, 5,847 bytes.
 
     The harm is the one the architect's `technical_specification_v2.md` caused:
@@ -2749,12 +2749,12 @@ def _refuse_a_test_script_that_strands_suites(
             return
         # A glob is the shell's discovery, not a list of names: `*.test.mjs`
         # expands to whatever is there, and reading it literally reports every
-        # file it would have matched as stranded (run 5f4cdd55).
+        # file it would have matched as stranded (one run).
         if any(character in command for character in "*?["):
             return
         # Only positional arguments name suites. `--config=jest.config.js`
         # names a configuration file, and jest with no pattern searches the
-        # project (run fff9bf89).
+        # project (one run).
         named = {
             token
             for token in shlex.split(command)
@@ -2945,7 +2945,7 @@ def _the_module_type_here_rejects_this_file(target: Path, content: str) -> str:
     in an ES module is perfectly good syntax and fails only when it runs, so
     no parser sees it and the cost lands on whoever runs the file.
 
-    Measured live on run-eb48de7a. `specialist_testing_5` wrote
+    Measured live on one run. `specialist_testing_5` wrote
     `todo-app/test_core.js` opening `const assert = require('assert');` into a
     project whose `package.json` says `"type": "module"`. The write was
     accepted in silence. The next call ran it and got
@@ -3170,7 +3170,7 @@ def _with_one_trailing_newline(content: str) -> str:
     byte comparison, and a trailing newline the model happened to include one
     time and not the next makes two identical documents compare as different.
 
-    Measured on run-130deeef's `specialist_backend_8`: it wrote `docs/blocker.md`
+    Measured on one run's `specialist_backend_8`: it wrote `docs/blocker.md`
     with a trailing newline, then wrote the same 600 characters without one.
     That counted as a real change, so the second write reported "written"
     instead of "unchanged", and the "do not write it again" signal - and the
@@ -3230,7 +3230,7 @@ def _write_unless_it_changes_nothing(
     it reads the file back, finds its change absent, concludes the edit failed,
     and sends the identical call again.
 
-    That is what killed run-b61df271. Its `specialist_backend_3` made three
+    That is what killed one run. Its `specialist_backend_3` made three
     edits to `to-do-app/app.js` whose `find` and `replace` were the same 848
     characters, each answered with `"status": "edited"`, re-reading the file
     between them and seeing the same 73 lines every time. The fifth identical
@@ -3245,7 +3245,7 @@ def _write_unless_it_changes_nothing(
     """
     if updated != original:
         _refuse_an_edit_that_goes_backwards_again(relative_path, updated)
-        # Edits are how run 6b511391's mock grew: 145 lines to 1,195, one
+        # Edits are how one run's mock grew: 145 lines to 1,195, one
         # `edit_artifact` at a time. Refusing only the write would leave the
         # path that was actually used wide open.
         _refuse_a_hand_built_dom_again(relative_path, updated)
@@ -3269,7 +3269,7 @@ def _write_unless_it_changes_nothing(
             # whole file correctly in one call, and `write_artifact` refuses
             # broken content too.
             #
-            # Measured live on run-eb48de7a. `todo-app/main.js` had a
+            # Measured live on one run. `todo-app/main.js` had a
             # duplicate `li` declaration, and `specialist_ui_ux_2` and `_3`
             # were refused four consecutive edits - at lines 22, 59, 83 and
             # 72. The moving line number is the evidence it was making
@@ -3405,7 +3405,7 @@ survive is not a node boundary but a *process*: agents are built per stage, each
 derives paths for itself, and none of them can see what an earlier stage decided.
 The file is the only thing every stage shares.
 
-run-0b55ad49 built the same to-do application three times over - in
+One run built the same to-do application three times over - in
 `simple-todo-list-app`, `simple_todo_list_app`, and `thehub` - because each
 stage picked a name and nothing carried the first choice forward. None of the
 three was ever finished.
@@ -3415,7 +3415,7 @@ three was ever finished.
 #: project directory is pinned, each of these creates a *second* project that
 #: competes with it.
 #:
-#: run-0b55ad49 ended with two: `package.json` at the root declaring jest 30 and
+#: One run ended with two: `package.json` at the root declaring jest 30 and
 #: another in the project declaring jest 29, two `jest.config.js`, two
 #: `jestSetup.js`, two `node_modules`. `npm test` ran the root's jest against
 #: the project's tests and failed with "Identifier 'jest' has already been
@@ -3448,7 +3448,7 @@ def _scaffolding_at_the_workspace_root(
     """Why this file cannot go here, or None if it can.
 
     Every prompt says to build inside one top-level project directory, and
-    until now nothing enforced it. Measured on run-7b11cb67: the UI specialist
+    until now nothing enforced it. Measured on one run: the UI specialist
     wrote `css/style.css` and `index.html` straight into the workspace root, so
     the pin took `css` as the project and the application would have been built
     inside a directory named after its stylesheets.
@@ -3479,7 +3479,7 @@ def _scaffolding_at_the_workspace_root(
     project = pinned_project_directory(root)
     if project:
         # A source file at the root once a project exists is the other half of
-        # the same mistake: on run-7b11cb67 `index.html` sat at the workspace
+        # the same mistake: on one run `index.html` sat at the workspace
         # root beside the `css/` that had been pinned, belonging to neither.
         return (
             f"Refusing to write '{shown}': this run's project is '{project}', and "
@@ -3505,7 +3505,7 @@ def _tests_outside_the_project(root: Path, relative_parts: tuple[str, ...]) -> s
     invoked inside the project, so a suite at the workspace root is one the
     project's own `npm test` will never collect.
 
-    Measured on run-2b5def74, which completed with two test directories -
+    Measured on one run, which completed with two test directories -
     `tests/` at the workspace root and `simple-to-do-list-app/tests/` - holding
     three files of the same names. Nothing reconciled them, both were run by
     hand in different stages, and the milestone reviewer counted them twice.
@@ -3539,7 +3539,7 @@ def _code_in_the_documents_directory(
     workflow's own generated documents share. Code there is read as prose by
     one stage and imported by none.
 
-    Measured on run-304add54: the testing specialist wrote `/docs/test_suite.js`
+    Measured on one run: the testing specialist wrote `/docs/test_suite.js`
     and then edited it five times running, fighting JSDOM scope problems in a
     file that no test runner would ever collect - the project's runner looks in
     the project directory. The repeat guard stopped the stage; the file was in
@@ -3547,7 +3547,7 @@ def _code_in_the_documents_directory(
 
     Names the destination, not just the rule. A refusal that says only "not
     here" leaves an agent that has read the rule and cannot apply it: on
-    run-2bfa5e6e the testing specialist was refused `docs/tests/playwright.config.js`,
+    one run the testing specialist was refused `docs/tests/playwright.config.js`,
     answered "the requirement conflicts, so we have a blocker", and shipped the
     milestone with no UI tests at all - the run then failed the review for
     missing them. `_test_outside_the_project` already names where to write
@@ -3582,7 +3582,7 @@ def _is_project_manifest(name: str) -> bool:
 _NON_PROJECT_DIRECTORIES = frozenset({
     "docs", "large_tool_results", "tests", "test",
     # Conventional folders that live INSIDE a project and are never the project
-    # itself. Measured on run-7b11cb67: the UI specialist wrote
+    # itself. Measured on one run: the UI specialist wrote
     # `css/style.css` before anything else, the pin took `css` as the project,
     # and every later stage would have built the application inside a directory
     # called `css` - with `index.html` stranded at the workspace root beside it.
@@ -3675,7 +3675,7 @@ def _forks_existing_directory(root: Path, target: Path) -> Path | None:
 
     The shared prompt tells every agent to put code in a folder named after the
     product, and every agent derives that name for itself. Sprint 1 of
-    run-0b55ad49 built `simple-todo-list-app`; sprint 2 derived
+    one run built `simple-todo-list-app`; sprint 2 derived
     `simple_todo_list_app` and rebuilt the application from scratch beside it,
     so the project existed twice and neither copy was finished.
 
@@ -3746,7 +3746,7 @@ def _the_same_module_already_here(target: Path, content: str) -> Path | None:
     `_supersedes_existing` catches `spec_v2.md` beside `spec.md`. This catches
     the other spelling of the same mistake, which the extension hides.
 
-    Measured on run-454adf22: `simple-to-do-list-app/app.js` (4,887 bytes) and
+    Measured on one run: `simple-to-do-list-app/app.js` (4,887 bytes) and
     `simple-to-do-list-app/app.mjs` (4,853 bytes), near-identical copies of one
     application. From there every fix lands in one of them, the test file
     imports whichever it imports, and half the remediation does nothing - which
@@ -3852,7 +3852,7 @@ rest are the delimiters a chat template wraps around a turn. They are not
 supposed to survive into content, and when they do the file is not what the
 model meant to write - it is the model's transcript, cut off mid-thought.
 
-Measured on run-44653bd2, on North-Mini-Code-1.0. `Task.test.mjs` was written
+Measured on one run, on North-Mini-Code-1.0. `Task.test.mjs` was written
 ending:
 
     });
@@ -3939,7 +3939,7 @@ def _a_rewrite_that_drops_what_the_file_defines(
     and the next stage to look found the behaviour missing with no record of
     where it went.
 
-    Measured on run-6e50b630, which failed at the milestone revision limit. Its
+    Measured on one run, which failed at the milestone revision limit. Its
     `todo-app/app.js`, by successful whole-file write, paired strictly by
     tool_call_id:
 
@@ -3966,13 +3966,13 @@ def _a_rewrite_that_drops_what_the_file_defines(
     # Not a test file. Every test body has locals, so rewriting a suite reads as
     # losing a dozen definitions - and rewriting a suite is ordinary work.
     #
-    # Measured in production on run-a6b28314, the first firing this guard had:
+    # Measured in production on one run, the first firing this guard had:
     # `specialist_backend_2` rewrote `task-manager/app.test.mjs` and was told it
     # was removing `__dirname`, `__filename`, `after`, `err`, `exactTitle`,
     # `longTitle` and four more - module-scope consts, a `node:test` import and
     # locals inside test bodies. None of it is an interface anything depends on.
     #
-    # Nested definitions are counted deliberately, because run-6e50b630's lost
+    # Nested definitions are counted deliberately, because one run's lost
     # handler lived inside `init()`. That is right for product code and wrong
     # here, and a test file is the one place the two diverge. A suite that really
     # disappears is caught by `_a_suite_registered_twice` and by the case counts
@@ -4137,7 +4137,7 @@ def write_approved_artifact(
         # rejected write must not pin anything: the pin is permanent and every
         # later path is measured against it.
         #
-        # Observed on run-64df2b20: the technical lead wrote a 1-byte file named
+        # Observed on one run: the technical lead wrote a 1-byte file named
         # `med2`, then a specialist wrote `med2/app/__init__.py`. That pinned
         # `med2` and *then* failed, because `med2` was a file and not a
         # directory. The specialist removed the file, created `med2-app`, and
@@ -4242,7 +4242,7 @@ def write_approved_artifact(
             # `exist_ok=True` tolerates an existing *directory* and nothing else.
             # When a plain file already occupies the path - `todo-app` created by
             # a stray `touch` or a write with no extension - this raises
-            # FileExistsError, and on run-95ca3f72 that escaped as an unhandled
+            # FileExistsError, and on one run that escaped as an unhandled
             # exception and killed the stage. Every other failure in this module
             # is a RepositoryToolError the agent can read and act on; this one
             # should be too, and it has to say what is actually in the way.
@@ -4257,7 +4257,7 @@ def write_approved_artifact(
             # `IsADirectoryError`, which reached the model as
             # "[Errno 21] Is a directory: '/app/data/workspaces/...'" -
             # an errno and a host path, naming neither the problem nor the fix.
-            # run-08acb1ee's `specialist_ui_ux_1` wrote to `docs/` and got
+            # One run's `specialist_ui_ux_1` wrote to `docs/` and got
             # exactly that. Every other failure in this module is a sentence
             # the agent can act on; this one should be too.
             if target.is_dir():
@@ -4367,7 +4367,7 @@ def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
     `looks_like_a_test` matches the directory too, so the renamed file was
     protected exactly as before.
 
-    run-84e05d4b walked straight into it: `specialist_ui_ux_0` wrote
+    One run walked straight into it: `specialist_ui_ux_0` wrote
     `simple-to-do-list-app/tests/ui_test.js` as a probe, was refused the
     delete, followed the instructions, moved it to
     `simple-to-do-list-app/tests/ui_test.js.probe` - and stopped there, leaving
@@ -4399,7 +4399,7 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
 
     Why this exists:
         Agents are told scratch files do not belong in the deliverable, and
-        until now had no way to act on that. On run-61c5a5b6 the UI specialist
+        until now had no way to act on that. On one run the UI specialist
         needed to remove one temporary `.mjs` probe. With no delete tool it
         wrote a second `.mjs` that unlinked the first - which was itself a
         scratch file it then wanted gone. Fifty approval gates and nine
@@ -4436,13 +4436,13 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
     # it looks exactly like the dotfile clutter an agent tidying the workspace
     # root would remove. Losing it does not fail loudly; it makes the next
     # stage build the application a second time in a second directory, which is
-    # the failure the pin was added to prevent (run-0b55ad49, three copies).
+    # the failure the pin was added to prevent (one run, three copies).
     if target.name == PROJECT_MARKER:
         raise RepositoryToolError(
             f"'{shown}' records which directory this project lives in and is not "
             "clutter. Leave it alone; every later stage reads it."
         )
-    # A test is evidence, not clutter. Measured on run-2b5def74: the test round
+    # A test is evidence, not clutter. Measured on one run: the test round
     # wrote four suites, ran them - 27 assertions passing against the real
     # application - and then deleted three of them as "temporary helper
     # scripts", leaving only the one suite that tested a copy of the code.
@@ -4459,7 +4459,7 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
 
     if looks_like_a_test(shown):
         # The refusal has to name the way out, or an agent that genuinely wrote
-        # a throwaway probe has nowhere to go. run-9ff00d5b's
+        # a throwaway probe has nowhere to go. One run's
         # `specialist_testing_1` wrote `todo-app/debug.test.mjs`, ran it, then
         # asked to delete it five times in a row - refused every time - until
         # the repeat guard stopped the stage and FAILED THE RUN. The old text
@@ -4486,7 +4486,7 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         # The same memo the read, the edit and the move consult. A stage
         # clearing up the debugging scripts it wrote loses track of which it
         # has already removed, and "run `ls`" sends it to look for an answer it
-        # already has. Measured on run 551640d3: twelve failed deletes across
+        # already has. Measured on one run: twelve failed deletes across
         # two stages, ten of them on a path that same stage had just deleted.
         if _this_stage_already_deleted(shown):
             raise RepositoryToolError(
@@ -4543,7 +4543,7 @@ def move_approved_artifact(
     from_shown = source.relative_to(root).as_posix()
     to_shown = target.relative_to(root).as_posix()
 
-    # A move is how an agent gets round the write refusal: run-01f03ed9 moved
+    # A move is how an agent gets round the write refusal: one run moved
     # `docs/architecture_review.md` to `docs/old_architecture_review.md`, which
     # left the canonical path vacant, and then wrote
     # `docs/architecture_review_new.md` - which `_supersedes_existing` allowed,
@@ -4652,7 +4652,7 @@ def run_approved_validation(
 
     # Validation runs where the project is, not where the workspace starts.
     # The pin already decides where code is written; a test command that
-    # ignored it ran the workspace root's manifest instead - on run-95ca3f72
+    # ignored it ran the workspace root's manifest instead - on one run
     # that was npm's `npm init -y` default, whose test script is
     # `echo "Error: no test specified" && exit 1`. Every test round reported a
     # failure that had nothing to do with the tests.
@@ -4686,7 +4686,7 @@ def run_approved_validation(
     # so every one of them reached `run_terminal_command` and none reached
     # `run_validation` - the tool the testing specialists are told to use.
     #
-    # Measured on run-84e05d4b's `specialist_testing_1`: 53 model calls, `node
+    # Measured on one run's `specialist_testing_1`: 53 model calls, `node
     # --test` run six times through this path and three through the other. Only
     # the three could be told anything.
     if result.get("note"):

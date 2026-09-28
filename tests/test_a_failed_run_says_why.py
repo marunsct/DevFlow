@@ -9,7 +9,7 @@ So the run reached `failed_node`, which returned `{"stage": "failed"}`, and the
 runner recorded `record.error = state.get("error")`: a row saying `failed` and
 nothing else.
 
-`run-0ea9181d` is one. Seventy-three minutes of work, approvals answered every
+`one run` is one. Seventy-three minutes of work, approvals answered every
 thirty seconds by the monitor, then `failed` at 11:53:56 with a null error, no
 event explaining it and no log line. Diagnosing it meant ruling out the causes
 it was not - and the stage name it had kept, `awaiting_approval:test_round_2`,

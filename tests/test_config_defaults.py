@@ -13,7 +13,7 @@ This has now happened twice, in both directions:
   it for compose, and missed the one two lines from the field it edited.
 - `WORKFLOW_MAX_GATES_PER_STAGE` was raised 25 -> 120 in `runner.py`, with a
   docstring explaining at length why 25 strands an iterative specialist mid-work
-  - while compose went on passing 25. On run-0b55ad49 `specialist_testing_3` was
+  - while compose went on passing 25. On one run `specialist_testing_3` was
   stopped at exactly 25 gates, having made real progress the whole way, and lost
   all of it.
 

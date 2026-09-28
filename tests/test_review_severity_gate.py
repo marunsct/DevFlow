@@ -5,7 +5,7 @@ findings. Until this gate, nothing routed on the grade: `status` alone decided,
 so a reviewer that wrote `changes_required` over nothing but `minor` findings
 sent the work back exactly as hard as one that found a blocking defect.
 
-That killed run-da4df814. Its six architecture reviews went:
+That killed one run. Its six architecture reviews went:
 
     1   8 findings, 2 blocking   - legitimate
     2   4 findings, all minor    - sent back
@@ -49,7 +49,7 @@ def _review(*severities: str) -> ArchitectureReviewOutput:
 
 
 def test_minor_findings_do_not_block() -> None:
-    """Rounds 2, 3 and 4 of run-da4df814."""
+    """Rounds 2, 3 and 4 of one run."""
     assert _findings_that_block(_review("minor", "minor", "minor", "minor")) == []
 
 
@@ -106,7 +106,7 @@ def test_a_review_with_no_findings_blocks_nothing() -> None:
 
 def test_both_reviewers_route_on_it() -> None:
     """Fixing the reviewer that happened to fail is how this codebase has
-    shipped the same bug four times. Architecture failed run-da4df814;
+    shipped the same bug four times. Architecture failed one run;
     milestone had the identical hole and no run had reached it yet.
     """
     import inspect

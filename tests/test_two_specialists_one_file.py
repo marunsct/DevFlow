@@ -6,7 +6,7 @@ workspace mutation lock serialises the writes, it cannot make them agree.
 
 Measured across the 27 current-generation runs: 157 writes were one stage writing
 content byte-identical to what a *different* stage had already written.
-run-2ac28a2f is the clearest - three specialists each wrote the same
+One run is the clearest - three specialists each wrote the same
 `package.json`, the same `app.js`, the same test file and the same
 `jest.config.cjs`. Two of each three produced nothing, having each paid a model
 call to generate it.
@@ -16,7 +16,7 @@ than one specialist:
 
     0ea9181d  app.js        -> backend, ui_ux
     977eedf8  app.js        -> backend, testing, ui_ux
-    b3cb2d80  app.js        -> backend, testing, ui_ux
+    a000000b  app.js        -> backend, testing, ui_ux
     6e50b630  app.test.mjs  -> testing, ui_ux
 
 So two things: the Technical Lead is asked for one owner per file, and the
@@ -45,7 +45,7 @@ class Task:
         self.acceptance_criteria = list(criteria)
 
 
-#: run-b3cb2d80's own shape: three roles, one `app.js`.
+#: One run's own shape: three roles, one `app.js`.
 THE_PLAN_THAT_OVERLAPPED = [
     Task("Write app.js with the localStorage adapter and the pure functions"),
     Task("Update app.js renderTasks() to add the completed class to each item"),
@@ -220,7 +220,7 @@ class TestBothCallSitesAreWired:
     once - so it is the one where a file two tasks share matters most. It was the
     unwired one.
 
-    Caught by auditing run-a6b28314 rather than by a test: its plan named
+    Caught by auditing one run rather than by a test: its plan named
     `app.js` in four of six delegated tasks, five stages wrote `app.js`, and not
     one brief mentioned the overlap. The helper passed its own tests the whole
     time.

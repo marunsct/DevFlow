@@ -10,7 +10,7 @@ after_model` cycle before stopping again. So every approval gate costs a model
 call, and the count climbs until the run's repeat guard kills the stage for
 asking for the same thing five times in a row.
 
-Measured on run-91a18470's `test_round_3`: eighteen `__start__` re-entries and
+Measured on one run's `test_round_3`: eighteen `__start__` re-entries and
 thirty-four `jump_to=end` hard stops on a single inner thread, the model-call
 count rising with every gate, ending in
 

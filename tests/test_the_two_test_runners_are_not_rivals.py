@@ -8,7 +8,7 @@ Install it using `npm i -D @playwright/test`".
 A stack records one testing framework, so for every UI product those two cannot
 both be satisfied, and nothing in the brief said which won.
 
-Measured on run-83bd156a, which oscillated and then shipped the result:
+Measured on one run, which oscillated and then shipped the result:
 
     #1308  defect_fix_4_6        added a `test:e2e` script
     #1728  specialist_backend_1  made `test` run both suites

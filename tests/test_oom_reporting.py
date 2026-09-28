@@ -1,6 +1,6 @@
 """An OOM-killed worker must say so, not look like an infrastructure fault.
 
-Measured on run-cbd22a34: `npx vitest run` forked one worker per CPU, each
+Measured on one run: `npx vitest run` forked one worker per CPU, each
 permitted `SANDBOX_MEMORY_LIMIT` (2 GiB) of heap by RLIMIT_DATA. The tree
 reached `memory.peak = 4,294,975,488` - exactly the worker container's 4 GiB
 limit - and the kernel killed the Celery workers mid-test:
@@ -118,5 +118,5 @@ def test_the_sandbox_heap_leaves_room_for_a_fork_pool():
     assert per_process * 4 <= container, (
         f"SANDBOX_MEMORY_LIMIT={per_process}g x4 forked workers exceeds the "
         f"worker container's {container}g limit, which is what OOM-killed "
-        "run-cbd22a34"
+        "run-a000000c"
     )

@@ -7,7 +7,7 @@ blocking finding unless you can show it is not". Then it renders them into a
 paragraph, and the only thing that can turn them into work is the reviewer
 choosing to write them into `findings`.
 
-Measured on run-5696a52d. Three problems graded `BREAKS`, one of them
+Measured on one run. Three problems graded `BREAKS`, one of them
 
     simple-to-do-list-app/index.html references `style.css`, which does not
     exist in the workspace.
@@ -53,7 +53,7 @@ A_PAGE_MISSING_ITS_STYLESHEET = """<!doctype html>
 
 @pytest.fixture
 def a_workspace(tmp_path):
-    """The shape of run-5696a52d's product: a page linking a file nobody wrote."""
+    """The shape of one run's product: a page linking a file nobody wrote."""
     project = tmp_path / "todo-app"
     project.mkdir()
     (project / "index.html").write_text(A_PAGE_MISSING_ITS_STYLESHEET)
@@ -91,7 +91,7 @@ class TestWhatTheChecksCanProve:
 
 class TestTheFindingsTheHarnessRaises:
     def test_the_missing_stylesheet_becomes_a_blocking_finding(self, a_workspace):
-        """The finding run-5696a52d never got."""
+        """The finding one run never got."""
         findings = findings_for_what_the_checks_proved(a_workspace, "javascript", "")
 
         missing = [f for f in findings if "style.css" in f.description]
@@ -186,7 +186,7 @@ class TestWhatTheLeadReceives:
 
         Without findings, `_milestone_changes_requested` falls back to the
         reviewer's prose under "It recorded no structured findings" - what
-        run-5696a52d's lead got three times. With them it renders one line per
+        one run's lead got three times. With them it renders one line per
         defect in the severity/category/remediation form the lead delegates from.
         """
         from app.graph.workflow import _milestone_changes_requested

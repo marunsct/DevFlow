@@ -1,6 +1,6 @@
 """Catch a structurally broken source file at the moment it is written.
 
-run-e37a2bd8 lost a whole sprint to one edit. `confirmDeletePrompt` had its
+One run lost a whole sprint to one edit. `confirmDeletePrompt` had its
 `return new Promise((resolve) => {` removed and its closing `});` left behind:
 
     export function confirmDeletePrompt(id, simulate = false) {
@@ -166,7 +166,7 @@ def _confidently_unbalanced(text: str) -> Imbalance | None:
 #: thing a model guesses at most often - `assert` is the *default* export of
 #: `node:assert`, not a named one, and `node:test` does not export it at all.
 #:
-#: run-82e1dbdb wrote `import { assert } from 'node:test'` and
+#: One run wrote `import { assert } from 'node:test'` and
 #: `import { assert } from 'node:assert'` more than ten times. Each one is
 #: valid-looking, parses cleanly, and fails only when the test runs - so the
 #: sprint spent all three remediation attempts on it and the run ended with the
@@ -190,7 +190,7 @@ _NODE_NAMED_EXPORTS["node:assert/strict"] = _NODE_NAMED_EXPORTS["node:assert"]
 #: model reaching for these has the right idea and the wrong library, and the
 #: list of what `node:test` does export does not tell it that.
 #:
-#: run-a7150a6c wrote `import { test, expect } from "node:test"` and then spent
+#: One run wrote `import { test, expect } from "node:test"` and then spent
 #: three `grep`s hunting `expect(` through its own test files.
 _JEST_ONLY = frozenset({"expect", "jest", "vi", "vitest", "beforeAll", "afterAll"})
 
@@ -282,7 +282,7 @@ def _broken_json(relative_path: str, content: str) -> str | None:
 
     `package.json` is the one that matters most: Node reads it to resolve every
     module in the directory, so a broken one does not fail the file that
-    contains it, it fails everything near it. run-0deeb8bf wrote one and got
+    contains it, it fails everything near it. One run wrote one and got
     "Error parsing simple-to-do-list-app/package.json: Expected property name
     or '}' in JSON at position 73" from `package_json_reader` - a stack trace
     naming an internal Node module, two stages from the write.

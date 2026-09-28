@@ -82,7 +82,7 @@ def returned_to_an_earlier_state(relative_path: str, content: str) -> bool:
     with new arguments and let it through. The file oscillates and the stage
     spends its budget.
 
-    Measured on run 8d28ee3f, `defect_fix_1_0`, which made 67 tool calls
+    Measured on one run, `defect_fix_1_0`, which made 67 tool calls
     against a 40-call budget - 23 edits and 16 reads of one file. Its edits to
     `app.js` ran: `console.log(...)` -> `global.console.log(...)` ->
     `console.log(...)` -> `console.log(...)`, each reported "edited", toggling
@@ -159,7 +159,7 @@ def where_this_stage_moved_it(relative_path: str) -> str | None:
 
     A read or an edit that misses at a path the stage renamed itself is not a
     missing file - it is a stale name, and the stage knows the new one because
-    it chose it. Measured on run d6297b2f: `specialist_backend_0` moved
+    it chose it. Measured on one run: `specialist_backend_0` moved
     `test/loadTasks.test.mjs` to `test/loadTasks.test.js`, then spent a
     `read_file` and an `edit_artifact` on the old name, each answered only
     "not found". That stage ran 47 model calls against a next-longest of 10.
@@ -194,7 +194,7 @@ _MOCK_DOM_WARNINGS = "times this stage was told it was building a DOM by hand"
 #: the undo refusal, and for the same reason: a note the model has ignored
 #: twice is not a note that needs rewording.
 #:
-#: Measured on run-6b511391. `specialist_testing_1` was told nine times that
+#: Measured on one run. `specialist_testing_1` was told nine times that
 #: "This test builds a browser API by hand ... Mocking the DOM is no longer
 #: permitted. You MUST write a browser-based test using Playwright", and grew
 #: the mock from 145 lines to 1,195 - Proxy traps over a `Map` for `dataset` -
@@ -243,7 +243,7 @@ def this_stage_deleted_it(relative_path: str) -> bool:
     "there is nothing to delete, run `ls`" sends it to look for the answer it
     already has.
 
-    Measured on run 551640d3: twelve failed deletes across two stages, ten of
+    Measured on one run: twelve failed deletes across two stages, ten of
     them on a path that same stage had deleted successfully a moment earlier.
     """
     return bool(store(_DELETIONS, _FALLBACK_DELETIONS).get(the_same_place(relative_path)))

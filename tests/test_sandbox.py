@@ -210,14 +210,14 @@ def test_install_category_is_the_only_one_with_network(monkeypatch):
 # quotes that path. The agent reads it and uses it, and every filesystem tool it
 # holds then fails - inside the agent the workspace is rooted at "/".
 #
-# Measured on run-0b55ad49: two stages called `ls` against that exact string
+# Measured on one run: two stages called `ls` against that exact string
 # four times each, every attempt returning path_not_found, and passed it to
 # `node` and `read_file` besides. 64 of 378 tool calls in that run were repeats,
 # and this was the single largest cause.
 # ---------------------------------------------------------------------------
 
 
-WORKSPACE = "/app/data/workspaces/low-run-0b55ad49-2918-4325-8534-1be504ee3927"
+WORKSPACE = "/app/data/workspaces/low-run-a0000002-2918-4325-8534-1be504ee3927"
 
 
 def test_a_host_path_in_output_becomes_workspace_relative():
@@ -265,7 +265,7 @@ def test_a_missing_workspace_never_raises():
 # `ROLE_EXECUTABLES` is keyed by the name the sandbox is called with -
 # `f"{role}_specialist"`. A key that matches no role is not an error anywhere:
 # `allowed_executables` falls back to the common set and the role simply runs
-# crippled. On run-0b55ad49 the frontend specialist was refused `node` eight
+# crippled. On one run the frontend specialist was refused `node` eight
 # times while building a web page, because the key said `ui_specialist` and the
 # role is `ui_ux`. Three of six roles had no entry at all.
 # ---------------------------------------------------------------------------
@@ -339,7 +339,7 @@ def test_an_unknown_role_still_gets_nothing_extra():
 # bounds-check trick and touch almost none of it. Against a 2 GB address-space
 # cap, every WASM instantiation fails.
 #
-# On run-0b55ad49 that produced `WebAssembly.Instance(): Out of memory` 24
+# On one run that produced `WebAssembly.Instance(): Out of memory` 24
 # times, the milestone review concluded "no test commands succeeded in the
 # workspace", and agents had begun writing `WebAssembly = null` stubs to work
 # around a limit that was never about their memory use.
@@ -427,7 +427,7 @@ def test_a_test_runner_is_still_not_a_shell():
 #
 # Commands run with the workspace root as their working directory, so
 # `npm install` there creates `package.json` and `node_modules` beside a project
-# that has its own. On run-0b55ad49 that meant jest 30 at the root running the
+# that has its own. On one run that meant jest 30 at the root running the
 # project's jest-29 tests, and three remediation rounds spent on "Identifier
 # 'jest' has already been declared". `write_artifact` already refused a root
 # manifest; a package manager reached the same file through another door.
@@ -512,12 +512,12 @@ def test_a_static_file_server_is_refused_rather_than_timed_out() -> None:
     it. Every one of these is a real call from a stored run that returned
     nothing after two minutes:
 
-        run-cbd22a34  npx serve . -p 8000       (and retried without the dot)
-        run-cbb1a5fc  npx http-server -p 8765 --silent
-        run-2eb3aa24  npx --yes serve -p 3000   (retried)
+        One run  npx serve . -p 8000       (and retried without the dot)
+        one run  npx http-server -p 8765 --silent
+        one run  npx --yes serve -p 3000   (retried)
 
     A refusal costs nothing and says what to do instead. This is the shape of
-    the `node -e` refusal, which works: run-5d83e946 hit it twice and the agent
+    the `node -e` refusal, which works: one run hit it twice and the agent
     put the code in a file both times.
     """
     import pytest
@@ -535,7 +535,7 @@ def test_a_static_file_server_is_refused_rather_than_timed_out() -> None:
         # It must say what to do instead, or it only moves the behaviour.
         # The alternative is now named by the workspace: with a browser runner
         # installed, Playwright's `webServer` is the supported route and it
-        # works - run-35424714 served this very way and ran 34 browser tests.
+        # works - one run served this very way and ran 34 browser tests.
         # Without one, the advice is to call the module directly. Asserted on
         # the guarantee rather than on one wording of it.
         assert "webServer" in str(refusal.value)
@@ -568,7 +568,7 @@ def test_a_timeout_says_why_a_command_might_not_finish() -> None:
 
     The commonest cause is not slowness: it is a command that was never going
     to exit. The name check refuses the ones it can recognise, but
-    run-2eb3aa24's ui specialist wrote its own server, `node serve-test.mjs`,
+    one run's ui specialist wrote its own server, `node serve-test.mjs`,
     and ran it twice for 120 seconds each. No name check can catch that; the
     message it gets back can still explain it.
     """
@@ -620,8 +620,7 @@ def test_a_doubled_project_directory_is_repaired(tmp_path) -> None:
 
     An agent that sets `working_directory` to the project and then writes the
     project into the path as well produces it. Seen in at least seven runs:
-    run-2b5def74, run-61c5a5b6 (six times), run-cbb1a5fc, run-da6c5e19,
-    run-2eb3aa24. Nothing says whether a path argument resolves against the
+    Two runs (six times), three runs. Nothing says whether a path argument resolves against the
     workspace root or against `working_directory`, so the agent guesses.
     """
     from app.tools.sandbox import strip_a_doubled_working_directory
@@ -704,10 +703,10 @@ def test_a_string_command_survives_the_doubled_directory_repair() -> None:
 def test_a_command_that_already_failed_is_told_so(tmp_path) -> None:
     """Measured twice.
 
-    run-9ff00d5b's `specialist_backend_2` wrote a `verify.js`, hit
+    One run's `specialist_backend_2` wrote a `verify.js`, hit
     `node:fs:448 ... binding.readFileUtf8` on a path that does not exist, and
     ran the identical command four times with the identical failure.
-    run-e9e7f48f's `specialist_ui_ux_2` made 14 identical `grep` calls and rode
+    One run's `specialist_ui_ux_2` made 14 identical `grep` calls and rode
     the stage into the recursion limit, failing the whole run.
 
     Nothing told either of them.
@@ -754,7 +753,7 @@ def test_an_unwritable_ledger_never_fails_the_command() -> None:
 def test_an_edit_clears_the_previous_failure(tmp_path) -> None:
     """The false positive this check shipped with.
 
-    Caught live on run-37476645's `specialist_testing_2`, in the first run
+    Caught live on one run's `specialist_testing_2`, in the first run
     after the check shipped. The trace is EDIT, RUN, EDIT, RUN, EDIT, RUN - a
     specialist debugging a suite exactly as it should - and it was told
     twenty-six times that it had changed nothing and should change something.
@@ -781,8 +780,8 @@ def test_an_edit_clears_the_previous_failure(tmp_path) -> None:
 
 
 def test_a_failure_with_nothing_written_since_still_counts(tmp_path) -> None:
-    """The case the check exists for: run-e9e7f48f's 14 identical greps and
-    run-9ff00d5b's four identical failing commands, neither preceded by a
+    """The case the check exists for: one run's 14 identical greps and
+    one run's four identical failing commands, neither preceded by a
     change of any kind."""
     import time
 
@@ -809,7 +808,7 @@ def test_a_write_outside_the_command_directory_does_not_clear_the_count(
     "nothing has changed". The whole-workspace walk it used applied that same
     logic to files the command never touched: between two stages the workflow
     rewrites `docs/milestone_review.md`, and that single write reset the
-    failure count to zero. On run-2bfa5e6e a `npm test` failing on a missing
+    failure count to zero. On one run a `npm test` failing on a missing
     `package.json` was re-run across three stages and the "already failed"
     note never fired once.
     """
@@ -866,9 +865,9 @@ def test_a_write_in_the_command_directory_does_clear_the_count(tmp_path) -> None
 def test_a_command_that_already_passed_unchanged_is_counted(tmp_path) -> None:
     """The leak the failure-side check left open.
 
-    Measured on run-ae4b717e's `specialist_ui_ux_1`: eleven identical
+    Measured on one run's `specialist_ui_ux_1`: eleven identical
     `node -c task-manager/app.js`, every one exit 0 with empty output and no
-    write between any of them. Worse on run-9ff00d5b's `test_round_0`: one
+    write between any of them. Worse on one run's `test_round_0`: one
     passing `node --test todo-app/app.test.mjs` run twenty-eight times, and
     that run died in the recursion limit.
     """
@@ -986,7 +985,7 @@ def test_a_refused_command_gets_no_note(tmp_path) -> None:
 def test_a_refusal_is_not_cleared_by_a_write(tmp_path) -> None:
     """The asymmetry between a refusal and a failure.
 
-    Measured on run-ae4b717e's `specialist_backend_0`: `node -e "..."` refused
+    Measured on one run's `specialist_backend_0`: `node -e "..."` refused
     at 23:44:29 with a message naming the way round, edits and a delete in
     between, then the identical command again at 23:44:41. A write gate would
     have called that a fresh situation and said nothing - but the allowlist
@@ -1061,14 +1060,14 @@ def test_every_specialist_can_run_the_code_it_may_be_asked_to_write():
 
     A specialist is handed whatever the Technical Lead delegates, in whatever
     stack the stack selector picked. A role that can write a file it cannot
-    run has only bad options, and it takes them: on run-414a621f the database
+    run has only bad options, and it takes them: on one run the database
     specialist, refused `node`, wrote a Python script to subprocess-launch node
     (permitted), ran `python3 app.test.mjs`, and finally tried to `exec()` a
     JavaScript module as Python.
 
     This has been fixed one role at a time four times - `ui_ux` on
-    run-0b55ad49, `backend` on run-95ca3f72, `testing` on run-3da8dd91,
-    `database` on run-414a621f. Asserted across the whole set so there is no
+    one run, `backend` on one run, `testing` on one run,
+    `database` on one run. Asserted across the whole set so there is no
     fifth.
     """
     import typing
@@ -1092,7 +1091,7 @@ def test_every_specialist_can_run_the_code_it_may_be_asked_to_write():
 def test_a_search_that_found_nothing_is_not_called_a_failure(tmp_path) -> None:
     """`grep` exits 1 when it matches nothing, which is an answer.
 
-    Counting it as a failure told run-1c522244's `specialist_ui_ux_1` that a
+    Counting it as a failure told one run's `specialist_ui_ux_1` that a
     working command "had already failed" and to "change the command, or change
     the file it runs". It ran the identical grep twelve times and the run died
     on the repeat guard at 1,132 events.
@@ -1148,7 +1147,7 @@ def test_only_commands_that_answer_that_way_are_excused(tmp_path) -> None:
 def test_a_command_line_packed_into_one_argument_says_so() -> None:
     """The refusal used to list the program it was refusing.
 
-    Measured on run-1c522244: `["wc -l", "todo-app/style.css"]` was answered
+    Measured on one run: `["wc -l", "todo-app/style.css"]` was answered
     with "'wc -l' is not permitted for role 'ui_ux_specialist'. Allowed: ...,
     wc, ..." - true, and useless. The problem is not a permission, and an agent
     told it is will go looking for the wrong fix. Three calls went that way
@@ -1189,7 +1188,7 @@ def test_node_cannot_syntax_check_a_stylesheet() -> None:
     """A failure that no edit can fix, so the write-gated note never speaks.
 
     `node --check style.css` throws ERR_UNKNOWN_FILE_EXTENSION - it fails for
-    what the file is, not what it contains. Measured on run-fa7b7286:
+    what the file is, not what it contains. Measured on one run:
     `specialist_ui_ux_0` ran the identical command twice, two minutes apart,
     editing files in between, so the "you already tried this" gate correctly
     saw a changed workspace and stayed silent both times about a command that
@@ -1226,7 +1225,7 @@ def test_only_check_is_affected() -> None:
 def test_the_ledger_separates_the_same_command_in_different_places(tmp_path) -> None:
     """Keying on argv alone answered "you already ran this" from the wrong history.
 
-    run-44653bd2 ran `node --test` under `/simple-to-do-list-app` and under
+    One run ran `node --test` under `/simple-to-do-list-app` and under
     `simple-to-do-list-app`. The ledger recorded argv only, so the two were one
     entry. Keying on argv alone is the mistake finding 68 already made once.
     """
@@ -1341,7 +1340,7 @@ def test_a_shell_redirect_is_refused_rather_than_silently_doing_nothing() -> Non
     prints them, exits 0, and writes nothing - so the agent is told its command
     succeeded and believes the file exists.
 
-    Measured on run-fff9bf89: `specialist_backend_2` did exactly that twice,
+    Measured on one run: `specialist_backend_2` did exactly that twice,
     for `app.js` and `simple-to-do-list-app/app.js`. Both "succeeded". Neither
     file was written. An exit code of zero is the most convincing lie a tool
     can tell.
@@ -1409,7 +1408,7 @@ def test_the_executable_itself_is_never_read_as_an_operator() -> None:
 def test_a_refused_rm_names_the_tool_that_does_it() -> None:
     """The allowlist says what may be run; it does not say how to do the job.
 
-    run-130deeef's backend specialist sent `rm -rf simple-to-do-list-app/tests`
+    One run's backend specialist sent `rm -rf simple-to-do-list-app/tests`
     and was handed twenty-six program names. `delete_artifact` exists.
     """
     with pytest.raises(CommandNotAllowed) as caught:
@@ -1450,7 +1449,7 @@ def test_a_doubled_project_directory_is_stripped_however_it_is_written(
     """`./project/x` and `/project/x` mean the same as `project/x` to the model,
     and it writes all three.
 
-    Comparing the raw string missed the first two. run-04576307 sent
+    Comparing the raw string missed the first two. One run sent
     `["node", "--test", "./simple-to-do-list-app/app.test.mjs"]` with
     `working_directory` already set to the project, and the guard written for
     exactly that shape did not fire over one `.`. The command then looked for
@@ -1510,7 +1509,7 @@ def test_the_refusal_separates_what_runs_from_what_must_be_installed(monkeypatch
     `make` is the one this harness itself recommends, in the refusal that
     explains there is no shell. A specialist told "Allowed: ... make ..." tries
     it, is told "not found", and has been handed an environment fault it cannot
-    fix - the shape that turned run-130deeef into five identical `sh` attempts
+    fix - the shape that turned one run into five identical `sh` attempts
     and then a blocker loop.
     """
     import app.tools.sandbox as sandbox

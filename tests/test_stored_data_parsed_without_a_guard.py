@@ -17,7 +17,7 @@ case that can. When storage holds something that is not JSON, load throws,
 and a page whose whole state comes from that call renders nothing.
 
 Raised as an open item by the session that ran on the other machine, against
-run 9f14d645's `task-manager/app.js`, which does the same thing with a
+one run's `task-manager/app.js`, which does the same thing with a
 comment explaining why it is safe.
 
 Deliberately whole-file: a file that handles an error anywhere is left alone.

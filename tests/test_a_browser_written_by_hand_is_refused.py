@@ -114,7 +114,7 @@ def test_a_clean_test_never_counts() -> None:
 
 
 def test_the_edit_path_refuses_too() -> None:
-    """Edits are how run 6b511391's mock grew: 145 lines to 1,195, one
+    """Edits are how one run's mock grew: 145 lines to 1,195, one
     `edit_artifact` at a time."""
     import inspect
 

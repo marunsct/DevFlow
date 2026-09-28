@@ -6,7 +6,7 @@ is the damage the argument exists to prevent. What it then said was "Read the
 file again and use the new line numbers", which costs a read of the whole
 file and a second attempt.
 
-Measured on run-ed05e20e: three of the run's ten costly failures were this
+Measured on one run: three of the run's ten costly failures were this
 refusal, and in every one the expected line was two or three lines from where
 the caller looked. `specialist_testing_2` asked for
 `export function renderTaskList(...)` at line 195 twice, and it was at 197

@@ -1,6 +1,6 @@
 """Tests for the workspace delete tool and the loop that made it necessary.
 
-On run-61c5a5b6 the UI specialist held a write tool and no delete tool, and was
+On one run the UI specialist held a write tool and no delete tool, and was
 told scratch files must not be kept. It obeyed the only way it could: it wrote
 `_selfdestruct.mjs` to unlink a probe, then `_finalclean.mjs` to unlink that,
 then `_cleanup_selfdestruct2.mjs`, for roughly fifty approval gates, because a
@@ -189,7 +189,7 @@ def test_the_project_pin_cannot_be_tidied_away(repo_root: Path) -> None:
 
     Deleting it does not fail loudly - it makes the next stage build the
     application a second time in a second directory, which is what the pin was
-    added to prevent after run-0b55ad49 produced three copies of one app.
+    added to prevent after one run produced three copies of one app.
     """
     from app.tools.repository import PROJECT_MARKER
 
@@ -293,7 +293,7 @@ def test_a_test_file_cannot_be_deleted(repo_root: Path) -> None:
     """The delete tool was added to end a cleanup loop. Without this guard it
     also hands an agent a way to throw away the proof the product works.
 
-    Measured on run-2b5def74: the test round wrote four suites, ran them - 27
+    Measured on one run: the test round wrote four suites, ran them - 27
     assertions passing against the real application - then deleted three of
     them as "temporary helper scripts", leaving only the suite that tested a
     copy of the code.
@@ -315,7 +315,7 @@ def test_the_refusal_says_what_to_do_instead(repo_root: Path) -> None:
 
     # Naming the route, not just the rule. The old wording ("give it a name
     # that is not a test name") reads as advice for next time and left an agent
-    # holding a throwaway probe with nowhere to go: run-9ff00d5b asked to
+    # holding a throwaway probe with nowhere to go: one run asked to
     # delete one five times, was refused each time, and the repeat guard failed
     # the run.
     message = " ".join(str(caught.value).split())
@@ -401,7 +401,7 @@ def test_an_mjs_test_is_protected_from_deletion(name: str) -> None:
 
 
 def test_the_test_refusal_names_the_two_steps_that_work(tmp_path):
-    """run-9ff00d5b's `specialist_testing_1` wrote `todo-app/debug.test.mjs`,
+    """One run's `specialist_testing_1` wrote `todo-app/debug.test.mjs`,
     ran it, then asked to delete it five times in a row - refused every time -
     until the repeat guard stopped the stage and FAILED THE RUN.
 
@@ -450,7 +450,7 @@ def test_the_route_the_refusal_names_actually_works(tmp_path):
 
 
 def test_a_real_test_is_still_protected(tmp_path):
-    """The protection exists because run-2b5def74's test round deleted three of
+    """The protection exists because one run's test round deleted three of
     its four suites as "temporary helper scripts", leaving only the one that
     tested a copy of the code."""
     from app.tools.repository import PROJECT_MARKER, delete_approved_artifact

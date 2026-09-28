@@ -2,7 +2,7 @@
 
 `what_the_brief_asked_for_that_is_missing` checks one direction - the brief
 asks for a page, the product has none. Nothing checked the other, and it is the
-direction run 0c5aabdb failed in: a brief reading "No external dependencies
+direction one run failed in: a brief reading "No external dependencies
 beyond basic HTML/CSS/JS" against a product built on Express with a 32KB
 lockfile.
 
@@ -64,7 +64,7 @@ def test_a_shipped_dependency_is_reported(project):
 
 def test_a_test_only_devdependency_is_not_a_violation(project):
     """A test runner in `devDependencies` ships to nobody, so a brief that
-    forbids dependencies has nothing to say about it. Measured on run-2d9066e2,
+    forbids dependencies has nothing to say about it. Measured on one run,
     which spent all three remediation attempts on `@playwright/test` here and
     failed without a product defect in it.
     """
@@ -201,7 +201,7 @@ def test_a_test_only_package_imported_but_never_declared_is_reported(tmp_path):
 
 
 def test_a_declared_package_and_an_undeclared_one_are_both_named(tmp_path):
-    """Run cbd22a34 declared `jsdom` and `vitest` and imported `linkedom` too.
+    """Run a000000c declared `jsdom` and `vitest` and imported `linkedom` too.
 
     The two declared ones are test-only, so they are no longer a violation; the
     undeclared one still is, because `npm ci` will not install it and the suite
@@ -264,7 +264,7 @@ def test_relative_and_url_imports_are_not_packages(tmp_path):
 
 
 def test_a_test_framework_config_file_is_test_tooling_not_product_code(tmp_path):
-    """The one import that cost run-519a9d8a its milestone.
+    """The one import that cost one run its milestone.
 
     `@playwright/test` sat in `devDependencies` with no `dependencies` at all,
     imported by a test file and by `playwright.config.ts`. `file_kinds` classifies

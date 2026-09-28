@@ -368,7 +368,7 @@ def test_a_specialist_must_be_able_to_state_its_evidence():
 # ---------------------------------------------------------------------------
 # A stage that returns no structured response
 #
-# From run-0b55ad49: `specialist_ui_ux_0` did its work, then wrote the heading
+# From one run: `specialist_ui_ux_0` did its work, then wrote the heading
 # "## Structured Response" in prose and continued for 431,441 characters. The
 # stage raised, the run was resumed, and the resume re-entered that same inner
 # thread, replayed it, and failed identically four minutes later - forever.
@@ -429,7 +429,7 @@ class _DeafAgent:
 def test_a_stage_is_asked_again_before_its_conversation_is_discarded():
     """The prose answer means the work is done and the last step was skipped.
 
-    Restarting throws away the work as well. Measured on run-61c5a5b6: the
+    Restarting throws away the work as well. Measured on one run: the
     restart of `test_round_0` re-read the same four files and re-ran the same
     two globs to arrive back where it already was.
     """
@@ -489,7 +489,7 @@ def test_a_stage_that_succeeds_clears_its_retry_debt():
 #
 # The generic revision prompt asks an agent to "address every requested change",
 # and for a *plan* there is a way to do that which changes nothing: write it
-# down. On run-0b55ad49 a review named the exact file, line and fix for a
+# down. On one run a review named the exact file, line and fix for a
 # test-suite failure; the lead reproduced it verbatim under `## Integration
 # Notes`; no delegated task mentioned it; eighty minutes later the file was
 # byte-for-byte unchanged. The relay worked. The assignment never happened.
@@ -533,7 +533,7 @@ def _gated_lead(state, agent):
 def test_a_revision_that_changes_nothing_is_refused():
     """The proof is an identical task list, not an empty bespoke field.
 
-    Measured on run-95ca3f72: the lead left `review_task_assignments` empty on
+    Measured on one run: the lead left `review_task_assignments` empty on
     three fresh conversations while returning the same seven tasks each time.
     An empty field alone does not prove the work was unassigned; an unchanged
     task list does.
@@ -603,7 +603,7 @@ def test_an_unassigned_revision_retries_before_failing_the_run():
 
     The guard is right that a change nobody owns will not be made - but failing
     the run for a single omission throws away hours of work when asking again on
-    a clean conversation usually suffices. Seen on run-95ca3f72: the milestone
+    a clean conversation usually suffices. Seen on one run: the milestone
     reviewer requested changes, the re-plan omitted the assignments once, and
     the whole run stopped.
     """
@@ -635,7 +635,7 @@ class _Review:
 def test_a_review_with_no_findings_still_says_what_to_change():
     """`findings` is optional in the schema, so a model may leave it empty.
 
-    Observed on run-95ca3f72: `changes_required` with `findings == []` and
+    Observed on one run: `changes_required` with `findings == []` and
     three concrete complaints in `acceptance_evidence`. Joining the empty list
     produced `""`, and the technical lead was asked to revise a plan against a
     revision request that contained nothing.

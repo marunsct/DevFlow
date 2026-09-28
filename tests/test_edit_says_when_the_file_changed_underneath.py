@@ -1,6 +1,6 @@
 """An edit whose `find` went stale says so, instead of diffing the lines.
 
-Measured on run 8d28ee3f, `specialist_ui_ux_0`: the stage wrote package.json,
+Measured on one run, `specialist_ui_ux_0`: the stage wrote package.json,
 ran `npm install --save-dev jest-environment-jsdom`, then edited the file with
 the text it had written. npm had reformatted the manifest and added a
 dependency. The diff it got back was accurate to the character and never said

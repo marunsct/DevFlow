@@ -986,7 +986,7 @@ def test_a_changes_required_with_no_findings_is_re_reviewed_not_acted_on(
     `findings` is the only field the revision loop can gate on, so a reviewer
     that buries a blocking defect in `acceptance_evidence` hands the technical
     lead free text: no severity, no required remediation, and nothing for
-    `_findings_that_block` to see. Observed on run-27fac2a5, where the
+    `_findings_that_block` to see. Observed on one run, where the
     deterministic cross-file checks told the reviewer a module script tag was
     loading a CommonJS file, the reviewer wrote that in `acceptance_evidence`
     and left `findings` empty, and three revisions later the file was unchanged

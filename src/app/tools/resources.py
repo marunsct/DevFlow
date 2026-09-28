@@ -2,7 +2,7 @@
 
 Every limit in the sandbox used to be a static number from the environment:
 `SANDBOX_MEMORY_LIMIT` is what one process may hold, `SANDBOX_CPU_LIMIT` how
-many CPUs it may use. Nothing asked what was left. That is how run-cbd22a34
+many CPUs it may use. Nothing asked what was left. That is how one run
 died twice: the worker was already holding the conversation, a test runner
 forked a worker per CPU, the tree reached the container's limit, and the kernel
 killed the celery workers mid-run. The run was not failed, it was orphaned -
@@ -107,7 +107,7 @@ def usable_cpus() -> int:
     """How many CPUs this container may use, not how many the host has.
 
     A cgroup CPU quota does not change what `nproc` or `os.cpus()` report.
-    Measured on run-cbd22a34: the worker is limited to 2 CPUs, the host has 20,
+    Measured on one run: the worker is limited to 2 CPUs, the host has 20,
     every tool inside the container saw 20, and a test runner forked twenty
     workers. Raising the memory limit could never have fixed that - the
     multiplier was wrong, not the ceiling.

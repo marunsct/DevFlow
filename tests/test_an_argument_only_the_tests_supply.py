@@ -5,7 +5,7 @@ take its collaborator as an argument is testable by construction - the suite
 hands it a fake and every case passes - and the application is the one caller
 that has to hand it the real thing.
 
-Found on run-9c0fc48d of 2026-09-20. `app-logic.mjs` exported
+Found on one run of 2026-09-20. `app-logic.mjs` exported
 
     export function addTaskAndPersist(title, description = '', storage)
 
@@ -127,7 +127,7 @@ def test_it_stays_quiet_when_the_suite_does_not_pass_it_either(tmp_path):
     """The narrowing that keeps this honest.
 
     If nobody ever supplies the argument, the parameter may simply be
-    vestigial. What makes the run-9c0fc48d case unambiguous is that the suite
+    vestigial. What makes the one run case unambiguous is that the suite
     *does* supply it: the parameter is wanted, it is exercised, and only the
     product forgot it.
     """

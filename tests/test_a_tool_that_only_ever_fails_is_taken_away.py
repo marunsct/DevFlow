@@ -4,15 +4,15 @@ The repeat note already says "It will fail this way again. Change the arguments,
 create what is missing, or carry on without it." Measured across two runs, a
 stage read that and carried straight on:
 
-    run-83bd156a  specialist_backend_0  15 identical `edit_artifact` calls, each
+    One run  specialist_backend_0  15 identical `edit_artifact` calls, each
                   refused because the file would not parse afterwards
-    run-1bdbc08a  specialist_backend_3   7 identical `replace_lines` calls, the
+    one run  specialist_backend_3   7 identical `replace_lines` calls, the
                   same refusal every time
 
 The first was the largest single class of failed call in its run, and neither was
 visible until the audit tool was fixed: its failure regex was anchored, so the
 bracketed repeat note pushed the error off the start of the string and the
-counting stopped exactly when the repeating began. run-83bd156a's true total was
+counting stopped exactly when the repeating began. One run's true total was
 29 failed calls against the 15 first reported.
 
 Reads already escalate from a note to withholding the tool after
@@ -88,7 +88,7 @@ class TestCountingTheRepeats:
     def test_any_guard_s_wording_counts(self) -> None:
         """The first version matched one phrase and missed every other guard.
 
-        Measured on run-be25a68e: `specialist_testing_2` called
+        Measured on one run: `specialist_testing_2` called
         `read_command_output` seven times with a workspace path where a journal
         reference belongs. Its guard answered well - "looks like a path rather
         than a journal reference ... read it with `read_file`" - in its own
@@ -182,8 +182,8 @@ class TestWhatIsTakenAway:
 
         `repeated` used to be computed only when nothing else had set a
         correction, and the read rung sets one constantly - 114 times in
-        run-be25a68e - so a stage looping on `edit_artifact` never lost it.
-        Measured on run-ad4815da, which repeated one past the threshold and was
+        one run - so a stage looping on `edit_artifact` never lost it.
+        Measured on one run, which repeated one past the threshold and was
         never withheld once.
         """
         without_reads = _without_the_read_tools_in(self.TOOLS)
@@ -251,7 +251,7 @@ class TestTheReadOrdinalIsNotTheStages:
     """The refusal quotes a number that looks like the stage's tally and is not.
 
     "it is the 34th time this stage has asked for content it already has" counts
-    the run. Measured on run-1bdbc08a: `specialist_testing_5` made 11 read calls
+    the run. Measured on one run: `specialist_testing_5` made 11 read calls
     in total and was told 34; `specialist_ui_ux_1` made 14 and was told 29;
     `specialist_ui_ux_0` was refused once and told 33.
 
@@ -305,9 +305,9 @@ def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
 
     `repeated` was computed only when nothing else had set a correction, and the
     read rung sets one whenever a stage has been refused three redundant reads -
-    114 times in run-be25a68e. A stage that loops on `edit_artifact` loops on
+    114 times in one run. A stage that loops on `edit_artifact` loops on
     reads too, so the reads always won and the mutation loop was never bounded.
-    run-ad4815da repeated an `edit_artifact` past the threshold and was never
+    One run repeated an `edit_artifact` past the threshold and was never
     withheld it once.
     """
     import inspect

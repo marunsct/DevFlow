@@ -15,7 +15,7 @@ Three statements that contradict each other. It prints the line, prints the same
 line back, then says the line is not in the file. Nothing in it could lead a
 reader to the newline that caused it.
 
-Measured on run-df4dc6f5's `specialist_ui_ux_0`, which sent exactly that, twice
+Measured on one run's `specialist_ui_ux_0`, which sent exactly that, twice
 in the same second, on a `package.json` whose line 1 really was `{`. The call was
 right about where the line was and was refused for the shape of an argument.
 
@@ -37,7 +37,7 @@ from app.tools.repository import (
 
 A_MANIFEST = '{\n  "name": "simple-to-do-list-app",\n  "version": "1.0.0"\n}\n'
 
-#: What run-df4dc6f5 actually sent as `expect_start`.
+#: What one run actually sent as `expect_start`.
 TWO_LINES = '{\n  "name": "simple-to-do-list-app"'
 
 

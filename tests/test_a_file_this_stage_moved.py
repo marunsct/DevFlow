@@ -133,7 +133,7 @@ def test_a_source_that_never_existed_still_says_to_look(project: Path):
 def test_deleting_a_file_this_stage_already_deleted_says_so(project: Path):
     """A stage clearing up its own debugging scripts loses track of which went.
 
-    Measured on run 551640d3: twelve failed deletes across two stages, ten of
+    Measured on one run: twelve failed deletes across two stages, ten of
     them on a path that same stage had deleted successfully a moment earlier.
     "Run `ls` to see what is actually there" sends it to look for an answer it
     already has.

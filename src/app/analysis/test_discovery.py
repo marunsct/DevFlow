@@ -1,6 +1,6 @@
 """Catch a test file the project's runner will never collect.
 
-run-d3965815's security specialist wrote `todo-app/app.test_xss.mjs`: a real
+One run's security specialist wrote `todo-app/app.test_xss.mjs`: a real
 test file, with real assertions, for a real XSS concern. Node's test runner
 collects `*.test.mjs`, `*-test.mjs`, `*_test.mjs`, `test-*.mjs`, `test.mjs` and
 anything under a `test/` directory. `app.test_xss.mjs` is none of those, so
@@ -34,7 +34,7 @@ import re
 #:     ok  add-task-test.mjs   ok  add.test.mjs   ok  add_task_test.mjs
 #:     ok  test-add-task.mjs   ok  test.mjs       --  test_add_task.mjs
 #:
-#: Five of six collected. run-04576307 wrote `test_add_task.mjs`,
+#: Five of six collected. One run wrote `test_add_task.mjs`,
 #: `test_delete_task.mjs`, `test_edit_task.mjs`, `test_filter_tasks.mjs`,
 #: `test_persistence.mjs` and `test_toggle_task.mjs` - six suites, none of
 #: which Node runs, and this check called every one of them fine.
@@ -117,7 +117,7 @@ _RELATIVE_IMPORT = re.compile(
 def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None:
     """Why this test file tests no project code, or None if it does.
 
-    run-84e05d4b wrote `simple-to-do-list-app/app.test.js` with four passing
+    One run wrote `simple-to-do-list-app/app.test.js` with four passing
     tests:
 
         package.json has correct name
@@ -137,7 +137,7 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
     file that imports only those and reads files by name is asserting about
     the repository, not exercising it.
 
-    A framework import is not required - run-a7150a6c wrote `app.test.mjs`
+    A framework import is not required - one run wrote `app.test.mjs`
     importing only `fs`, reading `index.html`, and throwing if a `<link>` tag
     was missing. A file the project calls a test and that imports none of the
     project is the same finding whether or not it uses `node:test`.
@@ -147,7 +147,7 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
     be worse than letting a documentation test through.
     """
     # A framework import, or a name that says "test". Requiring the import
-    # missed the shape run-a7150a6c produced: `app.test.mjs` importing only
+    # missed the shape one run produced: `app.test.mjs` importing only
     # `fs`, reading `index.html`, and throwing if a `<link>` tag is absent.
     # No `node:test`, so the first version of this check said nothing - about a
     # file called `app.test.mjs` that tests no application code at all.
@@ -174,7 +174,7 @@ def tests_nothing_of_the_project(relative_path: str, content: str) -> str | None
 #: `localStorage` and `sessionStorage` are deliberately NOT here. They are a
 #: string-keyed map with four methods, a mock of one is complete in five lines,
 #: and it does not collapse the way a `document` stub does. Including them
-#: meant run-740edb6b's `addTask.test.mjs` - which mocks `localStorage`, sets
+#: meant one run's `addTask.test.mjs` - which mocks `localStorage`, sets
 #: up no DOM, and fails with `document is not defined` - was told its
 #: localStorage mock was the problem. The note was wrong about the file it
 #: fired on, and the right note for that file could not fire.
@@ -201,12 +201,12 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
     It works until the code under test touches something the mock does not
     have, and then the failure is `TypeError: Cannot read properties of
     undefined (reading 'children')` inside application code - which reads as an
-    application bug and is not one. run-d3965815 spent three remediation
-    rounds and its whole sprint on exactly that; run-0deeb8bf and run-84e05d4b
+    application bug and is not one. One run spent three remediation
+    rounds and its whole sprint on exactly that; two runs
     lost stages to the same shape.
 
     The sandbox grants a network to the `install` category, so `npm install
-    jsdom` genuinely works here - measured on run-84e05d4b, "added 39
+    jsdom` genuinely works here - measured on one run, "added 39
     packages". A real DOM is available and costs one command.
 
     `--save-dev`, because `tests/brief_low.md` says "No external dependencies
@@ -263,8 +263,7 @@ _PROVIDES_A_DOM = re.compile(
 def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | None" = None) -> str | None:
     """Why this test will throw `document is not defined`, or None.
 
-    Four runs have ended a stage on it - run-0deeb8bf, run-d3965815,
-    run-84e05d4b and run-740edb6b, whose `addTask.test.mjs` imported `addTask`
+    Four runs have ended a stage on it - four runs, whose `addTask.test.mjs` imported `addTask`
     from a module whose render path calls `document.getElementById`, mocked
     `localStorage` and nothing else, and reported
 
@@ -336,7 +335,7 @@ __all__ = [
 
 #: Calls that make a test able to fail. Deliberately broad across runners:
 #: `node:assert`, Jest/Vitest `expect`, chai's `should`/`expect`, and a bare
-#: `throw` written by hand, which is how run-a7150a6c's test asserted.
+#: `throw` written by hand, which is how one run's test asserted.
 _AN_ASSERTION = re.compile(
     r"""(?<![\w.$])assert\s*[.(]"""
     r"""|(?<![\w.$])expect\s*\("""
@@ -499,7 +498,7 @@ def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | 
 _ONLY_CHECKS_IT_EXISTS = re.compile(
     # `'undefined'` is deliberately absent. `typeof window !== 'undefined'` is
     # feature detection, which application code does constantly and which is
-    # not an assertion about anything; including it reported run 551640d3's
+    # not an assertion about anything; including it reported one run's
     # `app.js` as a suite that only checks things exist.
     r"""typeof\s+\w+\s*(?:,\s*|===?\s*)['"](?:function|object)['"]"""
     r"""|['"](?:function|object)['"]\s*===?\s*typeof\s+\w+"""
@@ -622,7 +621,7 @@ def assertions_called_on_the_test_module(relative_path: str, content: str) -> st
     'node:test'` is the correct form and names the function, not the module.
     """
     # The test context is the third spelling of this confusion, and the one
-    # that cost run f81808a4 most. Verified in the run image on Node 20.20.2:
+    # that cost one run most. Verified in the run image on Node 20.20.2:
     #
     #     t.ok -> undefined   t.equal -> undefined   t.assert -> object
     #
@@ -841,7 +840,7 @@ def a_suite_calling_a_global_node_does_not_define(
         # pass 0   # fail 1
 
     `_suites_calling_a_global_node_does_not_define` already finds this, at a
-    milestone review. It cost run d6297b2f and run 0afef410 a round each
+    milestone review. It cost two runs a round each
     before that, and four of the fifty-eight stored workspaces still carry it.
     This is the same question asked at the write, where one import fixes it.
 
@@ -915,7 +914,7 @@ def a_name_this_test_defines_instead_of_importing(
     each defined their own `loadTasks` beside an import of the module that
     exports it, the finding was reported at the end of two consecutive
     sprints, and both files still carried it. Five more workspaces end this
-    way, run 1ae7671d with eight files.
+    way, one run with eight files.
 
     The evidence is all there at the write: the file names a relative module,
     so that module is on disk, and whether it defines a name that module

@@ -11,7 +11,7 @@ Measured live on 2026-09-21. `specialist_ui_ux_2` ran
 
 The container runs as `appuser` by design, so this fails every time. The
 Dockerfile already installs the browser system libraries - it records why, from
-run-2d9066e2, which burnt all three remediation attempts on a missing
+one run, which burnt all three remediation attempts on a missing
 `libglib-2.0.so.0`. And the message it returns points at credentials, so the
 agent's next move is `sudo`, or abandoning browser tests altogether.
 

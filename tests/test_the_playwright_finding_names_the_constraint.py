@@ -6,7 +6,7 @@ beyond basic HTML/CSS/JS" - that reads as an instruction to break a constraint
 the run has already committed to, and it arrived with no mention that the
 constraint exists.
 
-Both of run-d483f554's milestone reviewers worked the answer out for
+Both of one run's milestone reviewers worked the answer out for
 themselves, wrote the reasoning into their findings ("While the brief forbids
 external dependencies..."), and filed the result as `suggestion` against a
 finding this module grades as blocking. Two consecutive reviewers overruling a

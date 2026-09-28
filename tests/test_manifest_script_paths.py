@@ -10,7 +10,7 @@ which exists nowhere.
 `package.json` is persisted, and `npm test` fails the same way every time, for
 the rest of the project's life.
 
-run-a7150a6c's manifest said
+One run's manifest said
 
     "test": "node --test simple-to-do-list-app/app.test.mjs"
 

@@ -5,7 +5,7 @@ identifier, where it stopped is the least useful fact available: the token is
 legal in most positions, so the message is indistinguishable from a misplaced
 brace, and the edit that follows moves the fault to a new line.
 
-Measured on run-df4dc6f5's `specialist_testing_1`, eight refusals over four
+Measured on one run's `specialist_testing_1`, eight refusals over four
 minutes on `main.js`:
 
     08:49:06  edit_artifact   Unexpected token 'delete'  on line 57
@@ -45,7 +45,7 @@ export { tasks };
 
 
 class TestNamingTheWord:
-    def test_the_name_that_cost_run_df4dc6f5_eight_calls(self):
+    def test_the_name_that_cost_run_a000000f_eight_calls(self):
         found = a_reserved_name_bound_in("main.js", THE_LINE_THAT_COST_EIGHT_CALLS)
 
         assert found is not None

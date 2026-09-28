@@ -9,7 +9,7 @@ It cannot decide a command that *creates* the path, because then neither version
 exists yet - and such a command succeeds, so no failure and no location hint ever
 follows it.
 
-Measured live on run-f05d8d47:
+Measured live on one run:
 
     06:29:00  test_round_0  wd='task-manager'  mkdir -p task-manager/e2e
 

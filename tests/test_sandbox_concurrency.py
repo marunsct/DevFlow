@@ -1,6 +1,6 @@
 """A cgroup CPU quota does not change what a tool thinks it can parallelise.
 
-Measured on run-cbd22a34, twice:
+Measured on one run, twice:
 
     worker container CPU limit     2   (cgroup cpu.max = 200000 100000)
     host cores                    20

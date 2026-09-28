@@ -309,7 +309,7 @@ def test_reconcile_does_not_unrepair_a_damaged_run(run_store):
 # power, a container replaced mid-task - nothing writes a terminal status. The
 # row then says `running` forever: `resume_run` compare-and-sets from `failed`
 # so it refuses, and `reconcile-runs` only repairs rows parked on a pause. Hit
-# twice on run-0b55ad49, both times needing hand-written SQL to get out of.
+# twice on one run, both times needing hand-written SQL to get out of.
 # ---------------------------------------------------------------------------
 
 

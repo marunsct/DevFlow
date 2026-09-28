@@ -3,7 +3,7 @@
 Scope inflation in this pipeline is not one agent's mistake. It compounds
 down the chain, and each step is locally reasonable:
 
-Measured on run-c4f17841 (brief_medium), whose brief names FastAPI or Express,
+Measured on one run (brief_medium), whose brief names FastAPI or Express,
 React or Vue, JWT, migrations and Docker - and mentions Helm, Kubernetes,
 Prometheus, Grafana, Redis, Celery and encryption exactly zero times:
 

@@ -5,7 +5,7 @@ The workspace root carries the harness's own bookkeeping beside the work:
 records the toolchain the run chose, and `.project-memory.json` holds which
 stage last wrote each file.
 
-`git ls-files` on run-07cd52ae's workspace listed all three, so every sprint
+`git ls-files` on one run's workspace listed all three, so every sprint
 commit carried them and a delivered repository would hand whoever receives it
 three files that mean nothing to them.
 
@@ -36,7 +36,7 @@ def test_every_harness_file_is_ignored_by_the_sprint_history(name: str):
 def test_every_runner_output_directory_is_ignored_too(directory: str):
     """A test runner's output is not the work either.
 
-    Measured on run-fbe23618's first sprint:
+    Measured on one run's first sprint:
     `todo-app/test-results/.last-run.json` was committed alongside the
     product, and a reviewer reading that diff has to work out for itself that
     it is not part of the work.

@@ -4,7 +4,7 @@ An agent that writes its answer into the conversation instead of returning it
 through the response schema leaves its artifact out of state. Every later stage
 that read the key directly died with a bare `KeyError` raised from inside
 LangGraph, naming neither the stage that failed nor anything to do about it -
-observed as `KeyError: 'product_intake'` on run-c826ae90.
+observed as `KeyError: 'product_intake'` on one run.
 
 The rate makes this a design constraint rather than an edge case. Driving the
 product manager agent to completion against this deployment's model with

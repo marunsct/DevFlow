@@ -7,7 +7,7 @@ of `stage_memory`. The upper two read a plain attribute on the backend object,
 while their own words say "the {n}th time this stage has asked for content it
 already has".
 
-Measured on run-df4dc6f5. 110 reads had their content withheld and the two upper
+Measured on one run. 110 reads had their content withheld and the two upper
 rungs fired zero times - not once in a run of 262 tool calls. Every withholding
 calls `_the_way_out`, which returns text as soon as the tally reaches 6, so the
 tally was under 6 on all 110 occasions. `specialist_testing_2` alone read one
@@ -64,7 +64,7 @@ class TestTheTallySurvivesTheBackend:
         assert _backend(a_root)._repeated_reads_so_far() == 4
 
     def test_the_exit_rung_becomes_reachable_across_rebuilds(self, a_root, in_one_stage):
-        """run-df4dc6f5's `specialist_testing_2`, in miniature."""
+        """One run's `specialist_testing_2`, in miniature."""
         for _ in range(REPEATED_READS_BEFORE_NAMING_THE_EXIT):
             _backend(a_root)._count_a_repeated_read()
 

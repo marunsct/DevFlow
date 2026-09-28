@@ -4,10 +4,10 @@ A stage that produces no structured response is restarted on a fresh
 conversation. That is the right move - `_restart_on_a_fresh_conversation`
 explains why - but until now it threw away everything the attempt had learned,
 and the comment in `workflow.py` said so. Each of three attempts re-read the
-same files and re-ran the same commands: run-37476645 spent 170 tool calls
+same files and re-ran the same commands: one run spent 170 tool calls
 across three attempts of one stage.
 
-Measured again on run b0db10b1, where the two stages that spun cost 100 and 80
+Measured again on one run, where the two stages that spun cost 100 and 80
 model calls across their attempts while the fifteen that finished averaged
 under ten. The waste is not the failed attempt; it is that the next one starts
 blind.
@@ -46,7 +46,7 @@ def _files_already_read(thread_id: str, repo_root: str | None) -> list[str]:
     those keys hands the next attempt
     `/app/data/workspaces/default/todo-run9-.../app.js`, which no tool here
     accepts - every one of them takes a path relative to the workspace. Seen in
-    run 86a60de1, where the note fired five times and named absolute paths each
+    one run, where the note fired five times and named absolute paths each
     time.
 
     Worse than useless: an absolute path in front of a model is how the invented

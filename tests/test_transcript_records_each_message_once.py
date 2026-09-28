@@ -1,6 +1,6 @@
 """A model request carries the whole conversation; the record kept every copy.
 
-Measured on run-ed05e20e mid-run: a 36.6 MB transcript, of which 279
+Measured on one run mid-run: a 36.6 MB transcript, of which 279
 `model_request` entries were 33.4 MB. 91% of the record was text already in
 it, and the file grows with the SQUARE of a stage's length. Across the stored
 runs the directory had reached 490 MB.

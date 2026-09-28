@@ -6,7 +6,7 @@ origin may take to answer. When the first exceeds the second, every full-length
 reply is cut off, retried on a fixed backoff, and cut off again - and nothing
 said so until it had happened forty times.
 
-Measured on run 35424714, 2026-09-21: 37 retries at a fixed 120 seconds each,
+Measured on one run, 2026-09-21: 37 retries at a fixed 120 seconds each,
 74 minutes of a 129.6-minute run spent waiting - 57% of the wall clock.
 
 `install()` explains an individual 524 to whoever reads the log. This explains

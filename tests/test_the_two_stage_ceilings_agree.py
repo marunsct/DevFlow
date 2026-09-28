@@ -95,7 +95,7 @@ def test_the_budget_guard_reaches_a_stage_before_the_ceiling_does() -> None:
     At `SUPERSTEPS_PER_MODEL_CALL = 3.2` the ceiling was 128, which the
     worst-ratio stage on record reaches at 33 model calls - five before the
     guard withholds tools at 38 - so on those stages the guard never acted.
-    Measured live on run-b6436e36: `defect_fix_1_1` hit the ceiling and
+    Measured live on one run: `defect_fix_1_1` hit the ceiling and
     restarted while the guard sat unreached.
     """
     from app.agents.settled_answer import (

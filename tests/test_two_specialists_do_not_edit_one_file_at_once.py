@@ -6,7 +6,7 @@ writes. The guards catch it - a `replace_lines` whose anchor shifted is refused,
 and so is an edit leaving the file unparseable - so nothing corrupt ships, and
 every one of those refusals still cost a model call.
 
-Measured on run-1bdbc08a, a seven-task milestone in which four tasks named
+Measured on one run, a seven-task milestone in which four tasks named
 `app.js`: of 400 calls 64 failed, and 45 of those were this one thing - 28
 redundant reads of `app.js`, 13 identical `replace_lines`, 7 identical
 `edit_artifact`, each stage retrying against a file another stage was moving.
@@ -164,7 +164,7 @@ class TestAResumeDispatchesThePausedWorker:
     is delivered by re-dispatching it. Deferring it leaves the decision with no
     hanging call to answer: "ValueError: Number of human decisions (2) does not
     match number of hanging tool calls (1)". That failure predates this filter -
-    it ended run-c4a30293 on 2026-09-11 - and staggering is a new way to reach
+    it ended one run on 2026-09-11 - and staggering is a new way to reach
     it.
 
     That used to be met by sending every pending task on any resume, which
@@ -214,7 +214,7 @@ class TestAResumeDispatchesThePausedWorker:
         assert 1 in names, "the paused worker must be among them or its decision answers nothing"
 
     def test_a_task_sharing_its_file_waits(self) -> None:
-        """run-6c7721c4: the first approval released a task onto app.js."""
+        """One run: the first approval released a task onto app.js."""
         sent = self._route(self._state(
             pending_decision={"kind": "approve"},
             pending_inner_thread_id="thread-x:specialist_backend_0:abcd1234",

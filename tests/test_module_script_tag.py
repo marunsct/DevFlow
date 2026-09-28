@@ -5,7 +5,7 @@ the first line, and throws `Uncaught SyntaxError: Unexpected token 'export'`.
 Nothing on the page works - and nothing in the test suite notices, because
 `node --test` imports the module directly and never loads the HTML.
 
-run-01f03ed9's milestone reviewer read both files and called it blocking:
+One run's milestone reviewer read both files and called it blocking:
 `index.html` line 33 was `<script src="app.js">` and `app.js` opens with
 `export { addTask, ... }`. It was right, the specialist fixed it, and it is
 decidable from those two files - so it should not have needed a model.

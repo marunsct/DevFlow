@@ -1,6 +1,6 @@
 """A structurally broken file, caught where it was written.
 
-run-e37a2bd8 lost a sprint to one edit. `confirmDeletePrompt` had its
+One run lost a sprint to one edit. `confirmDeletePrompt` had its
 `return new Promise((resolve) => {` removed and its closing `});` left behind.
 The write was accepted; the break surfaced two stages later as "Syntax error in
 app.mjs at line 206", and three remediation attempts edited around line 206 -
@@ -104,7 +104,7 @@ def test_the_forgiving_match_path_also_gets_the_note(tmp_path) -> None:
     forgiving match that tolerates line numbers, JSON escaping or a different
     indent. The notes were attached to the exact path only.
 
-    That cost run-3ddd443f. At 12:52:03 `test_round_0` removed a passage
+    That cost one run. At 12:52:03 `test_round_0` removed a passage
     through the forgiving path and got no structural note; the edit left a
     brace unclosed, and `node --test` failed four times with "Unexpected end of
     input" before the next edit - through the exact path - finally reported it.
@@ -151,7 +151,7 @@ def test_both_edit_paths_build_their_result_in_one_place() -> None:
 
 
 def test_the_import_that_cost_a_sprint_is_caught() -> None:
-    """run-82e1dbdb wrote this more than ten times.
+    """One run wrote this more than ten times.
 
     `import { assert } from 'node:test'` parses, looks right, and fails only
     when the test runs - so the sprint spent all three remediation attempts on
@@ -194,7 +194,7 @@ def test_a_package_whose_exports_are_unknown_is_left_alone() -> None:
 
 
 def test_commonjs_in_an_mjs_file_is_caught() -> None:
-    """Three of run-82e1dbdb's failures were "require is not defined in ES
+    """Three of one run's failures were "require is not defined in ES
     module scope"."""
     problem = structural_problem("a.mjs", "const x = require('./a.js');\n")
 
@@ -226,7 +226,7 @@ def test_a_broken_package_json_is_refused(tmp_path) -> None:
     broken one does not fail the file that contains it - it fails everything
     near it.
 
-    run-0deeb8bf wrote one and got "Error parsing
+    One run wrote one and got "Error parsing
     simple-to-do-list-app/package.json: Expected property name or '}' in JSON
     at position 73" from `package_json_reader`: a stack trace naming an
     internal Node module, two stages away from the write.
@@ -275,7 +275,7 @@ def test_an_ordinary_json_file_is_checked_too() -> None:
 @pytest.mark.parametrize("name", ["expect", "beforeAll", "afterAll", "vi"])
 def test_a_jest_api_imported_from_node_test_names_the_replacement(name: str) -> None:
     """Listing what `node:test` exports does not tell a model it has the wrong
-    library. run-a7150a6c wrote `import { test, expect } from "node:test"` and
+    library. One run wrote `import { test, expect } from "node:test"` and
     then spent three greps hunting `expect(` through its own test files.
     """
     problem = structural_problem("a.test.mjs", f"import {{ test, {name} }} from 'node:test';\n")

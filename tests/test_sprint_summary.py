@@ -216,7 +216,7 @@ class TestEverySprintEndingIsRecorded:
     The summary is written at each ending rather than in one place, because the
     figures it needs - the attempt's defects, its rounds, the plan it was
     working to - are on the state at that moment. The cost of that is one more
-    ending to forget, and `run-5696a52d` found the one that was: the milestone
+    ending to forget, and `one run` found the one that was: the milestone
     review ran out of revisions, the run stopped, and `docs/` held the plan, the
     review and the specification with no `sprint_1_summary.md` beside them.
 
@@ -232,7 +232,7 @@ class TestEverySprintEndingIsRecorded:
         return inspect.getsource(workflow)
 
     def test_the_review_revision_limit_records_one(self):
-        """The ending run-5696a52d took."""
+        """The ending one run took."""
         source = self._workflow_source()
         limit_block = source[source.index("revision_count >= MAX_MILESTONE_REVISIONS"):]
         limit_block = limit_block[: limit_block.index("return _handing_on(")]
@@ -278,7 +278,7 @@ class TestEverySprintEndingIsRecorded:
 class TestFeaturesReadAsAList:
     """`features` is the delegated task text, and a task is not a feature line.
 
-    Measured on run-df4dc6f5's `sprint_1_summary.md`, live. Two delegated tasks
+    Measured on one run's `sprint_1_summary.md`, live. Two delegated tasks
     rendered as an 18-line "Features Implemented" section in which the second
     task began inside the first one's acceptance-criteria list, because that
     list is written with `-` and Markdown had no reason to think otherwise.
@@ -332,7 +332,7 @@ Acceptance criteria:
     def test_a_failed_sprint_does_not_claim_the_work_was_implemented(self):
         """`features` is what the milestone delegated, not what passed.
 
-        Measured on run-e980310b, which failed its first sprint with
+        Measured on one run, which failed its first sprint with
         `index.html references style.css which does not exist` as a blocking
         finding, while this section read "Create style.css with basic
         responsive CSS rules". Nothing in the state records per-task
@@ -447,7 +447,7 @@ class TestTheAttemptsLineCountsWhatCameBefore:
     that preceded it. Wrong exactly when this attempt also failed, which is the
     case a reader most needs right.
 
-    run-6e50b630's sprint 1, its second and final attempt, read
+    One run's sprint 1, its second and final attempt, read
 
         **Attempts:** 2 (re-run after 2 failed attempts at this same sprint)
 

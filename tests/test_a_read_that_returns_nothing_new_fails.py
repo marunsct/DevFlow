@@ -9,7 +9,7 @@ tool call:
     after the stage-wide  93.0% read again
     exit notice
 
-The exit notice fired 515 times across 29 stages, and run-b0db10b1's
+The exit notice fired 515 times across 29 stages, and one run's
 `specialist_ui_ux_0` received it 115 times. Withholding the bytes reduces what
 a redundant read costs and moves the stage to another file rather than to
 work; naming the exit is ignored outright.

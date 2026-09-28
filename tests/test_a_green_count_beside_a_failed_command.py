@@ -10,7 +10,7 @@ A composite test command runs more than one runner. `npm test` chaining
 runner's. If a later runner fails, its cases are never added up, so the ledger
 records a green count beside a non-zero exit code.
 
-Measured on run-b3cb2d80, which COMPLETED. Six of its ledger entries carry counts
+Measured on one run, which COMPLETED. Six of its ledger entries carry counts
 and a failing exit code, five of them reading
 
     npm test   tests=27  passed=27  failed=0  returncode=1
@@ -48,7 +48,7 @@ class _Repository:
 @pytest.fixture
 def a_ledger(tmp_path, monkeypatch):
     monkeypatch.setenv("DATA_DIR", str(tmp_path / "data"))
-    root = tmp_path / "workspace-run-b3cb2d80-0000-0000"
+    root = tmp_path / "workspace-run-a000000b-0000-0000"
     root.mkdir()
 
     from app.tools.sandbox import _ledger_path
@@ -63,7 +63,7 @@ def a_ledger(tmp_path, monkeypatch):
     return _write
 
 
-#: run-b3cb2d80's own entry, verbatim in every field that matters.
+#: One run's own entry, verbatim in every field that matters.
 THE_FALSE_GREEN = {
     "at": "2026-09-27T02:44:35.427416+00:00",
     "role": "testing_specialist",

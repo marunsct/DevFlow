@@ -1,6 +1,6 @@
 """At the end of the budget, answering is the only move the model has left.
 
-Measured on run-6b511391. The last request `specialist_testing_1` ever made
+Measured on one run. The last request `specialist_testing_1` ever made
 carried "You have made about 39 of the 40 model calls this stage is allowed ...
 Return your structured response now", and the model replied with an
 `edit_artifact` call. It did that on three consecutive fresh conversations and
@@ -148,7 +148,7 @@ def test_the_real_graph_leaves_exactly_one_tool_bound() -> None:
         return "the same twenty lines every time"
 
     class WorksUntilItCannot(BaseChatModel):
-        """Reads a file whenever reading is possible - run-6b511391's model."""
+        """Reads a file whenever reading is possible - one run's model."""
 
         @property
         def _llm_type(self) -> str:

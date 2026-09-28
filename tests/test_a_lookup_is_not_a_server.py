@@ -14,13 +14,13 @@ nothing here will stop it":
 said about a path lookup and a directory listing. `grep serve package.json` and
 `npx which serve` do the same.
 
-`which serve` was live in run-1a0d3610's `test_round_1`, which was checking
+`which serve` was live in one run's `test_round_1`, which was checking
 whether the server binary it needed was installed - the refusal answered a
 question about availability by describing a process lifetime.
 
 This is the same shape as the install carve-out already in that function:
 `npm install -D serve` names `serve` as a package to add, and was refused twice
-on run-ed05e20e before that was fixed. A program that only inspects is the other
+on one run before that was fixed. A program that only inspects is the other
 half.
 
 `tail` is deliberately not on the list, because `tail -f` does run until it is

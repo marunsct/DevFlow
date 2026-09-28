@@ -6,7 +6,7 @@ marker is graded untidy, silently - the reviewer is handed "untidy rather than
 broken - dead rules, unused files. Worth a minor finding, not a blocking one"
 over a suite that never runs, or a page that throws on load.
 
-That happened: all three checks added for run d6297b2f's failures landed in
+That happened: all three checks added for one run's failures landed in
 the untidy bucket the day they were written, and the summary invited the
 milestone reviewer to wave them through. These are the cases, pinned.
 """

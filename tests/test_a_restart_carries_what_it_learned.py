@@ -5,7 +5,7 @@ own comment: a stage that produces no structured response restarts on a fresh
 conversation, and every attempt re-read the same files and re-ran the same
 commands. Run 37476645 spent 170 tool calls across three attempts of one stage.
 
-Measured again on run b0db10b1: the two stages that spun cost 100 and 80 model
+Measured again on one run: the two stages that spun cost 100 and 80 model
 calls across their attempts, while the fifteen that finished averaged under ten.
 The waste is not the failed attempt, it is that the next one starts blind.
 
@@ -160,7 +160,7 @@ class TestThePathsAreOnesTheToolsAccept:
     `read_digests` is keyed on the resolved absolute path. Written straight
     into the note, that hands the next attempt
     `/app/data/workspaces/default/todo-run9-.../app.js`, which no tool accepts.
-    Seen in run 86a60de1, where the note fired five times and named absolute
+    Seen in one run, where the note fired five times and named absolute
     paths every time - and an absolute path in front of a model is how the
     invented `/project/...` prefix gets invented in the first place.
     """
@@ -210,7 +210,7 @@ class TestTheWorkspaceReachesTheNote:
     `_restart_on_a_fresh_conversation` gained `repo_root` so the carry-over
     could name files relative to the workspace, and every call site kept using
     the default of None. The unit test for the None case passed, the relative
-    -path tests passed, and run 6b511391 still received
+    -path tests passed, and one run still received
 
         Files you already read, and which have not changed since:
           /app/data/workspaces/default/todo-run12-.../todo-list-app/app.js

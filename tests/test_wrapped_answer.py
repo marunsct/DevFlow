@@ -1,6 +1,6 @@
 """An answer the model put inside a single key.
 
-run-454adf22's `specialist_testing` sent
+One run's `specialist_testing` sent
 
     {"SpecialistOutput": {"changed_files": [...], "decisions": [...], ...}}
 

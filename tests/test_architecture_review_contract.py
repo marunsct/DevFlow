@@ -17,7 +17,7 @@ def _finding(severity: str) -> dict:
 
 
 def test_a_missing_status_is_derived_from_the_findings() -> None:
-    """Measured on run-6412366b: the reviewer answered `{"findings": [...]}`
+    """Measured on one run: the reviewer answered `{"findings": [...]}`
     with no `status` four times in one stage, costing two stage restarts and
     reaching "attempt 3 of 3" - the last retry before the stage fails. Across
     all stored runs, 8 of 74 answers carrying findings omit the field.
@@ -79,7 +79,7 @@ def _a_finding(severity: str) -> dict:
 
 
 def test_a_missing_status_is_derived_from_the_findings() -> None:
-    """Measured on run-6412366b: the reviewer answered `{"findings": [...]}`
+    """Measured on one run: the reviewer answered `{"findings": [...]}`
     with no `status` four times in one stage, costing two stage restarts and
     reaching "attempt 3 of 3" - the last retry before the stage fails outright.
     Across all stored runs, 8 of 74 answers carrying findings omit the field.

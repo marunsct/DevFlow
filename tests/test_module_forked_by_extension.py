@@ -3,7 +3,7 @@
 `_supersedes_existing` catches `spec_v2.md` beside `spec.md`. This is the other
 spelling of the same mistake, and the extension hides it.
 
-run-454adf22 ended a milestone with `simple-to-do-list-app/app.js` (4,887
+One run ended a milestone with `simple-to-do-list-app/app.js` (4,887
 bytes) and `simple-to-do-list-app/app.mjs` (4,853 bytes) - near-identical
 copies of one application. From there every fix lands in one of them, the test
 file imports whichever it imports, and half the remediation does nothing. That

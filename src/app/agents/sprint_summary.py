@@ -73,7 +73,7 @@ def a_suite_that_did_not_pass(entry: Mapping[str, Any] | None) -> bool:
     line it recognises, which is the first runner's. If a later runner fails, the
     counts say the suite is green and the exit code says the command failed.
 
-    Measured on run-b3cb2d80, which completed. Its ledger holds six entries with
+    Measured on one run, which completed. Its ledger holds six entries with
     counts and a non-zero exit code, five of them reading
 
         npm test   tests=27  passed=27  failed=0  returncode=1
@@ -143,7 +143,7 @@ def _one_line(text: str) -> str:
     ending in an "Acceptance criteria:" list of its own. Rendered as a bullet,
     one of those is not a feature line, it is the whole task.
 
-    Measured on run-df4dc6f5's `sprint_1_summary.md`, live. Two delegated tasks
+    Measured on one run's `sprint_1_summary.md`, live. Two delegated tasks
     produced a "Features Implemented" section of 18 lines in which the second
     task began inside the first one's criteria list, because that list is
     written with `-` and Markdown had no reason to think otherwise. Nothing was
@@ -161,7 +161,7 @@ def _one_line(text: str) -> str:
     # A line ending in a colon announces a list instead of naming anything, so
     # on its own it is not a feature. Carry on into what it introduces.
     #
-    # Measured on run-83bd156a's `sprint_1_summary.md`, live: two of its three
+    # Measured on one run's `sprint_1_summary.md`, live: two of its three
     # "Features Implemented" bullets read "Create the following changes in two
     # files:" and "Create changes to two files:". Both were the first non-blank
     # line of a task, and neither said which files or what changed.
@@ -227,7 +227,7 @@ def render_sprint_summary(
         # every non-Completed attempt counted the current one among the failures
         # that preceded it - and "re-run after N failed attempts" means N came
         # first. Wrong exactly when this attempt also failed, which is the case a
-        # reader most needs right: run-6e50b630's second and final attempt read
+        # reader most needs right: one run's second and final attempt read
         # "Attempts: 2 (re-run after 2 failed attempts at this same sprint)" with
         # one attempt behind it.
         earlier = attempts[:-1]
@@ -253,7 +253,7 @@ def render_sprint_summary(
     # review that reads correctly enough. On one that failed it does not, and
     # this is the document a reader opens to find out what happened.
     #
-    # Measured on run-e980310b, which failed its first sprint with
+    # Measured on one run, which failed its first sprint with
     # `index.html references style.css which does not exist` as a blocking
     # finding, while this section read "Create style.css with basic responsive
     # CSS rules". The heading is the one the dashboards parse, so the

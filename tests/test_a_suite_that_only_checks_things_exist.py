@@ -142,7 +142,7 @@ def test_application_files_are_not_asked_whether_they_can_fail(tmp_path):
     """`_tests_that_cannot_fail` ran all four checks over every file.
 
     "Can this suite fail" is not a question about application code, and asking
-    it of `app.js` is how run 551640d3's application became a blocking finding.
+    it of `app.js` is how one run's application became a blocking finding.
     """
     from app.analysis.integration_checks import _tests_that_cannot_fail
 

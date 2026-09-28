@@ -1,8 +1,8 @@
 """The audit's last section answers what the transcript cannot: does it work?
 
 Every run in this harness's history that shipped something broken shipped it
-with a green suite. Run 0c5aabdb had no HTML at all; run 0afef410 had HTML and
-JavaScript that never met; run 7e960f06 had a page with no `<script>` tag. In
+with a green suite. Run 0c5aabdb had no HTML at all; one run had HTML and
+JavaScript that never met; one run had a page with no `<script>` tag. In
 each case the transcript looked fine - the cost numbers were good and the
 failures were few - because nothing in a transcript says whether the product
 runs.
@@ -130,7 +130,7 @@ class TestASandboxRefusalIsNotACost:
     refusals in `app/tools/repository.py` - and the sandbox writes its own,
     which the list had never covered.
 
-    On run b0db10b1, six of the eight calls filed under "failures that cost the
+    On one run, six of the eight calls filed under "failures that cost the
     run" were sandbox refusals: five withheld repeats of a settled command and
     one refused long-running server. Counting them as costs made the number the
     script exists to drive down rise whenever a guard did its job. Corrected,

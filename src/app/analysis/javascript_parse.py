@@ -11,7 +11,7 @@ and Node is on the allowlist of every role because the products this harness
 builds are mostly JavaScript. Measured in the worker container: five checks in
 83 milliseconds.
 
-run-454adf22 is what this is for. `app.js` was written with a stray `try`, and
+One run is what this is for. `app.js` was written with a stray `try`, and
 the whole of `test_round_0` was spent discovering `SyntaxError: Unexpected
 token 'try'` at line 83 and routing it back as a defect - a round trip through
 the test round, the triage and a defect-fix stage, for something the parser
@@ -74,7 +74,7 @@ def _the_module_goal_also_rejects(node: str, path: Path, content: str) -> str | 
     module syntax: 16 of 116 pass `node --check` and throw on import. Four
     runs paid for it - d6297b2f twice on `Duplicate export of 'init'`,
     f81808a4 on `Export 'addTask' is not defined in module`, 551640d3
-    thirteen times, and run 1cd4597b spent 177 events of a defect-fix stage
+    thirteen times, and one run spent 177 events of a defect-fix stage
     on `Duplicate export of 'deleteHandler'` that this would have named at
     the write.
 
@@ -228,7 +228,7 @@ def _the_other_half(detail: str, content: str, path: Path | None = None) -> str:
     Node names one end of the problem. For the errors this harness actually
     produces, the other end is what the agent needs and is cheap to find.
 
-    Measured on run-04576307's `specialist_backend_2`: five consecutive edits
+    Measured on one run's `specialist_backend_2`: five consecutive edits
     refused, three of them `Unexpected token '}'` and one `Identifier
     'newTitle' has already been declared`. It had the line number each time
     and still could not place the fault, because the line a parser stops on is

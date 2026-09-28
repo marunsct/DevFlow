@@ -6,7 +6,7 @@ product artifact, nothing reads it, and the stage has usually finished its real
 work by then - so the write is followed by nothing, and the repeat guard ends
 the run.
 
-Measured on run-2bcdc19b: `defect_fix_2_1` wrote `final_output.json` containing
+Measured on one run: `defect_fix_2_1` wrote `final_output.json` containing
 `{"changed_files": [], "decisions": [...]}` - its own schema - five times in
 twenty seconds. The second and later writes were answered "This file already
 contained exactly this content ... Do not write it again; continue with your
@@ -120,7 +120,7 @@ def test_every_writing_role_gets_the_check() -> None:
 def test_a_truncated_answer_is_still_recognised(write) -> None:
     """The case that matters most is the one that does not parse.
 
-    run-9f617c73 wrote a 3,344-byte answer that ended `...}] }` - truncated,
+    One run wrote a 3,344-byte answer that ended `...}] }` - truncated,
     almost certainly against the output ceiling. `json.loads` raised, the check
     read that as "not the answer", and the write went through. It was then
     written four more times and the run died at 627 events.

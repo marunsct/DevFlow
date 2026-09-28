@@ -878,7 +878,7 @@ def _derive_stages(events: list[Any], current_stage: str | None) -> list[dict[st
     for event in events:
         # Every event carries the stage that produced it, and only pauses emit
         # `stage_change` - the runner publishes one per gate, so a timeline
-        # built from those alone showed 8 of run-2b5def74's 17 stages and none
+        # built from those alone showed 8 of one run's 17 stages and none
         # of the planning or review. Reading the stage off all events costs
         # nothing and shows the run that actually happened.
         raw = event.stage or ""
@@ -954,7 +954,7 @@ def _stage_in_flight(record: RunRecord, stages: list[dict[str, Any]]) -> str:
     `current_stage` is written by the runner's gate loop, and that loop only
     turns when the graph pauses for an approval. A run between gates - which is
     most of a run - carries whatever it last paused on, or, for one that has
-    not reached its first gate, nothing at all. Measured on run-7b11cb67: ten
+    not reached its first gate, nothing at all. Measured on one run: ten
     minutes of steady work, a model call every thirty seconds, and a blank
     stage on the screen the whole time.
 

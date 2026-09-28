@@ -5,7 +5,7 @@
 a time and collapses under a parallel fan-out, because every `Send` in a
 superstep sees the parent graph's config rather than its own.
 
-Measured on run-1bdbc08a's first milestone, a seven-task parallel sprint. The
+Measured on one run's first milestone, a seven-task parallel sprint. The
 redundant-read refusal quotes an ordinal, and across six concurrent specialists
 those formed a single interleaved sequence:
 
@@ -22,7 +22,7 @@ pooled when concurrent.
 The wrong number was the symptom. This memory holds which lines of which files a
 stage has been given, so a pooled slot means one specialist is refused a read
 because a *different* specialist read that file, and is told it has "already been
-given" content it has never seen. Of run-1bdbc08a's 70 failed calls at that
+given" content it has never seen. Of one run's 70 failed calls at that
 point, 32 were redundant-read refusals raised during that fan-out.
 """
 
@@ -57,7 +57,7 @@ def _count(times: int) -> int:
 
 class TestConcurrentStagesAreIsolated:
     def test_three_stages_counting_at_once_each_count_their_own(self) -> None:
-        """The run-1bdbc08a shape: concurrent workers, one tally each."""
+        """The one run shape: concurrent workers, one tally each."""
         totals: dict[str, int] = {}
 
         def worker(key: str, times: int) -> None:
@@ -157,7 +157,7 @@ def test_every_function_that_invokes_an_agent_declares_a_stage() -> None:
     `approval`: with `auto_approve` every gated tool interrupts, so after the
     first one a stage does the rest of its work - reads included - inside
     `resume_with_decision`. Leaving that unwrapped left six concurrent
-    specialists sharing one slot, which run-ad4815da showed by reporting
+    specialists sharing one slot, which one run showed by reporting
     redundant-read ordinals of 12 to 20 across six different stages after the
     first attempt at this fix was deployed.
 

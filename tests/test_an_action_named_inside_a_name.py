@@ -24,7 +24,7 @@ def test_a_name_that_starts_with_the_action_counts() -> None:
 
 
 def test_a_camel_case_boundary_counts(  ) -> None:
-    """The run-6b511391 shape."""
+    """The one run shape."""
     assert _names_the_action("    function saveEdit() {", EDIT)
     assert _names_the_action("    function cancelEdit() {", EDIT)
     assert _names_the_action("btn.addEventListener('click', handleEditClick)", EDIT)
@@ -71,7 +71,7 @@ def test_the_inflected_form_still_works_for_tests() -> None:
 
 
 def test_the_real_product_reads_as_having_it() -> None:
-    """The exact lines from run-6b511391's `app.js`."""
+    """The exact lines from one run's `app.js`."""
     product = """
       // Wire double-click on .task-title -> inline editing
       function cancelEdit() { input.replaceWith(span); }
@@ -87,7 +87,7 @@ def test_the_real_product_reads_as_having_it() -> None:
 def test_a_capital_that_is_not_the_word_is_not_a_boundary() -> None:
     """Real strings from real suites, and the nearest misses this matcher has.
 
-    `persistedItems` (run 9c0fc48d) and `completedItems` (run 3c8e772e) both
+    `persistedItems` (one run) and `completedItems` (one run) both
     contain `edIt`. The camelCase rung looks for the capitalised *word* -
     `Edit` - so neither counts, and both of those runs are correctly reported
     as having no test for editing. A looser rule would have accepted a

@@ -5,7 +5,7 @@ There is no shell in the sandbox, so an agent cannot `cd`. Before
 was a flag the tool happened to provide: `npm --prefix` has one, `npx` and a
 shell script have nothing.
 
-Measured on run-95ca3f72, the specialists spent eight commands discovering
+Measured on one run, the specialists spent eight commands discovering
 `--prefix`, and these were refused outright with no alternative:
 
     ["cd", "todo-app", "&&", "npx", "jest"]              x2
@@ -164,7 +164,7 @@ def test_a_workspace_rooted_path_names_the_subdirectory(tmp_path):
 
     The read tools, the write tool and the prompt all teach the leading slash
     as "from the workspace root". `working_directory` alone read it as the
-    filesystem root and refused it. Measured on run-61c5a5b6: the UI
+    filesystem root and refused it. Measured on one run: the UI
     specialist ran its verifier with `working_directory="/simple-to-do-list-app"`
     and was told that directory was "outside the workspace".
     """
@@ -204,7 +204,7 @@ def test_a_workspace_rooted_path_cannot_reach_the_real_filesystem(tmp_path):
 def test_the_bare_workspace_root_is_accepted(tmp_path):
     """`working_directory="/"` means the workspace root, not the host's.
 
-    Measured on run-61c5a5b6: the defect-fix agent passed `/`, was refused,
+    Measured on one run: the defect-fix agent passed `/`, was refused,
     and spent two more gates on `pwd` and `ls` working out where it was.
     """
     from app.tools.sandbox import resolve_working_directory
@@ -218,7 +218,7 @@ def test_the_bare_workspace_root_is_accepted(tmp_path):
 def test_a_workspace_rooted_argument_names_the_file_it_means(tmp_path):
     """`/project/file` is how every other tool in this codebase is addressed.
 
-    Measured on run-61c5a5b6: `wc -l /simple-to-do-list-app/index.html` found
+    Measured on one run: `wc -l /simple-to-do-list-app/index.html` found
     nothing, and the documentation specialist spent six approval gates on
     `pwd`, `ls /`, `find` and two more spellings of the same command.
     """
@@ -300,7 +300,7 @@ def test_a_directory_being_created_is_rewritten_too(tmp_path):
     """A `mkdir` target does not exist yet by definition.
 
     Requiring the path itself to be present excluded exactly the case that
-    needs the rewrite. Measured on run-2b5def74: the testing specialist spent
+    needs the rewrite. Measured on one run: the testing specialist spent
     five gates on `mkdir -p /simple-to-do-list-app/tests`, `mkdir -p /tests`,
     `ls`, `pwd` and finally a relative path - and left the tests in the wrong
     directory as a result.

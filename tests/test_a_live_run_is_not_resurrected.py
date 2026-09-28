@@ -6,7 +6,7 @@ still knows about, and its own docstring names the danger of getting that wrong:
 available to make, because a broker's answer can lag a task it has only just
 handed to a pool child.
 
-Measured on run 7c0bf755, 2026-09-21. Dispatched at 15:45:00 as task
+Measured on one run, 2026-09-21. Dispatched at 15:45:00 as task
 `fce6686c`; the worker's startup sweep ran eleven seconds later while that task
 was executing. `_live_task_ids()` did answer - so the "no worker replied" guard
 did not fire - but the reply did not list the task. The run was marked failed
@@ -127,7 +127,7 @@ def test_the_cli_gets_no_grace_and_the_sweep_does():
     """Two callers asking different questions.
 
     The sweep guesses, from a broker reply that can be incomplete seconds after
-    a hand-off, and that guess is what ran run 7c0bf755 twice. A human running
+    a hand-off, and that guess is what ran one run twice. A human running
     `manage.py recover-orphans` has looked and decided, and making them wait
     two minutes to act on their own judgement would answer a question they did
     not ask.

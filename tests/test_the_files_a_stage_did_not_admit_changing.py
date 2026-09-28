@@ -7,16 +7,16 @@ the same way, from each specialist's structured response.
 Measured across the 28 current-generation runs: 82 stages wrote a file and did
 not name it. Every role, about three per run.
 
-    run-0322d658  test_round_0         wrote 5 files, reported none
-    run-0322d658  specialist_ui_ux_1   wrote app.js, index.html, package.json,
+    One run  test_round_0         wrote 5 files, reported none
+    one run  specialist_ui_ux_1   wrote app.js, index.html, package.json,
                                        server.mjs; reported app.js
-    run-0322d658  specialist_testing_2 wrote 5 files; reported app.test.mjs
-    run-1a0d3610  specialist_ui_ux_0   wrote app.js, app.test.mjs,
+    one run  specialist_testing_2 wrote 5 files; reported app.test.mjs
+    one run  specialist_ui_ux_0   wrote app.js, app.test.mjs,
                                        package.json; reported app.test.mjs
 
 So a test round can be told nothing changed after five files did.
 
-Git is the record that cannot under-report. Checked against run-1a0d3610's live
+Git is the record that cannot under-report. Checked against one run's live
 workspace: the reported list held `task-manager/app.test.mjs` alone, and the
 union adds `task-manager/app.js`, which that stage wrote and did not report.
 
@@ -95,7 +95,7 @@ class TestTheFilesAStageDidNotName:
         assert "task-manager/app.test.mjs" in changed
 
     def test_a_stage_reporting_nothing_still_gets_the_list(self, a_tagged_sprint):
-        """run-0322d658's `test_round_0` wrote five files and reported none."""
+        """One run's `test_round_0` wrote five files and reported none."""
         state = {"current_sprint_index": 1, "repository": Repository(str(a_tagged_sprint))}
 
         changed = _the_files_this_milestone_changed(state, {"a": Output([])})

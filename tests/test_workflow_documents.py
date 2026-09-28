@@ -1,6 +1,6 @@
 """One canonical copy of every document the workflow writes itself.
 
-run-84e05d4b: a specialist wrote `simple-to-do-list-app/docs/architecture_review.md`,
+One run: a specialist wrote `simple-to-do-list-app/docs/architecture_review.md`,
 a copy of the review the workflow had already rendered to
 `docs/architecture_review.md` from the reviewer's structured decision. Two files
 with the same name and different contents, in a workspace where every later
@@ -33,7 +33,7 @@ def test_an_agent_cannot_change_one_at_the_canonical_path(tmp_path, name: str) -
     """Succeeding would be no better than failing: the next run of the stage
     that produces it rewrites the file whole.
 
-    run-84e05d4b's `specialist_documentation_2` spent six consecutive model
+    One run's `specialist_documentation_2` spent six consecutive model
     calls and ninety seconds failing to edit `docs/tools_and_models.md`.
     """
     write_approved_artifact(tmp_path, f"docs/{name}", "# Generated\n", by_the_workflow=True)
@@ -87,7 +87,7 @@ def test_a_specialists_own_document_belongs_with_its_code(tmp_path) -> None:
     "name", ["tech_specification.md", "technicalspecification.md", "tools_and_model.md"]
 )
 def test_a_name_a_reader_would_confuse_is_refused(tmp_path, name: str) -> None:
-    """run-454adf22 wrote `docs/tech_specification.md`, 470 bytes, beside the
+    """One run wrote `docs/tech_specification.md`, 470 bytes, beside the
     workflow's `docs/technical_specification.md`, 5,847 bytes."""
     with pytest.raises(RepositoryToolError) as caught:
         write_approved_artifact(tmp_path, f"docs/{name}", "# doc\n")
@@ -158,8 +158,8 @@ def test_the_refusal_names_the_channel_that_works(tmp_path) -> None:
     model found the worst way round it.
 
     Refused the specification, `specialist_ui_ux_0` wrote
-    `docs/specification_update.md` instead - in run-04576307 and again in
-    run-01f03ed9, written once each and never read by anything. A specialist's
+    `docs/specification_update.md` instead - in one run and again in
+    one run, written once each and never read by anything. A specialist's
     `decisions`, `risks` and `blockers` reach the workflow and the next stage;
     a sibling document reaches nobody.
     """
@@ -179,7 +179,7 @@ def test_the_refusal_names_the_channel_that_works(tmp_path) -> None:
 
 
 def test_a_workflow_document_cannot_be_moved_out_of_the_way(tmp_path) -> None:
-    """How run-01f03ed9 got round the refusal.
+    """How one run got round the refusal.
 
     It moved `docs/architecture_review.md` to `docs/old_architecture_review.md`,
     which left the canonical path vacant, then wrote

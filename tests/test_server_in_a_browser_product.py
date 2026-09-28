@@ -1,6 +1,6 @@
 """A server in a product whose own stack says there is none.
 
-run-bb1ee9bb chose "Vanilla JavaScript" with "Web LocalStorage" and wrote its
+One run chose "Vanilla JavaScript" with "Web LocalStorage" and wrote its
 own rationale: "Web LocalStorage meets this requirement without any server or
 additional libraries ... the application runs entirely in the browser". A
 specialist then wrote a 3,696-byte `server.js` - `createServer` from

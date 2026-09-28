@@ -183,7 +183,7 @@ def test_status_is_informative_when_nothing_is_configured():
 
 
 def test_a_model_turn_is_bounded_by_the_context_window() -> None:
-    """Unbounded, one turn burned 108,000 tokens and 38 minutes on run-0b55ad49."""
+    """Unbounded, one turn burned 108,000 tokens and 38 minutes on one run."""
     from app.agents.context_budget import ContextBudget
     from app.models import _max_output_tokens
 

@@ -7,14 +7,14 @@ specialist reads "No external dependencies beyond basic HTML/CSS/JS", believes
 `@playwright/test` is forbidden, and reaches for something that cannot do the
 job - or for nothing at all.
 
-run-2d9066e2 is the clearest case. Its brief forbids external dependencies, and
+One run is the clearest case. Its brief forbids external dependencies, and
 `TESTABILITY_RULE` mandates Playwright for browser UI. Both were read as
 binding, so the sprint spent all three of its remediation attempts on the
 contradiction and the run failed without a single product defect in it. The
 constraint was never aimed at the test suite; nothing in the brief said it was,
 and nothing in the pipeline said it was not.
 
-run-551640d3 failed from the other side of the same rule. It installed `jsdom`
+One run failed from the other side of the same rule. It installed `jsdom`
 to give its tests a DOM and recorded the decision as a *risk* - "Potential need
 for jsdom to mock DOM in tests, which would introduce an external dependency" -
 because the constraint it was reading did not distinguish the product's

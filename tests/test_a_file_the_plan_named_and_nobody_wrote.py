@@ -7,11 +7,11 @@ at all. The plan is the other half of the comparison, and nothing was reading it
 
 Two consecutive runs ended on exactly that.
 
-run-e980310b delegated "Create style.css with basic responsive CSS rules" and
+One run delegated "Create style.css with basic responsive CSS rules" and
 `index.html` linked it. That one is provable from the workspace, because the
 link is a second file naming the first, and `_broken_local_references` finds it.
 
-run-2ac28a2f is the version nothing could prove. Its plan named
+One run is the version nothing could prove. Its plan named
 
     index.html with semantic HTML5 structure: <header>, form (#add-form) for
     task creation, unordered list container for tasks, embedded CSS
@@ -38,7 +38,7 @@ from app.analysis.planned_files import (
     paths_a_plan_named,
 )
 
-#: run-2ac28a2f's plan, verbatim from `sprint_1_summary.md`.
+#: One run's plan, verbatim from `sprint_1_summary.md`.
 THE_PLAN_THAT_FAILED = [
     'Create simple-to-do-list/ project directory with package.json ("type": '
     '"module", jest test script, devDependencies for Jest + jsdom only)',
@@ -53,7 +53,7 @@ THE_PLAN_THAT_FAILED = [
 
 @pytest.fixture
 def the_workspace_it_left(tmp_path):
-    """Exactly what run-2ac28a2f finished with: everything but the page."""
+    """Exactly what one run finished with: everything but the page."""
     project = tmp_path / "simple-to-do-list"
     project.mkdir()
     (project / "package.json").write_text('{"type": "module"}\n')
@@ -344,7 +344,7 @@ class TestAJavaScriptLibraryIsNotAPlannedFile:
 class TestOnlySomethingWithARealExtension:
     """A CSS selector is not a filename, and this reported one as a missing file.
 
-    Found live in run-1a0d3610, where the plan described an error banner and the
+    Found live in one run, where the plan described an error banner and the
     check reported
 
         This sprint's plan names `div.error` and the workspace has no file of that
@@ -402,7 +402,7 @@ class TestOnlySomethingWithARealExtension:
         assert expected in problems, planned
 
     def test_the_two_findings_that_matter_survive(self, tmp_path):
-        """`index.html` on run-2ac28a2f and `style.css` on run-e980310b."""
+        """`index.html` on one run and `style.css` on one run."""
         (tmp_path / "placeholder.txt").write_text("x")
 
         problems = " ".join(
@@ -431,7 +431,7 @@ class TestOnlySomethingWithARealExtension:
 class TestAnExtensionThatMeansTheSameThing:
     """A plan asking for `app.test.js` is satisfied by `app.test.mjs`.
 
-    Measured on run-a6b28314. Its plan named `app.test.js`, the project built
+    Measured on one run. Its plan named `app.test.js`, the project built
     `app.test.mjs` - the extension its own module system requires - and this check
     reported the planned file as never written, eight times, at the breaking tier.
 
@@ -484,7 +484,7 @@ class TestAnExtensionThatMeansTheSameThing:
 class TestASuffixPatternIsNotAFile:
     """A plan naming `.spec.ts` means "files ending in this", not a file.
 
-    Found on run-a6b28314, alongside the extension case above. Structurally
+    Found on one run, alongside the extension case above. Structurally
     identical to `.env.example`, which is a real file, so this is a list rather
     than a rule - the same mechanism the prose abbreviations use.
     """

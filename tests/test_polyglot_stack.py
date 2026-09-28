@@ -165,7 +165,7 @@ def test_every_role_can_run_every_pinned_toolchain(tmp_path, language, role):
 # The resolver took the leading word, which handled "JavaScript (ES6+)" and
 # failed on anything with a qualifier in front of the name.
 #
-# Measured live on run-cac07d52: the stack selector answered "Plain JavaScript
+# Measured live on one run: the stack selector answered "Plain JavaScript
 # (ES6+)", the head word was `plain`, nothing matched, and `.project-stack`
 # was written empty. Every role lost the JavaScript toolchain, so `tsc`,
 # `vitest` and `playwright` were on no allowlist - in a run whose own test
@@ -217,7 +217,7 @@ def test_something_that_names_no_known_language_pins_nothing(written):
 
 
 def test_the_live_failure_now_pins_its_toolchain(tmp_path):
-    """run-cac07d52 end to end: the selector's own words reach the allowlist."""
+    """One run end to end: the selector's own words reach the allowlist."""
     pin_project_stack(tmp_path, "Plain JavaScript (ES6+)", "None – vanilla JS")
 
     assert project_stack(tmp_path) == frozenset({"javascript"})

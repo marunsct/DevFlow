@@ -4,7 +4,7 @@ The harness already counts repeats and says so. What it said was advice about
 the command, when the problem was the directory the command ran in - and the
 workspace could answer that at the first failure.
 
-Measured live on run-df4dc6f5's `specialist_ui_ux_4`, five calls in 36 seconds:
+Measured live on one run's `specialist_ui_ux_4`, five calls in 36 seconds:
 
     09:00:16  node --test main.test.js storage.test.js  wd=(none)      exit 1
     09:00:19  node --test main.test.js storage.test.js  wd=the project exit 1
@@ -37,7 +37,7 @@ from app.tools.sandbox import (
 
 @pytest.fixture
 def a_workspace(tmp_path):
-    """run-df4dc6f5's shape: tests inside a project directory, one level down."""
+    """One run's shape: tests inside a project directory, one level down."""
     project = tmp_path / "simple-to-do-list-app"
     project.mkdir()
     (project / "main.test.js").write_text("// tests\n")

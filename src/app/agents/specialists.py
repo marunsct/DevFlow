@@ -48,11 +48,11 @@ _STAGE = "implementation"
 #: Each of those is a "MUST" that outranks the stack in the same conversation,
 #: and the harness has been paying for all four:
 #:
-#: - run-bb1ee9bb: a "Web LocalStorage" product whose spec said "no server-side
+#: - one run: a "Web LocalStorage" product whose spec said "no server-side
 #:   infrastructure" four times got a 3,696-byte `server.js`, and the milestone
 #:   reviewer accepted it as the product. `_a_server_in_a_browser_only_product`
 #:   catches that at review; this is where it came from.
-#: - run 8d28ee3f: `stack_selector` chose "Custom JS assert tests ... avoiding
+#: - one run: `stack_selector` chose "Custom JS assert tests ... avoiding
 #:   large dependencies" and `specialist_ui_ux_0` installed jest anyway, then
 #:   spent four `npm test` calls on `TextEncoder is not defined`.
 #: - the testing specialist's own round brief says "Do not install a test
@@ -148,7 +148,7 @@ class ReportedDefect(BaseModel):
 
     `ignore` rather than `forbid`, and aliases on `description` - for the
     reason spelled out on `VerificationRun` below, measured again on
-    run-0deeb8bf's `defect_fix_2_0`. The Testing specialist wrote a real,
+    one run's `defect_fix_2_0`. The Testing specialist wrote a real,
     well-described defect as
 
         {"name": "LocalStorage Integration Failure in Unit Tests",
@@ -218,7 +218,7 @@ class VerificationRun(BaseModel):
     # "the command you ran with its exit code" pastes that record back, and
     # `forbid` then rejected every key of it.
     #
-    # run-3ddd443f died of exactly that. `specialist_testing_5` was refused
+    # One run died of exactly that. `specialist_testing_5` was refused
     # three times over `verification.0.exit_code`, `.exitCode`, `.returncode`,
     # `.stdout`, `.category` and `.working_directory`, could not produce a
     # valid answer, and so `settled_answer` could not recognise one and end the
@@ -310,7 +310,7 @@ so three of its four suggestions were dead ends. Measured 2026-09-16 with
 `shutil.which` inside the worker; see B2 in `docs/harness-hardening-plan.md`
 for the full list. Advice has to name something that is there.
 
-Measured on run-130deeef. The technical specification called for a shell build
+Measured on one run. The technical specification called for a shell build
 script, so `simple-to-do-list-app/build.sh` became the most-written file of the
 entire run - 22 writes and edits across several stages - for a file the sandbox
 can never execute. `specialist_backend_0` then sent `sh ./build.sh` five times,
@@ -327,7 +327,7 @@ written, the task delegated and the script authored.
 def _no_code_on_the_command_line(stack: Any) -> str:
     """The inline-code refusal this stack's own toolchain will hand back, or "".
 
-    Measured on run-83bd156a: `specialist_backend_1`, `specialist_testing_2`
+    Measured on one run: `specialist_backend_1`, `specialist_testing_2`
     and `specialist_ui_ux_0` each sent the byte-identical
     `node -e "import('./simple-to-do-list/app.js').then(...)"`, and each was
     refused. Three of the run's seven failed calls were that one command.
@@ -402,7 +402,7 @@ Install it using `npm i -D @playwright/test`". For a UI product whose stack
 names a unit runner - which is every UI product, because a stack records one
 testing framework - those cannot both be satisfied, and nothing said which won.
 
-Measured on run-83bd156a, which oscillated and then shipped the wreckage.
+Measured on one run, which oscillated and then shipped the wreckage.
 `defect_fix_4_6` added a `test:e2e` script; `specialist_backend_1` then made
 `test` run both suites, which is exactly what the cross-file check asks for.
 The next test round raised "@playwright/test installed despite stack choosing
@@ -441,8 +441,7 @@ def _how_the_pieces_load(stack: Any) -> str:
     do not agree.
 
     That disagreement is the most expensive recurring failure in this harness.
-    Five separate cross-file checks exist to catch its shapes, and runs
-    0c5aabdb, d6297b2f, 0afef410, 7e960f06, 1ae7671d and 551640d3 each spent
+    Five separate cross-file checks exist to catch its shapes, and six runs each spent
     rounds on it.
 
     What is stated here is not a preference. Both combinations work, and a
@@ -476,7 +475,7 @@ def describe_stack(stack: Any) -> str:
     A specialist used to be given its task, its acceptance criteria and nothing
     about the technology. Each one then guessed, and reasonable guesses differ.
 
-    Measured on run-64df2b20, whose stack selection was Python / FastAPI /
+    Measured on one run, whose stack selection was Python / FastAPI /
     PostgreSQL / pytest / React: the project directory ended up holding two
     complete, incompatible backends. One specialist wrote `package.json` with
     express, jsonwebtoken and mongoose plus `src/routes/auth.js` and a jest
@@ -528,7 +527,7 @@ def _task_names_a_workflow_document(task_description: str, criteria: list[str]) 
     """Warn a specialist whose task asks it to change a file it cannot, or "".
 
     `PROJECT_LAYOUT` tells the Technical Lead these documents are the
-    workflow's and must not be written. run-01f03ed9 shows a prompt is not
+    workflow's and must not be written. One run shows a prompt is not
     enough: the lead delegated "update `docs/milestone_review.md` with the test
     results", and `specialist_documentation_1` spent twelve model calls on it -
     writing a `# Task Status` note four times, byte-identical, explaining that
@@ -580,7 +579,7 @@ def _a_file_another_specialist_is_also_given(
 
     Measured across the 27 current-generation runs: 157 writes were one stage
     writing content byte-identical to what a *different* stage had already
-    written. run-2ac28a2f is the clearest - three specialists each wrote the same
+    written. One run is the clearest - three specialists each wrote the same
     `package.json`, the same `app.js`, the same test file and the same
     `jest.config.cjs`. Two of each three produced nothing, having each paid a
     model call to generate it.
@@ -672,7 +671,7 @@ def build_test_run_request(
     test rounds had finished and a green suite had already been reported, and
     fixing it then costs a whole milestone revision.
 
-    Measured on run-e980310b, which failed its first sprint in eight minutes.
+    Measured on one run, which failed its first sprint in eight minutes.
     Its plan delegated "Create style.css with basic responsive CSS rules",
     `index.html` linked that file, no tool call in the run ever touched it, and
     `_broken_local_references` proves that by reading the two files. The suite
@@ -702,7 +701,7 @@ def build_test_run_request(
         # The one comparison the workspace cannot make against itself. A file
         # planned and never written is referenced by nothing, so nothing on disk
         # is inconsistent and no check that reads only the workspace can see it.
-        # run-2ac28a2f finished a "single-page application" with no HTML file,
+        # One run finished a "single-page application" with no HTML file,
         # 34 tests passing, and three test rounds reporting no defect.
         proven = proven + files_the_plan_named_that_are_missing(planned, repository_root)
     except Exception:  # noqa: BLE001 - same reason
@@ -776,7 +775,7 @@ def build_defect_fix_request(
     `observed` is what the last failing command actually printed, from
     `app.observability.transcript.last_failing_command`. Everything above it in
     this brief is the *reporting* specialist's prose reading of a failure, and
-    prose drifts: on run-d3965815 `defect_fix_2_1` was briefed to find a
+    prose drifts: on one run `defect_fix_2_1` was briefed to find a
     "Syntax error in createElementFallback ... Unexpected token '}'" in a file
     that had no syntax error, while the suite was failing on a different line
     for a different reason. Both belong in the brief - the prose carries the
@@ -813,7 +812,7 @@ def build_defect_fix_request(
 #:
 #: The shared responsibilities used to say "use `run_terminal_command` (or
 #: `run_validation`)" to all six, so four of them were pointed at a tool they
-#: do not hold. That is the run-db3a4a0b fault - the scrum master spent a stage
+#: do not hold. That is the one run fault - the scrum master spent a stage
 #: reporting "I don't have a `write_artifact` tool" instead of answering - and
 #: the reason `role_agent` withholds the writing rules from a read-only agent.
 _VALIDATION_NOTE = (

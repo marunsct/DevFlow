@@ -7,7 +7,7 @@ the reference ends in eight random hex characters, so it cannot be reconstructed
 from the command, however exactly the agent remembers running it.
 
 The refusal said "use the exact reference from the truncation pointer", which is
-advice only to an agent that already has it. Measured on run-fd891220, from the
+advice only to an agent that already has it. Measured on one run, from the
 offline audit of its 723 tool calls: eight failed `read_command_output` calls on
 invented names of the right shape -
 `5-backend-specialist-pytest-stdout-a1b2c3d4.log` - and seven of those eight were
@@ -35,8 +35,8 @@ def a_journal(tmp_path, monkeypatch):
 
 class TestScopingAnEntryToItsRun:
     @pytest.mark.parametrize("root, expected", [
-        ("/app/data/workspaces/default/workspace-run-5696a52d-a778-4faa", "run-5696a52d"),
-        ("/data/workspace-run-92246003-0d1b-46f0-9456-802c8921d4b1", "run-92246003"),
+        ("/app/data/workspaces/default/workspace-run-a0000005-a778-4faa", "run-a0000005"),
+        ("/data/workspace-run-a0000008-0d1b-46f0-9456-802c8921d4b1", "run-a0000008"),
         ("", ""),
         (None, ""),
     ])

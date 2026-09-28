@@ -6,7 +6,7 @@ told which runner this run's stack chose.
 
 Measured across the stored transcripts: 18 of 143 delegated specialist tasks
 were test-only work handed to another role, across 14 runs - most often
-`backend`, including on products with no backend at all. On run d6297b2f that
+`backend`, including on products with no backend at all. On one run that
 stage ran 47 model calls, wrote its tests in a different module system from the
 suite already in the project, and the testing specialist spent the next stage
 undoing it.

@@ -3,14 +3,14 @@
 Inside an agent every path resolves against a workspace rooted at "/". The
 host path - `/app/data/workspaces/<label>-<run-id>` - names nothing the agent
 can reach, so reading it answers `not found` and writing it builds a mirror of
-the host layout inside the workspace, which is what run-2f252e4e actually did.
+the host layout inside the workspace, which is what one run actually did.
 
-`product_manager` has carried that reasoning in a comment since run-0b55ad49
+`product_manager` has carried that reasoning in a comment since one run
 and was the only caller that acted on it. Five other briefs opened with
 `Repository root: {repository_root}`, and the agents used it. Measured across
 the stored run histories: 15 of 24 runs carry that string into tool calls.
-run-cbb1a5fc completed cleanly and still spent six calls on it, five returning
-`not found` or `path_not_found`; run-3f8e387d spent 432 calls and 254 approval
+One run completed cleanly and still spent six calls on it, five returning
+`not found` or `path_not_found`; one run spent 432 calls and 254 approval
 gates before dying of gate exhaustion.
 
 This is a source-level property rather than six separate assertions, because
@@ -70,7 +70,7 @@ def test_every_brief_builder_that_takes_a_root_withholds_it() -> None:
     from app.agents.security_reviewer import build_security_review_request
     from app.agents.technical_lead import build_milestone_planning_request
 
-    root = "/app/data/workspaces/t18-run-623d9a52"
+    root = "/app/data/workspaces/t18-run-a0000006"
     rendered = [
         build_architecture_review_request("spec", root),
         build_security_review_request(["a.js"], "none", root),
@@ -106,7 +106,7 @@ def test_no_brief_claims_a_completeness_it_does_not_have() -> None:
 def test_a_quoted_document_names_the_file_it_came_from() -> None:
     """So an agent that wants the untruncated text knows where to look, instead
     of inventing `/home/user/workspace/docs/product_intake.md` - which
-    run-5c7d7d8d's stack selector did five times."""
+    one run's stack selector did five times."""
     from app.agents.stack_selector import build_stack_selector_request
 
     body = build_stack_selector_request("intake", "tools", _Repo())["messages"][0][
@@ -114,7 +114,7 @@ def test_a_quoted_document_names_the_file_it_came_from() -> None:
     ]
 
     # ABSOLUTE, with the leading slash. Written as `docs/product_intake.md`,
-    # run-6412366b's architecture_review prepended its own `/docs/` and asked
+    # one run's architecture_review prepended its own `/docs/` and asked
     # for `/docs/docs/technology_stack.md` six times. That spelling appears in
     # no run before this change shipped. An absolute workspace path is what the
     # read tools accept and is the one thing an agent cannot prefix.

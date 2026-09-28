@@ -52,7 +52,7 @@ def project(tmp_path):
 
 
 def test_a_product_inside_its_budget_says_so(project):
-    """The run-8904f87b shape: a large raw total over a small code total."""
+    """The one run shape: a large raw total over a small code total."""
     (project / "index.html").write_text(_page(200))
     (project / "app.js").write_text(
         "// a comment\n\n" * 100 + "document.title = 'x';\n"
@@ -106,7 +106,7 @@ def test_no_declared_budget_means_no_verdict(tmp_path):
 def test_the_write_time_note_and_the_report_agree(project):
     """The two must never contradict each other again.
 
-    `budget_note_for_a_write` stayed silent all through run 8904f87b while the
+    `budget_note_for_a_write` stayed silent all through one run while the
     reviewer blocked; both read the same measurement, so they are checked
     against each other here.
     """

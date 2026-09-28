@@ -88,7 +88,7 @@ class TestRedirectingAPath:
         ],
     )
     def test_a_path_that_is_not_there_is_not_sent_anywhere(self, tmp_path, reference):
-        """Measured on run-f05d8d47: told to use `read_file` 14 times for a
+        """Measured on one run: told to use `read_file` 14 times for a
         Playwright artefact Playwright had already deleted. Suggesting a tool
         that cannot work is one more round trip."""
         note = _and_a_path_is_read_with_read_file(reference, str(tmp_path))
@@ -111,7 +111,7 @@ class TestRedirectingAPath:
     def test_a_real_reference_is_left_alone(self):
         """The eight random characters are what says a reference is one."""
         assert _and_a_path_is_read_with_read_file(
-            "1790418892-run-df4dc6f5-testing_specialist-npm-stdout-43b36066.log"
+            "1790418892-run-a000000f-testing_specialist-npm-stdout-43b36066.log"
         ) == ""
 
     @pytest.mark.parametrize(
@@ -255,7 +255,7 @@ class TestAReferenceThatIsAPathWithSomethingAfterIt:
 
     def test_a_real_journal_reference_is_still_left_alone(self, a_project):
         assert _and_a_path_is_read_with_read_file(
-            "1790497387-run-1a0d3610-testing_specialist-npx-stdout-328ba6e2.log",
+            "1790497387-run-a0000003-testing_specialist-npx-stdout-328ba6e2.log",
             str(a_project),
         ) == ""
 

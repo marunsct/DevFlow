@@ -6,7 +6,7 @@ workspace. An agent that believes the prompt asks for
 `/app/data/workspaces/<run>/todo-app/package.json` and is told the file does
 not exist, which it cannot distinguish from a genuinely missing file.
 
-Measured on run-95ca3f72: seven `read_file` calls and one `ls` failed this way,
+Measured on one run: seven `read_file` calls and one `ls` failed this way,
 all for files that existed, and the same path was retried three times in a row.
 """
 
@@ -16,7 +16,7 @@ import pytest
 
 from app.agents.workspace_paths import rewrite_tool_arguments, workspace_relative
 
-ROOT = "/app/data/workspaces/low2-run-95ca3f72"
+ROOT = "/app/data/workspaces/low2-run-a0000009"
 
 
 @pytest.mark.parametrize(
@@ -41,7 +41,7 @@ def test_a_root_relative_path_is_left_alone(already_relative):
 
 
 def test_a_path_that_merely_shares_a_prefix_is_left_alone():
-    """`/app/data/workspaces/low2-run-95ca3f72-other` is a different workspace."""
+    """`/app/data/workspaces/low2-one run-other` is a different workspace."""
     other = f"{ROOT}-other/package.json"
 
     assert workspace_relative(other, ROOT) == other
@@ -78,7 +78,7 @@ def test_an_unchanged_call_returns_the_same_object():
 
 def test_a_read_with_no_window_gets_a_useful_one():
     """`read_file`'s own default is 100 lines, less than half what the
-    tool-result budget affords. Measured on run-61c5a5b6: 148 of 257 read calls
+    tool-result budget affords. Measured on one run: 148 of 257 read calls
     carried an explicit offset - they were paging, not sampling, and
     `tests.test.js` alone was paged 57 times."""
     from app.agents.workspace_paths import DEFAULT_READ_LINES, rewrite_tool_arguments
@@ -144,7 +144,7 @@ def test_arguments_are_returned_unchanged_when_nothing_applies():
 
 
 def test_an_invented_workspace_root_is_stripped(tmp_path) -> None:
-    """Measured on run-44653bd2, on North-Mini-Code-1.0.
+    """Measured on one run, on North-Mini-Code-1.0.
 
     16 `read_file` calls for `/workspace/docs/technical_specification.md` and
     two `ls` of `/workspace` - 18 of that run's 33 tool failures, every one for

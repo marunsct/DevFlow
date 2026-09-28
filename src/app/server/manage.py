@@ -245,7 +245,7 @@ def _worker_ran_out_of_memory() -> bool:
     "the container went away" message sends the operator looking for an
     infrastructure fault that did not happen.
 
-    Measured on run-cbd22a34: `npx vitest run` forked one worker per CPU, each
+    Measured on one run: `npx vitest run` forked one worker per CPU, each
     permitted `SANDBOX_MEMORY_LIMIT` of heap by RLIMIT_DATA, and the tree
     reached `memory.peak = 4,294,975,488` - exactly the container's limit. The
     kernel killed the Celery workers mid-test. Per-process rlimits do not bound
@@ -369,7 +369,7 @@ def _touched_within(record: Any, seconds: float) -> bool:
 #: broker says. `updated_at` is a liveness signal that does not depend on
 #: inspect timing, and inspect timing is what went wrong.
 #:
-#: Measured on run 7c0bf755, 2026-09-21. It was dispatched at 15:45:00 as task
+#: Measured on one run, 2026-09-21. It was dispatched at 15:45:00 as task
 #: `fce6686c` and the worker's startup sweep ran eleven seconds later, while
 #: that task was executing. `_live_task_ids()` answered - so the "no worker
 #: replied" guard did not fire - but its reply did not yet list a task handed

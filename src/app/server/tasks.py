@@ -51,7 +51,7 @@ celery_app.conf.update(
     # One dispatch runs the graph until it pauses or finishes, and on an
     # unattended run that means the *whole* workflow: a dozen stages, each a
     # sequence of model calls. Against a local model that is hours of work, and
-    # the old hour-long ceiling cut it off mid-stage - measured on run-0b55ad49,
+    # the old hour-long ceiling cut it off mid-stage - measured on one run,
     # 54.3 minutes of healthy progress from stack_selector to technical_lead,
     # then SoftTimeLimitExceeded with the specialists still ahead of it.
     #
@@ -322,7 +322,7 @@ def _mark_failed(run_id: str, message: str) -> None:
 # `cancel_run` revokes with `terminate=True, signal="SIGTERM"`, which raises
 # `SystemExit` inside the pool child. Celery then tries to store that exception
 # as the task's result, and the JSON serializer cannot encode it. Measured on
-# 2026-09-20, cancelling run 9c0fc48d:
+# 2026-09-20, cancelling one run:
 #
 #     Pool callback raised exception: EncodeError(
 #         TypeError('Object of type SystemExit is not JSON serializable'))

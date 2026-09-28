@@ -65,7 +65,7 @@ class SpecialistTask(BaseModel):
         """Refuse a task that says there is nothing to do.
 
         A specialist with no work should not be on the list. Measured on
-        run-bb1ee9bb, whose milestone plan read
+        one run, whose milestone plan read
 
             #### backend — N/A
             #### database — N/A
@@ -99,7 +99,7 @@ class SpecialistTask(BaseModel):
         The sibling of `_a_task_is_work`, and the same lesson: an agent handed
         a task it cannot complete does not stop, it finds something to do.
 
-        Measured on run f81808a4. The lead delegated
+        Measured on one run. The lead delegated
 
             Update docs/sprint_plan.md to include a new section detailing the
             filtering feature implementation.
@@ -210,7 +210,7 @@ class MilestonePlanOutput(BaseModel):
     def _a_plan_assigns_something(self) -> "MilestonePlanOutput":
         """A milestone with scope and no tasks is not a plan.
 
-        Measured on run-a7150a6c, whose fifth plan named a full scope - "Add
+        Measured on one run, whose fifth plan named a full scope - "Add
         event handlers and UI rendering for add, edit, delete, toggle in
         app.js; unit tests; documentation; encrypt data before saving" - and
         delegated nothing, with no blockers. The workflow accepted it, found no
@@ -245,8 +245,8 @@ class MilestonePlanOutput(BaseModel):
 #:                      0.28 0.29 0.30 0.36
 #:   repeats            0.45 0.46 0.49 0.51 0.61 0.61 0.61 0.70 0.80
 #:
-#: Two of those are known ground truth: run-ad4815da's 0.70 is the pair whose
-#: text was byte-identical, and run-50d08fa7's 0.49 is the pair that said "the
+#: Two of those are known ground truth: one run's 0.70 is the pair whose
+#: text was byte-identical, and one run's 0.49 is the pair that said "the
 #: CSS in index.html contains no responsive rules" and then "the <style> block in
 #: index.html contains no responsive rules" - the same finding, reworded, which
 #: an exact-match test missed while that run died on the revision cap.
@@ -255,7 +255,7 @@ class MilestonePlanOutput(BaseModel):
 #: adjacent observations deciding a constant. This note is advice and not a gate:
 #: a false positive tells a lead that a change looks like last round's and to name
 #: the file and the edit, which is sound whether or not it repeated, and a false
-#: negative is what cost run-50d08fa7 four sprints.
+#: negative is what cost one run four sprints.
 SAME_CHANGE_WORD_OVERLAP = 0.40
 
 
@@ -285,14 +285,14 @@ def _a_change_asked_for_twice(comments: list[str]) -> str:
     the same request twice and nothing says the measurement did not move. Round
     two then reads like round one and is answered the same way.
 
-    Two runs died this way. run-ad4815da's first two milestone reviews were
+    Two runs died this way. One run's first two milestone reviews were
     byte-identical, both blocking on "The product exceeds the stated 500-line code
     limit ... 506 lines of code" - six lines over, asked for twice in the same
     words - and its third round got under the limit by deleting `updateTask`,
     which the suite still called, so `npm test` exited 1 and that became the new
     blocker.
 
-    run-50d08fa7 then showed the other shape. Its rounds 4 and 5 both blocked on
+    One run then showed the other shape. Its rounds 4 and 5 both blocked on
     the same missing responsive CSS, once as "the CSS in index.html" and once as
     "the <style> block in index.html". An exact-match test - which is what this
     was when it shipped - saw two different strings and said nothing, and the run
@@ -332,7 +332,7 @@ def build_milestone_revision_request(
 
     The generic revision prompt asks the agent to "address every requested
     change", and for a *plan* there is a way to do that which changes nothing:
-    write it down. Measured on run-0b55ad49 - a review named the exact file,
+    write it down. Measured on one run - a review named the exact file,
     line and fix for a test-suite failure, the lead reproduced it verbatim under
     `## Integration Notes`, no delegated task mentioned it, and eighty minutes
     later the file was byte-for-byte unchanged. The relay worked; the assignment
@@ -421,7 +421,7 @@ Responsibilities:
   is the only role told which runner this run's stack chose. Measured across
   the stored runs, 18 of 143 delegated specialist tasks were test-only work
   given to another role - most often `backend`, including on products with no
-  backend at all. On run d6297b2f that stage ran 47 model calls, wrote its
+  backend at all. One such stage ran 47 model calls, wrote its
   tests in a different module system from the suite already in the project,
   and the testing specialist spent the next stage undoing it.
 - One file, one owner. Two tasks that both write the same file are two

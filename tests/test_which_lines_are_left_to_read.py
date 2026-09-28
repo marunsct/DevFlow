@@ -5,7 +5,7 @@ not read, and named neither the ranges already served nor the length of the file
 There was no way to choose one except by guessing, and a stage that guesses asks
 for the same range again.
 
-Measured on run-a6b28314, whose `specialist_documentation_5` sent
+Measured on one run, whose `specialist_documentation_5` sent
 
     read_file  task-manager/app.js  offset=50  limit=50
 

@@ -7,7 +7,7 @@ remediation attempts. Both are the right place to want a person; neither checked
 whether there is one.
 
 Reviews are opt-in, and the default `review_policy` is `{}`. Measured on
-run-36eb1260: it sat in `awaiting_user_review:sprint` with an empty policy -
+one run: it sat in `awaiting_user_review:sprint` with an empty policy -
 not failed, not progressing, and holding a worker.
 """
 

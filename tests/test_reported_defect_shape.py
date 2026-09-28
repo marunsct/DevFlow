@@ -1,4 +1,4 @@
-"""The defect shape a specialist actually sends, taken from run-0deeb8bf.
+"""The defect shape a specialist actually sends, taken from one run.
 
 `defect_fix_2_0` produced this answer and the harness rejected it five times
 running, until the repeat guard stopped the stage and the run failed. Every
@@ -106,7 +106,7 @@ def test_an_unroutable_defect_is_still_refused(owner: str) -> None:
 
 
 def test_a_defect_missing_its_evidence_is_still_refused() -> None:
-    """The first answer run-0deeb8bf sent really was incomplete.
+    """The first answer one run sent really was incomplete.
 
     It carried a name, a description and a status and nothing else - no
     reproduction, no expected behaviour. That one must still be rejected, so

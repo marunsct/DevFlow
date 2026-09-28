@@ -8,10 +8,10 @@ Measured on a local llama.cpp server. Twice a request has wedged: the server
 reported `llamacpp:requests_processing 1` with `prompt_tokens_total` AND
 `tokens_predicted_total` both frozen across a 25-second sample, while the GPU
 sat at 88%. A slow generation still moves those counters; a wedged one moves
-neither. run-6412366b lost 22 minutes to it in `tools_models`; run-caae7e32
+neither. One run lost 22 minutes to it in `tools_models`; one run
 never produced a single event.
 
-The retry is cheap: on run-6412366b the identical request succeeded in 66
+The retry is cheap: on one run the identical request succeeded in 66
 seconds once the first attempt was abandoned.
 """
 
@@ -91,7 +91,7 @@ def test_the_timeout_allows_a_full_length_answer() -> None:
     (~13,000 tokens). httpx applies the timeout as a total, so at this
     deployment's measured ~41 tokens/second a 300-second timeout cut off every
     reply beyond about 12,000 tokens - including that 13,000-token
-    specification. run-f0630b10 hit it twice in one hour, each costing 300
+    specification. One run hit it twice in one hour, each costing 300
     seconds and a retry that could only time out the same way.
 
     A timeout shorter than a full-length answer is not a timeout, it is a
@@ -138,7 +138,7 @@ def test_streaming_is_not_enabled_on_the_model() -> None:
         ValueError: Unexpected response type from OpenAI-compatible endpoint.
         Expected a dict or openai.BaseModel, got Stream
 
-    That killed run-027f369c on its first model call. It passes when a model
+    That killed one run on its first model call. It passes when a model
     is built and invoked directly, which is how it reached a deploy; the agent
     invokes a *bound* model and takes a different path. This test exists so
     the next attempt starts from a reproduction through `langchain.agents`.
@@ -153,11 +153,11 @@ def test_the_floor_comes_from_real_output_not_the_pathology_ceiling() -> None:
 
     `_max_output_tokens()` is 32,000, but that is a ceiling on pathology - it
     exists so one confused turn cannot emit 108,000 tokens over 38 minutes, as
-    `specialist_ui_ux_0` did on run-0b55ad49. Deriving the timeout from it gave
+    `specialist_ui_ux_0` did on one run. Deriving the timeout from it gave
     800 seconds, which made the only failure mode that actually occurs take 2.7
     times longer to detect in order to permit answers that never happen.
 
-    Measured on run-414a621f, 206 model calls: the longest legitimate call was
+    Measured on one run, 206 model calls: the longest legitimate call was
     141.7 seconds and *nothing* landed between 170 and 800 seconds. The single
     call past 800s was a wedge whose retry succeeded in 2.5 seconds.
     """

@@ -5,7 +5,7 @@ Delegation works because the event travels from the child up to the container.
 handler for one of them is never called - and nothing throws, no test fails, and
 the feature is simply absent.
 
-Measured on run-f05d8d47, which failed at the milestone revision limit. Its
+Measured on one run, which failed at the milestone revision limit. Its
 `task-manager/app.js` line 151 held
 
     listContainer.addEventListener('blur', e => { ... e.target ... })
@@ -35,7 +35,7 @@ from app.analysis.integration_checks import (
     _source_files,
 )
 
-#: run-f05d8d47's shape, reduced.
+#: One run's shape, reduced.
 THE_DEAD_HANDLER = """export function init() {
   const listContainer = document.getElementById('task-list');
   listContainer.addEventListener('blur', e => {
@@ -173,9 +173,9 @@ class TestWhatMustStaySilent:
 class TestASuiteRegisteredTwice:
     """Both copies run, so the count every gate reads is inflated.
 
-    run-f05d8d47's `app.test.mjs` declares `describe('editTask', ...)` at lines
+    One run's `app.test.mjs` declares `describe('editTask', ...)` at lines
     167 and 245; its reviewer found it. Sweeping the stored workspaces found a
-    second nobody reported: run-0322d658's `todo-app/app.test.mjs` registers
+    second nobody reported: one run's `todo-app/app.test.mjs` registers
     `filterTasks` at lines 401 and 527.
     """
 

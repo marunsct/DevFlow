@@ -6,7 +6,7 @@ The shared-file note added earlier was wired into the first and not the second -
 and parallel is the mode that is enabled, and the mode where specialists really
 do run at once, so it is the one where a file two tasks share matters most.
 
-The note therefore never fired in production. Found by auditing run-a6b28314:
+The note therefore never fired in production. Found by auditing one run:
 its plan named `app.js` in four of six delegated tasks, five stages wrote
 `app.js`, and not one brief mentioned the overlap. The helper had passed its own
 tests the whole time, because they called it directly.

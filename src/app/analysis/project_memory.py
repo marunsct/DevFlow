@@ -22,7 +22,7 @@ Two things are missing from a list of names:
 * **What the file is for.** `task-manager/app.js (348 lines): createTask,
   toggleTask, deleteTask` does not say whether `app.js` is the model, the
   view or the entry point. Taken from the file's own header comment, which
-  its author has usually already written - run-ed05e20e's `server.mjs` opens
+  its author has usually already written - one run's `server.mjs` opens
   with "Minimal static file server for Playwright testing", a better line
   than any separate model call would produce, and free.
 * **How to call it.** `createTask` does not say whether it takes a title, an
@@ -152,14 +152,14 @@ def _without_the_file_name(purpose: str, path: str) -> str:
     prints. Only when a separator follows it, so a sentence that happens to
     begin with the file's name is left alone.
 
-    The full relative path is tried first: measured on run-ed05e20e, the
+    The full relative path is tried first: measured on one run, the
     header of `task-manager/app.js` opens `task-manager/app.js — ES module
     with all task management logic`, so matching only the base name left the
     directory in.
     """
     name = Path(path).name
     # A spelling that carries the extension is unmistakably a label, so it may
-    # be dropped with or without a separator - measured on run-ed05e20e,
+    # be dropped with or without a separator - measured on one run,
     # "task-manager/style.css Production styles for the Task Manager
     # single-page app". The bare stem still needs one, because a sentence
     # that happens to open with the word must be left alone.
@@ -305,7 +305,7 @@ def interface_of(text: str, limit: int = MAX_SIGNATURES) -> str:
                 if not _balanced(parameters):
                     # `[^)]` stops at the first `)`, which a default value or
                     # a destructured argument can contain: measured on
-                    # run-ed05e20e, `createMockStorage({ getItemFn = ()`. A
+                    # one run, `createMockStorage({ getItemFn = ()`. A
                     # signature cut mid-expression is worse than a bare name,
                     # because a stage will try to call it.
                     found.append(name)

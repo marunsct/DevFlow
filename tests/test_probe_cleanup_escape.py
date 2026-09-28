@@ -1,6 +1,6 @@
 """The way out of the delete refusal has to actually work.
 
-A test file is protected from deletion because run-1b1cb1ff deleted three real
+A test file is protected from deletion because one run deleted three real
 suites as "temporary helper scripts". The refusal names an escape - rename it,
 then delete the renamed file - for the agent that genuinely wrote a throwaway
 probe.
@@ -9,7 +9,7 @@ That escape was built by taking `.test.` out of the filename, which is right
 for `debug.test.mjs` and useless inside a `tests/` directory: `looks_like_a_test`
 matches the directory too, so the renamed file was protected exactly as before.
 
-run-84e05d4b walked into it. `specialist_ui_ux_0` wrote
+One run walked into it. `specialist_ui_ux_0` wrote
 `simple-to-do-list-app/tests/ui_test.js` as a probe, was refused the delete,
 followed the instructions, moved it to `.../tests/ui_test.js.probe` and stopped
 there - leaving a renamed corpse in the project it shipped. Had it tried the
@@ -69,7 +69,7 @@ def test_both_steps_of_the_escape_run(tmp_path: Path, original: str) -> None:
 
 
 def test_a_real_suite_is_still_protected(tmp_path: Path) -> None:
-    """The reason the rule exists. run-1b1cb1ff deleted three passing suites."""
+    """The reason the rule exists. One run deleted three passing suites."""
     write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
     write_approved_artifact(tmp_path, "proj/app.test.mjs", "// 27 assertions\n")
 

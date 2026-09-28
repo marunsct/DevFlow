@@ -1,7 +1,7 @@
 """A delegated task that asks a specialist to change a file it cannot.
 
 `PROJECT_LAYOUT` tells the Technical Lead these documents belong to the
-workflow. run-01f03ed9 shows a prompt is not enough: the lead delegated
+workflow. One run shows a prompt is not enough: the lead delegated
 "update `docs/milestone_review.md` with the test results", and
 `specialist_documentation_1` spent twelve model calls on it - writing a
 `# Task Status` note four times, byte-identical, explaining that the task

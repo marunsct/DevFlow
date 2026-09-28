@@ -9,7 +9,7 @@ runs. It decided who owned the pause by reading `stage`. But a parallel resume
 enters `specialist_dispatch`, which returns `stage: specialist_dispatch_parallel`
 before the router fans out, so by the time any worker runs the
 `awaiting_approval:<name>` marker is gone. No worker matched, the decision was
-taken from all of them including its owner, and on run-6c7721c4
+taken from all of them including its owner, and on one run
 `specialist_backend_1` started over at least six times - the same `ls`, the
 same three document reads, "I'll create app.js", the gated write, the pause -
 without writing a byte.
@@ -114,7 +114,7 @@ class TestTheOwnerResumes:
     def test_the_paused_worker_is_resumed_on_the_thread_it_paused_on(
         self, agents: ScriptedAgents, parallel: None, calls: list, tmp_path: Any
     ) -> None:
-        """The run-6c7721c4 livelock, as one assertion."""
+        """The one run livelock, as one assertion."""
         _script(agents, _plan(("backend", "Create api.py."), ("database", "Create schema.sql.")))
         agents.script("specialist_backend", [
             pause_for_approval("api.py", "Backend write"),
@@ -221,7 +221,7 @@ class TestAHeldBackTaskStillRuns:
     def test_a_resume_does_not_release_it_early(
         self, agents: ScriptedAgents, parallel: None, calls: list, tmp_path: Any
     ) -> None:
-        """run-6c7721c4: the first approval dispatched `testing` onto `app.js`
+        """One run: the first approval dispatched `testing` onto `app.js`
         while `backend` was still writing it.
 
         Checked at a superstep boundary rather than by call order. Two workers

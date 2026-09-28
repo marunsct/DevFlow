@@ -80,15 +80,15 @@ def a_queue(monkeypatch):
 class TestReportingWhatIsThere:
     def test_the_nine_that_were_waiting(self, a_queue, capsys):
         a_queue([
-            _entry("connection already closed", "run-3faaa89b", resume=True),
-            _entry("-241", "run-db362501"),
-            _entry("'WorkflowRunner' object has no attribute '_run_loop'", "run-d97506e1"),
-            _entry("'WorkflowRunner' object has no attribute '_run_loop'", "run-a9108658"),
-            _entry("unexpected character after line continuation character", "run-70310423"),
-            _entry("unexpected character after line continuation character", "run-000c53d9"),
-            _entry("Worker exited prematurely: signal 9 (SIGKILL) Job: 0.", "run-cbd22a34"),
-            _entry("Worker exited prematurely: signal 9 (SIGKILL) Job: 0.", "run-cbd22a34"),
-            _entry("SoftTimeLimitExceeded()", "run-0b55ad49", resume=True),
+            _entry("connection already closed", "run-a0000004", resume=True),
+            _entry("-241", "run-a000000e"),
+            _entry("'WorkflowRunner' object has no attribute '_run_loop'", "run-a000000d"),
+            _entry("'WorkflowRunner' object has no attribute '_run_loop'", "run-a000000a"),
+            _entry("unexpected character after line continuation character", "run-a0000007"),
+            _entry("unexpected character after line continuation character", "run-a0000001"),
+            _entry("Worker exited prematurely: signal 9 (SIGKILL) Job: 0.", "run-a000000c"),
+            _entry("Worker exited prematurely: signal 9 (SIGKILL) Job: 0.", "run-a000000c"),
+            _entry("SoftTimeLimitExceeded()", "run-a0000002", resume=True),
         ])
 
         assert failed_tasks() == 0
@@ -96,7 +96,7 @@ class TestReportingWhatIsThere:
 
         assert "9 permanently failed task(s)" in printed
         assert "x2" in printed, "the count is what says one-off or pattern"
-        assert "run-cbd22a34" in printed
+        assert "run-a000000c" in printed
 
     def test_an_empty_queue_says_so(self, a_queue, capsys):
         a_queue([])

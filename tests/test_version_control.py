@@ -2,7 +2,7 @@
 
 Nothing in a run could answer "what did the last sprint change?" or "what did
 this look like when it last worked?". Every stage re-read the workspace to find
-out - 257 `read_file` calls over 22 distinct files on run-61c5a5b6 - and a
+out - 257 `read_file` calls over 22 distinct files on one run - and a
 sprint that broke something had nothing to fall back to.
 """
 
@@ -196,7 +196,7 @@ def test_a_sprint_that_changed_nothing_is_still_addressable(workspace: Path) -> 
 @needs_git
 def test_an_agent_can_ask_what_the_last_sprint_changed(workspace: Path) -> None:
     """Every stage otherwise works this out by re-reading the workspace: 257
-    `read_file` calls over 22 files on run-61c5a5b6, most of them untouched."""
+    `read_file` calls over 22 files on one run, most of them untouched."""
     from app.tools.agent_toolkit import build_sprint_history_tool
 
     initialise_repository(workspace)

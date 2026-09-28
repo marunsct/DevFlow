@@ -14,7 +14,7 @@ On a project whose stack chose `node --test with JSDOM`, measured directly:
 The remedy for each is the thing the other forbids, so a milestone reviewer
 cannot accept either and every revision swaps one finding for the other.
 
-run-6e50b630 hit the second horn and failed at the revision limit:
+One run hit the second horn and failed at the revision limit:
 
     [major] contracts: @playwright/test is declared as a devDependency in
     todo-app/package.json, but technology_stack.md explicitly chose
@@ -136,7 +136,7 @@ class TestTheRunThatFailed:
     def test_a_stack_that_chose_node_test_is_not_told_to_install_playwright(
         self, a_ui_project
     ):
-        """run-6e50b630's stack. The demand contradicted its own stack document."""
+        """One run's stack. The demand contradicted its own stack document."""
         missing, _ = _both(a_ui_project, "node --test with JSDOM", False)
 
         assert missing == []

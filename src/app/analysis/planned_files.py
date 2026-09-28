@@ -149,7 +149,18 @@ def paths_a_plan_named(texts: Iterable[str]) -> list[str]:
     """Every path-like token the plan's prose contains, in order, deduplicated."""
     found: list[str] = []
     for text in texts:
-        for token in _A_PATH_IN_PROSE.findall(str(text or "")):
+        prose = str(text or "")
+        for match in _A_PATH_IN_PROSE.finditer(prose):
+            # A call, not a file. One run's plan said "right before the
+            # `filtered.map()` call", `map` is on the list because source maps
+            # are real files, and `filtered.map` went to the test round as a
+            # planned file nobody wrote - "Write it, or say why". A file is
+            # never followed by an argument list.
+            # Only a parenthesis attached to the name: "index.html (the page)" is
+            # prose about a file, "filtered.map()" is a call.
+            if prose[match.end():].startswith("("):
+                continue
+            token = match.group(1)
             # `rstrip`, not `strip`: the leading dot is part of a dotfile's name.
             candidate = token.strip().rstrip(".,;:)")
             if not candidate or candidate.lower() in _NOT_A_FILENAME:

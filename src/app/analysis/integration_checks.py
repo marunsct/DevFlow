@@ -506,6 +506,33 @@ _JS_SETS_DATA_ATTRIBUTE = re.compile(
     r"""setAttribute\(\s*["']data-([A-Za-z][\w-]*)["']"""
 )
 _HTML_DATA_ATTR = re.compile(r"""\bdata-([A-Za-z][\w-]*)\s*=""")
+
+#: `data-id="${task.id}"` inside a string or template literal the script turns
+#: into markup. A hyphenated name cannot be a JavaScript identifier, so this
+#: shape in a script is always markup - except inside an attribute selector,
+#: `[data-id="3"]`, which reads the attribute; `_markup_data_attributes` skips
+#: those.
+_MARKUP_DATA_ATTR = re.compile(r"""\bdata-([A-Za-z][\w-]*)\s*=\s*["'`$\\]""")
+
+
+def _markup_data_attributes(script: str) -> set[str]:
+    """The data attributes a script writes into markup it builds.
+
+    Measured on one run: `render()` built each row with
+    `innerHTML = filtered.map(task => `<li ... data-id="${task.id}">`)`, the
+    delegated click handler read `dataset.id`, and the check reported
+    "reads the attribute `data-id`, which no HTML element sets" - at the tier
+    handed to the test round as already proven, against code that worked. Only
+    `dataset.x =` and `setAttribute` counted as setting an attribute, and the
+    most common way a script creates elements was neither.
+    """
+    found: set[str] = set()
+    for match in _MARKUP_DATA_ATTR.finditer(script):
+        before = script[:match.start()].rstrip()
+        if before.endswith("["):
+            continue
+        found.add(match.group(1))
+    return found
 _JS_DATA_SELECTOR = re.compile(r"""\[\s*data-([A-Za-z][\w-]*)""")
 
 
@@ -572,6 +599,7 @@ def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
 
         set_here = {_camel_to_dashed(n) for n in _JS_ASSIGNS_DATASET.findall(text)}
         set_here.update(_JS_SETS_DATA_ATTRIBUTE.findall(text))
+        set_here.update(_markup_data_attributes(text))
         read_here = {
             _camel_to_dashed(name) for name in set(_JS_DATASET.findall(text))
         }

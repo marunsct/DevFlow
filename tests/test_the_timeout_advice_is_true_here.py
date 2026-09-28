@@ -115,3 +115,18 @@ def test_both_timeout_messages_use_it() -> None:
     calls = source.count("+ _timeout_advice(")
 
     assert calls == 2, f"expected both timeout messages to choose the advice, found {calls}"
+
+
+def test_the_plain_advice_claims_nothing_false_about_this_environment() -> None:
+    """A browser runner can be installed here at any time; a workspace without
+    one yet is not a machine without browsers."""
+    assert "no browser" not in _TIMEOUT_ADVICE
+    assert "read the file and assert on its contents" not in _TIMEOUT_ADVICE
+
+
+def test_the_plain_advice_names_a_runner_left_watching() -> None:
+    """One run's `npm test` was `vitest` - watch mode - and ran the full 300
+    seconds. The cause is named without naming a runner."""
+    assert "watches for changes by default" in _TIMEOUT_ADVICE
+    assert "run-once mode" in _TIMEOUT_ADVICE
+    assert "vitest" not in _TIMEOUT_ADVICE.lower()

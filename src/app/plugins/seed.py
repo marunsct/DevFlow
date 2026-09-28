@@ -217,6 +217,10 @@ _BROWSER_PAGE_TESTING = """Testing a page that runs in a browser:
 #: How JavaScript and TypeScript modules are tested, and where their test-only
 #: packages go. Moved here from `TESTABILITY_RULE` and `TESTING_DEPENDENCY_RULE`.
 _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
+- A TEST SCRIPT MUST EXIT. `vitest` on its own starts watch mode and never
+  returns; the script is `vitest run`. Likewise `jest --watch` is for a
+  terminal, not for `npm test`. A command that never exits is killed at the
+  time limit and reports nothing.
 - IF YOU USE `export`, DECLARE IT. A `.js` file is CommonJS unless something says
   otherwise, so a test importing it gets "does not provide an export named ...".
   Ship a `package.json` containing `{"type": "module"}` beside it, or name the

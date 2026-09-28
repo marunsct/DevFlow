@@ -1853,13 +1853,22 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
 #: command that was never going to exit. `_SERVER_COMMANDS` refuses the ones
 #: that can be recognised by name, but one run's ui specialist wrote its
 #: own - `node serve-test.mjs` - and no name check can catch that.
+#:
+#: It used to say "there is no browser to open a page with" and "to check a page,
+#: read the file and assert on its contents". Both were false wherever a browser
+#: runner could be installed - which is here - and the second describes the
+#: hand-built DOM another check refuses. The commonest cause it never named was
+#: a test runner that watches by default: one run's `npm test` was `vitest`, ran
+#: the full 300 seconds, and the fix was two words, `vitest run`. Named here
+#: without naming any runner, because every ecosystem has one of these.
 _TIMEOUT_ADVICE = (
     " A command that does not finish is usually one that was not meant to: a "
     "server, a watcher, or something waiting on input that will never come. "
-    "Nothing here will connect to a server and there is no browser to open a "
-    "page with, so it would have served nobody. To check a page, read the file "
-    "and assert on its contents from a test; to check logic, import it and call "
-    "it. If the command really is just slow, run the smaller part of it."
+    "A test runner that watches for changes by default never exits on its own: "
+    "check the script this command runs, and use the runner's run-once mode. A "
+    "server a test needs belongs in the test runner's own configuration, which "
+    "starts and stops it. To check logic, import it and call it. If the command "
+    "really is just slow, run the smaller part of it."
 )
 
 #: The same advice for a workspace that HAS a browser runner. The text above

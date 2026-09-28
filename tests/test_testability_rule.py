@@ -136,6 +136,11 @@ class TestTheBrowserSpecificsLiveWithThePageStack:
 
 
 class TestTheJavaScriptSpecificsLiveWithTheLanguage:
+    def test_a_test_script_that_watches_is_named(self) -> None:
+        """One run declared `"test": "vitest"`, which never exits."""
+        assert "`vitest run`" in JAVASCRIPT
+        assert "MUST EXIT" in JAVASCRIPT
+
     def test_the_module_type_is_declared(self) -> None:
         assert "IF YOU USE `export`, DECLARE IT" in JAVASCRIPT
         assert '{"type": "module"}' in JAVASCRIPT

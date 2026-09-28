@@ -107,7 +107,7 @@ def test_the_refusal_keeps_the_advice_the_timeout_gives(tmp_path, monkeypatch):
 
     outcome = SandboxExecutor.execute(SERVER, str(tmp_path), "backend_specialist")
 
-    assert "Nothing here will connect to a server" in outcome["error"]
+    assert "belongs in the test runner's own configuration" in outcome["error"]
 
 
 def test_a_first_run_is_not_refused(tmp_path, monkeypatch):

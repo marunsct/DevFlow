@@ -96,7 +96,12 @@ from app.agents.product_manager import (
     with_the_constraints_the_brief_states,
 )
 from app.agents.role_agent import create_role_agent
-from app.agents.scrum_master import SprintPlanOutput, build_sprint_planning_request, create_scrum_master_agent
+from app.agents.scrum_master import (
+    SprintPlanOutput,
+    build_sprint_planning_request,
+    create_scrum_master_agent,
+    unaccounted_success_measures,
+)
 from app.agents.sprint_summary import (
     a_suite_that_did_not_pass,
     count_test_cases,
@@ -419,6 +424,9 @@ class WorkflowGraphState(TypedDict, total=False):
     stage_carry_over: dict[str, str]
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
+    # Success-measure numbers a sprint plan left unassigned, carried into the
+    # one re-plan that asks for them. See `unaccounted_success_measures`.
+    sprint_plan_gaps: list[int]
     current_sprint_index: int
     # Every attempt at every sprint, oldest first, each one a mapping of the
     # shape `sprint_summary.render_sprint_summary` documents. A sprint that
@@ -3404,7 +3412,16 @@ def build_workflow_graph(
             return missing
         agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
-        request = build_sprint_planning_request(spec_text, state["repository"].root_path)
+        measures = [
+            str(m) for m in (getattr(state.get("product_intake"), "success_measures", None) or []) if str(m).strip()
+        ]
+        gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
+        request = build_sprint_planning_request(
+            spec_text,
+            state["repository"].root_path,
+            success_measures=measures,
+            gaps=gaps_already_asked_about,
+        )
         update = _run_gated_agent(
             state,
             config,
@@ -3415,6 +3432,23 @@ def build_workflow_graph(
             next_stage="technical_lead",
         )
         if not _hand_back(update, "sprint_plan"):
+            missing = unaccounted_success_measures(update["sprint_plan"], measures)
+            if missing and not gaps_already_asked_about:
+                # Once. A plan that omits a success measure is caught at the
+                # milestone review otherwise, a full build cycle later and at
+                # the cost of one of three revisions; a second planning call is
+                # far cheaper. A second omission is let through with a warning
+                # rather than looped on - the review is still there behind it.
+                logger.warning(
+                    "Sprint plan left success measures %s unassigned; asking once more", missing
+                )
+                return _handing_on(stage="scrum_master", sprint_plan_gaps=missing)
+            if missing:
+                logger.warning(
+                    "Sprint plan still leaves success measures %s unassigned after one "
+                    "re-plan; continuing, and the milestone review will judge it", missing
+                )
+            update["sprint_plan_gaps"] = []
             update["current_sprint_index"] = 0
             _record_document(
                 state,

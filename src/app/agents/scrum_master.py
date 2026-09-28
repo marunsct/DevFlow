@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from app.agents.project_layout import WORKSPACE_ROOT_NOTE
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -51,16 +52,105 @@ class SprintPlanOutput(BaseModel):
 
     sprints: list[SprintDefinition] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+    success_measure_coverage: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One line per numbered success measure you were given, saying which "
+            "sprint delivers it: 'N: Sprint K' (K counts from 1 in `sprints`), or "
+            "'N: every sprint' for a constraint every sprint must keep."
+        ),
+    )
+
+
+#: A coverage line: the measure's number, then the sprint that delivers it.
+_COVERAGE_LINE = re.compile(r"^\s*(\d+)\s*[:.)\-]\s*(.+)$")
+_NAMES_A_SPRINT = re.compile(r"\bsprints?\s*#?\s*(\d+)\b", re.I)
+_EVERY_SPRINT = re.compile(r"\b(every|all|each)\s+sprints?\b", re.I)
+
+
+def unaccounted_success_measures(plan: Any, measures: list[str]) -> list[int]:
+    """The 1-based numbers of the success measures no sprint claims to deliver.
+
+    The intake's success measures are the only place a requirement is sure to
+    be stated plainly, and the Scrum Master was never shown them - it planned
+    from the specification alone. Measured across the 33 stored runs whose
+    intake required editing a task: the sprint plan never mentioned editing in
+    12. The specification had dropped it in only 3; in the rest it mentioned
+    editing once or twice, far down, and the plan followed the emphasis. Each
+    omission was caught at the milestone review - on run-ed19fdbb, run-a8ad0ef0
+    and others - a full build cycle later, and spent one of the three revisions
+    the run is allowed. Revision exhaustion is how the three low-brief runs
+    before those died.
+
+    This does not judge whether a sprint really delivers a measure; the
+    milestone review still does that against the code. It asks only that each
+    measure be assigned somewhere, which is the omission that was measured:
+    the plan never considered the requirement at all. Accounting by number
+    rather than matching words, because a word match would hand back a plan for
+    missing "subsets" or "correctly" - and a plan handed back for nothing is
+    a planning call wasted.
+
+    A line counts when it names a sprint that exists, or says every sprint. A
+    number with no such line, or a line naming sprint 7 of a two-sprint plan,
+    is unaccounted for.
+    """
+    if not measures:
+        return []
+    sprint_count = len(getattr(plan, "sprints", None) or [])
+    accounted: set[int] = set()
+    for line in getattr(plan, "success_measure_coverage", None) or []:
+        match = _COVERAGE_LINE.match(str(line))
+        if not match:
+            continue
+        number, claim = int(match.group(1)), match.group(2)
+        named = [int(k) for k in _NAMES_A_SPRINT.findall(claim)]
+        if _EVERY_SPRINT.search(claim) or any(1 <= k <= sprint_count for k in named):
+            accounted.add(number)
+    return [n for n in range(1, len(measures) + 1) if n not in accounted]
+
+
+def _the_success_measures(measures: list[str], gaps: list[int]) -> str:
+    """The numbered checklist, and - on a second pass - what the first one missed."""
+    if not measures:
+        return ""
+    numbered = "\n".join(f"  {n}. {text}" for n, text in enumerate(measures, start=1))
+    section = (
+        "--- Success measures from the product intake ---\n"
+        f"{numbered}\n\n"
+        "These are what the finished product is judged against, and the "
+        "specification may state some of them only in passing. Every one must "
+        "be delivered by a sprint. In `success_measure_coverage`, write one line "
+        "per measure - '1: Sprint 1', '2: Sprint 2', '4: every sprint' for a "
+        "constraint every sprint keeps - and make sure the sprint you name has "
+        "that work in its scope and acceptance criteria.\n"
+    )
+    if gaps:
+        missed = "\n".join(f"  {n}. {measures[n - 1]}" for n in gaps if 1 <= n <= len(measures))
+        section += (
+            "\nYOUR LAST PLAN LEFT THESE UNASSIGNED - no sprint delivered them:\n"
+            f"{missed}\n"
+            "Return the complete plan again with each of them in the scope and "
+            "acceptance criteria of a sprint, and a coverage line for every "
+            "measure.\n"
+        )
+    return section + "\n"
 
 
 def build_sprint_planning_request(
-    technical_specification_text: str, repository_root: str
+    technical_specification_text: str,
+    repository_root: str,
+    success_measures: list[str] | None = None,
+    gaps: list[int] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved technical specification.
 
     Budgeted for the same reason as the architecture review request: this is a
     first message, so compaction cannot save it if the specification alone
     exceeds the window.
+
+    `success_measures` are the intake's, numbered so the plan can account for
+    each; `gaps` are the numbers a previous attempt left unassigned. See
+    `unaccounted_success_measures`.
     """
     from app.agents.text_budget import excerpt, specification_budget
 
@@ -72,7 +162,8 @@ def build_sprint_planning_request(
     brief = (
         WORKSPACE_ROOT_NOTE
         + f"--- Approved technical specification (/docs/technical_specification.md) ---\n{specification}\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + _the_success_measures(list(success_measures or []), list(gaps or []))
+        + f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

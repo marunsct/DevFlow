@@ -53,6 +53,18 @@ class TestTheMatch:
 
         assert _named_in_the_selected_stack(doc, KNOWN) == ["nextjs"]
 
+    def test_a_version_number_does_not_hide_the_name(self) -> None:
+        """One run's stack: "None - vanilla HTML5/CSS3/JS"."""
+        doc = "## Selected Technology Stack\n**Framework:** None - vanilla HTML5/CSS3/JS\n## Rationale\n"
+
+        assert _named_in_the_selected_stack(doc, KNOWN | {"css"}) == ["css", "html"]
+
+    def test_a_version_does_not_make_one_name_another(self) -> None:
+        """`java` still does not match `javascript`, versioned or not."""
+        doc = "## Selected Technology Stack\nJavaScript ES2020, Java17\n## Rationale\n"
+
+        assert _named_in_the_selected_stack(doc, KNOWN) == ["java", "javascript"]
+
     def test_a_document_without_the_section_gives_nothing(self) -> None:
         """Nothing is guessed from free text that may list rejected options."""
         assert _named_in_the_selected_stack("# Stack\n\nReact, HTML\n", KNOWN) == []

@@ -187,7 +187,10 @@ def _named_in_the_selected_stack(content: str, known: set[str]) -> List[str]:
     return [
         name
         for name in sorted(known)
-        if name and re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text)
+        # A version number may follow: "HTML5/CSS3/JS" selected `html` and
+        # `css` on one run and matched neither while the boundary was a bare
+        # word boundary, because a digit is a word character.
+        if name and re.search(rf"(?<![\w-]){re.escape(name)}(?:\d[\d.]*)?(?![\w-])", text)
     ]
 
 

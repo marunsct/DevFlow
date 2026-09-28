@@ -116,6 +116,20 @@ class TestTheBrowserSpecificsLiveWithThePageStack:
         assert "--reporter=tap" in PAGE
         assert "file://" in PAGE and "webServer" in PAGE
 
+    def test_storage_is_not_cleared_where_a_reload_reruns_it(self) -> None:
+        """One run's `test_round_1` spent its whole call budget on ten failing
+        Playwright tests. Its helper cleared `localStorage` in
+        `page.addInitScript`, which runs again on `page.reload()` - so every
+        persistence test erased what it was about to check."""
+        assert "addInitScript" in PAGE
+        assert "reloads included" in PAGE
+        assert "fresh browser context" in PAGE
+
+    def test_an_empty_element_is_not_asserted_visible(self) -> None:
+        """The same round: `toBeVisible()` on an empty placeholder `<div>` failed
+        with "unexpected value hidden" though the element was on the page."""
+        assert "toBeVisible()" in PAGE and "toBeAttached()" in PAGE
+
     @pytest.mark.parametrize("framework", ["react", "vue", "angular", "nextjs"])
     def test_every_page_framework_carries_it(self, framework: str) -> None:
         assert "typeof document !== 'undefined'" in SEED_INSTRUCTIONS[framework]

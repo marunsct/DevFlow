@@ -204,7 +204,15 @@ _BROWSER_PAGE_TESTING = """Testing a page that runs in a browser:
         reuseExistingServer: false,
       }
 - Do NOT run a static server as a command of its own - it never exits, it is
-  refused, and nothing connects to it."""
+  refused, and nothing connects to it.
+- EVERY PLAYWRIGHT TEST ALREADY STARTS WITH EMPTY STORAGE: each gets a fresh
+  browser context. Do not clear `localStorage` yourself, and never in
+  `page.addInitScript` - that script runs before EVERY navigation, reloads
+  included, so a test that reloads to check persistence wipes the data it is
+  checking and fails however the app behaves.
+- `toBeVisible()` fails on an element with no size, such as an empty placeholder
+  `<div>`. For an element that may be empty, assert `toBeAttached()` or
+  `toHaveCount(1)` instead."""
 
 #: How JavaScript and TypeScript modules are tested, and where their test-only
 #: packages go. Moved here from `TESTABILITY_RULE` and `TESTING_DEPENDENCY_RULE`.

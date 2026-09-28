@@ -58,9 +58,13 @@ def test_the_ui_role_is_told_that_no_build_step_is_a_valid_stack():
     assert "no build tooling" in prompt
 
 
-def test_the_testing_role_agrees_with_the_round_brief_it_is_given():
-    """Both reach the same agent in one conversation, so they cannot disagree."""
-    brief = build_test_run_request("goal", [], "/", None)["messages"][0]["content"]
+def test_the_testing_role_agrees_with_the_round_brief_it_is_given(tmp_path):
+    """Both reach the same agent in one conversation, so they cannot disagree.
+
+    The repository root is a real, empty directory. It was `/`, which the
+    product checks walked in full - the whole machine - until the walk died
+    with a segmentation fault and took the test suite down with it."""
+    brief = build_test_run_request("goal", [], str(tmp_path), None)["messages"][0]["content"]
     assert "Do not install a test framework" in brief
 
     prompt = _ROLE_DESCRIPTIONS["testing"]

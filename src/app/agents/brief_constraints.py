@@ -1,6 +1,6 @@
 """The brief's own technical constraints, for the stage that chooses the stack.
 
-Run 0c5aabdb chose `Express` with `JSON File Storage` for a brief whose
+One run chose `Express` with `JSON File Storage` for a brief whose
 Technical Constraints section reads, in full:
 
     - Single-page application
@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from app.analysis.walk import files_under
 
 #: Headings whose body states what the product may and may not be built with.
 #: Matched on the heading text, so any level of `#` and any trailing colon.
@@ -212,7 +213,7 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     and a lockfile of thirty-nine packages.
     """
     imported: set[str] = set()
-    for script in project.rglob("*"):
+    for script in files_under(project, {"node_modules"}):
         if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
             continue
         try:
@@ -257,7 +258,7 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     from app.analysis.file_kinds import classify_file, is_test
 
     try:
-        for script in project.rglob("*"):
+        for script in files_under(project, {"node_modules"}):
             if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
                 continue
             relative = str(script.relative_to(project))
@@ -288,7 +289,7 @@ def what_the_brief_forbids_that_is_there(
     external dependencies beyond basic HTML/CSS/JS" against a product built on
     Express with a 32KB lockfile.
 
-    Run 551640d3 is the same thing in a quieter form. It installed `jsdom` to
+    One run is the same thing in a quieter form. It installed `jsdom` to
     get a DOM for its tests - a reasonable engineering instinct, and exactly
     what the brief forbids - leaving a full `node_modules` and a 29KB
     lockfile. Nothing reported it: the cross-file checks look at how files
@@ -320,7 +321,7 @@ def what_the_brief_forbids_that_is_there(
     found: list[str] = []
     try:
         root = Path(repository_root)
-        for manifest in sorted(root.rglob("package.json")):
+        for manifest in sorted(files_under(root, {"node_modules"}, "package.json")):
             if "node_modules" in manifest.parts:
                 continue
             try:
@@ -414,7 +415,7 @@ def what_the_brief_asked_for_that_is_missing(
 ) -> list[str]:
     """Requirements the brief states plainly that the product does not have.
 
-    Run 0c5aabdb completed. Its architecture review returned "approved" with no
+    One run completed. Its architecture review returned "approved" with no
     findings, both security reviews "passed", and the milestone review raised
     one blocking finding - a missing npm test script - then "accepted". What it
     delivered was:

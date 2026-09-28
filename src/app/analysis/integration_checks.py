@@ -32,6 +32,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
+from app.analysis.walk import files_under
 
 #: Directories that are never the project's own source.
 #: The harness's own files, never the product's. Read from one place.
@@ -96,7 +97,7 @@ _COLLECTED_SUFFIXES = frozenset({
 
 def _source_files(root: Path) -> list[Path]:
     found: list[Path] = []
-    for path in root.rglob("*"):
+    for path in files_under(root, _SKIP):
         if not path.is_file():
             continue
         if any(part in _SKIP for part in path.relative_to(root).parts):
@@ -192,7 +193,7 @@ def _documented_commands_that_cannot_run(files: list[Path], root: Path, docs: Pa
 
     documents: list[Path] = []
     try:
-        for path in sorted(root.rglob("*.md")):
+        for path in sorted(files_under(root, _SKIP, "*.md")):
             if not path.is_file():
                 continue
             parts = path.relative_to(root).parts
@@ -497,7 +498,7 @@ _JS_ASSIGNS_DATASET = re.compile(r"""\.dataset\.([A-Za-z][\w]*)\s*=""")
 #: element an attribute it will later read. `_JS_ASSIGNS_ID` has had the
 #: `setAttribute` form since it was written and the data-attribute side did
 #: not, which is the §1-B mistake again: a rule covering part of the set it
-#: governs. Run c97f5a88 built inline editing whose inputs carry
+#: governs. One run built inline editing whose inputs carry
 #: `setAttribute('data-field', 'title')` and whose handler reads
 #: `[data-field="title"]`, and was reported as reading an attribute "which no
 #: HTML element sets" - a blocking finding against working code.
@@ -789,7 +790,7 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
     product works.
 
     A command that NAMES files strands everything it does not name, whatever
-    those files are called. Run f81808a4 reached its sixth milestone with
+    those files are called. One run reached its sixth milestone with
     `scripts.test` of `node --test main.test.js` and a second suite at
     `tests/filter.test.js` - a correct Node test name, in a directory bare
     `node --test` would recurse into, and never run once, because the command
@@ -824,7 +825,7 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         project = manifest.parent
         named = _paths_named_after_the_test_flag(command)
         searched, listed_files = _what_the_command_searches(named, project)
-        # A named file that imports the suites runs them. Run f81808a4's
+        # A named file that imports the suites runs them. One run's
         # `run-tests.mjs` sets up a localStorage mock and then imports four
         # files from `tests/`; without following that, this reported all four
         # as never executed - four wrong findings out of ten, for tests that
@@ -1311,7 +1312,7 @@ def _manifest_scripts_that_cannot_resolve(files: list[Path], root: Path) -> list
                     continue
                 elsewhere = [
                     other.relative_to(project).as_posix()
-                    for other in project.rglob(Path(candidate).name)
+                    for other in files_under(project, _SKIP, Path(candidate).name)
                     if other.is_file()
                     and not any(part in _SKIP for part in other.parts)
                 ]
@@ -1552,13 +1553,13 @@ def _reached_only_by_its_tests(files: list[Path], root: Path) -> list[str]:
     wrong for "does the product run". A suite can exercise every function in a
     module the page never loads, and does: that is the shape of the failure.
 
-    Run 7e960f06's milestone review found it by reading, which is luck rather
+    One run's milestone review found it by reading, which is luck rather
     than design: `index.html` carried no `<script>` tag of any kind, `app.js`
     was imported only by `app.test.mjs`, and the deterministic checks reported
     one untidy problem and nothing else. The suite was 5 of 5 green over a
     product that never loaded.
 
-    Run 0afef410 is the same failure surviving to the end of a run, and this is
+    One run is the same failure surviving to the end of a run, and this is
     the half of it `_a_page_no_script_ever_touches` does not cover: there the
     page loaded a script that ignored it, here the page loads nothing at all.
 
@@ -1891,8 +1892,8 @@ def _a_browser_helper_of_the_same_name(text: str, name: str) -> bool:
     different job, and importing the application's version in its place would
     defeat the test.
 
-    Run 86a60de1's `tests/fixtures.ts` was reported for exactly that, and run
-    35424714's milestone reviewer had already rebutted the same finding in its
+    One run's `tests/fixtures.ts` was reported for exactly that, and one
+    run's milestone reviewer had already rebutted the same finding in its
     own words - "importing the JS module would defeat the purpose of end-to-end
     verification and is not required or expected". Two reviewers pushing back on
     a blocking finding is the signal that the finding is wrong, and a specialist
@@ -2063,7 +2064,7 @@ def _files_that_contradict_the_declared_module_type(
         import instead
         ReferenceError: module is not defined in ES module scope
 
-    Run d6297b2f is what this is for. `specialist_testing_1` added
+    One run is what this is for. `specialist_testing_1` added
     `"type":"module"` to the manifest while four of its five test files still
     used `require('../app.js')`, and then converted them one at a time, each
     discovered by a separate failing `npm test`. It also tried three times to
@@ -2209,10 +2210,10 @@ def _suites_calling_a_global_node_does_not_define(
         # tests 1   # pass 0   # fail 1
 
     Both of the runs that carried this were already deep in a module-system
-    tangle when they hit it, and it cost each of them a round of its own. Run
-    d6297b2f's `test_round_0` got `ReferenceError: describe is not defined` and
+    tangle when they hit it, and it cost each of them a round of its own. One
+    run's `test_round_0` got `ReferenceError: describe is not defined` and
     "fixed" it by moving every case inside a default export, which
-    `tests_the_runner_will_never_call` now catches. Run 0afef410's
+    `tests_the_runner_will_never_call` now catches. One run's
     `specialist_backend_2` renamed `app.test.mjs` to `app.test.js` and got
     `ReferenceError: test is not defined` for its trouble.
 
@@ -2279,7 +2280,7 @@ def how_the_page_receives_text(root: str | Path) -> str:
     """A statement of which DOM-writing APIs this product uses, or "".
 
     Decidable from the source, and stated so a reviewer does not have to infer
-    it. Run 1c9854c7's milestone reviewer inferred it wrongly - it recorded a
+    it. One run's milestone reviewer inferred it wrongly - it recorded a
     major XSS finding against a product whose only text write was
     `textSpan.textContent = task.text` and whose only `innerHTML` was `= ""` -
     and the run was stopped after three revisions over a defect that did not
@@ -2292,7 +2293,7 @@ def how_the_page_receives_text(root: str | Path) -> str:
         base = Path(root)
         files = [
             path
-            for path in base.rglob("*")
+            for path in files_under(base, _SKIP)
             if path.is_file()
             and path.suffix.lower() in {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx"}
             and not any(part in _SKIP for part in path.parts)
@@ -2306,8 +2307,8 @@ def how_the_page_receives_text(root: str | Path) -> str:
     for path in files:
         # Comments blanked, string literals kept. A commented-out `innerHTML`
         # read as markup withholds the one sentence this exists to provide -
-        # that an injection finding would be incorrect - which is what run
-        # 1c9854c7 was killed for the want of. But the literals have to stay:
+        # that an injection finding would be incorrect - which is what one
+        # run was killed for the want of. But the literals have to stay:
         # `innerHTML = ""` is a clearing and ``innerHTML = `<li>${t}</li>` `` is
         # markup, and blanking both loses that distinction entirely.
         code = _without_comments(_read(path))
@@ -2359,7 +2360,7 @@ def _scratch_scripts_left_behind(files: list[Path], root: Path) -> list[str]:
     and learns something. That is good practice and this does not discourage
     it - what it reports is the ones never cleaned up.
 
-    Run 1ae7671d's `defect_fix_2_1` left twelve: `tmp_debug2.mjs` through
+    One run's `defect_fix_2_1` left twelve: `tmp_debug2.mjs` through
     `tmp_debug6.mjs`, `tmp_full_test.mjs`, `tmp_run_test.mjs`,
     `tmp_print_tnew.mjs` and more, beside an application of three files. Across
     the stored workspaces five of fifty-five carry them.
@@ -2428,7 +2429,7 @@ def _a_page_no_script_ever_touches(files: list[Path], root: Path) -> list[str]:
     declares controls, and no script in the project addresses any of them or
     touches the document at all.
 
-    Run 0afef410 completed on this. Its final sprint - "Finalize code,
+    One run completed on this. Its final sprint - "Finalize code,
     documentation, test coverage, and prepare for deployment" - reduced
     `app.js` from 6,388 bytes to 2,345 by removing every line of DOM code:
     no `getElementById`, no listener, no render, no `init`. What was left is
@@ -2516,8 +2517,8 @@ def _module_system_mismatch(files: list[Path], root: Path) -> list[str]:
 
     Node has detected module syntax in a typeless `.js` since 20.19 and simply
     reparses the file, printing a MODULE_TYPELESS_PACKAGE_JSON performance
-    warning and working correctly. The original observation came from run
-    da6c5e19, where the note "we can't directly import app.js" was written by
+    warning and working correctly. The original observation came from one
+    run, where the note "we can't directly import app.js" was written by
     the agent in its own test file - the agent's diagnosis, recorded here as
     Node's behaviour, and wrong.
 
@@ -3039,7 +3040,7 @@ def _size_report(files: list[Path], root: Path, orphans: set[str] | None = None)
 
     # State the verdict, not two numbers and a hint about which to use.
     #
-    # Run 8904f87b failed on this. Its milestone review blocked with
+    # One run failed on this. Its milestone review blocked with
     # "Application source files total 631 lines across 3 files, exceeding the
     # brief's stated constraint of 'Maximum 500 lines of code'. The
     # deterministic size check confirms this violates the size budget." The
@@ -3180,9 +3181,8 @@ def _manifest_defects(files: list[Path], root: Path, stack: Any) -> list[str]:
     # Nothing above runs when there is no manifest at all, and that is the
     # worse version of the same fault: `npm test` answers ENOENT rather than
     # "missing script", so not one suite in the project can be reached by the
-    # command every stage is told to use. Run 1cd4597b reached 699 events with
-    # two suites on disk and no `package.json`; runs 37476645, f0630b10 and
-    # c150cb2e ended that way.
+    # command every stage is told to use. One run reached 699 events with
+    # two suites on disk and no `package.json`; three runs ended that way.
     #
     # Reported here rather than at the write of a test file, because the write
     # order does not settle it: across the stored transcripts the manifest
@@ -3230,7 +3230,7 @@ def _orphans_quietly(files: list[Path], root: Path) -> set[str]:
 _BREAKS_BEHAVIOUR = (
     "have never executed, and a passing suite",  # a false green suite
     # The same false green, reached the other way: a suite the gating command
-    # cannot run at all. Run-cac07d52 COMPLETED with five Playwright tests
+    # cannot run at all. One run COMPLETED with five Playwright tests
     # that had never executed once, because `scripts.test` is `node --test`
     # and they are TypeScript; all five failed when run afterwards. Classified
     # untidy at first for want of a phrase in this tuple, which is the stale
@@ -3238,7 +3238,7 @@ _BREAKS_BEHAVIOUR = (
     # `test_every_blocking_check_is_classified_as_blocking`.
     "does not parse TypeScript or JSX",
     # The third way to the same false green, and the one that reached a live
-    # review as tidiness. Run b6436e36 shipped a three-file suite in which
+    # review as tidiness. One run shipped a three-file suite in which
     # `task-manager/ui.pw.test.mjs` is a Playwright spec and `scripts.test` is
     # `node --test`, which throws on another runner's spec rather than running
     # it. No gate in this pipeline ran that file once, and the finding whose
@@ -3279,8 +3279,8 @@ _BREAKS_BEHAVIOUR = (
     "is `undefined` every time the application",  # an argument only the tests pass
     # Its own message says "This BREAKS regression detection. You MUST",
     # and it was being filed under "worth a minor finding, not a blocking
-    # one" - the summary contradicting the finding it was quoting. Run
-    # 9c0fc48d is the evidence that the message had it right: that product
+    # one" - the summary contradicting the finding it was quoting. One
+    # run is the evidence that the message had it right: that product
     # had no browser test, and its page threw `ReferenceError` on load.
     "This BREAKS regression detection",  # a UI with no end-to-end test
     # A capability the run's own acceptance criteria enumerate and the
@@ -3354,7 +3354,7 @@ def _servers_started_by_a_test_runner(files: list[Path], root: Path) -> set[Path
 
     `TESTABILITY_RULE` tells the model, in these words, to "let Playwright
     manage the server itself - declare a `webServer` in
-    `playwright.config.ts`". Run-ed05e20e's model did exactly that, with
+    `playwright.config.ts`". One run's model did exactly that, with
     `command: 'node server.mjs'`, and two checks then reported `server.mjs` as
     blocking: one because the stack stores data in the browser and therefore
     "has no server", the other because no page loads it. The harness asked for
@@ -4201,7 +4201,7 @@ def _names_the_action(text: str, words: tuple[str, ...], inflected: bool = False
     already.
 
     **At a camelCase boundary inside one** - `saveEdit`, `cancelEdit`,
-    `handleEditClick`. Run-6b511391's product implements inline editing in
+    `handleEditClick`. One run's product implements inline editing in
     full: a double-click handler on `.task-title`, `saveEdit()`, `cancelEdit()`,
     Enter to commit, Escape to cancel, blur to save, and
     `updateTask(id, { title })` underneath. Not one of those names starts with
@@ -4419,8 +4419,8 @@ def _a_required_action_nothing_implements(
     separately, under Acceptance Criteria, "Users can add, edit, delete tasks".
     Editing appears in the second list and not the first.
 
-    Two of three runs against that brief shipped no way to edit a task. Run
-    b0db10b1's own `product_intake.md` had it right - "All four acceptance
+    Two of three runs against that brief shipped no way to edit a task. One
+    run's own `product_intake.md` had it right - "All four acceptance
     criteria delivered together: add/edit/delete, persistence, filtering, and
     responsive design" - and the product it then built has no edit control, no
     edit handler and no test mentioning one. Neither the security review nor the
@@ -4453,7 +4453,7 @@ def _a_required_action_nothing_implements(
     # a page that embeds its whole application keeps it - and no CSS and no
     # markup at all.
     #
-    # Run b0db10b1 is why. Its milestone review found "Filter buttons
+    # One run is why. Its milestone review found "Filter buttons
     # (All/Active/Completed) are present in index.html with data-filter
     # attributes and CSS styling, but no JavaScript handler exists for them".
     # It was right and this check was silent, because `id="filter-buttons"` in
@@ -4531,7 +4531,7 @@ def _a_required_action_nothing_implements(
             continue
         if deferral:
             # Recorded, not forgotten - which is better, and still not the
-            # run's decision to make. Run 35424714 captured "Users can
+            # run's decision to make. One run captured "Users can
             # successfully add, edit, and delete tasks without errors" in its
             # intake, then wrote "ADR-08 - Inline Editing: Deferred - not
             # implemented in MVP", and its milestone reviewer cited that ADR to
@@ -4574,7 +4574,7 @@ _CLICKABLE_WITH_DATA = re.compile(
 #: group's name. The other common way to build a set of controls, and the one
 #: `_CLICKABLE_WITH_DATA` cannot see, because it carries no `data-` attribute.
 #:
-#: Run-3c8e772e's filter bar is three of these. It wired them, so nothing was
+#: One run's filter bar is three of these. It wired them, so nothing was
 #: lost there - but one run's dead filter bar was caught only because that
 #: run happened to spell its buttons `data-filter`, and the same bar written
 #: this way would have shipped dead and unreported.
@@ -4651,7 +4651,7 @@ def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[s
     anywhere". A page that is wired for most of itself and dead in one corner is
     outside it by design, and that is the shape this catches.
 
-    Run b0db10b1 shipped exactly that. Its `index.html` carries
+    One run shipped exactly that. Its `index.html` carries
 
         <nav id="filter-buttons" aria-label="Filter tasks by status">
           <button data-filter="all" class="filter-btn active">All</button>
@@ -4679,8 +4679,8 @@ def _a_control_group_no_script_operates(files: list[Path], root: Path) -> list[s
         if any(part in _SKIP for part in path.parts):
             continue
         # Tests excluded, exactly as `_a_page_no_script_ever_touches` excludes
-        # them. A suite that locates a control does not operate it: run
-        # b0db10b1's `app.pw.spec.ts` holds
+        # them. A suite that locates a control does not operate it: one
+        # run's `app.pw.spec.ts` holds
         # `filterNav.locator('[data-filter="all"]')` for three buttons its
         # product never wires, and reading that as wiring is how a dead control
         # acquires an alibi from the very suite that should have caught it.
@@ -4803,7 +4803,7 @@ def _a_required_action_no_test_covers(
     requirement list, so a requirement that was never built has no failing test
     - it has no test at all, and a green suite says so with confidence.
 
-    Run b0db10b1 is the clean demonstration. Its Playwright suite is good: 72
+    One run is the clean demonstration. Its Playwright suite is good: 72
     assertions, 22 of them `toHaveCount`, four page reloads checking that tasks
     survive a refresh. It ran six times, caught real failures - `2 failed, 10
     passed` early in the run - and finished green at 14 tests. It grew from 12
@@ -4967,7 +4967,7 @@ def _persisted_data_parsed_without_a_guard(files: list[Path], root: Path) -> lis
 #: A floor declared here cannot be lost to an edit of the prose, because it is
 #: attached to the check rather than to its words.
 #:
-#: Run-6e50b630 is the fourth instance. `_a_control_group_no_script_operates`
+#: One run is the fourth instance. `_a_control_group_no_script_operates`
 #: found `todo-app/index.html`'s three `data-filter` buttons, reported that they
 #: "render, respond to hover and do nothing when clicked", and was graded untidy
 #: - the marker is "does nothing when a user", and this message says "do nothing

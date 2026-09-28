@@ -20,6 +20,7 @@ import tomllib
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
+from app.analysis.walk import files_under
 
 logger = logging.getLogger(__name__)
 
@@ -364,7 +365,7 @@ def _where_that_name_actually_is(root: Path, wanted: str) -> str:
     try:
         found = [
             candidate.relative_to(root).as_posix()
-            for candidate in root.rglob(name)
+            for candidate in files_under(root, IGNORED_DIRECTORIES, name)
             if candidate.is_file()
             and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
         ]
@@ -866,7 +867,7 @@ def _refuse_an_edit_that_goes_backwards_again(relative_path: str, updated: str) 
     transcript, that is enough: of the three stages ever to receive the note,
     two stopped after one.
 
-    The third is what this is for. Run 1ae7671d's `test_round_1` was told five
+    The third is what this is for. One run's `test_round_1` was told five
     times and went on swapping a single line between four spellings -
     `++nextId`, `nextId; nextId++`, `nextId++`, `current.length > 0 ? ... : 1`
     and back - for eight edits, while the stage grew to the longest in the run.
@@ -908,7 +909,7 @@ def _refuse_a_hand_built_dom_again(relative_path: str, content: str) -> None:
     this cannot tell that from a mock that is about to collapse". That is
     right the first time and the second.
 
-    The third is what this is for. Run 6b511391's `specialist_testing_1` was
+    The third is what this is for. One run's `specialist_testing_1` was
     told nine times, and grew `app.test.mjs` from 145 lines to 1,195 while
     being told - a `Proxy` over a `Map` standing in for `dataset`, a
     `mockStorage` throwing `QUOTA_EXCEEDED`, an `eventListeners` registry -
@@ -2435,11 +2436,11 @@ def _the_response_written_under_another_name(
     `_the_response_it_should_be_returning` refuses it by name, and the name is
     whatever the agent invents. Five runs died on this and it caught three:
 
-        d6297b2f  docs/structured_response.md    32 writes
-        1ae7671d  todo-list/structured_response.json   8
-        a7150a6c  docs/structured_response.json        4
-        0deeb8bf  final_response.json                  6   - fell through
-        01f03ed9  docs/summary.json                    5   - fell through
+        one run  docs/structured_response.md    32 writes
+        one run  todo-list/structured_response.json   8
+        one run  docs/structured_response.json        4
+        one run  final_response.json                  6   - fell through
+        one run  docs/summary.json                    5   - fell through
 
     Fifty-five writes across the five, every one of them carrying the same
     thing: `{"changed_files": [...], "decisions": [...], "tests": [...]}`.
@@ -2485,7 +2486,7 @@ def _the_response_it_should_be_returning(relative_parts: tuple[str, ...]) -> str
     succeeds or is auto-approved, the workflow still has no structured
     response, the stage is asked again, and it writes the same file again.
 
-    Run d6297b2f died of exactly this: `defect_fix_1_0` requested
+    One run died of exactly this: `defect_fix_1_0` requested
     `docs/structured_response.md` five times in a row, carrying
     `{"role":"Testing and Quality Engineering Specialist","output":{...}}` as
     its content, and the loop guard stopped the run. Twenty model calls in that
@@ -2716,8 +2717,8 @@ def _refuse_a_test_script_that_strands_suites(
     """Refuse a manifest whose `test` script leaves existing suites unrun.
 
     `_the_test_command_will_not_run_this` says so at the write of each test
-    file, and that is the right first response. It is not enough. Run
-    9bd3a091 delivered that note 27 times across ten stages and still ended
+    file, and that is the right first response. It is not enough. One
+    run delivered that note 27 times across ten stages and still ended
     with
 
         "test": "node --test test_filter.mjs"
@@ -2806,7 +2807,7 @@ def _the_test_command_will_not_run_this(target: Path | None) -> str:
     test files `npm test` never runs, their assertions never executed while
     every gate reads a passing suite.
 
-    Run 1ae7671d is what that costs. Its script ran three named files while the
+    One run is what that costs. Its script ran three named files while the
     project held six, `npm test` passed on the curated subset, the real
     failures survived every green run, and the sprint exhausted all three
     remediation attempts. Said at the write, the fix is one edit to the
@@ -2994,8 +2995,8 @@ def _the_module_type_this_declares_breaks_files_here(target: Path, content: str)
     """Why this manifest's `"type"` contradicts files beside it, or "".
 
     One line of one file decides how Node parses every `.js` in the directory,
-    and the stage that writes it is rarely the stage that wrote them. Run
-    9bd3a091's `specialist_testing_3`, reaching for jest to get away from a
+    and the stage that writes it is rarely the stage that wrote them. One
+    run's `specialist_testing_3`, reaching for jest to get away from a
     failing assertion, rewrote `"type": "module"` to `"type": "commonjs"`
     while all seven exports in `app.js` were still ES syntax - and the write
     went through in silence. `node --check app.js` then gave
@@ -3191,8 +3192,8 @@ def _with_escaped_newlines_resolved(original: str, updated: str) -> str | None:
     Models send `replace` with newlines escaped as the two characters `\` and
     `n`. The forgiving matcher already resolves that on the `find` side - it is
     one of the four spellings it accepts - but the replacement was written
-    through literally, which lands `\n` in the file and breaks it. Run
-    8d28ee3f, `specialist_ui_ux_0`, sent this twice:
+    through literally, which lands `\n` in the file and breaks it. One
+    run, `specialist_ui_ux_0`, sent this twice:
 
         "replace": "\"type\":\"module\",\\n\"scripts\": {\\n ... }"
 
@@ -4285,8 +4286,8 @@ def write_approved_artifact(
             _pin_project_directory(artifact_root, pin_after_writing)
 
     # What the stage has seen of this file is now what it wrote. Recorded for
-    # writes and not only reads because the stale-edit case measured on run
-    # 8d28ee3f began with a write: the stage wrote package.json, npm rewrote
+    # writes and not only reads because the stale-edit case measured on one
+    # run began with a write: the stage wrote package.json, npm rewrote
     # it, and the stage then edited against its own text. See
     # `app.tools.seen_content`.
     try:

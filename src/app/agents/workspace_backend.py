@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from deepagents.backends.filesystem import FilesystemBackend
+from app.analysis.walk import directories_under, files_under
 
 #: Directory names hidden from an agent's view of the workspace. Sourced from
 #: the repository tools so the two listings cannot drift apart.
@@ -106,8 +107,8 @@ class _Suggesting:
 
         `_where_it_actually_is` searches by basename, which is the part an
         agent usually gets right - but a rename that changes the extension
-        changes the basename too, so it finds nothing. Measured on run
-        d6297b2f: `specialist_backend_0` moved `test/loadTasks.test.mjs` to
+        changes the basename too, so it finds nothing. Measured on one
+        run: `specialist_backend_0` moved `test/loadTasks.test.mjs` to
         `test/loadTasks.test.js`, then spent a read and an edit on the old
         name, each answered only "not found". That stage ran 47 model calls
         against a next-longest of 10.
@@ -138,7 +139,11 @@ class _Suggesting:
         try:
             found = [
                 str(candidate.relative_to(root))
-                for candidate in Path(root).rglob(name)
+                for candidate in (
+                    files_under(root, IGNORED_DIRECTORIES, name)
+                    if want_file
+                    else directories_under(root, IGNORED_DIRECTORIES, name)
+                )
                 if (candidate.is_file() if want_file else candidate.is_dir())
                 and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
             ]
@@ -194,7 +199,7 @@ class _Suggesting:
         try:
             found = [
                 str(candidate.relative_to(root))
-                for candidate in Path(root).rglob(name)
+                for candidate in files_under(root, IGNORED_DIRECTORIES, name)
                 if candidate.is_file()
                 and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
             ]
@@ -522,10 +527,7 @@ class _NoticingRepeats:
         This run has already committed to one and recorded it; the guess is
         the only part that is missing. Measured across six runs, 53 failed
         listings of a directory that never existed while the marker sat on
-        disk the whole time:
-
-            ae4b717e 16   37476645 11   304add54 8
-            db3a4a0b  8   2eb3aa24  5   d6369866 5
+        disk the whole time - 16, 11, 8, 8, 5 and 5 per run.
 
         One run's ui specialist asked for `task-manager-ui` eleven times
         and `task-manager` - the real one - four. The digest already lists the

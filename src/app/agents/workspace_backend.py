@@ -20,6 +20,7 @@ not mean a command cannot write to it.
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from dataclasses import replace
 from pathlib import Path
@@ -30,6 +31,8 @@ from deepagents.backends.filesystem import FilesystemBackend
 #: Directory names hidden from an agent's view of the workspace. Sourced from
 #: the repository tools so the two listings cannot drift apart.
 from app.agents.workspace_paths import the_same_place
+
+logger = logging.getLogger(__name__)
 from app.tools.repository import IGNORED_DIRECTORIES
 
 
@@ -716,6 +719,20 @@ class _NoticingRepeats:
         """Add one to this stage's tally and return the new total."""
         tally = self._the_repeated_read_tally()
         tally["count"] = tally.get("count", 0) + 1
+        # Diagnostic, not a guard. Two attempts at making this tally per stage -
+        # 6bdbba1 and c6125b1 - both shipped and changed nothing: run-50d08fa7
+        # still reported one interleaved sequence, 12 to 17, across three
+        # concurrent specialists while the sequential `test_round_0` after them
+        # restarted at 12. The remaining question is what key the count is
+        # actually landing under, and whether two workers share a dict or a key.
+        # Inference has been wrong twice here, so this records the answer instead.
+        if logger.isEnabledFor(logging.INFO):
+            from app.agents.stage_memory import current_stage_key
+
+            logger.info(
+                "repeated-read tally %d under key %r in backend %s",
+                tally["count"], current_stage_key(), hex(id(self)),
+            )
         return tally["count"]
 
     def _repeated_reads_so_far(self) -> int:

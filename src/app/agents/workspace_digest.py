@@ -221,8 +221,29 @@ def _nothing_has_been_built(names: list[str]) -> bool:
     )
 
 
-def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -> str:
+#: The header and footer once a stage has already acted. See `_a_refresh`.
+_REFRESH_HEADER = (
+    "The workspace as it stands now - the same listing as before, refreshed for "
+    "this turn so it includes anything you have just written. It is reference, "
+    "not a new request: carry on from where you left off."
+)
+_REFRESH_FOOTER = (
+    "Nothing here asks you to read anything again. A file you have already "
+    "read in this stage is still what that result showed you unless you or "
+    "another stage has written it since, and the read tool says so when it has. "
+    "Under each name is what the file is for and the calls it exposes, so a file "
+    "you only need to call is one you do not have to open."
+)
+
+
+def render_workspace_digest(
+    repo_root: str | Path, max_files: int = MAX_FILES, *, refresh: bool = False
+) -> str:
     """One compact listing of what is in the workspace, or "" if nothing is.
+
+    `refresh` is for every call after a stage's first: the listing is the same,
+    but it is framed as a status line rather than as an opening brief. See
+    `_a_refresh`.
 
     Never raises. A digest that fails a stage would cost far more than the
     calls it saves, so an unreadable workspace simply produces no digest and
@@ -290,6 +311,8 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
             "given is the whole of the evidence available to you. Do not spend "
             "a call looking for a file a repository would usually have."
         )
+    if refresh:
+        return _REFRESH_HEADER + "\n" + "\n".join(lines) + more + "\n" + _REFRESH_FOOTER
     return (
         "The workspace as it stands. This is what is there - you do not need to "
         "list the directories to find out:\n" + "\n".join(lines) + more + "\n"
@@ -298,6 +321,38 @@ def render_workspace_digest(repo_root: str | Path, max_files: int = MAX_FILES) -
         "so a file you only need to CALL or to know ABOUT is one you do not "
         "have to open."
     )
+
+
+def _a_refresh(messages: list[Any]) -> bool:
+    """Whether the stage has already acted, so the digest is a refresh.
+
+    The digest is appended as the last message of every call, which is the
+    right place for the prefix cache - the conversation before it is unchanged
+    call to call - and the wrong place for its old wording. The last message a
+    model reads is the one it answers, and the old one ended "Read the files you
+    actually need." After a tool result, that is an instruction to read.
+
+    It was obeyed. On run-ed19fdbb `specialist_backend_1` wrote `app.js` at
+    06:26:02 and then opened seven of its next nine turns as though arriving for
+    the first time - "Both files already exist from a prior run. Let me read...
+    and verify" - re-issuing the same `read_file` pair, `wc -l`, `node --check`
+    and `grep innerHTML` while its history grew from 32 messages to 51. Across
+    the twelve runs before it, 20 to 49% of every `read_file` was answered with
+    content the stage already had.
+
+    So once the model has replied at least once, the listing is still sent, and
+    still current, but framed as a status line and without the instruction.
+    Keyed on an AI message being present rather than on a message count,
+    because a carried-over summary or a restart note can put several messages
+    in front of a stage that has not yet done anything.
+    """
+    for message in messages:
+        kind = getattr(message, "type", None)
+        if kind is None and isinstance(message, dict):
+            kind = message.get("role") or message.get("type")
+        if kind in ("ai", "assistant"):
+            return True
+    return False
 
 
 def build_workspace_digest_middleware(repo_root: str) -> Any:
@@ -339,7 +394,7 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
                 return handler(request)
             if os.environ.get("WORKSPACE_DIGEST", "1").lower() in ("0", "false", "off"):
                 return handler(request)
-            digest = render_workspace_digest(repo_root)
+            digest = render_workspace_digest(repo_root, refresh=_a_refresh(messages))
             if not digest:
                 return handler(request)
             try:

@@ -94,7 +94,11 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     """
     from app.analysis import project_memory
 
-    count = text.count("\n") + 1
+    # The count every file tool reports ("@@ lines 1-113 of 113 @@"). It was
+    # newlines plus one, so a file ending in a newline - nearly all of them -
+    # read one line longer here than in the read that followed, and a model
+    # that tracks line counts had two numbers for one unchanged file.
+    count = len(text.splitlines())
     head = f"  {name} ({count} lines)"
     try:
         changed_by = project_memory.who_changed(root, name)

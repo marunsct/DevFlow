@@ -40,7 +40,20 @@ def test_the_digest_names_every_file_with_its_size(workspace: Path) -> None:
     digest = render_workspace_digest(workspace)
 
     assert "todo-app/app.js" in digest
-    assert "docs/plan.md (21 lines)" in digest
+    assert "docs/plan.md (20 lines)" in digest
+
+
+def test_the_count_agrees_with_the_read_tool(workspace: Path) -> None:
+    """Twenty "# Plan" lines are twenty lines, as `read_file` reports them.
+
+    The digest counted newlines plus one, and on one run listed
+    `logic.test.mjs (114 lines)` beside a read reporting "of 113"."""
+    (workspace / "docs/no-final-newline.md").write_text("a\nb", encoding="utf-8")
+
+    digest = render_workspace_digest(workspace)
+
+    assert "docs/no-final-newline.md (2 lines)" in digest
+    assert "todo-app/index.html (1 lines)" in digest
 
 
 def test_the_digest_names_what_a_code_file_defines(workspace: Path) -> None:

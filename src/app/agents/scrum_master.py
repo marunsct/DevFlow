@@ -109,7 +109,88 @@ def unaccounted_success_measures(plan: Any, measures: list[str]) -> list[int]:
     return [n for n in range(1, len(measures) + 1) if n not in accounted]
 
 
-def _the_success_measures(measures: list[str], gaps: list[int]) -> str:
+#: An enumeration inside a success measure: "add, edit, and delete",
+#: "mobile and desktop", "localStorage or JSON file".
+_ENUMERATION = re.compile(
+    r"\b([A-Za-z][\w-]*)((?:\s*,\s*[A-Za-z][\w-]*)*)\s*,?\s+(and|or)\s+([A-Za-z][\w-]*)", re.I
+)
+#: Words that can sit in an enumeration without naming a capability.
+_NOT_A_CAPABILITY = {
+    "a", "all", "an", "are", "be", "both", "can", "either", "for", "in", "is", "of",
+    "on", "only", "task", "tasks", "the", "to", "user", "users", "with",
+}
+
+
+def _stem(word: str) -> str:
+    word = word.lower()
+    for suffix in ("ing", "es", "ed", "s"):
+        if len(word) - len(suffix) >= 4 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def _named_in(word: str, text: str) -> bool:
+    """Whether `text` names `word` at the start of a word, camelCase included.
+
+    `editTask` names "edit"; "credit" does not.
+    """
+    stem = _stem(word)
+    for match in re.finditer(re.escape(stem), text, re.I):
+        at = match.start()
+        if at == 0 or not text[at - 1].isalpha() or text[at].isupper():
+            return True
+    return False
+
+
+def _delivered_text(plan: Any) -> str:
+    """What the plan commits to building. Deferrals and questions are not it."""
+    parts: list[str] = []
+    for sprint in getattr(plan, "sprints", None) or []:
+        parts.append(str(getattr(sprint, "goal", "") or ""))
+        parts.append(str(getattr(sprint, "user_value", "") or ""))
+        for field in ("in_scope", "acceptance_criteria", "test_strategy"):
+            parts.extend(str(item) for item in (getattr(sprint, field, None) or []))
+    return "\n".join(parts)
+
+
+def capabilities_the_plan_never_names(plan: Any, measures: list[str]) -> dict[int, list[str]]:
+    """Items of a success measure's own list that no sprint delivers.
+
+    Assignment alone was not enough. On run-f4c6dee4 the plan wrote
+    "1: Sprint 1" for "Users can add, edit, and delete tasks without errors",
+    and Sprint 1 delivered add and delete. Editing appeared nowhere in the plan
+    - the same requirement dropped the same way as before the coverage lines
+    existed, now with a line claiming it was covered.
+
+    What the dropped requirement has in common every time is that it is one
+    item of an enumeration the measure itself spells out. So the enumerations
+    are what is checked: every item of an "and" list must be named somewhere a
+    sprint commits to work, and at least one item of an "or" list must be.
+    Words outside such lists - "correctly", "controls", "subsets" - are never
+    required, which is what keeps this from handing back a plan for phrasing.
+    Deferrals and open questions do not count as delivering anything.
+
+    Returns {measure number: [missing items]}, empty when nothing is missing.
+    """
+    delivered = _delivered_text(plan)
+    missing: dict[int, list[str]] = {}
+    for number, measure in enumerate(measures, start=1):
+        for match in _ENUMERATION.finditer(str(measure)):
+            words = [match.group(1)]
+            words += [w.strip() for w in match.group(2).split(",") if w.strip()]
+            words.append(match.group(4))
+            words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY]
+            if len(words) < 2:
+                continue
+            absent = [w for w in words if not _named_in(w, delivered)]
+            conjunctive = match.group(3).lower() == "and"
+            if (conjunctive and absent) or (not conjunctive and len(absent) == len(words)):
+                bucket = missing.setdefault(number, [])
+                bucket.extend(w for w in absent if w not in bucket)
+    return missing
+
+
+def _the_success_measures(measures: list[str], gaps: list[Any]) -> str:
     """The numbered checklist, and - on a second pass - what the first one missed."""
     if not measures:
         return ""
@@ -125,13 +206,22 @@ def _the_success_measures(measures: list[str], gaps: list[int]) -> str:
         "that work in its scope and acceptance criteria.\n"
     )
     if gaps:
-        missed = "\n".join(f"  {n}. {measures[n - 1]}" for n in gaps if 1 <= n <= len(measures))
+        lines = []
+        for gap in gaps:
+            # An int is a measure no line assigned; a dict also names the items
+            # of the measure's own list that no sprint delivers.
+            number = gap.get("measure") if isinstance(gap, dict) else gap
+            if not isinstance(number, int) or not 1 <= number <= len(measures):
+                continue
+            words = gap.get("missing") if isinstance(gap, dict) else None
+            named = f" - no sprint delivers: {', '.join(words)}" if words else ""
+            lines.append(f"  {number}. {measures[number - 1]}{named}")
         section += (
             "\nYOUR LAST PLAN LEFT THESE UNASSIGNED - no sprint delivered them:\n"
-            f"{missed}\n"
-            "Return the complete plan again with each of them in the scope and "
-            "acceptance criteria of a sprint, and a coverage line for every "
-            "measure.\n"
+            + "\n".join(lines)
+            + "\nReturn the complete plan again with each of them - every item "
+            "each measure lists - in the scope and acceptance criteria of a "
+            "sprint, and a coverage line for every measure.\n"
         )
     return section + "\n"
 
@@ -140,7 +230,7 @@ def build_sprint_planning_request(
     technical_specification_text: str,
     repository_root: str,
     success_measures: list[str] | None = None,
-    gaps: list[int] | None = None,
+    gaps: list[Any] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved technical specification.
 

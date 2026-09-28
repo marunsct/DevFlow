@@ -99,6 +99,7 @@ from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import (
     SprintPlanOutput,
     build_sprint_planning_request,
+    capabilities_the_plan_never_names,
     create_scrum_master_agent,
     unaccounted_success_measures,
 )
@@ -424,9 +425,11 @@ class WorkflowGraphState(TypedDict, total=False):
     stage_carry_over: dict[str, str]
     milestone_revision_count: int
     sprint_plan: SprintPlanOutput
-    # Success-measure numbers a sprint plan left unassigned, carried into the
-    # one re-plan that asks for them. See `unaccounted_success_measures`.
-    sprint_plan_gaps: list[int]
+    # Success measures a sprint plan left unassigned or only partly delivered,
+    # as {"measure": n, "missing": [items]}, carried into the one re-plan that
+    # asks for them. See `unaccounted_success_measures` and
+    # `capabilities_the_plan_never_names`.
+    sprint_plan_gaps: list[dict[str, Any]]
     current_sprint_index: int
     # Every attempt at every sprint, oldest first, each one a mapping of the
     # shape `sprint_summary.render_sprint_summary` documents. A sprint that
@@ -3432,7 +3435,12 @@ def build_workflow_graph(
             next_stage="technical_lead",
         )
         if not _hand_back(update, "sprint_plan"):
-            missing = unaccounted_success_measures(update["sprint_plan"], measures)
+            unnamed = capabilities_the_plan_never_names(update["sprint_plan"], measures)
+            unassigned = unaccounted_success_measures(update["sprint_plan"], measures)
+            missing = [
+                {"measure": n, "missing": unnamed.get(n, [])}
+                for n in sorted(set(unassigned) | set(unnamed))
+            ]
             if missing and not gaps_already_asked_about:
                 # Once. A plan that omits a success measure is caught at the
                 # milestone review otherwise, a full build cycle later and at

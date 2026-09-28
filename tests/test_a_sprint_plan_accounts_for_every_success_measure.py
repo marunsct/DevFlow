@@ -31,6 +31,7 @@ from app.agents.scrum_master import (
     SprintDefinition,
     SprintPlanOutput,
     build_sprint_planning_request,
+    capabilities_the_plan_never_names,
     unaccounted_success_measures,
 )
 from app.graph.workflow import start_workflow
@@ -101,6 +102,83 @@ class TestTheAccounting:
         assert unaccounted_success_measures(_plan([]), []) == []
 
 
+#: run-f4c6dee4's Sprint 1, which its coverage line said delivered measure 1.
+F4C6DEE4_SPRINT_1 = SprintDefinition(
+    goal=(
+        "Users can add tasks with title and description, toggle completion state, "
+        "delete tasks, and have all changes persist across page refreshes."
+    ),
+    user_value="Users keep a task list",
+    in_scope=[
+        "app.js: all four exported pure functions (addTask, toggleTask, deleteTask, filterTasks)",
+        "style.css: mobile-first responsive layout; desktop refinements",
+        "localStorage adapter",
+    ],
+)
+
+
+class TestWhatTheSprintsDeliver:
+    """Assignment was not enough: the item a measure lists must be delivered."""
+
+    def test_the_measured_case(self) -> None:
+        plan = SprintPlanOutput(sprints=[F4C6DEE4_SPRINT_1], success_measure_coverage=COMPLETE)
+
+        assert unaccounted_success_measures(plan, MEASURES) == []
+        assert capabilities_the_plan_never_names(plan, MEASURES) == {1: ["edit"]}
+
+    def test_a_deferral_does_not_deliver_it(self) -> None:
+        sprint = F4C6DEE4_SPRINT_1.model_copy(update={"out_of_scope": ["Editing tasks (later)"]})
+
+        assert capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), MEASURES) == {1: ["edit"]}
+
+    def test_an_open_question_does_not_deliver_it(self) -> None:
+        plan = SprintPlanOutput(sprints=[F4C6DEE4_SPRINT_1], open_questions=["Should tasks be editable?"])
+
+        assert 1 in capabilities_the_plan_never_names(plan, MEASURES)
+
+    def test_a_camel_case_function_names_it(self) -> None:
+        sprint = F4C6DEE4_SPRINT_1.model_copy(
+            update={"in_scope": [*F4C6DEE4_SPRINT_1.in_scope, "editTask(id, fields) pure function"]}
+        )
+
+        assert 1 not in capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), MEASURES)
+
+    def test_a_word_that_merely_contains_it_does_not(self) -> None:
+        """'credit' is not 'edit'."""
+        sprint = F4C6DEE4_SPRINT_1.model_copy(
+            update={"in_scope": [*F4C6DEE4_SPRINT_1.in_scope, "Show a credit line in the footer"]}
+        )
+
+        assert capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), MEASURES) == {1: ["edit"]}
+
+    def test_an_or_list_needs_only_one(self) -> None:
+        """'localStorage or JSON file' is satisfied by localStorage alone."""
+        plan = SprintPlanOutput(sprints=[F4C6DEE4_SPRINT_1])
+
+        assert 2 not in capabilities_the_plan_never_names(plan, MEASURES)
+
+    def test_an_and_list_needs_every_item(self) -> None:
+        sprint = SprintDefinition(goal="g", user_value="v", in_scope=["Works on mobile"])
+        measures = ["UI is responsive on both mobile and desktop viewports"]
+
+        assert capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), measures) == {1: ["desktop"]}
+
+    def test_words_outside_a_list_are_never_required(self) -> None:
+        """'correctly', 'controls', 'show' - handing back for those is phrasing, not scope."""
+        sprint = SprintDefinition(goal="g", user_value="v", in_scope=["Filter dropdown for active and completed"])
+        measures = ["Filter controls correctly show only active or completed tasks"]
+
+        assert capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), measures) == {}
+
+    def test_a_measure_without_a_list_is_not_checked(self) -> None:
+        plan = SprintPlanOutput(sprints=[SprintDefinition(goal="g", user_value="v")])
+
+        assert capabilities_the_plan_never_names(plan, ["Total codebase stays within 500 lines"]) == {}
+
+    def test_the_whole_plan_delivering_everything_passes(self) -> None:
+        assert capabilities_the_plan_never_names(_one_sprint(COMPLETE), MEASURES) == {}
+
+
 class TestTheRequest:
     def test_the_planner_is_shown_the_measures(self) -> None:
         body = build_sprint_planning_request("spec", "/w", success_measures=MEASURES)["messages"][0]["content"]
@@ -137,9 +215,24 @@ def _script(agents: ScriptedAgents, *plans: SprintPlanOutput) -> None:
     agents.script("security_reviewer", [responds_with(_security_review())])
 
 
-def _one_sprint(coverage: list[str]) -> SprintPlanOutput:
+#: A sprint that really delivers every measure above.
+DELIVERS_ALL = [
+    "Add, edit and delete tasks from the list",
+    "Persist tasks to local storage across refreshes",
+    "Filter by all, active or completed",
+    "Responsive layout on mobile and desktop",
+]
+
+
+def _one_sprint(coverage: list[str], scope: list[str] | None = None) -> SprintPlanOutput:
     return SprintPlanOutput(
-        sprints=[SprintDefinition(goal="Sprint 1: todo", user_value="Users manage tasks")],
+        sprints=[
+            SprintDefinition(
+                goal="Sprint 1: todo",
+                user_value="Users manage tasks",
+                in_scope=DELIVERS_ALL if scope is None else scope,
+            )
+        ],
         success_measure_coverage=coverage,
     )
 
@@ -178,6 +271,20 @@ class TestTheWorkflow:
         assert len(agents.requests["scrum_master"]) == 2
         assert state["stage"] == "complete", state.get("error")
         assert not state.get("sprint_plan_gaps")
+
+    def test_a_plan_that_claims_a_measure_it_only_half_delivers_is_asked_again(
+        self, agents: ScriptedAgents, tmp_path: Any
+    ) -> None:
+        """run-f4c6dee4: every measure assigned, and editing nowhere in the plan."""
+        half = [s.replace("Add, edit and delete", "Add and delete") for s in DELIVERS_ALL]
+        _script(agents, _one_sprint(COMPLETE, scope=half), _one_sprint(COMPLETE))
+
+        state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-half")
+
+        assert len(agents.requests["scrum_master"]) == 2
+        second = agents.last_request_text("scrum_master").split("LEFT THESE UNASSIGNED")[1]
+        assert "no sprint delivers: edit" in second
+        assert state["stage"] == "complete", state.get("error")
 
     def test_the_accepted_plan_is_the_one_recorded(self, agents: ScriptedAgents, tmp_path: Any) -> None:
         _script(agents, _one_sprint(COMPLETE[1:]), _one_sprint(COMPLETE))

@@ -158,6 +158,39 @@ def _framework_names(reply: str) -> List[str]:
     return names
 
 
+#: The heading `artifact_document` gives the chosen stack. The section under it
+#: is what was selected; the rationale after it also names what was rejected.
+_SELECTED_SECTION = re.compile(
+    r"^##\s+Selected Technology Stack\s*$(?P<body>.*?)(?=^##\s|\Z)", re.M | re.S
+)
+
+
+def _named_in_the_selected_stack(content: str, known: set[str]) -> List[str]:
+    """Every framework with stored instructions that the selected stack names.
+
+    The model's extraction is told to leave out "tools or generic terms", and
+    for one run's stack - "None (Vanilla HTML/CSS/JS)", "Playwright for page" -
+    it returned `javascript` alone. The instructions for testing a page in a
+    browser are stored under `html`, so the stage that wrote the Playwright
+    suite never received them, including the two traps it then fell into.
+
+    A stored name that the selected section spells out is not a judgement call,
+    so it is matched here rather than left to the model: whole words, case
+    folded, with dots dropped so "Next.js" reads as `nextjs`. Only that section
+    is read, because the rationale also names the options it turned down.
+    """
+    match = _SELECTED_SECTION.search(content)
+    if not match:
+        return []
+    body = match.group("body").lower()
+    text = f"{body}\n{body.replace('.', '')}"
+    return [
+        name
+        for name in sorted(known)
+        if name and re.search(rf"(?<![\w-]){re.escape(name)}(?![\w-])", text)
+    ]
+
+
 def _extract_stack_keywords(repo_root: str) -> List[str]:
     """The frameworks this run's stack mandates, with instructions for each.
 
@@ -209,6 +242,9 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
 
         store = PluginStore.shared()
         known = set(store.get_all_framework_names())
+        detected += [
+            name for name in _named_in_the_selected_stack(content, known) if name not in detected
+        ]
         for framework in detected:
             if framework not in known:
                 # Nothing maintains a list of supported frameworks, so the ones

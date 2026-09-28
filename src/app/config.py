@@ -84,17 +84,17 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
     else:
         values = environment
     # The model name defaults to a placeholder if not set, to allow the UI settings page to load.
-    model_name = values.get("OPENAI_MODEL", "").strip()
+    model_name = _read_str(values, "OPENAI_MODEL", "")
     if not model_name or model_name.startswith("replace-with-"):
         model_name = "default-model"
 
-    llm_provider = values.get("LLM_PROVIDER", "local").strip().lower()
+    llm_provider = _read_str(values, "LLM_PROVIDER", "local").lower()
 
     # Construct Settings only after validation, so callers receive a trusted configuration object.
     return Settings(
         llm_provider=llm_provider,
-        openai_base_url=values.get("OPENAI_BASE_URL", "http://localhost:1234/v1").strip(),
-        openai_api_key=values.get("OPENAI_API_KEY", "lm-studio"),
+        openai_base_url=_read_str(values, "OPENAI_BASE_URL", "http://localhost:1234/v1"),
+        openai_api_key=_openai_api_key(values, llm_provider),
         anthropic_api_key=values.get("ANTHROPIC_API_KEY") or None,
         # GEMINI_API_KEY is accepted as an alias: docker-compose and
         # .env.example both set that name, so reading only GOOGLE_API_KEY
@@ -102,18 +102,56 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         google_api_key=values.get("GOOGLE_API_KEY") or values.get("GEMINI_API_KEY") or None,
         model_name=model_name,
         langsmith_tracing=_read_bool(values, "LANGSMITH_TRACING", False),
-        langsmith_endpoint=values.get(
-            "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com"
-        ).strip(),
+        langsmith_endpoint=_read_str(values, "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com"),
         langsmith_api_key=values.get("LANGSMITH_API_KEY") or None,
-        langsmith_project=values.get("LANGSMITH_PROJECT", "product-development-workflow").strip(),
-        artifact_directory=values.get("WORKFLOW_ARTIFACT_DIRECTORY", "docs/generated").strip(),
+        langsmith_project=_read_str(values, "LANGSMITH_PROJECT", "product-development-workflow"),
+        artifact_directory=_read_str(values, "WORKFLOW_ARTIFACT_DIRECTORY", "docs/generated"),
         require_approval=_read_bool(values, "WORKFLOW_REQUIRE_APPROVAL", True),
         allow_command_execution=_read_bool(values, "WORKFLOW_ALLOW_COMMAND_EXECUTION", False),
-        checkpointer_type=values.get("CHECKPOINTER_TYPE", DEFAULT_CHECKPOINTER).strip().lower(),
+        checkpointer_type=_read_str(values, "CHECKPOINTER_TYPE", DEFAULT_CHECKPOINTER).lower(),
         # "default" sends nothing, so adding this setting cannot change how an
         # existing deployment behaves - see `app.agents.thinking.ThinkingMode`.
-        thinking_mode=values.get("MODEL_THINKING_MODE", "default").strip().lower(),
-        thinking_effort=values.get("MODEL_THINKING_EFFORT", "medium").strip().lower(),
-        execution_mode=values.get("EXECUTION_MODE", "linear").strip().lower(),
+        thinking_mode=_read_str(values, "MODEL_THINKING_MODE", "default").lower(),
+        thinking_effort=_read_str(values, "MODEL_THINKING_EFFORT", "medium").lower(),
+        execution_mode=_read_str(values, "EXECUTION_MODE", "linear").lower(),
     )
+
+
+def _read_str(values: Mapping[str, str], key: str, default: str) -> str:
+    """`key`'s value stripped, or `default` when it is absent OR blank.
+
+    `values.get(key, default)` applies the default only when the key is
+    missing, and docker-compose's `${VAR:-}` pattern - used throughout this
+    repository's compose file - sets every such variable to "" when it is not
+    configured. So the defaults below never applied in the deployment they were
+    written for: a blank `LLM_PROVIDER` became provider "", a blank
+    `EXECUTION_MODE` became mode "", and a blank `OPENAI_API_KEY` reached the
+    OpenAI client as "", which refuses to construct. That is how a rebuilt stack
+    on 2026-09-28 could not build a model client at all.
+    """
+    raw = values.get(key)
+    if raw is None or not str(raw).strip():
+        return default
+    return str(raw).strip()
+
+
+def _openai_api_key(values: Mapping[str, str], llm_provider: str) -> str:
+    """The key for the OpenAI-compatible client.
+
+    An absent key has always meant the local placeholder, and still does. A
+    blank one now means the same - but only for the `local` provider, whose
+    OpenAI-compatible server ignores the key while the client refuses to be
+    built without one.
+
+    Not for the others. Under `anthropic` and `gemini` a non-empty key switches
+    on a fallback to real OpenAI (`gpt-4o-mini`), so turning a blank into the
+    placeholder there would add a fallback that authenticates with a fake key,
+    and under `openai` it would replace a clear "missing credentials" at start-up
+    with a 401 on the first call. For those, blank stays blank.
+    """
+    raw = values.get("OPENAI_API_KEY")
+    if raw is None:
+        return "lm-studio"
+    if not raw.strip():
+        return "lm-studio" if llm_provider == "local" else ""
+    return raw

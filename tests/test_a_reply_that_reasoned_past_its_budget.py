@@ -50,7 +50,7 @@ class _Reply:
 
 
 class TestNothingButReasoning:
-    def test_the_run_be25a68e_reply_is_recognised(self) -> None:
+    def test_the_measured_reply_is_recognised(self) -> None:
         """Truncated, no text, no tool call: a restart cannot help."""
         assert _nothing_but_reasoning(_Reply(finish="length")) is True
 
@@ -131,5 +131,14 @@ def test_the_attempt_count_reads_as_one_when_nothing_was_retried() -> None:
     """Three attempts were reported because three were made. One now."""
     from app.graph.workflow import _it_spent_its_whole_output_budget
 
-    assert "retried" not in _it_spent_its_whole_output_budget("test_round_2", 1)
-    assert "retried 3 times" in _it_spent_its_whole_output_budget("test_round_2", 3)
+    assert "attempt" not in _it_spent_its_whole_output_budget("test_round_2", 1)
+    assert "attempt 3 at the stage" in _it_spent_its_whole_output_budget("test_round_2", 3)
+
+
+def test_it_does_not_say_every_attempt_hit_the_ceiling() -> None:
+    """Only the last attempt is known to have. On one run the one before it
+    ended on its model-call budget, and the message said "hit the same ceiling
+    each time" anyway."""
+    from app.graph.workflow import _it_spent_its_whole_output_budget
+
+    assert "each time" not in _it_spent_its_whole_output_budget("test_round_1", 2)

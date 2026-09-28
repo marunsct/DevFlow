@@ -163,7 +163,34 @@ class ThinkingPolicy:
         )
 
 
+def answering_without_reasoning(model: object) -> dict:
+    """Per-call model settings that make one reply an answer, not more reasoning.
+
+    For the call after a reply that reasoned until it was cut off. Taking the
+    tools away and asking for the answer is not enough on its own: measured on
+    one run's `test_round_1`, the call after that notice reasoned through the
+    whole 25,000-token budget again, with the thinking mode left at `default`
+    and the server launched with thinking on. So the run failed on the second
+    spiral, with nothing else tried.
+
+    Only an OpenAI-compatible server reached through a base URL can be switched
+    per call - it takes the llama.cpp chat-template flag in `extra_body`, merged
+    over whatever the client already sends there. Anthropic ignores a per-call
+    `thinking` override, but it does not need one: its thinking budget is always
+    set below the reply ceiling, so a reply there always has room left to
+    answer. Every other client gets nothing, rather than a field it may reject.
+    """
+    if not getattr(model, "openai_api_base", None):
+        return {}
+    extra = dict(getattr(model, "extra_body", None) or {})
+    template = dict(extra.get("chat_template_kwargs") or {})
+    template["enable_thinking"] = False
+    extra["chat_template_kwargs"] = template
+    return {"extra_body": extra}
+
+
 __all__ = [
+    "answering_without_reasoning",
     "DEFAULT_EFFORT",
     "DEFAULT_MODE",
     "ThinkingMode",

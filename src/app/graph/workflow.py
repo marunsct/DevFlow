@@ -1209,6 +1209,18 @@ step, so it forbids the two things such a model does next: starting over, and
 explaining itself in more prose."""
 
 
+_CUT_OFF_WHILE_REASONING_NUDGE = (
+    "Your last reply was cut off at its output limit while you were still "
+    "reasoning, so nothing of it reached the workflow - no text, no tool call, "
+    "no structured response.\n\n"
+    "Do not start the work again and do not reason it all through a second "
+    "time: that reaches the same limit. Return your structured response now, "
+    "briefly, from what you have already established. If something you needed "
+    "is still unknown, say what in `blockers` - that is a complete answer too."
+)
+"""What to say to a model whose reply was all reasoning and no answer."""
+
+
 def _answer_left_in_a_spinning_stage(
     agent: Any, inner_thread_id: str, schema: Any
 ) -> Any | None:
@@ -1534,6 +1546,16 @@ def _nudge_text(result: dict[str, Any] | None, schema: Any) -> str:
     shape as before. The diagnosis existed and was not used at the one moment
     it would have settled the stage.
     """
+    last_ai = next(
+        (m for m in reversed((result or {}).get("messages") or []) if getattr(m, "type", None) == "ai"),
+        None,
+    )
+    if _nothing_but_reasoning(last_ai):
+        # Checked before anything else, because the prose nudge is false here:
+        # it opens "You wrote your answer into the conversation as text" and
+        # "You already have the answer above", to a model whose reply was cut
+        # off before it wrote a word. Measured on one run's `test_round_1`.
+        return _CUT_OFF_WHILE_REASONING_NUDGE
     if schema is None or not result:
         return _STRUCTURED_RESPONSE_NUDGE
     try:
@@ -1663,9 +1685,12 @@ def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
 
     configured = os.environ.get("MODEL_MAX_OUTPUT_TOKENS", "").strip()
     budget = f"{configured} output tokens" if configured else "its configured output limit"
+    # Only the attempt that failed is known to have hit the ceiling. The one
+    # before it may have ended some other way - on one run it had used up its
+    # model-call budget - so the message must not say they all hit it.
     tried = (
-        f" The stage was retried {attempts} times on fresh conversations and "
-        "hit the same ceiling each time."
+        f" This was attempt {attempts} at the stage; the earlier ones ended "
+        "without a structured response too."
         if attempts > 1
         else ""
     )
@@ -2123,8 +2148,8 @@ def _run_gated_agent(
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)
     # Dropped with the retry count, and for the same reason. A stage name
-    # recurs - `specialist_ui_ux_0` ran in three separate sprints of run
-    # b0db10b1 - so a note kept past the attempt it was written for would
+    # recurs - `specialist_ui_ux_0` ran in three separate sprints of one
+    # run - so a note kept past the attempt it was written for would
     # arrive at a later sprint describing files a different task had read.
     spent = dict(state.get("stage_carry_over") or {})
     spent.pop(stage_name, None)
@@ -2711,13 +2736,13 @@ def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     Asked once, at the last sprint, because it is the only point where the
     whole brief is the question. Every milestone review before it is scoped to
     its own milestone, and deferring a requirement out of one is legitimate -
-    a sprint plan exists to do exactly that. Run b6436e36's first review put
+    a sprint plan exists to do exactly that. One run's first review put
     both `edit` and the filter bar into later sprints, correctly.
 
     What nothing did was ask again at the end. `complete_node` returns
     `{"stage": "complete"}` and nothing else, so a requirement deferred out of
     every milestone in turn was never checked, and three completed runs
-    shipped with no way to edit a task: b0db10b1, 0cbbb28b and 3c8e772e.
+    shipped with no way to edit a task: three runs.
 
     Reads the operator's brief rather than the run's documents, for the reason
     `_actions_the_brief_requires` gives: a run that redefines a requirement
@@ -4434,7 +4459,7 @@ def build_workflow_graph(
         # and `complete_node` returns `{"stage": "complete"}` and nothing else,
         # so a requirement deferred out of every milestone in turn was never
         # checked at all. Three completed runs shipped with no way to edit a
-        # task that way: b0db10b1, 0cbbb28b and 3c8e772e.
+        # task that way: three runs.
         if not has_more_sprints:
             unbuilt = _a_brief_requirement_the_run_never_built(state)
             if unbuilt:

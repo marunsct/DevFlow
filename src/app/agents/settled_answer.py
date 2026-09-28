@@ -646,8 +646,7 @@ def _most_recent_answer(messages: list[Any], schema: Any) -> Any | None:
 MODEL_CALLS_PER_STAGE = 40
 """Model calls a stage may spend before it is stopped and retried.
 
-Measured across 71 stage executions in four runs (b598780b, 9c0fc48d, 8904f87b,
-b0db10b1), counting `model_request` records per stage from the transcripts:
+Measured across 71 stage executions in four runs, counting `model_request` records per stage from the transcripts:
 
     stages that finished under the ceiling   61
       most calls any of them needed          36  (specialist_backend_1)
@@ -666,7 +665,7 @@ work in hand is worse than one that wastes a dozen calls before the retry.
 Raising it is worse still: the stages that reach 40 do not finish at 50 either.
 Every one of the ten above had been told to return what it had from 70% onward,
 had content withheld from repeated reads, and had the exit named for it - on
-b0db10b1's `specialist_testing_1`, seventeen reads withheld and the exit named
+one run's `specialist_testing_1`, seventeen reads withheld and the exit named
 96 times across the run. They are not short of room; they are not using it.
 """
 
@@ -1133,6 +1132,22 @@ def build_settled_answer_middleware(
                     # list holds, so the model is left bound to exactly one
                     # tool: the one that ends the stage.
                     overrides["tools"] = []
+                    if spiralled:
+                        # Without tools the model can still spend the reply
+                        # reasoning, and did. See `answering_without_reasoning`.
+                        from app.agents.thinking import answering_without_reasoning
+
+                        quiet = answering_without_reasoning(getattr(request, "model", None))
+                        if quiet:
+                            overrides["model_settings"] = {
+                                **(getattr(request, "model_settings", None) or {}),
+                                **quiet,
+                            }
+                            logger.warning(
+                                "Stage %s: thinking switched off for this one call "
+                                "so the reply can be the answer",
+                                stage_name or "?",
+                            )
                 else:
                     kept = list(getattr(request, "tools", None) or [])
                     narrowed = False

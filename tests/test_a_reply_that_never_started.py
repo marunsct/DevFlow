@@ -1,6 +1,6 @@
 """A stage reasoned until its reply was truncated, and the harness guessed.
 
-Run-fbe23618 failed after 3 hours 23 minutes at `defect_fix_2_4`. Fourteen
+One run failed after 3 hours 23 minutes at `defect_fix_2_4`. Fourteen
 model responses across that run came back with `finish_reason: length`, no
 text and no tool call - nine of them in that one stage. Settings were
 `model_max_output_tokens = 20000` with `thinking_effort = high`, and the
@@ -90,7 +90,7 @@ def test_it_says_a_restart_cannot_help():
 
     assert "FRESH CONVERSATION CANNOT FIX THIS" in message
     assert "per reply, not" in message
-    assert "retried 3 times" in message
+    assert "attempt 3 at the stage" in message
 
 
 def test_it_names_every_setting_that_would_change_the_outcome():

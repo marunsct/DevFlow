@@ -114,7 +114,9 @@ def test_both_timeout_messages_use_it() -> None:
     source = inspect.getsource(sandbox)
     calls = source.count("+ _timeout_advice(")
 
-    assert calls == 2, f"expected both timeout messages to choose the advice, found {calls}"
+    # Three since the container path stopped sending the fixed text: the
+    # in-container timeout, the container timeout, and the repeat refusal.
+    assert calls == 3, f"expected every timeout message to choose the advice, found {calls}"
 
 
 def test_the_plain_advice_claims_nothing_false_about_this_environment() -> None:

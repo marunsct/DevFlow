@@ -168,6 +168,51 @@ def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
     return named
 
 
+#: Subcommands that fetch what a manifest already declares, beside the ones in
+#: `_INSTALL_GRAMMAR` that add something new. Both need the registry.
+_RESOLVE_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "npm": frozenset({"ci"}),
+    "yarn": frozenset({"install"}),
+    "pip": frozenset({"download"}),
+    "pip3": frozenset({"download"}),
+    "uv": frozenset({"sync", "pip"}),
+    "poetry": frozenset({"install"}),
+    "cargo": frozenset({"fetch"}),
+    "dotnet": frozenset({"restore"}),
+    "bundle": frozenset({"install"}),
+    "composer": frozenset({"install"}),
+    "dart": frozenset({"pub"}),
+    "flutter": frozenset({"pub"}),
+    "mix": frozenset({"deps.get"}),
+}
+
+
+def _fetches_dependencies(command: Sequence[str]) -> bool:
+    """Whether this command downloads packages through a package manager.
+
+    Such a command belongs in the `install` category whatever the caller
+    sent: that is the category with the registry and the time to use it.
+    Measured on one run: `npm i -D jest` arrived with no category, ran under
+    the 120-second default instead of the install limit, and timed out - to
+    advice about servers, watchers and browser test suites, none of which it
+    was.
+    """
+    manager = _manager_of(command)
+    if not manager:
+        return False
+    words = [str(word).lower() for word in command[1:]]
+    if not words:
+        return False
+    first = next((word for word in words if not word.startswith("-")), "")
+    grammar = _INSTALL_GRAMMAR.get(manager)
+    if grammar is not None and first in grammar["subcommands"]:
+        return True
+    if first in _RESOLVE_SUBCOMMANDS.get(manager, frozenset()):
+        return True
+    # `go mod download` - the one resolve step that is two words.
+    return manager == "go" and words[:2] == ["mod", "download"]
+
+
 def _is_a_test_only_install(command: Sequence[str]) -> bool:
     """Whether this install puts its packages somewhere the product does not ship.
 
@@ -1977,8 +2022,22 @@ def _a_browser_runner_is_installed(repo_root: str, working_directory: str | None
     return False
 
 
-def _timeout_advice(repo_root: str, working_directory: str | None) -> str:
-    """Which of the two above this workspace has earned."""
+#: For an install that ran out of time. Servers, watchers and browser suites -
+#: what the other two describe - are not what an install is.
+_INSTALL_TIMEOUT_ADVICE = (
+    " This was a package install. An install that runs past the limit is a slow "
+    "registry or a large dependency tree, not a command that never ends: run it "
+    "once more, or install fewer packages per command. Nothing was changed by "
+    "the part that did not finish."
+)
+
+
+def _timeout_advice(
+    repo_root: str, working_directory: str | None, command: Sequence[str] = ()
+) -> str:
+    """Which of the advice above this command and workspace have earned."""
+    if command and _fetches_dependencies(command):
+        return _INSTALL_TIMEOUT_ADVICE
     if _a_browser_runner_is_installed(repo_root, working_directory):
         return _TIMEOUT_ADVICE_WITH_A_BROWSER
     return _TIMEOUT_ADVICE
@@ -3525,7 +3584,7 @@ class SandboxExecutor:
             )
         except subprocess.TimeoutExpired as expired:
             return {
-                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in),
+                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in, argv),
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",
@@ -3568,6 +3627,8 @@ class SandboxExecutor:
         # left alone either way: it has said where it means, including when
         # that is the root.
         started = time.monotonic()
+        if category == "default" and _fetches_dependencies(command):
+            category = "install"
         with _the_lock_for(repo_root):
             return cls._execute_serialised(
                 command, repo_root, role_name, category, extra_env, working_directory, started
@@ -3804,7 +3865,7 @@ class SandboxExecutor:
         except subprocess.TimeoutExpired:
             subprocess.run([docker, "kill", container], capture_output=True, check=False)
             return {
-                "error": f"Command timed out after {timeout} seconds." + _TIMEOUT_ADVICE
+                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in, argv)
             }
         except OSError as exc:
             return {"error": f"Could not start the sandbox: {exc}"}

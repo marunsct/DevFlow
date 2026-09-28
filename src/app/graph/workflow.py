@@ -1184,10 +1184,11 @@ def _answer_written_into_the_conversation(result: dict[str, Any], schema: Any) -
                 continue
         if not isinstance(payload, dict):
             continue
+        from app.agents.settled_answer import _without_repeats
         from app.agents.wrapped_answer import unwrapped
 
         try:
-            return schema.model_validate(unwrapped(payload, schema))
+            return schema.model_validate(unwrapped(_without_repeats(payload), schema))
         except Exception:  # noqa: BLE001 - a near-miss is not the answer
             continue
     return None

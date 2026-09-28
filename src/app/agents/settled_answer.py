@@ -172,6 +172,40 @@ def was_stopped_by_the_budget(result: Any) -> bool:
     return False
 
 
+def _without_repeats(payload: Any) -> Any:
+    """`payload` with every list's repeated entries dropped, at any depth.
+
+    For an answer read out of the conversation, which is where a runaway reply
+    ends up. Measured on one run's `defect_fix_1_0`: its final reply opened a
+    correct response object and then wrote the same eleven lines of its `tests`
+    list over and over for 100,189 characters, until the 25,000-token reply
+    ceiling cut it off. The truncated object was closed, it validated, and it
+    was taken as the answer - with the repetition in it, for every later stage
+    that reads a specialist's `tests` to see.
+
+    An entry equal to an earlier one in the same list says nothing the first
+    did not, in any field of any schema, so dropping it cannot lose an answer.
+    """
+    if isinstance(payload, dict):
+        return {key: _without_repeats(value) for key, value in payload.items()}
+    if isinstance(payload, list):
+        kept: list[Any] = []
+        seen: set[str] = set()
+        for item in payload:
+            item = _without_repeats(item)
+            try:
+                marker = json.dumps(item, sort_keys=True, default=str)
+            except (TypeError, ValueError):
+                kept.append(item)
+                continue
+            if marker in seen:
+                continue
+            seen.add(marker)
+            kept.append(item)
+        return kept
+    return payload
+
+
 def _answer_in(message: Any, schema: Any) -> Any | None:
     """The message content read as an instance of the stage's response schema.
 
@@ -209,7 +243,7 @@ def _answer_in(message: Any, schema: Any) -> Any | None:
     from app.agents.wrapped_answer import unwrapped
 
     try:
-        return schema.model_validate(unwrapped(payload, schema))
+        return schema.model_validate(unwrapped(_without_repeats(payload), schema))
     except Exception:  # noqa: BLE001 - a near-miss is not the answer
         return None
 

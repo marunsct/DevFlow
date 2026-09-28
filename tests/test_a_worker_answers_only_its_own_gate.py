@@ -161,7 +161,13 @@ class TestLinearModeIsUnaffected:
     def test_a_stage_running_alone_owns_its_gate(self) -> None:
         """Linear mode reaches `_run_gated_agent` directly; this is the parallel
         site only, and the owner path must be a no-op so it stays that way."""
-        state = _paused_state(stage=f"{APPROVAL_PAUSE_PREFIX}test_round_0")
+        # The marker and the thread come from the same pause update, so they
+        # always name the same stage; a fixture where they disagree describes
+        # no state the graph produces.
+        state = _paused_state(
+            stage=f"{APPROVAL_PAUSE_PREFIX}test_round_0",
+            pending_inner_thread_id="thread-48170b27:test_round_0:5a5a5a5a",
+        )
 
         assert _only_this_worker_s_pause(state, "test_round_0") == {}
 
@@ -206,3 +212,60 @@ class TestDrainingOnePauseKeepsTheRest:
 
         # Returning only what should remain merges the surfaced one back.
         assert "a" in _merge_or_reset(queue, {"b": {"pending_inner_thread_id": "y"}})
+
+
+class TestTheStateAWorkerReallySees:
+    """What reaches a worker on a parallel resume.
+
+    `specialist_dispatch` returns `stage: specialist_dispatch_parallel` before
+    the router fans out, so the `awaiting_approval:<name>` marker every fixture
+    above carries is gone by the time a worker runs. The first version of the
+    ownership check read that marker, matched nobody, and took the decision
+    away from its owner as well - the run-6c7721c4 livelock.
+    """
+
+    @staticmethod
+    def _as_dispatched() -> dict:
+        return {
+            "stage": "specialist_dispatch_parallel",
+            "pending_decision": {"type": "approve"},
+            "pending_inner_thread_id": OWNER_THREAD,
+            "pending_approval": {"tool": "edit_artifact"},
+            "specialist_pauses": {OWNER: None},
+        }
+
+    def test_the_owner_is_still_recognised(self) -> None:
+        assert _only_this_worker_s_pause(self._as_dispatched(), OWNER) == {}
+
+    def test_a_sibling_is_still_refused_the_decision(self) -> None:
+        for other in OTHERS:
+            override = _only_this_worker_s_pause(self._as_dispatched(), other)
+
+            assert override["pending_decision"] is None
+            assert override["pending_inner_thread_id"] != OWNER_THREAD
+
+
+class TestNamingTheStageThatPaused:
+    def test_from_the_thread_id(self) -> None:
+        from app.graph.workflow import _the_stage_that_paused
+
+        assert _the_stage_that_paused({"pending_inner_thread_id": OWNER_THREAD}) == OWNER
+
+    def test_an_outer_id_with_colons_of_its_own(self) -> None:
+        from app.graph.workflow import _the_stage_that_paused
+
+        thread = "tenant:a:b:specialist_backend_1:0123abcd"
+
+        assert _the_stage_that_paused({"pending_inner_thread_id": thread}) == "specialist_backend_1"
+
+    def test_the_marker_when_there_is_no_thread(self) -> None:
+        from app.graph.workflow import _the_stage_that_paused
+
+        state = {"stage": f"{APPROVAL_PAUSE_PREFIX}test_round_0"}
+
+        assert _the_stage_that_paused(state) == "test_round_0"
+
+    def test_nothing_paused(self) -> None:
+        from app.graph.workflow import _the_stage_that_paused
+
+        assert _the_stage_that_paused({"stage": "specialist_dispatch_parallel"}) is None

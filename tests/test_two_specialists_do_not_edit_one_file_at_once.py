@@ -157,7 +157,7 @@ class TestItNeverBlocksADispatch:
         assert len(_that_do_not_share_a_file(pending)) == 1
 
 
-class TestAResumeIsNotStaggered:
+class TestAResumeDispatchesThePausedWorker:
     """A pause inside the fan-out must get every pending task back.
 
     The resume carries a decision for the worker that paused, and that decision
@@ -165,7 +165,16 @@ class TestAResumeIsNotStaggered:
     hanging call to answer: "ValueError: Number of human decisions (2) does not
     match number of hanging tool calls (1)". That failure predates this filter -
     it ended run-c4a30293 on 2026-09-11 - and staggering is a new way to reach
-    it, so the resume path keeps the old behaviour.
+    it.
+
+    That used to be met by sending every pending task on any resume, which
+    switched the staggering off for the rest of the milestone after its first
+    approval. Now the paused worker is forced through and the rest are
+    staggered against the files it holds.
+
+    The paused worker is named by `pending_inner_thread_id`, not by `stage`: a
+    parallel resume reaches this router with `stage` already rewritten to
+    `specialist_dispatch_parallel`, which is the shape these states use.
     """
 
     @staticmethod
@@ -194,14 +203,31 @@ class TestAResumeIsNotStaggered:
 
         assert isinstance(sent, list) and len(sent) == 1
 
-    def test_a_resume_with_a_decision_dispatches_everything(self) -> None:
-        sent = self._route(self._state(pending_decision={"kind": "approve"}))
+    def test_the_paused_worker_goes_even_when_it_would_be_held_back(self) -> None:
+        """The testing task pauses second in the plan and shares app.js."""
+        sent = self._route(self._state(
+            pending_decision={"kind": "approve"},
+            pending_inner_thread_id="thread-x:specialist_testing_1:abcd1234",
+        ))
 
-        assert isinstance(sent, list) and len(sent) == 2, (
-            "the paused worker must be among them or its decision answers nothing"
-        )
+        names = [s.arg["__worker_index"] for s in sent]
+        assert 1 in names, "the paused worker must be among them or its decision answers nothing"
 
-    def test_a_resume_with_a_pending_thread_dispatches_everything(self) -> None:
-        sent = self._route(self._state(pending_inner_thread_id="t:specialist_backend_0:ab"))
+    def test_a_task_sharing_its_file_waits(self) -> None:
+        """run-6c7721c4: the first approval released a task onto app.js."""
+        sent = self._route(self._state(
+            pending_decision={"kind": "approve"},
+            pending_inner_thread_id="thread-x:specialist_backend_0:abcd1234",
+        ))
 
-        assert isinstance(sent, list) and len(sent) == 2
+        assert [s.arg["__worker_index"] for s in sent] == [0]
+
+    def test_a_queued_pause_is_dispatched_too(self) -> None:
+        """A worker whose pause waits behind another re-surfaces it; it must be sent."""
+        sent = self._route(self._state(
+            pending_decision={"kind": "approve"},
+            pending_inner_thread_id="thread-x:specialist_backend_0:abcd1234",
+            specialist_pauses={"specialist_testing_1": {"pending_inner_thread_id": "t:specialist_testing_1:ef"}},
+        ))
+
+        assert sorted(s.arg["__worker_index"] for s in sent) == [0, 1]

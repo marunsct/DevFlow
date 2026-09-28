@@ -587,6 +587,38 @@ def _queued_pauses(state: Any) -> dict[str, dict[str, Any]]:
     }
 
 
+def _the_stage_that_paused(state: Any) -> str | None:
+    """The stage whose approval gate the pending decision answers, or None.
+
+    Read from `pending_inner_thread_id` first, not from `stage`. In parallel mode
+    a resume enters `specialist_dispatch`, which returns
+    `stage: specialist_dispatch_parallel` before the router fans out - so by the
+    time any worker runs, the `awaiting_approval:<name>` marker is gone and
+    `stage` names nobody.
+
+    That cost run-6c7721c4. The first version of the ownership check read
+    `stage`, found no worker it named, and so took the decision away from every
+    worker including the one it was for. `specialist_backend_1` restarted from
+    scratch at least six times - the same `ls`, the same three document reads,
+    "I'll create app.js", the gated write, the pause - and never wrote a byte,
+    while the tests passed on a fixture holding the marker the worker never
+    sees.
+
+    The inner thread id is minted as `{outer}:{stage}:{8 hex}` by
+    `_run_gated_agent`, is carried unchanged through the pause, the surfacing
+    and the dispatcher, and names the stage it belongs to. `stage` is kept as a
+    fallback for a state that has the marker and no thread.
+    """
+    thread = str(state.get("pending_inner_thread_id") or "")
+    parts = thread.rsplit(":", 2)
+    if len(parts) == 3 and parts[1]:
+        return parts[1]
+    stage = str(state.get("stage") or "")
+    if stage.startswith(APPROVAL_PAUSE_PREFIX):
+        return stage[len(APPROVAL_PAUSE_PREFIX):] or None
+    return None
+
+
 def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
     """The pause fields a parallel worker may act on, as an override for its state.
 
@@ -617,7 +649,7 @@ def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
     Returns `{}` for the worker whose gate is the one being answered, so it
     resumes exactly as it did before.
     """
-    if _is_awaiting_approval_for(state, stage_name):
+    if _the_stage_that_paused(state) == stage_name:
         return {}
     queued = _queued_pauses(state).get(stage_name) or {}
     override: dict[str, Any] = {
@@ -638,8 +670,14 @@ def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
 
 def _that_do_not_share_a_file(
     pending: list[tuple[int, Any]],
+    already_going: list[tuple[int, Any]] | tuple = (),
 ) -> list[tuple[int, Any]]:
     """As many pending tasks as can run at once without editing one file.
+
+    `already_going` are tasks that must be dispatched whatever they share - a
+    worker holding an approval pause, which is only answered by re-dispatching
+    it. They go first and claim their files, and the rest are staggered against
+    them exactly as against each other.
 
     Two tasks naming the same file are the most expensive thing the parallel
     fan-out does. They run in the same superstep, so each reads the file, plans
@@ -675,11 +713,9 @@ def _that_do_not_share_a_file(
     except Exception:  # noqa: BLE001 - never hold up a dispatch over a hint
         return pending
 
-    going: list[tuple[int, Any]] = []
-    claimed: set[str] = set()
-    for index, task in pending:
+    def named_by(task: Any) -> set[str]:
         try:
-            named = {
+            return {
                 path.rsplit("/", 1)[-1].lower()
                 for path in paths_a_plan_named(
                     [
@@ -689,7 +725,17 @@ def _that_do_not_share_a_file(
                 )
             }
         except Exception:  # noqa: BLE001 - a task whose files cannot be read runs
-            named = set()
+            return set()
+
+    going: list[tuple[int, Any]] = list(already_going)
+    claimed: set[str] = set()
+    for _, task in going:
+        claimed |= named_by(task)
+    committed = {index for index, _ in going}
+    for index, task in pending:
+        if index in committed:
+            continue
+        named = named_by(task)
         # Compared by basename: one task writes `app/app.js` and another
         # `app.js`, and the plan's prose spells the same file both ways.
         if going and named & claimed:
@@ -697,6 +743,41 @@ def _that_do_not_share_a_file(
         going.append((index, task))
         claimed |= named
     return going or pending
+
+
+def _tasks_without_an_output(state: Any) -> list[tuple[int, Any]]:
+    """The milestone's delegated tasks that have not produced an output yet.
+
+    The router's resume guard and the gather node's "is anything left" question
+    are the same question, and two copies of it is how one of them comes to
+    disagree about what "done" means.
+
+    `getattr` with a default, like every other reader of this field:
+    `state.get(...)` is None when no plan has been stored, and
+    `None.delegated_tasks` is an AttributeError inside a router - which takes
+    the run down rather than routing it anywhere.
+    """
+    tasks = getattr(state.get("milestone_plan"), "delegated_tasks", None) or []
+    done = set(state.get("specialist_outputs") or {})
+    return [
+        (index, task)
+        for index, task in enumerate(tasks)
+        if _specialist_stage_name(task, index) not in done
+    ]
+
+
+def _stages_holding_a_pause(state: Any) -> set[str]:
+    """The specialist stages that paused inside the fan-out and are still paused.
+
+    The one whose gate is being answered - see `_the_stage_that_paused` - and every one whose
+    pause is still queued behind it. These are the tasks a resume has to
+    re-dispatch; any other pending task is free to wait its turn.
+    """
+    holding = set(_queued_pauses(state))
+    paused = _the_stage_that_paused(state)
+    if paused:
+        holding.add(paused)
+    return holding
 
 
 def _specialist_stage_name(task: Any, index: int) -> str:
@@ -724,11 +805,6 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         return END
         
     if stage == "specialist_dispatch_parallel":
-        # `getattr` with a default, like every other reader of this field.
-        # `state.get(...)` returns None when no plan has been stored, and
-        # `None.delegated_tasks` is an AttributeError inside a router - which
-        # takes the run down rather than routing it anywhere.
-        tasks = getattr(state.get("milestone_plan"), "delegated_tasks", None) or []
         # Only the tasks that have not already produced an output. A run that
         # paused inside the fan-out resumes at the dispatcher - the paused stage
         # name maps there, exactly as it does in linear mode - and re-deriving
@@ -737,30 +813,35 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         # `specialist_task_index`; this is the parallel equivalent, and it reads
         # the outputs themselves rather than a counter because a fan-out has no
         # order to count through.
-        done = set(state.get("specialist_outputs") or {})
-        pending = [
-            (index, task)
-            for index, task in enumerate(tasks)
-            if _specialist_stage_name(task, index) not in done
-        ]
+        pending = _tasks_without_an_output(state)
         if not pending:
             # Not straight to the tests: `specialist_gather` is the one writer
             # that may set `stage` after a fan-out, and it is also what surfaces
             # a worker that paused. An empty milestone reaches it with nothing
             # recorded and moves on, which is what an empty fan-out needs.
             return "specialist_gather"
-        # Staggered only while nothing is mid-approval. A run that paused inside
-        # the fan-out resumes here carrying a decision for the worker that
-        # paused, and that decision is delivered by re-dispatching it; deferring
-        # it instead leaves the decision with no hanging call to answer, which
-        # is `ValueError: Number of human decisions (2) does not match number of
-        # hanging tool calls (1)`. That failure predates this filter - it ended
-        # run-c4a30293 on 2026-09-11 - but the filter is a new way to reach it,
-        # so on the resume path the whole pending set goes, exactly as before.
-        resuming = bool(state.get("pending_decision")) or bool(
-            state.get("pending_inner_thread_id")
-        )
-        going = pending if resuming else _that_do_not_share_a_file(pending)
+        # A worker holding a pause must be re-dispatched: that is how its
+        # decision is delivered, and deferring it leaves the decision with no
+        # hanging call to answer - `ValueError: Number of human decisions (2)
+        # does not match number of hanging tool calls (1)`, which ended
+        # run-c4a30293 on 2026-09-11.
+        #
+        # That used to be met by sending the whole pending set whenever a
+        # decision was in state, which switched the staggering off for the rest
+        # of the milestone after its first approval: with `auto_approve` every
+        # fan-out pauses on its first gated call, and nothing clears the
+        # decision until the fan-out ends. Measured on run-6c7721c4:
+        # `specialist_testing_2`, which imports `app.js`, was rightly held back
+        # while `specialist_backend_1` wrote `app.js` - and was dispatched at
+        # 05:57:06 by the first resume, with `backend_1` still writing until
+        # 05:58:51. Now only the paused workers are forced through, and every
+        # other task is staggered against the files they hold.
+        must_go = [
+            (index, task)
+            for index, task in pending
+            if _specialist_stage_name(task, index) in _stages_holding_a_pause(state)
+        ]
+        going = _that_do_not_share_a_file(pending, already_going=must_go)
         return [
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
             for index, task in going
@@ -3633,6 +3714,27 @@ def build_workflow_graph(
             # one key set to `None` says "this one is answered" and leaves the
             # rest queued for the supersteps after it.
             return {**pauses[first], "specialist_pauses": {first: None}}
+
+        # Nothing is paused. A task the fan-out held back because it shares a
+        # file with one that was running has not been dispatched yet, and this
+        # is its next pass - `_that_do_not_share_a_file` promises one. Handing on
+        # to the tests here skipped it: the deferred task was only ever run
+        # because the resume path used to send the whole pending set at the
+        # first approval, which also switched the staggering off. Now that a
+        # resume staggers too, this is the only way a deferred task gets its
+        # turn.
+        #
+        # No pause is outstanding at this point - any worker that paused in
+        # this superstep left an entry in the queue above - so the decision and
+        # thread from the last surfaced pause belong to a stage that has since
+        # finished, and are cleared rather than carried into a fresh dispatch.
+        if _tasks_without_an_output(state):
+            return {
+                "stage": "specialist_dispatch_parallel",
+                "pending_decision": None,
+                "pending_inner_thread_id": None,
+                "pending_approval": None,
+            }
         return _handing_on(stage="test_and_triage", specialist_pauses={})
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:

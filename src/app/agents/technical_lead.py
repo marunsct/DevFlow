@@ -236,30 +236,83 @@ class MilestonePlanOutput(BaseModel):
         )
 
 
+#: How much of two requested changes must be the same words for the second to
+#: count as a repeat. Measured over the milestone reviews of 20 stored runs, as
+#: word-set overlap between consecutive rounds' gating findings:
+#:
+#:   clearly different  0.05 0.07 0.08 0.08 0.09 0.10 0.10 0.10 0.11 0.12 0.13
+#:                      0.14 0.15 0.15 0.15 0.17 0.18 0.18 0.18 0.20 0.24 0.25
+#:                      0.28 0.29 0.30 0.36
+#:   repeats            0.45 0.46 0.49 0.51 0.61 0.61 0.61 0.70 0.80
+#:
+#: Two of those are known ground truth: run-ad4815da's 0.70 is the pair whose
+#: text was byte-identical, and run-50d08fa7's 0.49 is the pair that said "the
+#: CSS in index.html contains no responsive rules" and then "the <style> block in
+#: index.html contains no responsive rules" - the same finding, reworded, which
+#: an exact-match test missed while that run died on the revision cap.
+#:
+#: 0.40 rather than a line fitted between 0.46 and 0.49, which would be two
+#: adjacent observations deciding a constant. This note is advice and not a gate:
+#: a false positive tells a lead that a change looks like last round's and to name
+#: the file and the edit, which is sound whether or not it repeated, and a false
+#: negative is what cost run-50d08fa7 four sprints.
+SAME_CHANGE_WORD_OVERLAP = 0.40
+
+
+def _the_same_words(first: str, second: str) -> float:
+    """Word-set overlap of two requested changes, 0.0 to 1.0.
+
+    Words rather than characters, because the rewording that matters swaps a
+    phrase and keeps the subject: "the CSS in index.html" for "the <style> block
+    in index.html". Numbers are kept - a budget finding that moves from 506 lines
+    to 688 is a different measurement, and dropping the digits would merge them.
+    """
+    import re
+
+    def words(text: str) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", str(text).lower()))
+
+    mine, theirs = words(first), words(second)
+    if not mine or not theirs:
+        return 0.0
+    return len(mine & theirs) / len(mine | theirs)
+
+
 def _a_change_asked_for_twice(comments: list[str]) -> str:
-    """The note for a requested change that is unchanged from last round, or "".
+    """The note for a requested change that repeats the last one, or "".
 
     `revision_comments` accumulates, so a lead on its second revision is handed
-    the same words twice and nothing says the measurement did not move. Round two
-    then reads exactly like round one and is answered the same way.
+    the same request twice and nothing says the measurement did not move. Round
+    two then reads like round one and is answered the same way.
 
-    Measured on run-ad4815da, which died on the revision cap. Its first two
-    milestone reviews were byte-identical, both blocking on "The product exceeds
-    the stated 500-line code limit ... 506 lines of code" - six lines over, asked
-    for twice in the same words. The third round's plan got under the limit by
-    deleting `updateTask`, which the test suite still called, so `npm test`
-    exited 1 and the run stopped there.
+    Two runs died this way. run-ad4815da's first two milestone reviews were
+    byte-identical, both blocking on "The product exceeds the stated 500-line code
+    limit ... 506 lines of code" - six lines over, asked for twice in the same
+    words - and its third round got under the limit by deleting `updateTask`,
+    which the suite still called, so `npm test` exited 1 and that became the new
+    blocker.
 
-    So this says two things: that the change is a repeat, and that meeting a size
-    limit by removing delivered behaviour is not meeting it. Both come from what
-    that run actually did.
+    run-50d08fa7 then showed the other shape. Its rounds 4 and 5 both blocked on
+    the same missing responsive CSS, once as "the CSS in index.html" and once as
+    "the <style> block in index.html". An exact-match test - which is what this
+    was when it shipped - saw two different strings and said nothing, and the run
+    died on the revision cap.
+
+    So the comparison is by overlap, and the note says both things those runs
+    demonstrated: the change is a repeat, and meeting a size limit by removing
+    delivered behaviour is not meeting it.
     """
     trimmed = [" ".join(str(comment).split()) for comment in comments if str(comment).strip()]
-    if len(trimmed) < 2 or trimmed[-1] != trimmed[-2]:
+    if len(trimmed) < 2:
+        return ""
+    if (
+        trimmed[-1] != trimmed[-2]
+        and _the_same_words(trimmed[-1], trimmed[-2]) < SAME_CHANGE_WORD_OVERLAP
+    ):
         return ""
     return (
-        "\n\nTHIS IS THE SAME CHANGE YOU WERE GIVEN LAST ROUND, WORD FOR WORD.\n"
-        "The review re-measured and got the same answer, so whatever the previous "
+        "\n\nTHIS IS THE SAME CHANGE YOU WERE GIVEN LAST ROUND.\n"
+        "The review re-measured and asked for it again, so whatever the previous "
         "plan assigned did not move it. Assigning the same task again in the same "
         "terms will not either. Name the file and the specific edit this time, and "
         "give it to a specialist who can make exactly that edit.\n"

@@ -25,7 +25,9 @@ from __future__ import annotations
 import pytest
 
 from app.agents.technical_lead import (
+    SAME_CHANGE_WORD_OVERLAP,
     _a_change_asked_for_twice,
+    _the_same_words,
     build_milestone_revision_request,
 )
 
@@ -58,11 +60,45 @@ class TestWhenItFires:
 
         assert _a_change_asked_for_twice([THE_LINE_LIMIT, moved_on]) == ""
 
-    def test_a_reworded_finding_says_nothing(self) -> None:
-        """Deliberately strict. A review that adds detail has done something."""
-        fuller = f"{THE_LINE_LIMIT} Largest: task-manager/app.js (198)."
+    def test_a_reworded_finding_is_still_a_repeat(self) -> None:
+        """The shape that killed run-50d08fa7.
 
-        assert _a_change_asked_for_twice([THE_LINE_LIMIT, fuller]) == ""
+        Its rounds 4 and 5 both blocked on the same missing responsive CSS, once
+        as "the CSS in index.html" and once as "the <style> block in index.html".
+        The first version of this compared exact text, saw two different strings,
+        said nothing, and the run died on the revision cap.
+        """
+        fourth = (
+            "The milestone requires 'use the app on any screen size from mobile "
+            "to desktop' but the CSS in index.html contains no responsive rules."
+        )
+        fifth = (
+            "The milestone requires 'use the app on any screen size from mobile "
+            "to desktop' but the <style> block in index.html contains no "
+            "responsive rules."
+        )
+
+        assert _a_change_asked_for_twice([fourth, fifth]) != ""
+
+    def test_the_same_limit_with_a_new_number_is_still_a_repeat(self) -> None:
+        """688 lines after 506 is progress on the number and the same request.
+
+        The lead is still being asked to cut lines, so "name the specific edit"
+        and "do not delete behaviour" both still apply.
+        """
+        later = THE_LINE_LIMIT.replace("506", "688")
+
+        assert _a_change_asked_for_twice([THE_LINE_LIMIT, later]) != ""
+
+    def test_a_genuinely_different_finding_still_says_nothing(self) -> None:
+        """run-50d08fa7's rounds 3 and 4 overlapped 0.14 - a size limit and
+        missing responsive CSS share almost no words."""
+        responsive = (
+            "The milestone requires 'use the app on any screen size from mobile "
+            "to desktop' but the CSS in index.html contains no responsive rules."
+        )
+
+        assert _a_change_asked_for_twice([THE_LINE_LIMIT, responsive]) == ""
 
     @pytest.mark.parametrize("comments", ([], [""], ["   "], [THE_LINE_LIMIT, ""]))
     def test_nothing_to_compare_says_nothing(self, comments: list[str]) -> None:
@@ -111,3 +147,38 @@ class TestItReachesTheLead:
         assert "SAME CHANGE" not in content
         # The instruction that was always there must survive.
         assert "DELEGATED TASK" in content
+
+
+class TestTheThresholdCameFromMeasurement:
+    """Overlap between consecutive rounds' gating findings, over 20 stored runs:
+
+        clearly different  0.05 0.07 0.08 0.08 0.09 0.10 0.10 0.10 0.11 0.12
+                           0.13 0.14 0.15 0.15 0.15 0.17 0.18 0.18 0.18 0.20
+                           0.24 0.25 0.28 0.29 0.30 0.36
+        repeats            0.45 0.46 0.49 0.51 0.61 0.61 0.61 0.70 0.80
+    """
+
+    def test_the_threshold_sits_in_the_gap(self) -> None:
+        assert 0.36 < SAME_CHANGE_WORD_OVERLAP <= 0.45, (
+            "the measured distribution has a gap between 0.36 and 0.45; a "
+            "threshold outside it is either fitted to adjacent points or misses "
+            "the reworded repeats"
+        )
+
+    def test_identical_text_is_total_overlap(self) -> None:
+        assert _the_same_words(THE_LINE_LIMIT, THE_LINE_LIMIT) == 1.0
+
+    def test_nothing_in_common_is_no_overlap(self) -> None:
+        assert _the_same_words("alpha beta", "gamma delta") == 0.0
+
+    def test_an_empty_side_is_no_overlap(self) -> None:
+        assert _the_same_words("", THE_LINE_LIMIT) == 0.0
+        assert _the_same_words(THE_LINE_LIMIT, "") == 0.0
+
+    def test_numbers_are_kept(self) -> None:
+        """A budget finding that moves 506 to 688 is a different measurement.
+
+        Dropping digits would merge findings that differ only by their number,
+        which is the one part of a size finding that carries the news.
+        """
+        assert _the_same_words("over by 6", "over by 188") < 1.0

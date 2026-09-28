@@ -521,6 +521,38 @@ class _NoticingRepeats:
             + self._the_way_out()
         )
 
+    def _not_written_yet(self, wanted: str) -> str:
+        """Say that nothing is there yet, when nothing of that name is anywhere.
+
+        The two hints above say where a path really is, or what the project is
+        really called. Neither fires for the commonest case of all: the name is
+        right and nothing has been written there yet. Measured on one run: its
+        `scrum_master` listed `/`, got `.gitignore` and `docs/`, and listed
+        `/task-manager` - this run's own project directory, pinned and correct,
+        and empty because no stage had written a file - to a bare
+        "path_not_found". Two more stages did the same.
+        """
+        root = getattr(self, "cwd", None)
+        segments = [part for part in str(wanted).strip("/").split("/") if part]
+        if not root or not segments or "." in segments[-1]:
+            return ""
+        try:
+            from app.tools.repository import pinned_project_directory
+
+            pinned = pinned_project_directory(Path(root))
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            pinned = None
+        if pinned and segments[0] == pinned:
+            return (
+                f" '/{pinned}' is this run's project directory, and no stage has "
+                "written a file into it yet, so it does not exist. It is created by "
+                "the first file written under it."
+            )
+        return (
+            f" Nothing named '{segments[-1]}' exists anywhere in the workspace yet. "
+            "A directory is created by the first file written under it."
+        )
+
     def _the_project_is_called(self, wanted: str) -> str:
         """Name the project directory when an agent guesses at it and misses.
 
@@ -976,7 +1008,11 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         result = super().ls(path)
         error = getattr(result, "error", None)
         if error and "path_not_found" in error:
-            hint = self._where_it_actually_is(path) or self._the_project_is_called(path)
+            hint = (
+                self._where_it_actually_is(path)
+                or self._the_project_is_called(path)
+                or self._not_written_yet(path)
+            )
             return replace(result, error=error + hint) if hint else result
         entries = getattr(result, "entries", None)
         if not entries:

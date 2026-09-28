@@ -1,6 +1,6 @@
 """`node --test <file>` runs that file and nothing else.
 
-Run f81808a4 reached its sixth milestone with `scripts.test` of
+One run reached its sixth milestone with `scripts.test` of
 `node --test main.test.js` and a second suite at `tests/filter.test.js` - a
 correct Node test name, in a directory bare `node --test` would recurse into,
 which never ran once. Every gate read "# tests 4  # pass 4" and none of the
@@ -118,7 +118,7 @@ def test_a_badly_named_test_is_still_caught_under_a_bare_command(tmp_path):
 def test_an_aggregator_that_imports_the_suites_strands_nothing(tmp_path):
     """A named entry point that imports the tests runs them.
 
-    Run f81808a4's `run-tests.mjs` installs a localStorage stub the individual
+    One run's `run-tests.mjs` installs a localStorage stub the individual
     files need and then imports them:
 
         global.localStorage = { ... };

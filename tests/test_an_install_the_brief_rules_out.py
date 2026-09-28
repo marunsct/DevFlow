@@ -8,13 +8,13 @@ review; the module-system findings arrive a sprint later still. It enters at
 Eight of the twenty-nine recorded install commands add a named package to a
 project whose brief says "No external dependencies beyond basic HTML/CSS/JS":
 jsdom four times across three runs, plus
-jest-environment-jsdom and text-encoding in 8d28ee3f, and jsdom then jest in
-9bd3a091. The other twenty-one are a bare `npm install`, which adds nothing.
+jest-environment-jsdom and text-encoding in one run, and jsdom then jest in
+another. The other twenty-one are a bare `npm install`, which adds nothing.
 
 A refusal rather than a note, on the escalation the codebase has settled
 twice. The testing role's own description already tells it not to introduce a
 runner the stack did not choose and to "verify with what the runtime already
-provides" where the stack names none. Run 9bd3a091 had that text in front of
+provides" where the stack names none. One run had that text in front of
 it and ran `npm install jsdom`, then `npm install jest`.
 """
 

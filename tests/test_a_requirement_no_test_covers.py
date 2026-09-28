@@ -6,7 +6,7 @@ read the code in front of them. Nothing is derived from the requirement list,
 so a requirement that was never built has no *failing* test - it has no test at
 all, and a green suite reports that with confidence.
 
-Run b0db10b1 demonstrates it cleanly. Its Playwright suite is good: 72
+One run demonstrates it cleanly. Its Playwright suite is good: 72
 assertions, 22 `toHaveCount`, four page reloads checking persistence. It ran
 six times, caught real failures early (`2 failed, 10 passed`) and finished
 green at 14 tests. It grew from 12 tests to 14 as features were built, so the
@@ -81,7 +81,7 @@ def test_a_covered_requirement_is_silent(project):
 
 
 def test_a_browser_test_counts_as_a_test(project):
-    """Run b0db10b1 kept its filter coverage in a Playwright spec."""
+    """One run kept its filter coverage in a Playwright spec."""
     (project / "app.test.mjs").write_text(
         "import { test } from 'node:test';\ntest('adds', () => {});\n"
         "test('deletes', () => {});\n"

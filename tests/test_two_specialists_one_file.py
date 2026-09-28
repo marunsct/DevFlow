@@ -14,10 +14,10 @@ call to generate it.
 The cause is upstream. Of 25 stored sprint plans, 17 assign the same file to more
 than one specialist:
 
-    0ea9181d  app.js        -> backend, ui_ux
-    977eedf8  app.js        -> backend, testing, ui_ux
+    one run  app.js        -> backend, ui_ux
+    one run  app.js        -> backend, testing, ui_ux
     a000000b  app.js        -> backend, testing, ui_ux
-    6e50b630  app.test.mjs  -> testing, ui_ux
+    one run  app.test.mjs  -> testing, ui_ux
 
 So two things: the Technical Lead is asked for one owner per file, and the
 specialist is told when the plan does it anyway. A note rather than a refusal -

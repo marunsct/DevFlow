@@ -663,7 +663,7 @@ def test_the_correction_reaches_the_request_without_touching_history() -> None:
     assert "not a valid response" in str(captured["messages"][-1])
 
 
-def test_the_real_shape_from_run_5c7d7d8d_is_diagnosed() -> None:
+def test_the_real_shape_from_a_run_is_diagnosed() -> None:
     """The exact payload, against the exact schema."""
     from app.agents.principal_architect import TechnicalSpecificationOutput
     from app.agents.settled_answer import _why_it_was_not_accepted

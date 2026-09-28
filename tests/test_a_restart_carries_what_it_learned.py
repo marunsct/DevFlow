@@ -3,7 +3,7 @@
 Item 9 of `docs/harness-hardening-plan.md` (B13). `workflow.py` said so in its
 own comment: a stage that produces no structured response restarts on a fresh
 conversation, and every attempt re-read the same files and re-ran the same
-commands. Run 37476645 spent 170 tool calls across three attempts of one stage.
+commands. One run spent 170 tool calls across three attempts of one stage.
 
 Measured again on one run: the two stages that spun cost 100 and 80 model
 calls across their attempts, while the fifteen that finished averaged under ten.

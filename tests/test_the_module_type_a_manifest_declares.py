@@ -1,7 +1,7 @@
 """A manifest whose `"type"` contradicts the `.js` files beside it.
 
 One line of one file decides how Node parses every `.js` in the directory, and
-the stage that writes it is rarely the stage that wrote them. Run 9bd3a091's
+the stage that writes it is rarely the stage that wrote them. One run's
 `specialist_testing_3`, reaching for jest to escape a failing assertion,
 rewrote `"type": "module"` to `"type": "commonjs"` while every export in
 `app.js` was still ES syntax. The write went through in silence; `node --check
@@ -49,7 +49,7 @@ def test_declaring_module_over_a_require_is_named(tmp_path):
 
 
 def test_a_tool_config_is_the_common_case(tmp_path):
-    """Run 3c0c31d2 left `babel.config.js` and `jest.config.js` on
+    """One run left `babel.config.js` and `jest.config.js` on
     `module.exports` under `"type": "module"`, where each throws
     `ReferenceError: module is not defined in ES module scope`.
     """

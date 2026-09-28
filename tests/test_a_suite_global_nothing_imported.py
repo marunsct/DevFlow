@@ -9,9 +9,9 @@ reports
     ReferenceError: test is not defined
     # tests 1   # pass 0   # fail 1
 
-Run d6297b2f's `test_round_0` got `ReferenceError: describe is not defined` and
+One run's `test_round_0` got `ReferenceError: describe is not defined` and
 "fixed" it by moving every case inside a default export - the shape
-`tests_the_runner_will_never_call` now catches. Run 0afef410's
+`tests_the_runner_will_never_call` now catches. One run's
 `specialist_backend_2` renamed `app.test.mjs` to `app.test.js` and got
 `ReferenceError: test is not defined` for its trouble.
 """

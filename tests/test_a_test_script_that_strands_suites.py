@@ -1,7 +1,7 @@
 """A manifest whose `test` script leaves suites on disk unrun is refused.
 
 `_the_test_command_will_not_run_this` says so at the write of each test file,
-and that note is the right first response. Run 9bd3a091 delivered it twenty-
+and that note is the right first response. One run delivered it twenty-
 seven times across ten stages and still ended with
 
     "test": "node --test test_filter.mjs"
@@ -60,7 +60,7 @@ def test_a_command_naming_every_suite_is_written(tmp_path):
 
 
 def test_a_chain_that_still_misses_one_is_refused(tmp_path):
-    """Run 1ae7671d ran three suites with `&&` and stranded three more."""
+    """One run ran three suites with `&&` and stranded three more."""
     _project(tmp_path, "a.test.mjs", "b.test.mjs", "c.test.mjs")
     with pytest.raises(RepositoryToolError) as refusal:
         _manifest(tmp_path, "node --test a.test.mjs && node --test b.test.mjs")
@@ -73,7 +73,7 @@ def test_a_discovering_command_is_never_refused(tmp_path):
 
 
 def test_a_glob_is_the_shells_discovery_and_not_a_name(tmp_path):
-    """Run 5f4cdd55 ran `node --test *.test.mjs`.
+    """One run ran `node --test *.test.mjs`.
 
     Read literally the pattern is a filename nothing matches, so every suite
     it would have run came back stranded - a refusal of a working command.
@@ -83,7 +83,7 @@ def test_a_glob_is_the_shells_discovery_and_not_a_name(tmp_path):
 
 
 def test_a_config_flag_does_not_name_a_suite(tmp_path):
-    """Run fff9bf89 ran `npx jest --config=jest.config.js`.
+    """One run ran `npx jest --config=jest.config.js`.
 
     `jest.config.js` is a configuration file, and jest with no pattern
     searches the project - nothing is stranded.
@@ -93,7 +93,7 @@ def test_a_config_flag_does_not_name_a_suite(tmp_path):
 
 
 def test_a_runner_that_imports_the_suites_strands_nothing(tmp_path):
-    """Run f81808a4's `run-tests.mjs` imported its suites; naming it is enough."""
+    """One run's `run-tests.mjs` imported its suites; naming it is enough."""
     _project(tmp_path, "add.test.mjs", "filter.test.mjs")
     write_approved_artifact(
         tmp_path,

@@ -4,8 +4,7 @@
 when that file is written. Nothing asked the reverse: when the *imported*
 module is written, does what it still exports satisfy the files importing it?
 
-That silence is what keeps a run oscillating. Runs 0c5aabdb, d6297b2f and
-0afef410 each reached a genuine conflict - `index.html` loading `app.js` with a
+That silence is what keeps a run oscillating. Three runs each reached a genuine conflict - `index.html` loading `app.js` with a
 plain `<script>` tag needs a classic script, while `app.test.mjs` doing
 `import { addTask } from './app.js'` needs a module - and each alternated
 between satisfying one and the other. On one run the milestone reviewer

@@ -1,6 +1,6 @@
 """The stage that picks the stack reads the brief's constraints.
 
-Run 0c5aabdb chose `Express` with `JSON File Storage` for a brief whose
+One run chose `Express` with `JSON File Storage` for a brief whose
 Technical Constraints section reads, in full:
 
     - Single-page application

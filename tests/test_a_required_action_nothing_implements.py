@@ -5,12 +5,12 @@ complete/incomplete", "Delete tasks" and "Filter tasks by status", and states
 separately, under Acceptance Criteria, "Users can add, edit, delete tasks".
 Editing is in the second list and not the first.
 
-Two of three runs against that brief shipped no way to edit a task. Run
-b0db10b1's own `product_intake.md` had it right - "All four acceptance criteria
+Two of three runs against that brief shipped no way to edit a task. One
+run's own `product_intake.md` had it right - "All four acceptance criteria
 delivered together: add/edit/delete, persistence, filtering, and responsive
 design" - and the product it then built has no edit control, no edit handler and
 no test naming one. Neither its security review nor its milestone review raised
-it. Run b598780b, from the same brief, built editing with a double-click handler
+it. One run, from the same brief, built editing with a double-click handler
 and an Edit button, so this is what the workflow drops, not what it cannot do.
 
 The requirement is captured correctly and then lost between the intake and the
@@ -50,7 +50,7 @@ def project(tmp_path):
 
 
 def test_the_action_that_went_missing_is_named(project):
-    """Run b0db10b1's shape: add and delete built, edit dropped."""
+    """One run's shape: add and delete built, edit dropped."""
     (project / "app.js").write_text(
         "function addTask(t) { return t; }\n"
         "function deleteTask(id) { return id; }\n"
@@ -87,7 +87,7 @@ def test_a_test_naming_the_action_does_not_count(project):
     """Corrected: a suite is not the product.
 
     This asserted the opposite - "built or tested, either is evidence the
-    capability was not forgotten" - and that union was wrong. Run 6b511391 was
+    capability was not forgotten" - and that union was wrong. One run was
     reported clean for `edit` on the strength of `app.test.mjs` mentioning it,
     with no edit anywhere in `app.js`. Whether a suite covers the requirement
     is `_a_required_action_no_test_covers`'s question, and it reads the suites;
@@ -149,7 +149,7 @@ class TestTheSynonymsAreEvidence:
     """Generic vocabulary must not be read as a delivered feature.
 
     The first version accepted `update`, `change`, `new`, `append` and `check`.
-    Run 8904f87b, which has no way to edit a task, was reported clean because
+    One run, which has no way to edit a task, was reported clean because
     one comment in it reads "update closure so subsequent ops work".
     """
 
@@ -200,7 +200,7 @@ class TestTheSynonymsAreEvidence:
 class TestEvidenceIsBehaviourNotMarkup:
     """Three buttons that do nothing are the opposite of delivered.
 
-    Run b0db10b1's milestone review found "Filter buttons (All/Active/Completed)
+    One run's milestone review found "Filter buttons (All/Active/Completed)
     are present in index.html with data-filter attributes and CSS styling, but
     no JavaScript handler exists for them". Markup and a stylesheet are not
     evidence that a user can do anything, and neither is a built-in method that
@@ -245,7 +245,7 @@ class TestEvidenceIsBehaviourNotMarkup:
         assert _problems(wants_filtering) == []
 
     def test_an_inline_module_still_counts_as_script(self, wants_filtering):
-        """Run 9c0fc48d kept its whole application inside the page."""
+        """One run kept its whole application inside the page."""
         (wants_filtering / "index.html").write_text(
             "<!doctype html><html><body>\n"
             '<script type="module">\n'
@@ -258,7 +258,7 @@ class TestEvidenceIsBehaviourNotMarkup:
 class TestADescopeTheRunAuthorisedItself:
     """Recorded is better than forgotten, and still not the run's call.
 
-    Run 35424714 captured "Users can successfully add, edit, and delete tasks
+    One run captured "Users can successfully add, edit, and delete tasks
     without errors" in its intake, then wrote into its technical specification
 
         ADR-08 - Inline Editing: Deferred - not implemented in MVP
@@ -337,7 +337,7 @@ class TestADescopeTheRunAuthorisedItself:
 class TestARequirementSectionIsEnoughOnItsOwn:
     """A heading says these lines are requirements; the wording need not.
 
-    The per-line test was too narrow. Run 0cbbb28b's intake stated
+    The per-line test was too narrow. One run's intake stated
 
         ## Success measures
         - All four CRUD operations (add, edit, delete, mark complete) work
@@ -399,7 +399,7 @@ class TestARequirementSectionIsEnoughOnItsOwn:
         )
         assert _problems(under_a_heading) == []
 
-    def test_the_run_0cbbb28b_line_verbatim(self, under_a_heading):
+    def test_the_measured_line_verbatim(self, under_a_heading):
         """The exact text that went unreported."""
         (under_a_heading / "docs" / "product_intake.md").write_text(
             "# Product Intake\n\n## Success measures\n"
@@ -418,7 +418,7 @@ class TestARequirementSectionIsEnoughOnItsOwn:
 class TestASuiteIsNotTheProduct:
     """A test naming a feature is not the product having one.
 
-    Run 6b511391 was reported clean for `edit` because `app.test.mjs` mentions
+    One run was reported clean for `edit` because `app.test.mjs` mentions
     it, while `app.js` has no edit anywhere. This check asks whether the product
     does it; `_a_required_action_no_test_covers` asks whether anything would
     notice if it stopped. They read different files on purpose, and neither may
@@ -462,7 +462,7 @@ class TestASuiteIsNotTheProduct:
         assert not any("`edit`" in p for p in tested), "a test does name edit"
 
     def test_an_inline_script_in_the_page_still_counts_as_product(self, project):
-        """Run 9c0fc48d kept its whole application inside the page."""
+        """One run kept its whole application inside the page."""
         (project / "app.js").write_text("function addTask(t) { return t; }\n")
         (project / "index.html").write_text(
             "<!doctype html><html><body>\n"

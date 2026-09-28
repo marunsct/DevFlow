@@ -874,7 +874,7 @@ def test_an_unrelated_find_is_not_given_a_misleading_hint(tmp_path: Path) -> Non
 
     That protection still holds, and a short file now does better than silence:
     it is quoted whole, which cannot mislead because there is nothing else in
-    it. Run-36eb1260 was stopped as a loop after a five-line file answered three
+    it. One run was stopped as a loop after a five-line file answered three
     failed edits with "Read the section first" and nothing more.
     """
     (tmp_path / "script.js").write_text(SCRIPT)

@@ -45,7 +45,7 @@ export { tasks };
 
 
 class TestNamingTheWord:
-    def test_the_name_that_cost_run_a000000f_eight_calls(self):
+    def test_the_name_that_cost_a_run_eight_calls(self):
         found = a_reserved_name_bound_in("main.js", THE_LINE_THAT_COST_EIGHT_CALLS)
 
         assert found is not None

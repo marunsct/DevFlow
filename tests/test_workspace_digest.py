@@ -193,7 +193,7 @@ def test_a_workspace_holding_only_its_seed_files_says_nothing_is_built_yet(
     a listing and not an answer, and its prompt tells it to ground every
     conclusion in repository evidence.
 
-    Run d6297b2f is the proof. Its first model call carried the digest
+    One run is the proof. Its first model call carried the digest
 
         The workspace as it stands. This is what is there ...
           .gitignore (9 lines)
@@ -230,7 +230,7 @@ def test_an_unreadable_workspace_still_says_nothing_at_all() -> None:
 def test_documents_without_code_say_nothing_is_built_yet(tmp_path: Path) -> None:
     """The state every stage before the first specialist is in.
 
-    Run 1c9854c7's `architecture_review` was handed a digest of four `docs/`
+    One run's `architecture_review` was handed a digest of four `docs/`
     files and `.gitignore`. It spent a `read_file` on `/app.test.mjs` - a file
     its own specification plans - and then recorded a finding: "Specification
     references a test file 'app.test.mjs' but the repository does not contain

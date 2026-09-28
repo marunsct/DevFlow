@@ -6,11 +6,11 @@ milestone and lets specialists fix every finding, `blocked` ends the run
 immediately with no attempt at any of them - and the field description said
 only "Routing decision: accepted, changes required, or blocked."
 
-Run e7ef79a2 died sixteen minutes in. Its review was good: `toggleTask` absent
+One run died sixteen minutes in. Its review was good: `toggleTask` absent
 so every checkbox did nothing, filter buttons with no handlers, and no tests
 for either. Every finding carried a precise `required_remediation`. It chose
 `blocked` because its findings were severity "blocking" - the natural reading -
-and the run ended without one revision being attempted. Run 8904f87b's reviewer
+and the run ended without one revision being attempted. One run's reviewer
 called the same class of defect `changes_required` and got three revisions.
 
 The prompt already said to use `changes_required` for a blocking finding, and

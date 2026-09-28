@@ -1,6 +1,6 @@
 """The size report names the budget and the verdict, not two numbers.
 
-Run 8904f87b of 2026-09-20 failed on this. Its milestone review blocked with:
+One run of 2026-09-20 failed on this. Its milestone review blocked with:
 
     Application source files total 631 lines across 3 files, exceeding the
     brief's stated constraint of 'Maximum 500 lines of code'. The deterministic

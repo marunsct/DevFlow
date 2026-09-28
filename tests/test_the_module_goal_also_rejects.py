@@ -9,9 +9,9 @@ to prevent.
 
 Measured over every `.js` write in the stored transcripts that uses ES module
 syntax: **17 of 116** pass `node --check` and throw on import. Four runs paid
-for it - d6297b2f twice on `Duplicate export of 'init'`, f81808a4 on
-`Export 'addTask' is not defined in module`, 551640d3 fourteen times, and run
-1cd4597b spent 177 events of a defect-fix stage on `Duplicate export of
+for it - one run twice on `Duplicate export of 'init'`, one run on
+`Export 'addTask' is not defined in module`, one run fourteen times, and one
+run spent 177 events of a defect-fix stage on `Duplicate export of
 'deleteHandler'`.
 
 Verified by loading the files rather than by reading Node's flags: each one
@@ -48,7 +48,7 @@ def test_exporting_a_name_the_module_does_not_define_is_reported(tmp_path):
     assert found is not None and "missingOne" in found
 
 
-def test_the_stray_semicolon_from_run_551640d3(tmp_path):
+def test_the_stray_semicolon_from_a_run(tmp_path):
     """An object literal with `setTasks: (tasks) => {};` inside it."""
     found = parse_error(
         tmp_path / "script.js",

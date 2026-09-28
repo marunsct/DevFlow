@@ -125,7 +125,7 @@ class MilestoneReviewOutput(BaseModel):
         with no handlers, and no tests for either - and every finding carried a
         precise `required_remediation`. It chose "blocked" because its findings
         were severity "blocking", which is the natural reading of the word, and
-        the run ended without one revision being attempted. Run 8904f87b's
+        the run ended without one revision being attempted. One run's
         reviewer called the same class of defect `changes_required` and got
         three.
 
@@ -183,7 +183,7 @@ def _integration_evidence(
 
     `document_text` is the operator's brief, passed through because two of the
     checks compare the product against it rather than against the run's own
-    restatement of it. Run-3c8e772e redefined "edit" as "toggling completion
+    restatement of it. One run redefined "edit" as "toggling completion
     status" in its technical specification and shipped without editing, and
     every check agreed, because every check read the specification.
     """
@@ -198,7 +198,7 @@ def _integration_evidence(
 def _how_text_reaches_the_page(repository_root: str) -> str:
     """How this product puts text into the DOM, stated as fact, or "".
 
-    Run 1c9854c7 was killed by a finding that was not true. After three
+    One run was killed by a finding that was not true. After three
     revisions this stage recorded
 
         [major] security: The addTask function inserts user-provided task text
@@ -229,7 +229,7 @@ def _how_text_reaches_the_page(repository_root: str) -> str:
 def _against_the_brief(document_text: str, repository_root: str) -> str:
     """What the brief asks for and the product does not have, or "".
 
-    Run 0c5aabdb was accepted here. Its architecture review returned "approved"
+    One run was accepted here. Its architecture review returned "approved"
     with no findings, both security reviews "passed", and this stage raised one
     blocking finding - a missing npm test script - then accepted a product with
     no HTML, no CSS and no front-end JavaScript, for a brief whose first

@@ -416,8 +416,8 @@ def test_a_wrong_project_guess_is_told_the_real_name(tmp_path) -> None:
     the guess is the only part missing.
 
     Measured across six runs, 53 failed listings of a directory that never
-    existed while the marker sat on disk the whole time: ae4b717e 16,
-    37476645 11, 304add54 8, db3a4a0b 8, 2eb3aa24 5, d6369866 5.
+    existed while the marker sat on disk the whole time - 16, 11, 8, 8, 5
+    and 5 per run.
     One run's ui specialist asked for `task-manager-ui` eleven times and
     `task-manager` - the real one - four.
     """

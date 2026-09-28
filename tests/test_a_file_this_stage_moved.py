@@ -1,6 +1,6 @@
 """A read or an edit at a path the stage renamed itself.
 
-Run d6297b2f's `specialist_backend_0` moved `test/loadTasks.test.mjs` to
+One run's `specialist_backend_0` moved `test/loadTasks.test.mjs` to
 `test/loadTasks.test.js`, then spent a `read_file` and an `edit_artifact` on
 the old name. Each was answered only "not found". That stage ran 47 model
 calls; the next longest in the run ran 10.
@@ -101,7 +101,7 @@ def test_the_read_hint_is_empty_for_a_file_nothing_moved():
 def test_moving_a_file_this_stage_already_moved_says_so(project: Path):
     """A stage renaming a set of files loses track of which it has done.
 
-    Run d6297b2f's `test_round_0` renamed test files one at a time and spent
+    One run's `test_round_0` renamed test files one at a time and spent
     two `move_artifact` calls on sources it had already moved, each answered
     only "does not exist. Run `ls`" - a call to learn something it did itself.
     """

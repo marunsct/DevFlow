@@ -6,7 +6,7 @@ direction one run failed in: a brief reading "No external dependencies
 beyond basic HTML/CSS/JS" against a product built on Express with a 32KB
 lockfile.
 
-Run 551640d3 is the same thing more quietly. It installed `jsdom` to get a DOM
+One run is the same thing more quietly. It installed `jsdom` to get a DOM
 for its tests - a reasonable instinct, and exactly what the brief forbids -
 leaving a full `node_modules` and a 29KB lockfile. Nothing reported it: the
 cross-file checks look at how files relate, and the missing-things check has
@@ -163,7 +163,7 @@ def test_the_milestone_reviewer_is_given_it(project):
 
 
 def test_a_package_imported_but_never_declared_is_still_a_dependency(tmp_path):
-    """Run 9bd3a091 imported `jsdom` into three test files under an empty
+    """One run imported `jsdom` into three test files under an empty
     `devDependencies`, with a full `node_modules` and a lockfile of thirty-nine
     packages. Reading declarations alone, the check went dark on it.
     """

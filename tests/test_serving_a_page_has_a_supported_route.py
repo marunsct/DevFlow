@@ -5,7 +5,7 @@ with "There is also no browser to open the page with. To check the page, read
 the files and assert on them from a test."
 
 Both halves are false in a workspace with Playwright - which is the workspace
-the harness's own checks push every UI product toward. Run-35424714's
+the harness's own checks push every UI product toward. One run's
 `playwright.config.ts` carried `webServer: { command: 'npx serve .' }`, started
 it, logged "Accepting connections at http://localhost:3000" and ran 34 browser
 tests with real passes and failures. The same program, in the same container,

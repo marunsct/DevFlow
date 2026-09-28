@@ -1,6 +1,6 @@
 """A command that timed out is refused rather than run a second time.
 
-Run 0c5aabdb's `specialist_backend_1` ran `node simple-to-do-list-app/index.js`
+One run's `specialist_backend_1` ran `node simple-to-do-list-app/index.js`
 twice and spent four minutes of wall clock on a server the sandbox has nobody
 to connect to - which is exactly what the timeout message says, delivered
 after the second 120 seconds had already been paid.

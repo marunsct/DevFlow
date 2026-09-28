@@ -1,6 +1,6 @@
 r"""An edit refused for a broken file is answered in the edit's own terms.
 
-Run 8d28ee3f, `specialist_ui_ux_0`, made six `edit_artifact` calls on
+One run, `specialist_ui_ux_0`, made six `edit_artifact` calls on
 package.json. Every one was refused with "Refusing to *write* ... Send the
 file again as complete, valid JSON" - a verb naming a tool it had not called,
 and an instruction it could not follow through the one it had. It switched to

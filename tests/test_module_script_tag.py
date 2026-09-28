@@ -35,7 +35,7 @@ def _check(tmp_path: Path, html: str, script: str = MODULE, name: str = "app.js"
     return _modules_loaded_as_plain_scripts(_source_files(tmp_path), tmp_path)
 
 
-def test_the_run_01f03ed9_shape_is_reported(tmp_path: Path) -> None:
+def test_the_measured_shape_is_reported(tmp_path: Path) -> None:
     (problem,) = _check(tmp_path, '<html><body><script src="app.js"></script></body></html>')
 
     assert "plain <script> tag" in problem

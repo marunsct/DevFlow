@@ -210,8 +210,8 @@ def build_architecture_request(
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         # The brief's own constraints, quoted, before anything derived from
-        # them. The whole document appears below and that was not enough: run
-        # 0c5aabdb's specification said "Backend: Express server" with the
+        # them. The whole document appears below and that was not enough: one
+        # run's specification said "Backend: Express server" with the
         # brief in front of it, and two runs wrote "Use
         # Node's built-in test runner with jsdom for DOM simulation" into a
         # specification for a brief reading "No external dependencies beyond
@@ -268,8 +268,8 @@ def build_architecture_revision_request(
         f"Repository: branch {repository.branch}, commit {repository.commit}\n"
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         # The brief's own constraints, quoted, before anything derived from
-        # them. The whole document appears below and that was not enough: run
-        # 0c5aabdb's specification said "Backend: Express server" with the
+        # them. The whole document appears below and that was not enough: one
+        # run's specification said "Backend: Express server" with the
         # brief in front of it, and two runs wrote "Use
         # Node's built-in test runner with jsdom for DOM simulation" into a
         # specification for a brief reading "No external dependencies beyond

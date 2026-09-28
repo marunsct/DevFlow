@@ -15,7 +15,7 @@ import pytest
 
 from app.agents.specialists import ReportedDefect, SpecialistOutput
 
-RUN_0DEEB8BF = {
+MEASURED_REPORTED_DEFECT_ANSWER = {
     "changed_files": ["simple-to-do-list-app/app.test.js", "docs/defects.md"],
     "decisions": ["Added regression test 'testAddTaskRegression'."],
     "tests": ["testAddTaskRegression"],
@@ -38,8 +38,8 @@ RUN_0DEEB8BF = {
 }
 
 
-def test_the_answer_that_killed_run_0deeb8bf_is_accepted() -> None:
-    output = SpecialistOutput.model_validate(RUN_0DEEB8BF)
+def test_the_answer_that_killed_a_run_is_accepted() -> None:
+    output = SpecialistOutput.model_validate(MEASURED_REPORTED_DEFECT_ANSWER)
 
     (defect,) = output.defects
     assert defect.severity == "major"

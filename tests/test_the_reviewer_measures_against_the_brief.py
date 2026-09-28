@@ -1,6 +1,6 @@
 """The gate that accepts a milestone reads the brief it is meant to satisfy.
 
-Run 0c5aabdb completed. Its architecture review returned "approved" with no
+One run completed. Its architecture review returned "approved" with no
 findings, both security reviews "passed", and the milestone review raised one
 blocking finding - a missing npm test script - then "accepted". What it
 delivered was:

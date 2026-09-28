@@ -58,7 +58,7 @@ def _brief(root, stack="javascript"):
 
 
 class TestHandingOverWhatIsProven:
-    def test_the_defect_that_cost_run_e980310b_its_sprint(self, a_workspace):
+    def test_the_defect_that_cost_a_run_its_sprint(self, a_workspace):
         brief = _brief(a_workspace)
 
         assert "style.css" in brief

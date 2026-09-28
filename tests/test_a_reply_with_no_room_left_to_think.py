@@ -53,7 +53,7 @@ class _Tool:
 
 
 class TestRecognisingTheSpiral:
-    def test_the_run_be25a68e_reply_is_recognised(self) -> None:
+    def test_the_measured_reply_is_recognised(self) -> None:
         assert _the_last_reply_was_all_reasoning([_Ai(finish="length")]) is True
 
     def test_it_reads_the_flag_from_additional_kwargs_too(self) -> None:

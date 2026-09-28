@@ -1,6 +1,6 @@
 """A fixed command must not read like a broken one.
 
-Run 0afef410's milestone reviewer was handed the execution ledger as a
+One run's milestone reviewer was handed the execution ledger as a
 chronological list and nothing else:
 
     25 command(s) executed, 4 succeeded:

@@ -1,6 +1,6 @@
 """No check may tell a reviewer that an application file is a bad test suite.
 
-Run 551640d3 was handed, thirteen times, a blocking finding reading
+One run was handed, thirteen times, a blocking finding reading
 
     todo-app/app.js has 3 assertion(s) and every one of them only checks that
     something exists

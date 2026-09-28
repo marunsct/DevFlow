@@ -5,7 +5,7 @@ See `app.agents.response_reminder` for why it was removed.
 Original rationale:
 Make the first attempt more likely to be right, not just the recovery cheap.
 
-Run-61c5a5b6 lost two stages of about twenty-five to a prose answer, and both
+One run lost two stages of about twenty-five to a prose answer, and both
 were among its longest: `test_round_0` after 38 file reads, `specialist_ui_ux_1`
 after 203 events. One of them opened "Here's my structured response:" and then
 wrote prose - it knew what was wanted and the requirement had simply receded

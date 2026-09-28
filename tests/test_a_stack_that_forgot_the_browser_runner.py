@@ -45,7 +45,7 @@ class Stack:
 
 
 class TestABrowserProductGetsTheRunner:
-    def test_the_run_1bdbc08a_stack_is_corrected(self) -> None:
+    def test_the_measured_stack_is_corrected(self) -> None:
         corrected = the_browser_runner_this_stack_forgot(
             Stack(
                 framework="None (vanilla HTML/CSS/JS)",

@@ -12,9 +12,9 @@ current-generation runs, failed results that mention a repeat:
 And it was the second-biggest waster of identical failing calls - 19 of them,
 with single stages sending one reference 8, 6 and 5 times:
 
-    fd891220  specialist_ui_ux_1  x8  '1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log'
+    one run  specialist_ui_ux_1  x8  '1717171717-backend-specialist-pytest-stdout-a1b2c3d4.log'
     a000000b  test_round_0        x6  'task-manager/app.js'
-    2ac28a2f  specialist_ui_ux_1  x5  'simple-to-do-list-jest-config-cjs-edit-artifact-stdout'
+    one run  specialist_ui_ux_1  x5  'simple-to-do-list-jest-config-cjs-edit-artifact-stdout'
 
 One run is the one that shows the message was not the problem. Its
 `specialist_testing_2` was answered, correctly and in full,

@@ -42,7 +42,7 @@ def workspace(tmp_path: pathlib.Path) -> pathlib.Path:
     return tmp_path
 
 
-def test_the_exact_run_eb48de7a_content_is_written(workspace):
+def test_the_exact_a_run_content_is_written(workspace):
     sent = (
         '{\\n  "name": "todo-app",\\n  "version": "1.0.0",\\n  "type": "module",'
         '\\n  "scripts": {\\n    "test": "node --test"\\n  }\\n}'

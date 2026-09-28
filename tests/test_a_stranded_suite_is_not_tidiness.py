@@ -1,6 +1,6 @@
 """A suite no command runs is a false green, not an unused file.
 
-Run b6436e36 shipped a three-file suite in which
+One run shipped a three-file suite in which
 `task-manager/ui.pw.test.mjs` is a Playwright spec while `scripts.test` is
 `node --test`, which throws on another runner's spec rather than running it.
 No gate in that pipeline executed the file once, and the finding whose own

@@ -6,8 +6,8 @@ write was `textSpan.textContent = task.text`, and the run was stopped after
 three revisions over a defect that did not exist.
 
 It went to that reviewer and no further. The security reviewer is the stage
-whose job this is, and it made the same mistake with no way to check: run
-08acb1ee reported "renders task names using innerHTML without sanitization"
+whose job this is, and it made the same mistake with no way to check: one
+run reported "renders task names using innerHTML without sanitization"
 against a product that assigns `textContent` three times and `innerHTML` never.
 
 Two stages can make this finding. The answer was computed for one of them.
@@ -57,7 +57,7 @@ def test_a_product_with_no_dom_writes_adds_nothing(tmp_path):
 
 
 def test_the_run_that_prompted_this(tmp_path):
-    """Run 08acb1ee, reduced to the three writes its `app.js` actually made."""
+    """One run, reduced to the three writes its `app.js` actually made."""
     (tmp_path / "app.js").write_text(
         "list.textContent = '';\n"
         "span.textContent = `${sanitizedTitle}${sanitizedDescription}`;\n"

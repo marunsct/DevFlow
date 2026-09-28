@@ -9,7 +9,7 @@ manifests across the stored workspaces - and every one excludes whatever is
 written next. Twelve of fifty-five workspaces carry test files `npm test`
 never runs, their assertions never executed while every gate reads a pass.
 
-Run 1ae7671d is what that costs: its script ran three named files while the
+One run is what that costs: its script ran three named files while the
 project held six, `npm test` passed on the subset, the real failures survived
 every green run, and the sprint exhausted all three remediation attempts.
 """

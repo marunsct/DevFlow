@@ -5,8 +5,8 @@ item 2. Nothing bounded this: `_dispatch` handed every run to Celery, which
 accepted the message and held it, so a second run looked started and was in
 fact competing.
 
-Observed on 2026-09-20: orphan recovery resumed one run at the moment run
-8904f87b was started, and both executed against a model server that answers one
+Observed on 2026-09-20: orphan recovery resumed one run at the moment another
+run was started, and both executed against a model server that answers one
 request at a time. Throughput halved and the 524 rate rose.
 
 Part I's item 2 derives a request timeout from a measured generation rate. A

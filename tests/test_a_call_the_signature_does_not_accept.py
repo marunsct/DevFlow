@@ -1,12 +1,12 @@
 """A test that calls a local function with more arguments than it takes.
 
-JavaScript drops the extra ones in silence. Run 9bd3a091 wrote
+JavaScript drops the extra ones in silence. One run wrote
 
     addTask(storage, 'Active Task', '', false)
 
 against `addTask({ title, description = '' }, storage)`: every argument
 landed one place left, and the run's only discoverable suite died three times
-on `storage.setItem is not a function`. Run 9506d3ab is the quiet version -
+on `storage.setItem is not a function`. One run is the quiet version -
 `addTask('Completed Task 1', '', true)` against `addTask(title, description)`,
 where the `true` was dropped and the assertions about completed tasks ran
 against tasks nothing had completed.

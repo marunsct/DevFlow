@@ -13,7 +13,7 @@ positions at once:
 So the stage that chooses the testing approach was told a browser could not
 exist; if it chose one anyway and phrased it the natural way, the validator
 threw the whole answer away; and the specialist downstream was ordered to use
-one regardless. Run 519a9d8a spent six refusals and part of seven sprint
+one regardless. One run spent six refusals and part of seven sprint
 cycles inside that contradiction.
 
 This is root-cause class A in its most expensive form: one fact, four copies,

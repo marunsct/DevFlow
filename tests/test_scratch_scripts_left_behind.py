@@ -4,7 +4,7 @@ A stage that cannot see why a test fails writes a small script, runs it, and
 learns something. That is good practice and this does not discourage it - what
 it reports is the ones never cleaned up.
 
-Run 1ae7671d's `defect_fix_2_1` left twelve: `tmp_debug2.mjs` through
+One run's `defect_fix_2_1` left twelve: `tmp_debug2.mjs` through
 `tmp_debug6.mjs`, `tmp_full_test.mjs`, `tmp_run_test.mjs`, `tmp_print_tnew.mjs`
 and more, beside an application of three files. Across the stored workspaces,
 seven of fifty-five carry them.
@@ -119,7 +119,7 @@ def test_a_scratch_file_is_not_listed_as_a_stranded_test(tmp_path: Path):
 def test_a_scratch_script_is_not_also_reported_as_an_orphan(tmp_path: Path):
     """"Nothing runs it" is the definition of a throwaway, not a finding.
 
-    Run 551640d3's report ran to 14 findings of which 10 were about its own
+    One run's report ran to 14 findings of which 10 were about its own
     temp files - four real problems buried in a list three times their length.
     """
     from app.analysis.integration_checks import summarise_integration

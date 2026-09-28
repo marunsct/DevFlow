@@ -1,6 +1,6 @@
 """A write that changes nothing counts per file, not per byte sent.
 
-Run f81808a4's `specialist_backend_0` wrote `docs/README.md` ten times:
+One run's `specialist_backend_0` wrote `docs/README.md` ten times:
 
     1.     0B  ?
     2.   479B  written

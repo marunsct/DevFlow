@@ -1480,7 +1480,7 @@ def test_the_stranded_typescript_suite_blocks(tmp_path):
     """A suite no gate runs is a false green, and a false green must block.
 
     Classified untidy at first, for want of a phrase in `_BREAKS_BEHAVIOUR`.
-    Run-cac07d52 COMPLETED with five Playwright tests that had never executed
+    One run COMPLETED with five Playwright tests that had never executed
     once, and all five failed when run afterwards.
     """
     root = _workspace(
@@ -1608,7 +1608,7 @@ class TestAnAttributeTheScriptSetsItself:
     the data-attribute side covered only `element.dataset.x = ...`. That is the
     §1-B mistake again - a rule defined over part of the set it governs.
 
-    Run c97f5a88 built inline editing whose inputs carry
+    One run built inline editing whose inputs carry
     `setAttribute('data-field', 'title')` and whose save handler reads
     `li.querySelector('[data-field="title"]')`. It was reported for reading an
     attribute "which no HTML element sets. It is `undefined` every time", as a
@@ -1676,11 +1676,11 @@ class TestABrowserHelperIsNotACopy:
     place of the first would defeat the test, which is why one run's
     milestone reviewer rebutted this finding in its own words: "importing the
     JS module would defeat the purpose of end-to-end verification and is not
-    required or expected". Run 86a60de1 was reported for the same thing.
+    required or expected". One run was reported for the same thing.
 
     Two reviewers pushing back on a blocking finding is the signal the finding
-    is wrong - and a specialist sent to fix working code is what cost run
-    8904f87b its life.
+    is wrong - and a specialist sent to fix working code is what cost one
+    run its life.
     """
 
     def _problems(self, tmp_path):

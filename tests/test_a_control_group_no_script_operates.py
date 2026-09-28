@@ -5,7 +5,7 @@ so in its own docstring: it "requires that nothing touches the document
 anywhere". A page wired for most of itself and dead in one corner is outside it
 by design. This is that corner.
 
-Run b0db10b1 shipped one. Its `index.html` carries
+One run shipped one. Its `index.html` carries
 
     <nav id="filter-buttons" aria-label="Filter tasks by status">
       <button data-filter="all" class="filter-btn active">All</button>

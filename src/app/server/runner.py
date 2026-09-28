@@ -738,7 +738,7 @@ class WorkflowRunner:
         # full-length reply the run will ask for. Warned, never refused: the
         # run works, it just truncates long answers and pays a retry for each,
         # and that is the operator's trade to make - but it has to be made
-        # knowingly. Run 35424714 made it unknowingly and spent 74 of its 130
+        # knowingly. One run made it unknowingly and spent 74 of its 130
         # minutes waiting out retries that could not succeed.
         try:
             from app.observability.proxy_timeouts import (

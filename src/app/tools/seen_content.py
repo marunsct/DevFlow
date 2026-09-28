@@ -5,8 +5,8 @@ file changes between that read and the edit, `find` no longer matches and the
 tool answers "Could not find that text", optionally with a diff of the lines
 that differ. The model is then left to work out *why* its own copy is wrong.
 
-It usually cannot, because the change was not its doing. Measured on run
-8d28ee3f, `specialist_ui_ux_0`: the stage wrote `package.json`, ran
+It usually cannot, because the change was not its doing. Measured on one
+run, `specialist_ui_ux_0`: the stage wrote `package.json`, ran
 `npm install --save-dev jest-environment-jsdom`, and then tried to edit the
 file using the text it had written. npm had reformatted the manifest and added
 a dependency, so the diff it got back read:
@@ -121,8 +121,8 @@ def what_replaced_it(relative_path: str, find: str) -> str | None:
     itself.
 
     `_already_applied` in `repository` catches the narrower case where the
-    whole edit is re-sent - same `find`, same `replace`. Measured on run
-    f81808a4, `specialist_testing_3` sent one `find` six times with the
+    whole edit is re-sent - same `find`, same `replace`. Measured on one
+    run, `specialist_testing_3` sent one `find` six times with the
     replacement varying each time, so that check stayed silent and the stage
     was answered with a character diff six times over.
     """

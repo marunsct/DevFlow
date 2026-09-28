@@ -57,7 +57,7 @@ class TestWhatGoesAtOnce:
 
         assert _roles(_that_do_not_share_a_file(pending)) == ["backend"]
 
-    def test_the_run_1bdbc08a_shape(self) -> None:
+    def test_the_measured_shape(self) -> None:
         """Seven tasks, four of them naming `app.js`, as that milestone did.
 
         `specialist_backend_2`, `specialist_backend_3`, `specialist_testing_5`

@@ -165,7 +165,7 @@ def _the_same_refusal(content: str) -> str:
 
     Measured across every stored transcript, 26 combinations of stage, refusal
     and path were refused three or more times, costing 72 model calls past the
-    second. Run 551640d3's `test_round_0` wrote `docs/technical_specification.md`
+    second. One run's `test_round_0` wrote `docs/technical_specification.md`
     ten times with different content on each attempt - a document the workflow
     renders and no agent may write - and was refused ten times without the
     guard ever seeing a repeat.

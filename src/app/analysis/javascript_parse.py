@@ -72,8 +72,8 @@ def _the_module_goal_also_rejects(node: str, path: Path, content: str) -> str | 
 
     Measured over every `.js` write in the stored transcripts that uses ES
     module syntax: 16 of 116 pass `node --check` and throw on import. Four
-    runs paid for it - d6297b2f twice on `Duplicate export of 'init'`,
-    f81808a4 on `Export 'addTask' is not defined in module`, 551640d3
+    runs paid for it - one run twice on `Duplicate export of 'init'`,
+    one run on `Export 'addTask' is not defined in module`, one run
     thirteen times, and one run spent 177 events of a defect-fix stage
     on `Duplicate export of 'deleteHandler'` that this would have named at
     the write.
@@ -179,8 +179,8 @@ CONTEXT_LINES = 4
 def _around_the_failure(line: str | None, content: str) -> str:
     """The text at the line the parser named, with its neighbours, or "".
 
-    The message named a line number and never showed the line. Measured on run
-    1c9854c7's `test_round_0`: an edit refused with "Node cannot parse this
+    The message named a line number and never showed the line. Measured on one
+    run's `test_round_0`: an edit refused with "Node cannot parse this
     file on line 26: SyntaxError: Unexpected token '}'", sent again unchanged,
     and again, and again - four attempts, the last two answered only by the
     repeat guard. The agent had the number and not the text, and the text is
@@ -247,7 +247,7 @@ def _the_other_half(detail: str, content: str, path: Path | None = None) -> str:
     if "Unexpected token" in detail or "Unexpected end of input" in detail:
         # Before the bracket guess: a keyword bound as a name is certain, and
         # `Unexpected token 'delete'` is otherwise indistinguishable from a
-        # misplaced brace. Run-df4dc6f5 took five edits to five different line
+        # misplaced brace. One run took five edits to five different line
         # numbers on one such name - see `app.analysis.reserved_words`.
         if path is not None:
             try:

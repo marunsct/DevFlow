@@ -81,7 +81,7 @@ def test_it_blocks_rather_than_reading_as_untidy(build):
 
 
 def test_it_says_a_passing_suite_is_not_evidence(build):
-    """Run 0afef410's suite was 9/9 green over this exact product."""
+    """One run's suite was 9/9 green over this exact product."""
     files, root = build({"index.html": PAGE, "app.js": PURE})
 
     assert "tests import the functions directly" in unwired(files, root)[0]
@@ -127,7 +127,7 @@ def test_a_single_control_is_below_the_floor(build):
 
 
 def test_a_test_file_does_not_count_as_wiring_the_page(build):
-    """Run f0630b10's project was a page, a stylesheet and two test files."""
+    """One run's project was a page, a stylesheet and two test files."""
     files, root = build({
         "index.html": PAGE,
         "validate-html.test.mjs": "import assert from 'node:assert';\ndocument;\n",

@@ -111,7 +111,7 @@ class TestTheRunDfWasMeasuredOn:
     def test_it_grades_as_breaking_not_untidy(self, tmp_path):
         """A false green is the whole point, and `untidy` is where this hid before.
 
-        Run-b6436e36's version of this finding reached a live review classified
+        One run's version of this finding reached a live review classified
         "untidy rather than broken - dead rules, unused files".
         """
         _project(

@@ -1,6 +1,6 @@
 """A round that found only test defects must not spend the product's budget.
 
-Run b6436e36 failed after three remediation attempts with a working product:
+One run failed after three remediation attempts with a working product:
 43 of its 43 unit tests passed, all five features the brief names were built,
 and the cross-file checks found one stranded spec and a 518-line product
 against a 500-line cap. Of the eleven defects it spent those attempts on,
@@ -86,7 +86,7 @@ def test_a_clean_round_counts_as_ordinary() -> None:
 
 
 def test_three_test_only_rounds_do_not_exhaust_the_sprint() -> None:
-    """Run b6436e36's shape. Under the old rule this escalated."""
+    """One run's shape. Under the old rule this escalated."""
     cycle = start_remediation("inline editing and filtering", max_attempts=3)
     for _ in range(3):
         cycle = _round(cycle, [_defect("task-manager/ui.pw.test.mjs")])

@@ -12,7 +12,7 @@ model call at the median, 3.14 at the 90th percentile, 3.67 at the maximum. At
 2.41, the old ceiling of 60 supersteps is about 25 model calls - well under the
 40 the budget allows and under the 36 a healthy stage has actually used.
 
-Run 9f14d645 died of it. Its `specialist_ui_ux_0` spun out three times at
+One run died of it. Its `specialist_ui_ux_0` spun out three times at
 roughly 32 calls an attempt, never once reaching its model-call budget, and
 took the run with it.
 
@@ -49,7 +49,7 @@ def test_a_stage_can_use_its_whole_call_budget():
 
 
 def test_the_largest_stage_that_ever_finished_would_survive():
-    """Run 9f14d645's specialist died at roughly 32 calls; 36 have been needed."""
+    """One run's specialist died at roughly 32 calls; 36 have been needed."""
     needed = LARGEST_HEALTHY_STAGE_IN_CALLS * MEASURED_SUPERSTEPS_PER_CALL_P90
     assert INNER_AGENT_RECURSION_LIMIT >= needed
 

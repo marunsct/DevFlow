@@ -4,7 +4,7 @@ The assertions are real, the logic is real, and none of it is connected to the
 product: the suite passes whatever the application does, and every gate
 downstream reads the pass.
 
-`_redefined_instead_of_imported` finds it at a milestone review. Run 1cd4597b
+`_redefined_instead_of_imported` finds it at a milestone review. One run
 is why that is not enough - `crud.test.mjs` and `filter.test.mjs` each defined
 their own `loadTasks` beside an import of the module that exports it, the
 finding was reported at the end of two consecutive sprints, and both files
@@ -32,7 +32,7 @@ def _note(tmp_path, suite: str, name: str = "crud.test.mjs", module=A_MODULE):
     return a_name_this_test_defines_instead_of_importing(name, suite, tmp_path)
 
 
-def test_the_run_1cd4597b_shape_is_named(tmp_path):
+def test_the_measured_shape_is_named(tmp_path):
     """Its own `loadTasks` beside a real import of the same module."""
     note = _note(
         tmp_path,

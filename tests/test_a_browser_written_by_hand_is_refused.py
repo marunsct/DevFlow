@@ -5,7 +5,7 @@
 tell that from a mock that is about to collapse". That is right the first time
 and the second.
 
-Run 6b511391 is the third. `specialist_testing_1` was told nine times, grew
+One run is the third. `specialist_testing_1` was told nine times, grew
 `app.test.mjs` from 145 lines to 1,195 while being told - a `Proxy` over a
 `Map` standing in for `dataset`, a `mockStorage` throwing `QUOTA_EXCEEDED`, an
 `eventListeners` registry - and then spent three whole conversations debugging

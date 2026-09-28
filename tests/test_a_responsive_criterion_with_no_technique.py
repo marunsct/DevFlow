@@ -72,7 +72,7 @@ def test_a_breakpoint_satisfies_it(workspace: Path) -> None:
 
 
 def test_fluid_units_satisfy_it_without_any_breakpoint(workspace: Path) -> None:
-    """Run-d483f554's shape. A check that demanded `@media` would have called
+    """One run's shape. A check that demanded `@media` would have called
     the best product this harness has built broken."""
     (workspace / "style.css").write_text(
         ".app { max-width: min(48rem, 100%); padding: clamp(0.5rem, 3vw, 1.5rem); }",

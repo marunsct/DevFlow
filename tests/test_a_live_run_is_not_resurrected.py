@@ -41,7 +41,7 @@ class TestTheRecencySignal:
     def test_a_run_touched_now_is_protected(self):
         assert _touched_within(_Record(_ago(seconds=1)), RECENTLY_TOUCHED_SECONDS)
 
-    def test_the_eleven_second_window_that_lost_run_7c0bf755(self):
+    def test_the_eleven_second_window_that_lost_a_run(self):
         assert _touched_within(_Record(_ago(seconds=11)), RECENTLY_TOUCHED_SECONDS)
 
     def test_a_long_dead_run_is_not_protected(self):

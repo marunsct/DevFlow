@@ -60,7 +60,7 @@ def site(tmp_path):
 
 
 def test_the_exact_page_that_shipped_broken(site):
-    """Run 9c0fc48d's shape: imports one set of names, calls another."""
+    """One run's shape: imports one set of names, calls another."""
     (site / "index.html").write_text(_page("""
     import { addTask, setRenderCallback } from './app-logic.mjs';
 

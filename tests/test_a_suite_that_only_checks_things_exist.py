@@ -5,7 +5,7 @@ the next shape along: every assertion is `typeof x === 'function'` or similar,
 so the suite is green the moment the exports exist and says nothing whatever
 about what they do.
 
-Run 1c9854c7 wrote `app.test.js` as five cases of exactly one form:
+One run wrote `app.test.js` as five cases of exactly one form:
 
     test('loadTasks is a function', () => {
       assert.strictEqual(typeof loadTasks, 'function');
@@ -120,7 +120,7 @@ def test_the_reviewer_reports_it_too(tmp_path):
 def test_feature_detection_is_not_an_existence_assertion():
     """`typeof window !== 'undefined'` is what application code does constantly.
 
-    Run 551640d3's `app.js` guards every storage access that way, and with
+    One run's `app.js` guards every storage access that way, and with
     `'undefined'` in the pattern it was reported as a suite of existence checks
     - a blocking finding against the application itself.
     """

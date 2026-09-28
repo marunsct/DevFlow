@@ -362,7 +362,7 @@ _A_TEST_CASE = re.compile(
 def a_test_that_asserts_nothing(relative_path: str, content: str) -> str | None:
     """Why this test file cannot fail, or None if it can.
 
-    Run f81808a4 wrote `simple-to-do-list-app/main.test.js` as its whole
+    One run wrote `simple-to-do-list-app/main.test.js` as its whole
     suite, 164 bytes:
 
         import assert from 'node:assert';
@@ -445,7 +445,7 @@ _A_TEST_CASE_IN_ANY_FORM = re.compile(
 def tests_the_runner_will_never_call(relative_path: str, content: str) -> str | None:
     """Why this file's cases never run, or None if they do.
 
-    Run d6297b2f's test round hit `ReferenceError: describe is not defined` -
+    One run's test round hit `ReferenceError: describe is not defined` -
     a Jest-shaped suite under `node --test` - and fixed it by moving every case
     inside a default-exported function:
 
@@ -521,7 +521,7 @@ def a_suite_that_only_checks_things_exist(relative_path: str, content: str) -> s
     so the suite is green the moment the exports exist and says nothing
     whatever about what they do.
 
-    Run 1c9854c7 wrote `app.test.js` as five cases of exactly one form:
+    One run wrote `app.test.js` as five cases of exactly one form:
 
         test('loadTasks is a function', () => {
           assert.strictEqual(typeof loadTasks, 'function');
@@ -598,7 +598,7 @@ _ASSERTION_NAMES = ("assert", "expect", "strict", *(_ASSERTIONS_NOT_ON_NODE_TEST
 def assertions_called_on_the_test_module(relative_path: str, content: str) -> str | None:
     """Why every test in this file throws TypeError, or None if they do not.
 
-    Run f81808a4 wrote `simple-to-do-list-app/main.test.js` with
+    One run wrote `simple-to-do-list-app/main.test.js` with
 
         import assert from 'node:test';
         ...
@@ -644,7 +644,7 @@ def assertions_called_on_the_test_module(relative_path: str, content: str) -> st
                 )
 
     # The named form first: `import { test, assert } from 'node:test'` binds
-    # `assert` to undefined, and the first call on it throws. Run f81808a4
+    # `assert` to undefined, and the first call on it throws. One run
     # wrote both forms in turn, for the same file, an hour apart.
     for match in _NAMED_IMPORTS_FROM_NODE_TEST.finditer(content):
         names = (match.group(1) or match.group(2) or "").replace("\n", " ")
@@ -753,7 +753,7 @@ def a_call_the_signature_does_not_accept(
     on its own - the test either fails somewhere unrelated or, worse, passes
     on a premise that was never established.
 
-    Run 9bd3a091 wrote
+    One run wrote
 
         addTask(storage, 'Active Task', '', false)
 
@@ -763,7 +763,7 @@ def a_call_the_signature_does_not_accept(
     `storage.setItem is not a function` - the run's only discoverable suite,
     nothing of the product tested. The same call was written into two files.
 
-    Run 9506d3ab is the quieter half of the pair: `addTask('Completed Task
+    One run is the quieter half of the pair: `addTask('Completed Task
     1', '', true)` against `addTask(title, description)`. The `true` meant to
     mark the task complete was dropped, nothing threw, and the assertions
     about completed tasks ran against tasks that were never completed.
@@ -909,8 +909,8 @@ def a_name_this_test_defines_instead_of_importing(
     application does - the assertions are real, the logic is real, and none of
     it is connected to the product. Every gate downstream reads the pass.
 
-    `_redefined_instead_of_imported` finds it at a milestone review, and run
-    1cd4597b is why that is not enough: `crud.test.mjs` and `filter.test.mjs`
+    `_redefined_instead_of_imported` finds it at a milestone review, and one
+    run is why that is not enough: `crud.test.mjs` and `filter.test.mjs`
     each defined their own `loadTasks` beside an import of the module that
     exports it, the finding was reported at the end of two consecutive
     sprints, and both files still carried it. Five more workspaces end this

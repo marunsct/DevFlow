@@ -2,13 +2,13 @@
 
 Every milestone review is scoped to its own milestone, and deferring a
 requirement out of one is legitimate - a sprint plan exists to do exactly
-that. Run b6436e36's first review put both `edit` and the filter bar into
+that. One run's first review put both `edit` and the filter bar into
 later sprints, correctly.
 
 Nothing asked again at the end. `complete_node` returns `{"stage":
 "complete"}` and nothing else, so a requirement deferred out of every
 milestone in turn was never checked at all, and three completed runs shipped
-with no way to edit a task: b0db10b1, 0cbbb28b and 3c8e772e.
+with no way to edit a task: three runs.
 """
 
 from __future__ import annotations

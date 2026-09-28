@@ -133,7 +133,7 @@ def test_the_note_reaches_a_write_that_is_wrong(tmp_path: Path) -> None:
 def test_the_suggestion_does_not_name_the_importing_file(tmp_path: Path) -> None:
     """`rglob("app.*")` matched `app.test.mjs` as well as `app.js`.
 
-    Run d6297b2f's `defect_fix_1_0` wrote `import { ... } from './app.cjs'`
+    One run's `defect_fix_1_0` wrote `import { ... } from './app.cjs'`
     into `app.test.mjs` and was told "There is a file of that name at app.js,
     app.test.mjs" - a file that is not of that name, and an instruction to
     import itself.

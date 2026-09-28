@@ -1,7 +1,7 @@
 """The audit's last section answers what the transcript cannot: does it work?
 
 Every run in this harness's history that shipped something broken shipped it
-with a green suite. Run 0c5aabdb had no HTML at all; one run had HTML and
+with a green suite. One run had no HTML at all; another had HTML and
 JavaScript that never met; one run had a page with no `<script>` tag. In
 each case the transcript looked fine - the cost numbers were good and the
 failures were few - because nothing in a transcript says whether the product
@@ -109,7 +109,7 @@ def test_several_blocking_problems_are_still_reported(run_audit):
 
     Matching the singular reported "no blocking cross-file problems" for every
     workspace that had more than one - silent in exactly the case that matters
-    most. Run 1ae7671d had nine and the audit called it clean.
+    most. One run had nine and the audit called it clean.
     """
     out = run_audit({"index.html": DEAD_TWO, "app.js": PURE})
 

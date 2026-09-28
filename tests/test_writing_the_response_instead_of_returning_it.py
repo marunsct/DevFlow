@@ -1,6 +1,6 @@
 """A stage that tries to deliver its answer by writing a file.
 
-Run d6297b2f died of this. `defect_fix_1_0` requested
+One run died of this. `defect_fix_1_0` requested
 `docs/structured_response.md` five times in a row, carrying
 
     {"role":"Testing and Quality Engineering Specialist","output":{...}}

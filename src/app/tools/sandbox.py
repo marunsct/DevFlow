@@ -238,7 +238,7 @@ def _refuse_an_install_the_brief_rules_out(
 
     The testing role's own description already says not to introduce a runner
     the stack did not choose, and to "verify with what the runtime already
-    provides" where the stack names none. Run 9bd3a091 read that and ran
+    provides" where the stack names none. One run read that and ran
     `npm install jsdom`, then `npm install jest`. Six of the twenty-six
     recorded runs install a named package this way - jsdom four times, jest,
     and jest-environment-jsdom - against briefs that rule dependencies out.
@@ -2685,7 +2685,7 @@ def timed_out_this_way_before(
 
     Worth its own check because of what a repeat costs. An ordinary repeated
     failure costs a model call; a repeated timeout costs a model call and the
-    full timeout. Run 0c5aabdb's `specialist_backend_1` ran
+    full timeout. One run's `specialist_backend_1` ran
     `node simple-to-do-list-app/index.js` twice and spent four minutes of wall
     clock on a server the sandbox has nobody to connect to - which is what the
     refusal already says, after the second 120 seconds had been paid.
@@ -3378,7 +3378,7 @@ def summarise_executions(repo_root: str) -> str:
     not a convenience: without it this digest is read as a verdict on the
     product, and it is a record of the work instead.
 
-    Run 0afef410's milestone reviewer is the case. It was handed
+    One run's milestone reviewer is the case. It was handed
 
         25 command(s) executed, 4 succeeded:
         ... - [testing_specialist] npm test -> exit 1   (x4)
@@ -3548,7 +3548,7 @@ class SandboxExecutor:
         captured on the same path as successes.
         """
         # An install with no directory given used to be refused, with a message
-        # naming the directory to use instead. Run 8d28ee3f spent two calls on
+        # naming the directory to use instead. One run spent two calls on
         # that: bare `npm install`, refused, then the identical command with
         # the directory filled in. The refusal could only ever name one
         # directory - a project is pinned, and there is one - so run it there
@@ -3732,7 +3732,7 @@ class SandboxExecutor:
         # Ask what is free before starting, not after the kernel has answered.
         # A refusal is a tool result the model can read and work around; an OOM
         # kill takes the worker with it, and a run whose worker is gone has no
-        # process left to write an error. Run-cbd22a34 ended that way twice.
+        # process left to write an error. One run ended that way twice.
         from app.tools.resources import enough_headroom, read_resource_state
 
         state = read_resource_state()

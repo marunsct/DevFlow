@@ -21,7 +21,7 @@ NODE_TEST = (
 )
 
 
-def test_the_file_from_run_d3965815_is_caught() -> None:
+def test_the_file_from_a_run_is_caught() -> None:
     note = undiscoverable_test("todo-app/app.test_xss.mjs", NODE_TEST)
 
     assert note is not None
@@ -138,7 +138,7 @@ test('README.md exists and contains title', () => {
 """
 
 
-def test_the_four_green_tests_from_run_84e05d4b_are_flagged() -> None:
+def test_the_four_green_tests_from_a_run_are_flagged() -> None:
     """Four passing assertions, none touching a line of application code.
 
     There was none in the project to touch. The test round passed, the security
@@ -188,7 +188,7 @@ def test_the_note_reaches_the_write_too(tmp_path) -> None:
 # --- a browser API built by hand -------------------------------------------
 
 
-RUN_D3965815 = """import test from 'node:test';
+MEASURED_HAND_BUILT_DOCUMENT_SUITE = """import test from 'node:test';
 import assert from 'node:assert';
 
 global.document = {
@@ -209,7 +209,7 @@ def test_a_hand_built_dom_is_flagged() -> None:
     """
     from app.analysis.test_discovery import a_dom_built_by_hand
 
-    note = a_dom_built_by_hand("app.test.mjs", RUN_D3965815)
+    note = a_dom_built_by_hand("app.test.mjs", MEASURED_HAND_BUILT_DOCUMENT_SUITE)
 
     assert note is not None
     # The advice changed with commit 8a17712, which made Playwright
@@ -249,12 +249,12 @@ def test_the_note_reaches_the_write_as_well(tmp_path) -> None:
 
     write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
 
-    result = write_approved_artifact(tmp_path, "proj/app.test.mjs", RUN_D3965815)
+    result = write_approved_artifact(tmp_path, "proj/app.test.mjs", MEASURED_HAND_BUILT_DOCUMENT_SUITE)
 
     assert "Playwright" in (result.get("note") or "")
 
 
-RUN_A7150A6C = """// Test to ensure style.css is linked in index.html
+MEASURED_STYLESHEET_LINK_SCRIPT = """// Test to ensure style.css is linked in index.html
 import fs from 'fs';
 const html = fs.readFileSync('simple-to-do-list-app/index.html', 'utf8');
 if (!html.includes('<link rel="stylesheet" href="style.css">')) {
@@ -274,7 +274,7 @@ def test_a_test_by_name_with_no_framework_import_is_still_judged() -> None:
     """
     from app.analysis.test_discovery import tests_nothing_of_the_project
 
-    note = tests_nothing_of_the_project("proj/app.test.mjs", RUN_A7150A6C)
+    note = tests_nothing_of_the_project("proj/app.test.mjs", MEASURED_STYLESHEET_LINK_SCRIPT)
 
     assert note is not None
     assert "imports nothing from the project" in note
@@ -303,7 +303,7 @@ function render() { const list = document.getElementById('task-list'); }
 if (typeof document !== "undefined") { render(); }
 """
 
-RUN_740EDB6B = """import { addTask } from './app.js';
+MEASURED_UNNAMED_SUITE = """import { addTask } from './app.js';
 import { test } from 'node:test';
 import assert from 'assert';
 
@@ -324,7 +324,7 @@ def project(tmp_path):
     return tmp_path
 
 
-def test_the_run_740edb6b_test_is_warned(project) -> None:
+def test_the_measured_test_is_warned(project) -> None:
     """Four runs have ended a stage on `document is not defined`.
 
     One run's `addTask.test.mjs` imported `addTask` from a module whose
@@ -336,7 +336,7 @@ def test_the_run_740edb6b_test_is_warned(project) -> None:
     """
     from app.analysis.test_discovery import a_test_that_needs_a_dom
 
-    note = a_test_that_needs_a_dom("addTask.test.mjs", RUN_740EDB6B, project)
+    note = a_test_that_needs_a_dom("addTask.test.mjs", MEASURED_UNNAMED_SUITE, project)
 
     assert note is not None
     assert "document is not defined" in note
@@ -354,7 +354,7 @@ def test_the_run_740edb6b_test_is_warned(project) -> None:
 def test_a_test_that_provides_a_dom_is_silent(project, prelude: str) -> None:
     from app.analysis.test_discovery import a_test_that_needs_a_dom
 
-    assert a_test_that_needs_a_dom("a.test.mjs", prelude + RUN_740EDB6B, project) is None
+    assert a_test_that_needs_a_dom("a.test.mjs", prelude + MEASURED_UNNAMED_SUITE, project) is None
 
 
 def test_a_dom_free_module_is_silent(project) -> None:

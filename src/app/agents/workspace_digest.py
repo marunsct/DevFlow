@@ -177,7 +177,7 @@ def _nothing_here_is_evidence(names: list[str]) -> bool:
     the transcripts, four runs and four `read_repository_file` calls, all of
     them `README.md`, all answered "File does not exist within the repository".
 
-    Run d6297b2f is the proof this needs saying rather than listing. Its first
+    One run is the proof this needs saying rather than listing. Its first
     model call carried the digest
 
         The workspace as it stands. This is what is there ...

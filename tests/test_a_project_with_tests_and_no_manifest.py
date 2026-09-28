@@ -6,8 +6,8 @@ fault they exist for. `npm test` answers ENOENT rather than "missing script:
 test", so not one suite can be reached by the command every stage is told to
 use, and nothing has executed a single assertion.
 
-Run 1cd4597b reached 699 events with two suites on disk and no manifest. Runs
-37476645, f0630b10 and c150cb2e ended that way.
+One run reached 699 events with two suites on disk and no manifest. Three
+runs ended that way.
 
 Reported at the cross-file checks rather than at the write of a test file:
 across the stored transcripts the manifest is written first in 12 runs and

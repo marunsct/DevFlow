@@ -462,7 +462,7 @@ class TestTheAttemptsLineCountsWhatCameBefore:
         )
         return next(l for l in text.splitlines() if l.startswith("**Attempts:"))
 
-    def test_the_line_run_6e50b630_got(self):
+    def test_the_line_a_run_got(self):
         """Two attempts, both failed: one failure came before this one."""
         line = self._attempts_line(
             [{"number": 1, "status": "Failed"}, {"number": 2, "status": "Failed"}]

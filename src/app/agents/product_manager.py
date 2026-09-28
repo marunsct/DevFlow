@@ -177,8 +177,7 @@ def build_intake_request(
         # the HOST - `/app/data/uploads/brief_low_752e3b83.md` - and inside the
         # agent every path is resolved against a workspace rooted at "/", so
         # reading it answers "not found" and writing it would build a mirror of
-        # the host layout inside the workspace. Measured across runs 2b5def74,
-        # da6c5e19 and 5d83e946: `product_manager` opens by trying to read that
+        # the host layout inside the workspace. Measured across three runs: `product_manager` opens by trying to read that
         # exact string, every time, and gets an error for its first tool call.
         # This is the rule the comment below already states, applied to the
         # other path on the same line - it was written for the repository and
@@ -190,8 +189,7 @@ def build_intake_request(
         # basename instead of its host path, on the reasoning that the name was
         # safe where the path was not. It is not: the stored name carries an
         # upload suffix (`brief_low_aa06a786.md`) and names nothing that exists
-        # in a workspace rooted at "/". Measured on runs 2b5def74, da6c5e19,
-        # 5d83e946 and again on one run - `product_manager` spends its
+        # in a workspace rooted at "/". Measured on three runs and again on one run - `product_manager` spends its
         # first two calls on `read_file` and then `glob` for that exact string,
         # and gets an error for both.
         #

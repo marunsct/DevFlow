@@ -106,7 +106,7 @@ def test_every_marker_is_a_phrase_some_message_really_emits():
 
 
 def test_a_name_the_page_never_imported_blocks(project: Path):
-    """Run 9c0fc48d: the page threw on load and this was graded untidy."""
+    """One run: the page threw on load and this was graded untidy."""
     from app.analysis.integration_checks import _called_without_being_imported
 
     (project / "logic.mjs").write_text(
@@ -198,7 +198,7 @@ def test_a_ui_with_no_browser_test_blocks(project: Path):
 
 
 def test_a_dropped_acceptance_criterion_blocks(project: Path):
-    """Run b0db10b1 shipped no way to edit a task and nothing said so.
+    """One run shipped no way to edit a task and nothing said so.
 
     Its own intake required "add/edit/delete". Untidy is dead rules and unused
     files; a capability the documents require and the product never built is

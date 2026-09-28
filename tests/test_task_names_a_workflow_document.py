@@ -33,7 +33,7 @@ def test_every_workflow_document_is_recognised(name: str) -> None:
     assert "`decisions`" in brief
 
 
-def test_the_run_01f03ed9_task(tmp_path) -> None:
+def test_the_measured_task(tmp_path) -> None:
     brief = _brief(
         "Update docs/milestone_review.md with the test results for this milestone.",
         ["The file reflects the latest run"],

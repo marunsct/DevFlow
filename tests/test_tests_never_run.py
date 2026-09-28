@@ -40,7 +40,7 @@ def _project(tmp_path: Path, test_script: str, names: list[str]) -> list[str]:
     return _tests_the_project_never_runs(_source_files(tmp_path), tmp_path)
 
 
-RUN_04576307 = [
+MEASURED_TEST_FILES = [
     "test_add_task.mjs",
     "test_delete_task.mjs",
     "test_edit_task.mjs",
@@ -51,16 +51,16 @@ RUN_04576307 = [
 
 
 def test_the_six_stranded_suites_are_reported(tmp_path: Path) -> None:
-    (problem,) = _project(tmp_path, "node --test ./", [*RUN_04576307, "app.test.mjs"])
+    (problem,) = _project(tmp_path, "node --test ./", [*MEASURED_TEST_FILES, "app.test.mjs"])
 
-    for name in RUN_04576307:
+    for name in MEASURED_TEST_FILES:
         assert name in problem
     assert "app.test.mjs" not in problem, "the one that does run is not listed"
 
 
 def test_it_counts_as_breaking_the_product(tmp_path: Path) -> None:
     """The run believes it has coverage it does not have."""
-    (problem,) = _project(tmp_path, "node --test", RUN_04576307)
+    (problem,) = _project(tmp_path, "node --test", MEASURED_TEST_FILES)
 
     assert _severity_of(problem) == "BREAKS"
 
@@ -85,11 +85,11 @@ def test_another_runner_is_left_alone(tmp_path: Path, script: str) -> None:
     """Jest, Vitest and Mocha decide discovery in their own configuration,
     which this cannot read. A wrong claim about a suite that runs perfectly
     well would be worse than no claim."""
-    assert _project(tmp_path, script, RUN_04576307) == []
+    assert _project(tmp_path, script, MEASURED_TEST_FILES) == []
 
 
 def test_a_project_with_no_test_script_is_left_alone(tmp_path: Path) -> None:
-    assert _project(tmp_path, "", RUN_04576307) == []
+    assert _project(tmp_path, "", MEASURED_TEST_FILES) == []
 
 
 def test_a_broken_manifest_is_reported_elsewhere(tmp_path: Path) -> None:

@@ -94,6 +94,7 @@ from app.agents.product_manager import (
     build_intake_request,
     create_product_manager_agent,
     with_the_constraints_the_brief_states,
+    with_the_workflows_its_measures_require,
 )
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import (
@@ -163,7 +164,7 @@ def _max_architecture_revisions() -> int:
     It stays bounded, because a reviewer and an architect that simply disagree
     will never converge and each round costs two model calls.
 
-    That reasoning was incomplete, and run-c4f17841 showed why. The reviewer was
+    That reasoning was incomplete, and one run showed why. The reviewer was
     not converging slowly on a fixed specification - the specification was
     growing under it. Each round the architect answered a finding by adding
     ADRs, and each new ADR gave the reviewer more artefacts to find missing:
@@ -232,7 +233,7 @@ from app.agents.settled_answer import MODEL_CALLS_PER_STAGE
 #:
 #: At 3.2 the ceiling is 128, which the worst-ratio stage reaches at 33 model
 #: calls - five before the guard withholds tools at 38 - so on those stages the
-#: guard never acts at all. Measured live on run-b6436e36, where
+#: guard never acts at all. Measured live on one run, where
 #: `defect_fix_1_1` hit the ceiling and restarted while the guard sat
 #: unreached. At 4.0 the ceiling is 160, which the worst ratio on record
 #: reaches at 41 calls, one past the budget: the budget now stops every stage
@@ -417,6 +418,9 @@ class WorkflowGraphState(TypedDict, total=False):
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
+    # Set once the workflow has raised its one success-measure coverage finding
+    # against a specification. See `_a_success_measure_the_specification_drops`.
+    specification_coverage_checked: bool
     specification_repair_count: int
     # Per-stage count of attempts that ended without a structured response.
     structured_retries: dict[str, int]
@@ -514,7 +518,7 @@ def _is_context_overflow(error: BaseException) -> bool:
 #: succeeds next time, and the run has nothing to gain from stopping.
 _TRANSIENT_MODEL_MARKERS = (
     # A local model truncated a tool call mid-string and the server rejected it.
-    # Measured on run-cbd22a34: "Failed to parse tool call arguments as JSON:
+    # Measured on one run: "Failed to parse tool call arguments as JSON:
     # parse error at line 1, column 26: invalid string: missing closing quote".
     # The run ended at 2,333 events over one malformed message.
     "failed to parse tool call",
@@ -607,7 +611,7 @@ def _the_stage_that_paused(state: Any) -> str | None:
     time any worker runs, the `awaiting_approval:<name>` marker is gone and
     `stage` names nobody.
 
-    That cost run-6c7721c4. The first version of the ownership check read
+    That cost one run. The first version of the ownership check read
     `stage`, found no worker it named, and so took the decision away from every
     worker including the one it was for. `specialist_backend_1` restarted from
     scratch at least six times - the same `ls`, the same three document reads,
@@ -641,7 +645,7 @@ def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
     this each of those workers resumed whichever inner thread happened to be
     stored there - a sibling's - and executed the gated call waiting on it.
 
-    Measured on run-a8ad0ef0: one `call_id` recorded three times under three
+    Measured on one run: one `call_id` recorded three times under three
     stage names, with three `tool_result` records microseconds apart, one
     reporting `"status": "edited"` and the other two "already contains the text
     you asked to put there". Every call that was multiplied was a gated one -
@@ -698,7 +702,7 @@ def _that_do_not_share_a_file(
     unparseable - which is why nothing corrupt ships, but every one of those
     refusals cost a model call.
 
-    Measured on run-1bdbc08a, a seven-task milestone in which four tasks named
+    Measured on one run, a seven-task milestone in which four tasks named
     `app.js`: of 400 calls, 64 failed, and 45 of those were this - 28 redundant
     reads of `app.js`, 13 identical `replace_lines` and 7 identical
     `edit_artifact`, each stage re-reading and retrying against a file another
@@ -835,13 +839,13 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         # decision is delivered, and deferring it leaves the decision with no
         # hanging call to answer - `ValueError: Number of human decisions (2)
         # does not match number of hanging tool calls (1)`, which ended
-        # run-c4a30293 on 2026-09-11.
+        # one run on 2026-09-11.
         #
         # That used to be met by sending the whole pending set whenever a
         # decision was in state, which switched the staggering off for the rest
         # of the milestone after its first approval: with `auto_approve` every
         # fan-out pauses on its first gated call, and nothing clears the
-        # decision until the fan-out ends. Measured on run-6c7721c4:
+        # decision until the fan-out ends. Measured on one run:
         # `specialist_testing_2`, which imports `app.js`, was rightly held back
         # while `specialist_backend_1` wrote `app.js` - and was dispatched at
         # 05:57:06 by the first resume, with `backend_1` still writing until
@@ -917,7 +921,7 @@ def _entry_router(state: WorkflowGraphState) -> str:
 #: stage before it - and `_run_gated_agent`, seeing a pending decision, resumes
 #: that inherited thread instead of starting its own.
 #:
-#: Observed on run-0b55ad49: `milestone_review` finished with `changes_required`
+#: Observed on one run: `milestone_review` finished with `changes_required`
 #: and handed back to `technical_lead`, which resumed the *reviewer's*
 #: conversation and was handed a `MilestoneReviewOutput`. It stored that under
 #: `milestone_plan` and died on `'MilestoneReviewOutput' object has no attribute
@@ -945,7 +949,7 @@ def unassigned_review_changes(
 
     A plan is a list of assignments. Asked to "address every requested change",
     an agent can satisfy that for a *plan* by writing the change down, which
-    changes nothing: on run-0b55ad49 a review named the exact file, line and fix
+    changes nothing: on one run a review named the exact file, line and fix
     for a test-suite failure, the lead reproduced it verbatim under
     `## Integration Notes`, no delegated task mentioned it, and eighty minutes
     later the file was byte-for-byte unchanged.
@@ -960,7 +964,7 @@ def unassigned_review_changes(
     if getattr(milestone, "review_task_assignments", None):
         return None
 
-    # Not every model fills a bespoke field. Measured on run-95ca3f72, this one
+    # Not every model fills a bespoke field. Measured on one run, this one
     # left it empty on three fresh conversations while producing a plan that was
     # otherwise complete - so an empty field alone cannot mean the work was not
     # assigned. What *does* prove it is a revision whose delegated tasks are
@@ -1017,7 +1021,7 @@ def _max_structured_retries() -> int:
     conversation is abandoned and the stage starts a fresh one. That distinction
     is the whole reason retrying works. The failure is not "the model cannot do
     this" but "this particular conversation went somewhere it could not come
-    back from" - on run-0b55ad49 a specialist answered in 431,441 characters of
+    back from" - on one run a specialist answered in 431,441 characters of
     prose under a heading it wrote itself, and every resume replayed that same
     conversation and failed the same way in four minutes.
 
@@ -1075,7 +1079,7 @@ def _hand_back(update: dict[str, Any], output_key: str) -> bool:
 
     Callers used to test only for the pause. A retry therefore fell through
     into code that rewrote `stage` and read an output key that was not there:
-    on run-c826ae90 `product_manager_node` overwrote the retry's
+    on one run `product_manager_node` overwrote the retry's
     "go back to product_manager" with "tools_models" and sent a state carrying
     no `product_intake` downstream, which is how the run reached
     `KeyError: 'product_intake'` despite the retry working correctly.
@@ -1092,7 +1096,7 @@ def _first_json_object(text: str) -> str | None:
     A plain `json.loads` is not enough. The model writes the object and then
     keeps talking, so the message is valid JSON followed by prose and
     `json.loads` fails with "Extra data" on an answer that is entirely present.
-    Measured on run-2b5def74: two such messages, 2,027 and 2,028 characters,
+    Measured on one run: two such messages, 2,027 and 2,028 characters,
     each a complete response object with a paragraph after it.
     """
     fenced = _JSON_FENCE.search(text)
@@ -1127,7 +1131,7 @@ def _first_json_object(text: str) -> str | None:
     # unreachable for every consumer of this function, because each of them
     # treats None as "no object present" rather than "object unfinished" - so
     # a model that truncated one character short of valid JSON had written an
-    # answer nothing could read. Measured on run-91a18470, whose
+    # answer nothing could read. Measured on one run, whose
     # `specialist_testing` wrote the same 3068-byte object fifty-nine times and
     # failed at character 3067 every time.
     #
@@ -1142,7 +1146,7 @@ def _answer_written_into_the_conversation(result: dict[str, Any], schema: Any) -
 
     The failure this exists for is not a model that could not answer. It is a
     model that answered correctly and sent it down the wrong channel: on
-    run-2b5def74 `specialist_backend_0` emitted its complete response object as
+    one run `specialist_backend_0` emitted its complete response object as
     a chat message three times, each followed by a sentence of commentary, and
     the workflow discarded all three and then failed the stage. The nudge did
     not help, because being asked for the schema produced the same thing again.
@@ -1220,7 +1224,7 @@ def _answer_left_in_a_spinning_stage(
     agent does not return - it raises. So read the messages back off the
     checkpoint and try the same recovery there.
 
-    Measured on run-2192f23b: forty minutes and 266 events, every cycle
+    Measured on one run: forty minutes and 266 events, every cycle
     containing a complete specification object printed as a chat message.
     """
     if schema is None:
@@ -1385,7 +1389,7 @@ def _spun_without_finishing(stage_name: str, exc: Exception) -> str | None:
     and the operator is left with a stack trace for a condition that has a plain
     description: the stage went round in a circle and never produced an answer.
 
-    Measured on run-2192f23b: the principal architect spent twenty-two minutes
+    Measured on one run: the principal architect spent twenty-two minutes
     printing the same specification into the conversation and re-reading the
     same three documents, with no restart recorded, because every workflow guard
     is checked when a stage ends and this one never ended.
@@ -1433,13 +1437,13 @@ def _restart_on_a_fresh_conversation(
     Clearing `pending_inner_thread_id` is what makes this a retry instead of a
     loop: without it the resume path re-enters the very conversation that
     failed, replays it, and fails identically - which is exactly what happened
-    on run-0b55ad49 until this existed.
+    on one run until this existed.
 
     Shared by the two ways a stage can produce no answer. They were handled
     differently for no reason anyone could defend: a stage that RETURNED
     without a structured response got three fresh conversations, and a stage
     that SPUN until the recursion limit got none - it failed the whole run on
-    its first attempt. run-e9e7f48f died that way in `specialist_ui_ux_2`,
+    its first attempt. One run died that way in `specialist_ui_ux_2`,
     with three restarts unused, while the error it raised said in as many
     words that "a resume re-runs it on a fresh conversation".
     """
@@ -1522,7 +1526,7 @@ def _nudge_text(result: dict[str, Any] | None, schema: Any) -> str:
     know which field is wrong, and telling it "return it through the schema"
     produces the same near miss again.
 
-    Measured on run-2c523383's `principal_architect`. The correction that rides
+    Measured on one run's `principal_architect`. The correction that rides
     on the model request fixed it mid-conversation: the turn after it fired,
     `product_scope` came back as the string the schema asks for. But that turn
     made no tool call, so the stage ended, the generic nudge ran, the restart
@@ -1561,7 +1565,7 @@ def _nudge_for_the_structured_response(
     """Ask the same conversation for the answer it already worked out.
 
     The retry below starts the stage over on a clean conversation, which works
-    but throws away everything the stage learned. Measured on run-61c5a5b6:
+    but throws away everything the stage learned. Measured on one run:
     `test_round_0` read four files, globbed for existing tests, and wrote a
     paragraph of correct analysis - then returned it as prose. The restart
     re-read the same four files and re-ran the same globs, about twenty-seven
@@ -1639,7 +1643,7 @@ def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
 def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
     """The message for a stage that reasoned until its reply was truncated.
 
-    Measured on run-fbe23618, which failed after 3 hours 23 minutes at
+    Measured on one run, which failed after 3 hours 23 minutes at
     `defect_fix_2_4`. Fourteen model responses across the run came back with
     `finish_reason: length`, no text and no tool call - nine of them in that
     one stage. The run's settings were `model_max_output_tokens = 20000` with
@@ -2025,7 +2029,7 @@ def _run_gated_agent(
         # budget. That re-invokes the same inner thread, which re-enters at
         # `__start__` and runs another model call before stopping again - so
         # every gate costs a call and the count climbs until the run's repeat
-        # guard kills it. Measured on run-91a18470's `test_round_3`: eighteen
+        # guard kills it. Measured on one run's `test_round_3`: eighteen
         # re-entries and thirty-four hard stops on one inner thread. The model
         # has already been told it is out of room and kept going; asking again
         # cannot produce a different answer, so go straight to the retry.
@@ -2080,8 +2084,8 @@ def _run_gated_agent(
         # which is what `_it_spent_its_whole_output_budget` tells the operator in
         # capitals - while the harness did it three times anyway.
         #
-        # Recorded on run-fbe23618, which spent 3h23m reaching that conclusion,
-        # and reproduced on run-be25a68e: `test_round_2` after four sprints of
+        # Recorded on one run, which spent 3h23m reaching that conclusion,
+        # and reproduced on one run: `test_round_2` after four sprints of
         # work, three restarts, same ceiling, run failed. The remedy is a setting
         # - a bigger output budget, or less reasoning - and no number of attempts
         # substitutes for it. Failing now says the same thing an hour earlier and
@@ -2100,7 +2104,7 @@ def _run_gated_agent(
         # run. Clearing `pending_inner_thread_id` is what makes this a retry
         # instead of a loop: without it the resume path re-enters the very
         # conversation that failed, replays it, and fails identically - which is
-        # exactly what happened on run-0b55ad49 until this existed.
+        # exactly what happened on one run until this existed.
         restarted = (
             None
             if out_of_room
@@ -2226,6 +2230,63 @@ def _severity_gates(value: Any) -> bool:
     return rank is not None and rank <= _WORST_RANK_THAT_PASSES
 
 
+def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> Any:
+    """A major finding for a capability the intake requires and the spec never names.
+
+    The Senior Architect Reviewer is given the specification and the brief's
+    constraints, not its requirements, so it cannot see a feature that is
+    missing - and the architect, which is given the whole intake, drops one
+    whenever the intake's core workflows leave out what its success measures
+    keep. On two runs the success measure read "Users can
+    add, edit, and delete tasks", the workflows read add, toggle, delete and
+    filter, and neither specification named editing; both were approved, and
+    the gap surfaced at the milestone review a full build cycle later.
+
+    Raised by the workflow rather than asked of the reviewer, because it is a
+    comparison of two texts and not a judgement: see
+    `app.agents.success_measures`. Once per run, and never on the revision that
+    would exhaust `MAX_ARCHITECTURE_REVISIONS` - an architect that still leaves
+    it out is not worth failing the run over, because the sprint-plan check and
+    the milestone review are both still behind it.
+    """
+    if state.get("specification_coverage_checked"):
+        return None
+    if state.get("architecture_revision_count", 0) + 1 >= MAX_ARCHITECTURE_REVISIONS:
+        return None
+    measures = [
+        str(m) for m in (getattr(state.get("product_intake"), "success_measures", None) or []) if str(m).strip()
+    ]
+    from app.agents.success_measures import capabilities_never_named
+
+    missing = capabilities_never_named(spec_text, measures)
+    if not missing:
+        return None
+    from app.agents.architecture_reviewer import ArchitectureReviewFinding
+
+    lines = [
+        f"success measure {n} (\"{measures[n - 1]}\") lists {', '.join(repr(w) for w in words)}"
+        for n, words in sorted(missing.items())
+    ]
+    return ArchitectureReviewFinding(
+        severity="major",
+        description=(
+            "The specification never mentions a capability the product intake's "
+            "success measures require: " + "; ".join(lines) + ". Every later stage "
+            "plans and builds from this document, so a capability it leaves out is "
+            "left out of the product."
+        ),
+        evidence=(
+            "Compared by the workflow against docs/product_intake.md: the "
+            "specification text does not name it anywhere."
+        ),
+        required_remediation=(
+            "Add each missing capability to the specification the way the others "
+            "are specified - its data flow, the functions or endpoints that carry "
+            "it, the UI that exposes it, and an acceptance criterion that verifies it."
+        ),
+    )
+
+
 def _findings_that_block(review: Any, repo_root: str | None = None) -> list[Any]:
     """The findings in a review that justify another round of work.
 
@@ -2234,7 +2295,7 @@ def _findings_that_block(review: Any, repo_root: str | None = None) -> list[Any]
     decided, and a reviewer that wrote `changes_required` over nothing but
     `minor` findings sent the work back anyway.
 
-    That is what killed run-da4df814. Its six architecture reviews went:
+    That is what killed one run. Its six architecture reviews went:
 
         1  8 findings, 2 blocking   - legitimate
         2  4 findings, all minor    - sent back
@@ -2344,7 +2405,7 @@ def _record_sprint_summary(
     # each time - so after a sprint is sent back, `selected_sprint_goal`
     # describes the latest revision rather than the sprint being summarised.
     #
-    # Measured on run-83bd156a's `sprint_1_summary.md`, live. Its header read
+    # Measured on one run's `sprint_1_summary.md`, live. Its header read
     # "Wire filter button functionality and inline edit UI ...", which was the
     # third milestone plan's goal, while "Planned for This Sprint" underneath
     # correctly listed sprint 1's scope - create the project directory, build
@@ -2487,7 +2548,7 @@ def _missing_upstream(state: WorkflowGraphState, *keys: str) -> dict[str, Any] |
 
     That is not a rare shape. Measured directly against this deployment's model,
     driving the product manager agent to completion twice with identical input:
-    one run returned its structured response, the other wrote "# Product Intake
+    One run returned its structured response, the other wrote "# Product Intake
     Complete" as a message and returned nothing. Roughly half. Across a pipeline
     of ten sequential stages, something will land on it most runs.
 
@@ -2530,7 +2591,7 @@ def _milestone_changes_requested(review: Any) -> str | None:
     `changes_required` - putting its whole argument in `acceptance_evidence`,
     which is required and so always gets written.
 
-    Observed on run-95ca3f72: the reviewer returned `changes_required` with
+    Observed on one run: the reviewer returned `changes_required` with
     `findings == []` and three concrete complaints in `acceptance_evidence`
     (a root `package.json` whose test script was `exit 1`, duplicate installs
     in CI, `npm test` exiting 1). Joining an empty list produced `""`, and the
@@ -2620,7 +2681,7 @@ def _a_round_that_found_a_product_defect(defects: list[Any]) -> bool:
     """Whether this round found anything wrong with the *product*.
 
     A round that found only test defects is the suite settling down, and
-    charging it against a budget meant for the product is how run b6436e36
+    charging it against a budget meant for the product is how one run
     failed after three attempts with a working product: 43 of 43 unit tests
     passing, all five features the brief names built, and seven of its eleven
     defects in `ui.pw.test.mjs` - the Playwright suite the run had just
@@ -2703,10 +2764,10 @@ def _the_files_this_milestone_changed(
     under-reports it. Measured across the 28 current-generation runs: 82 stages
     wrote a file and did not name it - every role, about three per run.
 
-        run-0322d658  test_round_0         wrote 5 files, reported none
-        run-0322d658  specialist_ui_ux_1   wrote app.js, index.html,
+        One run  test_round_0         wrote 5 files, reported none
+        one run  specialist_ui_ux_1   wrote app.js, index.html,
                                            package.json, server.mjs; reported app.js
-        run-1a0d3610  specialist_ui_ux_0   wrote app.js, app.test.mjs,
+        one run  specialist_ui_ux_0   wrote app.js, app.test.mjs,
                                            package.json; reported app.test.mjs
 
     Three stages read that list - the test round, the security review and the
@@ -2782,7 +2843,7 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     printed a summary line is in the execution ledger with its own `tests`,
     `passed` and `failed`.
 
-    Measured on run-df4dc6f5's third sprint. The ledger recorded `npm test` -
+    Measured on one run's third sprint. The ledger recorded `npm test` -
     the project's own gating command - eight times in the four minutes before
     the review:
 
@@ -2819,7 +2880,7 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     # A failure the counts cannot show. A composite command - `npm test` chaining
     # `node --test` and `playwright test` - has its first runner's summary parsed,
     # so a later runner's failure leaves `failed: 0` beside a non-zero exit code.
-    # Measured on run-b3cb2d80: five ledger entries reading 27 passed, 0 failed,
+    # Measured on one run: five ledger entries reading 27 passed, 0 failed,
     # returncode 1. Reading `failed` alone was silent on every one of them.
     if cases.get("failed", 0) <= 0:
         return (
@@ -2860,7 +2921,7 @@ def _escalate_to_a_human(
     A run with the default `review_policy` of `{}` has opted out of both human
     gates. Sending it to one leaves it `waiting_for_review` with nobody coming -
     not failed, not progressing, and holding the worker. Measured on
-    run-36eb1260, which sat in `awaiting_user_review:sprint` with
+    one run, which sat in `awaiting_user_review:sprint` with
     `review_policy` empty.
 
     So: park it when a reviewer was asked for, and otherwise fail with the
@@ -3070,6 +3131,9 @@ def build_workflow_graph(
         update["product_intake"] = with_the_constraints_the_brief_states(
             update["product_intake"], getattr(state.get("document"), "text", "") or ""
         )
+        # And no contradiction between its own lists: a capability a success
+        # measure names is a workflow, whatever the workflow list left out.
+        update["product_intake"] = with_the_workflows_its_measures_require(update["product_intake"])
 
         _record_document(
             state,
@@ -3100,7 +3164,7 @@ def build_workflow_graph(
             # conversation, rather than failing here. Resuming re-enters *this*
             # node, where the intake is still missing - so telling the operator
             # to resume, as the first version of this guard did, was advice that
-            # could not work. Measured on run-c826ae90: resumed once, failed
+            # could not work. Measured on one run: resumed once, failed
             # again in the same place.
             retries = dict(state.get("structured_retries") or {})
             key = "product_manager:intake"
@@ -3109,7 +3173,7 @@ def build_workflow_graph(
                 retries[key] = attempted + 1
                 return _handing_on(stage="product_manager", structured_retries=retries)
             # The stage before this one finished without returning its
-            # structured response - on run-c826ae90 the product manager wrote
+            # structured response - on one run the product manager wrote
             # `docs/product_intake.md`, then reported "Product intake complete.
             # Here is the structured summary:" as prose. Reading the key
             # directly turned that into `KeyError: 'product_intake'` from deep
@@ -3179,7 +3243,7 @@ def build_workflow_graph(
         agent = create_stack_selector_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         # The brief's own constraints, quoted, not a model's summary of them.
         # This stage was given `product_intake` and `tools_models` and nothing
-        # else, and on run 0c5aabdb `ProductManagerOutput.constraints` came
+        # else, and on one run `ProductManagerOutput.constraints` came
         # back empty - so "No external dependencies beyond basic HTML/CSS/JS"
         # never reached the stage that picked Express. See
         # `app.agents.brief_constraints`.
@@ -3213,7 +3277,7 @@ def build_workflow_graph(
 
         # The prompt tells this stage, in capitals, that a product with a user
         # interface needs both a logic runner and a browser runner and must name
-        # both. run-1bdbc08a named only `node --test`, for a brief asking for a
+        # both. One run named only `node --test`, for a brief asking for a
         # "web-based interface with HTML/CSS/JavaScript", and justified it with
         # "manual browser verification" - which the same prompt calls impossible
         # twice, there being no display and nobody to look at one. Its
@@ -3241,12 +3305,12 @@ def build_workflow_graph(
             )
 
         # Rendered from the decision, like every other document the workflow
-        # keeps. On run-0b18e403 this stage still wrote its own: it printed the
+        # keeps. On one run this stage still wrote its own: it printed the
         # selection into the conversation, wrote `docs/technology_stack.md`,
         # printed it again, wrote again - five identical writes, and the repeat
-        # guard ended the run at stage three. The same shape that cost
-        # run-78804673 its technical lead and run-c826ae90 its architecture
-        # reviewer, in the one stage that had not been converted.
+        # guard ended the run at stage three. The same shape had already cost
+        # earlier runs their technical lead and their architecture reviewer,
+        # in the one stage that had not been converted.
         _record_document(
             state,
             "docs/technology_stack.md",
@@ -3352,6 +3416,14 @@ def build_workflow_graph(
             return update
 
         review: ArchitectureReviewOutput = update["architecture_review"]
+
+        coverage_finding = _a_success_measure_the_specification_drops(state, spec_text)
+        if coverage_finding is not None:
+            review = review.model_copy(
+                update={"findings": [*review.findings, coverage_finding], "status": "changes_required"}
+            )
+            update["architecture_review"] = review
+            update["specification_coverage_checked"] = True
 
         # Rendered from the decision, not written by the reviewer as a second
         # copy that can disagree with it. See `app.agents.review_document`.
@@ -3558,7 +3630,7 @@ def build_workflow_graph(
         # plan identity. Leaving the previous plan's outputs in place therefore
         # told the router that this plan's tasks were done.
         #
-        # Measured on run-83bd156a, whose three plans produced the identical
+        # Measured on one run, whose three plans produced the identical
         # names `specialist_ui_ux_0`, `specialist_backend_1`,
         # `specialist_testing_2`, because the lead assigns those roles in that
         # order every time. Sprint 1 ran all three; the two revisions the
@@ -3669,7 +3741,7 @@ def build_workflow_graph(
             # is handed one task at a time. Wiring only the linear site left this
             # one without them, and this is the parallel site - the mode where
             # specialists really do run at once, so the one where a file two tasks
-            # share matters most. Measured on run-a6b28314, whose plan named
+            # share matters most. Measured on one run, whose plan named
             # `app.js` in four of six tasks and whose `app.js` was written by five
             # stages, with no brief mentioning the overlap.
             other_tasks=list(
@@ -3686,7 +3758,7 @@ def build_workflow_graph(
         # inner thread happened to be stored there - a sibling's - and executed
         # the gated call that was waiting on it.
         #
-        # Measured on run-a8ad0ef0: one `call_id` recorded three times under
+        # Measured on one run: one `call_id` recorded three times under
         # three stage names, with three `tool_result` records microseconds apart,
         # one reporting `"status": "edited"` and the other two "already contains
         # the text you asked to put there". Every call that was multiplied was a
@@ -4084,7 +4156,7 @@ def build_workflow_graph(
         # Rendered from the decision, like the architecture and milestone
         # reviews. This was the last reviewer still holding a write tool with
         # no document of its own to render - the same latent shape that ended
-        # run-0b18e403 at stage three when the stack selector finally used it.
+        # one run at stage three when the stack selector finally used it.
         # It had never misbehaved; neither had the stack selector, until it did.
         _record_document(
             state,
@@ -4179,7 +4251,7 @@ def build_workflow_graph(
         ):
             # A `changes_required` carrying nothing above the gating severities
             # falls through to the accepted path below - the same hole that
-            # cost run-da4df814 six architecture rounds, fixed for every
+            # cost one run six architecture rounds, fixed for every
             # reviewer rather than the one that happened to fail. An empty
             # `findings` still enters here, because the branch below has its
             # own message for a review that asked for changes and said nothing.
@@ -4198,7 +4270,7 @@ def build_workflow_graph(
                 # The reviewer described a defect only in `acceptance_evidence`.
                 # `_findings_that_block` reads `findings`, so gating would be
                 # bypassed and the lead would be handed prose it cannot act on
-                # deterministically - the failure behind run-27fac2a5, where a
+                # deterministically - the failure behind one run, where a
                 # browser-breaking defect survived three revisions because it was
                 # never turned into a task. Ask the reviewer again on a fresh
                 # conversation before falling back to the evidence below.
@@ -4229,7 +4301,7 @@ def build_workflow_graph(
                 # the files, and `summarise_integration` has already told this
                 # reviewer that each one "means a feature DOES NOT WORK".
                 #
-                # Measured on run-5696a52d: three proven defects, including an
+                # Measured on one run: three proven defects, including an
                 # `index.html` linking a `style.css` that was not there, went in
                 # as evidence and came back as prose with `findings: []`. Prose
                 # is not a task, so the lead was handed a paragraph three times
@@ -4258,7 +4330,7 @@ def build_workflow_graph(
             revision_count = state.get("milestone_revision_count", 0) + 1
             if revision_count >= MAX_MILESTONE_REVISIONS:
                 # This sprint ends here, so it gets a summary like every other
-                # ending. Measured on run-5696a52d, which failed exactly here:
+                # ending. Measured on one run, which failed exactly here:
                 # `docs/` held the plan, the review and the specification, and no
                 # `sprint_1_summary.md` at all - the one document a reader opens
                 # to ask what the sprint did and why it stopped. The four paths
@@ -4451,7 +4523,7 @@ def build_workflow_graph(
 
         So the run arrived here with `error` unset, and the runner records
         `record.error = state.get("error")` - leaving a row that says `failed`
-        and nothing else. run-0ea9181d is one of those: 73 minutes of work,
+        and nothing else. One run is one of those: 73 minutes of work,
         approvals answered every 30 seconds, then `failed` at 11:53 with a null
         error, no event and no way to tell what had happened. Diagnosing it
         started by ruling out the three causes it was not.

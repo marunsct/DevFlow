@@ -7,7 +7,7 @@ task: the sprint plan never mentioned editing in 12 of them. The specification
 had dropped it outright in only 3; in the others it mentioned editing once or
 twice, far down, and the plan followed the emphasis.
 
-On run-ed19fdbb the intake's success measures read "Users can add, edit, and
+On one run the intake's success measures read "Users can add, edit, and
 delete tasks through the UI", its core workflows listed create, toggle, delete,
 filter and persist, and the specification never mentioned editing a task at
 all. The milestone review caught it - "No `edit` functionality exists in app.js
@@ -45,12 +45,13 @@ from test_graph_routing import (  # noqa: F401 - `agents` is a fixture
     _repository,
     _script_through_architecture,
     _security_review,
+    _spec,
     _specialist,
     agents,
     responds_with,
 )
 
-#: run-ed19fdbb's success measures, verbatim.
+#: One run's success measures, verbatim.
 MEASURES = [
     "Users can add, edit, and delete tasks through the UI",
     "Tasks persist between page refreshes (verified via local storage or JSON file)",
@@ -69,7 +70,7 @@ def _plan(coverage: list[str], sprints: int = 2) -> SprintPlanOutput:
 
 class TestTheAccounting:
     def test_a_plan_that_never_considered_them_misses_all(self) -> None:
-        """run-ed19fdbb's own plan: no coverage at all."""
+        """One run's own plan: no coverage at all."""
         assert unaccounted_success_measures(_plan([]), MEASURES) == [1, 2, 3, 4, 5]
 
     def test_a_complete_plan_misses_none(self) -> None:
@@ -102,8 +103,8 @@ class TestTheAccounting:
         assert unaccounted_success_measures(_plan([]), []) == []
 
 
-#: run-f4c6dee4's Sprint 1, which its coverage line said delivered measure 1.
-F4C6DEE4_SPRINT_1 = SprintDefinition(
+#: One run's Sprint 1, which its coverage line said delivered measure 1.
+A_SPRINT_THAT_CLAIMS_EDIT = SprintDefinition(
     goal=(
         "Users can add tasks with title and description, toggle completion state, "
         "delete tasks, and have all changes persist across page refreshes."
@@ -121,39 +122,39 @@ class TestWhatTheSprintsDeliver:
     """Assignment was not enough: the item a measure lists must be delivered."""
 
     def test_the_measured_case(self) -> None:
-        plan = SprintPlanOutput(sprints=[F4C6DEE4_SPRINT_1], success_measure_coverage=COMPLETE)
+        plan = SprintPlanOutput(sprints=[A_SPRINT_THAT_CLAIMS_EDIT], success_measure_coverage=COMPLETE)
 
         assert unaccounted_success_measures(plan, MEASURES) == []
         assert capabilities_the_plan_never_names(plan, MEASURES) == {1: ["edit"]}
 
     def test_a_deferral_does_not_deliver_it(self) -> None:
-        sprint = F4C6DEE4_SPRINT_1.model_copy(update={"out_of_scope": ["Editing tasks (later)"]})
+        sprint = A_SPRINT_THAT_CLAIMS_EDIT.model_copy(update={"out_of_scope": ["Editing tasks (later)"]})
 
         assert capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), MEASURES) == {1: ["edit"]}
 
     def test_an_open_question_does_not_deliver_it(self) -> None:
-        plan = SprintPlanOutput(sprints=[F4C6DEE4_SPRINT_1], open_questions=["Should tasks be editable?"])
+        plan = SprintPlanOutput(sprints=[A_SPRINT_THAT_CLAIMS_EDIT], open_questions=["Should tasks be editable?"])
 
         assert 1 in capabilities_the_plan_never_names(plan, MEASURES)
 
     def test_a_camel_case_function_names_it(self) -> None:
-        sprint = F4C6DEE4_SPRINT_1.model_copy(
-            update={"in_scope": [*F4C6DEE4_SPRINT_1.in_scope, "editTask(id, fields) pure function"]}
+        sprint = A_SPRINT_THAT_CLAIMS_EDIT.model_copy(
+            update={"in_scope": [*A_SPRINT_THAT_CLAIMS_EDIT.in_scope, "editTask(id, fields) pure function"]}
         )
 
         assert 1 not in capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), MEASURES)
 
     def test_a_word_that_merely_contains_it_does_not(self) -> None:
         """'credit' is not 'edit'."""
-        sprint = F4C6DEE4_SPRINT_1.model_copy(
-            update={"in_scope": [*F4C6DEE4_SPRINT_1.in_scope, "Show a credit line in the footer"]}
+        sprint = A_SPRINT_THAT_CLAIMS_EDIT.model_copy(
+            update={"in_scope": [*A_SPRINT_THAT_CLAIMS_EDIT.in_scope, "Show a credit line in the footer"]}
         )
 
         assert capabilities_the_plan_never_names(SprintPlanOutput(sprints=[sprint]), MEASURES) == {1: ["edit"]}
 
     def test_an_or_list_needs_only_one(self) -> None:
         """'localStorage or JSON file' is satisfied by localStorage alone."""
-        plan = SprintPlanOutput(sprints=[F4C6DEE4_SPRINT_1])
+        plan = SprintPlanOutput(sprints=[A_SPRINT_THAT_CLAIMS_EDIT])
 
         assert 2 not in capabilities_the_plan_never_names(plan, MEASURES)
 
@@ -206,6 +207,12 @@ def _script(agents: ScriptedAgents, *plans: SprintPlanOutput) -> None:
     agents.script(
         "product_manager",
         [responds_with(ProductManagerOutput(product_name="Todo", success_measures=MEASURES))],
+    )
+    # A specification that names every listed capability, so the architecture
+    # review's own coverage check passes and these tests reach the planner.
+    agents.script(
+        "principal_architect",
+        [responds_with(_spec(scope="Add, edit and delete tasks; local storage; mobile and desktop layouts"))],
     )
     agents.script("scrum_master", [responds_with(p) for p in plans])
     agents.script("technical_lead", [responds_with(_milestone("backend"))])
@@ -275,7 +282,7 @@ class TestTheWorkflow:
     def test_a_plan_that_claims_a_measure_it_only_half_delivers_is_asked_again(
         self, agents: ScriptedAgents, tmp_path: Any
     ) -> None:
-        """run-f4c6dee4: every measure assigned, and editing nowhere in the plan."""
+        """One run: every measure assigned, and editing nowhere in the plan."""
         half = [s.replace("Add, edit and delete", "Add and delete") for s in DELIVERS_ALL]
         _script(agents, _one_sprint(COMPLETE, scope=half), _one_sprint(COMPLETE))
 

@@ -68,6 +68,39 @@ class ProductManagerOutput(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
 
 
+def with_the_workflows_its_measures_require(output: ProductManagerOutput) -> ProductManagerOutput:
+    """`output`, with a core workflow for every capability a success measure lists.
+
+    An intake can contradict itself: its success measures say "Users can add,
+    edit, and delete tasks" while its core workflows list add, toggle, delete and
+    filter. Every later stage then has to pick one of the two lists, and they
+    picked the workflows. In one run the architect saw the contradiction and
+    wrote an ADR resolving it the wrong way - "'Edit' in the success measures
+    refers to toggling completion status" - the reviewer approved it, and the
+    planner deferred editing from both sprints. The brief had said "Users can
+    add, edit, delete tasks" in so many words.
+
+    So the contradiction is removed where it is made. A success measure whose
+    enumeration names a capability no core workflow names is added to the core
+    workflows verbatim, marked as coming from the measures. The model's own
+    workflows are kept and come first; nothing is removed; an intake whose
+    workflows already cover its measures is returned unchanged. The comparison
+    is `app.agents.success_measures`, which reads product prose and no
+    programming language.
+    """
+    from app.agents.success_measures import capabilities_never_named
+
+    measures = [str(m) for m in output.success_measures if str(m).strip()]
+    missing = capabilities_never_named("\n".join(str(w) for w in output.core_workflows), measures)
+    if not missing:
+        return output
+    added = [
+        f"{measures[n - 1]} (a success measure; no workflow above covered {', '.join(words)})"
+        for n, words in sorted(missing.items())
+    ]
+    return output.model_copy(update={"core_workflows": [*output.core_workflows, *added]})
+
+
 def with_the_constraints_the_brief_states(
     output: ProductManagerOutput, document_text: str
 ) -> ProductManagerOutput:

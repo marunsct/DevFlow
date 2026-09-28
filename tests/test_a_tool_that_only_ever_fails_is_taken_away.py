@@ -30,7 +30,8 @@ from app.agents.settled_answer import (
     IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
     _a_tool_refused_identically,
     _a_tool_withheld_notice,
-    _without_that_tool,
+    _without_that_tool_in,
+    _without_the_read_tools_in,
 )
 
 
@@ -160,34 +161,62 @@ class TestCountingTheRepeats:
 
 class TestWhatIsTakenAway:
     TOOLS: list[dict[str, Any]] = [
+        {"name": "read_file"},
+        {"name": "read_repository_file"},
         {"name": "edit_artifact"},
         {"name": "write_artifact"},
         {"name": "replace_lines"},
-        {"name": "read_file"},
     ]
-
-    class _Request:
-        def __init__(self, tools: list[Any]) -> None:
-            self.tools = tools
 
     def test_only_the_repeated_tool_goes(self) -> None:
         """A stage with no way to change a file at all could only give up."""
-        kept = _without_that_tool(self._Request(self.TOOLS), "edit_artifact")
+        kept = _without_that_tool_in(self.TOOLS, "edit_artifact")
 
         assert kept is not None
         names = {tool["name"] for tool in kept}
         assert "edit_artifact" not in names
-        assert {"write_artifact", "replace_lines", "read_file"} <= names
+        assert {"write_artifact", "replace_lines"} <= names
+
+    def test_both_rungs_compose_on_one_call(self) -> None:
+        """The reason they are separate functions over one list.
+
+        `repeated` used to be computed only when nothing else had set a
+        correction, and the read rung sets one constantly - 114 times in
+        run-be25a68e - so a stage looping on `edit_artifact` never lost it.
+        Measured on run-ad4815da, which repeated one past the threshold and was
+        never withheld once.
+        """
+        without_reads = _without_the_read_tools_in(self.TOOLS)
+        assert without_reads is not None
+
+        both = _without_that_tool_in(without_reads, "edit_artifact")
+        assert both is not None
+        assert [tool["name"] for tool in both] == ["write_artifact", "replace_lines"]
 
     def test_removing_the_only_tool_is_declined(self) -> None:
         """Leaving the model nothing to call is worse than the loop."""
-        assert _without_that_tool(self._Request([{"name": "edit_artifact"}]), "edit_artifact") is None
+        assert _without_that_tool_in([{"name": "edit_artifact"}], "edit_artifact") is None
 
     def test_a_tool_that_is_not_there_is_not_reported_as_removed(self) -> None:
-        assert _without_that_tool(self._Request(self.TOOLS), "run_terminal_command") is None
+        assert _without_that_tool_in(self.TOOLS, "run_terminal_command") is None
 
     def test_no_tools_at_all_is_declined(self) -> None:
-        assert _without_that_tool(self._Request([]), "edit_artifact") is None
+        assert _without_that_tool_in([], "edit_artifact") is None
+        assert _without_the_read_tools_in([]) is None
+
+    def test_a_list_with_no_readers_is_left_alone(self) -> None:
+        assert _without_the_read_tools_in([{"name": "edit_artifact"}]) is None
+
+    def test_a_tool_object_is_named_like_a_mapping(self) -> None:
+        """Providers hand these over as objects as well as dicts."""
+
+        class Tool:
+            def __init__(self, name: str) -> None:
+                self.name = name
+
+        kept = _without_that_tool_in([Tool("edit_artifact"), Tool("write_artifact")], "edit_artifact")
+
+        assert kept is not None and [t.name for t in kept] == ["write_artifact"]
 
 
 class TestTheNotice:
@@ -269,3 +298,33 @@ class TestTheReadOrdinalIsNotTheStages:
         from app.agents.settled_answer import _refused_reads
 
         assert _refused_reads([_ToolMessage("@@ lines 1-20 of 20 @@\nconst a = 1;")]) == 0
+
+
+def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
+    """Both rungs must be evaluated on the same call.
+
+    `repeated` was computed only when nothing else had set a correction, and the
+    read rung sets one whenever a stage has been refused three redundant reads -
+    114 times in run-be25a68e. A stage that loops on `edit_artifact` loops on
+    reads too, so the reads always won and the mutation loop was never bounded.
+    run-ad4815da repeated an `edit_artifact` past the threshold and was never
+    withheld it once.
+    """
+    import inspect
+
+    from app.agents import settled_answer
+
+    source = inspect.getsource(settled_answer.build_settled_answer_middleware)
+    guarded = source.split("reading_nothing_new = _refused_reads(messages)", 1)[1]
+
+    assert "repeated = None if correction else" not in guarded, (
+        "the repeat rung is gated on no other correction existing, which the "
+        "read rung above it almost always provides"
+    )
+    read_rung = guarded.find("READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL")
+    repeat_rung = guarded.find("_a_tool_refused_identically(messages)")
+
+    assert read_rung != -1 and repeat_rung != -1
+    assert "if not correction:" in guarded[:read_rung], (
+        "a schema or budget correction should still take priority over both"
+    )

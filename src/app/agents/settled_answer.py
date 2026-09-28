@@ -946,24 +946,29 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     return name, count
 
 
-def _without_that_tool(request: Any, name: str) -> list[Any] | None:
-    """The request's tools with one named tool removed, or None.
+def _named(tool: Any) -> str:
+    """A tool's name, whether it is an object or a mapping."""
+    return str(
+        getattr(tool, "name", "")
+        or (tool.get("name") if isinstance(tool, dict) else "")
+    )
 
-    None when it is not there or nothing would be left, so a request already
-    narrowed is not narrowed into something the model cannot act with.
+
+def _without_that_tool_in(tools: list[Any], name: str) -> list[Any] | None:
+    """`tools` without the one named, or None if that changes nothing.
+
+    None when it is not there or when removing it would leave nothing, so a list
+    already narrowed is not narrowed into something the model cannot act with.
     """
-    tools = list(getattr(request, "tools", None) or [])
-    if not tools:
+    kept = [tool for tool in tools if _named(tool) != name]
+    if len(kept) == len(tools) or not kept:
         return None
-    kept = [
-        tool
-        for tool in tools
-        if str(
-            getattr(tool, "name", "")
-            or (tool.get("name") if isinstance(tool, dict) else "")
-        )
-        != name
-    ]
+    return kept
+
+
+def _without_the_read_tools_in(tools: list[Any]) -> list[Any] | None:
+    """`tools` without the file readers, or None if that changes nothing."""
+    kept = [tool for tool in tools if _named(tool) not in _READ_TOOLS]
     if len(kept) == len(tools) or not kept:
         return None
     return kept
@@ -987,25 +992,6 @@ def _a_tool_withheld_notice(name: str, refusals: int) -> str:
         "genuinely in the way, say so in `blockers` and return your structured "
         "response."
     )
-
-
-def _without_the_read_tools(request: Any) -> list[Any] | None:
-    """The request's tools with the file readers removed, or None.
-
-    None when there is nothing to remove or nothing would be left to take it
-    away from, so a request that has already been narrowed is not narrowed
-    again into something the model cannot act with at all.
-    """
-    tools = list(getattr(request, "tools", None) or [])
-    if not tools:
-        return None
-    kept = [
-        tool
-        for tool in tools
-        if str(getattr(tool, "name", "") or (tool.get("name") if isinstance(tool, dict) else ""))
-        not in _READ_TOOLS
-    ]
-    return kept if len(kept) != len(tools) else None
 
 
 #: Sent on the call the read tool is taken away, because a tool that vanishes
@@ -1121,16 +1107,23 @@ def build_settled_answer_middleware(
                         stage_name or "?",
                         step_limit - _model_calls_used(messages),
                     )
-                if not correction and reading_nothing_new >= (
-                    READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
-                ):
-                    correction = _READ_TOOL_WITHHELD_NOTICE
-                # After the read check, so a stage doing both loses the reads
-                # first - they are the cheaper thing to take, and the write may
-                # still be the work this stage exists to do.
-                repeated = None if correction else _a_tool_refused_identically(messages)
-                if repeated is not None:
-                    correction = _a_tool_withheld_notice(*repeated)
+                # The two withholding rungs are independent. `repeated` used to
+                # be computed only when nothing else had produced a correction,
+                # and the read rung above produces one constantly - 114 times in
+                # run-be25a68e - so it starved this one completely: a stage that
+                # loops on `edit_artifact` loops on reads too, and the reads
+                # always won. Measured on run-ad4815da, which held an
+                # `edit_artifact` repeated past the threshold and never withheld
+                # it once. Both can apply on one call, and the tool list below is
+                # narrowed by each in turn.
+                repeated = None
+                if not correction:
+                    if reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
+                        correction = _READ_TOOL_WITHHELD_NOTICE
+                    repeated = _a_tool_refused_identically(messages)
+                    if repeated is not None:
+                        notice = _a_tool_withheld_notice(*repeated)
+                        correction = f"{correction}\n\n{notice}" if correction else notice
                 if not correction:
                     return handler(request)
                 overrides: dict[str, Any] = {}
@@ -1140,29 +1133,33 @@ def build_settled_answer_middleware(
                     # list holds, so the model is left bound to exactly one
                     # tool: the one that ends the stage.
                     overrides["tools"] = []
-                elif reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
-                    kept = _without_the_read_tools(request)
-                    if kept is not None:
+                else:
+                    kept = list(getattr(request, "tools", None) or [])
+                    narrowed = False
+                    if reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
+                        without_reads = _without_the_read_tools_in(kept)
+                        if without_reads is not None:
+                            kept, narrowed = without_reads, True
+                            logger.warning(
+                                "Stage %s has been refused %d redundant reads; "
+                                "withholding the read tool for the rest of it",
+                                stage_name or "?", reading_nothing_new,
+                            )
+                    if repeated is not None:
+                        without_it = _without_that_tool_in(kept, repeated[0])
+                        if without_it is not None:
+                            kept, narrowed = without_it, True
+                            logger.warning(
+                                "Stage %s has called `%s` %d times to the same "
+                                "refusal; withholding that one tool for the rest "
+                                "of it",
+                                stage_name or "?", repeated[0], repeated[1],
+                            )
+                    if narrowed:
                         overrides["tools"] = kept
-                        logger.warning(
-                            "Stage %s has been refused %d redundant reads; "
-                            "withholding the read tool for the rest of it",
-                            stage_name or "?", reading_nothing_new,
-                        )
-                elif repeated is not None:
-                    kept = _without_that_tool(request, repeated[0])
-                    if kept is not None:
-                        overrides["tools"] = kept
-                        logger.warning(
-                            "Stage %s has called `%s` %d times to the same "
-                            "refusal; withholding that one tool for the rest "
-                            "of it",
-                            stage_name or "?", repeated[0], repeated[1],
-                        )
-                    else:
-                        # Nothing was removed, so the notice would describe a
-                        # tool the model can still see and call. Pass the call
-                        # through rather than say something untrue about it.
+                    elif repeated is not None and not correction.strip():
+                        # Nothing was removed, so a notice would describe a tool
+                        # the model can still see and call.
                         return handler(request)
                 request = request.override(
                     messages=[*messages, {"role": "user", "content": correction}],

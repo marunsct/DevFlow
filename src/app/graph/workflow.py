@@ -1529,6 +1529,27 @@ def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
     )
 
 
+def _nothing_but_reasoning(message: Any) -> bool:
+    """Whether this reply hit the output ceiling having produced nothing at all.
+
+    Stricter than `_the_reply_was_cut_off_before_it_began`, which reports the
+    truncation flag alone and so is also true of a reply that said a great deal
+    and was cut off at the end. That difference decides whether a restart is
+    worth attempting: a model that wrote nothing will write nothing again,
+    because the ceiling is per reply, but one that was truncated mid-answer may
+    well land inside the budget on a second pass.
+
+    So this asks for what the name says - the flag, no content, and no tool call
+    - and only that case skips the restart. The looser check keeps choosing the
+    message, where naming the ceiling is right either way.
+    """
+    if not _the_reply_was_cut_off_before_it_began(message):
+        return False
+    if str(getattr(message, "content", "") or "").strip():
+        return False
+    return not (getattr(message, "tool_calls", None) or ())
+
+
 def _missing_structured_response(
     stage_name: str, result: dict[str, Any], *, attempts: int = 1
 ) -> str:
@@ -1898,14 +1919,40 @@ def _run_gated_agent(
             structured_response = nudged["structured_response"]
 
     if structured_response is None:
+        # One failure is not worth restarting for: a reply cut off at the output
+        # ceiling before it produced anything. The ceiling is per reply, so a
+        # fresh conversation reasons from the beginning and reaches it again,
+        # which is what `_it_spent_its_whole_output_budget` tells the operator in
+        # capitals - while the harness did it three times anyway.
+        #
+        # Recorded on run-fbe23618, which spent 3h23m reaching that conclusion,
+        # and reproduced on run-be25a68e: `test_round_2` after four sprints of
+        # work, three restarts, same ceiling, run failed. The remedy is a setting
+        # - a bigger output budget, or less reasoning - and no number of attempts
+        # substitutes for it. Failing now says the same thing an hour earlier and
+        # leaves the artifacts on disk either way.
+        out_of_room = _nothing_but_reasoning(
+            next(
+                (
+                    m
+                    for m in reversed(result.get("messages") or [])
+                    if getattr(m, "type", None) == "ai"
+                ),
+                None,
+            )
+        )
         # Start the stage over on a clean conversation rather than failing the
         # run. Clearing `pending_inner_thread_id` is what makes this a retry
         # instead of a loop: without it the resume path re-enters the very
         # conversation that failed, replays it, and fails identically - which is
         # exactly what happened on run-0b55ad49 until this existed.
-        restarted = _restart_on_a_fresh_conversation(
-            state, stage_name, inner_thread_id, "produced no structured response",
-            _repository_root(state),
+        restarted = (
+            None
+            if out_of_room
+            else _restart_on_a_fresh_conversation(
+                state, stage_name, inner_thread_id, "produced no structured response",
+                _repository_root(state),
+            )
         )
         if restarted is not None:
             return restarted

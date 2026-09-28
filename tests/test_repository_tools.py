@@ -779,13 +779,16 @@ def test_an_edit_sent_twice_is_told_it_already_landed(tmp_path: Path) -> None:
     )
     assert edit_approved_artifact(tmp_path, "app.js", find, replace)["status"] == "edited"
 
-    with pytest.raises(RepositoryToolError) as caught:
-        edit_approved_artifact(tmp_path, "app.js", find, replace)
+    # Not an error. The `find` is gone and the `replace` is present, which is
+    # the state the call asked for; see `_already_there`.
+    again = edit_approved_artifact(tmp_path, "app.js", find, replace)
 
-    message = str(caught.value)
-    assert "already been applied" in message
-    assert "at line 9" in message
-    assert "These lines differ" not in message, "the one fact that matters, alone"
+    assert again["status"] == "already_applied"
+    assert "at line 9" in again["detail"]
+    assert "These lines differ" not in again["detail"], "the one fact that matters, alone"
+    # The file is untouched: reporting the state is not claiming the write.
+    assert edit_approved_artifact.__name__  # keeps the import honest
+    assert (tmp_path / "app.js").read_text().count(replace) == 1
 
 
 def test_a_deletion_is_not_mistaken_for_an_edit_already_made(tmp_path: Path) -> None:

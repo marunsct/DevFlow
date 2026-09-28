@@ -1177,7 +1177,7 @@ _MAX_AMBIGUOUS_MATCHES_SHOWN = 4
 _REPLACE_LONG_ENOUGH_TO_RECOGNISE = 24
 
 
-def _already_applied(original: str, find: str, replace: str) -> str:
+def _already_applied(original: str, find: str, replace: str) -> int:
     """The message for an edit that has already been made, or "".
 
     Measured on run-0deeb8bf's `defect_fix_2_0`. At 14:15:33 it edited
@@ -1193,20 +1193,66 @@ def _already_applied(original: str, find: str, replace: str) -> str:
     text" is true, and the quoted nearest passage was its own edit, which reads
     like a near miss rather than like success. The file itself has the answer -
     what the model asked to put there is already there.
+
+    Returns the 1-based line where `replace` sits, or 0 when this is not an
+    edit that has already been made. A line number rather than a sentence,
+    because the caller answers with a success now and not with an error - see
+    `_already_there` for what that costs and why it changed.
     """
     if len(replace.strip()) < _REPLACE_LONG_ENOUGH_TO_RECOGNISE:
         # A short `replace` proves nothing by being present, and a deletion
         # (empty `replace`) has nothing to look for at all.
-        return ""
+        return 0
     if replace not in original:
-        return ""
-    line = original[: original.index(replace)].count("\n") + 1
-    return (
-        f" The file already contains the text you asked to put there, at line "
-        f"{line} - this edit has already been applied, which is why the text it "
-        "replaced is gone. Nothing was changed just now and nothing needs to be. "
-        "Read the file if you want to confirm it, then move on."
-    )
+        return 0
+    return original[: original.index(replace)].count("\n") + 1
+
+
+def _already_there(
+    target: Path, root: Path, relative_path: str, replace: str, line: int
+) -> dict[str, Any]:
+    """The answer to an edit whose text is already in the file.
+
+    This was an error until it was measured. Across 85 stored runs it fired 247
+    times in 46 of them, and the message it raised opened with "Could not find
+    that text" and only then explained that the edit was already made. Leading
+    with the failure is what the model answered: 41 of those 247 re-sent the
+    byte-identical edit immediately, which cannot do anything but fail again.
+
+    It also said "Read the file if you want to confirm it", and 65 stages did
+    exactly that. Eighteen of those reads were then refused by the repeated-read
+    guard - the harness inviting a read and denying it - and the invitation was
+    never worth anything, because this function only runs once `replace` has
+    been found in the file. The confirmation the model was sent to fetch had
+    already been made on its behalf.
+
+    So the edit is not a failure. The requested `find` is gone and the requested
+    `replace` is present: the file reads the way the call asked for it to read.
+    That is the success condition of a declarative edit, and reporting it as one
+    is what lets a stage move to its next change.
+
+    `status` is `already_applied` rather than `edited` because nothing was
+    written just now. No authorship is recorded for the same reason - whoever
+    made the edit was recorded when they made it, and claiming the write here
+    would credit this call for a change it did not make.
+    """
+    written = target.read_text(encoding="utf-8")
+    summary = replace[:80] + ("..." if len(replace) > 80 else "")
+    return {
+        "path": str(target.relative_to(root)),
+        "status": "already_applied",
+        "summary": summary,
+        "lines": _line_count(written),
+        "detail": (
+            f"This edit is already in '{relative_path}', at line {line}. It was "
+            "applied earlier, which is why the text in `find` is no longer "
+            "there. Nothing was written just now and nothing needed to be - the "
+            "file already reads the way you asked for, and this was checked "
+            "against its current contents, so there is nothing to confirm. "
+            "Move on to your next change. If you meant a further change to that "
+            "same passage, send the text that is there now as `find`."
+        ),
+    }
 
 
 def _best_matching_line(first: str, lines: list[str]) -> int | None:
@@ -1709,11 +1755,9 @@ def edit_approved_artifact(
             # Before anything else: the model may be re-sending an edit it
             # already made, in which case every other message here is a
             # distraction from the one fact that matters.
-            done = _already_applied(original, find, replace)
-            if done:
-                raise RepositoryToolError(
-                    f"Could not find that text in '{relative_path}'.{done}"
-                )
+            line = _already_applied(original, find, replace)
+            if line:
+                return _already_there(target, root, relative_path, replace, line)
 
             if len(find.strip()) < 10:
                 raise RepositoryToolError(

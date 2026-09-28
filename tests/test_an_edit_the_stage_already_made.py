@@ -66,6 +66,10 @@ def test_a_passage_this_stage_never_replaced_keeps_the_diff(project):
 def test_re_sending_the_whole_edit_keeps_its_own_message(project):
     """`_already_applied` is the better answer when `replace` is there too.
 
+    This also pins the precedence between the two checks, which is the point of
+    the test: the replacement record would also have something to say here, and
+    the whole-edit answer is the one that must come out.
+
     It needs a replacement long enough to prove its presence is not a
     coincidence - `_REPLACE_LONG_ENOUGH_TO_RECOGNISE`, 24 characters - so the
     replacement here is a realistic full line rather than a short call.
@@ -74,10 +78,13 @@ def test_re_sending_the_whole_edit_keeps_its_own_message(project):
     read_text_file(project, "a.test.js")
     _edit(project, LINE.rstrip("\n"), long_enough)
 
-    with pytest.raises(RepositoryToolError) as caught:
-        _edit(project, LINE.rstrip("\n"), long_enough)
+    # Both checks could answer this call. `_already_applied` still wins, and
+    # it now wins with a success rather than an error: the whole edit was
+    # re-sent, so the file already reads the way it asks for.
+    again = _edit(project, LINE.rstrip("\n"), long_enough)
 
-    assert "already been applied" in str(caught.value)
+    assert again["status"] == "already_applied"
+    assert "already replaced it earlier in this stage" not in again.get("detail", "")
 
 
 def test_a_short_replacement_falls_to_the_replacement_record(project):

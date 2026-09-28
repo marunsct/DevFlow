@@ -37,7 +37,10 @@ PREVENTED_DAMAGE = (
     "Node cannot parse",
     "Refusing to write",
     "Refusing to change",
-    "already been applied",
+    # "already been applied" was here until an edit already in the file stopped
+    # being a failure at all. It is now a success - `already_applied` - so it
+    # never reaches this classification, and a marker no tool emits would only
+    # rot. See `_already_there` in `app.tools.repository`.
     "exactly as it is",
     "already contained exactly",
     "is a test, and tests are part of what",

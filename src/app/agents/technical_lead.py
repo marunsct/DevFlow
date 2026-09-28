@@ -236,6 +236,42 @@ class MilestonePlanOutput(BaseModel):
         )
 
 
+def _a_change_asked_for_twice(comments: list[str]) -> str:
+    """The note for a requested change that is unchanged from last round, or "".
+
+    `revision_comments` accumulates, so a lead on its second revision is handed
+    the same words twice and nothing says the measurement did not move. Round two
+    then reads exactly like round one and is answered the same way.
+
+    Measured on run-ad4815da, which died on the revision cap. Its first two
+    milestone reviews were byte-identical, both blocking on "The product exceeds
+    the stated 500-line code limit ... 506 lines of code" - six lines over, asked
+    for twice in the same words. The third round's plan got under the limit by
+    deleting `updateTask`, which the test suite still called, so `npm test`
+    exited 1 and the run stopped there.
+
+    So this says two things: that the change is a repeat, and that meeting a size
+    limit by removing delivered behaviour is not meeting it. Both come from what
+    that run actually did.
+    """
+    trimmed = [" ".join(str(comment).split()) for comment in comments if str(comment).strip()]
+    if len(trimmed) < 2 or trimmed[-1] != trimmed[-2]:
+        return ""
+    return (
+        "\n\nTHIS IS THE SAME CHANGE YOU WERE GIVEN LAST ROUND, WORD FOR WORD.\n"
+        "The review re-measured and got the same answer, so whatever the previous "
+        "plan assigned did not move it. Assigning the same task again in the same "
+        "terms will not either. Name the file and the specific edit this time, and "
+        "give it to a specialist who can make exactly that edit.\n"
+        "If the change is a size or count limit: meet it by removing duplication, "
+        "dead code, comments or over-long constructs. Do NOT meet it by deleting "
+        "behaviour the product has already delivered - the tests that cover it "
+        "will fail, the promise in the intake goes unmet, and the next review "
+        "blocks on that instead. That is what happened the last time this limit "
+        "was answered by deletion."
+    )
+
+
 def build_milestone_revision_request(
     previous_plan_json: str, comments: list[str]
 ) -> dict[str, list[dict[str, str]]]:
@@ -272,7 +308,8 @@ def build_milestone_revision_request(
                 "naming the task that took it. If you cannot name a task for a change, "
                 "you have not assigned it yet.\n"
                 "- Fixing what the review raised comes before adding new work. Do not "
-                "add new tests or features while a reported failure is unfixed.",
+                "add new tests or features while a reported failure is unfixed."
+                + _a_change_asked_for_twice(comments),
             }
         ]
     }

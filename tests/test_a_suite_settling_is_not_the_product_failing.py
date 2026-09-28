@@ -136,8 +136,16 @@ def test_the_ceiling_is_derived_from_the_budget() -> None:
 
 
 def test_a_passing_round_still_clears_nothing_unexpected() -> None:
+    """A clean round after the defect was fixed costs nothing.
+
+    The defect is marked fixed first, as `defect_remediation` does. A clean round
+    over a defect still open is a different case, and it is charged - see
+    `test_a_defect_left_open_under_green_rounds`."""
+    from app.sprint import mark_defect_fixed
+
     cycle = start_remediation("a sprint", max_attempts=3)
     cycle = _round(cycle, [_defect("app.js")])
+    cycle = mark_defect_fixed(cycle, 0, regression_test="app.test.js")
     cycle = _round(cycle, [])
 
     assert cycle.attempt == 1

@@ -227,8 +227,18 @@ def record_test_run(
             rounds than any budget allows, so the caller pauses the sprint with
             an actionable error instead of looping forever.
     """
+    # A round that passes while an earlier defect is still open has not cleared
+    # the sprint: the workflow sends it straight back to remediation. Both
+    # bounds below were written for failing rounds only, and `defect_remediation`
+    # leaves a defect open on purpose when its fix names no regression test,
+    # trusting "the next test round will count this as another failed attempt".
+    # The next round passed. Measured on one run: a defect no stage could close
+    # looped test_round_3 -> defect_fix_4_3 -> test_round_4 ... test_round_7 ->
+    # defect_fix_8_3 with every round green and no limit ever reached.
+    still_open = any(getattr(d, "status", "") == "open" for d in cycle.defects)
+    cleared = passed and not still_open
     rounds_so_far = len(cycle.test_runs) + 1
-    if not passed and rounds_so_far > cycle.max_attempts * ROUNDS_PER_ATTEMPT_CEILING:
+    if not cleared and rounds_so_far > cycle.max_attempts * ROUNDS_PER_ATTEMPT_CEILING:
         raise RemediationLimitExceeded(
             f"Sprint '{cycle.sprint_goal}' has run {rounds_so_far} verification "
             f"rounds, the ceiling for a sprint allowed {cycle.max_attempts} "
@@ -237,8 +247,8 @@ def record_test_run(
             "suite is not settling. A human must intervene."
         )
 
-    next_attempt = cycle.attempt + (0 if passed or not charge_the_budget else 1)
-    if not passed and next_attempt > cycle.max_attempts:
+    next_attempt = cycle.attempt + (0 if cleared or not charge_the_budget else 1)
+    if not cleared and next_attempt > cycle.max_attempts:
         raise RemediationLimitExceeded(
             f"Sprint '{cycle.sprint_goal}' has failed remediation {cycle.attempt} time(s), "
             f"reaching the limit of {cycle.max_attempts} attempts. Escalating instead of "

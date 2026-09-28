@@ -172,3 +172,18 @@ class TestTheThresholdsAreUnchanged:
             < REPEATED_READS_BEFORE_NAMING_THE_EXIT
             < REPEATED_READS_BEFORE_REFUSING
         )
+
+
+def test_the_exit_notice_claims_nothing_the_tally_does_not_measure(a_root, in_one_stage):
+    """The tally counts reads of unchanged content and is never reset by a write.
+
+    The notice said "and written nothing between them", and one run's
+    `defect_fix_1_0` was told so after writing three files between the reads.
+    """
+    for _ in range(REPEATED_READS_BEFORE_NAMING_THE_EXIT):
+        _backend(a_root)._count_a_repeated_read()
+
+    notice = _backend(a_root)._the_way_out()
+
+    assert "written nothing" not in notice
+    assert "unchanged" in notice

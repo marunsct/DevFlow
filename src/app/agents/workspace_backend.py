@@ -853,9 +853,12 @@ class _NoticingRepeats:
         if self._repeated_reads_so_far() < REPEATED_READS_BEFORE_NAMING_THE_EXIT:
             return ""
         return (
+            # Only what is true. It said "and written nothing between them", but
+            # the tally counts unchanged content and is never reset by a write:
+            # one run's `defect_fix_1_0` had written three files between the
+            # reads it was told it had written nothing between.
             "\n\n[You have now re-read files this stage had already been given "
-            f"{self._repeated_reads_so_far()} times, and written nothing between "
-            f"them. "
+            f"{self._repeated_reads_so_far()} times, unchanged each time. "
             "Reading again cannot tell you anything new: nothing has changed "
             "these files since you last saw them. There are two ways out and "
             "both end this stage. If you have what you need, return your "

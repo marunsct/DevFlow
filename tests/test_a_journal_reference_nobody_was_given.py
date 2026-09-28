@@ -265,3 +265,35 @@ class TestAReferenceThatIsAPathWithSomethingAfterIt:
         assert _the_files_a_reference_names("task-manager/app.js (188 lines)") == ["app.js"]
         assert _the_files_a_reference_names("app.spec.js lines 315-340") == ["app.spec.js"]
         assert _the_files_a_reference_names("nothing here") == []
+
+
+class TestASearchOfAWorkspaceFile:
+    """One run's `specialist_backend_0` passed a file path as the reference with
+    `search: "toggle-btn"`, was told to use `read_file`, and sent the identical
+    call again: it was searching, not reading."""
+
+    def test_the_note_names_the_grep_call_it_wanted(self, tmp_path):
+        target = tmp_path / "task-manager/tests/e2e/todo.spec.ts"
+        target.parent.mkdir(parents=True)
+        target.write_text("x")
+
+        note = _and_a_path_is_read_with_read_file(
+            "task-manager/tests/e2e/todo.spec.ts", str(tmp_path), "toggle-btn"
+        )
+
+        assert "`grep`" in note
+        assert '"toggle-btn"' in note
+        assert "task-manager/tests/e2e/todo.spec.ts" in note
+        assert "`read_file`" not in note
+
+    def test_without_a_search_it_is_still_a_read(self, tmp_path):
+        target = tmp_path / "app.js"
+        target.write_text("x")
+
+        assert "`read_file`" in _and_a_path_is_read_with_read_file("app.js", str(tmp_path), "")
+
+    def test_a_missing_file_is_still_missing(self, tmp_path):
+        note = _and_a_path_is_read_with_read_file("app.js", str(tmp_path), "needle")
+
+        assert "no file of that name" in note
+        assert "`grep`" not in note

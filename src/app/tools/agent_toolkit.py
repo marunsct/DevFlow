@@ -597,7 +597,9 @@ def _the_first_file_named(repo_root: str, wanted: str) -> str:
 
 
 
-def _and_a_path_is_read_with_read_file(reference: str, repo_root: str | None = None) -> str:
+def _and_a_path_is_read_with_read_file(
+    reference: str, repo_root: str | None = None, search: str = ""
+) -> str:
     """The sentence for a reference that is really a workspace path, or "".
 
     6 of the 28 failed calls across the current generation of runs passed a path
@@ -632,6 +634,18 @@ def _and_a_path_is_read_with_read_file(reference: str, repo_root: str | None = N
             "workspace, use `read_file`."
         )
     where = _somewhere_in_the_workspace(repo_root, candidate)
+    if where and str(search or "").strip():
+        # The stage was searching, not reading. Told to `read_file`, one run's
+        # `specialist_backend_0` sent the identical call again - a file path as
+        # the reference and `search: "toggle-btn"` - because reading the whole
+        # file was not what it wanted. The call that does what it wanted is
+        # `grep`, with both of the values it already gave.
+        return (
+            f" '{candidate}' looks like a path rather than a journal reference: a "
+            f"reference ends in eight random characters. That file is in the "
+            f"workspace at '{where}'. To search it, call `grep` with pattern "
+            f"{json.dumps(str(search).strip())} and path '{where}'."
+        )
     if where:
         return (
             f" '{candidate}' looks like a path rather than a journal reference: a "
@@ -800,7 +814,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                         "Pass one of those names exactly. The reference ends in "
                         "eight random characters and cannot be guessed from the "
                         "command that produced it."
-                        + _and_a_path_is_read_with_read_file(reference, repo_root)
+                        + _and_a_path_is_read_with_read_file(reference, repo_root, search)
                         + repeated
                     )
                 }
@@ -811,7 +825,7 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
                     "large for the conversation, and a command whose output fitted "
                     "has nothing more to read. Entries are also deleted after the "
                     "configured retention window."
-                    + _and_a_path_is_read_with_read_file(reference, repo_root)
+                    + _and_a_path_is_read_with_read_file(reference, repo_root, search)
                     + repeated
                 )
             }

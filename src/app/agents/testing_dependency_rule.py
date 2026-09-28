@@ -58,24 +58,15 @@ TESTING_DEPENDENCY_RULE = """Testing is exempt from the product's dependency con
   dependencies". That answer is always wrong, in every language and stack. A
   test suite that needs a package installs it in the ecosystem's test-only
   scope, which ships to nobody, costs the user nothing and breaks no constraint
-  in the brief:
-      Node     -> `devDependencies`             (`npm i -D ...`)
-      Python   -> a dev/test dependency group    (`[dependency-groups]`,
-                   `[project.optional-dependencies]`, or a test extra)
-      Java/Kt  -> Maven `<scope>test</scope>`, Gradle `testImplementation`
-      Rust     -> `[dev-dependencies]`
-      PHP      -> `require-dev`
-      Ruby     -> `group :test`
-      .NET     -> a `PackageReference` used only by the test project
-      Go       -> nothing; the toolchain's tests are part of the module
-  If a constraint appears to rule out testing, the constraint has been read as
-  covering something it does not.
+  in the brief. The stack's own guidance, appended under FRAMEWORK
+  CAPABILITIES, names that scope for its language. If a constraint appears to
+  rule out testing, the constraint has been read as covering something it does
+  not.
 - A TEST FRAMEWORK IS CHOSEN FOR WHAT IT CAN VERIFY, NOT FOR WHAT IT INSTALLS.
-  For frontend web UI code that means Playwright (`@playwright/test`), the only
-  thing here that can exercise the real DOM; a brief forbidding dependencies
-  does not make jsdom or a hand-written DOM stub adequate, and it never makes
-  "manual testing" or "no test framework" an answer. For other stacks use the
-  language's own framework - pytest, `go test`, JUnit, and so on.
+  A user interface is verified by driving the real interface, and a brief
+  forbidding dependencies does not make a mock of its rendering layer adequate;
+  it never makes "manual testing" or "no test framework" an answer. The stack's
+  own guidance names the framework for its language and interface.
 - THE USER MAY CHOOSE A TESTING STACK. A request for a specific test framework
   or tool is honoured as given, and it is not overruled by a dependency
   constraint in the brief. The two are not in conflict: one is about the

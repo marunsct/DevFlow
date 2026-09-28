@@ -118,9 +118,15 @@ def test_the_mandate_a_stage_reads_really_does_require_the_runner() -> None:
     be revisited rather than kept passing.
     """
     from app.agents.testability import TESTABILITY_RULE
+    from app.plugins.seed import SEED_INSTRUCTIONS
 
-    assert "MUST USE Playwright" in TESTABILITY_RULE
-    assert "npm i -D @playwright/test" in TESTABILITY_RULE
+    # Every stack is told a user interface is verified through the real one...
+    assert "verify it through the real interface with an automated driver" in " ".join(
+        TESTABILITY_RULE.split()
+    )
+    # ...and a page's own guidance names the runner and how to install it.
+    assert "with Playwright" in SEED_INSTRUCTIONS["html"]
+    assert "npm i -D @playwright/test" in SEED_INSTRUCTIONS["html"]
 
 
 def test_the_specialist_prompt_carries_the_mandate() -> None:

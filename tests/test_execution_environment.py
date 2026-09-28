@@ -196,7 +196,7 @@ def test_the_refusal_says_what_to_choose_instead():
     # The message used to end "'none' is valid only if the product genuinely
     # needs no verification", which is the sentence the selector took up.
     assert "'none' is valid" not in message
-    assert "install nothing" in message
+    assert "installs nothing" in message
 
 
 def test_the_validator_explains_why_the_prompt_was_not_enough():
@@ -229,7 +229,8 @@ def test_the_selector_prefers_a_runner_the_runtime_provides():
     flat = " ".join(_SYSTEM_PROMPT.split())
 
     assert "Prefer a runner the runtime already provides" in flat
-    assert "node --test" in flat
+    # Named for every language rather than by one runtime's command.
+    assert "A runner that ships with the language's runtime costs nothing" in flat
     # The measurement stays; the run id does not. It cannot be looked up from
     # inside a run, and the docstring above is where it is kept for whoever
     # changes this rule next.

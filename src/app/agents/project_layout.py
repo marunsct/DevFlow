@@ -29,20 +29,19 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
   one as the whole project cannot then write the other parts.
 - One language and a handful of files? Keep it FLAT. A five-file product needs
   no folders:
-      task-manager/index.html
-      task-manager/app.js
-      task-manager/style.css
-      task-manager/app.test.mjs
-      task-manager/package.json
+      task-manager/<entry file>
+      task-manager/<module files>
+      task-manager/<test files>
+      task-manager/<the language's manifest>
 - More than one tier, or more than one language? One directory per tier, all
   inside the project:
       task-dashboard/backend/      server code and its manifest
       task-dashboard/frontend/     the interface and its manifest
       task-dashboard/db/           migrations and schema
 - ONE LANGUAGE PER DIRECTORY. A directory is what a manifest and a test runner
-  address: `requirements.txt` and `package.json` in the same folder means
-  neither runner sees a complete project, and `test_auth.py` beside
-  `auth.test.js` means no single command runs the tests. Put each language in
+  address: two languages' manifests in the same folder means neither runner
+  sees a complete project, and two languages' test files side by side means
+  no single command runs the tests. Put each language in
   its own directory, with its own manifest and its own tests.
 - Tests live beside the code they test, inside the project. A suite at the
   workspace root is one the project's runner never collects.

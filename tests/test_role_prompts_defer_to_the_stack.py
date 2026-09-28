@@ -49,7 +49,7 @@ def test_the_backend_is_told_what_a_serverless_stack_means():
 
 def test_the_database_role_is_told_what_browser_storage_means():
     prompt = _ROLE_DESCRIPTIONS["database"].lower()
-    assert "localstorage" in prompt
+    assert "storage built into the browser or the device" in prompt
     assert "no migration to run" in prompt
 
 

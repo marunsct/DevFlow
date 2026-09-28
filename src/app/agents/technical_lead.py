@@ -196,8 +196,8 @@ class MilestonePlanOutput(BaseModel):
         default_factory=list,
         description=(
             "When revising after a review, one line per requested change naming the "
-            "delegated task that will make it, e.g. 'Add jest.setup.js polyfill -> task 3 "
-            "(testing)'. Empty on a first plan. Purpose: a requested change that no task "
+            "delegated task that will make it, e.g. 'Add the missing test setup file -> "
+            "task 3 (testing)'. Empty on a first plan. Purpose: a requested change that no task "
             "owns is a change nobody makes. Producer: Technical Lead. Consumer: the "
             "workflow, which refuses a revision that assigns nothing."
         ),
@@ -429,7 +429,7 @@ Responsibilities:
   write discards the first. Measured across the stored runs: 17 of 25 sprint
   plans assign one file to more than one specialist, and 157 writes were one
   stage writing byte-for-byte what a different stage had already written - three
-  specialists each wrote the same `package.json`, `app.js` and test file on one
+  specialists each wrote the same manifest, entry file and test file on one
   run. If two roles genuinely need the same file, say in each task which part of
   it that task owns, so neither has to rewrite the whole thing.
 - A role whose part of the product does not exist has nothing to delegate. A

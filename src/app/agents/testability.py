@@ -72,109 +72,71 @@ and wiring is the part a test does not need to load.
 """
 
 TESTABILITY_RULE = """Testability - this decides whether the tests can run at all:
-- The thing that breaks a headless test is a module that reads or writes the DOM
-  while it is being loaded. It reaches for `document`, `window` or `localStorage`
-  at module scope, so the import itself runs that code and throws before any of
-  your assertions are reached - and the only fix left to the test is to skip the
-  import and copy the code, which tests nothing.
-- FOR FRONTEND WEB UI CODE ONLY: YOU MUST USE Playwright (`@playwright/test`) to verify DOM interactions and application logic end-to-end. Do NOT use jsdom or Node-based DOM mocks, as they cause false positives and break the real UI. To test DOM logic, write Playwright tests that interact with the real browser. Install it using `npm i -D @playwright/test` and `npx playwright install chromium`. Run it with `npx playwright test`, and use a BUILT-IN reporter - `--reporter=line` or `--reporter=list`. Do NOT pass `--reporter=tap`: Playwright resolves that name to an npm package called `tap`, which is not installed, and the whole suite dies with "Cannot find module 'tap'" before a single test runs.
-- A PLAYWRIGHT TEST CANNOT OPEN THE PAGE WITH `file://`. Chromium blocks an ES
-  module script loaded from a `file://` URL on CORS grounds - "Cross origin
-  requests are only supported for protocol schemes: ... http, https" - so the
-  page loads, the script never runs, and the test times out waiting for a
-  global the module never set. The page is not broken and neither is the test;
-  the URL scheme is. A suite that waited on a global set by such a module,
-  served over `file://`, failed on every run of it.  Load the page over `http://localhost:<port>` instead, and let Playwright
-  manage the server itself - declare a `webServer` in `playwright.config.ts`
-  and it starts the server, runs the suite, and stops it again, all inside the
-  one `npx playwright test` command that terminates on its own:
-      webServer: {
-        command: 'npx serve .',       // or `node server.mjs`
-        url: 'http://localhost:3000',
-        reuseExistingServer: false,
-      }
-  Do NOT run a static server as a command of its own - it never exits, it is
-  refused, and nothing connects to it. A page that must also work when opened
-  directly from the filesystem is a separate requirement; it is not tested by
-  a `file://` Playwright test that cannot load it.
-- FOR ALL OTHER LANGUAGES/STACKS (Python, Go, Java, CLI apps, backend, etc): Use the testing framework appropriate to the language (e.g., PyTest, Go test, JUnit). Ensure tests are runnable and output results clearly.
-- NEVER remove or disable core application logic (including UI logic) to satisfy a test framework's limitations (e.g., headless test errors). If a test environment cannot support a feature, fix the test environment or mock appropriately, rather than deleting the code under test.
-- ALWAYS compare the output files against requirements and logs. Ensure that no previously working features were silently dropped.
-- Keep the pure logic apart from I/O or DOM wiring. Put state and rules in functions that take their input as
-  arguments and return a value. Export them for unit testing.
-- Do the DOM wiring in one `init()` (or `main()`) that the page calls. Guard
-  the call so importing the file does not run it:
-      if (typeof document !== 'undefined') init();
-  A bare `init();` at the end of the file is the whole problem - the import
-  itself touches the DOM and throws before a test reaches anything.
-- EXPORT the pure functions. A test that cannot import them will copy them
-  instead, and a copy passes whatever your code does. If you find yourself
-  writing "this test defines the same logic inline", stop: that test proves
-  nothing, and it will be rejected.
-- CALL THE FUNCTION YOU IMPORTED. This defect survives importing. A test that
-  imports the module and then asserts `typeof mod.addTask === 'function'` has
-  checked that an export exists, which is not testing it; if the assertions
-  about what the function DOES run against a `function addTask` declared in the
-  test file, they still pass whatever your code does. When a name appears both
-  as an import and as your own declaration of the same name, the tests are
-  calling yours. Import it once, call that, and declare nothing of that name.
-- "IT DID NOT THROW" IS NOT A RESULT. `assert.doesNotThrow(() => saveTasks(x))`
-  passes whether the function saves anything or nothing at all; so does a test
-  that only checks `typeof`. Assert on what the function RETURNED, or on the
-  state it changed - read it back and compare. Observed: a save function was
-  covered only by a "does not throw" assertion, inside a block named for a
-  round-trip, and replacing its whole body with `return <its argument>` left
-  all 33 tests passing. Persistence was an acceptance criterion of that brief.
+- The thing that breaks a headless test is a module that does its I/O while it
+  is being loaded - it touches a page, a database, the network or the file
+  system at the top level - so the import itself runs that code and fails
+  before any of your assertions are reached, and the only fix left to the test
+  is to skip the import and copy the code, which tests nothing.
+- Use the test tooling the stack's own guidance names. It is appended to these
+  instructions under FRAMEWORK CAPABILITIES when the stack has any: which runner
+  ships with the language, where a test-only dependency goes, and how a user
+  interface is driven. For a user interface, verify it through the real
+  interface with an automated driver - a mock of the rendering layer passes
+  while the real thing is broken.
+- NEVER remove or disable core application logic (including UI logic) to satisfy
+  a test framework's limitations. If a test environment cannot support a
+  feature, fix the test environment or substitute the boundary, rather than
+  deleting the code under test.
+- ALWAYS compare the output files against requirements and logs. Ensure that no
+  previously working features were silently dropped.
+- Keep the pure logic apart from I/O and UI wiring. Put state and rules in
+  functions that take their input as arguments and return a value.
+- Do the wiring in one entry point (`init()`, `main()`, the framework's own)
+  that the program calls, guarded so that importing the module does not run it.
+- EXPORT the pure functions - make them importable in whatever way the language
+  does that. A test that cannot import them will copy them instead, and a copy
+  passes whatever your code does. If you find yourself writing "this test
+  defines the same logic inline", stop: that test proves nothing, and it will
+  be rejected.
+- CALL THE FUNCTION YOU IMPORTED. A test that imports the module and then only
+  checks that a name exists has not tested it; and if its assertions about what
+  the function DOES run against a same-named function declared in the test
+  file, they pass whatever your code does. Import it once, call that, and
+  declare nothing of that name.
+- "IT DID NOT THROW" IS NOT A RESULT. An assertion that a call raised no error
+  passes whether the function saved anything or nothing at all; so does one that
+  checks only a type. Assert on what the function RETURNED, or on the state it
+  changed - read it back and compare. Observed: a save function covered only by
+  such an assertion could have its whole body replaced by `return <its
+  argument>` with every test still passing, and persistence was an acceptance
+  criterion of that brief.
 - THE TEST FOR THIS: if you replaced the body of the function with
   `return <its first argument>`, would any test fail? If not, that function is
   not tested, however many tests name it.
-- IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST. "The
-  browser's random ids may differ, so I re-implemented it here" is not a reason
-  to copy - it is a reason to take the id generator as an argument, or to
-  assert on the shape of what comes back rather than the exact value. Copying
-  turns an awkward design into a suite that proves nothing, and the awkward
-  design ships unchanged.
-- THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN. JavaScript inside a
-  `<script>` tag in your HTML is unreachable: no runner can import it, so the
-  only way to test it is to copy it, and a copy passes whatever your code does.
-  One `app.js` beside `index.html` costs nothing - it is still a single-page
-  application, still no build step, still no dependency - and it is the whole
-  difference between a suite that tests the product and one that tests itself.
-- IF YOU USE `export`, DECLARE IT. A `.js` file is CommonJS unless something
-  says otherwise, so a test importing it gets "does not provide an export
-  named ..." and the exports are invisible - the code looks importable and is
-  not. Ship a `package.json` containing `{"type": "module"}` beside it, or name
-  the files `.mjs`. Neither installs anything.
-- THE SAME `package.json` MUST SAY HOW TO RUN THE TESTS. If you are writing one
-  at all and the project has tests, give it
-  `"scripts": {"test": "node --test <your test files>"}`. Without it `npm test`
-  answers "missing script: test", so the suite is reachable only by someone who
-  already knows the command - and to anyone else the project reads as having no
-  tests. Measured across the delivered workspaces: five of the nine that ship a
-  manifest alongside tests have no way to run them by the obvious command.
-- WHERE THE PRODUCT RUNS IS NOT WHERE THE TESTS RUN. A page that ships as
-  static files and runs in a browser is still tested with `node --test` on the
-  machine that builds it. "Static-only deployment, so no Node runtime, so no
-  automated tests" is three steps of correct reasoning ending somewhere false:
-  the runtime the tests need is the developer's, and it is already here.
-  Observed: an ADR that decided against a test framework on exactly that
-  ground cost two architecture revisions, and the same argument made again was
-  caught in review. Deployment
-  constrains what you SHIP. It does not constrain what you can RUN while
-  building it.
-- A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. `export` and
-  `<script type="module">` are part of the browser and part of Node; they
-  install nothing and add no package. A brief that forbids external
-  dependencies does not forbid them. Choosing "no module system, single global
-  scope" to honour such a constraint gives up every real test in exchange for
-  nothing, because a test runner can only test what it can import.
+- IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST. A
+  non-deterministic value (an id, a clock) is a reason to take its source as an
+  argument, or to assert on the shape of what comes back - not to re-implement
+  the function in the test. Copying turns an awkward design into a suite that
+  proves nothing, and the awkward design ships unchanged.
+- THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN. Logic embedded in markup, a
+  template or a page cannot be imported by any runner, so the only way to test
+  it is to copy it. A separate source file beside it costs nothing.
+- WHERE THE PRODUCT RUNS IS NOT WHERE THE TESTS RUN. The runtime the tests need
+  is the developer's, and it is already here. Deployment constrains what you
+  SHIP; it does not constrain what you can RUN while building it.
+- A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. The language's own way of
+  exporting and importing installs nothing and adds no package, so a brief that
+  forbids external dependencies does not forbid it. Giving it up to honour such
+  a constraint gives up every real test in exchange for nothing, because a test
+  runner can only test what it can import.
 - Reach storage through a small adapter passed in as an argument, so a test can
-  hand it a plain object instead of mocking a browser API. The same holds for a
+  hand it a plain object instead of mocking a platform API. The same holds for a
   database: nothing is running here, so code that talks to PostgreSQL directly
   is code no test can execute. Put the queries behind an adapter and let the
   tests substitute it.
 - The test for a rule then imports the function and calls it. Only the wiring
-  needs a DOM, and a thin wiring layer is worth far less test effort than the
-  rules are."""
+  needs the real environment, and a thin wiring layer is worth far less test
+  effort than the rules are.
+"""
 
 __all__ = ["TESTABILITY_RULE"]

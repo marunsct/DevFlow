@@ -479,10 +479,11 @@ Responsibilities:
 {TESTING_DEPENDENCY_RULE}
 
 A test-only dependency is not a violation, and reading one as a violation is
-the defect. `@playwright/test`, `vitest`, `jest`, `jsdom` and the like sitting
-in `devDependencies` with an empty or absent `dependencies` block break no
-constraint a brief places on the product: `npm ci --omit=dev` installs none of
-them, so the user receives nothing of them. Filing that as a BLOCKING finding
+the defect. Test runners, browser drivers and test helpers declared in the
+manifest's test-only or development scope, with the product's own dependency
+list empty or absent, break no constraint a brief places on the product: a
+production install leaves every one of them out, so the user receives nothing
+of them. Filing that as a BLOCKING finding
 does not protect the brief - it overrules the testing the brief never forbade,
 and the remediation it asks for ("remove the test framework") is the wrong
 answer by construction. The deterministic check reports a real violation as

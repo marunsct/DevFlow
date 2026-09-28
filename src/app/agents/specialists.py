@@ -83,9 +83,9 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "actually chose: where it names a database server or an ORM, use "
         "`run_terminal_command` to install the driver, generate the client, run "
         "the migrations, and verify there are no syntax or type errors. Where "
-        "the stack's storage lives in the browser - localStorage, "
-        "sessionStorage, IndexedDB - there is no server, no driver and no "
-        "migration to run: model the data in the code the page loads."
+        "the stack's storage lives in the client itself - storage built into "
+        "the browser or the device - there is no server, no driver and no "
+        "migration to run: model the data in the code the client loads."
     ),
     "backend": (
         "You are the Backend specialist. You MUST write fully functional server "
@@ -105,11 +105,12 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "run the tests rather than only describing them. Do NOT introduce a "
         "different test runner: one the stack did not choose fails on its own "
         "setup rather than on the product. If the stack names none, verify with "
-        "what the stack can run natively (e.g. `node --test`). "
+        "the runner that ships with the stack's language. "
         "CRITICAL: Do NOT remove, disable, or 'separate' core application logic or "
         "UI logic to satisfy test environment limitations (e.g. headless test errors "
-        "or lack of a DOM). You must test the real UI logic end-to-end, usually "
-        "by introducing a browser-based test framework like Playwright. Report "
+        "or a missing display). You must test the real UI logic end-to-end, "
+        "through the real interface, with the driver the stack's own guidance "
+        "names. Report "
         "every failure as a structured defect in the `defects` field, naming "
         "the specialist role that must fix it, so the workflow can track and "
         "route it."
@@ -234,7 +235,7 @@ class VerificationRun(BaseModel):
         # `["pytest", "-q"]` was the example, and `pytest` is not in the
         # execution image - an example is strong guidance, and this one pointed
         # at a program that is not there.
-        description='The argv you ran, e.g. ["npm", "test"] or ["node", "--test"].'
+        description='The argv you ran, e.g. ["<program>", "<arg>", ...].'
     )
     exit_code: int = Field(
         validation_alias=AliasChoices("exit_code", "returncode", "exitCode", "return_code"),
@@ -296,9 +297,10 @@ class SpecialistOutput(BaseModel):
 NO_SHELL_NOTE = (
     "There is no shell in this environment: `sh`, `bash` and shell scripts "
     "cannot be run, and nor can `cd`, pipes or `&&`. A build or test step must "
-    "therefore be a `package.json` script run with `npm run <name>`, or a "
-    "program run directly (`node`, `python3`) - never a .sh file. `make`, "
-    "`pnpm` and `yarn` are not installed here either.\n"
+    "therefore be a script declared in the project's own manifest and run "
+    "through its package manager, or a program run directly with "
+    "`run_terminal_command` - never a .sh file. `make`, `pnpm` and `yarn` are "
+    "not installed here either.\n"
 )
 """The constraint that is invisible until a stage has already spent itself.
 
@@ -727,8 +729,8 @@ def build_test_run_request(
         "already chose. Use the run_validation tool to actually execute them.\n\n"
         "Do not install a test framework or add a dependency. If the stack above names "
         "no testing framework, that was a decision - the product is meant to be "
-        "verified the way the stack says, and `npm init` or `pip install` here creates "
-        "the very dependency the brief ruled out. If you cannot run a check without "
+        "verified the way the stack says, and initialising a package manager or "
+        "installing a package here creates the very dependency the brief ruled out. If you cannot run a check without "
         "new tooling, report that as a blocker instead of installing it.\n\n"
         "Report EVERY failure in the `defects` field, each with a severity, reproduction "
         "steps, expected behavior, actual behavior, affected files, and the specialist "
@@ -816,7 +818,8 @@ def build_defect_fix_request(
 #: the reason `role_agent` withholds the writing rules from a read-only agent.
 _VALIDATION_NOTE = (
     "- `run_validation` runs the project's test command inside the project "
-    "directory for you, which is the one place `npm test` resolves correctly. "
+    "directory for you, which is the one place the project's own test command "
+    "resolves correctly. "
     "Prefer it over `run_terminal_command` for running tests.\n"
 )
 
@@ -852,7 +855,7 @@ Constraints:
 - You may use the `run_terminal_command` tool to execute shell commands, build code, install dependencies, and perform end-to-end development.
 - There is no shell, so `cd`, `&&`, `|` and `$(...)` do not work and `cd` is not
   a program you can run. To act on a subdirectory, pass `working_directory` -
-  for a project directory named `myapp`, run `["npx", "jest"]` with
+  for a project directory named `myapp`, run `["<program>", "<args>"]` with
   `working_directory="myapp"` rather than trying to change into it first.
 - Commands run at the workspace root unless you pass `working_directory`. Run
   package-manager and test commands in the project directory, not at the root:

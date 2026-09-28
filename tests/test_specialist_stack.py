@@ -149,7 +149,7 @@ def test_the_test_round_is_told_not_to_install_a_framework():
     flat = " ".join(content.split())
 
     assert "Do not install a test framework" in flat
-    assert "npm init" in flat
+    assert "initialising a package manager" in flat
     assert "report that as a blocker instead of installing it" in flat
 
 
@@ -228,7 +228,7 @@ def test_the_refusal_names_the_free_option() -> None:
         TechnologyStack.model_validate(_stack(testing_framework="None"))
 
     message = str(caught.value)
-    assert "node --test" in message
+    assert "ship a test runner with their runtime" in message
     assert "nothing to install" in message
 
 

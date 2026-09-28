@@ -68,8 +68,11 @@ def test_the_note_only_names_programs_that_are_installed() -> None:
     """
     assert "Makefile" not in NO_SHELL_NOTE
     assert "pnpm/yarn script" not in NO_SHELL_NOTE
-    assert "npm run" in NO_SHELL_NOTE
-    assert "node" in NO_SHELL_NOTE
+    # A route that works, named without favouring one language: a manifest
+    # script through the project's package manager, or a program run directly
+    # through the tool that runs programs.
+    assert "manifest" in NO_SHELL_NOTE
+    assert "run_terminal_command" in NO_SHELL_NOTE
 
 
 def test_a_run_with_no_recorded_stack_is_unaffected() -> None:

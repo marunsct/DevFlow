@@ -168,4 +168,104 @@ SEED_INSTRUCTIONS: dict[str, str] = {
 }
 
 
+#: How a page that runs in a browser is tested. Attached to every key that means
+#: "this product renders a page". Moved here from `TESTABILITY_RULE` and
+#: `TESTING_DEPENDENCY_RULE`, where it was appended to every run whatever its
+#: stack, so a Go service's agents were told how to configure Playwright.
+_BROWSER_PAGE_TESTING = """Testing a page that runs in a browser:
+- The thing that breaks a headless test is a module that reads or writes the DOM
+  while it is being loaded. It reaches for `document`, `window` or `localStorage`
+  at module scope, so the import itself runs that code and throws before any of
+  your assertions are reached.
+- Do the DOM wiring in one `init()` that the page calls, guarded so importing the
+  file does not run it: `if (typeof document !== 'undefined') init();`. A bare
+  `init();` at the end of the file is the whole problem.
+- THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN. JavaScript inside a `<script>`
+  tag in your HTML is unreachable: no runner can import it, so the only way to
+  test it is to copy it, and a copy passes whatever your code does. One `app.js`
+  beside `index.html` is still a single-page application with no build step.
+- Verify DOM interactions end-to-end with Playwright (`@playwright/test`) - a real
+  headless browser is installed for it. Do NOT use jsdom or Node-based DOM mocks:
+  they pass while the real page is broken. A brief forbidding dependencies does
+  not make a DOM stub adequate. Install with `npm i -D @playwright/test` and
+  `npx playwright install chromium`, run with `npx playwright test`, and use a
+  BUILT-IN reporter - `--reporter=line` or `--reporter=list`. Do NOT pass
+  `--reporter=tap`: Playwright resolves that to an npm package called `tap`,
+  which is not installed, and the suite dies with "Cannot find module 'tap'".
+- A PLAYWRIGHT TEST CANNOT OPEN THE PAGE WITH `file://`. Chromium blocks an ES
+  module script loaded from a `file://` URL on CORS grounds, so the page loads,
+  the script never runs, and the test times out. Load it over
+  `http://localhost:<port>` and let Playwright manage the server: declare a
+  `webServer` in `playwright.config.ts` and one `npx playwright test` starts
+  it, runs the suite and stops it:
+      webServer: {
+        command: 'npx serve .',       // or `node server.mjs`
+        url: 'http://localhost:3000',
+        reuseExistingServer: false,
+      }
+- Do NOT run a static server as a command of its own - it never exits, it is
+  refused, and nothing connects to it."""
+
+#: How JavaScript and TypeScript modules are tested, and where their test-only
+#: packages go. Moved here from `TESTABILITY_RULE` and `TESTING_DEPENDENCY_RULE`.
+_JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
+- IF YOU USE `export`, DECLARE IT. A `.js` file is CommonJS unless something says
+  otherwise, so a test importing it gets "does not provide an export named ...".
+  Ship a `package.json` containing `{"type": "module"}` beside it, or name the
+  files `.mjs`. Neither installs anything, and `export` is not a dependency.
+- THE SAME `package.json` MUST SAY HOW TO RUN THE TESTS:
+  `"scripts": {"test": "node --test <your test files>"}`. Without it `npm test`
+  answers "missing script: test" and the project reads as having no tests.
+- `node --test` ships with Node: nothing to install, no dependency, no lines of
+  product code. A static page that ships to a browser is still tested with it on
+  the machine that builds it - deployment constrains what you ship, not what you
+  can run while building it.
+- A test-only package goes in `devDependencies` (`npm i -D ...`); it ships to
+  nobody and breaks no constraint on the product's dependencies.
+- An assertion like `typeof mod.addTask === 'function'` checks that an export
+  exists, not what it does; and `assert.doesNotThrow(() => saveTasks(x))` passes
+  whether the function saved anything or not. Assert on what it returned."""
+
+#: The test runner each language ships with or conventionally uses, and where a
+#: test-only dependency goes. Moved here from the per-ecosystem table that
+#: `TESTING_DEPENDENCY_RULE` carried in every prompt.
+_TESTING_BY_LANGUAGE = {
+    "python": (
+        "- Testing: `unittest` ships with Python and installs nothing; `pytest` is the "
+        "common choice. A test-only package goes in a dev/test dependency group "
+        "(`[dependency-groups]`, `[project.optional-dependencies]`, or a test extra)."
+    ),
+    "go": "- Testing: `go test ./...` is part of the toolchain; test code needs no dependency declaration.",
+    "rust": "- Testing: `cargo test`; test-only crates go in `[dev-dependencies]`.",
+    "java": "- Testing: JUnit, declared with Maven `<scope>test</scope>` or Gradle `testImplementation`.",
+    "kotlin": "- Testing: JUnit or kotest, declared with Gradle `testImplementation`.",
+    "spring": "- Testing: `spring-boot-starter-test` in test scope (`<scope>test</scope>` / `testImplementation`).",
+    "php": "- Testing: PHPUnit; test-only packages go in `require-dev`.",
+    "laravel": "- Testing: `php artisan test` (PHPUnit or Pest); test-only packages go in `require-dev`.",
+    "ruby": "- Testing: Minitest ships with Ruby; RSpec is common. Test-only gems go in `group :test`.",
+    "rails": "- Testing: `bin/rails test` (Minitest) or RSpec; test-only gems go in `group :test`.",
+    "csharp": "- Testing: `dotnet test` with xUnit, NUnit or MSTest; test packages belong to the test project only.",
+    "dotnet": "- Testing: `dotnet test`; test packages are `PackageReference`s of the test project only.",
+    "swift": "- Testing: `swift test` with XCTest.",
+}
+
+SEED_INSTRUCTIONS["javascript"] = (
+    "You are working in a JavaScript environment.\n"
+    "- Modules: prefer ES modules (`import`/`export`) and declare them, as below.\n"
+    "- Dependency Management: respect a lockfile if one is present.\n\n"
+    + _JAVASCRIPT_TESTING
+)
+SEED_INSTRUCTIONS["html"] = (
+    "You are building a page that runs in a browser.\n"
+    "- Keep behaviour in script files the page loads, not inline in the markup.\n\n"
+    + _BROWSER_PAGE_TESTING
+)
+for _key in ("typescript", "node"):
+    SEED_INSTRUCTIONS[_key] += "\n\n" + _JAVASCRIPT_TESTING
+for _key in ("react", "vue", "angular", "nextjs"):
+    SEED_INSTRUCTIONS[_key] += "\n\n" + _BROWSER_PAGE_TESTING
+for _key, _line in _TESTING_BY_LANGUAGE.items():
+    SEED_INSTRUCTIONS[_key] += "\n" + _line
+
+
 __all__ = ["SEED_INSTRUCTIONS"]

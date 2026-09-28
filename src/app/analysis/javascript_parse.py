@@ -166,7 +166,7 @@ def parse_error(path: Path, content: str) -> str | None:
         f"Node cannot parse this file{where}: {detail}. "
         "This is `node --check`, the same parser that loads the file, so the "
         "error is certain - it is not a guess about style."
-        + _the_other_half(detail, content, path)
+        + _the_other_half(detail, content, path, line.group(1) if line else None)
         + _around_the_failure(line.group(1) if line else None, content)
     )
 
@@ -222,7 +222,58 @@ def _declarations_of(name: str, content: str) -> list[int]:
     return [content.count("\n", 0, m.start()) + 1 for m in pattern.finditer(content)]
 
 
-def _the_other_half(detail: str, content: str, path: Path | None = None) -> str:
+def _a_comment_that_ended_early(content: str) -> tuple[int, int] | None:
+    """(where a block comment opened, where a `*/` inside it closed it), or None.
+
+    Block comments do not nest. Measured on one run's `defect_fix_1_4`: a JSDoc
+    block carried an example, `storageAdapter.set = (key, value) => { /* mock */ };`,
+    and the `*/` of that inner comment ended the JSDoc. Node stopped on the `}`
+    after it, the bracket guess said "a '}' closes something that was never
+    opened - look at the block that should contain it", and the stage rewrote
+    the whole file four times without finding what it had written: nothing was
+    wrong with any block, and the line looked like a comment to the eye.
+
+    Strings and line comments are skipped, so a `/*` inside either is not one.
+    """
+    i, n, line = 0, len(content), 1
+    while i < n:
+        c = content[i]
+        if c == "\n":
+            line += 1
+        elif c in "'\"`":
+            i += 1
+            while i < n and content[i] != c:
+                if content[i] == "\\":
+                    i += 1
+                elif content[i] == "\n":
+                    line += 1
+                    if c != "`":
+                        break
+                i += 1
+        elif content.startswith("//", i):
+            end = content.find("\n", i)
+            if end < 0:
+                return None
+            i = end
+            continue
+        elif content.startswith("/*", i):
+            opened = line
+            end = content.find("*/", i + 2)
+            if end < 0:
+                return None
+            body = content[i + 2:end]
+            if "/*" in body:
+                return opened, line + body.count("\n")
+            line += body.count("\n")
+            i = end + 2
+            continue
+        i += 1
+    return None
+
+
+def _the_other_half(
+    detail: str, content: str, path: Path | None = None, line: str | None = None
+) -> str:
     """The fact the parser's own message is missing, or "".
 
     Node names one end of the problem. For the errors this harness actually
@@ -258,6 +309,19 @@ def _the_other_half(detail: str, content: str, path: Path | None = None) -> str:
                 reserved = ""
             if reserved:
                 return reserved
+        early = _a_comment_that_ended_early(content)
+        if early is not None:
+            opened, closed = early
+            # Only when the parser gave up at or after that `*/`. Before it,
+            # the comment is intact and the fault is somewhere else.
+            if line is None or not str(line).isdigit() or int(line) >= closed:
+                return (
+                    f" The block comment opened on line {opened} holds another "
+                    f"`/* ... */`, and block comments do not nest: the `*/` on line "
+                    f"{closed} ends the comment that began on line {opened}, so "
+                    "the rest of it is read as code. Take the inner `/* */` out of "
+                    "the comment, or write it as `//`."
+                )
         try:
             from app.analysis.syntax_balance import _confidently_unbalanced
 

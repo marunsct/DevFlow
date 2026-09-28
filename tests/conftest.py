@@ -76,6 +76,53 @@ def isolated_runtime_dirs(tmp_path_factory):
     yield base
 
 
+@pytest.fixture(scope="session", autouse=True)
+def an_openai_key_that_is_not_a_secret():
+    """A dummy `OPENAI_API_KEY` for the tests that build a real client.
+
+    The agent-factory tests pass model strings such as `"openai:gpt-4o-mini"`,
+    and LangChain's `init_chat_model` reads the key straight from the process
+    environment - not through `app.config`. They passed only because the
+    developer's `.env` happened to hold a key: on 2026-09-28 a rebuilt `.env`
+    left it blank and 37 tests failed with "Missing credentials" before any of
+    them made a call. None of them goes to the network, so a dummy is all they
+    need, and a dummy is safer than a real key - a test that did reach OpenAI
+    would fail loudly rather than spend money. `.env` is loaded with
+    `override=False`, so the dummy set here is what every test sees.
+    """
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        os.environ["OPENAI_API_KEY"] = "sk-test-not-a-real-key"
+    yield
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "real_endpoint_probe: keep the runner's model-server reachability gate in this test",
+    )
+
+
+@pytest.fixture(autouse=True)
+def no_model_server_needed(request, monkeypatch):
+    """Tests that start a run must not need a live model server on this machine.
+
+    `WorkflowRunner` refuses to start a run when nothing answers at the
+    configured model endpoint. The lifecycle, API and seeding tests start runs
+    and never call a model, yet they only passed while the developer's `.env`
+    pointed at a server that happened to be up - on 2026-09-28 a rebuilt `.env`
+    left the endpoint at its default, `localhost:1234`, and 10 of them failed
+    with "Nothing is listening on localhost:1234". The probe itself is tested
+    directly in `test_endpoint_probe.py`, which calls `describe_model_endpoint`
+    and is not affected by this. A test that needs the gate in place marks
+    itself `real_endpoint_probe`.
+    """
+    if request.node.get_closest_marker("real_endpoint_probe") is None:
+        from app.server.runner import WorkflowRunner
+
+        monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self: None)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def object_store_isolation(tmp_path_factory):
     """Keep each test's object storage local, empty, and its own.

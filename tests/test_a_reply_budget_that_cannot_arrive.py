@@ -65,6 +65,7 @@ def test_the_ceiling_is_cloudflares_documented_one():
     assert FIXED_ORIGIN_TIMEOUTS["trycloudflare.com"] == 100
 
 
+@pytest.mark.real_endpoint_probe
 def test_the_runner_warns_rather_than_refuses():
     """A truncating transport is the operator's trade, made knowingly."""
     import inspect

@@ -573,6 +573,69 @@ def _is_awaiting_approval_for(state: WorkflowGraphState, stage_name: str) -> boo
     return state.get("stage", "") == f"{APPROVAL_PAUSE_PREFIX}{stage_name}"
 
 
+def _queued_pauses(state: Any) -> dict[str, dict[str, Any]]:
+    """The parallel pauses still waiting to be surfaced.
+
+    `specialist_gather` marks a pause it has surfaced by setting its entry to
+    `None` rather than removing it, because `_merge_or_reset` merges and an empty
+    update resets the whole channel. So `None` means answered, not paused.
+    """
+    return {
+        stage: pause
+        for stage, pause in (state.get("specialist_pauses") or {}).items()
+        if pause
+    }
+
+
+def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
+    """The pause fields a parallel worker may act on, as an override for its state.
+
+    A worker may only answer its *own* approval gate.
+
+    `pending_decision` and `pending_inner_thread_id` are single fields, and every
+    worker in a superstep is handed a copy of the one state that holds them. On a
+    resume the dispatcher re-sends every task that has no output yet, so without
+    this each of those workers resumed whichever inner thread happened to be
+    stored there - a sibling's - and executed the gated call waiting on it.
+
+    Measured on run-a8ad0ef0: one `call_id` recorded three times under three
+    stage names, with three `tool_result` records microseconds apart, one
+    reporting `"status": "edited"` and the other two "already contains the text
+    you asked to put there". Every call that was multiplied was a gated one -
+    write_artifact 4, replace_lines 5, edit_artifact 3, run_terminal_command 2 -
+    and every ungated one ran exactly once, which is the signature of the shared
+    field and not of three models choosing the same call in the same second.
+    `run_terminal_command` in that list means the shell commands ran three times
+    as well.
+
+    The cost was not only the duplicated work. Every repeat counter in the
+    harness is per stage, and three executions raised each of them three times,
+    so the read refusals and the withholding rungs fired at a third of the
+    repetition they describe - which is what made the counts in an audit of a
+    parallel run untrustworthy.
+
+    Returns `{}` for the worker whose gate is the one being answered, so it
+    resumes exactly as it did before.
+    """
+    if _is_awaiting_approval_for(state, stage_name):
+        return {}
+    queued = _queued_pauses(state).get(stage_name) or {}
+    override: dict[str, Any] = {
+        "pending_decision": None,
+        # Our own paused thread if we have one, and otherwise none at all. Never
+        # the value a sibling left behind.
+        "pending_inner_thread_id": queued.get("pending_inner_thread_id"),
+        "pending_approval": queued.get("pending_approval"),
+    }
+    if queued:
+        # Our pause is still queued behind another stage's. Declaring it here
+        # lets `_run_gated_agent` recognise its own gate and hand the pause
+        # straight back, which costs no model call and keeps the paused inner
+        # thread alive until its turn comes.
+        override["stage"] = f"{APPROVAL_PAUSE_PREFIX}{stage_name}"
+    return override
+
+
 def _that_do_not_share_a_file(
     pending: list[tuple[int, Any]],
 ) -> list[tuple[int, Any]]:
@@ -3491,11 +3554,31 @@ def build_workflow_graph(
             ),
         )
         
-        # Wait, if multiple agents pause for approval, they cannot share `pending_inner_thread_id`!
-        # The auto-approve logic and stage memory expects a single string. This is a known limitation 
-        # of adapting linear gates to parallel branches. For now, we will override the config thread_id
-        # to ensure isolated checkpoints.
-        
+        # A worker may only answer its *own* approval gate.
+        #
+        # `pending_decision` and `pending_inner_thread_id` are single fields, and
+        # every worker in the superstep is handed a copy of the one state that
+        # holds them. On a resume the dispatcher re-sends every task that has no
+        # output yet, so without this each of those workers resumed whichever
+        # inner thread happened to be stored there - a sibling's - and executed
+        # the gated call that was waiting on it.
+        #
+        # Measured on run-a8ad0ef0: one `call_id` recorded three times under
+        # three stage names, with three `tool_result` records microseconds apart,
+        # one reporting `"status": "edited"` and the other two "already contains
+        # the text you asked to put there". Every call that was multiplied was a
+        # gated one - write_artifact 4, replace_lines 5, edit_artifact 3,
+        # run_terminal_command 2 - and every ungated one ran exactly once, which
+        # is the signature of the shared field rather than of three models
+        # choosing the same call in the same second. `run_terminal_command` in
+        # that list means the shell commands ran three times too.
+        #
+        # The cost was not only the duplicate work. The repeated-read tally is
+        # per stage, and three executions raised it three times each, so the
+        # read refusals and the withholding rungs fired at a third of the
+        # repetition they are meant to describe.
+        temp_state.update(_only_this_worker_s_pause(state, stage_name))
+
         update = _run_gated_agent(
             temp_state,
             config,
@@ -3535,13 +3618,21 @@ def build_workflow_graph(
         already have outputs are not re-sent. Several pauses therefore drain one
         after another rather than racing each other for one `stage` value.
         """
-        pauses = state.get("specialist_pauses") or {}
+        pauses = _queued_pauses(state)
         if pauses:
             first = sorted(pauses)[0]
-            # The pause update verbatim - not through `_handing_on`, which
-            # clears exactly the pause fields this has to carry - with the queue
-            # emptied so the resumed run is not seen as still paused.
-            return {**pauses[first], "specialist_pauses": {}}
+            # The pause update verbatim - not through `_handing_on`, which clears
+            # exactly the pause fields this has to carry.
+            #
+            # Only the surfaced pause is drained. Emptying the whole queue threw
+            # away the other workers' paused inner threads, and because
+            # `pending_inner_thread_id` is a single field they then resumed the
+            # surfaced stage's thread instead of their own and re-ran its gated
+            # call - see `specialist_worker_node`. `_merge_or_reset` merges, so a
+            # subset cannot remove a key and an empty dict would reset the lot;
+            # one key set to `None` says "this one is answered" and leaves the
+            # rest queued for the supersteps after it.
+            return {**pauses[first], "specialist_pauses": {first: None}}
         return _handing_on(stage="test_and_triage", specialist_pauses={})
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:

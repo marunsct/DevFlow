@@ -38,6 +38,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app.analysis.walk import files_under
 from app.tools.repository import IGNORED_DIRECTORIES
 from typing import Any, Dict, Iterable, Sequence
 
@@ -2098,6 +2099,77 @@ def _a_missing_path_that_is_here(outcome: dict) -> str:
     return ""
 
 
+#: A relative path an error reports as missing, in the spellings runtimes use:
+#: Node's `ENOENT: no such file or directory, open './x'` and `Cannot find
+#: module 'x'`, Python's `No such file or directory: 'x'`, and the shell's
+#: `x: No such file or directory`. Absolute paths are `_REPORTED_MISSING`'s.
+_A_RELATIVE_PATH_MISSING = (
+    re.compile(r"no such file or directory,? (?:open|stat|scandir|lstat)? ?'((?!/)[\w./@+-]+)'", re.I),
+    re.compile(r"No such file or directory:? '((?!/)[\w./@+-]+)'"),
+    re.compile(r"Cannot find module '((?!/)[\w./@+-]*[./][\w./@+-]+)'"),
+    re.compile(r"(?m)^(?:[\w-]+: )?((?!/)[\w./@+-]+\.[\w]+): (?:No such file or directory|not found)"),
+)
+
+
+def _a_relative_path_missing_from_where_it_ran(
+    outcome: dict, repo_root: str | Path, working_directory: str | None
+) -> str:
+    """A note when a relative path is missing from where the command ran, or "".
+
+    A relative path in a command, or in a file the command reads, resolves from
+    the directory the command runs in - not from the file that names it. One
+    run's `specialist_ui_ux_0` wrote `todo-list/validate.mjs` reading
+    `./style.css` and ran it from the workspace root, then from `todo-list`
+    with the script named from the root, then flipped the path between
+    `./style.css` and `todo-list/style.css` four times: ENOENT every time, a
+    dozen calls, and each error named only the path, never the directory it
+    was looked for in. The harness knows both, and where the file is.
+
+    Only when exactly one workspace file ends with the reported path, so the
+    note never guesses between two.
+    """
+    text = f"{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}"
+    if not text.strip():
+        return ""
+    try:
+        root = Path(repo_root).resolve()
+        ran_in = (root / (working_directory or "")).resolve()
+    except OSError:
+        return ""
+    for pattern in _A_RELATIVE_PATH_MISSING:
+        for match in pattern.finditer(text):
+            wanted = match.group(1).rstrip(".,:;")
+            while wanted.startswith("./"):
+                wanted = wanted[2:]
+            if not wanted or wanted.startswith("../") or (ran_in / wanted).exists():
+                continue
+            name = wanted.rsplit("/", 1)[-1]
+            try:
+                found = [
+                    candidate.relative_to(root).as_posix()
+                    for candidate in files_under(root, IGNORED_DIRECTORIES, name)
+                    if candidate.is_file()
+                    and candidate.relative_to(root).as_posix().endswith(wanted)
+                ]
+            except Exception:  # noqa: BLE001 - a note must never fail a command
+                return ""
+            if len(found) != 1:
+                continue
+            here = found[0]
+            base = here[: -len(wanted)].rstrip("/")
+            where = f"'{working_directory}'" if working_directory else "the workspace root"
+            instead = f"working_directory '{base}'" if base else "no working_directory"
+            return (
+                f"'{match.group(1)}' was looked for in the directory this command ran "
+                f"in, {where}, and is not there. It is at '{here}'. A relative path - "
+                "in the command or in a file the command reads - resolves from the "
+                "working directory, not from the file that names it. Run with "
+                f"{instead} and name every other path relative to that, or change the "
+                "path to be relative to where it runs."
+            )
+    return ""
+
+
 def _timeout_advice(
     repo_root: str, working_directory: str | None, command: Sequence[str] = ()
 ) -> str:
@@ -3805,7 +3877,8 @@ class SandboxExecutor:
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
-        notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome)) if n]
+        notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome),
+                             _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory)) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
         regressed = _fewer_pass_than_last_time(

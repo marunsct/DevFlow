@@ -125,4 +125,4 @@ class TestItIsWiredBeforeValidation:
         from app.tools import sandbox
 
         source = inspect.getsource(sandbox)
-        assert "notes = [n for n in (redundant_cd, doubled, redirected) if n]" in source
+        assert "notes = [n for n in (redundant_cd, doubled, redirected" in source

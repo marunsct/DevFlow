@@ -2032,6 +2032,48 @@ _INSTALL_TIMEOUT_ADVICE = (
 )
 
 
+#: How runtimes report a program or file as missing, each capturing the path.
+#: `spawn /bin/sh ENOENT` is how Node reports a child whose working directory
+#: does not exist - it names the program, not the directory.
+_REPORTED_MISSING = (
+    re.compile(r"spawn (/[\w./+-]+) ENOENT"),
+    re.compile(r"No such file or directory:? '?(/[\w./+-]+)'?"),
+    re.compile(r"(/[\w./+-]+): (?:No such file or directory|not found)"),
+)
+
+
+def _a_missing_path_that_is_here(outcome: dict) -> str:
+    """A note when the output calls a path missing that exists here, or "".
+
+    One run's `specialist_backend_2` ran its browser tests and got
+    `Error: Failed to launch: Error: spawn /bin/sh ENOENT`. It concluded "this
+    container lacks /bin/sh, which is required for Playwright", and deleted
+    the end-to-end suite, its config and its server. `/bin/sh` was there. The
+    config it had just edited gave the web server `cwd: 'simple-todo-list'`,
+    resolved against a config already inside `simple-todo-list/`, and a child
+    started in a directory that does not exist is reported by the name of the
+    program it was starting.
+    """
+    text = f"{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}\n{outcome.get('error') or ''}"
+    for pattern in _REPORTED_MISSING:
+        for match in pattern.finditer(text):
+            path = match.group(1).rstrip(".,:;")
+            try:
+                present = Path(path).exists()
+            except OSError:
+                present = False
+            if present:
+                return (
+                    f"'{path}' exists in this environment. An error that names it as "
+                    "missing is about something else it was started with - most often "
+                    "a working directory that does not exist, such as a path given "
+                    "relative to the wrong folder in a command or a configuration "
+                    "file. Check every directory the command and its configuration "
+                    "name before concluding that a tool is unavailable here."
+                )
+    return ""
+
+
 def _timeout_advice(
     repo_root: str, working_directory: str | None, command: Sequence[str] = ()
 ) -> str:
@@ -3723,7 +3765,7 @@ class SandboxExecutor:
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
-        notes = [n for n in (redundant_cd, doubled, redirected) if n]
+        notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome)) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
         regressed = _fewer_pass_than_last_time(

@@ -203,6 +203,11 @@ _BROWSER_PAGE_TESTING = """Testing a page that runs in a browser:
         url: 'http://localhost:3000',
         reuseExistingServer: false,
       }
+  Its `cwd`, if you give one, is relative to the config file, not to where you
+  ran the command. With the config inside the project directory, leave `cwd`
+  out: `cwd: '<project-dir>'` points at a folder inside itself that does not
+  exist, and Node reports that as `spawn /bin/sh ENOENT` - naming the shell,
+  which is present - so the suite looks unrunnable when one line is wrong.
 - Do NOT run a static server as a command of its own - it never exits, it is
   refused, and nothing connects to it.
 - EVERY PLAYWRIGHT TEST ALREADY STARTS WITH EMPTY STORAGE: each gets a fresh

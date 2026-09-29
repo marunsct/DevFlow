@@ -258,6 +258,30 @@ _REFRESH_FOOTER = (
 )
 
 
+def _where_the_code_goes(root: Path) -> str:
+    """The pinned project directory, as a line of the listing, or ""."
+
+    Before any code exists the listing shows only `docs/`, so a specialist
+    names the directory itself - and in parallel mode several did, differently.
+    See `app.tools.repository.pin_the_directory_a_plan_names`.
+    """
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        project = pinned_project_directory(root)
+    except Exception:  # noqa: BLE001 - a hint must never fail the digest
+        return ""
+    if not project:
+        return ""
+    if (root / project).is_dir():
+        return f"  This run's project directory is '{project}/'. Every application file goes inside it."
+    return (
+        f"  This run's project directory is '{project}/'. Every application file "
+        "goes inside it; it does not exist yet, and the first file written inside it "
+        "creates it."
+    )
+
+
 def render_workspace_digest(
     repo_root: str | Path, max_files: int = MAX_FILES, *, refresh: bool = False
 ) -> str:
@@ -315,6 +339,9 @@ def render_workspace_digest(
         return ""
 
     more = f"\n  ... and {len(names) - max_files} more" if len(names) > max_files else ""
+    project_line = _where_the_code_goes(root)
+    if project_line:
+        lines.append(project_line)
     if _nothing_has_been_built(names) and not _nothing_here_is_evidence(names):
         return (
             "The workspace as it stands:\n"

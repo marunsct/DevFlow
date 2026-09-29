@@ -3829,6 +3829,62 @@ def _pin_project_directory(root: Path, name: str) -> None:
         logger.warning("Could not record the project directory at %s", marker, exc_info=True)
 
 
+#: Folders a plan names that live inside a project, never the project itself.
+_SUBDIRECTORY_NAMES = frozenset({
+    "src", "test", "tests", "spec", "specs", "e2e", "lib", "public", "static",
+    "assets", "scripts", "styles", "css", "js", "config", "dist", "build", "docs",
+    "end-to-end", "unit-tests", "e2e-tests", "test-results", "node-modules",
+})
+
+#: A top-level folder as a plan spells it: a lowercase-with-hyphens name followed
+#: by `/`, not itself part of a longer path.
+_A_PLANNED_DIRECTORY = re.compile(r"(?<![\w./-])([a-z0-9]+(?:-[a-z0-9]+)+)/")
+
+
+def pin_the_directory_a_plan_names(root: str | Path, plan_text: str) -> str | None:
+    """Pin the project directory the technical lead's plan names, if none is yet.
+
+    The pin was taken from the first file written. In parallel mode several
+    specialists start before anything exists, each names its own directory, and
+    whichever writes first wins; the rest are refused and redo their work. One
+    run's lead named `simple-to-do-list-app/` in its plan, and
+    `specialist_ui_ux_0` - given a task that said only "Write index.html" -
+    wrote `task-manager/index.html` and was refused.
+
+    The name is the most-mentioned hyphenated top-level folder in the plan,
+    mentioned at least twice: the layout rules ask for "lowercase-with-hyphens",
+    and a bare word followed by `/` in a plan is far more often a subfolder
+    (`test/`) or prose (`empty/whitespace`). On the sprint-one plans of four
+    runs this chose `simple-to-do-list-app` (twice), `todo-app` and
+    `todo-list` - each the directory the run then used.
+
+    Never overrides an existing pin, and does nothing once any project
+    directory exists: then the code already says where it lives.
+    """
+    base = Path(root)
+    if pinned_project_directory(base) is not None:
+        return None
+    try:
+        if any(
+            entry.is_dir() and _is_project_directory(entry.name) for entry in base.iterdir()
+        ):
+            return None
+    except OSError:
+        return None
+    counts: dict[str, int] = {}
+    for name in _A_PLANNED_DIRECTORY.findall(plan_text or ""):
+        if name in _SUBDIRECTORY_NAMES or not _is_project_directory(name):
+            continue
+        counts[name] = counts.get(name, 0) + 1
+    if not counts:
+        return None
+    name, mentions = max(counts.items(), key=lambda item: (item[1], item[0]))
+    if mentions < 2:
+        return None
+    _pin_project_directory(base, name)
+    return name
+
+
 def _file_blocking_directory(root: Path, target: Path) -> str | None:
     """The workspace-relative path of a plain file standing where a directory must go.
 

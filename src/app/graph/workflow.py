@@ -3652,6 +3652,18 @@ def build_workflow_graph(
                 ),
             )
 
+        # Before any specialist runs: in parallel mode they all start before a
+        # file exists, and the directory was pinned by whichever wrote first.
+        # See `pin_the_directory_a_plan_names`.
+        try:
+            from app.tools.repository import pin_the_directory_a_plan_names
+
+            pin_the_directory_a_plan_names(
+                state["repository"].root_path, milestone.model_dump_json()
+            )
+        except Exception:  # noqa: BLE001 - the first write still pins it
+            logger.warning("Could not pin the project directory from the plan", exc_info=True)
+
         update["remediation"] = start_remediation(milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS)
         update["specialist_task_index"] = 0
         # The parallel twin of the line above, and for the same reason: a plan

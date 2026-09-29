@@ -542,6 +542,23 @@ class _NoticingRepeats:
             pinned = pinned_project_directory(Path(root))
         except Exception:  # noqa: BLE001 - a hint must never fail the call
             pinned = None
+        # The deepest part of the path that is there. Asked for
+        # `/task-manager/e2e`, one run was told that `/task-manager` - which
+        # held nine files - "has no file written into it yet": the project was
+        # judged by its name alone, not by whether it existed.
+        present = 0
+        for depth in range(1, len(segments)):
+            if (Path(root) / Path(*segments[:depth])).is_dir():
+                present = depth
+            else:
+                break
+        if present:
+            there = "/" + "/".join(segments[:present])
+            return (
+                f" '{there}' exists, but nothing has been written under "
+                f"'{'/'.join(segments[present:])}' in it yet. A directory is created by "
+                "the first file written under it."
+            )
         if pinned and segments[0] == pinned:
             return (
                 f" '/{pinned}' is this run's project directory, and no stage has "

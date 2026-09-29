@@ -82,3 +82,16 @@ def test_a_copy_in_a_hidden_directory_does_not_count(tmp_path: Path) -> None:
     error = _read_error(tmp_path, "/app/README.md")
 
     assert "No file named 'README.md' exists anywhere in the workspace yet" in error
+
+
+def test_a_missing_folder_inside_an_existing_project_does_not_empty_the_project(tmp_path: Path) -> None:
+    """Asked for `/task-manager/e2e`, one run was told `/task-manager` - which held
+    nine files - "has no file written into it yet"."""
+    (tmp_path / PROJECT_MARKER).write_text("task-manager\n", encoding="utf-8")
+    (tmp_path / "task-manager").mkdir()
+    (tmp_path / "task-manager" / "app.js").write_text("export {}\n", encoding="utf-8")
+
+    error = _error(tmp_path, "/task-manager/e2e")
+
+    assert "no stage has written a file into it yet" not in error
+    assert "'/task-manager' exists, but nothing has been written under 'e2e' in it yet" in error

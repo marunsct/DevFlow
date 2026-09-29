@@ -210,9 +210,32 @@ class _Suggesting:
             return ""
         here = found[0].replace("\\", "/")
         asked = str(wanted).replace("\\", "/").lstrip("/")
-        if not asked.endswith(here) or asked == here:
+        if asked == here:
             return ""
-        return "/" + here
+        if asked.endswith(here) or self._only_the_project_directory_left_off(asked, here):
+            return "/" + here
+        return ""
+
+    @staticmethod
+    def _only_the_project_directory_left_off(asked: str, here: str) -> bool:
+        """Whether `asked` is `here` written relative to its top-level folder.
+
+        The mirror of an invented prefix: a path written from inside the
+        project, not from the workspace root. One run's `defect_fix_2_3` asked
+        for `tests/e2e/todo-app.spec.ts`, was told "There is a file of that name
+        at /todo-list/tests/e2e/todo-app.spec.ts", and spent a call asking for
+        exactly that.
+
+        Held to the same bar as the prefix case. The one missing piece must be
+        a single top-level directory, and the request must name at least one
+        directory of its own, so every directory it names agrees with the
+        answer. A bare `app.js` is still left alone, for the reason the caller
+        gives.
+        """
+        if "/" not in asked:
+            return False
+        top, _, rest = here.partition("/")
+        return bool(top) and rest == asked
 
 
 #: How many identical read failures to let pass before saying so. One repeat is

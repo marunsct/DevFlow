@@ -58,3 +58,38 @@ def test_nothing_was_written(workspace) -> None:
     _refusal(workspace)
 
     assert (workspace / "app.js").read_text(encoding="utf-8") == APP
+
+
+SUITE_END = """\
+describe('filter', () => {
+  it('keeps active', () => {
+    expect(1).toBe(1);
+  });
+});
+"""
+
+
+def test_content_that_drops_the_line_it_meant_to_follow_is_named(tmp_path) -> None:
+    """One run meant to append blocks after a file's last `});` and replaced
+    that line with them instead; the refusal quoted `});`, and the same edit
+    came again before the model saw its content no longer held it."""
+    (tmp_path / "app.test.js").write_text(SUITE_END, encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError) as refused:
+        replace_approved_lines(
+            tmp_path, "app.test.js", 5, 5, "\ndescribe('more', () => {\n  it('x', () => {});\n});"
+        )
+
+    message = " ".join(str(refused.value).split())
+    assert "Those lines close 2 more brackets than your `content` does" in message
+    assert "`replace_lines` has no insert mode: to add after line 5, begin `content` with that line" in message
+
+
+def test_content_that_leaves_a_line_out_entirely_is_named(tmp_path) -> None:
+    (tmp_path / "app.test.js").write_text(SUITE_END, encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError) as refused:
+        replace_approved_lines(tmp_path, "app.test.js", 2, 4, "  it('keeps active', () => {")
+
+    message = " ".join(str(refused.value).split())
+    assert "Those lines" in message or "does not contain" in message

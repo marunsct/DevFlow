@@ -1470,9 +1470,11 @@ def _what_went_unchecked(expect_start: str, replaced: str, content: str) -> str:
     more = f" (and {len(gone) - 1} more line(s))" if len(gone) > 1 else ""
     return (
         f"\n\nNo `expect_start` was sent, so nothing checked what was there. "
-        f"What this removed: {shown}{more}. If you meant to add a line rather "
-        "than replace one, send it again as an insertion - and pass "
-        "`expect_start` so the tool can refuse a line you did not mean."
+        f"What this removed: {shown}{more}. If you meant to add lines rather "
+        "than replace them, put what was removed back: `replace_lines` has no "
+        "insert mode, so an addition is a replacement whose `content` keeps the "
+        "original line. Pass `expect_start` so the tool can refuse a line you did "
+        "not mean."
     )
 
 
@@ -1527,7 +1529,21 @@ def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> st
 MOST_REPLACED_LINES_QUOTED = 8
 
 
-def _what_the_range_held(lines: list[str], start: int, last: int, expect_start: str) -> str:
+def _bracket_balance(text: str) -> int:
+    """Openers minus closers, counting (), [] and {} alike. Strings are not skipped:
+    this compares two texts from the same file, where they cancel out."""
+    return sum(text.count(c) for c in "([{") - sum(text.count(c) for c in ")]}")
+
+
+_HOW_TO_ADD_AROUND_A_LINE = (
+    "`replace_lines` has no insert mode: to add after line {last}, begin `content` "
+    "with that line as it is; to add before line {start}, end `content` with it."
+)
+
+
+def _what_the_range_held(
+    lines: list[str], start: int, last: int, expect_start: str, content: str = ""
+) -> str:
     """The lines a refused `replace_lines` would have removed, numbered.
 
     A refusal quoted the text the edit would produce, and never the text it
@@ -1550,6 +1566,32 @@ def _what_the_range_held(lines: list[str], start: int, last: int, expect_start: 
         if not expect_start
         else "Check those against what you meant to replace."
     )
+    # One run's `specialist_testing_1` meant to append two blocks after a
+    # file's last line, `});`, and replaced that line with them instead. The
+    # refusal quoted `});` and the model sent the same edit again before
+    # seeing that its content no longer held it.
+    # Presence alone cannot tell: that content ended with a `});` of its own.
+    # What it could not do is close the block the replaced line closed.
+    difference = _bracket_balance("".join(held)) - _bracket_balance(content)
+    dropped = [text.strip() for text in held if text.strip() and text.strip() not in content]
+    if difference:
+        advice = (
+            f"Those lines {'close' if difference < 0 else 'open'} {abs(difference)} "
+            f"more bracket{'s' if abs(difference) != 1 else ''} than your `content` "
+            "does, so replacing them leaves the file unbalanced. "
+            + _HOW_TO_ADD_AROUND_A_LINE.format(start=start, last=last)
+            + " "
+            + advice
+        )
+    elif dropped:
+        advice = (
+            f"Your `content` does not contain {_clip(dropped[0])!r}"
+            + (f" or {len(dropped) - 1} more of those lines" if len(dropped) > 1 else "")
+            + ", so this edit deletes it. "
+            + _HOW_TO_ADD_AROUND_A_LINE.format(start=start, last=last)
+            + " "
+            + advice
+        )
     return f"\n\nThe lines this edit would have replaced, {start}-{last}, hold:\n{quoted}{more}{advice}"
 
 
@@ -1684,7 +1726,7 @@ def replace_approved_lines(
             if "parse" not in str(exc).lower():
                 raise
             raise RepositoryToolError(
-                f"{exc}{_what_the_range_held(lines, start_line, last, expect_start)}"
+                f"{exc}{_what_the_range_held(lines, start_line, last, expect_start, content)}"
             ) from exc
         note = (
             f"Replaced lines {start_line}-{last} of {total}. "
@@ -2694,6 +2736,17 @@ def _import_note(root: Path, target: Path, content: str) -> str:
 _NAMES_A_SCRIPT_FILE = re.compile(r"""[\w./-]+\.[cm]?js\b""")
 
 
+def _the_runner_itself(token: str) -> bool:
+    """Whether a script path in a command is an installed tool, not a suite.
+
+    `node ./node_modules/jest/bin/jest.js` names a file, and that file is the
+    test runner, which then searches the project the way `jest` alone does.
+    One run's `specialist_testing_1` was told its new `app.test.js` "will not
+    be reached" by exactly that script, and Jest ran it on the next call.
+    """
+    return any(part in IGNORED_DIRECTORIES for part in token.replace("\\", "/").split("/"))
+
+
 def _refuse_a_script_path_that_repeats_its_own_directory(
     target: Path, content: str
 ) -> None:
@@ -2800,7 +2853,8 @@ def _refuse_a_test_script_that_strands_suites(
             for token in shlex.split(command)
             if not token.startswith("-") and _NAMES_A_SCRIPT_FILE.fullmatch(token)
         }
-        if not named:
+        # An installed runner named by path discovers like the bare command.
+        if not named or any(_the_runner_itself(token) for token in named):
             return
         # A runner that imports the others strands nothing.
         already_run = set()
@@ -2879,6 +2933,11 @@ def _the_test_command_will_not_run_this(target: Path | None) -> str:
                 return ""
             named = _NAMES_A_SCRIPT_FILE.findall(command)
             if not named or target.name in command:
+                return ""
+            # Only a command that names nothing but suites is known not to
+            # reach this one. An installed runner named by path searches the
+            # project, and a script of the project's own may import anything.
+            if not all(is_test(name) and not _the_runner_itself(name) for name in named):
                 return ""
             return (
                 f"`npm test` here runs `{command}`, which names "

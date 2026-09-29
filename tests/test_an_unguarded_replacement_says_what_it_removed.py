@@ -63,7 +63,11 @@ class TestTheExactCallThatBrokeRunOne:
             str(page), "index.html", start_line=5, end_line=5,
             content='  <meta http-equiv="Content-Security-Policy" content="x">\n',
         )
-        assert "add a line rather than replace one" in result["detail"]
+        detail = " ".join(result["detail"].split())
+        assert "add lines rather than replace them, put what was removed back" in detail
+        # It used to say "send it again as an insertion"; the tool has no such mode.
+        assert "no insert mode" in detail
+        assert "as an insertion" not in detail
 
 
 class TestItStaysQuietWhenThereIsNoSurprise:

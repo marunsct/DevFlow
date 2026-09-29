@@ -99,3 +99,30 @@ def test_a_project_with_no_test_script_is_silent(tmp_path: Path):
     note = write_approved_artifact(tmp_path, "todo/app.test.mjs", SUITE).get("note", "")
 
     assert "will not reach" not in note
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "node --experimental-vm-modules ./node_modules/jest/bin/jest.js",
+        "node node_modules/vitest/vitest.mjs run",
+    ],
+)
+def test_an_installed_runner_named_by_path_is_not_a_suite(project, command):
+    """One run's `specialist_testing_1` was told its new `app.test.js` "will not
+    be reached" by `node ... ./node_modules/jest/bin/jest.js` - the runner
+    itself, which then found and ran it on the next call."""
+    root = project(command)
+
+    note = write_approved_artifact(root, "todo/app.filter.test.mjs", SUITE).get("note", "")
+
+    assert "will not reach" not in note
+
+
+def test_a_script_of_the_project_s_own_is_not_judged(project):
+    """A runner script may import anything; only named suites are known to strand."""
+    root = project("node scripts/run-all.js")
+
+    note = write_approved_artifact(root, "todo/app.filter.test.mjs", SUITE).get("note", "")
+
+    assert "will not reach" not in note

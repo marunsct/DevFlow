@@ -152,9 +152,50 @@ def build_architecture_review_request(
         WORKSPACE_ROOT_NOTE
         + constraints_note(document_text, reader="reviewing")
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
+        + _what_the_brief_requires_that_this_defers(document_text, technical_specification_text)
         + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _what_the_brief_requires_that_this_defers(document_text: str, specification: str) -> str:
+    """Each brief requirement the specification defers, put to the reviewer.
+
+    The reviewer was given the brief's constraints and not its acceptance
+    criteria, so it had nothing to hold a descope against. One run's
+    specification redefined "edit" as toggling completion and deferred inline
+    editing, for a brief that says "Users can add, edit, delete tasks"; the
+    review accepted it as a trade-off, and the objection arrived three sprint-one
+    test rounds later, at stages that could not change the specification. See
+    `app.analysis.integration_checks.brief_actions_the_text_defers`.
+
+    Found by matching words, so the reviewer judges each one: a line can defer a
+    variant ("bulk delete") of something the specification builds elsewhere.
+    """
+    try:
+        from app.analysis.integration_checks import brief_actions_the_text_defers
+
+        found = brief_actions_the_text_defers(document_text, specification)
+    except Exception:  # noqa: BLE001 - a hint must never stop a review
+        return ""
+    if not found:
+        return ""
+    listed = "\n".join(
+        f"- `{action}`. The brief: \"{required}\". The specification: \"{line}\""
+        for action, required, line in found
+    )
+    return (
+        "\n--- Brief requirements this specification defers or redefines ---\n"
+        f"{listed}\n\n"
+        "Each of these is an acceptance criterion in the operator's brief. Narrowing, "
+        "reinterpreting or deferring one is the operator's decision, not the run's: a "
+        "specification that does it is a major finding, and the remediation is to "
+        "specify how it will be built. The one exception is a line that defers only a "
+        "variant of something the specification does build elsewhere - then quote "
+        "where it is built. The run's final check reads the brief, so a requirement "
+        "dropped here is built at the end anyway, after every sprint that could have "
+        "planned for it.\n"
+    )
 
 
 def _what_you_asked_for_last_time(earlier: list[ArchitectureReviewFinding], revision: int) -> str:

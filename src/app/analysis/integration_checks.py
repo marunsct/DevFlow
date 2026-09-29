@@ -4442,6 +4442,65 @@ def _where_the_run_deferred_it(root: Path, action: str, words: tuple[str, ...]) 
     return ""
 
 
+def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str, str]]:
+    """Each action the brief requires that `text` defers, as (action, brief line, text line).
+
+    The same judgement `_where_the_run_deferred_it` makes about a finished
+    workspace, made about one document before anything is built - for the
+    architecture review, which is the last point where dropping a requirement
+    costs nothing to undo.
+
+    Measured on one run. `tests/brief_low.md` states "Users can add, edit,
+    delete tasks". Its specification wrote "ADR-03 - 'Edit' means toggle
+    completion only" and "Inline description editing is deferred", the
+    architecture review accepted that as a trade-off, and every sprint-one
+    test round was then told by `_a_required_action_nothing_implements` that
+    the deferral carried no authority. The defect-fix stages it went to are
+    scoped to a milestone that never included editing, so none of them could
+    act on it: one added "edit" to a test name, and three test rounds ran.
+
+    Only the first deferring line per action, and only actions the brief
+    itself enumerates - the run's restatement of the brief is what this is
+    checking, so it cannot be the source.
+    """
+    required = _actions_the_brief_requires(brief)
+    found: list[tuple[str, str, str]] = []
+    for action in sorted(required):
+        words = _SAME_ACTION.get(action, (action,))
+        for line in (text or "").splitlines():
+            if any(
+                _names_the_action(part, words, inflected=True)
+                for part in _what_a_line_defers(line)
+            ):
+                found.append((action, required[action], line.strip()[:200]))
+                break
+    return found
+
+
+#: Where the thing deferred stops and the reason for deferring it starts.
+_A_REASON = re.compile(r"\b(?:to|because|since|as|so|for|until|due|given)\b", re.I)
+
+
+def _what_a_line_defers(line: str) -> list[str]:
+    """The part of each sentence in `line` that names what is being deferred.
+
+    The words before the deferral and the words after it, up to the reason.
+    The whole line was too much: "Inline description editing is deferred to
+    avoid adding complexity" reads as deferring `add` as well as `edit`,
+    because `adding` is in the reason.
+    """
+    parts: list[str] = []
+    for sentence in re.split(r"[.;]\s+|[.;]$", line):
+        match = _A_DEFERRAL.search(sentence)
+        if not match:
+            continue
+        after = sentence[match.end():]
+        reason = _A_REASON.search(after)
+        parts.append(sentence[: match.start()])
+        parts.append(after[: reason.start()] if reason else after)
+    return parts
+
+
 def _a_required_action_nothing_implements(
     files: list[Path], root: Path, brief: str = ""
 ) -> list[str]:

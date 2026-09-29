@@ -876,6 +876,31 @@ TOOLS_WITHHELD_NOTICE = (
 )
 
 
+#: Where the withholding is remembered for this stage, so a tool that would
+#: otherwise recommend `read_file` can know it is gone. See
+#: `app.tools.agent_toolkit._and_a_path_is_read_with_read_file`.
+READ_TOOL_WITHHELD = "read tool withheld"
+
+
+def _remember_the_read_tool_is_withheld() -> None:
+    try:
+        from app.agents.stage_memory import store
+
+        store(READ_TOOL_WITHHELD, {})["withheld"] = True
+    except Exception:  # noqa: BLE001 - a memo must never fail a model call
+        pass
+
+
+def the_read_tool_is_withheld() -> bool:
+    """Whether this stage has had its read tool withheld."""
+    try:
+        from app.agents.stage_memory import store
+
+        return bool(store(READ_TOOL_WITHHELD, {}).get("withheld"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _refused_reads(messages: list[Any]) -> int:
     """How many redundant reads this stage has been refused.
 
@@ -1189,6 +1214,7 @@ def build_settled_answer_middleware(
                         without_reads = _without_the_read_tools_in(kept)
                         if without_reads is not None:
                             kept, narrowed = without_reads, True
+                            _remember_the_read_tool_is_withheld()
                             logger.warning(
                                 "Stage %s has been refused %d redundant reads; "
                                 "withholding the read tool for the rest of it",

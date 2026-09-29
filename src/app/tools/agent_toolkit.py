@@ -647,6 +647,21 @@ def _and_a_path_is_read_with_read_file(
             f"{json.dumps(str(search).strip())} and path '{where}'."
         )
     if where:
+        # One run's `defect_fix_2_2` had its read tool withheld for re-reading
+        # files it already held, then asked this tool for `app.js (425 lines)`
+        # and `index.html (276 lines)` - copied from the workspace listing -
+        # and was told to read them with the tool it no longer had.
+        from app.agents.settled_answer import the_read_tool_is_withheld
+
+        if the_read_tool_is_withheld():
+            return (
+                f" '{candidate}' looks like a path rather than a journal reference: "
+                f"a reference ends in eight random characters. That file is in the "
+                f"workspace at '{where}', and its content is already in this "
+                "conversation from your earlier reads - that is why `read_file` was "
+                "withdrawn. Work from what you have; after you change the file, the "
+                "tool's result shows what it now holds."
+            )
         return (
             f" '{candidate}' looks like a path rather than a journal reference: a "
             f"reference ends in eight random characters. That file is in the "

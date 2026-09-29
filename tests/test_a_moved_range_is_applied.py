@@ -89,7 +89,7 @@ class TestItStillRefusesWhenItCannotBeSure:
                 start_line=3, end_line=5, content="X\n",
                 expect_start="const a = 1;",
             )
-        assert "numbering has moved" in str(caught.value)
+        assert "is not what you expected" in str(caught.value)
 
     def test_a_range_that_changed_size_is_refused(self, project):
         """The caller's replacement was written against a range that is gone.

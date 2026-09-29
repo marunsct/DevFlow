@@ -1478,6 +1478,15 @@ def _what_went_unchecked(expect_start: str, replaced: str, content: str) -> str:
     )
 
 
+#: Why a pinned line was not where the call said, without guessing which. The
+#: file may have changed since it was read, or the count was off by a few; the
+#: position reported after this is the file as it is now either way.
+_EITHER_IT_CHANGED_OR_IT_WAS_MISCOUNTED = (
+    "Either the file changed after you read it or the line was counted wrong; "
+    "the position below is read from the file as it is now."
+)
+
+
 def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> str:
     """Where the line the caller expected actually is now.
 
@@ -1690,9 +1699,14 @@ def replace_approved_lines(
                     done_at = _already_applied(original, expect_start.strip(), content)
                     if done_at:
                         return _already_there(target, root, relative_path, content, done_at)
+                    # Not "the numbering has moved": that blames a change the
+                    # file may never have had. One run's `specialist_backend_0`
+                    # read `app.js`, sent `let filterMode` as line 151 when it
+                    # was 154, was told the numbering had moved, and read the
+                    # unchanged file twice more before rewriting all of it.
                     raise RepositoryToolError(
                         f"Line {start_line} of '{relative_path}' is not what you "
-                        f"expected, so the numbering has moved since you read it.\n"
+                        f"expected. {_EITHER_IT_CHANGED_OR_IT_WAS_MISCOUNTED}\n"
                         f"  you expected: {_clip(expect_start.strip())}\n"
                         f"  line {start_line} is:  {_clip(actual_first.strip())}\n"
                         + _where_that_line_went(lines, expect_start, start_line)

@@ -248,7 +248,7 @@ def test_a_stale_line_number_is_refused_rather_than_applied(workspace):
     with pytest.raises(RepositoryToolError) as caught:
         replace_approved_lines(workspace, "p/j.py", 2, 2, "x", expect_start="a = 1")
 
-    assert "numbering has moved" in str(caught.value)
+    assert "is not what you expected" in str(caught.value)
     assert target.read_text(encoding="utf-8") == "a = 1\nb = 2\nc = 3\n"
 
 

@@ -235,11 +235,19 @@ def _nothing_has_been_built(names: list[str]) -> bool:
 #: and ran the same browser install four times. Across runs the echo climbed
 #: from about 1% of replies to 7%. Nothing was interrupted; the header now says
 #: what it is and that nothing was.
+#:
+#: It also used to call itself "the same listing as before". The same run's
+#: `specialist_ui_ux_1` edited `index.html` without changing its length, saw
+#: the entry still read "(36 lines)", concluded "the workspace listing reflects
+#: the original state before my edit", and read the file six more times. The
+#: listing shows names and sizes, never contents, and now says so.
 _REFRESH_HEADER = (
-    "The workspace as it stands now - the same listing as before, refreshed for "
-    "this turn so it includes anything you have just written. It is reference, "
-    "not a new request, and nothing was interrupted: it is attached automatically "
-    "to every call, and the conversation above it is unbroken."
+    "The workspace as it stands now, read from disk for this call. It is "
+    "reference, not a new request, and nothing was interrupted: it is attached "
+    "automatically to every call, and the conversation above it is unbroken. It "
+    "shows names and line counts, not contents, so an edit that kept a file's "
+    "length leaves its entry looking the same - the tool result of the edit is "
+    "what tells you it was applied."
 )
 _REFRESH_FOOTER = (
     "Nothing here asks you to read anything again. A file you have already "

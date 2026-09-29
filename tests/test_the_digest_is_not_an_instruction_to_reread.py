@@ -109,6 +109,16 @@ class TestEveryLaterCall:
         assert "nothing was interrupted" in last
         assert "the conversation above it is unbroken" in last
 
+    def test_an_unchanged_entry_is_not_read_as_a_lost_edit(self, workspace: Path) -> None:
+        """One stage edited `index.html` without changing its length, saw
+        "(36 lines)" under a header calling itself "the same listing as before",
+        decided its edit had not been applied, and read the file six more times."""
+        last = " ".join(_last_message(AFTER_A_TOOL_RESULT, workspace).split())
+
+        assert "the same listing as before" not in last
+        assert "names and line counts, not contents" in last
+        assert "an edit that kept a file's length leaves its entry looking the same" in last
+
     def test_it_is_still_current(self, workspace: Path) -> None:
         """The reason it is sent on every call at all: it shows what was just written."""
         (workspace / "task-manager" / "app.test.js").write_text("test\n", encoding="utf-8")

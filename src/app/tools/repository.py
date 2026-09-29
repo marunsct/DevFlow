@@ -1682,6 +1682,14 @@ def replace_approved_lines(
                     lines, expect_start, expect_end, start_line, end_line
                 )
                 if moved is None:
+                    # The range is gone and what was to replace it is there:
+                    # the edit has been made, usually by this stage. One run's
+                    # `specialist_backend_0` changed an import line with
+                    # `edit_artifact`, then sent `replace_lines` for the same
+                    # change four times, each told "read the file again".
+                    done_at = _already_applied(original, expect_start.strip(), content)
+                    if done_at:
+                        return _already_there(target, root, relative_path, content, done_at)
                     raise RepositoryToolError(
                         f"Line {start_line} of '{relative_path}' is not what you "
                         f"expected, so the numbering has moved since you read it.\n"

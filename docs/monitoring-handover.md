@@ -142,15 +142,6 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 ### 0.5.1 Parked: known, not fixed
 
-- **An all-empty structured answer ends a stage.** When a reply spends its whole
-  output budget on reasoning, `settled_answer` withholds tools for one call and
-  asks for the answer. Seen on run-76f08a5c's `defect_fix_3_0`: it wrote "fixed 1
-  of 3, let me write a debug script" and called `SpecialistOutput` with `{}`,
-  which validates (every field defaults empty) and ended the stage with the
-  defect open - one wasted test round plus fix round. A `model_validator` on
-  `SpecialistOutput` that refuses an all-empty answer fixes it but breaks about
-  50 routing/parallel tests whose fake agents return empty outputs; it needs a
-  narrower home (the settled-answer middleware, on the model's tool call only).
 - Tools are still offered when command execution is disabled; the duplicate
   `test/` and `tests/` suites seen in run 71d58b84 are not addressed.
 

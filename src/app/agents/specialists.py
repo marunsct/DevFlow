@@ -17,7 +17,7 @@ from typing import Any, Literal, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
 
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
@@ -292,6 +292,50 @@ class SpecialistOutput(BaseModel):
             "every other role should leave it empty and use `blockers` instead."
         ),
     )
+
+
+
+def _an_answer_says_something(cls: Any, data: Any) -> Any:
+    """Refuse a model's answer in which every field is empty.
+
+    Every field of `SpecialistOutput` defaults to empty, so `{}` validated and
+    ended the stage. On one run a defect-fix stage reasoned through a reply's
+    whole output budget, was asked to answer with its tools withheld, wrote
+    "fixed 1 of 3 ... let me write a debug script" - and called
+    `SpecialistOutput` with `{}`. It named no fix and no regression test, so the
+    defect stayed open, and the next fixer did the same: rounds 3, 4 and 5 on
+    one defect while every test round in between reported none.
+
+    Refused, the validation error goes back to the model on its next call, with
+    its tools restored. Only for the answer a live agent sends: see
+    `AGENT_ANSWER`.
+    """
+    if isinstance(data, dict) and not any(
+        value not in (None, "", [], {}) for value in data.values()
+    ):
+        raise ValueError(
+            "Every field of this answer is empty, so it reports nothing and cannot "
+            "end the stage. Say what you changed (`changed_files`), what you ran and "
+            "how it ended (`verification`), the regression test that proves a fix "
+            "(`tests`), and anything unfinished or in your way (`blockers`). If the "
+            "work is not finished, keep working - your tools are available again."
+        )
+    return data
+
+
+#: The schema a live specialist agent answers with: `SpecialistOutput`, same
+#: name and fields - so the tool the model calls is still `SpecialistOutput` -
+#: that refuses an all-empty answer. The base class stays permissive, because
+#: code and test doubles build empty instances on purpose.
+AGENT_ANSWER = create_model(
+    "SpecialistOutput",
+    __base__=SpecialistOutput,
+    __validators__={
+        "_an_answer_says_something": model_validator(mode="before")(
+            classmethod(_an_answer_says_something)
+        )
+    },
+)
 
 
 NO_SHELL_NOTE = (
@@ -926,7 +970,7 @@ def create_specialist_agent(
         name=f"specialist_{role}",
         stage=_STAGE,
         system_prompt=_system_prompt(role),
-        response_format=SpecialistOutput,
+        response_format=AGENT_ANSWER,
         model=model,
         checkpointer=checkpointer,
         repo_root=repo_root, allow_subdirectories=allow_subdirectories,

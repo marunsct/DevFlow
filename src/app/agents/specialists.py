@@ -733,7 +733,18 @@ def build_test_run_request(
         "new tooling, report that as a blocker instead of installing it.\n\n"
         "Report EVERY failure in the `defects` field, each with a severity, reproduction "
         "steps, expected behavior, actual behavior, affected files, and the specialist "
-        "role that must fix it. If everything passes, return an empty `defects` list."
+        "role that must fix it. If everything passes, return an empty `defects` list.\n\n"
+        # One run's last test round saw its suite print "QuotaExceededError is
+        # not defined" three times, called it "a non-fatal warning" under
+        # `risks`, and passed the milestone. The product's storage error
+        # handler named a class that does not exist, so the failure path the
+        # brief asked for threw instead of recovering; every test passed
+        # because none of them reached it with a real failure.
+        "A passing exit code is not the whole result: read what the run printed. An "
+        "error the product itself reports while the tests pass - a name that is not "
+        "defined, an exception it caught and logged, a stack trace - is a defect in "
+        "the code that printed it, not a risk. The suite passed because no assertion "
+        "looks at that path. Report it in `defects`."
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

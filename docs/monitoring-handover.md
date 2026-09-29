@@ -3,16 +3,152 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-09-24, branch `harness-hardening-session` at `2dd14bb`, plus
-whatever this run adds. Everything below is pushed to
-`github.com/marunsct/DevFlow`.
+**As of:** 2026-09-29, branch `harness-hardening-session`, pushed to the git
+remote named `main` (`git push main harness-hardening-session`). Section 0 is
+kept current by whoever runs the loop; sections 1-10 are the method and history
+written on 2026-09-24 and still hold unless section 0 says otherwise.
 
 **What this document is not.** It is not a list of what to change. That lives
-in `docs/harness-hardening-plan.md` (the running findings log, §4a through
-§4bh) and `docs/harness-hardening-session-changes.md` (the 20-22 September
-session, written on a different machine). This document is about *method*:
-how to look, what the numbers mean, which signals have repeatedly turned out
-to matter, and which apparent problems are not problems.
+in `docs/harness-hardening-plan.md` (the running findings log) and in the git
+log of this branch, where every fix's commit message says what a run did and
+why the change answers it.
+
+---
+
+## 0. Start here: the loop as it runs now
+
+### 0.1 The standing instruction
+
+Run a continuous audit / fix / deploy loop on this harness, and do not stop:
+
+1. start a run of a brief;
+2. audit its transcript, logs, database and tool calls closely - especially
+   failed and unnecessary calls - every **15-20 minutes** (not more often; it
+   costs tokens);
+3. fix what the harness did wrong, **technology-agnostically**: the harness
+   builds full-stack apps in any language or framework, so a fix must not
+   assume JavaScript, npm or a browser. Language/framework guidance belongs in
+   the `plugin_instructions` table and its seed, `src/app/plugins/seed.py`,
+   never hard-coded in prompts;
+4. add a test for every fix, **prove it fails on the unfixed code** (stash the
+   fix or make it a no-op, run the test, restore), run the full suite;
+5. commit, push, deploy, and start the next run.
+
+**The gate.** A run is *clean* when it completes and the audit finds no bug
+and no improvement worth making. Two consecutive clean runs of
+`tests/brief_low.md` move the loop to `tests/brief_medium.md`; two clean runs
+of that move it to `tests/brief_high.md`; then the same there. A run in which
+anything was fixed resets the count to zero, including a fix deployed while it
+ran.
+
+**Keep, and fix only where wrong:** dynamic agent instruction injection (the
+`plugin_instructions` table, the seed and its middleware), the parallel/linear
+execution toggle in settings, and the sprint summary.
+
+**Never:** hard-code run ids (`tests/test_no_run_ids_in_the_source.py`
+enforces it), read or reset the `admin` password, use the admin account for
+the loop, write the settings table directly (settings need admin; the owner
+configured the model endpoint `:8888` and parallel mode), print values from
+`.env`, kill the owner's GPU processes (llama-server and friends), or add
+knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
+
+### 0.2 Where it stands
+
+| | |
+|---|---|
+| brief | `tests/brief_low.md` |
+| clean runs toward the gate | **0 of 2** (every run so far found something) |
+| current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
+| database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
+| transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |
+| workspaces | `runs.repo_root`, e.g. `/app/data/workspaces/default/workspace-<run-id>` |
+
+Healthy numbers on recent brief_low runs: 1.7-6% of tool calls failed (most of
+those guards working), 0 duplicate executions, 8-19% redundant reads, three or
+fewer architecture reviews.
+
+### 0.3 The scripts
+
+All in `scripts/loop/`, all documented in their own headers. The Python ones
+run **inside the worker** and are piped in on stdin, so nothing is copied into
+the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
+
+| script | what it is for |
+|---|---|
+| `loop.sh` | the one entry point: `status`, `start [brief]`, `wait [minutes]`, `audit`, `stage <name> [HH:MM]`, `reads`, `deploy`, `suite`. Run with no argument for help. |
+| `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0), redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
+| `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
+| `redundant_reads.py` | re-reads by (stage, file) and which notice answered them. One pair with many re-reads has twice been a misleading harness message. |
+| `scripts/audit_run.py` | the older whole-run audit (predates this loop): separates *refusals that prevented damage* from *failures that cost the run*, and runs the cross-file checks over the product. Use it on a finished run; see section 5. |
+
+`loop.sh start` logs in with `LOOP_USER` / `LOOP_PASSWORD` from the
+environment; no credential is stored in the repository. The loop's operator
+account (currently `harness-test`) exists only in the local database and must
+be deleted when the loop ends. On a fresh database, create one:
+
+```sh
+docker exec langchain-app-1 python -m app.server.manage create-user <name> \
+  --password <password> --role operator
+```
+
+### 0.4 One iteration, step by step
+
+```sh
+export LOOP_USER=harness-test LOOP_PASSWORD=...        # the operator account
+scripts/loop/loop.sh start                             # prints the run id and JST start time
+scripts/loop/loop.sh wait 18                           # prints "next report by HH:MM JST", then the audit
+```
+
+Then, for every failure signature and every stage that looks wrong:
+
+1. `loop.sh stage <stage>` and read the replies around the failure. Decide:
+   guard working as designed (a refused repeat, a parse refusal that kept a
+   broken file off disk) - or a harness message that is wrong, misleading or
+   missing. Only the second is a finding.
+2. Also read the product: `docker compose exec -T worker sh -c "cd <repo_root>/<project> && npm test"`
+   (or the stack's equivalent) and the review documents in `<repo_root>/docs/`.
+   A reviewer or checker that reports working code as broken is a finding
+   (several of the fixes on this branch were false positives in
+   `src/app/analysis/*`).
+3. Fix in `src/`, add a test named for the behaviour, prove it fails on the
+   old code, then `loop.sh suite` (do not edit `src/` while it runs).
+4. Commit with a message that says what the run did and why the change
+   answers it; `git push main harness-hardening-session`.
+5. `loop.sh deploy`. A run that already has a finding may be resumed on the
+   new code (orphan recovery does it); a run that could still be clean should
+   be left to finish first.
+6. When the run ends: if nothing was found, count it toward the gate;
+   otherwise the count is 0. `loop.sh start` the next one.
+
+Always say when the next check will report (JST). If shell commands stop
+working (the tool-approval check can fail transiently), schedule a retry about
+10 minutes later rather than waiting for a person.
+
+### 0.5 Things that bite
+
+- Deploy = `docker compose build app worker && docker compose up -d app worker`.
+  There is no source mount; a restart deploys nothing. `loop.sh deploy`
+  compares the image's files with the working tree.
+- Orphan recovery resumes any `running` run after a deploy. A superseded run
+  comes back and competes for the two worker slots and the single model
+  server: cancel it with `POST /api/runs/{id}/cancel`.
+- Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
+- Containers log UTC; the host is JST (+9). Transcript times are UTC.
+- The full suite takes about 2.5 minutes here: roughly 7,150 pass, 16 skip,
+  and three `tests/test_codebase_seeding_api.py` tests fail for want of S3
+  credentials. Any other failure is real - unless `src/` was edited while the
+  suite ran (tests that read source with `inspect` then see shifted lines).
+- A tool call id run twice, or a stage that restarts, is always worth a trace.
+
+### 0.6 Removed on 2026-09-29
+
+`scratch/` (`check_run.py`, `get_run_logs.py`, `get_runs.py`,
+`resume_run.py`, `run_monitor.py`, `start_run_api.py`, `run_logs.json`,
+`worker.log`) and the root-level `audit_output.txt`. They logged in as
+`admin`/`dev`, named fixed run ids and the old `langchain_auth` database, and
+carried plain-text credentials; everything they did is covered by
+`scripts/loop/`. **Those credentials remain in git history and should be
+treated as exposed and rotated.**
 
 ---
 
@@ -33,7 +169,7 @@ Four ordering rules, each of which has cost a stage or an hour when broken:
    and it muddies whatever the run was being observed for. Check first:
 
    ```sh
-   docker exec langchain-db-1 psql -U postgres -d langchain_auth -tAc \
+   docker exec langchain-db-1 psql -U postgres -d langchain -tAc \
      "select run_id, status, left(updated_at,16) from runs
       where status in ('running','waiting_for_approval','waiting_for_review');"
    ```
@@ -192,7 +328,7 @@ runs are comparable.
 ```sh
 TOKEN=$(curl -s -X POST http://localhost:8000/api/auth/token \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d 'username=harness-test&password=loop-test-only-pw-2026' \
+  --data-urlencode "username=$LOOP_USER" --data-urlencode "password=$LOOP_PASSWORD" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 NEW=$(curl -s -X POST http://localhost:8000/api/runs/<finished-run-id>/clone \
@@ -216,7 +352,7 @@ comparison.
 The model is whatever `runtime_settings` points at:
 
 ```sh
-docker exec langchain-db-1 psql -U postgres -d langchain_auth -tAc \
+docker exec langchain-db-1 psql -U postgres -d langchain -tAc \
   "select key, value from runtime_settings;"
 ```
 
@@ -245,7 +381,7 @@ which server is actually up.
 **State:**
 
 ```sh
-docker exec langchain-db-1 psql -U postgres -d langchain_auth -tAc \
+docker exec langchain-db-1 psql -U postgres -d langchain -tAc \
   "select status, current_stage, left(updated_at,19) from runs
    where run_id='<run-id>';"
 ```

@@ -41,6 +41,7 @@ from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.plugins.middleware import build_plugin_instructions_middleware
+from app.agents.line_batches import build_line_batch_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
 from deepagents.middleware.filesystem import (
     FilesystemMiddleware,
@@ -629,6 +630,9 @@ def create_role_agent(
         # one. See `app.agents.text_tool_calls`.
         build_text_tool_call_middleware(),
         build_workspace_path_middleware(resolved_repo_root),
+        # After the path rewrite, so it groups a reply's edits by the path the
+        # tool will resolve. See `app.agents.line_batches`.
+        build_line_batch_middleware(resolved_repo_root),
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),
         build_plugin_instructions_middleware(resolved_repo_root),

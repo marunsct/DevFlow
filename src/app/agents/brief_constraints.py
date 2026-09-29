@@ -66,6 +66,21 @@ _A_RESTRICTION = re.compile(
 MAX_CONSTRAINT_LINES = 12
 
 
+def _not_the_product() -> frozenset[str]:
+    """The directories no scan here should enter.
+
+    It was `node_modules` alone. One run's milestone reviewer was told, as a
+    deterministic finding, "aab42732f01924e5/package.json declares `serve`.
+    The brief rules that out" - a manifest npx had written into its own cache,
+    `.agent-home/.npm/_npx/aab42732f01924e5/`, under the sandbox's HOME. The
+    reviewer then listed `/aab42732f01924e5`, which does not exist. Every other
+    check skips the same set this returns; this one now does too.
+    """
+    from app.tools.repository import IGNORED_DIRECTORIES
+
+    return IGNORED_DIRECTORIES
+
+
 def _section_under(text: str, heading: re.Match[str]) -> str:
     """The body below `heading`, ending at the next heading of the same level."""
     level = len(heading.group(1))
@@ -213,7 +228,7 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     and a lockfile of thirty-nine packages.
     """
     imported: set[str] = set()
-    for script in files_under(project, {"node_modules"}):
+    for script in files_under(project, _not_the_product()):
         if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
             continue
         try:
@@ -258,7 +273,7 @@ def _imported_only_by_tests(project: Path, package: str) -> bool:
     from app.analysis.file_kinds import classify_file, is_test
 
     try:
-        for script in files_under(project, {"node_modules"}):
+        for script in files_under(project, _not_the_product()):
             if script.suffix not in _A_SCRIPT or "node_modules" in script.parts:
                 continue
             relative = str(script.relative_to(project))
@@ -321,7 +336,7 @@ def what_the_brief_forbids_that_is_there(
     found: list[str] = []
     try:
         root = Path(repository_root)
-        for manifest in sorted(files_under(root, {"node_modules"}, "package.json")):
+        for manifest in sorted(files_under(root, _not_the_product(), "package.json")):
             if "node_modules" in manifest.parts:
                 continue
             try:

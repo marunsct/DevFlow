@@ -213,6 +213,30 @@ def _fetches_dependencies(command: Sequence[str]) -> bool:
     return manager == "go" and words[:2] == ["mod", "download"]
 
 
+def _runs_tests(command: Sequence[str]) -> bool:
+    """Whether this command runs a test suite, in any language.
+
+    Such a command belongs in the `test` category whatever the caller sent,
+    as an install belongs in `install`. Measured on one run:
+    `npm test` arrived with no category, ran under the 120-second default,
+    and timed out - its end-to-end half alone took 144 seconds when the stage
+    ran it again as `npm run test:e2e` with `category: "test"`.
+
+    Recognised by shape, not by a list of tools: a `test` subcommand or a
+    `test:*` script among the first few words (`npm test`, `npm run test:e2e`,
+    `go test`, `cargo test`, `npx playwright test`, `dotnet test`, `node --test`), a program
+    named for testing (`pytest`, `phpunit`), or `python -m pytest|unittest`.
+    """
+    words = [Path(str(word)).name.lower() for word in command[:4]]
+    if not words:
+        return False
+    if any(word in ("test", "--test") or word.startswith(("test:", "test-")) for word in words[1:]):
+        return True
+    if ("test" in words[0] or words[0].endswith("unit")) and not words[0].startswith("-"):
+        return True
+    return len(words) >= 3 and words[1] == "-m" and words[2] in ("pytest", "unittest")
+
+
 def _is_a_test_only_install(command: Sequence[str]) -> bool:
     """Whether this install puts its packages somewhere the product does not ship.
 
@@ -3671,6 +3695,8 @@ class SandboxExecutor:
         started = time.monotonic()
         if category == "default" and _fetches_dependencies(command):
             category = "install"
+        elif category == "default" and _runs_tests(command):
+            category = "test"
         with _the_lock_for(repo_root):
             return cls._execute_serialised(
                 command, repo_root, role_name, category, extra_env, working_directory, started

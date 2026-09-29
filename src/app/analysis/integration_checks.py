@@ -4450,6 +4450,34 @@ def _where_the_run_deferred_it(root: Path, action: str, words: tuple[str, ...]) 
     return ""
 
 
+#: The action a required-action finding is about, in either check's wording.
+_A_REQUIRED_ACTION_FINDING = re.compile(r"a user can `([a-z]+)`|No test names `([a-z]+)`")
+
+
+def planned_for_a_later_sprint(problem: str, later_sprints: str) -> bool:
+    """Whether `problem` is a missing action a later sprint of the plan builds.
+
+    `_a_required_action_nothing_implements` and `_a_required_action_no_test_covers`
+    read the whole project's requirements and run in every test round, so they
+    reported sprint two's work as sprint one's defect. Measured on one run: the
+    specification described inline editing (ADR-08) and the sprint plan put it
+    in sprint 2, and sprint 1's first test round reported "Edit feature required
+    by product_intake.md but not implemented" as major. `defect_fix_1_0` then
+    built editing inside sprint 1, outside any plan.
+
+    Deferring to a later sprint is what a sprint plan is for; the final gate at
+    the last sprint (`_a_brief_requirement_the_run_never_built`) is what catches
+    a requirement no sprint ever builds. `later_sprints` is the goal, in-scope
+    work and acceptance criteria of every sprint after this one - never their
+    `out_of_scope`, which names work in order to exclude it.
+    """
+    match = _A_REQUIRED_ACTION_FINDING.search(problem or "")
+    if not match or not (later_sprints or "").strip():
+        return False
+    action = match.group(1) or match.group(2)
+    return _names_the_action(later_sprints, _SAME_ACTION.get(action, (action,)), inflected=True)
+
+
 def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str, str]]:
     """Each action the brief requires that `text` defers, as (action, brief line, text line).
 

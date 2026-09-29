@@ -2731,6 +2731,27 @@ def _a_round_that_found_a_product_defect(defects: list[Any]) -> bool:
     return False
 
 
+def _what_later_sprints_build(state: Any) -> str:
+    """The goal, in-scope work and acceptance criteria of every sprint after this one.
+
+    Never `out_of_scope`: that field names work in order to exclude it. See
+    `app.analysis.integration_checks.planned_for_a_later_sprint`. "" on any
+    failure, which leaves every finding in place.
+    """
+    try:
+        plan = state.get("sprint_plan")
+        sprints = list(getattr(plan, "sprints", None) or [])
+        index = int(state.get("current_sprint_index", 0) or 0)
+        parts: list[str] = []
+        for sprint in sprints[index + 1:]:
+            parts.append(str(getattr(sprint, "goal", "") or ""))
+            parts.extend(str(item) for item in getattr(sprint, "in_scope", None) or ())
+            parts.extend(str(item) for item in getattr(sprint, "acceptance_criteria", None) or ())
+        return "\n".join(parts)
+    except Exception:  # noqa: BLE001 - see docstring
+        return ""
+
+
 def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     """What the brief asked for that the product still does not do, or "".
 
@@ -3935,6 +3956,7 @@ def build_workflow_graph(
                     for task in (getattr(milestone, "delegated_tasks", None) or ())
                 ),
             ],
+            later_sprints=_what_later_sprints_build(state),
         )
         update = _run_gated_agent(
             state,

@@ -699,6 +699,7 @@ def build_test_run_request(
     repository_root: str,
     stack: Any = None,
     planned: Sequence[str] = (),
+    later_sprints: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Testing specialist's input for one verification round (Step 5.4).
 
@@ -737,6 +738,11 @@ def build_test_run_request(
         from app.analysis.integration_checks import problems_that_break_the_product
 
         proven = problems_that_break_the_product(repository_root, stack)
+        # A requirement a later sprint builds is not this sprint's defect. See
+        # `planned_for_a_later_sprint`.
+        from app.analysis.integration_checks import planned_for_a_later_sprint
+
+        proven = [p for p in proven if not planned_for_a_later_sprint(p, later_sprints)]
     except Exception:  # noqa: BLE001 - a brief is better without them than absent
         proven = []
     try:

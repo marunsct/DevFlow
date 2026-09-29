@@ -997,6 +997,28 @@ def _what_this_stage_replaced_it_with(relative_path: str, find: str) -> str | No
         return None
 
 
+def _who_changed_it(root: Path, relative_path: str) -> str:
+    """Who rewrote a file under a stage that had read it, as a clause.
+
+    Always "a command you ran" until now, which was true when the stages ran
+    one at a time. With parallel stages the writer is as often a stage working
+    alongside: one run's `specialist_ui_ux_0` read `app.js`, and
+    `specialist_testing_1` edited it twice before the edit that read was for.
+    Blaming a command the stage never ran sends it looking for one.
+    """
+    try:
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+
+        writer = project_memory.who_changed(root, relative_path)
+        me = _stage_from_config("")
+    except Exception:  # noqa: BLE001 - the generic cause is still true
+        writer, me = "", ""
+    if writer and me and writer != me:
+        return f"'{writer}', a stage working alongside you, changed it since"
+    return "a command you ran (an installer, a formatter, a generator) rewrote it"
+
+
 def _changed_underneath(relative_path: str, original: str) -> bool:
     """True when this stage read the file and it no longer holds what it read.
 
@@ -1896,10 +1918,9 @@ def edit_approved_artifact(
             if _changed_underneath(relative_path, original):
                 raise RepositoryToolError(
                     f"Could not find that text in '{relative_path}' because the file "
-                    "changed after you last read it - a command you ran (an installer, "
-                    "a formatter, a generator) rewrote it. The passage you sent was "
-                    "correct for the version you had. Read the file again and copy the "
-                    "passage from what you read."
+                    f"changed after you last read it - {_who_changed_it(root, relative_path)}. "
+                    "The passage you sent was correct for the version you had. Read "
+                    "the file again and copy the passage from what you read."
                 )
 
             # What differs, before what is nearby: a model that is three

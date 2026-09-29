@@ -905,6 +905,29 @@ class _NoticingRepeats:
             "`grep`."
         )
 
+    def _remember_the_version_read(self, file_path: str) -> None:
+        """Record the file this stage has now seen, for `edit_artifact`.
+
+        `seen_content.remember` is how an edit whose `find` no longer matches
+        can say the file changed after it was read, and only
+        `read_repository_file` and the write tools called it. `read_file`, the
+        read most stages use, did not, so a stage that read with it was always
+        told "Could not find that text" and a nearest match. One run's
+        `specialist_ui_ux_0` read `app.js` with `read_file`, a parallel stage
+        edited it twice, and the edit was answered with a JSDoc block from the
+        top of the file.
+
+        The whole file, not the slice returned: the check compares whole-file
+        digests, and a ranged read has seen the version the range came from.
+        """
+        try:
+            from app.tools.seen_content import remember
+
+            text = self._resolve_path(file_path).read_text(encoding="utf-8")
+            remember(str(file_path), text)
+        except Exception:  # noqa: BLE001 - bookkeeping must never fail a read
+            return
+
     @staticmethod
     def _lines_in_the_file(result: object, content: str) -> int:
         """How long the file is, not how long the part of it just returned is.
@@ -1058,6 +1081,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         content = data.get("content") if isinstance(data, dict) else None
         if not isinstance(content, str):
             return result
+        self._remember_the_version_read(file_path)
         self._withheld = False  # noqa: SLF001 - own attribute
         note = self._note_if_repeated(file_path, content)
         if self._withheld:

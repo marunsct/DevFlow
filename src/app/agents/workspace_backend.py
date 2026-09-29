@@ -553,6 +553,28 @@ class _NoticingRepeats:
             "A directory is created by the first file written under it."
         )
 
+    def _no_file_of_that_name(self, wanted: str) -> str:
+        """Say that no file of this name exists anywhere, when none does.
+
+        The read counterpart of `_not_written_yet`. One run's
+        `specialist_documentation_2`, sent to write the README, read
+        `README.md` first, got a bare "not found", and spent its next call on
+        `ls` of the project to learn the same thing.
+        """
+        root = getattr(self, "cwd", None)
+        name = Path(str(wanted).strip()).name
+        if not root or not name:
+            return ""
+        try:
+            if next(iter(files_under(Path(root), IGNORED_DIRECTORIES, name)), None) is not None:
+                return ""
+        except Exception:  # noqa: BLE001 - a hint must never fail the call
+            return ""
+        return (
+            f" No file named '{name}' exists anywhere in the workspace yet. If it "
+            "is yours to write, writing it creates it."
+        )
+
     def _the_project_is_called(self, wanted: str) -> str:
         """Name the project directory when an agent guesses at it and misses.
 
@@ -960,6 +982,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 self._what_is_in_it(file_path)
                 or self._where_this_stage_moved_it(file_path)
                 or self._where_it_actually_is(file_path)
+                or self._no_file_of_that_name(file_path)
             )
             # After the hint, not instead of it: where the file really is
             # answers the question, and this only adds that asking again will

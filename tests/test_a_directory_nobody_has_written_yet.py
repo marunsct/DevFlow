@@ -47,3 +47,38 @@ def test_a_directory_that_exists_elsewhere_still_gets_the_better_hint(tmp_path: 
 
 def test_a_missing_file_is_not_told_about_directories(tmp_path: Path) -> None:
     assert "Nothing named" not in _error(tmp_path, "/docs/plan.md")
+
+
+def _read_error(root: Path, path: str) -> str:
+    return str(getattr(WorkspaceBackend(str(root), virtual_mode=True).read(path), "error", "") or "")
+
+
+def test_a_file_nobody_has_written_says_so(tmp_path: Path) -> None:
+    """One run's documentation stage read `README.md` before writing it, got a
+    bare "not found", and spent its next call on `ls` to learn the same."""
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "app.js").write_text("export {}\n", encoding="utf-8")
+
+    error = _read_error(tmp_path, "/app/README.md")
+
+    assert "not found" in error
+    assert "No file named 'README.md' exists anywhere in the workspace yet" in error
+
+
+def test_a_file_that_exists_elsewhere_is_not_called_missing(tmp_path: Path) -> None:
+    (tmp_path / "app" / "docs").mkdir(parents=True)
+    (tmp_path / "app" / "docs" / "README.md").write_text("# App\n", encoding="utf-8")
+
+    error = _read_error(tmp_path, "/README.md")
+
+    assert "exists anywhere in the workspace yet" not in error
+
+
+def test_a_copy_in_a_hidden_directory_does_not_count(tmp_path: Path) -> None:
+    """A dependency's README is not the product's."""
+    (tmp_path / "app" / "node_modules" / "jest").mkdir(parents=True)
+    (tmp_path / "app" / "node_modules" / "jest" / "README.md").write_text("# jest\n", encoding="utf-8")
+
+    error = _read_error(tmp_path, "/app/README.md")
+
+    assert "No file named 'README.md' exists anywhere in the workspace yet" in error

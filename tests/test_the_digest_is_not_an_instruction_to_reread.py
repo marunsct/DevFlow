@@ -95,7 +95,19 @@ class TestEveryLaterCall:
         last = _last_message(AFTER_A_TOOL_RESULT, workspace)
 
         assert "not a new request" in last
-        assert "carry on from where you left off" in last
+        assert "attached automatically to every call" in " ".join(last.split())
+
+    def test_it_does_not_tell_the_model_it_was_interrupted(self, workspace: Path) -> None:
+        """It used to end "carry on from where you left off", and one run's test
+        round answered it after every tool result - "I'll continue from where I
+        left off", "the conversation has been fragmented across turns" - while
+        re-running the same browser install four times."""
+        last = " ".join(_last_message(AFTER_A_TOOL_RESULT, workspace).split())
+
+        assert "left off" not in last
+        assert "carry on" not in last
+        assert "nothing was interrupted" in last
+        assert "the conversation above it is unbroken" in last
 
     def test_it_is_still_current(self, workspace: Path) -> None:
         """The reason it is sent on every call at all: it shows what was just written."""

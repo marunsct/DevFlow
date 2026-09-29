@@ -226,10 +226,20 @@ def _nothing_has_been_built(names: list[str]) -> bool:
 
 
 #: The header and footer once a stage has already acted. See `_a_refresh`.
+#:
+#: It used to end "carry on from where you left off", and models read that as
+#: being told they had been interrupted. It arrives after every tool result, so
+#: they said so after every tool result: one run's `test_round_0` opened turn
+#: after turn with "I'll continue from where I left off", once with "the
+#: conversation has been fragmented across turns", restated its plan each time,
+#: and ran the same browser install four times. Across runs the echo climbed
+#: from about 1% of replies to 7%. Nothing was interrupted; the header now says
+#: what it is and that nothing was.
 _REFRESH_HEADER = (
     "The workspace as it stands now - the same listing as before, refreshed for "
     "this turn so it includes anything you have just written. It is reference, "
-    "not a new request: carry on from where you left off."
+    "not a new request, and nothing was interrupted: it is attached automatically "
+    "to every call, and the conversation above it is unbroken."
 )
 _REFRESH_FOOTER = (
     "Nothing here asks you to read anything again. A file you have already "

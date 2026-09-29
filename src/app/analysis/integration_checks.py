@@ -4622,6 +4622,24 @@ def _a_required_action_nothing_implements(
                 "given it. Build it, or put the descope to the operator."
             )
             continue
+        # Whose words to quote. The run's documents outrank the brief in
+        # `required` so a finding can point at the file the run acts on - but a
+        # document that restates the requirement narrowly carries the
+        # narrowing with it. One run's intake wrote "Users can add, edit
+        # (toggle complete/incomplete), and delete tasks" for a brief saying
+        # "Users can add, edit, delete tasks". The final gate quoted the
+        # intake, and the technical lead it was sent back to read "edit" as
+        # toggling, found toggling built, and assigned a documentation fix.
+        # The run escalated with editing still unbuilt.
+        who, quoted = "This project's own documents require", f"\"{required[action][:160]}\""
+        if action in from_the_brief:
+            who, quoted = "The operator's brief requires", f"\"{from_the_brief[action][:160]}\""
+            if " ".join(required[action].split()) != " ".join(from_the_brief[action].split()):
+                quoted += (
+                    f" (this run's documents restate it as \"{required[action][:140]}\"; a "
+                    "restatement that narrows it to something already built does not "
+                    "satisfy the brief's own words)"
+                )
         if deferral:
             # Recorded, not forgotten - which is better, and still not the
             # run's decision to make. One run captured "Users can
@@ -4633,8 +4651,8 @@ def _a_required_action_nothing_implements(
             # A decision record the run wrote cannot descope a criterion the
             # brief states.
             problems.append(
-                f"This project's own documents require that a user can "
-                f"`{action}` - \"{required[action][:140]}\" - and also defer it: "
+                f"{who} that a user can "
+                f"`{action}` - {quoted} - and also defer it: "
                 f"{deferral}. Nothing in the product names it. Deferring is a "
                 "decision a person makes, not one this run may make about a "
                 "criterion it was given: the same workflow wrote both lines, so "
@@ -4644,8 +4662,8 @@ def _a_required_action_nothing_implements(
             )
             continue
         problems.append(
-            f"This project's own documents require that a user can `{action}`: "
-            f"\"{required[action][:160]}\". Nothing in the product names it - "
+            f"{who} that a user can `{action}`: "
+            f"{quoted}. Nothing in the product names it - "
             f"not {alternatives} either, in any source file, page or test. "
             "Every other action in that list is implemented, so this is one "
             "acceptance criterion delivered as far as the documents and no "

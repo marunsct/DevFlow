@@ -122,3 +122,40 @@ def test_a_first_run_is_not_refused(tmp_path, monkeypatch):
     SandboxExecutor.execute(SERVER, str(tmp_path), "backend_specialist")
 
     assert ran["called"] is True
+
+
+SUITE = ["npx", "playwright", "test", "--reporter=line"]
+
+
+def test_a_timeout_under_a_shorter_limit_does_not_predict_a_longer_one(tmp_path):
+    """One run's `test_round_0` timed this suite out at the 120-second default.
+    The next call would have had the 300-second test limit and was refused as
+    "would time out again"; the stage then ran the suite one test at a time,
+    about twenty-five invocations, though it had passed in seventy seconds
+    under the test limit earlier in the run."""
+    _ledger(tmp_path, [_timeout_entry(command=SUITE)])
+
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 0
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="default") == 1
+
+
+def test_a_timeout_under_the_same_limit_still_counts(tmp_path):
+    _ledger(tmp_path, [{**_timeout_entry(command=SUITE), "category": "test"}])
+
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 1
+
+
+def test_the_suite_runs_again_under_the_test_limit(tmp_path, monkeypatch):
+    _ledger(tmp_path, [_timeout_entry(command=SUITE)])
+    seen = {}
+
+    def _fake_run(cls, command, repo_root, role_name="general", category="default", *args, **kwargs):
+        seen["category"] = category
+        return {"returncode": "0", "stdout": "18 passed", "stderr": ""}
+
+    monkeypatch.setattr(SandboxExecutor, "_run", classmethod(_fake_run))
+
+    outcome = SandboxExecutor.execute(SUITE, str(tmp_path), "testing_specialist")
+
+    assert seen.get("category") == "test"
+    assert "error" not in outcome

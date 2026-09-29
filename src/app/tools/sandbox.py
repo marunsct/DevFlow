@@ -2809,7 +2809,10 @@ def _resolve_a_working_directory(repo_root: str, working_directory: str | None) 
 
 
 def timed_out_this_way_before(
-    repo_root: str, command: Sequence[str], working_directory: str | None = None
+    repo_root: str,
+    command: Sequence[str],
+    working_directory: str | None = None,
+    category: str | None = None,
 ) -> int:
     """How many times this exact command has already timed out in this run.
 
@@ -2829,12 +2832,20 @@ def timed_out_this_way_before(
         entries = read_execution_ledger(repo_root)
     except Exception:  # noqa: BLE001 - a guard must never fail the command
         return 0
+    # Only a timeout under at least the limit this run would get predicts
+    # another. One run's `test_round_0` timed `npx playwright test` out at the
+    # 120-second default; the next call, which would have had the 300-second
+    # test limit, was refused as "would time out again", and the stage ran the
+    # suite one test at a time with `-g` - about twenty-five invocations - where
+    # the whole suite had passed in seventy seconds under the test limit before.
+    allowed = TIMEOUTS.get(category or "default", TIMEOUTS["default"])
     return sum(
         1
         for entry in entries
         if _same_invocation(entry, argv, working_directory)
         and entry.get("command") == argv
         and "timed out" in str(entry.get("error") or "")
+        and TIMEOUTS.get(str(entry.get("category") or "default"), TIMEOUTS["default"]) >= allowed
     )
 
 
@@ -3777,7 +3788,7 @@ class SandboxExecutor:
             )
             return outcome
 
-        already_timed_out = timed_out_this_way_before(repo_root, command, working_directory)
+        already_timed_out = timed_out_this_way_before(repo_root, command, working_directory, category)
         if already_timed_out:
             outcome = {
                 "error": (

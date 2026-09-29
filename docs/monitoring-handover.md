@@ -134,11 +134,25 @@ working (the tool-approval check can fail transiently), schedule a retry about
   server: cancel it with `POST /api/runs/{id}/cancel`.
 - Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
 - Containers log UTC; the host is JST (+9). Transcript times are UTC.
-- The full suite takes about 2.5 minutes here: roughly 7,150 pass, 16 skip,
+- The full suite takes about 2.5 minutes here: roughly 7,330 pass, 16 skip,
   and three `tests/test_codebase_seeding_api.py` tests fail for want of S3
   credentials. Any other failure is real - unless `src/` was edited while the
   suite ran (tests that read source with `inspect` then see shifted lines).
 - A tool call id run twice, or a stage that restarts, is always worth a trace.
+
+### 0.5.1 Parked: known, not fixed
+
+- **An all-empty structured answer ends a stage.** When a reply spends its whole
+  output budget on reasoning, `settled_answer` withholds tools for one call and
+  asks for the answer. Seen on run-76f08a5c's `defect_fix_3_0`: it wrote "fixed 1
+  of 3, let me write a debug script" and called `SpecialistOutput` with `{}`,
+  which validates (every field defaults empty) and ended the stage with the
+  defect open - one wasted test round plus fix round. A `model_validator` on
+  `SpecialistOutput` that refuses an all-empty answer fixes it but breaks about
+  50 routing/parallel tests whose fake agents return empty outputs; it needs a
+  narrower home (the settled-answer middleware, on the model's tool call only).
+- Tools are still offered when command execution is disabled; the duplicate
+  `test/` and `tests/` suites seen in run 71d58b84 are not addressed.
 
 ### 0.6 Removed on 2026-09-29
 

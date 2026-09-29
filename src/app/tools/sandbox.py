@@ -2676,6 +2676,7 @@ def _record_execution(
         entry = {
             "at": datetime.now(timezone.utc).isoformat(),
             "role": role_name,
+            "stage": _the_stage_running_now(),
             "command": [str(part) for part in command],
             "working_directory": _where_it_ran(working_directory),
             "category": category,
@@ -2955,6 +2956,16 @@ note explaining that the text is simply not there.
 """
 
 
+def _the_stage_running_now() -> str:
+    """The stage making this call, or "" outside a graph run. Never raises."""
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        return _stage_from_config("")
+    except Exception:  # noqa: BLE001 - bookkeeping only
+        return ""
+
+
 def succeeded_this_way_before(
     repo_root: str, command: Sequence[str], working_directory: str | None = None
 ) -> int:
@@ -2988,6 +2999,17 @@ def succeeded_this_way_before(
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
+    # Only the passes this stage was shown. The refusal and the note both say
+    # "you already have the answer", which is true of a pass this stage ran and
+    # false of one another stage ran. One run's `defect_fix_1_1` was told to
+    # reproduce its defect, asked for `npm test`, and was refused because
+    # three earlier stages had passed it - output it had never seen. It spent
+    # some twenty calls on `cat`, `read_command_output` with a stage name as the
+    # reference, and a delete it was refused, hunting for that output. Outside a
+    # run there is no stage, and every entry counts as before.
+    stage = _the_stage_running_now()
+    if stage:
+        entries = [e for e in entries if e.get("stage") == stage]
     passes = [
         entry
         for entry in entries

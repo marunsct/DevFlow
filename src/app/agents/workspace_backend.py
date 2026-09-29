@@ -1155,10 +1155,49 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
     def grep(self, *args: Any, **kwargs: Any) -> Any:
         result = super().grep(*args, **kwargs)
         matches = getattr(result, "matches", None)
+        if not matches and not getattr(result, "error", None):
+            result = self._each_alternative(result, *args, **kwargs)
+            matches = getattr(result, "matches", None)
         if not matches:
             return result
         under = kwargs.get("path", args[1] if len(args) > 1 else None)
         return replace(result, matches=[m for m in matches if not _is_hidden(m, under)])
+
+    def _each_alternative(self, result: Any, *args: Any, **kwargs: Any) -> Any:
+        """A literal miss on `a|b|c`, searched as `a`, `b` and `c` instead.
+
+        `grep` here is literal, and a pattern with `|` in it is almost always
+        an alternation the model meant as a regex. The miss came back with
+        "run a separate search per alternative", and the model sent the same
+        alternation again: one run's `test_round_0` sent
+        `editBtn|edit-btn|editing` and `taskList.addEventListener|deleteBtn|editBtn`
+        and their like a dozen times, each answered "No matches found".
+
+        Only after the literal search found nothing, so a pattern that really
+        contains `|` still matches itself first; and never for `||`, which is
+        code, not alternation.
+        """
+        pattern = kwargs.get("pattern", args[0] if args else None)
+        if not isinstance(pattern, str) or "|" not in pattern or "||" in pattern:
+            return result
+        alternatives = [part.strip() for part in pattern.split("|") if part.strip()]
+        if len(alternatives) < 2:
+            return result
+        rest = args[1:]
+        options = {key: value for key, value in kwargs.items() if key != "pattern"}
+        found: list[Any] = []
+        seen: set[str] = set()
+        for alternative in alternatives:
+            try:
+                each = super().grep(alternative, *rest, **options)
+            except Exception:  # noqa: BLE001 - the literal answer still stands
+                return result
+            for match in getattr(each, "matches", None) or []:
+                key = repr(sorted(match.items())) if isinstance(match, dict) else repr(match)
+                if key not in seen:
+                    seen.add(key)
+                    found.append(match)
+        return replace(result, matches=found) if found else result
 
 
 __all__ = ["WorkspaceBackend"]

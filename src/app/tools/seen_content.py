@@ -249,6 +249,12 @@ def this_stage_deleted_it(relative_path: str) -> bool:
     return bool(store(_DELETIONS, _FALLBACK_DELETIONS).get(the_same_place(relative_path)))
 
 
+def has_seen_this_version(relative_path: str, content: str) -> bool:
+    """Whether this stage has read or written the file as it is now."""
+    seen = store(_PURPOSE, _FALLBACK)
+    return seen.get(the_same_place(relative_path)) == _digest(content)
+
+
 def changed_since_seen(relative_path: str, content: str) -> bool:
     """True when this stage has seen the file and it no longer matches.
 

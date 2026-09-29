@@ -4074,6 +4074,53 @@ def _who_has_it_now(root: Path, relative_path: str) -> str:
     return f" (last written by {stage})" if stage else ""
 
 
+def _refuse_a_blind_overwrite_of_another_stage_s_file(
+    root: Path, target: Path, relative_path: str, content: str
+) -> None:
+    """Refuse a whole-file write over another stage's file this stage has not seen.
+
+    In parallel mode a stage decides what to write from the workspace as it was
+    when it looked, and another stage can create the same file in the meantime.
+    Measured on one run: `specialist_ui_ux_0` listed an empty workspace at
+    16:14, spent twelve minutes on one reply, and at 16:26 wrote
+    `todo-app/index.html` over the page `specialist_testing_4` had written at
+    16:25 - never having seen it. `specialist_backend_2` rewrote `app.js` a
+    minute later over `specialist_testing_4`'s DOM wiring the same way.
+    `_a_rewrite_that_drops_what_the_file_defines` catches a lost function; a
+    page has none, so nothing was said.
+
+    Only when the file's last writer is a different stage and this stage has
+    not read or written the version on disk. Reading it lifts the refusal, so it
+    costs one call and never blocks: after that the write is a decision made
+    with the other stage's work in view.
+    """
+    try:
+        if not target.is_file():
+            return
+        existing = target.read_text(encoding="utf-8")
+        if not existing.strip() or existing == content:
+            return
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+        from app.tools.seen_content import has_seen_this_version
+
+        writer = project_memory.who_changed(root, relative_path)
+        me = _stage_from_config("")
+        if not writer or not me or writer == me:
+            return
+        if has_seen_this_version(relative_path, existing):
+            return
+    except Exception:  # noqa: BLE001 - bookkeeping must never decide a write
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': it already exists, '{writer}' wrote "
+        f"the version there now ({_line_count(existing)} lines), and you have not "
+        "seen it - writing the whole file would replace that work unread. Nothing "
+        "was written. Read it first; then change your part with `edit_artifact`, or "
+        "write the whole file again if replacing it is what you mean."
+    )
+
+
 def _a_rewrite_that_drops_what_the_file_defines(
     root: Path, target: Path, relative_path: str, content: str
 ) -> str:
@@ -4326,6 +4373,7 @@ def write_approved_artifact(
     _refuse_if_broken(relative_path, content)
     _refuse_if_node_cannot_parse(target, relative_path, content)
     _refuse_a_hand_built_dom_again(relative_path, content)
+    _refuse_a_blind_overwrite_of_another_stage_s_file(root, target, relative_path, content)
     # Before the write, because it compares against the file being replaced. The
     # note it returns is reported with the others once the write has landed.
     dropped_note = _a_rewrite_that_drops_what_the_file_defines(

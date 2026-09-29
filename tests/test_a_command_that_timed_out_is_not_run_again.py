@@ -159,3 +159,18 @@ def test_the_suite_runs_again_under_the_test_limit(tmp_path, monkeypatch):
 
     assert seen.get("category") == "test"
     assert "error" not in outcome
+
+
+def test_its_own_refusals_are_not_counted_as_timeouts(tmp_path):
+    """One run's count went "timed out 2 time(s)", 3, 4, 5, 6 across calls that
+    were all refused and never ran: each refusal was recorded, and it says
+    "already timed out"."""
+    refusal = {
+        **_timeout_entry(command=SUITE),
+        "category": "test",
+        "error": "Not running this again: it has already timed out 2 time(s) in this run and would time out again.",
+    }
+    _ledger(tmp_path, [_timeout_entry(command=SUITE), refusal, refusal])
+
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="default") == 1
+    assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 0

@@ -2844,7 +2844,10 @@ def timed_out_this_way_before(
         for entry in entries
         if _same_invocation(entry, argv, working_directory)
         and entry.get("command") == argv
-        and "timed out" in str(entry.get("error") or "")
+        # A real timeout, not this function's own refusal, which says "already
+        # timed out" and is recorded too: that run counted its refusals, and
+        # "timed out 2 time(s)" became 3, 4, 5, 6 with nothing timing out.
+        and str(entry.get("error") or "").lstrip().startswith("Command timed out")
         and TIMEOUTS.get(str(entry.get("category") or "default"), TIMEOUTS["default"]) >= allowed
     )
 

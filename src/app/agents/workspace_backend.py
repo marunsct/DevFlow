@@ -27,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from deepagents.backends.filesystem import FilesystemBackend
+from app.analysis.document_manifest import not_rendered_yet
 from app.analysis.walk import directories_under, files_under
 
 #: Directory names hidden from an agent's view of the workspace. Sourced from
@@ -1018,6 +1019,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 self._what_is_in_it(file_path)
                 or self._where_this_stage_moved_it(file_path)
                 or self._where_it_actually_is(file_path)
+                or not_rendered_yet(str(file_path))
                 or self._no_file_of_that_name(file_path)
             )
             # After the hint, not instead of it: where the file really is

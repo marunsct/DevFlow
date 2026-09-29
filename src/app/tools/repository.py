@@ -321,7 +321,10 @@ def read_text_file(repo_root: str | Path, relative_path: str) -> str:
     if not target.exists():
         raise RepositoryToolError(
             f"File does not exist within the repository: {relative_path}"
-            + _where_that_name_actually_is(root, relative_path)
+            + (
+                _document_manifest.not_rendered_yet(relative_path)
+                or _where_that_name_actually_is(root, relative_path)
+            )
         )
     if not target.is_file():
         raise RepositoryToolError(

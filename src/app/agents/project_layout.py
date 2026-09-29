@@ -50,8 +50,9 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
   `technology_stack.md`, `technical_specification.md`, `sprint_plan.md`,
   `milestone_plan.md`, `architecture_review.md`, `security_review.md`,
   `milestone_review.md` and `tools_and_models.md` are each rendered from a
-  stage's structured response. Read them; never write, copy, move or recreate
-  them, and never copy `docs/` into the project. A second copy is stale the
+  stage's structured response, once that stage has run - early in a run some
+  are not there yet. Read the ones that exist; never write, copy, move or
+  recreate them, and never copy `docs/` into the project. A second copy is stale the
   moment that stage runs again, and writing one is refused."""
 
 #: What to tell an agent about where it is, instead of where the workspace is

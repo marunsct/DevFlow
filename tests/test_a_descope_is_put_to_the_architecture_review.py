@@ -78,7 +78,7 @@ class TestTheReviewIsTold:
     def test_the_request_names_the_descope(self):
         request = _request(SPEC)
 
-        assert "Brief requirements this specification defers or redefines" in request
+        assert "Brief requirements this specification defers, redefines or never describes" in request
         assert "`edit`" in request
         assert "Users can add, edit, delete tasks" in request
 
@@ -86,9 +86,58 @@ class TestTheReviewIsTold:
         assert "is a major finding" in _request(SPEC)
 
     def test_nothing_is_added_when_nothing_is_deferred(self):
-        request = _request("# Spec\nEditing uses an inline input.\n")
+        request = _request(
+            "# Spec\n- Add: the form's submit handler appends a task.\n"
+            "- Editing uses an inline input.\n- Delete: a button removes the task.\n"
+        )
 
-        assert "defers or redefines" not in request
+        assert "defers, redefines or never describes" not in request
 
     def test_nothing_is_added_without_a_brief(self):
-        assert "defers or redefines" not in _request(SPEC, brief="")
+        assert "defers, redefines or never describes" not in _request(SPEC, brief="")
+
+
+class TestASilentOmission:
+    """One run's specification described every flow but editing, and deferred nothing.
+
+    It said "full CRUD operations (create, read, update, delete tasks)" and
+    gave create, toggle, delete and filter each a flow. The sprint plan raised
+    editing as an open question and answered it: "treat as toggle-only".
+    """
+
+    SILENT = """# Technical Specification
+This release covers full CRUD operations (create, read, update, delete tasks).
+- Create Task Flow: the submit handler calls createTask and re-renders.
+- Toggle Completion Flow: a click flips completed and re-renders.
+- Delete Task Flow: a click calls deleteTask and re-renders.
+<!-- Generated from the architect's structured specification. Editing this file does not change what the pipeline reads. -->
+"""
+
+    def test_the_undescribed_action_is_found(self):
+        from app.analysis.integration_checks import brief_actions_the_text_never_describes
+
+        assert [a for a, _ in brief_actions_the_text_never_describes(BRIEF, self.SILENT)] == ["edit"]
+
+    def test_the_rendered_footer_does_not_count_as_describing_it(self):
+        """"Editing this file does not change..." names `edit` on a line of its own."""
+        from app.analysis.integration_checks import brief_actions_the_text_never_describes
+
+        assert brief_actions_the_text_never_describes(BRIEF, self.SILENT)
+
+    def test_the_review_is_told(self):
+        request = _request(self.SILENT)
+
+        assert "`edit`" in request
+        assert "never in a line of its own that says how it is done" in request
+
+    def test_a_described_flow_is_enough(self):
+        from app.analysis.integration_checks import brief_actions_the_text_never_describes
+
+        described = self.SILENT + "- Edit Task Flow: clicking a title opens an input.\n"
+
+        assert brief_actions_the_text_never_describes(BRIEF, described) == []
+
+    def test_a_deferred_action_is_listed_once(self):
+        request = _request(SPEC)
+
+        assert request.count("- `edit`.") == 1

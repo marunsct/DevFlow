@@ -173,26 +173,49 @@ def _what_the_brief_requires_that_this_defers(document_text: str, specification:
     variant ("bulk delete") of something the specification builds elsewhere.
     """
     try:
-        from app.analysis.integration_checks import brief_actions_the_text_defers
+        from app.analysis.integration_checks import (
+            brief_actions_the_text_defers,
+            brief_actions_the_text_never_describes,
+        )
 
         found = brief_actions_the_text_defers(document_text, specification)
+        deferred = {action for action, _, _ in found}
+        # And the silent version: named only in a list of requirements, never
+        # given a flow of its own. One run's specification said "full CRUD
+        # operations (create, read, update, delete tasks)" and described every
+        # flow but editing; nothing deferred it, so the section above was empty.
+        silent = [
+            (action, required)
+            for action, required in brief_actions_the_text_never_describes(
+                document_text, specification
+            )
+            if action not in deferred
+        ]
     except Exception:  # noqa: BLE001 - a hint must never stop a review
         return ""
-    if not found:
+    if not found and not silent:
         return ""
     listed = "\n".join(
-        f"- `{action}`. The brief: \"{required}\". The specification: \"{line}\""
-        for action, required, line in found
+        [
+            f"- `{action}`. The brief: \"{required}\". The specification: \"{line}\""
+            for action, required, line in found
+        ]
+        + [
+            f"- `{action}`. The brief: \"{required}\". The specification names it only "
+            "in lists of requirements, never in a line of its own that says how it is done."
+            for action, required in silent
+        ]
     )
     return (
-        "\n--- Brief requirements this specification defers or redefines ---\n"
+        "\n--- Brief requirements this specification defers, redefines or never describes ---\n"
         f"{listed}\n\n"
         "Each of these is an acceptance criterion in the operator's brief. Narrowing, "
         "reinterpreting or deferring one is the operator's decision, not the run's: a "
         "specification that does it is a major finding, and the remediation is to "
-        "specify how it will be built. The one exception is a line that defers only a "
-        "variant of something the specification does build elsewhere - then quote "
-        "where it is built. The run's final check reads the brief, so a requirement "
+        "specify how it will be built - its flow, as the specification gives every other "
+        "action. The one exception is an action the specification does describe under "
+        "another name, or a line that defers only a variant of something it builds "
+        "elsewhere - then quote where it is built. The run's final check reads the brief, so a requirement "
         "dropped here is built at the end anyway, after every sprint that could have "
         "planned for it.\n"
     )

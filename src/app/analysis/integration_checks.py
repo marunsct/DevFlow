@@ -4467,7 +4467,7 @@ def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str,
     found: list[tuple[str, str, str]] = []
     for action in sorted(required):
         words = _SAME_ACTION.get(action, (action,))
-        for line in (text or "").splitlines():
+        for line in _without_html_comments(text).splitlines():
             if any(
                 _names_the_action(part, words, inflected=True)
                 for part in _what_a_line_defers(line)
@@ -4475,6 +4475,54 @@ def brief_actions_the_text_defers(brief: str, text: str) -> list[tuple[str, str,
                 found.append((action, required[action], line.strip()[:200]))
                 break
     return found
+
+
+def _without_html_comments(text: str) -> str:
+    """`text` without its HTML comments.
+
+    Every rendered document ends with the workflow's own footer, "Editing this
+    file does not change what the pipeline reads", which names `edit` in a
+    line of its own and read as a specification describing editing.
+    """
+    return re.sub(r"<!--.*?-->", "", text or "", flags=re.S)
+
+
+def brief_actions_the_text_never_describes(brief: str, text: str) -> list[tuple[str, str]]:
+    """Each action the brief requires that `text` only ever lists, as (action, brief line).
+
+    The silent half of `brief_actions_the_text_defers`. One run's
+    specification described create, toggle, delete and filter each as a flow -
+    a handler, the data change, the re-render - and named editing only in
+    "full CRUD operations (create, read, update, delete tasks)" and in the
+    success measure it restated, "add, edit, delete tasks". Nothing deferred
+    it, so nothing said so; the sprint plan raised it as an open question and
+    answered it itself: "treat as toggle-only".
+
+    A line counts as describing an action when it names that action and at most
+    one other user action. A line naming three is a list of requirements, and
+    repeating a requirement is not saying how it will be met.
+    """
+    required = _actions_the_brief_requires(brief)
+    missing: list[tuple[str, str]] = []
+    for action in sorted(required):
+        words = _SAME_ACTION.get(action, (action,))
+        others = [
+            other for other in _USER_ACTIONS
+            if other not in words and action not in _SAME_ACTION.get(other, (other,))
+        ]
+        described = False
+        for line in _without_html_comments(text).splitlines():
+            if not _names_the_action(line, words, inflected=True):
+                continue
+            named = sum(
+                1 for other in others if _names_the_action(line, (other,), inflected=True)
+            )
+            if named <= 1:
+                described = True
+                break
+        if not described:
+            missing.append((action, required[action]))
+    return missing
 
 
 #: Where the thing deferred stops and the reason for deferring it starts.

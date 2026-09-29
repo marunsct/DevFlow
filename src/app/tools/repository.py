@@ -18,7 +18,7 @@ import logging
 import threading
 import tomllib
 from fnmatch import fnmatch
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from app.analysis.walk import files_under
 
@@ -4398,6 +4398,44 @@ def looks_like_a_test(relative_path: str) -> bool:
     return is_test(relative_path)
 
 
+_ANOTHER_STAGE_S_TEST = (
+    "'{shown}' is a test that {stage} wrote, and tests are part of what this run "
+    "delivers - the reviewer reads them as the evidence the product works. It "
+    "stays where the test runner finds it. If one of its assertions is wrong, "
+    "correct that assertion in place; if the product is wrong, fix the product. "
+    "Asking to delete it, or to move it to a name the runner does not collect, "
+    "will be refused the same way."
+)
+
+
+def _another_stage_s_test(root: Path, shown: str) -> str:
+    """The stage that created this test, when it is not the stage running now.
+
+    The delete refusal offers a way out - rename, then delete - for a probe a
+    stage wrote for itself. One run's `specialist_testing_2` took it for a
+    100-line suite `specialist_backend_1` had written: one assertion failed, so
+    it wrote a replacement file and moved the original to
+    `app.e2e.spec.js.bak`, leaving it in the product and out of the suite.
+
+    "" when the file is not a test, when this stage created it, or when either
+    stage is unknown - outside a run, or for a file no tool wrote - so those
+    cases keep the behaviour they had.
+    """
+    if not looks_like_a_test(shown):
+        return ""
+    try:
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+
+        created_by = project_memory.who_created(root, shown)
+        running = _stage_from_config("")
+    except Exception:  # noqa: BLE001 - a guard that cannot decide lets the call through
+        return ""
+    if not created_by or not running or created_by == running:
+        return ""
+    return created_by
+
+
 def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
     """A path for the same file that `looks_like_a_test` will not protect.
 
@@ -4497,6 +4535,9 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
             "reads it in between finds nothing."
         )
 
+    written_by = _another_stage_s_test(root, shown)
+    if written_by:
+        raise RepositoryToolError(_ANOTHER_STAGE_S_TEST.format(shown=shown, stage=written_by))
     if looks_like_a_test(shown):
         # The refusal has to name the way out, or an agent that genuinely wrote
         # a throwaway probe has nowhere to go. One run's
@@ -4617,6 +4658,14 @@ def move_approved_artifact(
         raise RepositoryToolError(
             f"'{from_shown}' is already where you are asking to put it."
         )
+    # A move to a name no test runner collects is a delete by another route.
+    # See `_another_stage_s_test`. Judged by the name's suffixes, not by
+    # `looks_like_a_test`: the run that did it moved the suite to
+    # `test/app.e2e.spec.js.bak`, which is still inside a test directory and
+    # which no runner loads.
+    written_by = _another_stage_s_test(root, from_shown)
+    if written_by and PurePosixPath(to_shown).suffixes != PurePosixPath(from_shown).suffixes:
+        raise RepositoryToolError(_ANOTHER_STAGE_S_TEST.format(shown=from_shown, stage=written_by))
     if not source.exists():
         # The same memo the read and the edit consult. A stage renaming a set
         # of files one at a time loses track of which it has already done, and

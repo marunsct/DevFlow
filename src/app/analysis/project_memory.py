@@ -365,9 +365,12 @@ def record(root: str | Path, relative_path: str, stage: str = "") -> None:
         root = Path(root)
         with _WRITING:
             held = _load(root)
+            before = held.get(path, {})
             held[path] = {
-                "changed_by": str(stage or "") or held.get(path, {}).get("changed_by", ""),
+                "changed_by": str(stage or "") or before.get("changed_by", ""),
                 "changed_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                # Kept from the first write on: see `who_created`.
+                "created_by": before.get("created_by", "") if before else str(stage or ""),
             }
             _write_atomically(_memory_path(root), json.dumps(held, indent=1, sort_keys=True))
     except Exception:  # noqa: BLE001 - a memory that fails a write is worse than none
@@ -411,6 +414,23 @@ def who_changed(root: str | Path, relative_path: str) -> str:
         return ""
 
 
+def who_created(root: str | Path, relative_path: str) -> str:
+    """The stage that first wrote this file, or "". Never raises.
+
+    Not the same question as `who_changed`. One run's `specialist_testing_2`
+    edited a suite `specialist_backend_1` had written, which made it the last
+    writer, and then renamed the suite out of the test runner's reach as though
+    it were its own scratch file.
+    """
+    try:
+        from app.agents.workspace_paths import the_same_place
+
+        entry = _load(Path(root)).get(the_same_place(str(relative_path)), {})
+        return str(entry.get("created_by") or "")
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def note_for(root: str | Path, relative_path: str, text: str) -> FileNote:
     """Everything the index knows about one file. Never raises."""
     root = Path(root)
@@ -426,6 +446,7 @@ def note_for(root: str | Path, relative_path: str, text: str) -> FileNote:
 
 
 __all__ = [
+    "who_created",
     "MAX_PURPOSE_CHARS",
     "MAX_SIGNATURES",
     "MEMORY_FILE",

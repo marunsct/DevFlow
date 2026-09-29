@@ -913,9 +913,20 @@ def _path_of(entry: Any) -> str:
     return str(getattr(entry, "path", entry) or "")
 
 
-def _is_hidden(entry: Any) -> bool:
-    """Whether an entry lies in a directory agents are not shown."""
-    parts = [part for part in _path_of(entry).replace("\\", "/").split("/") if part]
+def _is_hidden(entry: Any, under: str | None = "") -> bool:
+    """Whether an entry lies in a directory agents are not shown.
+
+    Only the part of its path below `under`, the directory the agent asked
+    about, counts. An agent that names `node_modules` itself has a reason, as
+    one that reads a file there does. One run's `test_round_1` listed its
+    project's `node_modules` to see whether the install had happened, was told
+    "No files found" because every entry was inside it, and installed again.
+    """
+    path = _path_of(entry).replace("\\", "/").strip("/")
+    base = (under or "").replace("\\", "/").strip("/")
+    if base and (path == base or path.startswith(base + "/")):
+        path = path[len(base):]
+    parts = [part for part in path.split("/") if part]
     return any(part in IGNORED_DIRECTORIES for part in parts)
 
 
@@ -1014,24 +1025,32 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 or self._not_written_yet(path)
             )
             return replace(result, error=error + hint) if hint else result
+        if error and "not_a_directory" in error:
+            # The token stays: deepagents reads it as "this is a plain file".
+            return replace(
+                result,
+                error=error + f". '{path}' is a file, so it exists; read_file "
+                "reads it, and ls lists the directory that holds it.",
+            )
         entries = getattr(result, "entries", None)
         if not entries:
             return result
-        return replace(result, entries=[e for e in entries if not _is_hidden(e)])
+        return replace(result, entries=[e for e in entries if not _is_hidden(e, path)])
 
     def glob(self, pattern: str, path: str | None = None) -> Any:
         result = super().glob(pattern, path)
         matches = getattr(result, "matches", None)
         if not matches:
             return result
-        return replace(result, matches=[m for m in matches if not _is_hidden(m)])
+        return replace(result, matches=[m for m in matches if not _is_hidden(m, path)])
 
     def grep(self, *args: Any, **kwargs: Any) -> Any:
         result = super().grep(*args, **kwargs)
         matches = getattr(result, "matches", None)
         if not matches:
             return result
-        return replace(result, matches=[m for m in matches if not _is_hidden(m)])
+        under = kwargs.get("path", args[1] if len(args) > 1 else None)
+        return replace(result, matches=[m for m in matches if not _is_hidden(m, under)])
 
 
 __all__ = ["WorkspaceBackend"]

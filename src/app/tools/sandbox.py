@@ -3524,6 +3524,31 @@ def _what_to_say_about_a_missing_task(
     )
 
 
+def _a_silent_success(outcome: Dict[str, Any]) -> str:
+    """What an exit code of 0 with nothing printed means, or "".
+
+    One run's `specialist_testing_4` ran `npx playwright install chromium` with
+    the browser already cached. It exited 0 in a second and printed nothing,
+    and the stage sent the identical command four more times - the second
+    before any repeat note existed to stop it - until it was refused. A result
+    of `{"stdout": "", "stderr": "", "returncode": "0"}` reads as nothing
+    having happened, not as success.
+
+    Only for the first silent success: a repeat already gets
+    `_note_about_running_this_again`, which says more.
+    """
+    if _as_exit_code(outcome.get("returncode")) != 0 or outcome.get("error"):
+        return ""
+    if str(outcome.get("stdout") or "").strip() or str(outcome.get("stderr") or "").strip():
+        return ""
+    return (
+        "It exited 0 and printed nothing, which is success: a command with nothing "
+        "to do - a package or browser already installed, a directory already there, "
+        "a check that found no problem - usually says nothing. Running it again will "
+        "print nothing again; go on to the next step."
+    )
+
+
 def _note_about_running_this_again(
     repo_root: str,
     command: Sequence[str],
@@ -3891,7 +3916,7 @@ class SandboxExecutor:
             }
         note = _note_about_running_this_again(
             repo_root, command, outcome, role_name, working_directory
-        )
+        ) or _a_silent_success(outcome)
         if note:
             outcome = {
                 **outcome,

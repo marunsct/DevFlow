@@ -70,6 +70,12 @@ wait)
   status=""
   while [ "$(date +%s)" -lt "$end" ]; do
     status=$("${DB[@]}" "select status from runs where run_id='$run'" 2>/dev/null || true)
+    if [ "$status" = failed ]; then
+      # A deploy mid-run marks it failed ("the worker ... stopped without
+      # finishing") and orphan recovery resumes it within about two minutes.
+      sleep 150
+      status=$("${DB[@]}" "select status from runs where run_id='$run'" 2>/dev/null || true)
+    fi
     case "$status" in completed|failed|cancelled) break ;; esac
     sleep 30
   done

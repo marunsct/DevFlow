@@ -881,6 +881,25 @@ class _NoticingRepeats:
             "`grep`."
         )
 
+    @staticmethod
+    def _lines_in_the_file(result: object, content: str) -> int:
+        """How long the file is, not how long the part of it just returned is.
+
+        Both refusal sites passed `len(content.splitlines())`, which is the
+        length of the requested window. For a ranged read those differ, and the
+        refusal then contradicted itself. Measured on one run's `test_round_0`,
+        refused `offset=241 limit=35` on a 271-line `index.html`:
+
+            You have been given lines 1-271, which is the whole file (31 lines).
+
+        The read result already carries the file's length as `total_lines`; the
+        window is only the fallback for a backend that does not report it.
+        """
+        total = getattr(result, "total_lines", None)
+        if isinstance(total, int) and total > 0:
+            return total
+        return len(content.splitlines())
+
     def _refuse_a_read_that_returns_nothing_new(
         self, file_path: str, total_lines: int = 0
     ) -> str:
@@ -1018,7 +1037,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         note = self._note_if_repeated(file_path, content)
         if self._withheld:
             refusal = self._refuse_a_read_that_returns_nothing_new(
-                file_path, len(content.splitlines())
+                file_path, self._lines_in_the_file(result, content)
             )
             if refusal:
                 return replace(result, error=refusal)
@@ -1036,8 +1055,8 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 )
                 if self._withheld:
                     refusal = self._refuse_a_read_that_returns_nothing_new(
-                file_path, len(content.splitlines())
-            )
+                        file_path, self._lines_in_the_file(result, content)
+                    )
                     if refusal:
                         return replace(result, error=refusal)
                     # Same as the byte-identical rung above: the bytes are

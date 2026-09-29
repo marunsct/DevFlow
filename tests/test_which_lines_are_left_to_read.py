@@ -164,4 +164,46 @@ class TestTheLadderIsUnchanged:
         source = inspect.getsource(workspace_backend)
 
         assert source.count("_refuse_a_read_that_returns_nothing_new(") == 3
-        assert source.count("len(content.splitlines())") == 2
+        assert source.count("self._lines_in_the_file(result, content)") == 2
+
+
+class TestTheLengthIsTheFileNotTheWindow:
+    """A ranged read passed the length of its window as the file's length.
+
+    Measured on one run's `test_round_0`, refused `offset=241 limit=35` on a
+    271-line `index.html`:
+
+        You have been given lines 1-271, which is the whole file (31 lines).
+    """
+
+    @pytest.fixture
+    def a_read_file(self, a_refusing_stage):
+        root = a_refusing_stage.cwd
+        (root / "index.html").write_text(
+            "".join(f"<p>{n}</p>\n" for n in range(1, 272)), encoding="utf-8"
+        )
+        return a_refusing_stage
+
+    def _refused_tail_read(self, backend):
+        backend.read("/index.html", offset=0, limit=400)
+        for _ in range(20):
+            result = backend.read("/index.html", offset=240, limit=35)
+            if result.error:
+                return result.error
+        raise AssertionError("the repeated tail read was never refused")
+
+    def test_the_refusal_names_the_file_s_length(self, a_read_file):
+        message = self._refused_tail_read(a_read_file)
+
+        assert "which is the whole file (271 lines)" in message
+
+    def test_the_window_s_length_is_not_called_the_file_s(self, a_read_file):
+        message = self._refused_tail_read(a_read_file)
+
+        assert "(31 lines)" not in message
+
+    def test_a_result_without_a_total_falls_back_to_the_window(self):
+        class NoTotal:
+            total_lines = None
+
+        assert WorkspaceBackend._lines_in_the_file(NoTotal(), "a\nb\nc") == 3

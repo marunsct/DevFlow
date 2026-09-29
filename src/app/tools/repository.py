@@ -1203,6 +1203,47 @@ _MAX_AMBIGUOUS_MATCHES_SHOWN = 4
 _REPLACE_LONG_ENOUGH_TO_RECOGNISE = 24
 
 
+def _where_the_replacement_already_wraps_every_match(
+    original: str, find: str, replace: str
+) -> int:
+    """The line of the replacement when it already contains every match of `find`, or 0.
+
+    `_already_applied` looks for an edit whose `find` is gone. That misses the
+    edit whose `replace` contains its own `find`: once applied, `find` is still
+    there - inside the replacement - so a second send matches again and wraps
+    it again. Measured on one run's `defect_fix_1_1`: `find: "let tasks = [];"`,
+    `replace: "export let tasks = [];"`, applied at 16:40, sent again at 16:45,
+    and the file would have read `export export let tasks = [];`. Node's parse
+    check refused it; a stylesheet, a Python module or a README has no such
+    check and would have been changed twice.
+
+    Only when every occurrence of `find` lies inside an occurrence of `replace`:
+    one that does not is a place the edit has not been made yet.
+    """
+    if not find or find == replace or find not in replace or find not in original:
+        return 0
+    offset = replace.find(find)
+    covered = 0
+    start = original.find(find)
+    while start != -1:
+        begin = start - offset
+        if begin < 0 or original[begin : begin + len(replace)] != replace:
+            # `find` may sit in `replace` more than once; any placement will do.
+            placements = [
+                i for i in range(len(replace)) if replace.startswith(find, i)
+            ]
+            if not any(
+                start - i >= 0 and original[start - i : start - i + len(replace)] == replace
+                for i in placements
+            ):
+                return 0
+        covered += 1
+        start = original.find(find, start + 1)
+    if not covered:
+        return 0
+    return original[: original.find(replace)].count("\n") + 1
+
+
 def _already_applied(original: str, find: str, replace: str) -> int:
     """The message for an edit that has already been made, or "".
 
@@ -1825,6 +1866,10 @@ def edit_approved_artifact(
     with _MUTATION_LOCK:
         original = target.read_text(encoding="utf-8")
         occurrences = original.count(find)
+
+        wrapped = _where_the_replacement_already_wraps_every_match(original, find, replace)
+        if wrapped:
+            return _already_there(target, root, relative_path, replace, wrapped)
 
         if occurrences == 0:
             # Before refusing, try the two things that are wrong with a `find`

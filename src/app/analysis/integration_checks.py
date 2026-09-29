@@ -379,8 +379,14 @@ def _a_delegated_handler_for_an_event_that_does_not_bubble(
 #: `[ \t]*`, not `\s*`: `\s` matches a newline, so the match could start on the
 #: line before and every reported line number came out one too low. The message
 #: tells a reader which block to delete, so the number has to be the real one.
+#:
+#: The name runs to the quote that opened it. `([^'"`]+)` stopped at the first
+#: quote of any kind, so one run's `describe("filterTasks('all')", ...)`,
+#: `describe("filterTasks('active')", ...)` and `describe("filterTasks('completed')", ...)`
+#: were all read as `filterTasks(`, reported as one suite registered three
+#: times, and cost a milestone revision renaming three distinct suites.
 _A_SUITE_NAME = re.compile(
-    r"""^[ \t]*(?:test\s*\.\s*)?(describe|suite)\s*\(\s*['"`]([^'"`]+)['"`]""", re.M
+    r"""^[ \t]*(?:test\s*\.\s*)?(describe|suite)\s*\(\s*(['"`])((?:\\.|(?!\2).)+)\2""", re.M
 )
 
 
@@ -413,7 +419,7 @@ def _a_suite_registered_twice(files: list[Path], root: Path) -> list[str]:
         seen: dict[str, list[int]] = {}
         text = _read(path)
         for match in _A_SUITE_NAME.finditer(text):
-            name = match.group(2).strip()
+            name = match.group(3).strip()
             seen.setdefault(name, []).append(text.count("\n", 0, match.start()) + 1)
         for name, lines in seen.items():
             if len(lines) < 2:

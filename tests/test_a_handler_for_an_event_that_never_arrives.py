@@ -230,6 +230,28 @@ class TestASuiteRegisteredTwice:
 
         assert "`inner` 2 times" in problems[0]
 
+    def test_a_name_holding_the_other_quote_is_read_whole(self, tmp_path):
+        """One run's three suites `filterTasks('all')`, `filterTasks('active')` and
+        `filterTasks('completed')` were read as `filterTasks(` three times, and a
+        milestone revision went on renaming them."""
+        source = (
+            "describe('filterTasks', () => {\n"
+            "  describe(\"filterTasks('all')\", () => {});\n"
+            "  describe(\"filterTasks('active')\", () => {});\n"
+            "  describe(\"filterTasks('completed')\", () => {});\n"
+            "});\n"
+        )
+
+        assert self._problems(tmp_path, source) == []
+
+    def test_an_escaped_quote_does_not_end_the_name(self, tmp_path):
+        source = (
+            "describe('filterTasks(\\'all\\')', () => {});\n"
+            "describe('filterTasks(\\'active\\')', () => {});\n"
+        )
+
+        assert self._problems(tmp_path, source) == []
+
     def test_playwright_test_describe_counts(self, tmp_path):
         source = (
             "test.describe('editing', () => {});\n"

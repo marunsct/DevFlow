@@ -361,7 +361,17 @@ def build_milestone_revision_request(
                 "naming the task that took it. If you cannot name a task for a change, "
                 "you have not assigned it yet.\n"
                 "- Fixing what the review raised comes before adding new work. Do not "
-                "add new tests or features while a reported failure is unfixed."
+                "add new tests or features while a reported failure is unfixed.\n"
+                # One run's second revision re-assigned a stray brace and a dead
+                # CSS rule that the first revision had already removed; the
+                # review that sent it back never mentioned them. The specialist
+                # found nothing to fix and spent its turns re-reading the file to
+                # be sure - fifteen refused reads and a 21,000-token reply.
+                "- The tasks in the plan above HAVE ALREADY BEEN CARRIED OUT, and the "
+                "review that sent it back judged their result. Do not assign them "
+                "again. A task belongs in this revision only if one of the requested "
+                "changes asks for it: work the review does not mention is done, and a "
+                "specialist sent back to it finds nothing to fix."
                 + _a_change_asked_for_twice(comments),
             }
         ]

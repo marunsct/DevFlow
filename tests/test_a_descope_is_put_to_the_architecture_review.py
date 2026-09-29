@@ -141,3 +141,47 @@ This release covers full CRUD operations (create, read, update, delete tasks).
         request = _request(SPEC)
 
         assert request.count("- `edit`.") == 1
+
+
+class TestACapabilityDeclaredAway:
+    """Dropped without a deferral word: declared impossible instead.
+
+    One run's specification: 'There is no separate "edit" mode - the title and
+    description are immutable after creation (future work may add it)', for a
+    brief requiring "Users can add, edit, delete tasks". It names `edit` on a
+    line of its own, so it read as describing it, and no deferral word matched.
+    """
+
+    LINE = (
+        'State is derived from localStorage. There is no separate "edit" mode - the '
+        "title and description are immutable after creation (future work may add it)."
+    )
+
+    def test_it_is_found(self):
+        assert [a for a, _, _ in brief_actions_the_text_defers(BRIEF, self.LINE)] == ["edit"]
+
+    def test_the_plan_after_a_modal_is_not_what_is_dropped(self):
+        """"future work may add it" does not defer `add`."""
+        assert "add" not in [a for a, _, _ in brief_actions_the_text_defers(BRIEF, self.LINE)]
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "Tasks cannot be edited once created.",
+            "Editing is not supported in this release.",
+            "Editing is left to future releases.",
+        ],
+    )
+    def test_other_ways_of_saying_it(self, line):
+        assert "edit" in [a for a, _, _ in brief_actions_the_text_defers(BRIEF, line)]
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "Pure functions: deleteTask returns a new array and never mutates its input.",
+            "addTask returns a new array; the input array is left unchanged.",
+            "Design tokens live in an immutable configuration layer.",
+        ],
+    )
+    def test_immutability_of_data_is_not_a_descope(self, line):
+        assert brief_actions_the_text_defers(BRIEF, line) == []

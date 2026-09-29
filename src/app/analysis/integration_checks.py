@@ -4413,7 +4413,15 @@ _A_HEADING = re.compile(r"^#{1,6}\s")
 #: A decision record that drops something: "ADR-08 - Inline Editing: Deferred",
 #: "out of scope for the MVP", "not implemented in this release".
 _A_DEFERRAL = re.compile(
-    r"defer\w*|out of scope|post-?mvp|not implemented|won't ship|will not ship",
+    r"defer\w*|out of scope|post-?mvp|not implemented|won't ship|will not ship"
+    # A capability declared away rather than postponed. One run's specification:
+    # 'There is no separate "edit" mode - the title and description are
+    # immutable after creation (future work may...)', for a brief requiring
+    # "Users can add, edit, delete tasks". None of the words above is in it.
+    r"|future (?:work|release|version|iteration|enhancement|sprint)s?"
+    r"|no (?:separate |dedicated )?[\"'`\w-]+ (?:mode|feature|capability|support)"
+    r"|(?:cannot|can't|can not) be (?:edited|changed|modified|updated|renamed)"
+    r"|not (?:editable|modifiable|supported)|immutable after",
     re.I,
 )
 
@@ -4526,7 +4534,11 @@ def brief_actions_the_text_never_describes(brief: str, text: str) -> list[tuple[
 
 
 #: Where the thing deferred stops and the reason for deferring it starts.
-_A_REASON = re.compile(r"\b(?:to|because|since|as|so|for|until|due|given)\b", re.I)
+#: A modal starts one too: "future work may add it" is a plan, not what is dropped.
+_A_REASON = re.compile(
+    r"\b(?:to|because|since|as|so|for|until|due|given|may|might|could|would|will|can)\b",
+    re.I,
+)
 
 
 def _what_a_line_defers(line: str) -> list[str]:
@@ -4545,6 +4557,8 @@ def _what_a_line_defers(line: str) -> list[str]:
         after = sentence[match.end():]
         reason = _A_REASON.search(after)
         parts.append(sentence[: match.start()])
+        # The phrase itself can name what it drops: 'no separate "edit" mode'.
+        parts.append(match.group(0))
         parts.append(after[: reason.start()] if reason else after)
     return parts
 

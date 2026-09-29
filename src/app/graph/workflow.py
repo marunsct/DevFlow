@@ -3424,10 +3424,16 @@ def build_workflow_graph(
             return missing
         agent = create_architecture_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
+        previous_review = state.get("architecture_review")
         request = build_architecture_review_request(
             spec_text,
             state["repository"].root_path,
             getattr(state.get("document"), "text", "") or "",
+            earlier=list(
+                (previous_review.get("findings") if isinstance(previous_review, dict) else getattr(previous_review, "findings", None))
+                or []
+            ),
+            revision=state.get("architecture_revision_count", 0),
         )
         update = _run_gated_agent(
             state,

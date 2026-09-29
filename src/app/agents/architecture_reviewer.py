@@ -115,8 +115,17 @@ def build_architecture_review_request(
     technical_specification_text: str,
     repository_root: str,
     document_text: str = "",
+    earlier: list[ArchitectureReviewFinding] | None = None,
+    revision: int = 0,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the specification text awaiting review.
+
+    `earlier` is what this review asked for last time, and `revision` how many
+    times the specification has been sent back. Without them each review was a
+    first reading: one run's reviewer raised two new major findings on each of
+    three revisions of a to-do list - a partial-update contract, then an ES
+    module setting, then that a checkbox should show whether its task is done -
+    and never said whether the previous ones had been answered.
 
     The specification is budgeted. It is the largest artifact in the pipeline
     and it arrives in the *first* user message, which is the one case
@@ -143,8 +152,37 @@ def build_architecture_review_request(
         WORKSPACE_ROOT_NOTE
         + constraints_note(document_text, reader="reviewing")
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
+        + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _what_you_asked_for_last_time(earlier: list[ArchitectureReviewFinding], revision: int) -> str:
+    """The previous review's findings, and the bar a new one has to clear."""
+    if not earlier or revision < 1:
+        return ""
+    def field(finding: Any, name: str) -> str:
+        value = finding.get(name) if isinstance(finding, dict) else getattr(finding, name, "")
+        return str(value or "").strip()
+
+    listed = "\n".join(
+        f"- [{field(f, 'severity')}] {field(f, 'description')} "
+        f"Required remediation: {field(f, 'required_remediation')}"
+        for f in earlier
+    )
+    return (
+        f"\n--- What your review of the previous version asked for (revision {revision}) ---\n"
+        f"{listed}\n\n"
+        "This version is the architect's answer. Check each of these first: resolved, "
+        "or still open - and if still open, quote what the specification now says.\n\n"
+        "A finding you did not raise before is major only if a competent implementer "
+        "who followed this specification exactly would build something that fails a "
+        "requirement of the brief, or could not build it at all. Something they would "
+        "get right without being told - a control that shows the state it controls, a "
+        "validation error that reaches the user the way the specification already "
+        "shows errors - is minor. Every new major finding costs a full revision, and "
+        "the run ends when revisions run out.\n"
+    )
 
 
 _SYSTEM_PROMPT = f"""You are the Senior Architect Reviewer for this workflow.

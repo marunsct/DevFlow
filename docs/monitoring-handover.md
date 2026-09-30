@@ -75,7 +75,7 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 
 | script | what it is for |
 |---|---|
-| `loop.sh` | the one entry point: `status`, `start [brief]`, `wait [minutes]`, `audit`, `stage <name> [HH:MM]`, `reads`, `product [run-id]`, `deploy`, `suite`. Run with no argument for help. |
+| `loop.sh` | the one entry point: `status`, `start [brief]`, `wait [minutes]`, `cancel [run-id]`, `audit`, `stage <name> [HH:MM]`, `reads`, `product [run-id]`, `deploy`, `suite`. Run with no argument for help. |
 | `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0), redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
 | `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
 | `product_audit.py` | the product half of the audit (`loop.sh product [run-id]`): the product files, code lines per file (counted as the brief's line cap is), the intake's acceptance criteria, what the harness claimed (sprint summary counts, milestone acceptance evidence), and the product's own test command run once. Prints evidence; the reading is the checklist in 0.4.1. |

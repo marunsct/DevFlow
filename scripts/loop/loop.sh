@@ -4,6 +4,7 @@
 #
 #   scripts/loop/loop.sh status              state of the current run + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
+#   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
 #   scripts/loop/loop.sh wait [minutes]      block until the run ends or N minutes pass (default 18),
 #                                            then print status, key log lines and the audit
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
@@ -64,6 +65,17 @@ start)
   echo "started $run from $brief at $(jst +%H:%M) JST"
   ;;
 
+cancel)
+  run="${2:-$(current)}"
+  : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
+  : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
+  token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \
+            --data-urlencode "password=$LOOP_PASSWORD" |
+          "$PY" -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+  curl -s -X POST "$API/api/runs/$run/cancel" -H "Authorization: Bearer $token"
+  echo
+  echo "cancel requested for $run at $(jst +%H:%M) JST: $("${DB[@]}" "select status from runs where run_id='$run'")"
+  ;;
 wait)
   minutes="${2:-18}"
   run=$(current)

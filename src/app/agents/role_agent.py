@@ -321,7 +321,9 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
         # caches live inside the workspace because container mode mounts
         # nothing else, and without this they appear in every listing an agent
         # makes. See `app.agents.workspace_backend`.
-        backend=WorkspaceBackend(root_dir=repo_root, virtual_mode=True),
+        # `hold_notes`: `read_file` numbers the text it is given, so a note
+        # written into it shifts every line - see `held_read_note`.
+        backend=WorkspaceBackend(root_dir=repo_root, virtual_mode=True, hold_notes=True),
         tools=list(_WORKSPACE_READ_TOOLS),
     )
 

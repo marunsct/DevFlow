@@ -22,6 +22,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import threading
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -1061,6 +1062,32 @@ def _is_hidden(entry: Any, under: str | None = "") -> bool:
     return any(part in IGNORED_DIRECTORIES for part in parts)
 
 
+#: The note the read in progress on this thread held back, for
+#: `held_read_note`. A thread, not a context variable: the tool runs in a copy
+#: of the caller's context, so a context variable set inside the read would
+#: never be seen by the middleware that called it. Agents here run
+#: synchronously, one tool call per thread at a time.
+_HELD = threading.local()
+
+
+def held_read_note() -> str:
+    """Take the note the last read on this thread held back, or ''.
+
+    `read_file` numbers every line of the text the backend returns, starting at
+    the first line asked for. A note written into that text was numbered too,
+    and so pushed every real line two numbers down: measured on one run, a
+    re-read of `lib/tasks.js` showed `export function deleteTask` as line 105
+    when it was line 103, and the stage's `replace_lines` at the numbers it
+    was shown was refused as "not what you expected" - four times. Over 25
+    runs, 50 `replace_lines` calls were refused that way against 47 that
+    succeeded. `app.agents.workspace_paths` puts the note ahead of the numbered
+    text instead, where it still comes first.
+    """
+    note = getattr(_HELD, "note", "") or ""
+    _HELD.note = ""
+    return note
+
+
 class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
     """A `FilesystemBackend` that omits the run's own machinery from listings.
 
@@ -1068,9 +1095,18 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
     untouched: an agent that names a path inside one of these directories has a
     reason, and a read that silently failed would be a worse surprise than a
     listing that is quiet about the cache.
+
+    `hold_notes`: hold a note about the read back for `held_read_note` instead
+    of writing it into the text. The agents' backend sets it, because its
+    caller numbers the text; read directly, the note stays in the text.
     """
 
+    def __init__(self, *args: Any, hold_notes: bool = False, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.hold_notes = hold_notes
+
     def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        _HELD.note = ""
         result = super().read(file_path, *args, **kwargs)
         error = getattr(result, "error", None)
         if error:
@@ -1148,6 +1184,10 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         # second read onward. Being told at the end of what you are reading is
         # not being told: the notice exists to change the *next* call, so it
         # belongs where the model starts.
+        if self.hold_notes:
+            # Ahead of the numbered text, not inside it - see `held_read_note`.
+            _HELD.note = note.strip()
+            return result
         return replace(result, file_data={**data, "content": note.strip() + "\n\n" + content})
 
     def ls(self, path: str) -> Any:
@@ -1228,4 +1268,4 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         return replace(result, matches=found) if found else result
 
 
-__all__ = ["WorkspaceBackend"]
+__all__ = ["WorkspaceBackend", "held_read_note"]

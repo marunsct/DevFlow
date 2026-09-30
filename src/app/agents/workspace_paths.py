@@ -242,6 +242,24 @@ def rewrite_tool_arguments(
     return arguments if changed == arguments else changed
 
 
+def _with_the_note_it_held(result: Any) -> Any:
+    """`result`, with the note the backend held back ahead of the numbered text.
+
+    See `app.agents.workspace_backend.held_read_note`: written into the text,
+    the note was numbered with it and every real line came out two too high.
+    """
+    from app.agents.workspace_backend import held_read_note
+
+    note = held_read_note()
+    content = getattr(result, "content", None)
+    if not note or not isinstance(content, str):
+        return result
+    try:
+        return result.model_copy(update={"content": note + "\n\n" + content})
+    except Exception:  # noqa: BLE001 - a Command, or some other shape
+        return result
+
+
 def _explained_if_empty(result: Any, fragment: str, path: Any) -> Any:
     """`result`, with "No files found" replaced by what that means for a name search."""
     content = getattr(result, "content", None)
@@ -280,6 +298,8 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
                             return _explained_if_empty(
                                 handler(request), fragment, arguments.get("path")
                             )
+                if call.get("name") == "read_file":
+                    return _with_the_note_it_held(handler(request))
             return handler(request)
 
     return WorkspacePathMiddleware()

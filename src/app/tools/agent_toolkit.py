@@ -216,8 +216,52 @@ def _is_the_stages_own_answer(content: str, answer_fields: frozenset[str]) -> bo
     return set(keys) <= answer_fields
 
 
+#: How many of the schema's objections a refusal lists.
+MOST_OBJECTIONS_LISTED = 5
+
+
+def what_the_schema_would_refuse(content: str, schema: Any) -> str:
+    """What `schema` would reject in `content`, as one line, or "".
+
+    A stage that saves its answer as a file is told to return it instead - and
+    one run's `defect_fix_1_0` wrote `structured_response.json` twice more,
+    because the answer it was saving had `exitcode` where the schema has
+    `exit_code`. Returned as it was, it would have been refused too; the
+    refusal said nothing about that, so the model had no reason to change it.
+    A missing field with a near-identical key beside it is named as the likely
+    misspelling.
+    """
+    if schema is None or not hasattr(schema, "model_validate"):
+        return ""
+    try:
+        payload = json.loads(content)
+    except ValueError:
+        return ""
+    try:
+        schema.model_validate(payload)
+        return ""
+    except Exception as error:  # noqa: BLE001 - pydantic's ValidationError, or anything else
+        errors = getattr(error, "errors", None)
+        if not callable(errors):
+            return ""
+        import difflib
+
+        lines = []
+        for item in errors()[:MOST_OBJECTIONS_LISTED]:
+            where = ".".join(str(part) for part in item.get("loc", ()))
+            line = f"{where}: {item.get('msg', 'invalid')}"
+            given = item.get("input")
+            name = str(item.get("loc", ("",))[-1])
+            if item.get("type") == "missing" and isinstance(given, dict):
+                close = difflib.get_close_matches(name, [str(key) for key in given], n=1, cutoff=0.75)
+                if close:
+                    line += f" (you wrote `{close[0]}`)"
+            lines.append(line)
+        return "; ".join(lines)
+
+
 def build_artifact_write_tool(
-    repo_root: str, answer_fields: frozenset[str] = frozenset()
+    repo_root: str, answer_fields: frozenset[str] = frozenset(), schema: Any = None
 ) -> BaseTool:
     """Return the single controlled artifact-write tool bound to a repository root.
 
@@ -239,6 +283,7 @@ def build_artifact_write_tool(
         path instead of crashing the whole agent run.
         """
         if _is_the_stages_own_answer(content, answer_fields):
+            objections = what_the_schema_would_refuse(content, schema)
             return {
                 "error": (
                     f"Refusing to write '{relative_path}': this content is your "
@@ -246,6 +291,12 @@ def build_artifact_write_tool(
                     "through the response schema, which is the only way it is read - "
                     "a copy on disk is read by nothing and changes nothing. Nothing "
                     "was written. Return your structured response now instead."
+                    + (
+                        f" As written, the schema would not accept it either - fix "
+                        f"these in the response you return: {objections}."
+                        if objections
+                        else ""
+                    )
                 )
             }
         try:

@@ -180,7 +180,7 @@ def _answer_fields(response_format: Any) -> frozenset[str]:
 
 
 def writing_tools(
-    repo_root: str, answer_fields: frozenset[str] = frozenset()
+    repo_root: str, answer_fields: frozenset[str] = frozenset(), schema: Any = None
 ) -> list[BaseTool]:
     """The mutation tools a writing role gets - always as a set.
 
@@ -190,7 +190,7 @@ def writing_tools(
     to test rather than one call site to remember.
     """
     return [
-        build_artifact_write_tool(repo_root, answer_fields),
+        build_artifact_write_tool(repo_root, answer_fields, schema),
         build_artifact_edit_tool(repo_root),
         build_line_replace_tool(repo_root),
         build_artifact_delete_tool(repo_root),
@@ -598,7 +598,7 @@ def create_role_agent(
         # Read-only, and the cheap answer to a question every stage otherwise
         # works out by re-reading the workspace.
         build_sprint_history_tool(resolved_repo_root),
-        *(writing_tools(resolved_repo_root, _answer_fields(response_format)) if can_write else []),
+        *(writing_tools(resolved_repo_root, _answer_fields(response_format), response_format) if can_write else []),
         *(extra_tools or []),
     ]
 

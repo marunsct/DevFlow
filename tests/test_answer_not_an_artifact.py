@@ -112,7 +112,7 @@ def test_every_writing_role_gets_the_check() -> None:
 
     from app.agents.role_agent import create_role_agent
 
-    assert "writing_tools(resolved_repo_root, _answer_fields(response_format))" in (
+    assert "writing_tools(resolved_repo_root, _answer_fields(response_format), response_format)" in (
         inspect.getsource(create_role_agent)
     )
 

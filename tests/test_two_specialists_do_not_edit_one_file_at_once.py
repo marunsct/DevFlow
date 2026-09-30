@@ -268,3 +268,35 @@ class TestAWorkOrderWithNoFiles:
         )
 
         assert _roles(_that_do_not_share_a_file(pending)) == ["ui_ux"]
+
+
+class TestTheManifestComesFirst:
+    """One run's plan gave `package.json` to one task; both testing tasks and
+    another backend task wrote it too, in the same superstep."""
+
+    def test_the_task_declaring_it_goes_before_the_rest(self) -> None:
+        pending = _pending(
+            Order("ui_ux", "Build the page.", files=["shop/index.html"]),
+            Order("backend", "Create the store.", files=["shop/app.js"]),
+            Order("backend", "Create the manifest.", files=["shop/package.json"]),
+            Order("testing", "Write unit tests.", files=["shop/tests/app.test.js"]),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending)) == ["backend"]
+        rest = [item for item in pending if item[0] != 2]
+        assert _roles(_that_do_not_share_a_file(rest)) == ["ui_ux", "backend", "testing"]
+
+    def test_any_ecosystem_s_manifest_counts(self) -> None:
+        pending = _pending(
+            Order("backend", "Write the service.", files=["svc/main.py"]),
+            Order("backend", "Declare dependencies.", files=["svc/pyproject.toml"]),
+        )
+
+        assert [index for index, _ in _that_do_not_share_a_file(pending)] == [1]
+
+    def test_a_paused_task_is_still_sent(self) -> None:
+        paused = (0, Order("ui_ux", "Build the page.", files=["shop/index.html"]))
+        manifest = (1, Order("backend", "Create the manifest.", files=["shop/package.json"]))
+        going = _that_do_not_share_a_file([paused, manifest], already_going=[paused])
+
+        assert [index for index, _ in going] == [0, 1]

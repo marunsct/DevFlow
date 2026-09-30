@@ -1371,7 +1371,7 @@ def _quote(lines: list[str], start: int, end: int, marked: int | None) -> str:
 
 #: Package manifests, whatever the language. A test round fixing the `test`
 #: script in one is changing test configuration, not the product.
-_MANIFESTS = frozenset({
+PACKAGE_MANIFESTS = frozenset({
     "package.json", "pyproject.toml", "setup.cfg", "requirements.txt", "requirements-dev.txt",
     "Pipfile", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts",
     "Gemfile", "composer.json", "mix.exs", "deno.json",
@@ -1406,7 +1406,7 @@ def _a_test_round_changing_the_product(root: Path, target: Path) -> str | None:
         shown = target.relative_to(root).as_posix()
     except ValueError:
         return None
-    if target.name in _MANIFESTS or classify_file(shown) != "application":
+    if target.name in PACKAGE_MANIFESTS or classify_file(shown) != "application":
         return None
     return (
         f"'{shown}' is product code, and this is a test round: its job is to find "

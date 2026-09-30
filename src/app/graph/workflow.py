@@ -807,6 +807,28 @@ def _that_do_not_share_a_file(
         except Exception:  # noqa: BLE001 - a task whose files cannot be read runs
             return declared or None
 
+    # A task that declares the package manifest goes before the tasks that do
+    # not. Everything else builds and tests on top of the manifest - its
+    # dependencies, its test script - and without it each of them makes its
+    # own: on one run a plan gave `package.json` to one backend task, and
+    # both testing tasks and the other backend task wrote it too, in the same
+    # superstep, three of them refused as blind overwrites of the first.
+    try:
+        from app.tools.repository import PACKAGE_MANIFESTS
+
+        manifests = {name.lower() for name in PACKAGE_MANIFESTS}
+    except Exception:  # noqa: BLE001 - never hold up a dispatch over a hint
+        manifests = set()
+    first_the_manifest = {
+        index for index, task in pending if (named_by(task) or set()) & manifests
+    }
+    if first_the_manifest:
+        committed_first = {index for index, _ in already_going}
+        pending = [
+            (index, task) for index, task in pending
+            if index in first_the_manifest or index in committed_first
+        ]
+
     going: list[tuple[int, Any]] = list(already_going)
     claimed: set[str] = set()
     # Whether a task that names no file is going. Such a task may change any

@@ -72,71 +72,38 @@ and wiring is the part a test does not need to load.
 """
 
 TESTABILITY_RULE = """Testability - this decides whether the tests can run at all:
-- The thing that breaks a headless test is a module that does its I/O while it
-  is being loaded - it touches a page, a database, the network or the file
-  system at the top level - so the import itself runs that code and fails
-  before any of your assertions are reached, and the only fix left to the test
-  is to skip the import and copy the code, which tests nothing.
-- Use the test tooling the stack's own guidance names. It is appended to these
-  instructions under FRAMEWORK CAPABILITIES when the stack has any: which runner
-  ships with the language, where a test-only dependency goes, and how a user
-  interface is driven. For a user interface, verify it through the real
-  interface with an automated driver - a mock of the rendering layer passes
-  while the real thing is broken.
-- NEVER remove or disable core application logic (including UI logic) to satisfy
-  a test framework's limitations. If a test environment cannot support a
-  feature, fix the test environment or substitute the boundary, rather than
-  deleting the code under test.
-- ALWAYS compare the output files against requirements and logs. Ensure that no
-  previously working features were silently dropped.
-- Keep the pure logic apart from I/O and UI wiring. Put state and rules in
-  functions that take their input as arguments and return a value.
-- Do the wiring in one entry point (`init()`, `main()`, the framework's own)
-  that the program calls, guarded so that importing the module does not run it.
-- EXPORT the pure functions - make them importable in whatever way the language
-  does that. A test that cannot import them will copy them instead, and a copy
-  passes whatever your code does. If you find yourself writing "this test
-  defines the same logic inline", stop: that test proves nothing, and it will
-  be rejected.
-- CALL THE FUNCTION YOU IMPORTED. A test that imports the module and then only
-  checks that a name exists has not tested it; and if its assertions about what
-  the function DOES run against a same-named function declared in the test
-  file, they pass whatever your code does. Import it once, call that, and
-  declare nothing of that name.
-- "IT DID NOT THROW" IS NOT A RESULT. An assertion that a call raised no error
-  passes whether the function saved anything or nothing at all; so does one that
-  checks only a type. Assert on what the function RETURNED, or on the state it
-  changed - read it back and compare. Observed: a save function covered only by
-  such an assertion could have its whole body replaced by `return <its
-  argument>` with every test still passing, and persistence was an acceptance
-  criterion of that brief.
-- THE TEST FOR THIS: if you replaced the body of the function with
-  `return <its first argument>`, would any test fail? If not, that function is
-  not tested, however many tests name it.
-- IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST. A
-  non-deterministic value (an id, a clock) is a reason to take its source as an
-  argument, or to assert on the shape of what comes back - not to re-implement
-  the function in the test. Copying turns an awkward design into a suite that
-  proves nothing, and the awkward design ships unchanged.
+- A headless test breaks on a module that does its I/O while it is being
+  loaded - touching a page, a database, the network or the file system at the
+  top level - because importing it runs that code before any assertion.
+- Keep the pure logic apart from I/O and UI wiring: rules and state in
+  functions that take their input as arguments and return a value. Do the
+  wiring in one entry point (`init()`, `main()`, the framework's own),
+  guarded so that importing the module does not run it.
 - THE LOGIC MUST LIVE IN A FILE A TEST CAN OPEN. Logic embedded in markup, a
-  template or a page cannot be imported by any runner, so the only way to test
-  it is to copy it. A separate source file beside it costs nothing.
-- WHERE THE PRODUCT RUNS IS NOT WHERE THE TESTS RUN. The runtime the tests need
-  is the developer's, and it is already here. Deployment constrains what you
-  SHIP; it does not constrain what you can RUN while building it.
-- A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY. The language's own way of
-  exporting and importing installs nothing and adds no package, so a brief that
-  forbids external dependencies does not forbid it. Giving it up to honour such
-  a constraint gives up every real test in exchange for nothing, because a test
-  runner can only test what it can import.
-- Reach storage through a small adapter passed in as an argument, so a test can
-  hand it a plain object instead of mocking a platform API. The same holds for a
-  database: nothing is running here, so code that talks to PostgreSQL directly
-  is code no test can execute. Put the queries behind an adapter and let the
-  tests substitute it.
-- The test for a rule then imports the function and calls it. Only the wiring
-  needs the real environment, and a thin wiring layer is worth far less test
-  effort than the rules are.
+  template or a page cannot be imported by any runner.
+- EXPORT the pure functions, in whatever way the language does. A test that
+  cannot import them copies them, and a copy passes whatever your code does.
+- CALL THE FUNCTION YOU IMPORTED. A test that only checks that a name exists
+  has not tested it; declare nothing in the test with the same name.
+- IT DID NOT THROW IS NOT A RESULT. Assert on what the function returned, or
+  read back the state it changed. The check: if its body were replaced by
+  `return <its first argument>`, would any test fail?
+- IF A FUNCTION IS AWKWARD TO CALL, CHANGE THE FUNCTION, NOT THE TEST: take a
+  clock or an id source as an argument rather than re-implementing it.
+- Reach storage and databases through a small adapter passed in as an
+  argument, so a test can hand it a plain object. No database server runs
+  here, so code that talks to PostgreSQL directly is code no test can execute.
+- Use the test tooling the stack's own guidance names under FRAMEWORK
+  CAPABILITIES. For a user interface, verify it through the real interface
+  with an automated driver; a mock of the rendering layer passes while it is
+  broken.
+- WHERE THE PRODUCT RUNS IS NOT WHERE THE TESTS RUN. The runtime the tests
+  need is the developer's, and it is already here.
+- A MODULE SYSTEM IS NOT AN EXTERNAL DEPENDENCY: it installs nothing and adds
+  no package, and a test runner can only test what it can import.
+- NEVER remove or disable product logic to satisfy a test tool. Fix the test
+  environment or substitute the boundary instead, and make sure no working
+  feature was dropped.
 """
 
 __all__ = ["TESTABILITY_RULE"]

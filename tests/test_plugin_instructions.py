@@ -211,7 +211,7 @@ class TestWhatItCosts:
         for _ in range(10):
             built.wrap_model_call(_Request(system_message="p"), lambda r: r)
 
-        generations = [call for call in model.calls if "best practices" in call]
+        generations = [call for call in model.calls if "working notes" in call]
         assert len(generations) == 1
 
 
@@ -252,3 +252,21 @@ class TestParsingTheModelSAnswer:
     def test_content_blocks_are_read_as_text(self, content, expected):
         """A provider that returns blocks must not silently disable the feature."""
         assert plugin_middleware._text_of(_FakeReply(content)) == expected
+
+
+def test_a_block_several_modules_share_is_given_once(monkeypatch):
+    """The seed appends the same JavaScript testing notes to several modules;
+    a stack naming two of them carried the block twice."""
+    from app.plugins import registry
+
+    shared = "Testing JavaScript and TypeScript:\n- A TEST SCRIPT MUST EXIT."
+
+    class _Store:
+        def get_instructions(self, name):
+            return {"javascript": f"- JS specific.\n\n{shared}", "node": f"- Node specific.\n\n{shared}"}.get(name)
+
+    monkeypatch.setattr(registry.PluginStore, "shared", classmethod(lambda cls: _Store()))
+    text = registry.get_plugin_instructions(["javascript", "node"])
+
+    assert text.count("A TEST SCRIPT MUST EXIT") == 1
+    assert "- JS specific." in text and "- Node specific." in text

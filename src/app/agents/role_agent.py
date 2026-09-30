@@ -311,9 +311,10 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     exactly the path shape the middleware's own prompt teaches the model to use -
     resolves inside this run's directory and nowhere else.
 
-    Only the read tools are registered. That grants nothing new: an agent could
-    already read any file under the root through `read_repository_file`
-    (`allow_subdirectories` narrows *listing* depth, never read access).
+    Only the read tools are registered, and they are the agent's only readers:
+    reading grants nothing new, since any file under the root is the
+    workspace's own (`allow_subdirectories` narrows *listing* depth, never read
+    access).
     """
     return FilesystemMiddleware(
         # `WorkspaceBackend`, not `FilesystemBackend`: the run's own package
@@ -412,118 +413,65 @@ def _documents_the_workflow_owns() -> str:
 
 
 _WRITING_RULES = (
+    # One section per question, each said once. It had grown to about 9,000
+    # characters: the directory rules twice (here and in PROJECT_LAYOUT, which
+    # contradicted them - "Documents go in the workspace's `docs/`" beside
+    # "Writing ANY file into `docs/` is refused"), the tool guide twice (a
+    # bullet list and a table saying the same), and measurements meant for
+    # the people maintaining this file rather than for the model reading it.
+    # A small model given 91 rules follows fewer of them.
     "CRITICAL DIRECTORY RULES:\n"
-        "- `docs/` is the WORKFLOW's directory, not yours. It holds exactly these\n"
-        "  nine files and nothing else: " + _documents_the_workflow_owns() + ".\n"
-        "  The workflow renders each of them from the structured response of the\n"
-        "  stage that produces it, and rewrites it whole every time that stage\n"
-        "  runs, so any change you make there is discarded. Read them freely.\n"
-        "  Writing ANY file into `docs/` is refused - the nine because the\n"
-        "  workflow owns them, anything else because nothing reads it. Measured\n"
-        "  across fifty runs: 563 writes went into `docs/`, and not one of them\n"
-        "  produced something a later stage read.\n"
-        "- So where does your report go? Nowhere, usually. If it is something the\n"
-        "  next stage needs - a decision you made, a risk you found, something\n"
-        "  that blocks the work - it goes in your OWN structured response, which\n"
-        "  is the only thing the workflow actually receives. If it is\n"
-        "  documentation that SHIPS WITH THE PRODUCT - a README, an API guide, a\n"
-        "  design note for whoever maintains this code - write it inside the\n"
-        "  project folder beside the code it describes, where the reviewer reads\n"
-        "  it as part of the work.\n"
-        "- Write all code artifacts inside ONE top-level project folder. Run `ls`\n"
-        "  first: if a project folder already exists, use it exactly as spelled.\n"
-        "  Do NOT create a second folder that differs only in separators or case\n"
-        "  (`my-app` vs `my_app`) - that builds the project twice and finishes\n"
-        "  neither. Only create one if none exists.\n"
-        + PROJECT_LAYOUT + "\n"
-        "\n"
-        "- Scratch files (debug scripts, one-off probes) do not belong in the\n"
-        "  workspace root. Put them in the project folder, and call\n"
-        "  `delete_artifact` on them once they have told you what you needed.\n"
-        "- NEVER write a script whose purpose is to delete another script. A\n"
-        "  cleanup script is itself a file you then want gone, and a program\n"
-        "  cannot unlink itself while it is running, so this never converges.\n"
-        "  `delete_artifact` removes a file in one call.\n"
-        "\n"
-        "HOW TO WRITE:\n"
-        "- `write_artifact` CREATES a file, or replaces one completely. Its\n"
-        "  `relative_path` is relative to the workspace root, e.g. the filename\n"
-        "  your brief gives you, under `docs/`.\n"
-        "- `replace_lines` CHANGES a numbered range: `start_line`, `end_line` and\n"
-        "  the new text. Use it whenever you have just read the file. Reproducing\n"
-        "  a passage byte for byte is the single largest cause of failed edits in\n"
-        "  this harness, and naming two line numbers cannot get it wrong. Pass\n"
-        "  `expect_start` (the first line as you read it) AND `expect_end` (the\n"
-        "  last line of the range) and the edit survives a stale line number:\n"
-        "  with both ends pinned it is applied wherever the range has moved to,\n"
-        "  instead of being refused. With only `expect_start` a moved range is\n"
-        "  refused, because one line cannot say where the range now ends.\n"
-        "- `edit_artifact` CHANGES part of a file that already exists. Give it the\n"
-        "  exact passage to replace and what to replace it with. Use this for\n"
-        "  every revision to an existing document: it leaves the rest of the file\n"
-        "  untouched, so nothing is lost and you do not have to reproduce work\n"
-        "  that is already correct.\n"
-        "- Revising an existing document? Read the section you need with\n"
-        "  `read_repository_file` (it takes `start_line` and `line_count`, so you\n"
-        "  can read part of a long file), then `edit_artifact` that passage.\n"
-        "  Do NOT rewrite a long document from memory to change part of it, and\n"
-        "  NEVER save your revision under a new name like `spec_v2.md` - two\n"
-        "  versions of one document contradict each other and a reviewer reads\n"
-        "  both.\n"
-        "- `delete_artifact` REMOVES a file. Use it for temporary helpers you\n"
-        "  created; it takes the same workspace-relative path. It will refuse a\n"
-        "  test: a test you wrote to prove an acceptance criterion is part of\n"
-        "  what this run delivers, not scratch, and the reviewer reads it as the\n"
-        "  evidence your work is sound. Deleting it throws that evidence away.\n"
-        "- `move_artifact` RENAMES or RELOCATES a file, keeping its exact bytes.\n"
-        "  Use it rather than rewriting a file at a new path and deleting the\n"
-        "  old one: a rewrite regenerates content that was already correct.\n"
-        "\n"
-        "THE WHOLE FILE TOOLSET - there is a tool for every case, so you never\n"
-        "need to improvise one out of a script:\n"
-        "  list      `ls`, `glob`            what is there\n"
-        "  search    `grep`                  which file contains it\n"
-        "  read all  `read_file`             the whole file\n"
-        "  read part `read_file` + offset/limit, or `read_repository_file`\n"
-        "            with start_line/line_count - for a long document, read the\n"
-        "            section you need instead of all of it\n"
-        "  create    `write_artifact`        a new file\n"
-        "  replace   `write_artifact`        the whole file, again\n"
-        "  change    `edit_artifact`         one exact passage, rest untouched\n"
-        "  change lines `replace_lines`      lines 21-23, by number - no text to\n"
-        "            quote. PREFER THIS once you have read the file: the read\n"
-        "            shows you the line numbers, so there is nothing to copy,\n"
-        "            escape or indent, and it works the same in every language.\n"
-        "  cut       `edit_artifact` with an empty `replace` - deletes that\n"
-        "            passage without touching the rest of the file\n"
-        "  remove    `delete_artifact`       the whole file\n"
-        "  relocate  `move_artifact`         rename or move, bytes unchanged\n"
-        "- You already have permission to write. Call `write_artifact` directly.\n"
-        "  Never ask whether you should write a file, and never stop to request\n"
-        "  approval - approval is handled outside this conversation.\n"
-        "\n"
-        "PATHS - every path is inside the workspace:\n"
-        "- `docs/NAME.md` and `/docs/NAME.md` mean the same file. A leading slash\n"
-        "  reads as 'from the workspace root', which is what you mean by it.\n"
-        "- `ls`, `glob`, `grep`, `read_file` (read-only): browse from `/`. The\n"
-        "  intake is `/docs/product_intake.md`; `ls('/')` shows everything.\n"
-        "- The long absolute path quoted as the repository root elsewhere in this\n"
-        "  brief is the HOST's path and does not exist here - passing it returns\n"
-        "  `path_not_found`. Never use it; start from the workspace root.\n"
-        "- Shell commands already run inside the workspace directory, so use\n"
-        "  paths relative to that directory. Do not prefix them with `/`.\n"
-        "\n"
-        "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
-        "- Artifact content must be human-readable Markdown: headings, prose,\n"
-        "  lists, tables. A person reads these files.\n"
-        "- NEVER pass JSON as `write_artifact` content, and never save your\n"
-        "  structured response to a file. The structured response is returned\n"
-        "  through the response schema, separately, and is not an artifact.\n"
-        "- Write each artifact ONCE. After a write_artifact tool result comes\n"
-        "  back, that file is saved and correct. Do not write it again, do not\n"
-        "  'confirm' it with a second write, and never overwrite good Markdown\n"
-        "  with a serialized copy of your answer. Return your structured\n"
-        "  response instead.\n"
+    "- Application files go inside ONE top-level project folder: the one the\n"
+    "  workspace listing names, spelled exactly as it is there. Never create a\n"
+    "  second one.\n"
+    "- `docs/` is the WORKFLOW's directory, not yours. It holds only these files,\n"
+    "  each rendered from a stage's structured response: "
+    + _documents_the_workflow_owns()
+    + ".\n"
+    "  Read them; writing anything into `docs/` is refused. What the next stage\n"
+    "  needs from you goes in your structured response; documentation that\n"
+    "  ships with the product goes in the project folder beside the code it\n"
+    "  describes.\n"
+    "- Scratch files (debug scripts, probes) go in the project directory; remove\n"
+    "  them with `delete_artifact` when done. NEVER write a script whose purpose\n"
+    "  is to delete another script.\n"
+    + PROJECT_LAYOUT
+    + "\n\n"
+    "HOW TO WRITE - one tool for every file job:\n"
+    "  list      `ls`, `glob`         what is there\n"
+    "  search    `grep`               which file contains it\n"
+    "  read all  `read_file`          a file; every line comes with its number\n"
+    "  read part `read_file` + offset/limit, for the section of a long file\n"
+    "  create    `write_artifact`     a new file\n"
+    "  replace   `write_artifact`     a whole file, again\n"
+    "  change lines `replace_lines`   lines by number, from a read you just made.\n"
+    "                                 Pass `expect_start` (the first line as you\n"
+    "                                 read it) and `expect_end` (the last line as\n"
+    "                                 you read it, NOT the new text) so a range\n"
+    "                                 that moved is still found\n"
+    "  change    `edit_artifact`      one exact passage to its replacement\n"
+    "  cut       `edit_artifact` with an empty replacement - that passage only\n"
+    "  remove    `delete_artifact`    a whole file (tests are kept, not deleted)\n"
+    "  relocate  `move_artifact`      rename or move, bytes unchanged\n"
+    "- To revise a long file, read the part you need and change that part. Never\n"
+    "  rewrite it from memory, and never save a revision under a new name\n"
+    "  (`spec_v2.md`): two versions contradict each other.\n"
+    "- You already have permission to write; approval is handled outside this\n"
+    "  conversation. Never ask for it.\n"
+    "\n"
+    "PATHS - every path is inside the workspace:\n"
+    "- `docs/NAME.md` and `/docs/NAME.md` are the same file.\n"
+    "- Shell commands already run in the workspace directory: give them relative\n"
+    "  paths, never ones starting with `/`.\n"
+    "- A long absolute path quoted as the repository root is the HOST's path and\n"
+    "  does not exist here. Never use it.\n"
+    "\n"
+    "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
+    "- Files hold content a person reads or a program runs. Your result is\n"
+    "  returned by calling your answer tool - never written to a file, never\n"
+    "  printed as JSON text.\n"
+    "- Write each file once. A successful write is saved; do not write it again\n"
+    "  to confirm it.\n"
 )
 
 _READ_ONLY_RULES = (
@@ -532,10 +480,41 @@ _READ_ONLY_RULES = (
     "  produce travels in your structured response, and the workflow renders any\n"
     "  document from it. Do not look for a write tool, and do not report that one\n"
     "  is missing - nothing is missing.\n"
-    "- You may read anything in the workspace: `ls`, `read_file`, `glob`, `grep`\n"
-    "  and the repository read tools are all available, and reading widely before\n"
-    "  you answer is the whole of your job.\n"
+    "- You may read anything in the workspace with `ls`, `read_file`, `glob` and\n"
+    "  `grep`, and reading widely before you answer is the whole of your job.\n"
 )
+
+
+#: What every stage's answer tool says about itself. It used to be the schema
+#: class's docstring - notes for the people maintaining the class, such as
+#: "Structured product-intake output returned by the Product Manager agent.
+#: The schema deliberately mirrors ..." - so the one tool that ends a stage
+#: never said that it does. On 2026-09-30, 35 failed calls were a stage writing
+#: its answer into a file (`final_response.json`, `structured_response.json`).
+ANSWER_TOOL_DESCRIPTION = (
+    "Finish this stage: call this tool once, when your work is done, with your "
+    "complete result as its arguments. It is the only way your result reaches the "
+    "workflow - a file you write is not read as your result, and neither is JSON "
+    "printed as text."
+)
+
+
+def the_answer_tool(response_format: Any) -> Any:
+    """`response_format` as a tool strategy whose tool describes what it is for.
+
+    A tool strategy is what the agent built from a bare schema already - the
+    answer arrives as a call to a tool named after the schema - so only the
+    description changes. Anything that is not a schema class is returned as
+    it came.
+    """
+    if not isinstance(response_format, type):
+        return response_format
+    from langchain.agents.structured_output import ToolStrategy
+
+    strategy = ToolStrategy(schema=response_format)
+    for spec in strategy.schema_specs:
+        spec.description = ANSWER_TOOL_DESCRIPTION
+    return strategy
 
 
 def create_role_agent(
@@ -594,7 +573,12 @@ def create_role_agent(
     # Taking the tool away settles it; arguing with the model in the prompt did
     # not.
     tools = [
-        *build_repository_read_tools(resolved_repo_root, allow_subdirectories=allow_subdirectories),
+        # No second reader. `inspect_repository` and `read_repository_file`
+        # duplicated `ls`/`glob` and `read_file` under other parameter names
+        # (start_line/line_count against offset/limit), and inspect ran a fixed
+        # search for this harness's own vocabulary in every product. On
+        # 2026-09-30 they took 90 of 2,604 calls; a small model choosing among
+        # two tools that do one job is a choice it can get wrong.
         # Read-only, and the cheap answer to a question every stage otherwise
         # works out by re-reading the workspace.
         build_sprint_history_tool(resolved_repo_root),
@@ -661,7 +645,7 @@ def create_role_agent(
         model=selected_model,
         tools=tools,
         system_prompt=full_system_prompt,
-        response_format=response_format,
+        response_format=the_answer_tool(response_format),
         middleware=middleware,
         # Writes stay denied at the permission layer as well as absent from the
         # tool list. `write_artifact` is the only mutation path, and it is the

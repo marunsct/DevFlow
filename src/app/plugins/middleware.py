@@ -309,15 +309,25 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
                 # up for the run: an unseeded `javascript` cost the run its
                 # instructions for every other framework in its stack as well.
                 try:
+                    # Facts about the tool, never advice about the product. The
+                    # previous request asked for "best practices ... concurrency,
+                    # security and architecture" and a to-do list's specialists
+                    # were told to use Web Workers and CSP headers - scope the
+                    # brief never asked for, stated as a rule of the stack.
                     generated = _text_of(_ask(model, [
                         SystemMessage(content=(
-                            "You write concise, strict engineering instructions for "
-                            "coding agents. Output only the instructions."
+                            "You write short, factual working notes for a coding agent "
+                            "that has to build and test a project with a given framework "
+                            "or language. Output only the notes."
                         )),
                         HumanMessage(content=(
-                            f"Generate 4 bullet points of strict software engineering best "
-                            f"practices for the '{framework}' framework or language. Focus on "
-                            f"concurrency, security and architecture."
+                            f"Write at most 5 bullet points about working with "
+                            f"'{framework}': how a project is laid out, how it is run, how "
+                            f"its tests are run without a person watching, and where "
+                            f"test-only dependencies are declared. State facts about the "
+                            f"tool itself. Do not recommend features, patterns, security "
+                            f"measures or architecture - the product's own brief decides "
+                            f"those."
                         )),
                     ])).strip()
                 except Exception:  # noqa: BLE001 - one framework, not the stack

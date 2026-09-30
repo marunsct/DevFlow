@@ -49,39 +49,21 @@ from __future__ import annotations
 #: rule a Python, Go or Java run will ignore.
 TESTING_DEPENDENCY_RULE = """Testing is exempt from the product's dependency constraints:
 - A CONSTRAINT ON THE PRODUCT'S DEPENDENCIES IS NOT A CONSTRAINT ON ITS TESTS.
-  "No external dependencies", "no frameworks", "no build step", "no third-party
-  packages" and "maximum N lines of code" describe what the user receives. They
-  do not describe the developer's machine, and they never forbid a test runner,
-  a browser binary, a mocking library or a coverage tool. Read every such
-  constraint as applying to what is SHIPPED.
+  "No external dependencies", "no frameworks", "no build step" and "maximum N
+  lines of code" describe what is SHIPPED, never the test runner, browser
+  binary or mocking library used to verify it.
 - YOU MUST NOT ACCEPT "we cannot test this because the brief forbids
-  dependencies". That answer is always wrong, in every language and stack. A
-  test suite that needs a package installs it in the ecosystem's test-only
-  scope, which ships to nobody, costs the user nothing and breaks no constraint
-  in the brief. The stack's own guidance, appended under FRAMEWORK
-  CAPABILITIES, names that scope for its language. If a constraint appears to
-  rule out testing, the constraint has been read as covering something it does
-  not.
-- A TEST FRAMEWORK IS CHOSEN FOR WHAT IT CAN VERIFY, NOT FOR WHAT IT INSTALLS.
-  A user interface is verified by driving the real interface, and a brief
-  forbidding dependencies does not make a mock of its rendering layer adequate;
-  it never makes "manual testing" or "no test framework" an answer. The stack's
-  own guidance names the framework for its language and interface.
-- THE USER MAY CHOOSE A TESTING STACK. A request for a specific test framework
-  or tool is honoured as given, and it is not overruled by a dependency
-  constraint in the brief. The two are not in conflict: one is about the
-  product, the other about how it is verified.
-- NEVER DELETE, DISABLE OR AVOID PRODUCT CODE TO SATISFY A TEST TOOL. If a test
-  environment cannot support a feature, fix the environment or substitute the
-  boundary - do not remove the thing being tested.
-- IF YOU ARE REVIEWING: a specification, stack or plan that declines to test -
-  or that picks an inadequate test approach - because of a dependency
-  constraint is a BLOCKING finding. Name the constraint and state that it
-  governs the shipped product only. The same holds for a decision recorded as a
-  risk for installing a test-only dependency: that is the constraint being
-  applied to the wrong thing, and it is not a risk.
-- IF YOU ARE BUILDING OR TESTING: install what the suite needs, in the
-  ecosystem's test-only scope, and say so plainly. Do not ask permission from a
-  constraint that does not apply, and do not record the install as a risk."""
+  dependencies". A test-only package goes in the ecosystem's test-only scope,
+  which ships to nobody; the stack's guidance under FRAMEWORK CAPABILITIES
+  names it. "Manual testing" or "no test framework" is never the answer.
+- THE USER MAY CHOOSE A TESTING STACK, and that choice is not overruled by a
+  dependency constraint: one is about the product, the other about how it is
+  verified.
+- IF YOU ARE REVIEWING: a specification, stack or plan that declines to test,
+  or picks an inadequate approach, because of a dependency constraint is a
+  BLOCKING finding - name the constraint and say it governs the shipped
+  product only. A test-only install recorded as a risk is not a risk.
+- IF YOU ARE BUILDING OR TESTING: install what the suite needs in the
+  test-only scope and say so plainly."""
 
 __all__ = ["TESTING_DEPENDENCY_RULE"]

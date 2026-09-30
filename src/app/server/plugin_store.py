@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS plugin_instructions (
 );
 """
 
+#: The first line of every generated row, naming the prompt that wrote it.
+#: Generated rows without the current marker are deleted at seeding, so the
+#: framework is generated again under the current prompt the next time a stack
+#: names it. The previous prompt asked for "best practices ... concurrency,
+#: security and architecture", and a to-do list app's specialists were told to
+#: "Use Web Workers for CPU-heavy tasks" and "Adopt CSP headers".
+GENERATED_MARKER = "<!-- generated-v2 -->"
+
+
 def database_url() -> str:
     return os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
 
@@ -111,6 +120,11 @@ class PluginStore:
                         "OR plugin_instructions.instructions = plugin_instructions.seeded_instructions",
                         (framework.lower(), instructions, instructions),
                     )
+                cur.execute(
+                    "DELETE FROM plugin_instructions WHERE origin = 'generated' "
+                    "AND instructions NOT LIKE %s",
+                    (GENERATED_MARKER + "%",),
+                )
             conn.commit()
 
     def get_instructions(self, framework_name: str) -> Optional[str]:
@@ -119,7 +133,8 @@ class PluginStore:
                 cur.execute("SELECT instructions FROM plugin_instructions WHERE framework_name = %s", (framework_name.lower(),))
                 row = cur.fetchone()
                 if row:
-                    return row[0]
+                    text = str(row[0] or "")
+                    return text[len(GENERATED_MARKER):].lstrip("\n") if text.startswith(GENERATED_MARKER) else text
         return None
 
     def get_all_framework_names(self) -> list[str]:
@@ -138,6 +153,6 @@ class PluginStore:
                     "VALUES (%s, %s, 'generated') "
                     "ON CONFLICT (framework_name) DO UPDATE SET instructions = EXCLUDED.instructions, "
                     "origin = 'generated', updated_at = CURRENT_TIMESTAMP",
-                    (framework_name.lower(), instructions)
+                    (framework_name.lower(), f"{GENERATED_MARKER}\n{instructions}")
                 )
             conn.commit()

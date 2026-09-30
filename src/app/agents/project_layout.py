@@ -45,7 +45,8 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
   its own directory, with its own manifest and its own tests.
 - Tests live beside the code they test, inside the project. A suite at the
   workspace root is one the project's runner never collects.
-- Documents go in the workspace's `docs/`, never inside the project.
+- Documentation that ships with the product - a README, a guide for whoever
+  maintains it - goes inside the project, beside the code it describes.
 - `docs/` already exists and the workflow maintains it. `product_intake.md`,
   `technology_stack.md`, `technical_specification.md`, `sprint_plan.md`,
   `milestone_plan.md`, `architecture_review.md`, `security_review.md`,

@@ -98,9 +98,28 @@ class TestTheSeed:
 
 class TestGeneratedRows:
     def test_generation_marks_its_row(self, store, name) -> None:
+        from app.server.plugin_store import GENERATED_MARKER
+
         store.update_instructions(name, "generated text")
 
-        assert _row(store, name)[:2] == ("generated text", "generated")
+        assert _row(store, name)[:2] == (f"{GENERATED_MARKER}\ngenerated text", "generated")
+        assert store.get_instructions(name) == "generated text"
+
+    def test_a_row_generated_under_an_older_prompt_is_dropped_at_seeding(self, store, name) -> None:
+        """So it is generated again under the current prompt. The old one asked
+        for "best practices ... concurrency, security and architecture"."""
+        with store.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO plugin_instructions (framework_name, instructions, origin) "
+                    "VALUES (%s, %s, 'generated')",
+                    (name, "- Use Web Workers for CPU-heavy tasks"),
+                )
+            conn.commit()
+
+        store._seed_default_instructions()
+
+        assert store.get_instructions(name) is None
 
     def test_generation_never_touches_a_seed_row(self, store) -> None:
         """The middleware only generates for names the store does not know."""

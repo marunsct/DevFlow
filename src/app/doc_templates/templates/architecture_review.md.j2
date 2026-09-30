@@ -1,0 +1,26 @@
+{#- docs/architecture_review.md - the architecture reviewer's decision.
+    Context: o (ArchitectureReviewOutput), findings (o.findings, most severe first). -#}
+# Architecture Review
+
+## Findings
+{% if findings %}
+| Severity | Evidence | Description | Required remediation |
+|---|---|---|---|
+{% for f in findings %}
+| **{{ f.severity | cell | title }}** | {{ f.evidence | cell }} | {{ f.description | cell }} | {{ f.required_remediation | cell }} |
+{% endfor %}
+{% elif o.status == "approved" %}
+No findings were recorded.
+{% else %}
+No findings were recorded, so this review states no change for the architect to make.
+{% endif %}
+
+## Approval Conditions
+{{ o.approval_conditions | bullets("None.") }}
+
+## Accepted Risks
+{{ o.accepted_risks | bullets("None recorded.") }}
+
+## Status: {{ o.status or "unknown" }}
+
+<!-- Generated from the reviewer's structured decision. Editing this file does not change the workflow's routing. -->

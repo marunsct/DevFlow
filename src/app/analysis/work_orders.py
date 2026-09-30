@@ -1,0 +1,219 @@
+"""Work orders: what a specialist is handed, and the check before it is handed.
+
+A software team gives a developer who is new to a codebase more than one line
+of intent. The technical lead writes the ticket so it can be done without
+guessing: which files, which contracts, the steps, the edge cases, how it will
+be tested and how to check it. This workflow's specialists are that new
+developer on every task - they start each one knowing nothing of the codebase
+but what the brief says - and the weaker the model, the more the brief has to
+carry.
+
+`SpecialistTask` carries those fields. This module does two things with them.
+
+`readiness_problems` is the definition of ready: a check, before dispatch, that
+a plan is complete enough to hand out. Only what can be decided without
+judgement - a code task that names no files, a file outside the project, a
+task nothing will test, a command the sandbox will refuse. A plan that fails it
+goes back to the lead once, with the list; one that still fails is dispatched
+anyway with the problems written onto it, because a lead that cannot produce
+the field is better served by a note than by a failed run.
+
+`brief_for` renders one task's work order for the specialist that does it, and
+`contract_for_testing` gives the testing task every other task's interfaces and
+test cases - contract first: the tests are written against what the plan says
+the code will do, at the same time as the code, not against whatever the code
+turns out to do.
+
+Nothing here names a language, a framework or a kind of product.
+"""
+from __future__ import annotations
+
+from pathlib import Path, PurePosixPath
+from typing import Any, Iterable, Sequence
+
+#: Roles whose task is not code the product runs, so they need not name files
+#: or test cases.
+_NOT_CODE = frozenset({"documentation"})
+#: The role that turns other tasks' test cases into tests.
+_TESTING = "testing"
+
+
+def _role(task: Any) -> str:
+    return str(getattr(task, "specialist_role", "") or "")
+
+
+def _label(index: int, task: Any) -> str:
+    title = str(getattr(task, "title", "") or "").strip()
+    if not title:
+        first = next((line.strip() for line in str(getattr(task, "task_description", "")).splitlines() if line.strip()), "")
+        title = first[:70] + ("..." if len(first) > 70 else "")
+    return f"work order {index} ({_role(task)}: {title})"
+
+
+def _outside_the_project(path: str, project_dir: str) -> str:
+    """Why `path` is not a place this task may write, or ""."""
+    clean = str(PurePosixPath(path.strip().lstrip("/")))
+    if not clean or clean == ".":
+        return "is empty"
+    if clean.split("/", 1)[0] == "docs":
+        return "is inside docs/, which the workflow writes and no task may"
+    if project_dir and not (clean == project_dir or clean.startswith(project_dir + "/")):
+        return f"is outside the project directory '{project_dir}/'"
+    return ""
+
+
+def _pinned_project_directory(repo_root: str | Path | None) -> str:
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        return (pinned_project_directory(Path(repo_root or "")) or "").strip("/")
+    except Exception:  # noqa: BLE001 - no pin: paths are not checked against one
+        return ""
+
+
+def readiness_enforced() -> bool:
+    """Whether an unready plan is sent back. `WORKFLOW_WORK_ORDER_READINESS=off` disables it.
+
+    On by default. The switch exists for the whole-graph routing tests, whose
+    scripted plans predate work orders; nothing in a real run turns it off.
+    """
+    import os
+
+    return os.environ.get("WORKFLOW_WORK_ORDER_READINESS", "on").strip().lower() not in {
+        "0", "off", "false", "no",
+    }
+
+
+def readiness_problems(
+    milestone: Any, repo_root: str | Path | None, carried_forward: Sequence[str] = ()
+) -> list[str]:
+    """What stops this plan being handed out as it stands. Never raises.
+
+    `carried_forward` is what earlier sprints left for this one; each item needs
+    a line in the plan's `carried_forward_decisions`, taking or declining it.
+    """
+    if not readiness_enforced():
+        return []
+    try:
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+    except Exception:  # noqa: BLE001
+        return []
+    if not tasks:
+        return []
+    project_dir = _pinned_project_directory(repo_root)
+    problems: list[str] = []
+    code_tasks = [t for t in tasks if _role(t) not in _NOT_CODE and _role(t) != _TESTING]
+
+    for index, task in enumerate(tasks, 1):
+        role = _role(task)
+        label = _label(index, task)
+        files = [str(f) for f in getattr(task, "files", None) or [] if str(f).strip()]
+        if role not in _NOT_CODE and not files:
+            problems.append(
+                f"{label} names no `files`. List every file it creates or changes, as a "
+                "path inside the project directory."
+            )
+        for path in files:
+            why = _outside_the_project(path, project_dir)
+            if why:
+                problems.append(f"{label}: file '{path}' {why}.")
+        if role not in _NOT_CODE and role != _TESTING and not (getattr(task, "test_cases", None) or []):
+            problems.append(
+                f"{label} has no `test_cases`. Give the given/when/then cases that prove its "
+                "acceptance criteria - the testing task writes the tests from them."
+            )
+        try:
+            from app.analysis.planned_commands import commands_the_sandbox_would_refuse
+
+            refused = commands_the_sandbox_would_refuse(
+                "\n".join(f"`{c}`" for c in getattr(task, "verification", None) or []),
+                f"{role}_specialist",
+                repo_root,
+            )
+        except Exception:  # noqa: BLE001
+            refused = []
+        for note in refused:
+            problems.append(f"{label} `verification`: {note}")
+
+    carried = [str(item) for item in carried_forward or () if str(item).strip()]
+    decided = [str(d) for d in getattr(milestone, "carried_forward_decisions", None) or [] if str(d).strip()]
+    if carried and len(decided) < len(carried):
+        problems.append(
+            f"{len(carried)} item(s) were carried forward from earlier sprints and "
+            f"`carried_forward_decisions` records {len(decided)}. Give one line per item: "
+            "the work order that takes it, or why it is declined."
+        )
+    if code_tasks and not any(_role(t) == _TESTING for t in tasks):
+        problems.append(
+            "No `testing` work order. A milestone that changes code needs one, which "
+            "writes automated tests from the other work orders' `test_cases` and "
+            "`interfaces`."
+        )
+    return problems
+
+
+def readiness_feedback(problems: Sequence[str]) -> str:
+    """The note that sends an unready plan back to the lead."""
+    listed = "\n".join(f"- {problem}" for problem in problems)
+    return (
+        "\n\nYOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT. A specialist starts each "
+        "task knowing only its work order, so each one must be complete. Fix these "
+        "and return the whole plan again:\n" + listed
+    )
+
+
+def _section(heading: str, items: Iterable[Any], numbered: bool = False) -> str:
+    kept = [" ".join(str(item).split()) for item in items or () if str(item).strip()]
+    if not kept:
+        return ""
+    lines = (
+        [f"{n}. {item}" for n, item in enumerate(kept, 1)] if numbered else [f"- {item}" for item in kept]
+    )
+    return f"--- {heading} ---\n" + "\n".join(lines) + "\n\n"
+
+
+def brief_for(task: Any) -> str:
+    """One task's work order, as the sections of a specialist's brief."""
+    try:
+        return (
+            _section("Files you own in this task", getattr(task, "files", None) or [])
+            + _section("Interfaces to implement or call, exactly as written", getattr(task, "interfaces", None) or [])
+            + _section("Steps", getattr(task, "steps", None) or [], numbered=True)
+            + _section("Edge cases and the rule for each", getattr(task, "edge_cases", None) or [])
+            + _section("Test cases your work will be checked against", getattr(task, "test_cases", None) or [])
+            + _section("Verify with", getattr(task, "verification", None) or [])
+            + _section("Out of scope - do not change", getattr(task, "out_of_scope", None) or [])
+        )
+    except Exception:  # noqa: BLE001 - a brief without the order still has the task
+        return ""
+
+
+def contract_for_testing(task: Any, tasks: Sequence[Any]) -> str:
+    """For the testing task: every other work order's interfaces and test cases."""
+    if _role(task) != _TESTING:
+        return ""
+    blocks: list[str] = []
+    for index, other in enumerate(tasks or (), 1):
+        if other is task or _role(other) in (_TESTING, *_NOT_CODE):
+            continue
+        interfaces = [str(i) for i in getattr(other, "interfaces", None) or [] if str(i).strip()]
+        cases = [str(c) for c in getattr(other, "test_cases", None) or [] if str(c).strip()]
+        if not interfaces and not cases:
+            continue
+        lines = [f"{_label(index, other)}:"]
+        lines += [f"  interface: {i}" for i in interfaces]
+        lines += [f"  case: {c}" for c in cases]
+        blocks.append("\n".join(lines))
+    if not blocks:
+        return ""
+    return (
+        "--- The contract you are testing ---\n"
+        "The other work orders in this milestone promise these interfaces and these "
+        "cases. Write the tests against them as written - the code is being written "
+        "from the same work orders at the same time. A test that fails because the "
+        "code does not match the contract is a defect to report, not a test to "
+        "change.\n\n" + "\n\n".join(blocks) + "\n\n"
+    )
+
+
+__all__ = ["brief_for", "contract_for_testing", "readiness_feedback", "readiness_problems"]

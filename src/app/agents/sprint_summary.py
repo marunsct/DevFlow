@@ -210,18 +210,11 @@ def render_sprint_summary(
     """
     attempts = list(attempts or ())
     latest: Mapping[str, Any] = attempts[-1] if attempts else {}
-    tally = _defect_tally(latest.get("defects") or ())
-    cases = latest.get("cases")
-
-    of_plan = f" of {total_sprints}" if total_sprints else ""
-    lines = [f"# Sprint {sprint_number}{of_plan} Summary", ""]
-    lines.append(f"**Goal:** {goal or 'Unknown goal'}")
-    lines.append(f"**Status:** {latest.get('status', 'Unknown')}")
+    attempt_count = len(attempts) or 1
 
     # Why the run worked through more milestones than the plan has sprints.
     # Stated on every sprint, including the ones that took a single attempt, so
     # its absence never has to be interpreted.
-    attempt_count = len(attempts) or 1
     if attempt_count > 1:
         # The attempts *before* this one. `latest` is `attempts[-1]`, so counting
         # every non-Completed attempt counted the current one among the failures
@@ -230,81 +223,59 @@ def render_sprint_summary(
         # reader most needs right: one run's second and final attempt read
         # "Attempts: 2 (re-run after 2 failed attempts at this same sprint)" with
         # one attempt behind it.
-        earlier = attempts[:-1]
-        failures = sum(1 for attempt in earlier if attempt.get("status") != "Completed")
-        lines.append(
-            f"**Attempts:** {attempt_count} (re-run after {failures} failed "
+        failures = sum(1 for attempt in attempts[:-1] if attempt.get("status") != "Completed")
+        attempts_line = (
+            f"{attempt_count} (re-run after {failures} failed "
             f"attempt{'s' if failures != 1 else ''} at this same sprint)"
         )
     else:
-        lines.append("**Attempts:** 1 (no re-run)")
+        attempts_line = "1 (no re-run)"
 
-    if latest.get("reason"):
-        lines.append(f"**Failure Reason:** {latest['reason']}")
-
-    lines.append(f"**Test Cases:** {cases['tests'] if cases else 'not reported'}")
-    lines.append(f"- **Passed:** {cases['passed'] if cases else 0}")
-    lines.append(f"- **Failed:** {cases['failed'] if cases else 0}")
-
-    lines += ["", "## Planned for This Sprint", _bullets(planned, empty="Nothing recorded from the sprint plan.")]
-    lines += ["", "## Features Implemented"]
-    # These are the tasks the milestone delegated, which is what the state
-    # carries; nothing records per-task completion. On a sprint that passed its
-    # review that reads correctly enough. On one that failed it does not, and
-    # this is the document a reader opens to find out what happened.
-    #
-    # Measured on one run, which failed its first sprint with
-    # `index.html references style.css which does not exist` as a blocking
-    # finding, while this section read "Create style.css with basic responsive
-    # CSS rules". The heading is the one the dashboards parse, so the
-    # qualification goes in the body rather than the heading, and not as a
-    # bullet - the UI keeps only the lines that start with one.
-    if str(latest.get("status", "")).strip().lower() != "completed":
-        lines.append(
-            "These are the tasks this sprint delegated, not a record of what "
-            "passed: the sprint did not pass its review, so read them as what "
-            "was attempted."
-        )
-    lines.append(
-        _bullets(
-            [_one_line(feature) for feature in (latest.get("features") or ())],
-            empty="No delegated work recorded.",
-        )
-    )
-
-    lines += ["", "## Test Cycles",
-              f"- **Rounds Completed:** {latest.get('rounds', 0)}",
-              f"- **Total Bugs Found:** {tally['found']}",
-              f"- **Bugs Fixed:** {tally['fixed']}",
-              f"- **Bugs Open:** {tally['open']}"]
-
-    defects = latest.get("defects") or ()
-    if defects:
-        lines += ["", "### Defect Summary"]
-        for defect in defects:
-            status = str(defect.get("status", "open")).upper()
-            lines.append(
-                f"- [{status}] {defect.get('description', '')} "
-                f"(Owner: {defect.get('owner', 'unassigned')})"
-            )
-
+    history: list[str] = []
     if attempt_count > 1:
-        lines += ["", "## Attempt History",
-                  "Every attempt at *this* sprint, oldest first. A re-run is a "
-                  "second attempt at one sprint, not an extra sprint."]
         for attempt in attempts:
             label = "re-run" if attempt.get("number", 1) > 1 else "first attempt"
             reason = f": {attempt['reason']}" if attempt.get("reason") else ""
-            lines.append(
-                f"- **Attempt {attempt.get('number', '?')}** ({label}) - "
+            tally = _defect_tally(attempt.get("defects") or ())
+            history.append(
+                f"**Attempt {attempt.get('number', '?')}** ({label}) - "
                 f"{attempt.get('status', 'Unknown')}{reason}. "
                 f"Test cases: {_cases_phrase(attempt.get('cases'))} over "
                 f"{attempt.get('rounds', 0)} round(s). "
-                f"Defects: {_defect_tally(attempt.get('defects') or ())['found']} found, "
-                f"{_defect_tally(attempt.get('defects') or ())['fixed']} fixed."
+                f"Defects: {tally['found']} found, {tally['fixed']} fixed."
             )
 
-    return "\n".join(lines) + "\n"
+    from app.doc_templates import render_document
+
+    # The layout is the template's (`app/doc_templates/templates/sprint_summary.md.j2`).
+    # The "Features Implemented" qualification for a sprint that did not pass
+    # goes in the body rather than the heading, and not as a bullet - the panel
+    # keeps only the lines that start with one. Measured on one run, which
+    # failed its first sprint with `index.html references style.css which does
+    # not exist` while this section read "Create style.css with basic
+    # responsive CSS rules".
+    return render_document(
+        "sprint_summary",
+        number=sprint_number,
+        of_plan=f" of {total_sprints}" if total_sprints else "",
+        goal=goal,
+        status=latest.get("status", "Unknown"),
+        completed=str(latest.get("status", "")).strip().lower() == "completed",
+        attempts_line=attempts_line,
+        reason=latest.get("reason") or "",
+        cases=latest.get("cases"),
+        planned=[str(item).strip() for item in planned or () if str(item).strip()],
+        features=[_one_line(feature) for feature in (latest.get("features") or ())],
+        rounds=latest.get("rounds", 0),
+        tally=_defect_tally(latest.get("defects") or ()),
+        defects=list(latest.get("defects") or ()),
+        history=history,
+        work_orders=list(latest.get("work_orders") or ()),
+        defect_log=list(latest.get("defect_log") or ()),
+        findings=list(latest.get("findings") or ()),
+        carried_forward=list(latest.get("carried_forward") or ()),
+        lessons=list(latest.get("lessons") or ()),
+    )
 
 
 __all__ = [

@@ -68,7 +68,8 @@ from app.agents.architecture_reviewer import (
     build_architecture_review_request,
     create_architecture_reviewer_agent,
 )
-from app.agents.review_document import render_architecture_review
+from app.agents.review_document import render_architecture_review, render_security_review
+from app.doc_templates import render_document
 from app.agents.artifact_document import render_artifact
 from app.agents.specification_document import render_specification
 from app.agents.milestone_reviewer import (
@@ -442,6 +443,16 @@ class WorkflowGraphState(TypedDict, total=False):
     # re-run left no record, and the extra milestone it cost looked like an
     # extra sprint. Appended to, never rewritten.
     sprint_attempts: list[dict[str, Any]]
+    # A milestone plan that failed the definition of ready, and why - sent back
+    # to the lead once. See `app.analysis.work_orders`.
+    work_order_problems: list[str]
+    unready_plan: str
+    # The Sprint Record. Every review finding of this sprint, round by round;
+    # what the last sprint left for this one's lead to take or decline; and what
+    # the harness saw fail repeatedly. See `app.sprint.record`.
+    sprint_findings: list[dict[str, Any]]
+    carried_forward: list[str]
+    lessons: list[str]
     milestone_plan: MilestonePlanOutput
     specialist_task_index: int
     specialist_outputs: Annotated[dict[str, SpecialistOutput], _merge_or_reset]
@@ -2170,7 +2181,7 @@ def _run_gated_agent(
             _record_document(
                 state,
                 f"docs/stage_summaries/{stage_name}.md",
-                f"# {stage_name} Summary\n\n{recorded}",
+                render_document("stage_summary", stage=stage_name, recorded=recorded),
             )
     except Exception:  # noqa: BLE001 - narration is never load-bearing
         logger.debug("Could not publish the outcome of %s", stage_name, exc_info=True)
@@ -2454,8 +2465,11 @@ def _record_sprint_summary(
     if not planned and goal:
         planned = [goal]
 
+    # A task's title where the lead gave one - "Delete an item" rather than the
+    # first line of an instruction to a specialist, which on one run read
+    # "Review existing unit tests ..." under "Features Implemented".
     features = [
-        getattr(task, "task_description", str(task))
+        (getattr(task, "title", "") or "").strip() or getattr(task, "task_description", str(task))
         for task in (getattr(plan, "delegated_tasks", None) or [])
     ]
     defects = [
@@ -2484,6 +2498,29 @@ def _record_sprint_summary(
     except Exception:  # noqa: BLE001 - a summary without counts beats no summary
         logger.debug("Could not read test counts for the sprint summary", exc_info=True)
 
+    # The Sprint Record's own sections, from what the workflow and the harness
+    # recorded rather than from any agent's account. See `app.sprint.record`.
+    record: dict[str, Any] = {}
+    try:
+        from app.observability.transcript import _run_id_from_config, read_transcript
+        from app.sprint import record as sprint_record
+
+        completed = status == "Completed"
+        more = sprint_index + 1 < len(sprints)
+        findings = list(state.get("sprint_findings") or [])
+        run_id = _run_id_from_config()
+        record = {
+            "work_orders": sprint_record.work_order_outcomes(plan, state.get("specialist_outputs") or {}),
+            "defect_log": sprint_record.defect_log(cycle),
+            "findings": sprint_record.with_dispositions(findings, completed=completed, more_sprints=more),
+            "carried_forward": sprint_record.carried_from(findings, sprint_index + 1) if completed else [],
+            "lessons": sprint_record.lessons_from(
+                read_transcript(run_id, {"tool_call", "tool_result"}) if run_id else [], since=since
+            ),
+        }
+    except Exception:  # noqa: BLE001 - a summary without the record beats no summary
+        logger.warning("Could not assemble the sprint record", exc_info=True)
+
     attempt = {
         "sprint_index": sprint_index,
         "number": len(already) + 1,
@@ -2493,6 +2530,7 @@ def _record_sprint_summary(
         "rounds": state.get("test_round", 0),
         "features": features,
         "defects": defects,
+        **record,
         "ended_at": datetime.now(timezone.utc).isoformat(),
     }
     attempts = recorded + [attempt]
@@ -3185,7 +3223,7 @@ def build_workflow_graph(
         _record_document(
             state,
             "docs/product_intake.md",
-            render_artifact(update["product_intake"], title="Product Intake"),
+            render_document("product_intake", o=update["product_intake"]),
         )
         
         # After product manager finishes, optionally route to review
@@ -3258,7 +3296,7 @@ def build_workflow_graph(
             _record_document(
                 state,
                 "docs/tools_and_models.md",
-                render_artifact(update["tools_models"], title="Tools and Models"),
+                render_document("tools_and_models", o=update["tools_models"]),
             )
             # Pin every language the stack names, so the sandbox can open the
             # right toolchain to every role that writes code. The allowlist
@@ -3361,7 +3399,7 @@ def build_workflow_graph(
         _record_document(
             state,
             "docs/technology_stack.md",
-            render_artifact(update["stack_selection"], title="Technology Stack"),
+            render_document("technology_stack", o=update["stack_selection"]),
         )
         return update
 
@@ -3586,7 +3624,7 @@ def build_workflow_graph(
             _record_document(
                 state,
                 "docs/sprint_plan.md",
-                render_artifact(update["sprint_plan"], title="Sprint Plan"),
+                render_document("sprint_plan", o=update["sprint_plan"]),
             )
         return update
 
@@ -3616,7 +3654,22 @@ def build_workflow_graph(
                 previous_milestone.model_dump_json(indent=2), revision_comments
             )
         else:
-            request = build_milestone_planning_request(plan_text, current_goal, state["repository"].root_path)
+            request = build_milestone_planning_request(
+                plan_text, current_goal, state["repository"].root_path,
+                specification=state.get("technical_specification"),
+                carried_forward=state.get("carried_forward") or [],
+                lessons=state.get("lessons") or [],
+            )
+        # The previous answer was not ready to hand out: say exactly why, with
+        # the plan it was, so this attempt fixes it rather than starting over.
+        unready = [str(p) for p in state.get("work_order_problems") or [] if str(p).strip()]
+        if unready:
+            from app.analysis.work_orders import readiness_feedback
+
+            request["messages"][-1]["content"] += (
+                readiness_feedback(unready)
+                + (f"\n\nThe plan that was sent back:\n{state.get('unready_plan')}" if state.get("unready_plan") else "")
+            )
         update = _run_gated_agent(
             state,
             config,
@@ -3628,6 +3681,60 @@ def build_workflow_graph(
         )
         if _hand_back(update, "milestone_plan"):
             return update
+
+        # Pinned before the readiness check, which checks each work order's files
+        # against it. In parallel mode the specialists all start before a file
+        # exists, and the directory was pinned by whichever wrote first. See
+        # `pin_the_directory_a_plan_names`.
+        try:
+            from app.tools.repository import pin_the_directory_a_plan_names
+
+            pin_the_directory_a_plan_names(
+                state["repository"].root_path, update["milestone_plan"].model_dump_json()
+            )
+        except Exception:  # noqa: BLE001 - the first write still pins it
+            logger.warning("Could not pin the project directory from the plan", exc_info=True)
+
+        # The definition of ready: every work order complete enough for a
+        # specialist who knows nothing but its brief. See `app.analysis.work_orders`.
+        from app.analysis.work_orders import readiness_problems
+
+        problems = readiness_problems(
+            update["milestone_plan"],
+            state["repository"].root_path,
+            carried_forward=[] if revising else (state.get("carried_forward") or []),
+        )
+        if problems:
+            retries = dict(state.get("structured_retries") or {})
+            key = "technical_lead:work_orders"
+            attempted = retries.get(key, 0)
+            if attempted < _max_structured_retries():
+                retries[key] = attempted + 1
+                logger.warning(
+                    "Milestone plan is not ready to hand out (%d problem(s)); sending it "
+                    "back to the lead (attempt %d of %d): %s",
+                    len(problems), attempted + 2, _max_structured_retries() + 1,
+                    "; ".join(p[:80] for p in problems[:3]),
+                )
+                return _handing_on(
+                    stage="technical_lead",
+                    structured_retries=retries,
+                    revision_comments=revision_comments,
+                    work_order_problems=problems,
+                    unready_plan=update["milestone_plan"].model_dump_json(indent=2),
+                )
+            logger.warning(
+                "Milestone plan still not ready after %d attempts; dispatching it with "
+                "the problems noted: %s", attempted + 1, "; ".join(p[:80] for p in problems[:3]),
+            )
+            plan = update["milestone_plan"]
+            update["milestone_plan"] = plan.model_copy(update={
+                "integration_notes": list(plan.integration_notes) + [
+                    f"Not ready when dispatched: {problem}" for problem in problems
+                ]
+            })
+        update["work_order_problems"] = []
+        update["unready_plan"] = ""
 
         # Before it is written down or dispatched: a command the plan tells a
         # specialist to run, which the sandbox will refuse, is noted on the task.
@@ -3641,7 +3748,7 @@ def build_workflow_graph(
         _record_document(
             state,
             "docs/milestone_plan.md",
-            render_artifact(update["milestone_plan"], title="Milestone Plan"),
+            render_document("milestone_plan", o=update["milestone_plan"]),
         )
 
         milestone: MilestonePlanOutput = update["milestone_plan"]
@@ -3681,18 +3788,6 @@ def build_workflow_graph(
                     "fresh conversation."
                 ),
             )
-
-        # Before any specialist runs: in parallel mode they all start before a
-        # file exists, and the directory was pinned by whichever wrote first.
-        # See `pin_the_directory_a_plan_names`.
-        try:
-            from app.tools.repository import pin_the_directory_a_plan_names
-
-            pin_the_directory_a_plan_names(
-                state["repository"].root_path, milestone.model_dump_json()
-            )
-        except Exception:  # noqa: BLE001 - the first write still pins it
-            logger.warning("Could not pin the project directory from the plan", exc_info=True)
 
         update["remediation"] = start_remediation(milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS)
         update["specialist_task_index"] = 0
@@ -3766,6 +3861,7 @@ def build_workflow_graph(
                 # The sibling tasks, so a specialist sharing a file with another
                 # is told before it rewrites the file wholesale.
                 other_tasks=tasks,
+                work_order=task,
             )
             update = _run_gated_agent(
                 state,
@@ -3821,6 +3917,7 @@ def build_workflow_graph(
             other_tasks=list(
                 getattr(state.get("milestone_plan"), "delegated_tasks", None) or ()
             ),
+            work_order=task,
         )
         
         # A worker may only answer its *own* approval gate.
@@ -4193,8 +4290,15 @@ def build_workflow_graph(
                     "records as having run and passed",
                     stage_name, defect.description[:80],
                 )
+            # How it was fixed, for the Sprint Record's defect log: the fixer's
+            # own decisions and the files it changed.
+            resolution = "; ".join(
+                [" ".join(str(d).split()) for d in fix_result.decisions if str(d).strip()]
+                + ([f"changed {', '.join(fix_result.changed_files)}"] if fix_result.changed_files else [])
+            )[:600]
             update["remediation"] = mark_defect_fixed(
-                cycle, defect_index, regression_test=regression_test, verified_by=verified_by
+                cycle, defect_index, regression_test=regression_test, verified_by=verified_by,
+                resolution=resolution,
             )
 
         update["specialist_outputs"] = outputs
@@ -4236,11 +4340,37 @@ def build_workflow_graph(
         _record_document(
             state,
             "docs/security_review.md",
-            render_artifact(review, title="Security Review"),
+            render_security_review(review),
         )
-        return _handing_on(stage="milestone_review", security_review=review)
+        from app.sprint.record import findings_of
+
+        return _handing_on(
+            stage="milestone_review",
+            security_review=review,
+            sprint_findings=list(state.get("sprint_findings") or [])
+            + findings_of(review, "security", state.get("milestone_revision_count", 0) + 1),
+        )
 
     def milestone_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        """Review the milestone, and keep its findings for the Sprint Record.
+
+        Every exit that produced a verdict carries it as `milestone_review`; its
+        findings join the sprint's history here, once, not at each exit.
+        """
+        missing = _missing_upstream(state, "milestone_plan")
+        if missing is not None:
+            return missing
+        result = _review_the_milestone(state, config)
+        review = result.get("milestone_review") if isinstance(result, dict) else None
+        if review is not None and review is not state.get("milestone_review"):
+            from app.sprint.record import findings_of
+
+            result["sprint_findings"] = list(state.get("sprint_findings") or []) + findings_of(
+                review, "milestone", state.get("milestone_revision_count", 0) + 1
+            )
+        return result
+
+    def _review_the_milestone(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "milestone_plan")
         if missing is not None:
             return missing
@@ -4301,6 +4431,15 @@ def build_workflow_graph(
             return update
             
         review: MilestoneReviewOutput = update.pop("__milestone_review__")
+        # This round's findings, in the state the sprint record below reads, so
+        # a sprint that ends on this review records the review that ended it.
+        from app.sprint.record import findings_of
+
+        state = {
+            **state,
+            "sprint_findings": list(state.get("sprint_findings") or [])
+            + findings_of(review, "milestone", state.get("milestone_revision_count", 0) + 1),
+        }
 
         # The document is rendered here, from the decision the workflow routes
         # on, rather than written by the reviewer as a second copy that can
@@ -4486,6 +4625,33 @@ def build_workflow_graph(
         sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
         has_more_sprints = sprint_index < len(sprints) - 1
 
+        # The definition of done: the part of "finished" that needs no judgement.
+        # A sprint with a work order that never returned, or a defect still
+        # open, is not finished however the review read it, and the next sprint
+        # must not start on top of it. Bounded like every other send-back.
+        from app.sprint.record import definition_of_done_gaps
+
+        gaps = definition_of_done_gaps(milestone, outputs, cycle)
+        if gaps:
+            gaps_text = "The sprint is not done:\n" + "\n".join(f"- {gap}" for gap in gaps)
+            revision_count = state.get("milestone_revision_count", 0) + 1
+            if revision_count < MAX_MILESTONE_REVISIONS:
+                logger.warning("Milestone accepted but not done; sending it back: %s", gaps_text[:200])
+                return _handing_on(
+                    stage="technical_lead",
+                    revision_comments=state.get("revision_comments", []) + [gaps_text],
+                    milestone_revision_count=revision_count,
+                    milestone_review=review,
+                )
+            summary = _record_sprint_summary(state, "Failed", "the sprint was not done: " + "; ".join(gaps))
+            return _escalate_to_a_human(
+                state,
+                error=f"The sprint was accepted but is not done after {MAX_MILESTONE_REVISIONS} revisions.\n\n{gaps_text}",
+                milestone_revision_count=revision_count,
+                milestone_review=review,
+                **summary,
+            )
+
         # Accepted: the tests ran, the reviewer read them and said yes. This is
         # the only point in a sprint where the workflow has an opinion that the
         # work is sound, so it is the only sensible thing to record as a state
@@ -4561,8 +4727,14 @@ def build_workflow_graph(
 
     def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         summary = _record_sprint_summary(state, "Completed")
+        # What this sprint hands the next one's lead: findings it neither fixed
+        # nor was blocked by, and what failed repeatedly. See `app.sprint.record`.
+        latest = (summary.get("sprint_attempts") or [{}])[-1]
         return {
             **summary,
+            "carried_forward": list(latest.get("carried_forward") or []),
+            "lessons": list(latest.get("lessons") or []),
+            "sprint_findings": [],
             "stage": "technical_lead",
             "current_sprint_index": state.get("current_sprint_index", 0) + 1,
             # clear previous sprint's milestone state so it doesn't pollute the next sprint

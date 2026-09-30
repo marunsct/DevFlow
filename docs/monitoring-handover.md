@@ -63,7 +63,7 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |
-| clean runs toward the gate | **0 of 2** on brief_low (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed. run-ebde9fa1 completed, 2.4% failed calls, product tests 72+8 pass and match the summary, but it took three mid-run fixes and the product audit found the review accepting "full keyboard accessibility" while editing is pointer-only, and an edit path skipping the add form's description limit; count still 0) |
+| clean runs toward the gate | **0 of 2** on brief_low. Loop paused 2026-09-30 14:18 JST to build §0.7 (work orders, document templates, Sprint Record); restart from brief_low run 1 on the new build. History: (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed. run-ebde9fa1 completed, 2.4% failed calls, product tests 72+8 pass and match the summary, but it took three mid-run fixes and the product audit found the review accepting "full keyboard accessibility" while editing is pointer-only, and an edit path skipping the add form's description limit; count still 0) |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |
@@ -206,6 +206,67 @@ working (the tool-approval check can fail transiently), schedule a retry about
 carried plain-text credentials; everything they did is covered by
 `scripts/loop/`. **Those credentials remain in git history and should be
 treated as exposed and rotated.**
+
+### 0.7 How a sprint runs now (work orders, templates, the Sprint Record) - 2026-09-30
+
+Built at the operator's request, modelled on how a software team hands work to a
+developer who is new to the codebase. The loop was paused for it; audit the next
+runs against this section.
+
+**Every document comes from a template.** `src/app/doc_templates/templates/*.md.j2`
+holds one Jinja template per workflow document (the nine in `docs/`, the sprint
+summary, the stage summaries). A model supplies the content of each section; the
+template fixes the headings, their order, the labels inside a record and what an
+empty section says, so a different model produces the same document shape.
+`tests/test_document_templates.py` fails if a schema field is not placed in its
+template or if the heading skeleton varies with the content. The sprint panel in
+the UI parses `sprint_N_summary.md`; its template's header comment says which
+lines must not change.
+
+**The technical lead writes work orders.** `SpecialistTask` now carries `title`,
+`files`, `interfaces`, `steps`, `edge_cases`, `test_cases`, `verification` and
+`out_of_scope`. The lead is given the specification's contract sections to copy
+from. Each specialist's brief shows its own work order; the `testing` specialist
+also gets every other work order's interfaces and test cases and writes the tests
+against them while the code is written (contract first).
+
+**Definition of ready** (`app.analysis.work_orders.readiness_problems`), checked
+before dispatch: a code work order with no `files` or no `test_cases`, a file
+outside the pinned project directory or in `docs/`, code with no `testing` work
+order, a `verification` command the sandbox refuses, or carried-forward items with
+no `carried_forward_decisions`. An unready plan goes back to the lead once with the
+list and the plan it was (log line: "Milestone plan is not ready to hand out");
+after the retry budget it is dispatched with the problems in `integration_notes`.
+`WORKFLOW_WORK_ORDER_READINESS=off` disables it - only the test suite does that.
+Commands a task names are also checked against the sandbox and a refusal is
+written onto the task (`app.analysis.planned_commands`).
+
+**Definition of done** (`app.sprint.record.definition_of_done_gaps`), checked when
+the milestone review accepts: every work order returned a result and no tracked
+defect is open. A gap sends the sprint back (bounded by `MAX_MILESTONE_REVISIONS`,
+then escalates) - the next sprint never starts on an unfinished one.
+
+**The Sprint Record** (`docs/sprint_N_summary.md`) keeps the old header, test
+counts, "Planned", "Features Implemented" (task titles now) and "Defect Summary",
+and adds: Work Orders (outcome, files planned vs changed, verification, blockers),
+Defect Log (reproduction, expected/actual, how it was fixed, what verified it,
+regression test), Review Findings (every round of the milestone and security
+reviews, with a disposition), Carried Forward, and Lessons for the Next Sprint.
+Everything in it comes from state, the execution ledger and the transcript, not
+from an agent's account.
+
+**Carry-forward and lessons.** Non-blocking findings from a sprint's last review
+round are handed to the next sprint's lead, who must take or decline each in
+`carried_forward_decisions`. Tool failures repeated in a sprint (from the
+transcript) are handed on as lessons. Both reach the lead's request under
+"Carried forward from earlier sprints" and "What went wrong earlier in this run".
+
+**What to audit on the next runs:** does the lead fill the work-order fields (read
+`docs/milestone_plan.md` - "not stated" everywhere means it did not); how often
+the readiness check bounces a plan and whether the second plan fixes it; whether
+specialists follow their work orders (fewer refused commands, fewer files outside
+`files`); whether the Sprint Record's dispositions and carried items match what
+the reviews said; and whether a carried item is actually taken in the next sprint.
 
 ---
 

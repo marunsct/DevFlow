@@ -66,52 +66,23 @@ def _findings_table(findings: list[Any], *, context_column: str, context_field: 
     return "\n".join(rows)
 
 
+def _most_severe_first(review: Any) -> list[Any]:
+    return sorted(list(getattr(review, "findings", None) or []), key=_severity_rank)
+
+
 def render_milestone_review(review: Any, milestone_goal: str) -> str:
-    """The Markdown a person reads, built from the decision the workflow routes on."""
-    findings = list(getattr(review, "findings", None) or [])
-    status = str(getattr(review, "status", "") or "unknown")
+    """The Markdown a person reads, built from the decision the workflow routes on.
 
-    parts = [f"# Milestone Review: {milestone_goal or 'Milestone'}", ""]
+    Laid out by `app/doc_templates/templates/milestone_review.md.j2`. A review that
+    requires changes and records no findings says so in words - the exact
+    shape that failed one run, and one a reader should be able to see.
+    """
+    from app.doc_templates import render_document
 
-    parts.append("## Findings")
-    if findings:
-        parts.append(
-            _findings_table(findings, context_column="Category", context_field="category")
-        )
-    else:
-        # Said plainly rather than left blank. A review that requires changes
-        # and records no findings is the exact shape that failed one run,
-        # and a reader should be able to see it in the document.
-        parts.append(
-            "No structured findings were recorded."
-            if status == "accepted"
-            else (
-                "No structured findings were recorded. The account below is the "
-                "only statement of what needs to change."
-            )
-        )
-    parts.append("")
-
-    parts.append("## Acceptance Evidence")
-    parts.append(str(getattr(review, "acceptance_evidence", "") or "None recorded."))
-    parts.append("")
-
-    parts.append("## What Was Reviewed")
-    parts.append(
-        f"- Documentation reviewed: {'yes' if getattr(review, 'documentation_reviewed', False) else 'no'}"
+    return render_document(
+        "milestone_review", o=review, findings=_most_severe_first(review),
+        milestone_goal=milestone_goal,
     )
-    parts.append(
-        f"- Tests reviewed: {'yes' if getattr(review, 'tests_reviewed', False) else 'no'}"
-    )
-    parts.append("")
-
-    parts.append(f"## Status: {status}")
-    parts.append("")
-    parts.append(
-        "<!-- Generated from the reviewer's structured decision. Editing this "
-        "file does not change the workflow's routing. -->"
-    )
-    return "\n".join(parts)
 
 
 def render_architecture_review(review: Any) -> str:
@@ -124,45 +95,19 @@ def render_architecture_review(review: Any) -> str:
     disagreed on one run badly enough to fail the run.
 
     Its findings carry `evidence` - the spec section or ADR - where a milestone
-    finding carries `category`, so the table's middle column differs.
+    finding carries `category`, so the table's middle column differs. Laid out
+    by `app/doc_templates/templates/architecture_review.md.j2`.
     """
-    findings = list(getattr(review, "findings", None) or [])
-    status = str(getattr(review, "status", "") or "unknown")
+    from app.doc_templates import render_document
 
-    parts = ["# Architecture Review", ""]
-
-    parts.append("## Findings")
-    if findings:
-        parts.append(
-            _findings_table(findings, context_column="Evidence", context_field="evidence")
-        )
-    else:
-        parts.append(
-            "No findings were recorded."
-            if status == "approved"
-            else (
-                "No findings were recorded, so this review states no change for "
-                "the architect to make."
-            )
-        )
-    parts.append("")
-
-    for heading, attribute, empty in (
-        ("Approval Conditions", "approval_conditions", "None."),
-        ("Accepted Risks", "accepted_risks", "None recorded."),
-    ):
-        parts.append(f"## {heading}")
-        entries = list(getattr(review, attribute, None) or [])
-        parts.extend([f"- {entry}" for entry in entries] if entries else [empty])
-        parts.append("")
-
-    parts.append(f"## Status: {status}")
-    parts.append("")
-    parts.append(
-        "<!-- Generated from the reviewer's structured decision. Editing this "
-        "file does not change the workflow's routing. -->"
-    )
-    return "\n".join(parts)
+    return render_document("architecture_review", o=review, findings=_most_severe_first(review))
 
 
-__all__ = ["render_architecture_review", "render_milestone_review"]
+def render_security_review(review: Any) -> str:
+    """`docs/security_review.md`, from `templates/security_review.md.j2`."""
+    from app.doc_templates import render_document
+
+    return render_document("security_review", o=review, findings=_most_severe_first(review))
+
+
+__all__ = ["render_architecture_review", "render_milestone_review", "render_security_review"]

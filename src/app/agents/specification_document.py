@@ -64,41 +64,15 @@ def _as_lines(value: Any) -> list[str]:
 
 
 def render_specification(specification: Any, product_name: str = "") -> str:
-    """The Markdown a person reads, built from the decision the pipeline routes on."""
-    title = f"Technical Specification — {product_name}" if product_name else "Technical Specification"
-    parts: list[str] = [f"# {title}", ""]
+    """The Markdown a person reads, built from the decision the pipeline routes on.
 
-    for field, heading in _SECTIONS:
-        lines = _as_lines(getattr(specification, field, None))
-        parts.append(f"## {heading}")
-        # Said plainly rather than left blank: an empty required section is
-        # something a reviewer should see, not something to hide.
-        parts.extend(lines if lines else ["_Not specified._"])
-        parts.append("")
+    Laid out by `app/doc_templates/templates/technical_specification.md.j2`. An
+    empty required section says so rather than vanishing: it is something a
+    reviewer should see, not something to hide.
+    """
+    from app.doc_templates import render_document
 
-    decisions = list(getattr(specification, "decisions", None) or [])
-    parts.append("## Decisions (ADR)")
-    if not decisions:
-        parts.extend(["_No architecture decisions were recorded._", ""])
-    else:
-        parts.append("")
-        for index, record in enumerate(decisions, 1):
-            heading = str(getattr(record, "title", "") or f"Decision {index}").strip()
-            parts.append(f"### ADR-{index:02d} — {heading}")
-            for field, label in _ADR_FIELDS:
-                lines = _as_lines(getattr(record, field, None))
-                if not lines:
-                    continue
-                parts.append(f"**{label}:**")
-                parts.extend(lines)
-                parts.append("")
-            parts.append("")
-
-    parts.append(
-        "<!-- Generated from the architect's structured specification. Editing "
-        "this file does not change what the pipeline reads. -->"
-    )
-    return "\n".join(parts).rstrip() + "\n"
+    return render_document("technical_specification", o=specification, product_name=product_name)
 
 
 __all__ = ["render_specification"]

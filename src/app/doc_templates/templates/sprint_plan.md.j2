@@ -1,0 +1,47 @@
+{#- docs/sprint_plan.md - the scrum master's plan of sprints.
+    Context: o (SprintPlanOutput). Every sprint reads with the same labels. -#}
+# Sprint Plan
+
+## Sprints
+{% for s in o.sprints %}
+
+### Sprint {{ loop.index }}: {{ s.goal | text("Goal not stated") }}
+
+**User value:** {{ s.user_value | text }}
+
+**In scope:**
+{{ s.in_scope | bullets }}
+
+**Out of scope:**
+{{ s.out_of_scope | bullets }}
+
+**Dependencies:**
+{{ s.dependencies | bullets }}
+
+**Acceptance criteria:**
+{{ s.acceptance_criteria | bullets }}
+
+**Test strategy:**
+{{ s.test_strategy | bullets }}
+
+**Security checks:**
+{{ s.security_checks | bullets }}
+
+**Documentation work:**
+{{ s.documentation_work | bullets }}
+
+**Risks:**
+{{ s.risks | bullets }}
+
+**Rollback notes:** {{ s.rollback_notes | text("none") }}
+{% else %}
+_No sprints were planned._
+{% endfor %}
+
+## Open questions
+{{ o.open_questions | section }}
+
+## Success measure coverage
+{{ o.success_measure_coverage | section }}
+
+<!-- Generated from this stage's structured response. Editing this file does not change what the pipeline reads. -->

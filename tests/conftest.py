@@ -20,6 +20,12 @@ from testcontainers.redis import RedisContainer
 #: graph. Set `TEST_TIMEOUT_SECONDS=0` to switch it off.
 DEFAULT_TEST_TIMEOUT_SECONDS = 180
 
+# The whole-graph routing tests script technical-lead plans written before work
+# orders existed, so the definition-of-ready check would send every one of them
+# back. Off here; the tests that exercise it turn it on. See
+# `app.analysis.work_orders.readiness_enforced`.
+os.environ.setdefault("WORKFLOW_WORK_ORDER_READINESS", "off")
+
 
 @pytest.fixture(autouse=True)
 def _fail_a_hung_test():

@@ -56,8 +56,65 @@ class SpecialistTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     specialist_role: SpecialistRole = Field(..., description="Which specialist should perform this task.")
+    title: str = Field(
+        default="",
+        description=(
+            "A short name for what this task delivers, as a reader would list it: "
+            "'Delete an item', 'Persist items between sessions'. One line."
+        ),
+    )
     task_description: str = Field(..., description="The specific, scoped piece of work being delegated.")
     acceptance_criteria: list[str] = Field(default_factory=list)
+    # The work order. A developer new to this codebase should be able to do the
+    # task from these fields alone, without the specification in front of them
+    # and without guessing. See `app.analysis.work_orders`, which checks them.
+    files: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every file this task creates or changes, as a path inside the project "
+            "directory. One owner per file: a file listed here is this task's."
+        ),
+    )
+    interfaces: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The exact contracts this task implements or calls, copied from the "
+            "technical specification: names, parameters, return values, data "
+            "shapes, messages or endpoints. The tests are written against these."
+        ),
+    )
+    steps: list[str] = Field(
+        default_factory=list,
+        description="The implementation steps, in order, specific enough to follow without guessing.",
+    )
+    edge_cases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Inputs and conditions the work must handle and the rule for each: empty, "
+            "too long, missing, duplicate, invalid - and the same rule on every other "
+            "path that sets the same value."
+        ),
+    )
+    test_cases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Given/when/then cases that prove the acceptance criteria. The testing "
+            "task turns these into automated tests; the developer knows from them "
+            "exactly what will be checked."
+        ),
+    )
+    verification: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Commands the specialist runs to prove the work: one program and its "
+            "arguments per entry, no shell operators. Prefer the project's own test "
+            "command."
+        ),
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list,
+        description="What this task must not change, so it does not collide with another task.",
+    )
 
     @field_validator("task_description", mode="after")
     @classmethod
@@ -200,6 +257,16 @@ class MilestonePlanOutput(BaseModel):
             "task 3 (testing)'. Empty on a first plan. Purpose: a requested change that no task "
             "owns is a change nobody makes. Producer: Technical Lead. Consumer: the "
             "workflow, which refuses a revision that assigns nothing."
+        ),
+    )
+    carried_forward_decisions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One line per item carried forward from an earlier sprint, saying which "
+            "task in this milestone takes it, or why it is declined - e.g. "
+            "'Description cannot be edited once empty -> task 2' or 'Stale label on "
+            "filter controls -> declined: removed by task 1'. Empty when nothing was "
+            "carried forward."
         ),
     )
     blockers: list[str] = Field(
@@ -398,14 +465,71 @@ def _truncate(text: str, max_chars: int | None = None) -> str:
     )
 
 
+#: The specification sections a work order copies from: where things live, what
+#: the data is, the contracts between parts, how data moves, how it is tested.
+_CONTRACT_SECTIONS = (
+    ("component_boundaries", "Component boundaries"),
+    ("domain_model", "Domain model"),
+    ("api_and_event_contracts", "Contracts"),
+    ("data_flows", "Data flows"),
+    ("testing", "Testing"),
+)
+
+
+def _the_contracts(specification: Any) -> str:
+    """The specification's contract sections, for the lead to copy into work orders."""
+    if specification is None:
+        return ""
+    blocks: list[str] = []
+    for field, heading in _CONTRACT_SECTIONS:
+        items = [str(item).strip() for item in getattr(specification, field, None) or [] if str(item).strip()]
+        if items:
+            blocks.append(f"{heading}:\n" + "\n".join(f"- {item}" for item in items))
+    if not blocks:
+        return ""
+    return (
+        "--- From the approved technical specification: the contracts your work orders "
+        "copy from (/docs/technical_specification.md has the rest) ---\n"
+        + _truncate("\n\n".join(blocks)) + "\n\n"
+    )
+
+
 def build_milestone_planning_request(
-    sprint_plan_text: str, selected_sprint_goal: str, repository_root: str
+    sprint_plan_text: str,
+    selected_sprint_goal: str,
+    repository_root: str,
+    specification: Any = None,
+    carried_forward: Any = (),
+    lessons: Any = (),
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input for planning one milestone from the approved sprint plan."""
+    """Build the Deep Agent input for planning one milestone from the approved sprint plan.
+
+    `carried_forward` is what earlier sprints left open - review findings that
+    did not block, defects accepted rather than fixed - and each must be taken by
+    a task or declined with a reason. `lessons` is what the harness saw go wrong
+    in earlier sprints of this run, for the lead to design around.
+    """
+    carried = [str(item).strip() for item in carried_forward or () if str(item).strip()]
+    learned = [str(item).strip() for item in lessons or () if str(item).strip()]
     brief = (
         WORKSPACE_ROOT_NOTE
         + f"--- Approved sprint plan (/docs/sprint_plan.md) ---\n{_truncate(sprint_plan_text)}\n\n"
-        f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
+        + _the_contracts(specification)
+        + (
+            "--- Carried forward from earlier sprints ---\n"
+            + "\n".join(f"- {item}" for item in carried)
+            + "\nEach of these must either be taken by a work order in this milestone or "
+            "declined with a reason. Record which in `carried_forward_decisions`, one "
+            "line per item.\n\n"
+            if carried else ""
+        )
+        + (
+            "--- What went wrong earlier in this run (from the harness's own record) ---\n"
+            + "\n".join(f"- {item}" for item in learned)
+            + "\nWrite the work orders so these do not happen again.\n\n"
+            if learned else ""
+        )
+        + f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
@@ -446,9 +570,34 @@ Responsibilities:
   product the stack builds on vanilla JavaScript and browser storage has no
   backend and no database: do not invent a task for those roles to justify
   naming them.
-- Give each delegated task a highly granular, scoped description and explicit acceptance
-  criteria a Milestone Reviewer can check. You MUST instruct specialists to write complete,
-  executable code and explicitly mandate that they compile/verify their code using terminal commands.
+- Write every delegated task as a WORK ORDER that a developer new to this
+  codebase can complete without asking anything and without the specification
+  in front of them. The specialist sees its own work order and nothing else of
+  the plan. Fill every field:
+  - `title`: a short name for what it delivers, as a reader would list it.
+  - `task_description`: what to build and why, in plain sentences.
+  - `files`: every file it creates or changes, as paths inside the project
+    directory. One owner per file.
+  - `interfaces`: the exact contracts it implements or calls, copied from the
+    specification - names, parameters, return values, data shapes, messages or
+    endpoints. Code and tests are written from these at the same time, so they
+    must be exact.
+  - `steps`: the implementation steps in order.
+  - `edge_cases`: each input or condition to handle and the rule for it, and
+    the same rule on every other path that sets the same value.
+  - `test_cases`: given/when/then cases that prove the acceptance criteria.
+  - `verification`: commands that prove the work, each one program with its
+    arguments. There is no shell: no `&&`, `||`, pipes or redirections, and no
+    code passed inline to an interpreter. Prefer the project's own test command.
+  - `out_of_scope`: what this task must not change.
+  - `acceptance_criteria`: what a Milestone Reviewer checks.
+- A milestone that changes code includes one `testing` work order. It is given
+  the other work orders' `interfaces` and `test_cases` and writes the automated
+  tests from them while the code is written - contract first, not after.
+- The harness checks every plan before dispatch: a code work order with no
+  `files` or no `test_cases`, a file outside the project directory, a milestone
+  with code and no `testing` work order, or a verification command the sandbox
+  refuses sends the plan back to you.
 - Every milestone must change what the product DOES. At least one delegated
   task must add or change application code that a user or a caller would
   notice. Creating directories, copying files and writing documentation are

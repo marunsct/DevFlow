@@ -1,0 +1,53 @@
+{#- docs/technical_specification.md - the principal architect's specification.
+    Context: o (TechnicalSpecificationOutput), product_name (str). -#}
+# Technical Specification{% if product_name %} — {{ product_name }}{% endif %}
+
+## Product Scope
+{{ o.product_scope | section }}
+
+## Component Boundaries
+{{ o.component_boundaries | section }}
+
+## Domain Model
+{{ o.domain_model | section }}
+
+## API and Event Contracts
+{{ o.api_and_event_contracts | section }}
+
+## Data Flows
+{{ o.data_flows | section }}
+
+## Security and Privacy
+{{ o.security_and_privacy | section }}
+
+## Reliability and Observability
+{{ o.reliability_and_observability | section }}
+
+## Testing
+{{ o.testing | section }}
+
+## Deployment
+{{ o.deployment | section }}
+
+## Acceptance Criteria
+{{ o.acceptance_criteria | section }}
+
+## Open Questions
+{{ o.open_questions | section }}
+
+## Decisions (ADR)
+{% for adr in o.decisions %}
+
+### ADR-{{ '%02d' % loop.index }} — {{ adr.title | text("Decision " ~ loop.index) }}
+{% for label, value in [("Context", adr.context), ("Alternatives", adr.alternatives), ("Decision", adr.decision), ("Rationale", adr.rationale), ("Trade-offs", adr.trade_offs), ("Consequences", adr.consequences), ("Validation evidence", adr.validation_evidence)] %}
+{% if value | section("") %}
+**{{ label }}:**
+{{ value | section }}
+
+{% endif %}
+{% endfor %}
+{% else %}
+_No architecture decisions were recorded._
+{% endfor %}
+
+<!-- Generated from the architect's structured specification. Editing this file does not change what the pipeline reads. -->

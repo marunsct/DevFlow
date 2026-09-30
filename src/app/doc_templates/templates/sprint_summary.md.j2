@@ -1,0 +1,99 @@
+{#- docs/sprint_<n>_summary.md - the Sprint Record: one document per sprint,
+    carrying every attempt made at it.
+
+    The block down to "Attempt History" is parsed by the sprint panel in the UI
+    (langchain-ui/src/components/SprintSummaryPanel.tsx): its bold field labels,
+    the bullets under "Planned for This Sprint" and "Features Implemented", and
+    the `- [STATUS] description (Owner: role)` lines under "Defect Summary". The
+    sections after it must never produce a line of that last shape - the panel
+    reads defect lines from "Defect Summary" to the end of the file.
+
+    Context is prepared by `app.agents.sprint_summary.render_sprint_summary`. -#}
+# Sprint {{ number }}{{ of_plan }} Summary
+
+**Goal:** {{ goal or "Unknown goal" }}
+**Status:** {{ status }}
+**Attempts:** {{ attempts_line }}
+{% if reason %}
+**Failure Reason:** {{ reason }}
+{% endif %}
+**Test Cases:** {{ cases.tests if cases else "not reported" }}
+- **Passed:** {{ cases.passed if cases else 0 }}
+- **Failed:** {{ cases.failed if cases else 0 }}
+
+## Planned for This Sprint
+{{ planned | bullets("- Nothing recorded from the sprint plan.") }}
+
+## Features Implemented
+{% if not completed %}
+These are the tasks this sprint delegated, not a record of what passed: the sprint did not pass its review, so read them as what was attempted.
+{% endif %}
+{{ features | bullets("- No delegated work recorded.") }}
+
+## Test Cycles
+- **Rounds Completed:** {{ rounds }}
+- **Total Bugs Found:** {{ tally.found }}
+- **Bugs Fixed:** {{ tally.fixed }}
+- **Bugs Open:** {{ tally.open }}
+{% if defects %}
+
+### Defect Summary
+{% for d in defects %}
+- [{{ d.status | upper }}] {{ d.description }} (Owner: {{ d.owner }})
+{% endfor %}
+{% endif %}
+{% if history %}
+
+## Attempt History
+Every attempt at *this* sprint, oldest first. A re-run is a second attempt at one sprint, not an extra sprint.
+{% for line in history %}
+- {{ line }}
+{% endfor %}
+{% endif %}
+
+## Work Orders
+{% for w in work_orders %}
+
+### {{ loop.index }}. {{ w.title }} — {{ w.role }}
+- **Outcome:** {{ w.outcome }}
+- **Files planned:** {{ w.files_planned | join(", ") | text("not stated") }}
+- **Files changed:** {{ w.files_changed | join(", ") | text("none reported") }}
+- **Verification:** {{ w.verification | join("; ") | text("none recorded") }}
+- **Blockers raised:** {{ w.blockers | join("; ") | text("none") }}
+{% else %}
+None recorded.
+{% endfor %}
+
+## Defect Log
+{% for d in defect_log %}
+
+### {{ d.id }} · {{ d.severity }} · {{ d.state }}
+- **Summary:** {{ d.description | text }}
+- **Owner:** {{ d.owner | text }}
+- **Reproduction:** {{ d.reproduction | text }}
+- **Expected:** {{ d.expected | text }}
+- **Actual:** {{ d.actual | text }}
+- **Files:** {{ d.files | join(", ") | text("not identified") }}
+- **How it was fixed:** {{ d.resolution | text("not recorded") }}
+- **Fix verified by:** {{ d.verified_by | text("nothing recorded") }}
+- **Regression test:** {{ d.regression_test | text("none named") }}
+{% else %}
+No defects were found.
+{% endfor %}
+
+## Review Findings
+{% if findings %}
+| Round | Review | Severity | Finding | Disposition |
+|---|---|---|---|---|
+{% for f in findings %}
+| {{ f.round }} | {{ f.source | cell }} | {{ f.severity | cell | title }} | {{ f.description | cell }} | {{ f.disposition | cell }} |
+{% endfor %}
+{% else %}
+No review findings were recorded.
+{% endif %}
+
+## Carried Forward
+{{ carried_forward | bullets("Nothing was carried forward.") }}
+
+## Lessons for the Next Sprint
+{{ lessons | bullets("None recorded.") }}

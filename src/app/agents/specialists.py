@@ -675,9 +675,22 @@ def build_specialist_task_request(
     repository_root: str,
     stack: Any = None,
     other_tasks: Sequence[Any] = (),
+    work_order: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input for one delegated specialist task."""
+    """Build the Deep Agent input for one delegated specialist task.
+
+    `work_order` is the `SpecialistTask` itself, whose files, interfaces, steps,
+    edge cases, test cases and verification commands are the rest of the
+    ticket - see `app.analysis.work_orders`. The testing task is also given the
+    other tasks' interfaces and test cases, so it writes tests against the
+    contract while the code is written from it.
+    """
+    from app.analysis.work_orders import brief_for, contract_for_testing
+
     criteria_text = "\n".join(f"- {criterion}" for criterion in acceptance_criteria)
+    order = ""
+    if work_order is not None:
+        order = brief_for(work_order) + contract_for_testing(work_order, list(other_tasks or ()))
     brief = (
         # Deliberately not the host repository path. Inside the agent the
         # workspace is rooted at "/", and quoting the host path here sends
@@ -686,6 +699,7 @@ def build_specialist_task_request(
         f"{describe_stack(stack)}"
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
+        f"{order}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
         f"{_a_file_another_specialist_is_also_given(task_description, acceptance_criteria, other_tasks)}"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
@@ -913,7 +927,9 @@ Responsibilities:
   error is usually there.
 - If you cannot verify something (a test, a security property), say so as a
   risk or blocker instead of asserting it is fine.
-- **NEVER remove or disable application logic (e.g. DOM updates or UI interactions)** merely to make a test pass in a headless environment. If a test environment lacks browser features, fix the test environment (e.g., use JSDOM correctly) rather than breaking the application code.
+- **NEVER remove or disable application logic** merely to make a test pass in the
+  test environment. If the environment lacks something the product needs, fix the
+  test setup with the tooling this run's stack guidance names, never the product.
 
 Beginner documentation requirement:
 - Any non-obvious code or configuration you describe must explain purpose,

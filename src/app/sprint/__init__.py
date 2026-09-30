@@ -63,6 +63,13 @@ class Defect(BaseModel):
     accepted_risk_reason: str | None = Field(
         default=None, description="Why this defect was accepted as a risk instead of fixed, if applicable."
     )
+    resolution: str = Field(
+        default="",
+        description=(
+            "How it was fixed: the fixing specialist's own decisions and the files it "
+            "changed. Set by the controller from that specialist's result."
+        ),
+    )
 
 
 class TestRunRecord(BaseModel):
@@ -276,6 +283,7 @@ def mark_defect_fixed(
     *,
     regression_test: str,
     verified_by: str = "",
+    resolution: str = "",
 ) -> RemediationCycle:
     """Mark one defect fixed, requiring a regression test if the defect needs one.
 
@@ -312,6 +320,7 @@ def mark_defect_fixed(
             "status": "fixed",
             "regression_test": regression_test,
             "verified_by": verified_by,
+            "resolution": resolution,
         }
     )
     return cycle.model_copy(update={"defects": updated_defects})

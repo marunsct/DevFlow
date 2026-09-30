@@ -1,0 +1,11 @@
+{#- docs/technology_stack.md - the chosen stack.
+    Context: o (StackSelectorOutput). -#}
+# Technology Stack
+
+## Selected Technology Stack
+{% with stack = o.technology_stack %}{% include "_stack.md.j2" %}{% endwith %}
+
+## Rationale
+{{ o.rationale | section }}
+
+<!-- Generated from this stage's structured response. Editing this file does not change what the pipeline reads. -->

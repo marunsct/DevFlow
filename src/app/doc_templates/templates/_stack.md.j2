@@ -1,0 +1,7 @@
+{#- One TechnologyStack record, as fixed labelled lines. Context: stack. -#}
+- **Language:** {{ stack.language | text }}
+- **Framework:** {{ stack.framework | text }}
+- **Frontend framework:** {{ stack.frontend_framework | text }}
+- **Database:** {{ stack.database | text }}
+- **Testing framework:** {{ stack.testing_framework | text }}
+- **Additional tools:** {{ stack.additional_tools | join(", ") | text("none") }}

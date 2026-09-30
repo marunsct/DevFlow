@@ -57,7 +57,7 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |
-| clean runs toward the gate | **1 of 2** on brief_low (run-fb102e16, completed 2026-09-30 11:02 JST: 3.0% failed calls, 10% redundant reads, nothing fixed; product 36 unit + 10 e2e passing) |
+| clean runs toward the gate | **0 of 2** on brief_low (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset) |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |
@@ -75,9 +75,10 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 
 | script | what it is for |
 |---|---|
-| `loop.sh` | the one entry point: `status`, `start [brief]`, `wait [minutes]`, `audit`, `stage <name> [HH:MM]`, `reads`, `deploy`, `suite`. Run with no argument for help. |
+| `loop.sh` | the one entry point: `status`, `start [brief]`, `wait [minutes]`, `audit`, `stage <name> [HH:MM]`, `reads`, `product [run-id]`, `deploy`, `suite`. Run with no argument for help. |
 | `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0), redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
 | `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
+| `product_audit.py` | the product half of the audit (`loop.sh product [run-id]`): the product files, code lines per file (counted as the brief's line cap is), the intake's acceptance criteria, what the harness claimed (sprint summary counts, milestone acceptance evidence), and the product's own test command run once. Prints evidence; the reading is the checklist in 0.4.1. |
 | `redundant_reads.py` | re-reads by (stage, file) and which notice answered them. One pair with many re-reads has twice been a misleading harness message. |
 | `scripts/audit_run.py` | the older whole-run audit (predates this loop): separates *refusals that prevented damage* from *failures that cost the run*, and runs the cross-file checks over the product. Use it on a finished run; see section 5. |
 
@@ -117,8 +118,46 @@ Then, for every failure signature and every stage that looks wrong:
 5. `loop.sh deploy`. A run that already has a finding may be resumed on the
    new code (orphan recovery does it); a run that could still be clean should
    be left to finish first.
-6. When the run ends: if nothing was found, count it toward the gate;
-   otherwise the count is 0. `loop.sh start` the next one.
+6. When the run ends, **audit the generated product before counting the run**
+   (0.4.1). Then: if nothing was found in the run or the product, count it
+   toward the gate; otherwise the count is 0. `loop.sh start` the next one.
+
+### 0.4.1 Audit the generated product - every run, at the end (and mid-run when needed)
+
+A run can look clean in its transcript and still ship a wrong product, or a
+harness document that describes it wrongly. Standing instruction from the
+owner (2026-09-30): audit the generated files at the end of every run, and
+whenever a mid-run finding touches the product. A run is not clean until this
+is done.
+
+```sh
+scripts/loop/loop.sh product [run-id]    # evidence: files, code lines, claims, real test result
+```
+
+Then read the product itself - every source file, not only the tests - against
+the brief (`tests/brief_*.md`) and check:
+
+1. **Every brief requirement is really built and reachable by a user.** A pure
+   function with no UI wiring is not a feature. Try the obvious edge of each:
+   empty input, whitespace, the value another path refuses (an add form that
+   rejects an empty title while inline edit saves one was shipped past every
+   review on run-fb102e16).
+2. **The brief's constraints hold**: line caps (the script counts non-blank,
+   non-comment lines as the harness check does), "no external dependencies"
+   (a test runner in devDependencies is allowed), the stack it names.
+3. **The tests exercise the real code**: they import the product module or load
+   the real page; a suite that only asserts the repository's shape is not
+   evidence.
+4. **Hallucinations - every claim the harness or an agent made is true**:
+   sprint summary counts against the real test result (run-fb102e16's
+   summaries said 36 test cases for 36 unit + 10 browser tests - a harness
+   counting bug), milestone-review acceptance evidence against the code it
+   cites, README/docs against what exists, "tests added" against the files.
+5. **Classify each finding.** A harness document or check that is wrong is a
+   harness bug: fix it in `src/`. A product defect every stage missed is a
+   finding about the pipeline: ask what instruction or check would have
+   caught it in general (not for this product), and add that. Either way the
+   run is not clean.
 
 Always say when the next check will report (JST). If shell commands stop
 working (the tool-approval check can fail transiently), schedule a retry about

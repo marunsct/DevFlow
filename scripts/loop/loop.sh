@@ -9,6 +9,8 @@
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
 #   scripts/loop/loop.sh stage <stage> [HH:MM]  trace one stage (stage_trace.py; HH:MM is UTC)
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
+#   scripts/loop/loop.sh product [run-id]    audit the generated product: files, code lines, the
+#                                            harness's claims, and the product's own tests (product_audit.py)
 #   scripts/loop/loop.sh deploy              rebuild + restart app and worker, verify the image
 #                                            matches the working tree, list runs orphan recovery revived
 #   scripts/loop/loop.sh suite               the full test suite, logged to data/loop/suite.log
@@ -90,6 +92,7 @@ wait)
 
 audit)  in_worker audit_live.py "${2:-$(current)}" ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
+product) in_worker product_audit.py "${2:-$(current)}" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }
   in_worker stage_trace.py "$(current)" "$2" "${3:-}"

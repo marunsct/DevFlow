@@ -3629,6 +3629,15 @@ def build_workflow_graph(
         if _hand_back(update, "milestone_plan"):
             return update
 
+        # Before it is written down or dispatched: a command the plan tells a
+        # specialist to run, which the sandbox will refuse, is noted on the task.
+        # See `app.analysis.planned_commands`.
+        from app.analysis.planned_commands import with_refused_commands_noted
+
+        update["milestone_plan"] = with_refused_commands_noted(
+            update["milestone_plan"], state["repository"].root_path
+        )
+
         _record_document(
             state,
             "docs/milestone_plan.md",

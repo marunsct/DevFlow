@@ -131,7 +131,16 @@ class TechnologyStack(BaseModel):
         # that warns against *installed* runners, and shipped a human checklist
         # instead of a test suite. A built-in runner costs nothing, so there is
         # no product here that needs no verification.
-        if not text or lowered in ("none", "n/a", "na", "no testing", "nothing", "-"):
+        #
+        # Matched as a leading word, not the whole value. One run's selector
+        # answered "None (not required for MVP)", which the exact comparison
+        # let through; the browser-runner rewrite then recorded "None (not
+        # required for MVP) for the logic, Playwright for the page" as the
+        # stack's testing framework.
+        if not text or (
+            (_DECLINES_A_RUNNER.match(lowered) or _TESTING_IS_OPTIONAL.search(lowered))
+            and not names_a_runner
+        ):
             raise ValueError(
                 "A testing framework is required. Most languages ship a test "
                 "runner with their runtime - nothing to install, no dependency, "
@@ -141,6 +150,16 @@ class TechnologyStack(BaseModel):
             )
         return text
 
+
+
+#: An answer that opens by declining a runner: "None", "N/A - ...",
+#: "No tests for now", "Nothing (the MVP is small)".
+_DECLINES_A_RUNNER = re.compile(
+    r"^\s*(?:none|n/?a|nothing|-+|no\s+(?:test\w*|framework|runner|automated\s+test\w*))(?![\w/-])"
+)
+
+#: An answer that calls testing optional anywhere in it.
+_TESTING_IS_OPTIONAL = re.compile(r"\bnot\s+(?:required|needed|necessary|applicable)\b")
 
 
 class TechnologyChoice(BaseModel):

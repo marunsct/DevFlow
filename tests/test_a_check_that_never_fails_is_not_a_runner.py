@@ -67,3 +67,28 @@ class TestTheSpecificationsTesting:
             "End-to-end tests replace manual verification",
             "Headless end-to-end tests assert on console errors",
         )) == []
+
+
+@pytest.mark.parametrize("approach", [
+    "None (not required for MVP)",
+    "N/A - the product is small",
+    "No tests for the first release",
+    "Nothing; verified by the reviewer",
+    "Testing not required for a 500-line app",
+])
+def test_declining_a_runner_in_more_words_is_still_declining_it(approach):
+    """One run's selector answered "None (not required for MVP)"; the exact-match
+    check let it through and the browser rewrite recorded "None (not required for
+    MVP) for the logic, Playwright for the page"."""
+    with pytest.raises(ValueError, match="A testing framework is required"):
+        _stack(approach)
+
+
+@pytest.mark.parametrize("approach", [
+    "Nodeunit",
+    "nose2",
+    "node --test (no dependencies needed beyond the runtime)",
+    "pytest; a database is not required for the tests",
+])
+def test_a_runner_whose_name_or_note_resembles_declining_is_kept(approach):
+    assert _stack(approach).testing_framework == approach

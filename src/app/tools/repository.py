@@ -4726,6 +4726,40 @@ def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
     return "/".join([*kept, name])
 
 
+#: A sentence that asks for a file to go.
+_A_REMOVAL = re.compile(r"\b(?:delete|remove|drop)\b", re.I)
+
+
+def _the_plan_says_to_delete(root: Path, shown: str) -> bool:
+    """Whether this milestone's plan names this exact file for removal.
+
+    The test guards stop a stage throwing away tests on its own judgement. They
+    also stopped one carrying out the plan: a milestone plan delegated
+    "Delete `simple-to-do-list-app/app.test.js` (root-level Jest unit test -
+    duplicate of tests/app.test.js)", the delete was refused twice, `rm` and
+    `node -e` were refused, and the stage wrote a script that removed the files
+    anyway - four failed calls, and the guard bypassed regardless.
+
+    Only the full workspace-relative path in a sentence that asks for removal
+    counts: a basename is ambiguous (`tests/app.test.js` ends with `app.test.js`
+    too), and a plan that merely mentions a file is not asking for it to go.
+    """
+    try:
+        plan = (root / "docs" / "milestone_plan.md").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    path = shown.strip().lstrip("/")
+    if "/" not in path:
+        return False
+    for sentence in re.split(r"(?<=[.;:])\s+|\n", plan):
+        if path in sentence and _A_REMOVAL.search(sentence):
+            index = sentence.find(path)
+            before = sentence[index - 1] if index > 0 else " "
+            if before not in "/._-" and not before.isalnum():
+                return True
+    return False
+
+
 def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:
     """Delete one file the agent created inside the workspace.
 
@@ -4789,10 +4823,11 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
             "reads it in between finds nothing."
         )
 
-    written_by = _another_stage_s_test(root, shown)
+    planned = _the_plan_says_to_delete(root, shown)
+    written_by = "" if planned else _another_stage_s_test(root, shown)
     if written_by:
         raise RepositoryToolError(_ANOTHER_STAGE_S_TEST.format(shown=shown, stage=written_by))
-    if looks_like_a_test(shown):
+    if looks_like_a_test(shown) and not planned:
         # The refusal has to name the way out, or an agent that genuinely wrote
         # a throwaway probe has nowhere to go. One run's
         # `specialist_testing_1` wrote `todo-app/debug.test.mjs`, ran it, then

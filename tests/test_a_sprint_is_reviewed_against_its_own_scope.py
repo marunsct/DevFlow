@@ -87,3 +87,65 @@ def test_sprint_one_is_not_sent_back_for_sprint_two_s_work(agents: ScriptedAgent
     first_review = agents.requests["milestone_reviewer"][0]["messages"][0]["content"]
     assert "Deferred by the plan, not part of this sprint:\n- Editing or deleting tasks" in first_review
     assert "Sprint 2: Edit and delete tasks" in first_review
+
+
+class TestAFileALaterSprintMakes:
+    """One run's sprint 1 built the task store alone; sprint 2's scope read
+    "Add index.html in the project root"; sprint 1's third review raised
+    "The repository contains no index.html" as blocking and ended the run."""
+
+    NOW = "Build a robust TaskStore module.\nsrc/task-store.js with CRUD and persistence."
+    LATER = "Implement the interactive UI.\nAdd index.html in the project root.\nCreate src/ui.js."
+
+    def test_a_missing_file_a_later_sprint_makes_is_named(self) -> None:
+        from app.analysis.integration_checks import later_sprint_files_in
+
+        finding = "The repository contains no index.html or other HTML entry point, so the app cannot load."
+        assert later_sprint_files_in(finding, self.NOW, self.LATER) == ["index.html"]
+
+    def test_a_finding_that_names_this_sprint_s_file_is_not(self) -> None:
+        from app.analysis.integration_checks import later_sprint_files_in
+
+        finding = "src/task-store.js does not dispatch the update event that index.html listens for."
+        assert later_sprint_files_in(finding, self.NOW, self.LATER) == []
+
+    def test_a_technology_written_with_a_dot_is_not_a_file(self) -> None:
+        """The run's other blocking finding - a Node-only import in browser code -
+        began "a Node.js module", and a later sprint may well say Node.js."""
+        from app.analysis.integration_checks import later_sprint_files_in
+
+        finding = "TaskStore imports 'node:crypto', a Node.js module not available in browsers."
+        assert later_sprint_files_in(finding, self.NOW, self.LATER + "\nRun Node.js tests.") == []
+
+    def test_a_file_no_later_sprint_names_is_not(self) -> None:
+        from app.analysis.integration_checks import later_sprint_files_in
+
+        assert later_sprint_files_in("There is no server.js to serve the page.", self.NOW, self.LATER) == []
+
+
+class TestWhatARevisionIsAskedToChange:
+    """On the same run the revisions took on the review's suggestions - encrypt
+    stored tasks, remove @playwright/test - and the encryption lost its key on
+    every reload, a new major."""
+
+    def test_only_what_gates_is_required_and_the_rest_is_marked_so(self) -> None:
+        from app.graph.workflow import _milestone_changes_requested
+
+        text = _milestone_changes_requested(_review(
+            ("major", "addTask does not dispatch tasks-updated."),
+            ("suggestion", "Consider encrypting stored tasks."),
+            ("minor", "The documentation lists an off() method."),
+            status="changes_required",
+        ))
+
+        required, _, noted = text.partition("NOT required in this revision")
+        assert "addTask does not dispatch" in required
+        assert "encrypting" not in required and "off() method" not in required
+        assert "encrypting" in noted and "off() method" in noted
+
+    def test_with_nothing_gating_every_finding_is_listed_as_before(self) -> None:
+        from app.graph.workflow import _milestone_changes_requested
+
+        text = _milestone_changes_requested(_review(("minor", "A typo."), status="changes_required"))
+
+        assert text == "[minor] regression: A typo. -> Build it."

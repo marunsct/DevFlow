@@ -30,7 +30,7 @@ from app.analysis.file_kinds import is_application, is_test
 
 import json
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from app.analysis.walk import files_under
 
@@ -4508,6 +4508,41 @@ def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> 
         if _names_the_action(this_sprint or "", spellings, inflected=True):
             return []
     return claimed
+
+
+#: A file named in prose: a lower-case name with an extension of two or more
+#: characters, optionally under directories. Lower case so that a technology
+#: written with a dot - "a Node.js module", which one run's blocking finding
+#: about a browser module began with - and "e.g." are never read as files.
+_A_FILE_NAMED = re.compile(r"(?<![\w/.-])((?:[\w-]+/)*[a-z0-9_-]+\.[a-z][a-z0-9]{1,5})(?![\w/-])")
+
+
+def later_sprint_files_in(finding: str, this_sprint: str, later_sprints: str) -> list[str]:
+    """The files a review finding is about, when a later sprint makes them; else [].
+
+    `later_sprint_work_in` reads the claim for user actions, and a finding about
+    a missing file names none. Measured on one run: sprint 1 built the task
+    store alone, sprint 2's scope read "Add index.html in the project root",
+    and sprint 1's review raised "The repository contains no index.html or
+    other HTML entry point" as blocking - on the third revision, which ended
+    the run.
+
+    Returned only when every file the claim names is named in a later sprint's
+    goal, scope or acceptance criteria and nowhere in this sprint's; a finding
+    that names any file this sprint makes stays as it was.
+    """
+    if not (later_sprints or "").strip():
+        return []
+    named = {PurePosixPath(match).name for match in _A_FILE_NAMED.findall(_the_claim(finding))}
+    if not named:
+        return []
+    later = (later_sprints or "").lower()
+    now = (this_sprint or "").lower()
+    for name in named:
+        spelled = re.compile(rf"(?<![\w-]){re.escape(name.lower())}(?![\w-])")
+        if not spelled.search(later) or spelled.search(now):
+            return []
+    return sorted(named)
 
 
 def planned_for_a_later_sprint(problem: str, later_sprints: str) -> bool:

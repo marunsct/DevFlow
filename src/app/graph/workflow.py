@@ -2814,10 +2814,28 @@ def _milestone_changes_requested(review: Any) -> str | None:
     """
     findings = getattr(review, "findings", None) or []
     if findings:
-        return "\n".join(
-            f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}"
-            for f in findings
-        )
+        def lines(chosen: list[Any]) -> str:
+            return "\n".join(
+                f"[{f.severity}] {f.category}: {f.description} -> {f.required_remediation}"
+                for f in chosen
+            )
+
+        # Only what gates is a required change. The revision request makes
+        # every requested change a delegated task, and a suggestion made into
+        # a task is new work in a sprint that is being sent back. Measured on
+        # one run: sprint 1's revisions took on "consider encrypting stored
+        # tasks" and "remove @playwright/test", the encryption lost its key on
+        # every reload - a new major - and the third review ended the run.
+        required = [f for f in findings if _severity_gates(getattr(f, "severity", ""))]
+        noted = [f for f in findings if not _severity_gates(getattr(f, "severity", ""))]
+        if required and noted:
+            return (
+                lines(required)
+                + "\n\nAlso noted by the review, and NOT required in this revision - do not "
+                "plan work for these unless a required change above needs it; they do not "
+                "send the sprint back:\n" + lines(noted)
+            )
+        return lines(findings)
 
     evidence = (getattr(review, "acceptance_evidence", "") or "").strip()
     if evidence:
@@ -2990,7 +3008,7 @@ def _findings_a_later_sprint_builds(review: Any, state: Any) -> Any:
     catches work no sprint builds.
     """
     try:
-        from app.analysis.integration_checks import later_sprint_work_in
+        from app.analysis.integration_checks import later_sprint_files_in, later_sprint_work_in
 
         later = _what_later_sprints_build(state)
         if not later:
@@ -2999,8 +3017,10 @@ def _findings_a_later_sprint_builds(review: Any, state: Any) -> Any:
         findings = []
         moved = 0
         for finding in getattr(review, "findings", None) or []:
+            description = getattr(finding, "description", "")
             actions = (
-                later_sprint_work_in(getattr(finding, "description", ""), now, later)
+                later_sprint_work_in(description, now, later)
+                or later_sprint_files_in(description, now, later)
                 if _severity_gates(getattr(finding, "severity", ""))
                 else []
             )

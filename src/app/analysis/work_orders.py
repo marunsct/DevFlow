@@ -28,6 +28,7 @@ Nothing here names a language, a framework or a kind of product.
 """
 from __future__ import annotations
 
+from difflib import SequenceMatcher
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
 
@@ -60,6 +61,65 @@ def _outside_the_project(path: str, project_dir: str) -> str:
     if project_dir and not (clean == project_dir or clean.startswith(project_dir + "/")):
         return f"is outside the project directory '{project_dir}/'"
     return ""
+
+
+def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) -> Any:
+    """The plan with each work order's files named from the workspace root.
+
+    Once the project directory exists the lead often names files the way the
+    project sees them: `src/app.js`, `index.html`, `tests/unit/task.test.js`.
+    Measured over 25 runs: five readiness problems were a path like that, each
+    one a whole re-plan; and a plan dispatched unready recorded `src/app.js` as
+    its backend task's file, which matches nothing the specialists write, so no
+    one owned `simple-to-do-list-app/src/app.js` for that sprint.
+
+    Only a path that cannot mean anything else is rewritten: its first part is
+    not the project directory, not `docs`, not something at the top of the
+    workspace already, and not a near-spelling of the project's name - that one
+    is a second project, and the readiness check says so. Never raises.
+    """
+    project_dir = _pinned_project_directory(repo_root)
+    if not project_dir:
+        return milestone
+    try:
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        root = Path(repo_root or "")
+        changed = False
+        rewritten = []
+        for task in tasks:
+            files = [str(f) for f in getattr(task, "files", None) or []]
+            inside = [_inside_the_project(path, project_dir, root) for path in files]
+            if inside != files:
+                changed = True
+                task = task.model_copy(update={"files": inside})
+            rewritten.append(task)
+        if not changed:
+            return milestone
+        return milestone.model_copy(update={"delegated_tasks": rewritten})
+    except Exception:  # noqa: BLE001 - the readiness check still reports it
+        return milestone
+
+
+def _inside_the_project(path: str, project_dir: str, root: Path) -> str:
+    clean = str(PurePosixPath(path.strip().lstrip("/"))) if path.strip() else ""
+    if not clean or clean == ".":
+        return path
+    first = clean.split("/", 1)[0]
+    if first in {project_dir, "docs", "..", "."}:
+        return path
+    if SequenceMatcher(None, first.lower(), project_dir.lower()).ratio() >= _NEAR_SPELLING:
+        return path
+    try:
+        if (root / first).exists():
+            return path
+    except OSError:
+        return path
+    return f"{project_dir}/{clean}"
+
+
+#: How alike a first directory and the project's name must be to be read as a
+#: misspelling of it rather than a directory inside it.
+_NEAR_SPELLING = 0.8
 
 
 def _pinned_project_directory(repo_root: str | Path | None) -> str:
@@ -99,7 +159,18 @@ def readiness_problems(
     except Exception:  # noqa: BLE001
         return []
     if not tasks:
-        return []
+        # Measured on one run: the lead reasoned to its reply ceiling, answered
+        # from the recovery call with no work orders and a blocker - the tests
+        # "are not yet available; unable to define concrete implementation" -
+        # and the sprint went straight to a test round, a security review and
+        # a milestone review of work nobody had been given.
+        return [
+            "The plan hands out no work orders, so nothing in this sprint gets built. "
+            "Give the work orders that deliver the sprint goal. Something not yet "
+            "known or not yet built is not a reason to plan nothing: give it to a "
+            "work order to build or find out, and say what that work order depends "
+            "on in its brief."
+        ]
     project_dir = _pinned_project_directory(repo_root)
     problems: list[str] = []
     code_tasks = [t for t in tasks if _role(t) not in _NOT_CODE and _role(t) != _TESTING]
@@ -216,4 +287,10 @@ def contract_for_testing(task: Any, tasks: Sequence[Any]) -> str:
     )
 
 
-__all__ = ["brief_for", "contract_for_testing", "readiness_feedback", "readiness_problems"]
+__all__ = [
+    "brief_for",
+    "contract_for_testing",
+    "readiness_feedback",
+    "readiness_problems",
+    "with_paths_inside_the_project",
+]

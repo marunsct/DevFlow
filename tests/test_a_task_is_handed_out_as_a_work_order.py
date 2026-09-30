@@ -209,3 +209,96 @@ def test_a_pinned_project_directory_exists_before_anything_is_written(tmp_path):
     assert pinned_project_directory(tmp_path) == "shop-front"
     assert (tmp_path / "shop-front").is_dir()
     assert list((tmp_path / "shop-front").iterdir()) == []
+
+
+class TestAPlanThatBuildsNothing:
+    """Measured on one run: the lead reasoned to its reply ceiling, answered from
+    the recovery call with no work orders and a blocker, and the sprint went
+    straight to a test round and two reviews of work nobody had been given."""
+
+    def test_a_plan_with_no_work_orders_is_not_ready(self, enforced, project):
+        problems = readiness_problems(_plan(), project)
+
+        assert len(problems) == 1
+        assert "hands out no work orders" in problems[0]
+
+    def test_it_is_still_switched_off_with_the_rest(self, monkeypatch, project):
+        monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "off")
+
+        assert readiness_problems(_plan(), project) == []
+
+
+class TestPathsTheWayTheProjectSeesThem:
+    """A lead naming `src/app.js` means the project's `src/app.js`."""
+
+    def _files(self, project, *paths: str) -> list[str]:
+        from app.analysis.work_orders import with_paths_inside_the_project
+
+        plan = with_paths_inside_the_project(_plan(_order("backend", files=list(paths))), project)
+        return list(plan.delegated_tasks[0].files)
+
+    def test_a_path_inside_the_project_gains_its_directory(self, project):
+        assert self._files(project, "src/app.js", "index.html", "/tests/unit/a.test.js") == [
+            "app/src/app.js",
+            "app/index.html",
+            "app/tests/unit/a.test.js",
+        ]
+
+    def test_a_path_already_in_the_project_or_in_docs_is_untouched(self, project):
+        assert self._files(project, "app/src/app.js", "docs/notes.md") == ["app/src/app.js", "docs/notes.md"]
+
+    def test_something_already_at_the_top_of_the_workspace_is_untouched(self, project):
+        (project / "tools").mkdir()
+
+        assert self._files(project, "tools/build.src") == ["tools/build.src"]
+
+    def test_a_near_spelling_of_the_project_is_left_for_the_readiness_check(self, tmp_path):
+        (tmp_path / "shop-app").mkdir()
+        (tmp_path / ".project-directory").write_text("shop-app", encoding="utf-8")
+
+        assert self._files(tmp_path, "shop_ap/core.src") == ["shop_ap/core.src"]
+
+    def test_without_a_project_directory_nothing_changes(self, tmp_path):
+        from app.analysis.work_orders import with_paths_inside_the_project
+
+        plan = _plan(_order("backend", files=["src/app.js"]))
+
+        assert with_paths_inside_the_project(plan, tmp_path) is plan
+
+    def test_a_rewritten_plan_is_ready(self, enforced, project):
+        from app.analysis.work_orders import with_paths_inside_the_project
+
+        plan = with_paths_inside_the_project(
+            _plan(_order("backend", files=["src/app.js"]), _order("testing", files=["tests/a.test.js"])), project
+        )
+
+        assert readiness_problems(plan, project) == []
+
+
+def test_each_sprint_s_plan_gets_its_own_readiness_attempts(
+    agents: ScriptedAgents, tmp_path: Any, enforced
+) -> None:
+    """Measured on one run: sprint 1 spent the three attempts, nothing reset the
+    count, and sprint 2's first unready plan was dispatched without being sent
+    back once."""
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput
+
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(SprintPlanOutput(sprints=[
+        SprintDefinition(goal="Sprint 1: booking", user_value="Patients can book"),
+        SprintDefinition(goal="Sprint 2: reminders", user_value="Patients are reminded"),
+    ]))])
+    unready = _plan(_order("backend", files=[]))
+    ready = _plan(_order("backend", files=["acme-scheduling/backend.src"]), _order("testing", files=["acme-scheduling/test.src"]))
+    agents.script("technical_lead", [responds_with(unready)] * 3 + [responds_with(unready), responds_with(ready)])
+    agents.script("specialist_backend", [responds_with(_specialist())] * 6)
+    agents.script("specialist_testing", [responds_with(_specialist())] * 8)
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())] * 3)
+    agents.script("security_reviewer", [responds_with(_security_review())] * 3)
+
+    start_workflow(_graph(), _document(), _repository(tmp_path), "run-work-orders-per-sprint")
+
+    asked = [payload["messages"][0]["content"] for payload in agents.requests["technical_lead"]]
+    assert len(asked) == 5, len(asked)
+    assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" not in asked[3]
+    assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" in asked[4]

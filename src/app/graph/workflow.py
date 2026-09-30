@@ -1122,6 +1122,13 @@ def _owning_node(stage_name: str) -> str:
     return "failed"
 
 
+#: Retry budgets the technical lead's node keeps under its own keys, beside the
+#: stage's structured-response budget. Each belongs to one plan: see where
+#: they are cleared when a plan is dispatched.
+_READINESS_RETRIES = "technical_lead:work_orders"
+_ASSIGNMENT_RETRIES = "technical_lead:assignments"
+
+
 def _max_structured_retries() -> int:
     """How many times a stage may be restarted for producing no structured answer.
 
@@ -3956,8 +3963,11 @@ def build_workflow_graph(
 
         # The definition of ready: every work order complete enough for a
         # specialist who knows nothing but its brief. See `app.analysis.work_orders`.
-        from app.analysis.work_orders import readiness_problems
+        from app.analysis.work_orders import readiness_problems, with_paths_inside_the_project
 
+        update["milestone_plan"] = with_paths_inside_the_project(
+            update["milestone_plan"], state["repository"].root_path
+        )
         problems = readiness_problems(
             update["milestone_plan"],
             state["repository"].root_path,
@@ -3965,7 +3975,7 @@ def build_workflow_graph(
         )
         if problems:
             retries = dict(state.get("structured_retries") or {})
-            key = "technical_lead:work_orders"
+            key = _READINESS_RETRIES
             attempted = retries.get(key, 0)
             if attempted < _max_structured_retries():
                 retries[key] = attempted + 1
@@ -3994,6 +4004,16 @@ def build_workflow_graph(
             })
         update["work_order_problems"] = []
         update["unready_plan"] = ""
+        # A budget per plan, not per run. The success path clears the stage's
+        # own key and nothing cleared this one, so sprint 1's three attempts
+        # were still counted when sprint 2's plan arrived: measured on one run,
+        # sprint 2's first unready plan was dispatched as "still not ready after
+        # 3 attempts" without being sent back once.
+        update["structured_retries"] = {
+            key: count
+            for key, count in (update.get("structured_retries", state.get("structured_retries")) or {}).items()
+            if key != _READINESS_RETRIES
+        }
 
         # Before it is written down or dispatched: a command the plan tells a
         # specialist to run, which the sandbox will refuse, is noted on the task.
@@ -4040,7 +4060,7 @@ def build_workflow_graph(
             # budget is shared with the structured-response retry because both
             # are the same remedy: abandon this conversation and ask again.
             retries = dict(state.get("structured_retries") or {})
-            key = "technical_lead:assignments"
+            key = _ASSIGNMENT_RETRIES
             attempted = retries.get(key, 0)
             if attempted < _max_structured_retries():
                 retries[key] = attempted + 1
@@ -4062,6 +4082,12 @@ def build_workflow_graph(
                 ),
             )
 
+        # The same per-plan budget as the readiness retries above.
+        update["structured_retries"] = {
+            key: count
+            for key, count in (update.get("structured_retries", state.get("structured_retries")) or {}).items()
+            if key != _ASSIGNMENT_RETRIES
+        }
         update["remediation"] = start_remediation(milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS)
         update["specialist_task_index"] = 0
         # The parallel twin of the line above, and for the same reason: a plan

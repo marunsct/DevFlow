@@ -202,6 +202,12 @@ working (the tool-approval check can fail transiently), schedule a retry about
 
 - Tools are still offered when command execution is disabled; the duplicate
   `test/` and `tests/` suites seen in run 71d58b84 are not addressed.
+- Commands run without a shell, so a wildcard argument reaches the program
+  as written: `node --test tests/unit/*.js` fails with "Could not find" on
+  Node 20, which does not expand it itself. 4 calls in 25 runs (to
+  run-ccc66650), each recovered on the next call by naming the files.
+  Expanding wildcards in the harness would also rewrite arguments that are
+  patterns on purpose (a `grep` regex), so it is left until it costs more.
 
 ### 0.6 Removed on 2026-09-29
 

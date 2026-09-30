@@ -687,6 +687,16 @@ _MISSES_BEFORE_REFUSING = 3
 _MISSES_OUTSIDE_A_RUN: dict[str, int] = {}
 
 
+def _missed_before(reference: str) -> bool:
+    """Whether this stage has already asked for this reference and missed."""
+    try:
+        from app.agents.stage_memory import store
+
+        return bool(store("missing_journal_references", _MISSES_OUTSIDE_A_RUN).get(reference))
+    except Exception:  # noqa: BLE001 - treat as a first ask
+        return False
+
+
 def _count_a_missing_reference(reference: str) -> int:
     """How many times this exact reference has now failed for this stage.
 
@@ -743,6 +753,37 @@ def _refuse_a_reference_already_missed(reference: str, misses: int) -> str:
     )
 
 
+def _this_run_s_entries(repo_root: str | None) -> list[str]:
+    """This run's journal entries, newest first, or [] on any failure."""
+    try:
+        from app.tools.journal import list_entries, scope_of
+
+        return list(list_entries(scope=scope_of(repo_root)))
+    except Exception:  # noqa: BLE001 - the plain miss message still applies
+        return []
+
+
+def _the_one_entry_it_meant(reference: str, entries: list[str]) -> str:
+    """The one entry of this run whose name ends with `reference`, or "".
+
+    An entry is named `<timestamp>-<run>-<role>-<program>-<stream>-<random>.log`,
+    and a model copying one back drops the leading timestamp. One run's
+    `specialist_testing_3` asked for
+    `run-<id>-ui_ux_specialist-node-stderr-<random>.log` six times; the
+    reply listed the one entry, `<timestamp>-run-<id>-...-<random>.log`, and
+    from the third ask said "a reference that does not resolve never will" -
+    about a name one prefix away from the answer.
+
+    Only a suffix long enough to carry the random tail, and only when exactly one
+    of this run's entries has it, so this never picks between two logs.
+    """
+    wanted = str(reference or "").strip()
+    if len(wanted) < 12:
+        return ""
+    found = [name for name in entries or () if name != wanted and name.endswith(wanted)]
+    return found[0] if len(found) == 1 else ""
+
+
 def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
     """Return the read-back tool for output an earlier command had truncated.
 
@@ -787,6 +828,16 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
         from app.tools.journal import read_entry
 
         content = read_entry(reference)
+        listed_once: list[str] | None = None
+        if content is None and not _missed_before(str(reference)):
+            # Only on the first miss: a unique suffix match either resolves now
+            # or never will, and a refused reference must stop costing lookups.
+            # The list is kept for the "these are this run's outputs" answer
+            # below, so a first miss still costs one lookup, not two.
+            listed_once = _this_run_s_entries(repo_root)
+            resolved = _the_one_entry_it_meant(str(reference), listed_once)
+            if resolved:
+                reference, content = resolved, read_entry(resolved)
         if content is None:
             # Counted before the message is built, so the note and the refusal
             # both read from one tally.
@@ -819,7 +870,9 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
             # passing tests as your own is worse than the error it replaced.
             from app.tools.journal import list_entries, scope_of
 
-            available = list_entries(scope=scope_of(repo_root))
+            available = (
+                listed_once if listed_once is not None else list_entries(scope=scope_of(repo_root))
+            )
             if available:
                 listed = "\n".join(f"  {name}" for name in available)
                 return {

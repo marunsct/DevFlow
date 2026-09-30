@@ -302,3 +302,46 @@ def test_each_sprint_s_plan_gets_its_own_readiness_attempts(
     assert len(asked) == 5, len(asked)
     assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" not in asked[3]
     assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" in asked[4]
+
+
+class TestCasesFromTheCriteria:
+    """One run's lead answered `test_cases: []` for all seven work orders three
+    times running, the third with concrete acceptance criteria on every one."""
+
+    def _cases(self, *tasks: SpecialistTask) -> list[list[str]]:
+        from app.analysis.work_orders import with_test_cases_from_its_criteria
+
+        plan = with_test_cases_from_its_criteria(_plan(*tasks))
+        return [list(task.test_cases) for task in plan.delegated_tasks]
+
+    def test_a_code_work_order_without_cases_takes_its_criteria(self):
+        assert self._cases(
+            _order("ui_ux", test_cases=[], acceptance_criteria=["The form has a title field.", " "])
+        ) == [["The form has a title field."]]
+
+    def test_cases_the_lead_wrote_are_kept(self):
+        assert self._cases(_order("backend")) == [["Given x, when do_backend, then y"]]
+
+    def test_testing_and_documentation_are_left_as_they_are(self):
+        assert self._cases(
+            _order("testing", test_cases=[], acceptance_criteria=["suite passes"]),
+            _order("documentation", test_cases=[], acceptance_criteria=["README explains setup"]),
+        ) == [[], []]
+
+    def test_with_no_criteria_either_it_is_still_not_ready(self, enforced, project):
+        from app.analysis.work_orders import with_test_cases_from_its_criteria
+
+        plan = with_test_cases_from_its_criteria(
+            _plan(_order("backend", files=["app/x.src"], test_cases=[], acceptance_criteria=[]), _order("testing", files=["app/t.src"]))
+        )
+
+        assert any("no `test_cases`" in p for p in readiness_problems(plan, project))
+
+    def test_a_plan_that_takes_them_is_ready(self, enforced, project):
+        from app.analysis.work_orders import with_test_cases_from_its_criteria
+
+        plan = with_test_cases_from_its_criteria(
+            _plan(_order("backend", files=["app/x.src"], test_cases=[]), _order("testing", files=["app/t.src"]))
+        )
+
+        assert readiness_problems(plan, project) == []

@@ -63,6 +63,40 @@ def _outside_the_project(path: str, project_dir: str) -> str:
     return ""
 
 
+def with_test_cases_from_its_criteria(milestone: Any) -> Any:
+    """The plan with each code work order that has no test cases given its
+    acceptance criteria as them.
+
+    Test cases are "the cases that prove the acceptance criteria", and the
+    testing task writes tests from them. The lead leaves them out more than
+    anything else: over 25 runs, 54 readiness problems were a work order with
+    no `test_cases`. Sending the plan back rarely helped. On one run the lead
+    answered `test_cases: []` for all seven work orders three times running -
+    the third time with concrete, checkable acceptance criteria on every one -
+    and the plan was dispatched unready after about seven minutes of re-planning.
+
+    Only where there are criteria to take them from: a code work order with
+    neither is still sent back. Never raises.
+    """
+    try:
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        changed = False
+        rewritten = []
+        for task in tasks:
+            role = _role(task)
+            criteria = [str(c) for c in getattr(task, "acceptance_criteria", None) or [] if str(c).strip()]
+            cases = [str(c) for c in getattr(task, "test_cases", None) or [] if str(c).strip()]
+            if role not in _NOT_CODE and role != _TESTING and not cases and criteria:
+                task = task.model_copy(update={"test_cases": criteria})
+                changed = True
+            rewritten.append(task)
+        if not changed:
+            return milestone
+        return milestone.model_copy(update={"delegated_tasks": rewritten})
+    except Exception:  # noqa: BLE001 - the readiness check still reports it
+        return milestone
+
+
 def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) -> Any:
     """The plan with each work order's files named from the workspace root.
 
@@ -293,4 +327,5 @@ __all__ = [
     "readiness_feedback",
     "readiness_problems",
     "with_paths_inside_the_project",
+    "with_test_cases_from_its_criteria",
 ]

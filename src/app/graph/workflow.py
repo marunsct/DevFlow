@@ -3963,10 +3963,14 @@ def build_workflow_graph(
 
         # The definition of ready: every work order complete enough for a
         # specialist who knows nothing but its brief. See `app.analysis.work_orders`.
-        from app.analysis.work_orders import readiness_problems, with_paths_inside_the_project
+        from app.analysis.work_orders import (
+            readiness_problems,
+            with_paths_inside_the_project,
+            with_test_cases_from_its_criteria,
+        )
 
-        update["milestone_plan"] = with_paths_inside_the_project(
-            update["milestone_plan"], state["repository"].root_path
+        update["milestone_plan"] = with_test_cases_from_its_criteria(
+            with_paths_inside_the_project(update["milestone_plan"], state["repository"].root_path)
         )
         problems = readiness_problems(
             update["milestone_plan"],

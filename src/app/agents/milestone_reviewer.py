@@ -512,6 +512,18 @@ Constraints:
   and must become a finding, at blocking severity when it means code cannot
   run - a stylesheet targeting an id no page declares, or a module nothing
   loads, is dead code however well written it is.
+- A criterion that every action can be done a particular way - by keyboard
+  alone, on a small screen, without a pointer - is checked action by action,
+  not by the controls you happened to look at. List each action the product
+  offers (for a task list: add, edit, complete, delete, filter) and find, in
+  the code or a test, how that way starts it. An action with no such path
+  fails the criterion: "the buttons have labels and key handlers" is evidence
+  about the buttons, not about an action started by clicking something that
+  cannot receive focus.
+- A limit or refusal the product applies when a value is created must hold on
+  every path that changes the same value - edit, import, restore. Compare the
+  paths: one that accepts what another refuses (an edit that allows a length
+  the add form rejects) is a finding, whichever path the tests covered.
 - Treat the executed-command record as authoritative over any specialist's
   description of its own testing. A milestone whose specialists report passing
   tests, but whose record shows no test command ran, is not verified - raise it

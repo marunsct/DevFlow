@@ -57,7 +57,7 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |
-| clean runs toward the gate | **0 of 2** on brief_low (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed, count still 0) |
+| clean runs toward the gate | **0 of 2** on brief_low (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed. run-ebde9fa1 completed, 2.4% failed calls, product tests 72+8 pass and match the summary, but it took three mid-run fixes and the product audit found the review accepting "full keyboard accessibility" while editing is pointer-only, and an edit path skipping the add form's description limit; count still 0) |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |

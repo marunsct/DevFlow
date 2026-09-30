@@ -899,13 +899,19 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
             }
 
         if search:
+            lines = content.splitlines()
             matches = [
-                f"{number}: {line}"
-                for number, line in enumerate(content.splitlines())
-                if search in line
+                f"{number}: {line}" for number, line in enumerate(lines) if search in line
             ]
+            alternatives = _the_alternatives_meant(search) if not matches else []
+            if alternatives:
+                matches = [
+                    f"{number}: {line}"
+                    for number, line in enumerate(lines)
+                    if any(each in line for each in alternatives)
+                ]
             if not matches:
-                return {"error": f"'{search}' does not appear in '{reference}'."}
+                return _nothing_matched(search, reference, len(lines), alternatives)
             clipped = matches[:JOURNAL_TOOL_MAX_MATCHES]
             body = "\n".join(clipped)[:JOURNAL_TOOL_MAX_CHARS]
             if len(matches) > len(clipped):
@@ -921,6 +927,41 @@ def build_journal_read_tool(repo_root: str | None = None) -> BaseTool:
         )
 
     return read_command_output
+
+
+def _the_alternatives_meant(search: str) -> list[str]:
+    """`a|b|c` as the alternatives a regex would mean, or [] when it is not one.
+
+    `search` is a literal substring. A model checking a passing test log sent
+    `not ok|Error|FAIL|AssertionError|...` and found nothing, which here only
+    ever meant the literal string was absent. Asked after the literal search
+    missed, so text that really contains `|` still matches itself first; and
+    never for `||`, which is code, not alternation. The same reading `grep`
+    gets in `app.agents.workspace_backend`.
+    """
+    if "|" not in search or "||" in search:
+        return []
+    parts = [part.strip() for part in search.split("|") if part.strip()]
+    return parts if len(parts) >= 2 else []
+
+
+def _nothing_matched(search: str, reference: str, searched: int, alternatives: list[str]) -> str:
+    """A search that found nothing, reported as the answer it is.
+
+    It was `{"error": ...}`. A test round searched a passing log for its
+    failure markers, got an error back, and spent another call searching for
+    `not ok` alone to be sure: the absence it was looking for had been
+    reported as the tool failing.
+    """
+    what = (
+        f"none of {', '.join(repr(a) for a in alternatives)}"
+        if alternatives
+        else f"'{search}'"
+    )
+    return (
+        f"No line of '{reference}' contains {what}. All {searched:,} lines were "
+        "searched, so that is the answer: the output does not contain it."
+    )
 
 
 #: Tools that must never run without a human decision.

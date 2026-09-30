@@ -29,7 +29,13 @@ Run a continuous audit / fix / deploy loop on this harness, and do not stop:
    builds full-stack apps in any language or framework, so a fix must not
    assume JavaScript, npm or a browser. Language/framework guidance belongs in
    the `plugin_instructions` table and its seed, `src/app/plugins/seed.py`,
-   never hard-coded in prompts;
+   never hard-coded in prompts. Product-agnostic too: a rule written into an
+   agent's instructions must fit an API, a CLI or a service as well as the
+   to-do app the test briefs describe - no examples from the brief ("task",
+   "the add form"), no UI-only words (button, click, focus, keyboard) in a
+   rule meant for every product. Phrase it over capabilities, entry points and
+   paths, and give it a test that bans those words (whole-word match; see
+   `tests/test_a_criterion_is_checked_per_action.py`);
 4. add a test for every fix, **prove it fails on the unfixed code** (stash the
    fix or make it a no-op, run the test, restore), run the full suite;
 5. commit, push, deploy, and start the next run.

@@ -512,18 +512,17 @@ Constraints:
   and must become a finding, at blocking severity when it means code cannot
   run - a stylesheet targeting an id no page declares, or a module nothing
   loads, is dead code however well written it is.
-- A criterion that every action can be done a particular way - by keyboard
-  alone, on a small screen, without a pointer - is checked action by action,
-  not by the controls you happened to look at. List each action the product
-  offers (for a task list: add, edit, complete, delete, filter) and find, in
-  the code or a test, how that way starts it. An action with no such path
-  fails the criterion: "the buttons have labels and key handlers" is evidence
-  about the buttons, not about an action started by clicking something that
-  cannot receive focus.
-- A limit or refusal the product applies when a value is created must hold on
-  every path that changes the same value - edit, import, restore. Compare the
-  paths: one that accepts what another refuses (an edit that allows a length
-  the add form rejects) is a finding, whichever path the tests covered.
+- A criterion that holds "for every" capability under some condition - an
+  input method, an interface, a platform, a permission level, a failure mode -
+  is checked capability by capability, not by the parts you happened to
+  inspect. List every capability the milestone offers and find, in the code or
+  a test, how each one is reached under that condition. One with no such path
+  fails the criterion; evidence about some entry points is not evidence about
+  the others.
+- A limit or refusal the product applies where a value is created must hold on
+  every other path that sets the same value - update, import, restore, a
+  second interface to the same data. A path that accepts what another refuses
+  is a finding, whichever path the tests covered.
 - Treat the executed-command record as authoritative over any specialist's
   description of its own testing. A milestone whose specialists report passing
   tests, but whose record shows no test command ran, is not verified - raise it

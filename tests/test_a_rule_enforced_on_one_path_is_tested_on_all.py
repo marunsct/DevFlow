@@ -16,4 +16,4 @@ def test_the_rule_is_in_the_test_round_s_instructions():
     text = " ".join(_text().split())
 
     assert "A rule the product enforces on one path must hold on every path" in text
-    assert "try editing that field to empty too" in text
+    assert "send that value through every other way the product changes it" in text

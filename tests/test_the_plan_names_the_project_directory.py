@@ -70,18 +70,18 @@ class TestTheDigestSaysSo:
         digest = render_workspace_digest(root)
 
         assert "This run's project directory is 'simple-to-do-list-app/'" in digest
-        assert "does not exist yet" in digest
+        assert "it is empty so far" in digest
 
     def test_once_it_exists(self, tmp_path):
         root = _workspace(tmp_path)
         pin_the_directory_a_plan_names(root, PLAN)
-        (root / "simple-to-do-list-app").mkdir()
+        (root / "simple-to-do-list-app").mkdir(exist_ok=True)
         (root / "simple-to-do-list-app" / "index.html").write_text("<p>x</p>\n", encoding="utf-8")
 
         digest = render_workspace_digest(root, refresh=True)
 
         assert "This run's project directory is 'simple-to-do-list-app/'" in digest
-        assert "does not exist yet" not in digest
+        assert "empty so far" not in digest
 
     def test_nothing_pinned_adds_nothing(self, tmp_path):
         assert "project directory is" not in render_workspace_digest(_workspace(tmp_path))

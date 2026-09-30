@@ -3985,6 +3985,18 @@ def _pin_project_directory(root: Path, name: str) -> None:
         marker.write_text(f"{name}\n", encoding="utf-8")
     except OSError:
         logger.warning("Could not record the project directory at %s", marker, exc_info=True)
+        return
+    # And made to exist. A pinned directory nobody has written into yet did not
+    # exist, so every stage that looked before writing - the lead listing it,
+    # a parallel specialist whose sibling had not written yet, a command run in
+    # it - got path_not_found for the one directory the run had committed to.
+    # Measured on the runs of 2026-09-30: four to six failed calls a run, and
+    # the lead repeating the same `ls` until the tool was withheld. An empty
+    # directory is the truthful answer to "what is in the project so far".
+    try:
+        (root / name).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        logger.warning("Could not create the project directory %s", root / name, exc_info=True)
 
 
 #: Folders a plan names that live inside a project, never the project itself.

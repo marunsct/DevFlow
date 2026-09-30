@@ -197,3 +197,15 @@ class TestAStructuredItemIsALine:
         task = SpecialistTask(specialist_role="backend", task_description="Add the edit path.",
                               test_cases=["Given g, when w, then t"])
         assert task.test_cases == ["Given g, when w, then t"]
+
+
+def test_a_pinned_project_directory_exists_before_anything_is_written(tmp_path):
+    """Four to six calls a run were `ls` or a command in the pinned directory
+    before any file had been written into it, each answered path_not_found."""
+    from app.tools.repository import pin_the_directory_a_plan_names, pinned_project_directory
+
+    pin_the_directory_a_plan_names(tmp_path, "Write shop-front/index.html and shop-front/app.js")
+
+    assert pinned_project_directory(tmp_path) == "shop-front"
+    assert (tmp_path / "shop-front").is_dir()
+    assert list((tmp_path / "shop-front").iterdir()) == []

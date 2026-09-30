@@ -293,7 +293,19 @@ def _where_the_code_goes(root: Path) -> str:
         return ""
     if not project:
         return ""
-    if (root / project).is_dir():
+    where = root / project
+    if where.is_dir():
+        # Created empty when it is pinned, so "is a directory" no longer means
+        # anything has been written into it.
+        try:
+            empty = not any(where.iterdir())
+        except OSError:
+            empty = False
+        if empty:
+            return (
+                f"  This run's project directory is '{project}/'. Every application file "
+                "goes inside it; it is empty so far."
+            )
         return f"  This run's project directory is '{project}/'. Every application file goes inside it."
     return (
         f"  This run's project directory is '{project}/'. Every application file "

@@ -57,7 +57,7 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |
-| clean runs toward the gate | **0 of 2** on brief_low (run-dc4043b3 was clean; run-21a2bf0c then exposed a spec that never described `edit`, fixed in the architecture review, so the count reset) |
+| clean runs toward the gate | **1 of 2** on brief_low (run-fb102e16, completed 2026-09-30 11:02 JST: 3.0% failed calls, 10% redundant reads, nothing fixed; product 36 unit + 10 e2e passing) |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |

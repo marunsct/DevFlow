@@ -696,7 +696,21 @@ class _NoticingRepeats:
             "on without it."
         )
 
-    def _note_if_repeated(self, file_path: str, text: str) -> str:
+    def _the_part_it_covered(self, result: Any, content: str) -> str:
+        """"lines A-B of N" when a read returned less than the file, else ""."""
+        first = getattr(result, "start_line", None)
+        last = getattr(result, "end_line", None)
+        try:
+            total = self._lines_in_the_file(result, content)
+        except Exception:  # noqa: BLE001 - unknown size: claim nothing about it
+            return ""
+        if not first or not last or not total:
+            return ""
+        if first <= 1 and last >= total:
+            return ""
+        return f"lines {first}-{last} of {total}"
+
+    def _note_if_repeated(self, file_path: str, text: str, window: str = "") -> str:
         """Whether this stage has already been handed these exact bytes.
 
         Keyed on what came back and which file it came from, not on the call
@@ -774,11 +788,23 @@ class _NoticingRepeats:
                 + self._the_way_out()
             )
         if count >= REPEATS_BEFORE_SAYING_SO:
+            # "This is the whole file" only when it is. `window` names the
+            # lines this read covered when that is less than the file: one
+            # run's `architecture_review` read lines 1-120 of a 423-line
+            # specification a fifth time and was told a different range would
+            # not help because this was the whole file.
+            rest = (
+                f"These are {window}; if you need a part you have not seen, ask "
+                "for a range outside the lines you have read. Otherwise use "
+                "what you have and move on.]"
+                if window
+                else "Asking for a different range of it will not help - this "
+                "is the whole file. Use what you have and move on.]"
+            )
             return (
                 f"\n\n[These are the same bytes this file gave you {count} "
                 "previous times in this stage, and it has not changed since. "
-                "Asking for a different range of it will not help - this is "
-                "the whole file. Use what you have and move on.]"
+                + rest
                 + self._the_way_out()
             )
         return ""
@@ -1083,7 +1109,9 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             return result
         self._remember_the_version_read(file_path)
         self._withheld = False  # noqa: SLF001 - own attribute
-        note = self._note_if_repeated(file_path, content)
+        note = self._note_if_repeated(
+            file_path, content, self._the_part_it_covered(result, content)
+        )
         if self._withheld:
             refusal = self._refuse_a_read_that_returns_nothing_new(
                 file_path, self._lines_in_the_file(result, content)

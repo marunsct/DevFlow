@@ -164,7 +164,9 @@ class TestTheLadderIsUnchanged:
         source = inspect.getsource(workspace_backend)
 
         assert source.count("_refuse_a_read_that_returns_nothing_new(") == 3
-        assert source.count("self._lines_in_the_file(result, content)") == 2
+        # Three: the two refusal sites, and `_the_part_it_covered`, which says
+        # whether a repeated read was the whole file or a window of it.
+        assert source.count("self._lines_in_the_file(result, content)") == 3
 
 
 class TestTheLengthIsTheFileNotTheWindow:

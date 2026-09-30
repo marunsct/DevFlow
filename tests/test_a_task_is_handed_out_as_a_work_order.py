@@ -154,7 +154,7 @@ def test_an_unready_plan_goes_back_to_the_lead_once_with_the_reasons(
     _script_through_architecture(agents, _approved_review())
     agents.script("scrum_master", [responds_with(_sprint_plan())])
     unready = _plan(_order("backend", files=[]))
-    ready = _plan(_order("backend", files=["app/backend.src"]), _order("testing", files=["app/test.src"]))
+    ready = _plan(_order("backend", files=["acme-scheduling/backend.src"]), _order("testing", files=["acme-scheduling/test.src"]))
     agents.script("technical_lead", [responds_with(unready), responds_with(ready)])
     agents.script("specialist_backend", [responds_with(_specialist())])
     agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist())])

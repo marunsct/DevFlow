@@ -4055,6 +4055,44 @@ def pin_the_directory_a_plan_names(root: str | Path, plan_text: str) -> str | No
     return name
 
 
+#: The longest project directory name taken from a product name.
+_MOST_NAME_CHARACTERS = 48
+
+
+def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> str | None:
+    """Pin the product's name, as a directory, before any stage looks for one.
+
+    The pin came from the lead's plan, after the lead had answered - so for the
+    whole of the stages before it, and the lead's own exploration, the run had
+    no project directory. Each stage derived one from the product name for
+    itself: on the runs of 2026-09-30 the architect and the lead both listed
+    `/simple-to-do-list-app` for a product called "Simple To-Do List App",
+    before it existed, and the lead repeated the listing until the tool was
+    withheld - five of one lead's eleven calls.
+
+    So the name is fixed once, at intake, the way every one of them was
+    deriving it: lowercase, words joined by hyphens. Only for a workspace with
+    no project directory yet - an uploaded codebase already says where its code
+    lives - and never over an existing pin. A name with no letters or digits
+    in the Latin alphabet pins nothing, and the plan's own name is used later
+    as before.
+    """
+    base = Path(root)
+    if pinned_project_directory(base) is not None:
+        return None
+    try:
+        if any(entry.is_dir() and _is_project_directory(entry.name) for entry in base.iterdir()):
+            return None
+    except OSError:
+        return None
+    name = re.sub(r"[^a-z0-9]+", "-", str(product_name or "").lower()).strip("-")
+    name = name[:_MOST_NAME_CHARACTERS].rstrip("-")
+    if not name or name in _SUBDIRECTORY_NAMES or not _is_project_directory(name):
+        return None
+    _pin_project_directory(base, name)
+    return name
+
+
 def _file_blocking_directory(root: Path, target: Path) -> str | None:
     """The workspace-relative path of a plain file standing where a directory must go.
 

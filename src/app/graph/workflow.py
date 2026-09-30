@@ -3305,6 +3305,13 @@ def build_workflow_graph(
             "docs/product_intake.md",
             render_document("product_intake", o=update["product_intake"]),
         )
+        # The project directory, named once from the product, so no stage has
+        # to derive it and none looks for it before it exists.
+        from app.tools.repository import pin_the_directory_the_product_names
+
+        pin_the_directory_the_product_names(
+            state["repository"].root_path, getattr(update["product_intake"], "product_name", "")
+        )
         
         # After product manager finishes, optionally route to review
         next_stage = "user_review_product_intake" if _review_enabled(state, PRODUCT_INTAKE_REVIEW) else "tools_models"

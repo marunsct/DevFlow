@@ -97,3 +97,34 @@ def test_the_lead_node_pins_before_dispatch():
     dispatch = source.index('update["specialist_task_index"] = 0', pin)
 
     assert pin < dispatch
+
+
+class TestTheProductNamesItFirst:
+    """The architect and the lead both listed `/simple-to-do-list-app` for a
+    product called "Simple To-Do List App" before anything had pinned or made it."""
+
+    def test_the_name_becomes_the_directory(self, tmp_path):
+        from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
+
+        assert pin_the_directory_the_product_names(tmp_path, "Simple To-Do List App") == "simple-to-do-list-app"
+        assert pinned_project_directory(tmp_path) == "simple-to-do-list-app"
+        assert (tmp_path / "simple-to-do-list-app").is_dir()
+
+    def test_a_later_plan_does_not_move_it(self, tmp_path):
+        from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
+
+        pin_the_directory_the_product_names(tmp_path, "Inventory Service")
+        assert pin_the_directory_a_plan_names(tmp_path, PLAN) is None
+        assert pinned_project_directory(tmp_path) == "inventory-service"
+
+    def test_an_existing_codebase_is_left_where_it_is(self, tmp_path):
+        from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
+
+        (tmp_path / "billing-api").mkdir()
+        assert pin_the_directory_the_product_names(tmp_path, "Billing API") is None
+        assert pinned_project_directory(tmp_path) is None
+
+    def test_a_name_with_no_latin_letters_pins_nothing(self, tmp_path):
+        from app.tools.repository import pin_the_directory_the_product_names
+
+        assert pin_the_directory_the_product_names(tmp_path, "待办事项") is None

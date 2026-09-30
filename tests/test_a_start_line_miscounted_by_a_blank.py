@@ -86,3 +86,25 @@ def test_an_ambiguous_start_is_refused(project):
             expect_start="// -- Initialization --", expect_end="}",
         )
     assert _read(project) == doubled
+
+
+def test_a_line_quoted_as_a_string_literal_still_pins_it(tmp_path):
+    """One run sent expect_start='"    "scripts": {"' for the line `"scripts": {`."""
+    from app.tools.repository import replace_approved_lines
+
+    (tmp_path / "package.json").write_text('{\n  "name": "x",\n  "scripts": {\n    "test": "a"\n  }\n}\n', encoding="utf-8")
+    replace_approved_lines(
+        tmp_path, "package.json", 3, 5, '  "scripts": {\n    "test": "b"\n  }',
+        expect_start='"    "scripts": {"',
+    )
+    assert '"test": "b"' in (tmp_path / "package.json").read_text(encoding="utf-8")
+
+
+def test_a_quoted_line_that_is_not_the_line_is_still_refused(tmp_path):
+    import pytest
+
+    from app.tools.repository import RepositoryToolError, replace_approved_lines
+
+    (tmp_path / "notes.txt").write_text("alpha\nbeta\n", encoding="utf-8")
+    with pytest.raises(RepositoryToolError):
+        replace_approved_lines(tmp_path, "notes.txt", 1, 1, "gamma", expect_start='"beta"')

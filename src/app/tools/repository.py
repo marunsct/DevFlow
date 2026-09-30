@@ -1565,6 +1565,26 @@ def _guard_a_targeted_change(
     return root, target
 
 
+def _without_the_quotes_it_added(expected: str, actual: str) -> str:
+    """`expected` without one pair of surrounding double quotes, when that makes it `actual`.
+
+    A model quoting a line as a string literal wraps it in quotes: one run's
+    specialist sent `expect_start='"    "scripts": {"'` for the line
+    `"scripts": {` of `package.json`, which can never match, so a correctly
+    counted edit was refused. Forgiven only when the quotes are the whole
+    difference - the line itself is compared exactly, as before.
+    """
+    wanted = expected.strip()
+    if (
+        len(wanted) >= 2
+        and wanted[0] == wanted[-1] == '"'
+        and wanted != actual.strip()
+        and wanted[1:-1].strip() == actual.strip()
+    ):
+        return wanted[1:-1].strip()
+    return expected
+
+
 def _the_one_line_it_pins(expected: str) -> str:
     """`expect_start`/`expect_end` reduced to the single line they name.
 
@@ -1984,7 +2004,7 @@ def replace_approved_lines(
                     f"{len(expect_start.strip().splitlines())}; only its first "
                     "line was compared."
                 )
-            expect_start = pinned
+            expect_start = _without_the_quotes_it_added(pinned, actual_first)
             if expect_start.strip() != actual_first.strip():
                 moved = _the_same_range_somewhere_else(
                     lines, expect_start, expect_end, start_line, end_line

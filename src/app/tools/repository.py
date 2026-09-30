@@ -1311,15 +1311,35 @@ def _already_there(
         "summary": summary,
         "lines": _line_count(written),
         "detail": (
-            f"This edit is already in '{relative_path}', at line {line}. It was "
-            "applied earlier, which is why the text in `find` is no longer "
-            "there. Nothing was written just now and nothing needed to be - the "
+            f"This edit is already in '{relative_path}', at line {line}. "
+            f"{_who_applied_it(root, relative_path)}, which is why the text in "
+            "`find` is no longer there. Nothing was written just now and nothing needed to be - the "
             "file already reads the way you asked for, and this was checked "
             "against its current contents, so there is nothing to confirm. "
             "Move on to your next change. If you meant a further change to that "
             "same passage, send the text that is there now as `find`."
         ),
     }
+
+
+def _who_applied_it(root: Path, relative_path: str) -> str:
+    """Whose change an already-applied edit found, as the start of a sentence.
+
+    "It was applied earlier" did not stop one stage re-sending its own first
+    edit three times: it had lost track of having made it. Saying that it was
+    this stage's own change is the fact that ends the repeat.
+    """
+    try:
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+
+        writer = project_memory.who_changed(root, relative_path)
+        me = _stage_from_config("")
+    except Exception:  # noqa: BLE001 - the generic sentence is still true
+        writer, me = "", ""
+    if writer and me and writer == me:
+        return "You made this change yourself, earlier in this stage"
+    return "It was applied earlier"
 
 
 def _best_matching_line(first: str, lines: list[str]) -> int | None:

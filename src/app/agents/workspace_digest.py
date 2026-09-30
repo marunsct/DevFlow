@@ -76,6 +76,26 @@ def _is_a_rendered_document(name: str) -> bool:
         return False
 
 
+def _written_by(writer: str) -> str:
+    """Who last changed a file, told from the reader's side.
+
+    A stage is never told its own name, so "written by specialist_backend_2"
+    shown to `specialist_backend_2` reads as a colleague's work. Observed: that
+    stage exported one class in `app.js`, saw the digest name "a previous
+    backend specialist" as the file's writer on the next call, planned its six
+    changes from the top again, and sent the same first edit three more times.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        me = _stage_from_config("")
+    except Exception:  # noqa: BLE001 - naming the writer is still true
+        me = ""
+    if me and writer == me:
+        return " - last changed by you, in this stage"
+    return f" - written by {writer}"
+
+
 def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     """One file, as the lines a later stage reads instead of the file itself.
 
@@ -103,7 +123,7 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     try:
         changed_by = project_memory.who_changed(root, name)
         if changed_by:
-            head += f" - written by {changed_by}"
+            head += _written_by(changed_by)
         # Not for the nine. Every stage already knows what
         # `docs/milestone_plan.md` is, and its first heading is whatever that
         # stage's model happened to write: on one run it was "Milestone

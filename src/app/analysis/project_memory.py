@@ -377,6 +377,31 @@ def record(root: str | Path, relative_path: str, stage: str = "") -> None:
         logger.debug("Could not record %s in the project memory", relative_path, exc_info=True)
 
 
+def record_move(root: str | Path, from_path: str, to_path: str) -> None:
+    """The file's record follows it to its new name. Never raises.
+
+    A move keeps the bytes, so it keeps who wrote them. Without this a renamed
+    file had no author at all, and the checks that ask "did this stage create
+    it?" - a testing stage deleting its own probe after renaming it out of the
+    test runner's way - found nobody.
+    """
+    try:
+        from app.agents.workspace_paths import the_same_place
+
+        source, target = the_same_place(str(from_path)), the_same_place(str(to_path))
+        if not source or not target:
+            return
+        root = Path(root)
+        with _WRITING:
+            held = _load(root)
+            if source not in held:
+                return
+            held[target] = held.pop(source)
+            _write_atomically(_memory_path(root), json.dumps(held, indent=1, sort_keys=True))
+    except Exception:  # noqa: BLE001 - a memory that fails a write is worse than none
+        logger.debug("Could not move %s to %s in the project memory", from_path, to_path, exc_info=True)
+
+
 def _write_atomically(path: Path, content: str) -> None:
     """Replace `path`'s contents in one step, or leave them as they were.
 

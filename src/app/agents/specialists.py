@@ -799,7 +799,7 @@ def build_test_run_request(
         "steps, expected behavior, actual behavior, affected files, and the specialist "
         "role that must fix it. If everything passes, return an empty `defects` list. "
         # The write tools refuse product code in a test round - see
-        # `_a_test_round_changing_the_product` - so say it before the first try.
+        # `_a_tester_changing_the_product` - so say it before the first try.
         "You do not change product code yourself: a fault in it is a defect for the "
         "role that owns the file, which is how the fix gets an owner and a record. "
         "Tests, test configuration and the package manifest are yours to change.\n\n"

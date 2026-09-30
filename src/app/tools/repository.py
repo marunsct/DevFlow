@@ -1383,18 +1383,27 @@ PACKAGE_MANIFESTS = frozenset({
 
 #: The stage name of a verification round, `test_round_<n>`.
 _A_TEST_ROUND = "test_round_"
+_THE_TESTING_TASK = "specialist_testing_"
 
 
-def _a_test_round_changing_the_product(root: Path, target: Path) -> str | None:
-    """The refusal for a test round changing application code, or None.
+def _a_tester_changing_the_product(root: Path, target: Path) -> str | None:
+    """The refusal for a testing stage changing application code, or None.
 
     A test round finds what fails and reports each failure as a defect for the
     role that owns it; the owner fixes it and the Sprint Record logs the defect,
     its cause and its fix. On one run the test round's engineer edited the
     product's `app.js` itself to get a failing unit test through - a real
     fix, possibly, but one no defect log, no owner and no review round ever
-    heard of. Tests, test configuration, documents and package manifests stay
-    the round's to change.
+    heard of.
+
+    The testing work order is held to the same line. It writes tests against
+    the other work orders' interfaces while that code is being written, and the
+    ownership check stops it only at a file some work order lists. Measured
+    over 25 runs: testing specialists wrote product code nine times - a page,
+    an `app.js`, a server - and on one run wrote the stub `src/ui.js` that no
+    work order listed, over the version another stage had just written.
+
+    Tests, test configuration, documents and package manifests stay theirs.
     """
     try:
         from app.observability.transcript import _stage_from_config
@@ -1402,7 +1411,7 @@ def _a_test_round_changing_the_product(root: Path, target: Path) -> str | None:
         stage = str(_stage_from_config("") or "")
     except Exception:  # noqa: BLE001 - outside a run there is no round to guard
         return None
-    if not stage.startswith(_A_TEST_ROUND):
+    if not stage.startswith((_A_TEST_ROUND, _THE_TESTING_TASK)):
         return None
     from app.analysis.file_kinds import classify_file
 
@@ -1412,6 +1421,21 @@ def _a_test_round_changing_the_product(root: Path, target: Path) -> str | None:
         return None
     if target.name in PACKAGE_MANIFESTS or classify_file(shown) != "application":
         return None
+    if stage.startswith(_THE_TESTING_TASK) and _created_here(root, shown, stage):
+        # Its own file, not the product's: a probe renamed out of the test
+        # runner's way so it can be deleted, as the delete refusal suggests.
+        return None
+    if stage.startswith(_THE_TESTING_TASK):
+        return (
+            f"'{shown}' is product code, and this is the testing work order: it writes "
+            "tests against the interfaces the other work orders promise, while they "
+            "write the code. Write the test against the interface as the plan gives it, "
+            "even if the code is not there yet. If the code a test needs is missing or "
+            "does not match its interface, say exactly what in `blockers` - the "
+            "milestone review reads it and the owner makes the change. Tests, test "
+            "configuration and the package manifest are yours to change. "
+            "Nothing was written."
+        )
     return (
         f"'{shown}' is product code, and this is a test round: its job is to find "
         "what fails and report it, not to change the product. A fix made here is "
@@ -1503,7 +1527,19 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     )
 
 
-def _not_this_stage_s_to_take(root: Path, target: Path, *, done: str) -> str | None:
+def _created_here(root: Path, shown: str, stage: str) -> bool:
+    """Whether the running stage wrote this file first. False when unknown."""
+    try:
+        from app.analysis import project_memory
+
+        return bool(stage) and project_memory.who_created(root, shown) == stage
+    except Exception:  # noqa: BLE001 - unknown is not "its own"
+        return False
+
+
+def _not_this_stage_s_to_take(
+    root: Path, target: Path, *, done: str, product_code: bool = True
+) -> str | None:
     """Either refusal that holds a stage to its own files, for a delete or a move.
 
     `write_artifact` and the targeted changes asked both questions and
@@ -1514,8 +1550,8 @@ def _not_this_stage_s_to_take(root: Path, target: Path, *, done: str) -> str | N
     every import of it broken.
     """
     for refusal in (
-        _a_test_round_changing_the_product(root, target),
         _another_work_order_s_file(root, target),
+        _a_tester_changing_the_product(root, target) if product_code else None,
     ):
         if refusal is not None:
             return refusal.replace("Nothing was written.", f"Nothing was {done}.")
@@ -1546,12 +1582,13 @@ def _guard_a_targeted_change(
         raise RepositoryToolError(
             f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
         )
-    not_this_round_s = _a_test_round_changing_the_product(root, target)
-    if not_this_round_s is not None:
-        raise RepositoryToolError(not_this_round_s)
+    # The owner first: it names who writes the file, which says more.
     someone_else_s = _another_work_order_s_file(root, target)
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
+    not_this_round_s = _a_tester_changing_the_product(root, target)
+    if not_this_round_s is not None:
+        raise RepositoryToolError(not_this_round_s)
     returning = _the_response_it_should_be_returning(
         tuple(_repo_relative_path(root, relative_path).parts)
     )
@@ -4709,12 +4746,13 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
-    not_this_round_s = _a_test_round_changing_the_product(artifact_root, target)
-    if not_this_round_s is not None:
-        raise RepositoryToolError(not_this_round_s)
+    # The owner first: it names who writes the file, which says more.
     someone_else_s = _another_work_order_s_file(artifact_root, target)
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
+    not_this_round_s = _a_tester_changing_the_product(artifact_root, target)
+    if not_this_round_s is not None:
+        raise RepositoryToolError(not_this_round_s)
 
     # One project directory per run, pinned the first time code is written and
     # honoured by every stage afterwards. Without this each stage derived its own
@@ -5291,9 +5329,14 @@ def move_approved_artifact(
             f"'{from_shown}' is already where you are asking to put it."
         )
     # Moving another work order's file away takes it from its owner as surely
-    # as deleting it; moving a file onto one of its paths writes it.
-    for path in (source, target):
-        not_its_own = _not_this_stage_s_to_take(root, path, done="moved")
+    # as deleting it; moving a file onto one of its paths writes it. Product
+    # code is judged at the source only: renaming a testing stage's own probe
+    # to a name no runner collects, so that it can be deleted, is the way out
+    # `delete_approved_artifact` offers, and that name looks like code.
+    for path, product_code in ((source, True), (target, False)):
+        not_its_own = _not_this_stage_s_to_take(
+            root, path, done="moved", product_code=product_code
+        )
         if not_its_own is not None:
             raise RepositoryToolError(not_its_own)
     # A move to a name no test runner collects is a delete by another route.
@@ -5341,6 +5384,12 @@ def move_approved_artifact(
         from app.tools.seen_content import record_move
 
         record_move(from_shown, to_shown)
+    except Exception:  # noqa: BLE001 - never fail a move over a memo
+        pass
+    try:
+        from app.analysis import project_memory
+
+        project_memory.record_move(root, from_shown, to_shown)
     except Exception:  # noqa: BLE001 - never fail a move over a memo
         pass
     return {"moved": from_shown, "to": to_shown, "status": "moved"}

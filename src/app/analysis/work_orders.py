@@ -309,16 +309,26 @@ def contract_for_testing(task: Any, tasks: Sequence[Any]) -> str:
         lines += [f"  interface: {i}" for i in interfaces]
         lines += [f"  case: {c}" for c in cases]
         blocks.append("\n".join(lines))
-    if not blocks:
-        return ""
-    return (
+    contract = (
         "--- The contract you are testing ---\n"
         "The other work orders in this milestone promise these interfaces and these "
         "cases. Write the tests against them as written - the code is being written "
         "from the same work orders at the same time. A test that fails because the "
         "code does not match the contract is a defect to report, not a test to "
         "change.\n\n" + "\n\n".join(blocks) + "\n\n"
-    )
+    ) if blocks else ""
+    # The write tools refuse product code to this task - see
+    # `_a_tester_changing_the_product` - so say it before the first try.
+    return contract + _THE_TESTING_TASK_S_FILES
+
+
+_THE_TESTING_TASK_S_FILES = (
+    "--- What is yours to change ---\n"
+    "Tests, test configuration and the package manifest. The product code belongs "
+    "to the other work orders, even where it is not written yet: write the test "
+    "against the interface as given, and if the code it needs is missing or does "
+    "not match, say exactly what in `blockers`.\n\n"
+)
 
 
 __all__ = [

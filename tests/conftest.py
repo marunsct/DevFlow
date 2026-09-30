@@ -130,6 +130,20 @@ def no_model_server_needed(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_reasoning_probe(monkeypatch):
+    """Switching reasoning off measures the model server once (see
+    `app.agents.thinking.least_reasoning_effort`). No test has a server to
+    measure, so every one sees a server that honours "none" - what the harness
+    sent before the measurement existed - and a cache of its own. The tests of
+    the measurement replace `_reasoning_spent` themselves."""
+    from app.agents import thinking
+
+    monkeypatch.setattr(thinking, "_reasoning_spent", lambda model, effort: 0)
+    monkeypatch.setattr(thinking, "_least_effort", {})
+    yield
+
+
+@pytest.fixture(autouse=True)
 def object_store_isolation(tmp_path_factory):
     """Keep each test's object storage local, empty, and its own.
 

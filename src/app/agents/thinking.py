@@ -26,8 +26,12 @@ rejects, and one that consumes the whole ceiling leaves nothing to answer with.
 
 from __future__ import annotations
 
+import logging
+import threading
 from dataclasses import dataclass
 from typing import Literal
+
+logger = logging.getLogger(__name__)
 
 ThinkingEffort = Literal["low", "medium", "high"]
 
@@ -181,8 +185,10 @@ def answering_without_reasoning(model: object) -> dict:
     model: it ignored the template flag entirely - one run's stack selector
     reasoned through the whole 25,000-token budget on the switched-off call
     too - and answered a probe in two tokens with `reasoning_effort: "none"`.
-    A server that rejects the field is asked again without it
-    (`without_the_effort_field`), so no deployment is worse off for it.
+    Which effort value does that depends on the model, so it is measured, once
+    per endpoint and model (`least_reasoning_effort`). A server that rejects the
+    field is asked again without it (`without_the_effort_field`), so no
+    deployment is worse off for it.
 
     Anthropic ignores a per-call `thinking` override, but it does not need one:
     its thinking budget is always set below the reply ceiling, so a reply there
@@ -191,18 +197,122 @@ def answering_without_reasoning(model: object) -> dict:
     """
     if not getattr(model, "openai_api_base", None):
         return {}
+    extra = _without_the_template_switch(model)
+    effort = least_reasoning_effort(model)
+    if effort:
+        extra[_EFFORT_FIELD] = effort
+    return {"extra_body": extra}
+
+
+def _without_the_template_switch(model: object) -> dict:
+    """The client's own `extra_body`, with the chat-template thinking flag off."""
     extra = dict(getattr(model, "extra_body", None) or {})
     template = dict(extra.get("chat_template_kwargs") or {})
     template["enable_thinking"] = False
     extra["chat_template_kwargs"] = template
-    extra[_EFFORT_FIELD] = NO_REASONING_EFFORT
-    return {"extra_body": extra}
+    return extra
 
 
 #: The chat-completions field that sets how hard a model reasons, and the value
 #: that asks for no reasoning at all.
 _EFFORT_FIELD = "reasoning_effort"
 NO_REASONING_EFFORT = "none"
+
+#: The values tried for the call that must answer, fewest reasoning tokens
+#: intended first.
+#:
+#: Which one a server honours depends on the model behind it, not on the
+#: server. Measured on one LM Studio server: a GLM model answered a probe in
+#: two tokens with "none"; `openai/gpt-oss-20b`, whose own format knows only
+#: low, medium and high, treated "none" as no instruction at all and reasoned
+#: 384-1,990 tokens on a small puzzle, against 64-70 with "low". So the
+#: switched-off call after a lead's 25,000-token spiral reasoned another 12,372
+#: tokens and took 106 seconds.
+_EFFORTS_TO_TRY = (NO_REASONING_EFFORT, "low")
+
+#: A small question that a reasoning model does reason about, so the replies
+#: differ by how much each effort value restrained it. Its answer is one number
+#: whatever the effort, so a difference in output tokens is reasoning.
+_PROBE_QUESTION = (
+    "A farmer has 17 sheep; all but 9 run away; then he buys twice as many as "
+    "remain and sells a third of the total. How many sheep? Reply with the "
+    "number only."
+)
+
+#: The probe's reply ceiling. An effort value that is ignored reasons past it,
+#: so it only has to be well above what an honoured one spends.
+_PROBE_REPLY_TOKENS = 512
+
+#: At or below this, "none" is taken as honoured and nothing else is tried.
+_HONOURED_TOKENS = 64
+
+_least_effort: dict[tuple[str, str], str | None] = {}
+_least_effort_lock = threading.Lock()
+
+
+class _Unmeasured(Exception):
+    """The probe could not tell how much a reply reasoned."""
+
+
+def least_reasoning_effort(model: object) -> str | None:
+    """The `reasoning_effort` value that makes this model reason least, or None.
+
+    Measured once per endpoint and model in a process, by asking the probe
+    question with each value in `_EFFORTS_TO_TRY`. A value the server refuses
+    (400/422) is skipped; None means it refused them all, so the field is not
+    sent. A server that answers without reporting token usage gets "none", as
+    before. When the server did not answer at all the result is also "none",
+    but not remembered, so the next call measures again.
+    """
+    key = (
+        str(getattr(model, "openai_api_base", "") or ""),
+        str(getattr(model, "model_name", "") or ""),
+    )
+    with _least_effort_lock:
+        if key in _least_effort:
+            return _least_effort[key]
+        try:
+            chosen = _the_least_of(model)
+        except _Unmeasured:
+            return NO_REASONING_EFFORT
+        _least_effort[key] = chosen
+    logger.info(
+        "Reasoning switch for %s at %s: reasoning_effort=%s", key[1], key[0], chosen
+    )
+    return chosen
+
+
+def _the_least_of(model: object) -> str | None:
+    fewest: tuple[int, str] | None = None
+    for effort in _EFFORTS_TO_TRY:
+        try:
+            spent = _reasoning_spent(model, effort)
+        except Exception as error:  # noqa: BLE001 - a probe must never fail a call
+            if the_server_refused_the_request(error):
+                continue
+            raise _Unmeasured(str(error)) from error
+        if spent is None:
+            # It answers but does not say what the answer cost: nothing to
+            # compare, and no reason to ask again.
+            return NO_REASONING_EFFORT
+        if effort == NO_REASONING_EFFORT and spent <= _HONOURED_TOKENS:
+            return effort
+        if fewest is None or spent < fewest[0]:
+            fewest = (spent, effort)
+    return fewest[1] if fewest else None
+
+
+def _reasoning_spent(model: object, effort: str) -> int | None:
+    """Output tokens the probe question costs with `effort`, or None when the
+    reply does not report them."""
+    extra = _without_the_template_switch(model)
+    extra[_EFFORT_FIELD] = effort
+    reply = model.invoke(  # type: ignore[attr-defined]
+        [("human", _PROBE_QUESTION)], extra_body=extra, max_tokens=_PROBE_REPLY_TOKENS
+    )
+    usage = getattr(reply, "usage_metadata", None) or {}
+    spent = usage.get("output_tokens")
+    return spent if isinstance(spent, int) else None
 
 
 def the_server_refused_the_request(error: BaseException) -> bool:
@@ -227,6 +337,7 @@ def without_the_effort_field(settings: dict) -> dict | None:
 __all__ = [
     "NO_REASONING_EFFORT",
     "answering_without_reasoning",
+    "least_reasoning_effort",
     "without_the_effort_field",
     "DEFAULT_EFFORT",
     "DEFAULT_MODE",

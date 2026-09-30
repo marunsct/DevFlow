@@ -1369,6 +1369,56 @@ def _quote(lines: list[str], start: int, end: int, marked: int | None) -> str:
     )
 
 
+#: Package manifests, whatever the language. A test round fixing the `test`
+#: script in one is changing test configuration, not the product.
+_MANIFESTS = frozenset({
+    "package.json", "pyproject.toml", "setup.cfg", "requirements.txt", "requirements-dev.txt",
+    "Pipfile", "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "build.gradle.kts",
+    "Gemfile", "composer.json", "mix.exs", "deno.json",
+})
+
+#: The stage name of a verification round, `test_round_<n>`.
+_A_TEST_ROUND = "test_round_"
+
+
+def _a_test_round_changing_the_product(root: Path, target: Path) -> str | None:
+    """The refusal for a test round changing application code, or None.
+
+    A test round finds what fails and reports each failure as a defect for the
+    role that owns it; the owner fixes it and the Sprint Record logs the defect,
+    its cause and its fix. On one run the test round's engineer edited the
+    product's `app.js` itself to get a failing unit test through - a real
+    fix, possibly, but one no defect log, no owner and no review round ever
+    heard of. Tests, test configuration, documents and package manifests stay
+    the round's to change.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        stage = str(_stage_from_config("") or "")
+    except Exception:  # noqa: BLE001 - outside a run there is no round to guard
+        return None
+    if not stage.startswith(_A_TEST_ROUND):
+        return None
+    from app.analysis.file_kinds import classify_file
+
+    try:
+        shown = target.relative_to(root).as_posix()
+    except ValueError:
+        return None
+    if target.name in _MANIFESTS or classify_file(shown) != "application":
+        return None
+    return (
+        f"'{shown}' is product code, and this is a test round: its job is to find "
+        "what fails and report it, not to change the product. A fix made here is "
+        "recorded nowhere - not in the defect log, not in the Sprint Record, not by "
+        "the role that owns the file. Report it in `defects` with that role as the "
+        "owner, the reproduction, and the change you would make; the owner makes it "
+        "next. Tests, test configuration and the package manifest are yours to change. "
+        "Nothing was written."
+    )
+
+
 def _guard_a_targeted_change(
     repo_root: str | Path, relative_path: str, replacement: str
 ) -> tuple[Path, Path]:
@@ -1393,6 +1443,9 @@ def _guard_a_targeted_change(
         raise RepositoryToolError(
             f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
         )
+    not_this_round_s = _a_test_round_changing_the_product(root, target)
+    if not_this_round_s is not None:
+        raise RepositoryToolError(not_this_round_s)
     returning = _the_response_it_should_be_returning(
         tuple(_repo_relative_path(root, relative_path).parts)
     )
@@ -4480,6 +4533,9 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
+    not_this_round_s = _a_test_round_changing_the_product(artifact_root, target)
+    if not_this_round_s is not None:
+        raise RepositoryToolError(not_this_round_s)
 
     # One project directory per run, pinned the first time code is written and
     # honoured by every stage afterwards. Without this each stage derived its own

@@ -147,11 +147,29 @@ def without_an_invented_root(path: str, repo_root: str) -> str:
 #: continue stays with the model.
 DEFAULT_READ_LINES = 400
 
+#: What `grep` answers with when the model does not say. The tool's own default
+#: is `files_with_matches`: the names of the files that matched, and nothing
+#: of what matched in them.
+#:
+#: Measured over twelve runs: 35 of 36 `grep` calls left the mode unset, and
+#: 28 of the answers were file names alone. 20 of those calls searched a single
+#: named file, so the answer was that file's own name back - a yes or no, with
+#: no line and no text. One architecture review searched its specification for
+#: eight different words that way, and for "required" twice, then read the
+#: whole file anyway.
+#:
+#: `content` answers the same question and the one behind it: each matching
+#: line, numbered, under the file it is in. The file names are still there. It
+#: is held to the same result budget as every other tool answer, so a search
+#: that matches everywhere is cut short with a note, not dumped whole. A model
+#: that asks for file names or counts still gets them.
+DEFAULT_GREP_OUTPUT = "content"
+
 
 def rewrite_tool_arguments(
     name: str, arguments: dict[str, Any], repo_root: str
 ) -> dict[str, Any]:
-    """A copy of `arguments` with workspace paths and read windows normalised."""
+    """A copy of `arguments` with workspace paths, read windows and search output normalised."""
     changed = dict(arguments)
 
     key = _PATH_ARGUMENTS.get(name)
@@ -170,6 +188,9 @@ def rewrite_tool_arguments(
     # 30.
     if name == "read_file" and "limit" not in arguments:
         changed["limit"] = DEFAULT_READ_LINES
+
+    if name == "grep" and "output_mode" not in arguments:
+        changed["output_mode"] = DEFAULT_GREP_OUTPUT
 
     return arguments if changed == arguments else changed
 
@@ -201,6 +222,7 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
 
 
 __all__ = [
+    "DEFAULT_GREP_OUTPUT",
     "DEFAULT_READ_LINES",
     "build_workspace_path_middleware",
     "rewrite_tool_arguments",

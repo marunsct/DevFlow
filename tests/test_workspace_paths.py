@@ -219,3 +219,59 @@ def test_the_host_path_rewrite_still_runs_first(tmp_path) -> None:
     )
 
     assert rewritten["file_path"] == "/docs/spec.md"
+
+
+# --- what a search answers with ------------------------------------------
+
+
+def test_a_search_with_no_mode_answers_with_the_matching_lines():
+    """Left to the tool's default, a search of one file answered with that
+    file's name and nothing else - 28 of 36 searches over twelve runs."""
+    from app.agents.workspace_paths import DEFAULT_GREP_OUTPUT, rewrite_tool_arguments
+
+    arguments = rewrite_tool_arguments(
+        "grep", {"pattern": "required", "path": "/docs/spec.md"}, "/ws"
+    )
+
+    assert arguments["output_mode"] == DEFAULT_GREP_OUTPUT == "content"
+    assert arguments["pattern"] == "required"
+
+
+@pytest.mark.parametrize("asked_for", ["files_with_matches", "count", "content"])
+def test_a_mode_the_model_asked_for_is_kept(asked_for):
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    arguments = {"pattern": "x", "path": "/", "output_mode": asked_for}
+
+    assert rewrite_tool_arguments("grep", arguments, "/ws") is arguments
+
+
+def test_no_other_tool_gains_an_output_mode():
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    for name, args in (("ls", {"path": "/"}), ("glob", {"pattern": "*.js", "path": "/"})):
+        assert "output_mode" not in rewrite_tool_arguments(name, args, "/ws")
+
+
+def test_the_default_mode_carries_what_matched(tmp_path) -> None:
+    """The mode the rewrite picks is one the real backend renders with the
+    line and its text, not the file name alone."""
+    pytest.importorskip("deepagents")
+    from deepagents.backends import FilesystemBackend
+    from deepagents.backends.utils import format_grep_matches
+
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "spec.md").write_text("# Spec\nThe title field is required.\n")
+    arguments = rewrite_tool_arguments(
+        "grep", {"pattern": "required", "path": "/docs/spec.md"}, str(tmp_path)
+    )
+
+    found = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True).grep(
+        arguments["pattern"], arguments["path"]
+    )
+    answer = format_grep_matches(found.matches, arguments["output_mode"])
+
+    assert "2: The title field is required." in answer
+    assert "/docs/spec.md" in answer

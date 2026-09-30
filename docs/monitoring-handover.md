@@ -287,6 +287,39 @@ means the matching is too loose again.
 
 ---
 
+### 0.8 What the model is given (review of 2026-09-30, commits 6719aec..15a6241)
+
+A review of 23 runs (2,604 tool calls) found most of the struggle was context,
+not capability: 26% of calls repeated a read/list/search the stage had already
+made, and failed calls were led by missing files, answers written to files and
+line-number edits. What changed, and what to audit on the next runs:
+
+- **Locked dependencies.** Both images install `uv.lock` exactly (`uv export
+  --frozen`); production had been running 38 packages the suite never saw,
+  including deepagents 0.7.20, whose `read_file` has no line numbers. Check
+  after any deploy: `docker exec langchain-worker-1 python -c "import
+  importlib.metadata as m; print(m.version('deepagents'))"` equals the lock.
+- **Reasoning carried across tool calls** (`app.models.with_the_reasoning_carried`):
+  the tail of each of the last four tool-calling replies' reasoning is sent back
+  in that reply's `content` (LM Studio ignores every reasoning field). Audit:
+  the repeated-identical-call share should fall well below 26%.
+- **Tools**: `inspect_repository` and `read_repository_file` removed from role
+  agents; the answer tool's description now says it is the only way to finish.
+  Audit: "answer saved as a file" refusals.
+- **Prompts**: writing rules ~9,100 -> ~5,000 chars, testing rules halved, a
+  framework block shared by several seeded modules injected once; generated
+  framework notes now describe the tool, not the product, and rows generated
+  under the old prompt are regenerated. Specialist system prompt ~25,300 ->
+  ~12,500 chars before framework notes.
+- **Saved models** (settings page): every applied model configuration is kept
+  and can be picked again; credentials are never stored with it.
+- **Model settings are the operator's.** The review found gpt-oss-20b loaded
+  with 10 experts per token (trained with 4) and the harness's context window
+  still at GLM's 185,000; the loaded model and `runtime_settings.model_name`
+  must agree before a run starts - check `/v1/models` on the model server.
+
+---
+
 ## 1. The loop, in the order it must happen
 
 ```

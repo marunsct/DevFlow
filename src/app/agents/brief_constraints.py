@@ -127,6 +127,41 @@ def constraint_lines(document_text: str) -> list[str]:
     return found[:MAX_CONSTRAINT_LINES]
 
 
+#: Headings whose body is what the brief will be judged by.
+_ACCEPTANCE_HEADINGS = (
+    "acceptance criteria",
+    "success criteria",
+    "success measures",
+    "success metrics",
+    "definition of done",
+    "done criteria",
+)
+
+
+def acceptance_lines(document_text: str) -> list[str]:
+    """The brief's own acceptance criteria, as the lines that state them.
+
+    One run's brief said "Users can add, edit, delete tasks" under
+    `## Acceptance Criteria`. The intake's success measures paraphrased it as
+    "create, read, update, and delete", deferred "Task editing (beyond
+    status)", and the specification excluded editing in its scope - every
+    stage after the intake read the paraphrase, and none read the brief.
+    """
+    if not document_text:
+        return []
+    found: list[str] = []
+    seen: set[str] = set()
+    for heading in _HEADING.finditer(document_text):
+        if heading.group(2).strip().lower().rstrip(":") not in _ACCEPTANCE_HEADINGS:
+            continue
+        for line in _section_under(document_text, heading).splitlines():
+            cleaned = re.sub(r"^\s*(?:[-*+]|\d+[.)])\s*", "", line).strip()
+            if cleaned and len(cleaned) <= 300 and cleaned.lower() not in seen:
+                seen.add(cleaned.lower())
+                found.append(cleaned)
+    return found[:MAX_CONSTRAINT_LINES]
+
+
 #: What to do about a conflict, which differs by who is reading. The stage
 #: choosing picks again; the stage reviewing blocks. A single sentence telling
 #: a reviewer to "pick the one it leaves" would be telling it to do the job of
@@ -479,6 +514,7 @@ def what_the_brief_asked_for_that_is_missing(
 
 __all__ = [
     "MAX_CONSTRAINT_LINES",
+    "acceptance_lines",
     "constraint_lines",
     "constraints_note",
     "what_the_brief_asked_for_that_is_missing",

@@ -33,6 +33,17 @@ _ENUMERATION = re.compile(
     re.I,
 )
 
+#: A list with no conjunction: "Users can add, edit, delete tasks". Three items
+#: or more, so that "Yes, please" and a clause after a comma are not read as
+#: lists; "and" / "or" never count as an item, so a list that has one is left
+#: to `_ENUMERATION`. One brief's acceptance criterion was written exactly this
+#: way, the intake paraphrased it as "create, read, update, and delete", and
+#: "edit" was never checked anywhere again.
+_UNJOINED_LIST = re.compile(
+    r"\b((?!(?:and|or)\b)[A-Za-z][\w-]*)((?:\s*,\s*(?!(?:and|or)\b)[A-Za-z][\w-]*){2,})\b",
+    re.I,
+)
+
 #: Words that can sit in an enumeration without naming a capability.
 _NOT_A_CAPABILITY = {
     "a", "all", "an", "are", "be", "both", "can", "either", "for", "in", "is", "of",
@@ -45,6 +56,11 @@ def _stem(word: str) -> str:
     for suffix in ("ing", "es", "ed", "s"):
         if len(word) - len(suffix) >= 4 and word.endswith(suffix):
             return word[: -len(suffix)]
+    # A silent "e" goes too, or "rename" is never named by "Renaming" nor
+    # "delete" by "deleting". Only where five letters remain, so "store" is
+    # not named by "story".
+    if word.endswith("e") and len(word) - 1 >= 5:
+        return word[:-1]
     return word
 
 
@@ -79,13 +95,23 @@ def _item_named_in(item: str, text: str) -> bool:
 def enumerations(measure: str) -> list[tuple[bool, list[str]]]:
     """Each list inside a measure, as (every item required, items)."""
     found: list[tuple[bool, list[str]]] = []
+    joined: list[tuple[int, int]] = []
     for match in _ENUMERATION.finditer(str(measure)):
+        joined.append(match.span())
         words = [match.group(1)]
         words += [w.strip() for w in match.group(2).split(",") if w.strip()]
         words.append(match.group(4))
         words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY]
         if len(words) >= 2:
             found.append((match.group(3).lower() == "and", words))
+    for match in _UNJOINED_LIST.finditer(str(measure)):
+        start, end = match.span()
+        if any(start < j_end and j_start < end for j_start, j_end in joined):
+            continue
+        words = [match.group(1)] + [w.strip() for w in match.group(2).split(",") if w.strip()]
+        words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY]
+        if len(words) >= 2:
+            found.append((True, words))
     return found
 
 

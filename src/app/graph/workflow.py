@@ -95,7 +95,9 @@ from app.agents.product_manager import (
     build_intake_request,
     create_product_manager_agent,
     with_the_constraints_the_brief_states,
+    with_the_measures_the_brief_states,
     with_the_workflows_its_measures_require,
+    without_deferring_what_the_measures_require,
 )
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import (
@@ -3216,9 +3218,16 @@ def build_workflow_graph(
         update["product_intake"] = with_the_constraints_the_brief_states(
             update["product_intake"], getattr(state.get("document"), "text", "") or ""
         )
+        # Its acceptance criteria too, in the brief's words: the measures are
+        # what every later stage checks itself against.
+        update["product_intake"] = with_the_measures_the_brief_states(
+            update["product_intake"], getattr(state.get("document"), "text", "") or ""
+        )
         # And no contradiction between its own lists: a capability a success
-        # measure names is a workflow, whatever the workflow list left out.
+        # measure names is a workflow, whatever the workflow list left out,
+        # and is not deferred scope.
         update["product_intake"] = with_the_workflows_its_measures_require(update["product_intake"])
+        update["product_intake"] = without_deferring_what_the_measures_require(update["product_intake"])
 
         _record_document(
             state,

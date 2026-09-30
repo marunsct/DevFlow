@@ -69,7 +69,7 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |
-| clean runs toward the gate | **0 of 2** on brief_low. Loop paused 2026-09-30 14:18 JST to build §0.7 (work orders, document templates, Sprint Record); restart from brief_low run 1 on the new build. History: (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed. run-ebde9fa1 completed, 2.4% failed calls, product tests 72+8 pass and match the summary, but it took three mid-run fixes and the product audit found the review accepting "full keyboard accessibility" while editing is pointer-only, and an edit path skipping the add form's description limit; count still 0) |
+| clean runs toward the gate | **0 of 2** on brief_low. On the §0.7 build: run-1236224f cancelled at 15:08 JST (stack chose console assertions as its "testing framework"; fixed b38a670), run-557346a2 cancelled at 15:35 JST (intake deferred editing the brief requires; fixed 19c5033). History: (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed. run-ebde9fa1 completed, 2.4% failed calls, product tests 72+8 pass and match the summary, but it took three mid-run fixes and the product audit found the review accepting "full keyboard accessibility" while editing is pointer-only, and an edit path skipping the add form's description limit; count still 0) |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |
@@ -273,6 +273,14 @@ the readiness check bounces a plan and whether the second plan fixes it; whether
 specialists follow their work orders (fewer refused commands, fewer files outside
 `files`); whether the Sprint Record's dispositions and carried items match what
 the reviews said; and whether a carried item is actually taken in the next sprint.
+
+**The intake keeps the brief's acceptance criteria** (19c5033). They join the
+success measures verbatim, a comma list without "and" counts as a list, and a
+deferred item naming a capability a measure requires is removed with an
+`Evidence: "..." is not deferred` line. Audit `docs/product_intake.md` first on
+every run: nothing the brief's acceptance criteria require may appear under
+Deferred scope, nor as an exclusion in the specification's Product Scope
+(run-557346a2 deferred "Task editing" for "Users can add, edit, delete tasks").
 
 ---
 

@@ -85,10 +85,9 @@ class ArchitectureReviewOutput(BaseModel):
         answers carrying findings omit the field.
 
         Deliberately only fills what is ABSENT. A status the model did write is
-        left exactly as written: across those same runs there are zero cases of
-        a verdict approving around its own blocking finding, so there is
-        nothing to enforce and overriding a stated decision on no evidence
-        would be the worse error.
+        left as written here; a stated `approved` over the review's own gating
+        findings is routed as `changes_required` by the workflow instead
+        (`_a_pass_over_its_own_findings`), where the product's scope is known.
         """
         if not isinstance(data, dict) or data.get("status"):
             return data

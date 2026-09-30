@@ -2326,6 +2326,38 @@ def _a_success_measure_the_specification_drops(state: Any, spec_text: str) -> An
     )
 
 
+def _a_pass_over_its_own_findings(
+    review: Any, repo_root: str | None, passing_status: str, stage_name: str
+) -> Any:
+    """`review`, sent back when its status passes the work over findings that gate.
+
+    Both reviewers are told the same rule - approve or accept only when no
+    blocking or major finding remains - and routing read `status` alone. One
+    run's architecture review found that the specification never described
+    how an existing item is edited, graded that **major**, and returned
+    `approved` with no conditions; the run went on to sprint planning with
+    the gap in place. The reply was the one written after the reviewer's
+    reasoning ran out of room, with thinking switched off to get an answer at
+    all, which is when a verdict and its findings are most likely to part.
+
+    The findings are what the reviewer checked; the status is one word written
+    after them. Where they disagree the findings win, filtered exactly as a
+    `changes_required` is (`_findings_that_block`), so a finding outside the
+    product's scope still does not gate.
+    """
+    if getattr(review, "status", None) != passing_status:
+        return review
+    gating = _findings_that_block(review, repo_root)
+    if not gating:
+        return review
+    logger.warning(
+        "Stage %s returned '%s' over %d finding(s) of its own at %s; routing it "
+        "as changes_required",
+        stage_name, passing_status, len(gating), "/".join(sorted(_GATING_SEVERITIES)),
+    )
+    return review.model_copy(update={"status": "changes_required"})
+
+
 def _findings_that_block(review: Any, repo_root: str | None = None) -> list[Any]:
     """The findings in a review that justify another round of work.
 
@@ -3547,6 +3579,11 @@ def build_workflow_graph(
             update["architecture_review"] = review
             update["specification_coverage_checked"] = True
 
+        review = _a_pass_over_its_own_findings(
+            review, state["repository"].root_path, "approved", "architecture_review"
+        )
+        update["architecture_review"] = review
+
         # Rendered from the decision, not written by the reviewer as a second
         # copy that can disagree with it. See `app.agents.review_document`.
         _record_document(state, "docs/architecture_review.md", render_architecture_review(review))
@@ -4461,7 +4498,12 @@ def build_workflow_graph(
         if "__milestone_review__" not in update:
             return update
             
-        review: MilestoneReviewOutput = update.pop("__milestone_review__")
+        review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
+            update.pop("__milestone_review__"),
+            state["repository"].root_path,
+            "accepted",
+            "milestone_review",
+        )
         # This round's findings, in the state the sprint record below reads, so
         # a sprint that ends on this review records the review that ended it.
         from app.sprint.record import findings_of

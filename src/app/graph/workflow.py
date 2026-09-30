@@ -3917,6 +3917,20 @@ def build_workflow_graph(
             update["milestone_plan"], state["repository"].root_path
         )
 
+        # Which stage owns each file the work orders list, so a specialist
+        # writing another work order's file is told whose it is. A file two
+        # work orders list has no single owner and is left open.
+        from app.tools.repository import record_work_order_files
+
+        declared: dict[str, list[str]] = {}
+        for index, task in enumerate(getattr(update["milestone_plan"], "delegated_tasks", None) or []):
+            for path in getattr(task, "files", None) or []:
+                declared.setdefault(str(path), []).append(_specialist_stage_name(task, index))
+        record_work_order_files(
+            state["repository"].root_path,
+            {path: stages[0] for path, stages in declared.items() if len(set(stages)) == 1},
+        )
+
         _record_document(
             state,
             "docs/milestone_plan.md",

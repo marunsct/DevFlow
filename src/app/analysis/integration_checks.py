@@ -37,7 +37,7 @@ from app.analysis.walk import files_under
 #: Directories that are never the project's own source.
 #: The harness's own files, never the product's. Read from one place.
 _HARNESS_BOOKKEEPING = frozenset({
-    ".project-directory", ".project-stack", ".project-memory.json",
+    ".project-directory", ".project-stack", ".project-memory.json", ".work-order-files.json",
 })
 
 _SKIP = {

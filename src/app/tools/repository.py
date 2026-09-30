@@ -19,7 +19,7 @@ import threading
 import tomllib
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Mapping
 from app.analysis.walk import files_under
 
 logger = logging.getLogger(__name__)
@@ -186,8 +186,12 @@ def is_secret_path(path: Path) -> bool:
 #: .json` was not, because it has one. It appeared at the top of the first
 #: digest that carried it, which is exactly where a stage looks first.
 HARNESS_FILES = frozenset({
-    ".project-directory", ".project-stack", ".project-memory.json",
+    ".project-directory", ".project-stack", ".project-memory.json", ".work-order-files.json",
 })
+
+#: Which delegated task each file of the current milestone belongs to, written
+#: when the plan is dispatched. See `record_work_order_files`.
+WORK_ORDER_FILES = ".work-order-files.json"
 
 #: Directories, relative to the workspace root, holding the harness's own
 #: records rather than the product's files.
@@ -1419,6 +1423,86 @@ def _a_test_round_changing_the_product(root: Path, target: Path) -> str | None:
     )
 
 
+def _as_a_planned_path(path: str) -> str:
+    """A path as a plan or a tool call spells it, in one form: no leading `/` or `./`."""
+    cleaned = str(path or "").strip().replace("\\", "/")
+    while cleaned.startswith(("./", "/")):
+        cleaned = cleaned[2:] if cleaned.startswith("./") else cleaned[1:]
+    return cleaned.rstrip("/")
+
+
+def record_work_order_files(root: str | Path, owners: Mapping[str, str]) -> None:
+    """Record which stage each planned file belongs to, for this milestone.
+
+    `owners` maps a path a work order lists in `files` to the stage that task
+    runs as. A path two work orders both list has no single owner and is left
+    out - the fan-out staggers those. Replaced whole on every plan, so a new
+    milestone never inherits the last one's owners. Never raises.
+    """
+    base = Path(root)
+    pinned = pinned_project_directory(base)
+    table: dict[str, str] = {}
+    for path, stage in owners.items():
+        cleaned = _as_a_planned_path(path)
+        if not cleaned or not stage:
+            continue
+        if pinned and "/" not in cleaned:
+            cleaned = f"{pinned}/{cleaned}"
+        table[cleaned] = str(stage)
+    try:
+        (base / WORK_ORDER_FILES).write_text(json.dumps(table, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        logger.warning("Could not record the work orders' files", exc_info=True)
+
+
+def _another_work_order_s_file(root: Path, target: Path) -> str | None:
+    """The refusal for a specialist writing a file another work order owns, or None.
+
+    Work orders list their files so that a newcomer knows exactly what to touch,
+    and nothing held a specialist to it. On one run's first milestone the
+    testing task wrote the backend task's `app.js` before the backend task
+    did, and the documentation task wrote the testing task's unit test; the
+    blind-overwrite guard kept either from being lost, and every refusal it
+    issued was a call spent on a file the plan had given to someone else.
+
+    Only specialist stages are held to it, only for a file one other work order
+    lists, and only in the milestone whose plan recorded it. Files no work
+    order lists stay open to whoever needs them.
+    """
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        stage = str(_stage_from_config("") or "")
+    except Exception:  # noqa: BLE001 - outside a run there is no plan to hold to
+        return None
+    if not stage.startswith("specialist_"):
+        return None
+    try:
+        table = json.loads((root / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+        shown = target.relative_to(root).as_posix()
+    except (OSError, ValueError):
+        return None
+    if not isinstance(table, dict):
+        return None
+    owner = next(
+        (
+            str(stage_name)
+            for planned, stage_name in table.items()
+            if shown == planned or shown.startswith(f"{planned}/")
+        ),
+        None,
+    )
+    if owner is None or owner == stage:
+        return None
+    return (
+        f"'{shown}' belongs to another work order in this milestone: the plan gave it "
+        f"to {owner}, which writes it. Change only the files your own work order "
+        "lists. If your task needs something in that file - an export, an element, a "
+        "script - say exactly what in `blockers`, where the milestone review reads it. "
+        "Nothing was written."
+    )
+
+
 def _guard_a_targeted_change(
     repo_root: str | Path, relative_path: str, replacement: str
 ) -> tuple[Path, Path]:
@@ -1446,6 +1530,9 @@ def _guard_a_targeted_change(
     not_this_round_s = _a_test_round_changing_the_product(root, target)
     if not_this_round_s is not None:
         raise RepositoryToolError(not_this_round_s)
+    someone_else_s = _another_work_order_s_file(root, target)
+    if someone_else_s is not None:
+        raise RepositoryToolError(someone_else_s)
     returning = _the_response_it_should_be_returning(
         tuple(_repo_relative_path(root, relative_path).parts)
     )
@@ -4586,6 +4673,9 @@ def write_approved_artifact(
     not_this_round_s = _a_test_round_changing_the_product(artifact_root, target)
     if not_this_round_s is not None:
         raise RepositoryToolError(not_this_round_s)
+    someone_else_s = _another_work_order_s_file(artifact_root, target)
+    if someone_else_s is not None:
+        raise RepositoryToolError(someone_else_s)
 
     # One project directory per run, pinned the first time code is written and
     # honoured by every stage afterwards. Without this each stage derived its own

@@ -1641,6 +1641,29 @@ def _without_the_quotes_it_added(expected: str, actual: str) -> str:
     return expected
 
 
+#: The least of a line that pins it when the rest of the line is left off.
+#: Shorter than this, a prefix such as `}` or `if (` names half the file.
+_A_PREFIX_THAT_PINS = 8
+
+
+def _the_line_it_cut_short(expected: str, actual: str) -> str:
+    """`actual`, when `expected` is that line with only its end left off.
+
+    Measured over 25 runs: 17 of 52 `replace_lines` refused as "not what you
+    expected" pinned the right line without its last characters -
+    `function loadTasks()` for `function loadTasks() {`, a `<link ...>` without
+    its `>`, a property without its trailing comma - and were told the line
+    was "not in the file at all". The line number and the start of the line
+    agree, so the range is the one the model meant. Only a prefix of at least
+    `_A_PREFIX_THAT_PINS` characters counts, compared as the rest of the check
+    is, with the surrounding whitespace ignored.
+    """
+    wanted, there = expected.strip(), actual.strip()
+    if len(wanted) >= _A_PREFIX_THAT_PINS and wanted != there and there.startswith(wanted):
+        return actual
+    return expected
+
+
 def _the_one_line_it_pins(expected: str) -> str:
     """`expect_start`/`expect_end` reduced to the single line they name.
 
@@ -2060,7 +2083,9 @@ def replace_approved_lines(
                     f"{len(expect_start.strip().splitlines())}; only its first "
                     "line was compared."
                 )
-            expect_start = _without_the_quotes_it_added(pinned, actual_first)
+            expect_start = _the_line_it_cut_short(
+                _without_the_quotes_it_added(pinned, actual_first), actual_first
+            )
             if expect_start.strip() != actual_first.strip():
                 moved = _the_same_range_somewhere_else(
                     lines, expect_start, expect_end, start_line, end_line

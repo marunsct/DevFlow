@@ -108,3 +108,34 @@ def test_a_quoted_line_that_is_not_the_line_is_still_refused(tmp_path):
     (tmp_path / "notes.txt").write_text("alpha\nbeta\n", encoding="utf-8")
     with pytest.raises(RepositoryToolError):
         replace_approved_lines(tmp_path, "notes.txt", 1, 1, "gamma", expect_start='"beta"')
+
+
+# Over 25 runs, 17 of 52 refusals pinned the right line without its last
+# characters - `function loadTasks()` for `function loadTasks() {` - and were
+# told the line was "not in the file at all".
+
+
+def test_a_line_pinned_without_its_end_still_pins_it(tmp_path):
+    (tmp_path / "app.js").write_text("function loadTasks() {\n  return [];\n}\n", encoding="utf-8")
+
+    replace_approved_lines(
+        tmp_path, "app.js", 1, 3, "function loadTasks() {\n  return ['a'];\n}",
+        expect_start="function loadTasks()",
+    )
+
+    assert "return ['a'];" in (tmp_path / "app.js").read_text(encoding="utf-8")
+
+
+def test_a_short_prefix_does_not_pin_a_line(tmp_path):
+    """`}` or `if (` names half the file."""
+    (tmp_path / "app.js").write_text("});\nx();\n", encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError, match="not what you expected"):
+        replace_approved_lines(tmp_path, "app.js", 1, 1, "});", expect_start="}")
+
+
+def test_a_prefix_of_a_different_line_is_still_refused(tmp_path):
+    (tmp_path / "app.js").write_text("function saveTasks() {\n}\nfunction loadTasks() {\n}\n", encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError, match="not what you expected"):
+        replace_approved_lines(tmp_path, "app.js", 1, 2, "x", expect_start="function loadTasks()")

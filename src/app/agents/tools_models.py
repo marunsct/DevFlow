@@ -98,6 +98,23 @@ class TechnologyStack(BaseModel):
         )
 
         impossible = ("manual", "by hand", "devtools", "browser testing", "visual inspection")
+        # Checks that run and never fail. `console.assert`, a logged message and
+        # a printed line all exit 0 whatever they find, so a suite made of them
+        # is green by construction and reports no counts. One run's stack chose
+        # "Browser Console Assertions" for its logic; the architect's
+        # specification then read "use console.assert and manual verification".
+        # Only when no real runner is named: "pytest, with plain assert" is a
+        # runner that happens to mention its assertions.
+        never_fails = ("console", "assertion", "assert statements", "print", "logging", "log output")
+        if any(marker in lowered for marker in never_fails) and not names_a_runner:
+            raise ValueError(
+                f"'{text}' is not a test runner: assertions written to a console, a "
+                "log or standard output leave the command's exit code at 0 whatever "
+                "they find, so nothing can tell a failing check from a passing one "
+                "and no test count is ever reported. Name a runner that executes the "
+                "tests and exits non-zero when one fails - the runner that ships with "
+                "the language's runtime installs nothing and adds no dependency."
+            )
         if any(marker in lowered for marker in impossible) and not names_a_runner:
             raise ValueError(
                 f"'{text}' cannot be carried out in this environment: there is no "

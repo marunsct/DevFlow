@@ -3474,7 +3474,29 @@ def build_workflow_graph(
                     "sections that are already filled in."
                 ]
             elif not missing:
-                update["specification_repair_count"] = 0
+                # Testing nobody here can carry out: a person's check, or an
+                # assertion that exits 0 whatever it finds. Same bounded repair
+                # path, same reason - the architect can fix it in one pass, and
+                # a review cycle would only relay it.
+                from app.agents.principal_architect import testing_nobody_can_run
+
+                unrunnable = testing_nobody_can_run(update.get("technical_specification"))
+                if unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
+                    update["specification_repair_count"] = repairs + 1
+                    update["stage"] = "principal_architect"
+                    update["revision_comments"] = [
+                        "The `testing` section plans checks nothing in this environment "
+                        "can carry out:\n"
+                        + "\n".join(f"- {entry}" for entry in unrunnable)
+                        + "\nNo person watches the workspace and there is no display, so a "
+                        "manual or visual check never happens, and an assertion written "
+                        "to a console or log exits 0 whatever it finds. Every check must be "
+                        "an automated test run by the runner the technology stack names, "
+                        "which fails the command when a test fails. Return the whole "
+                        "specification with `testing` corrected; change nothing else."
+                    ]
+                else:
+                    update["specification_repair_count"] = 0
         return update
 
     def architecture_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:

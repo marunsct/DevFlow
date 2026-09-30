@@ -10,6 +10,8 @@ a choice was made.
 
 from __future__ import annotations
 
+import re
+
 import logging
 import os
 from pathlib import Path
@@ -55,6 +57,38 @@ class ArchitectureDecisionRecord(BaseModel):
     validation_evidence: str = Field(
         default="", description="Evidence (tests, benchmarks, prior art) supporting this decision, if any."
     )
+
+
+#: A testing entry that needs a person, or a check that cannot fail.
+_NEEDS_A_PERSON = re.compile(
+    r"\bmanual(?:ly)?\b[^.;]*\b(?:test|verif|check|inspect|review)"
+    r"|\bvisual(?:ly)?\s+(?:inspect|check|verif)"
+    r"|\bby hand\b|\beyeball"
+    r"|console\.assert|\bconsole\s+assert",
+    re.I,
+)
+_NEGATED = re.compile(
+    r"\b(?:no|not|never|without|instead of|rather than|replac\w*|avoid\w*|eliminat\w*)\b"
+    r"[^.;]{0,20}\b(?:manual|visual|by hand|console)",
+    re.I,
+)
+
+
+def testing_nobody_can_run(specification: Any) -> list[str]:
+    """The specification's testing entries that nothing here can carry out.
+
+    There is no person watching the workspace and no display, so a manual or
+    visual check never happens, and a `console.assert` exits 0 whatever it finds.
+    One run's specification read "No test framework dependencies - use
+    console.assert and manual verification"; every test written from it would
+    have passed. An entry that rules these out ("no manual steps") is kept.
+    """
+    found: list[str] = []
+    for entry in getattr(specification, "testing", None) or []:
+        text = " ".join(str(entry).split())
+        if _NEEDS_A_PERSON.search(text) and not _NEGATED.search(text):
+            found.append(text)
+    return found
 
 
 class TechnicalSpecificationOutput(BaseModel):

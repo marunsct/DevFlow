@@ -211,6 +211,22 @@ export interface SettingsView {
   execution_mode: 'linear' | 'parallel';
 }
 
+/** A model configuration saved when it was applied, so it can be picked again.
+ *  Never carries a credential: those stay write-only on the server. */
+export interface ModelProfile {
+  id: string;
+  label: string;
+  llm_provider: string | null;
+  openai_base_url: string | null;
+  model_name: string | null;
+  model_context_window: number | null;
+  model_max_output_tokens: number | null;
+  thinking_mode: 'default' | 'on' | 'off' | null;
+  thinking_effort: 'low' | 'medium' | 'high' | null;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
 export interface ApprovalPayload {
   artifact_path: string;
   content_summary: string;

@@ -324,6 +324,16 @@ async def update_settings(
         actor=user.username,
     )
 
+    # Remembered as a saved model, so switching back to it later is a pick
+    # from a list rather than six fields typed again. A failure here must not
+    # undo a settings change that has already been applied.
+    try:
+        from app.server import model_profiles
+
+        model_profiles.remember(payload.model_dump(), actor=user.username)
+    except Exception:  # noqa: BLE001 - the applied settings stand either way
+        logger.warning("Could not remember the model configuration", exc_info=True)
+
     submitted = {
         "openai_api_key": payload.openai_api_key,
         "anthropic_api_key": payload.anthropic_api_key,
@@ -354,6 +364,50 @@ async def update_settings(
         user.username, ", ".join(sorted(changed_credentials)) or "none",
     )
     return _current_view()
+
+
+class ModelProfile(BaseModel):
+    """A model configuration saved earlier, ready to fill the form again.
+
+    Never a credential: those stay write-only and are shared by every profile
+    for the same provider.
+    """
+
+    id: str
+    label: str
+    llm_provider: str | None = None
+    openai_base_url: str | None = None
+    model_name: str | None = None
+    model_context_window: int | None = None
+    model_max_output_tokens: int | None = None
+    thinking_mode: str | None = None
+    thinking_effort: str | None = None
+    updated_at: str | None = None
+    updated_by: str | None = None
+
+
+@settings_router.get("/models", response_model=list[ModelProfile])
+async def list_model_profiles(user: UserInDB = Depends(get_current_active_user)) -> list[ModelProfile]:
+    """Every model configuration saved so far, most recently saved first."""
+    from app.server import model_profiles
+
+    return [ModelProfile(**profile) for profile in model_profiles.list_profiles()]
+
+
+@settings_router.delete("/models/{profile_id}", status_code=204)
+async def delete_model_profile(profile_id: str, user: UserInDB = Depends(require_admin)) -> None:
+    """Forget one saved configuration. The active settings are not changed."""
+    from app.server import model_profiles
+
+    if not model_profiles.forget(profile_id):
+        raise HTTPException(status_code=404, detail="No saved model with that id.")
+    record_audit(
+        actor=user.username,
+        tenant_id=user.tenant_id,
+        action="settings.model_profile.delete",
+        subject=profile_id,
+        detail={},
+    )
 
 
 __all__ = ["settings_router"]

@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Server, User, Shield, Info, Save } from 'lucide-react';
+import { Server, User, Shield, Info, Save, Trash2 } from 'lucide-react';
 import { api } from '../api';
 
-import type { SettingsView } from '../types';
+import type { ModelProfile, SettingsView } from '../types';
 
 /** What the form can change.
  *
@@ -43,6 +43,10 @@ export const Settings: React.FC = () => {
   const [detecting, setDetecting] = useState(false);
   const [detectNote, setDetectNote] = useState('');
   const [message, setMessage] = useState('');
+  // Every configuration applied before, so switching back to a model is a pick
+  // from this list rather than six fields typed again.
+  const [profiles, setProfiles] = useState<ModelProfile[]>([]);
+  const [chosenProfile, setChosenProfile] = useState('');
   // Held apart from `settings` because these are never read back from the
   // server: an empty box means "leave it alone", not "there is no key".
   const [credentials, setCredentials] = useState<Record<CredentialField, string>>({
@@ -54,7 +58,42 @@ export const Settings: React.FC = () => {
   useEffect(() => {
     api.get('/auth/me').then(res => setUser(res.data)).catch(() => {});
     api.get('/settings').then(res => setSettings(res.data)).catch(() => {});
+    loadProfiles();
   }, []);
+
+  const loadProfiles = () => {
+    api.get('/settings/models').then(res => setProfiles(res.data)).catch(() => {});
+  };
+
+  /** Fill the form from a saved model. Nothing changes until Save Settings. */
+  const applyProfile = (id: string) => {
+    setChosenProfile(id);
+    const profile = profiles.find(p => p.id === id);
+    if (!profile || !settings) return;
+    setSettings({
+      ...settings,
+      llm_provider: profile.llm_provider ?? settings.llm_provider,
+      openai_base_url: profile.openai_base_url ?? settings.openai_base_url,
+      model_name: profile.model_name ?? settings.model_name,
+      model_context_window: profile.model_context_window ?? settings.model_context_window,
+      model_max_output_tokens: profile.model_max_output_tokens ?? 0,
+      thinking_mode: profile.thinking_mode ?? 'default',
+      thinking_effort: profile.thinking_effort ?? 'medium',
+    });
+    setMessage('Filled from a saved model. Save Settings to apply it.');
+  };
+
+  const forgetProfile = async () => {
+    if (!chosenProfile) return;
+    try {
+      await api.delete(`/settings/models/${chosenProfile}`);
+      setChosenProfile('');
+      loadProfiles();
+      setMessage('Saved model removed.');
+    } catch (err: any) {
+      setMessage(err.response?.data?.detail ?? 'Could not remove the saved model.');
+    }
+  };
 
   const CredentialField = ({ label, field, configured, hint, placeholder }: {
     label: string; field: CredentialField; configured: boolean;
@@ -132,7 +171,9 @@ export const Settings: React.FC = () => {
       const res = await api.put('/settings', form);
       setSettings(res.data);
       setCredentials({ openai_api_key: '', anthropic_api_key: '', google_api_key: '' });
-      setMessage('Settings saved.');
+      setMessage('Settings saved. This model is now in Saved models.');
+      setChosenProfile('');
+      loadProfiles();
     } catch (err: any) {
       setMessage(err.response?.data?.detail ?? 'Could not save settings.');
     } finally {
@@ -172,6 +213,48 @@ export const Settings: React.FC = () => {
             <p className="text-sm text-text-muted">Loading settings...</p>
           ) : (
             <form onSubmit={handleSave} className="space-y-4">
+              {profiles.length > 0 && (
+                <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+                  <label
+                    htmlFor="saved-models"
+                    className="block text-sm font-medium text-text-secondary mb-1"
+                  >
+                    Saved models
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      id="saved-models"
+                      value={chosenProfile}
+                      onChange={(e) => applyProfile(e.target.value)}
+                      className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                    >
+                      <option value="">Choose a model you have used before...</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                          {p.model_context_window ? ` - ${p.model_context_window.toLocaleString()} tokens` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={forgetProfile}
+                      disabled={!chosenProfile}
+                      title="Remove this saved model"
+                      aria-label="Remove this saved model"
+                      className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-40 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
+                    Every model you save is kept here with its endpoint, context window,
+                    reply limit and thinking settings. Picking one fills the form below;
+                    API keys are never stored with it.
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Provider</label>
                 <select

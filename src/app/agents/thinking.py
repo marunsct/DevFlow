@@ -205,6 +205,14 @@ _EFFORT_FIELD = "reasoning_effort"
 NO_REASONING_EFFORT = "none"
 
 
+def the_server_refused_the_request(error: BaseException) -> bool:
+    """Whether `error` is the server rejecting the request as malformed (400/422)."""
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    return status in (400, 422)
+
+
 def without_the_effort_field(settings: dict) -> dict | None:
     """`settings` without the `reasoning_effort` that `answering_without_reasoning`
     added, or None when it carries none - for a server that refused the request.
@@ -228,5 +236,6 @@ __all__ = [
     "ThinkingEffort",
     "ThinkingPolicy",
     "normalise_effort",
+    "the_server_refused_the_request",
     "thinking_budget_tokens",
 ]

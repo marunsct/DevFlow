@@ -129,18 +129,60 @@ def _extraction_model() -> Any:
 
     Reuses `app.models._runtime_settings`, which already falls back to the
     environment when there is no database, so the CLI and the tests are unchanged.
+
+    Bounded, because both calls are small and neither is the stage's work. The
+    client used to carry no reply ceiling, no timeout and whatever reasoning the
+    server defaults to. On one run a reasoning model given the stack document
+    reasoned for over 60,000 tokens and was still going 20 minutes later -
+    and since this runs in the middleware in front of an agent's model call,
+    the specification stage sat behind it the whole time. So the reply is
+    capped, the call times out, and reasoning is switched off the same way the
+    one-call answer after a spiral switches it off
+    (`app.agents.thinking.answering_without_reasoning`); `_ask` retries without
+    the effort field for a server that refuses it. A reply cut off anyway comes
+    back empty, which reads as "no frameworks named" - the names found in the
+    document itself (`_named_in_the_selected_stack`) still apply.
     """
     from langchain_openai import ChatOpenAI
 
+    from app.agents.thinking import answering_without_reasoning
     from app.models import _runtime_settings
 
     settings = _runtime_settings()
-    return ChatOpenAI(
+    model = ChatOpenAI(
         model=settings.model_name,
         api_key=settings.openai_api_key,
         base_url=settings.openai_base_url,
         temperature=0,
+        max_tokens=_AUXILIARY_REPLY_TOKENS,
+        timeout=_AUXILIARY_TIMEOUT_SECONDS,
+        max_retries=1,
     )
+    quiet = answering_without_reasoning(model)
+    return model.model_copy(update=quiet) if quiet else model
+
+
+#: The most either auxiliary reply may be: a comma-separated list, or four
+#: bullet points. Far below any stage's own ceiling.
+_AUXILIARY_REPLY_TOKENS = 2_048
+
+#: How long either auxiliary call may take before it counts as a failure.
+_AUXILIARY_TIMEOUT_SECONDS = 180
+
+
+def _ask(model: Any, messages: list[Any]) -> Any:
+    """`model.invoke(messages)`, asked again without `reasoning_effort` if the
+    server refused the request because of it."""
+    from app.agents.thinking import the_server_refused_the_request, without_the_effort_field
+
+    try:
+        return model.invoke(messages)
+    except Exception as error:
+        extra = getattr(model, "extra_body", None)
+        plainer = without_the_effort_field({"extra_body": extra}) if extra else None
+        if plainer is None or not the_server_refused_the_request(error):
+            raise
+        return model.model_copy(update=plainer).invoke(messages)
 
 
 def _framework_names(reply: str) -> List[str]:
@@ -229,7 +271,7 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
         from app.server.plugin_store import PluginStore
 
         model = _extraction_model()
-        reply = model.invoke([
+        reply = _ask(model, [
             SystemMessage(content=(
                 "You are a tech stack analyzer. Read the provided technology stack "
                 "document and return ONLY a comma-separated list of the core "
@@ -267,7 +309,7 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
                 # up for the run: an unseeded `javascript` cost the run its
                 # instructions for every other framework in its stack as well.
                 try:
-                    generated = _text_of(model.invoke([
+                    generated = _text_of(_ask(model, [
                         SystemMessage(content=(
                             "You write concise, strict engineering instructions for "
                             "coding agents. Output only the instructions."

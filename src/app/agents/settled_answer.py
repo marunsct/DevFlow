@@ -1065,14 +1065,6 @@ _READ_TOOL_WITHHELD_NOTICE = (
 )
 
 
-def _the_server_refused_the_request(error: BaseException) -> bool:
-    """Whether `error` is the server rejecting the request as malformed (400/422)."""
-    status = getattr(error, "status_code", None)
-    if status is None:
-        status = getattr(getattr(error, "response", None), "status_code", None)
-    return status in (400, 422)
-
-
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -1265,7 +1257,9 @@ def build_settled_answer_middleware(
             try:
                 return handler(request)
             except Exception as error:
-                if not _the_server_refused_the_request(error):
+                from app.agents.thinking import the_server_refused_the_request
+
+                if not the_server_refused_the_request(error):
                     raise
                 logger.warning(
                     "Stage %s: the model server refused `reasoning_effort` (%s); "

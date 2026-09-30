@@ -50,6 +50,32 @@ of valid role names.
 """
 
 
+def _as_a_line(item: Any) -> Any:
+    """One structured item of a work-order list, as the line of text it says.
+
+    `{"given": g, "when": w, "then": t}` reads "Given g, when w, then t", with
+    any other keys after it; an object with one key reads as its value; any
+    other object as "key: value" pairs; a nested list as its items joined.
+    Strings, and anything that is neither, are returned as they came.
+    """
+    if isinstance(item, list):
+        return "; ".join(str(_as_a_line(part)) for part in item if part not in (None, ""))
+    if not isinstance(item, dict):
+        return item
+    parts = {str(k).strip().lower(): v for k, v in item.items() if v not in (None, "", [])}
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return str(_as_a_line(next(iter(parts.values()))))
+    ordered = [key for key in ("given", "when", "then") if key in parts]
+    if ordered:
+        line = ", ".join(f"{key} {_as_a_line(parts.pop(key))}" for key in ordered)
+        line = line[0].upper() + line[1:]
+        rest = "; ".join(f"{key} {_as_a_line(value)}" for key, value in parts.items())
+        return f"{line}; {rest}" if rest else line
+    return "; ".join(f"{key}: {_as_a_line(value)}" for key, value in parts.items())
+
+
 class SpecialistTask(BaseModel):
     """One unit of delegated work for a single specialist."""
 
@@ -115,6 +141,27 @@ class SpecialistTask(BaseModel):
         default_factory=list,
         description="What this task must not change, so it does not collide with another task.",
     )
+
+    @field_validator(
+        "acceptance_criteria", "files", "interfaces", "steps", "edge_cases",
+        "test_cases", "verification", "out_of_scope",
+        mode="before",
+    )
+    @classmethod
+    def _each_item_as_a_line(cls, value: Any) -> Any:
+        """Accept a structured item where a line of text is asked for.
+
+        The readiness check asks for test cases as given/when/then, and one
+        run's lead did exactly that - `{"given": ..., "when": ..., "then": ...}`
+        for each case. The schema wanted strings, so the answer was refused on
+        `delegated_tasks.0.test_cases.0` through `.5`, and the lead's next
+        answer dropped its test cases altogether. The plan was then dispatched
+        with "no `test_cases`" noted against it, after three rounds spent on
+        exactly the thing the lead had written.
+        """
+        if not isinstance(value, list):
+            return value
+        return [_as_a_line(item) for item in value]
 
     @field_validator("task_description", mode="after")
     @classmethod

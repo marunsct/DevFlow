@@ -169,3 +169,31 @@ def test_an_unready_plan_goes_back_to_the_lead_once_with_the_reasons(
     assert "names no `files`" in second
     assert "No `testing` work order" in second
     assert "The plan that was sent back" in second
+
+
+class TestAStructuredItemIsALine:
+    """One run's lead wrote each test case as {"given", "when", "then"}; the
+    schema wanted strings, refused it, and the next answer had no test cases."""
+
+    def test_given_when_then_reads_as_a_sentence(self):
+        task = SpecialistTask(
+            specialist_role="backend", task_description="Add the edit path.",
+            test_cases=[{"given": "an item titled 'a'", "when": "it is renamed to 'b'", "then": "the list shows 'b'"}],
+        )
+        assert task.test_cases == ["Given an item titled 'a', when it is renamed to 'b', then the list shows 'b'"]
+
+    def test_other_keys_follow_and_a_single_key_is_its_value(self):
+        task = SpecialistTask(
+            specialist_role="backend", task_description="Add the edit path.",
+            test_cases=[{"given": "g", "when": "w", "then": "t", "and": "nothing else changes"}],
+            files=[{"path": "src/items.py"}],
+            steps=[{"step": 1, "action": "write the handler"}],
+        )
+        assert task.test_cases == ["Given g, when w, then t; and nothing else changes"]
+        assert task.files == ["src/items.py"]
+        assert task.steps == ["step: 1; action: write the handler"]
+
+    def test_strings_are_untouched(self):
+        task = SpecialistTask(specialist_role="backend", task_description="Add the edit path.",
+                              test_cases=["Given g, when w, then t"])
+        assert task.test_cases == ["Given g, when w, then t"]

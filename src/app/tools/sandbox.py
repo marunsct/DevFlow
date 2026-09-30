@@ -2557,12 +2557,25 @@ def _the_counts_a_test_run_reported(result: dict) -> dict:
         _TAP_TESTS.search(text),
     )
     if passed and failed and tests:
-        return {
+        tap = {
             "passed": int(passed.group(1)),
             "failed": int(failed.group(1)),
             "tests": int(tests.group(1)),
         }
+        # And whatever ran after it. `node --test x && playwright test` is one
+        # command and two runners; returning at the TAP totals dropped the
+        # second. One run's sprint summary reported "Test Cases: 36" for a
+        # suite of 36 unit tests and 10 browser tests. TAP's "# pass 36" does
+        # not match any runner pattern below, so nothing is counted twice.
+        other = _the_first_runner_s_totals(text)
+        if other:
+            return {key: tap[key] + other[key] for key in tap}
+        return tap
+    return _the_first_runner_s_totals(text)
 
+
+def _the_first_runner_s_totals(text: str) -> dict:
+    """The totals of the first non-TAP runner `text` reports, or `{}`."""
     # Not TAP. Every other runner says the same thing in its own words, and
     # reading only TAP is why the regression check fired in 3 runs of 41 while
     # 39 of them broke a suite that had been green. See `_RUNNER_TOTALS`.

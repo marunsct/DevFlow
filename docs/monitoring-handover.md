@@ -40,6 +40,12 @@ Run a continuous audit / fix / deploy loop on this harness, and do not stop:
    fix or make it a no-op, run the test, restore), run the full suite;
 5. commit, push, deploy, and start the next run.
 
+**Early stop (operator, 2026-09-30).** Any bug found in a run's first 40
+minutes: cancel it (`loop.sh cancel`), fix, deploy, start a new run - do not
+wait for it to finish. A major harness bug or gap found at any point: cancel
+immediately, fix, restart. So during the first 40 minutes check every ~10
+minutes (`loop.sh wait 10`), not every 18.
+
 **The gate.** A run is *clean* when it completes and the audit finds no bug
 and no improvement worth making. Two consecutive clean runs of
 `tests/brief_low.md` move the loop to `tests/brief_medium.md`; two clean runs

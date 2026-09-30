@@ -10,6 +10,8 @@ changes.
 
 from __future__ import annotations
 
+from typing import Any
+
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
 from langchain_anthropic import ChatAnthropic
@@ -243,7 +245,87 @@ class CompatibleChatOpenAI(ChatOpenAI):
         for message in payload.get("messages", []):
             if isinstance(message, dict) and message.get("role") != "tool":
                 message.pop("name", None)
+        try:
+            with_the_reasoning_carried(
+                self._convert_input(input_).to_messages(), payload.get("messages") or []
+            )
+        except Exception:  # noqa: BLE001 - a missing note must never cost the call
+            pass
         return payload
+
+    def _create_chat_result(self, response, generation_info=None):  # type: ignore[override]
+        """The result, with the reasoning the server returned kept on each message.
+
+        `ChatOpenAI` reads `content` and `tool_calls` and drops a server's
+        `reasoning_content` on the floor. See `with_the_reasoning_carried` for why
+        it is needed on the next request.
+        """
+        result = super()._create_chat_result(response, generation_info)
+        try:
+            data = response if isinstance(response, dict) else response.model_dump(warnings=False)
+            for generation, choice in zip(result.generations, data.get("choices") or []):
+                message = (choice or {}).get("message") or {}
+                reasoning = message.get("reasoning_content") or message.get("reasoning")
+                if isinstance(reasoning, str) and reasoning.strip():
+                    generation.message.additional_kwargs[REASONING_FIELD] = (
+                        reasoning.strip()[-REASONING_CARRIED_CHARS:]
+                    )
+        except Exception:  # noqa: BLE001 - keeping reasoning is an aid, never a failure
+            pass
+        return result
+
+
+#: Where a reply's reasoning is kept on its message.
+REASONING_FIELD = "reasoning_content"
+
+#: How much of one reply's reasoning is kept and carried forward - its end,
+#: where a model states what it has decided to do next.
+REASONING_CARRIED_CHARS = 1_500
+
+#: How many of the most recent tool-calling replies carry theirs.
+REPLIES_CARRYING_REASONING = 4
+
+
+def with_the_reasoning_carried(messages: list[Any], dicts: list[dict]) -> None:
+    """Put each recent tool-calling reply's reasoning back where the model will read it.
+
+    A reasoning model thinks before every tool call, and in an agent loop that
+    thinking is the plan: which file next, what the last result meant. OpenAI's
+    guide for its open-weight reasoning models says the previous chain of
+    thought must be passed back while the model is calling tools. Nothing here
+    did. `ChatOpenAI` discarded it, and an LM Studio server ignores it in every
+    reasoning field - measured: a plan placed in `reasoning_content`,
+    `reasoning` or `thinking` was invisible to the model, while the same plan in
+    the assistant message's `content` was read back word for word. The chat
+    template renders a tool-calling message's `content` as that model's
+    analysis channel.
+
+    On one run 82% of every token the model produced was reasoning, all of it
+    thrown away before the next call; 26% of that day's tool calls were a read,
+    listing or search the same stage had already made with the same arguments.
+
+    So the end of each of the last few tool-calling replies' reasoning goes into
+    that reply's `content` on the way out, where it is empty. Changed in the
+    request only - the stored conversation is untouched, so nothing that reads a
+    reply's content as an answer ever sees it. Bounded in length and in how many
+    replies carry it. A server that returns no reasoning is unaffected.
+    """
+    from langchain_core.messages import AIMessage
+
+    carrying = [
+        index
+        for index, message in enumerate(messages)
+        if isinstance(message, AIMessage)
+        and message.tool_calls
+        and not str(message.content or "").strip()
+        and message.additional_kwargs.get(REASONING_FIELD)
+    ]
+    for index in carrying[-REPLIES_CARRYING_REASONING:]:
+        if index >= len(dicts):
+            continue
+        outgoing = dicts[index]
+        if isinstance(outgoing, dict) and outgoing.get("role") == "assistant" and not outgoing.get("content"):
+            outgoing["content"] = str(messages[index].additional_kwargs[REASONING_FIELD])
 
 
 def _fallback_model(env_var: str, default: str) -> str:

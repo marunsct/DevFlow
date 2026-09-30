@@ -314,9 +314,10 @@ line-number edits. What changed, and what to audit on the next runs:
 - **Saved models** (settings page): every applied model configuration is kept
   and can be picked again; credentials are never stored with it.
 - **Model settings are the operator's.** The review found gpt-oss-20b loaded
-  with 10 experts per token (trained with 4) and the harness's context window
-  still at GLM's 185,000; the loaded model and `runtime_settings.model_name`
-  must agree before a run starts - check `/v1/models` on the model server.
+  with 10 experts per token (trained with 4). The loaded model and
+  `runtime_settings.model_name` must agree before a run starts - check
+  `/v1/models` on the model server; do not start a run while they differ, or
+  LM Studio either refuses it or unloads the operator's model to serve it.
 
 ---
 

@@ -270,3 +270,18 @@ def test_a_block_several_modules_share_is_given_once(monkeypatch):
 
     assert text.count("A TEST SCRIPT MUST EXIT") == 1
     assert "- JS specific." in text and "- Node specific." in text
+
+
+def test_generated_notes_are_asked_for_testing_mechanics_only(wired):
+    """Asked how a project is laid out and built, the notes described `src/`,
+    `dist/` and a bundler against the harness's own flat layout."""
+    model, store, stack = wired
+    model.frameworks = "elixir"
+    plugin_middleware.build_plugin_instructions_middleware(str(stack)).wrap_model_call(
+        _Request(system_message="p"), lambda r: r
+    )
+
+    [request] = [call for call in model.calls if "working notes" in call]
+    assert "run its tests without a person watching" in request
+    assert "Do not describe project layout, build or bundling steps" in request
+    assert "laid out" not in request

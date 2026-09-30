@@ -320,14 +320,22 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
                             "that has to build and test a project with a given framework "
                             "or language. Output only the notes."
                         )),
+                        # Testing mechanics only. Asked also for "how a project is
+                        # laid out, how it is run", the notes described a typical
+                        # project - `src/`, `dist/`, a bundler, Jest with jsdom and
+                        # a storage polyfill package - against the harness's own
+                        # "Keep it FLAT" layout and the seeded "`node --test`
+                        # ships with Node: nothing to install". Layout and build
+                        # belong to the harness and the brief.
                         HumanMessage(content=(
-                            f"Write at most 5 bullet points about working with "
-                            f"'{framework}': how a project is laid out, how it is run, how "
-                            f"its tests are run without a person watching, and where "
-                            f"test-only dependencies are declared. State facts about the "
-                            f"tool itself. Do not recommend features, patterns, security "
-                            f"measures or architecture - the product's own brief decides "
-                            f"those."
+                            f"Write at most 4 bullet points of facts about '{framework}' "
+                            f"that a coding agent needs in order to run its tests without "
+                            f"a person watching and to declare test-only dependencies. "
+                            f"Do not describe project layout, build or bundling steps, or "
+                            f"which libraries to add, and do not recommend features, "
+                            f"patterns, security measures or architecture - the product's "
+                            f"brief and the harness decide those. If '{framework}' is not "
+                            f"a framework, language or runtime, reply with nothing at all."
                         )),
                     ])).strip()
                 except Exception:  # noqa: BLE001 - one framework, not the stack

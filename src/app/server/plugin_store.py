@@ -24,8 +24,10 @@ CREATE TABLE IF NOT EXISTS plugin_instructions (
 #: framework is generated again under the current prompt the next time a stack
 #: names it. The previous prompt asked for "best practices ... concurrency,
 #: security and architecture", and a to-do list app's specialists were told to
-#: "Use Web Workers for CPU-heavy tasks" and "Adopt CSP headers".
-GENERATED_MARKER = "<!-- generated-v2 -->"
+#: "Use Web Workers for CPU-heavy tasks" and "Adopt CSP headers". v2 asked how
+#: a project is laid out and built, and described `src/`, `dist/` and a bundler
+#: against the harness's flat layout; v3 asks for testing mechanics only.
+GENERATED_MARKER = "<!-- generated-v3 -->"
 
 
 def database_url() -> str:

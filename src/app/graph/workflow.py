@@ -2261,6 +2261,11 @@ def _run_gated_agent(
             _missing_structured_response(stage_name, result, attempts=attempted + 1)
         )
 
+    # An answer is cleaned, a file is refused: see `app.agents.model_output`.
+    from app.agents.model_output import answer_without_leaked_turns
+
+    structured_response = answer_without_leaked_turns(structured_response)
+
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)
     # Dropped with the retry count, and for the same reason. A stage name
@@ -2537,13 +2542,18 @@ def _record_document(state: WorkflowGraphState, relative_path: str, content: str
     Never raises: a review that has already been decided must not be lost
     because the document could not be saved.
     """
+    from app.agents.model_output import CONTROL_TOKEN
     from app.tools.repository import write_approved_artifact
 
     try:
         write_approved_artifact(
             state["repository"].root_path,
             relative_path,
-            content,
+            # The workflow renders these from answers it has already accepted.
+            # A delimiter one of them still carries is a model's, not the
+            # document's, and refusing the write would lose the whole record -
+            # a Sprint Record for one stray token in one work order's blockers.
+            CONTROL_TOKEN.sub("", content),
             # The one writer allowed to touch the documents in
             # `WORKFLOW_DOCUMENTS`; it is the thing that renders them.
             by_the_workflow=True,

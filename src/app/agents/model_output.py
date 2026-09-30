@@ -31,6 +31,7 @@ otherwise have to learn about it separately.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 #: Special tokens in the `<|name|>` spelling every model family uses:
 #: `<|im_start|>`, `<|eot_id|>`, `<|END_THINKING|>`, `<|channel|>`.
@@ -81,4 +82,54 @@ def strip_reasoning(text: str) -> str:
     return cleaned
 
 
-__all__ = ["CONTROL_TOKEN", "find_leaked_marker", "strip_reasoning"]
+def without_a_leaked_turn(value: Any) -> Any:
+    """`value` with each string cut where a turn delimiter begins, recursively.
+
+    For a structured answer that arrived through its answer tool. One run's
+    `openai/gpt-oss-20b` specialist, near its model-call budget, ended a
+    `blockers` item with `<|end|><|start|>assistant<|channel|>final<|message|>{`
+    - the next turn, written into the field. The answer was accepted, and its
+    stage summary was then refused as a file carrying a delimiter; the Sprint
+    Record, rendered from the same answers, would have been refused whole.
+
+    Everything from the delimiter on belongs to another turn, so the string is
+    cut there rather than the marker merely removed.
+    """
+    if isinstance(value, str):
+        found = CONTROL_TOKEN.search(value)
+        return value[: found.start()].rstrip() if found else value
+    if isinstance(value, list):
+        return [without_a_leaked_turn(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(without_a_leaked_turn(item) for item in value)
+    if isinstance(value, dict):
+        return {key: without_a_leaked_turn(item) for key, item in value.items()}
+    return value
+
+
+def answer_without_leaked_turns(answer: Any) -> Any:
+    """A structured answer (a pydantic model) with `without_a_leaked_turn` applied.
+
+    The same object when nothing leaked, or when the cleaned answer no longer
+    validates - an answer with a delimiter in it is still better than none.
+    """
+    dump = getattr(answer, "model_dump", None)
+    if dump is None:
+        return answer
+    try:
+        before = dump()
+        after = without_a_leaked_turn(before)
+        if after == before:
+            return answer
+        return type(answer).model_validate(after)
+    except Exception:  # noqa: BLE001 - never lose an answer over cleaning it
+        return answer
+
+
+__all__ = [
+    "CONTROL_TOKEN",
+    "answer_without_leaked_turns",
+    "find_leaked_marker",
+    "strip_reasoning",
+    "without_a_leaked_turn",
+]

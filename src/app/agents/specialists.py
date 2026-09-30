@@ -794,7 +794,16 @@ def build_test_run_request(
         "error the product itself reports while the tests pass - a name that is not "
         "defined, an exception it caught and logged, a stack trace - is a defect in "
         "the code that printed it, not a risk. The suite passed because no assertion "
-        "looks at that path. Report it in `defects`."
+        "looks at that path. Report it in `defects`.\n\n"
+        # One run shipped, through two test rounds, a security review and two
+        # milestone reviews, a product whose add form refused an empty title and
+        # whose inline edit saved one: clearing a title and pressing Enter left a
+        # task with no name. Every suite tested edit with a new non-empty value.
+        "A rule the product enforces on one path must hold on every path that sets "
+        "the same value. If creating something refuses an empty or whitespace-only "
+        "field, try editing that field to empty too; if one form trims or limits its "
+        "input, check the others that write the same data. A path that lets through "
+        "what another refuses is a defect."
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

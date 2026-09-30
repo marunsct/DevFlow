@@ -44,7 +44,9 @@ class TestHowThinkingIsSwitchedOff:
     def test_a_local_server_gets_the_template_flag(self) -> None:
         settings = answering_without_reasoning(_local_model())
 
-        assert settings == {"extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
+        assert settings == {
+            "extra_body": {"chat_template_kwargs": {"enable_thinking": False}, "reasoning_effort": "none"}
+        }
 
     def test_what_the_client_already_sends_is_kept(self) -> None:
         """`extra_body` is replaced as a whole, so it must carry everything else."""
@@ -57,6 +59,7 @@ class TestHowThinkingIsSwitchedOff:
         assert settings["extra_body"] == {
             "chat_template_kwargs": {"enable_thinking": False, "x": 1},
             "top_k": 20,
+            "reasoning_effort": "none",
         }
 
     def test_the_setting_reaches_the_request_payload(self) -> None:
@@ -186,3 +189,60 @@ class TestWhatTheModelIsTold:
         prose = AIMessage(content="All tests pass.", response_metadata={"finish_reason": "stop"})
 
         assert _nudge_text({"messages": [prose]}, None) == _STRUCTURED_RESPONSE_NUDGE
+
+
+class TestAServerThatReadsOnlyTheEffortField:
+    """Measured on an LM Studio server: the chat-template flag was ignored and
+    the switched-off call reasoned through 25,000 tokens again, failing the run;
+    `reasoning_effort: "none"` answered a probe in two tokens."""
+
+    def test_the_payload_carries_it(self) -> None:
+        model = _local_model()
+
+        payload = model._get_request_payload(
+            [HumanMessage(content="hi")], **answering_without_reasoning(model)
+        )
+
+        assert payload["extra_body"]["reasoning_effort"] == "none"
+
+    def test_a_server_that_refuses_it_is_asked_again_without_it(self) -> None:
+        from app.agents.settled_answer import build_settled_answer_middleware
+
+        sent: list[_Request] = []
+
+        class _Refused(Exception):
+            status_code = 400
+
+        def handler(request: _Request) -> Any:
+            sent.append(request)
+            if "reasoning_effort" in request.model_settings["extra_body"]:
+                raise _Refused("unknown field reasoning_effort")
+            return SimpleNamespace(result=[])
+
+        middleware = build_settled_answer_middleware(_Answer, "test_round_1", step_limit=40)
+        middleware.wrap_model_call(
+            _Request([HumanMessage(content="Run the tests."), _spiral()], _local_model()), handler
+        )
+
+        assert len(sent) == 2
+        retry = sent[1].model_settings["extra_body"]
+        assert "reasoning_effort" not in retry and retry["chat_template_kwargs"]["enable_thinking"] is False
+        assert sent[1].tools == []
+
+    def test_any_other_failure_is_not_retried(self) -> None:
+        import pytest
+
+        from app.agents.settled_answer import build_settled_answer_middleware
+
+        calls: list[_Request] = []
+
+        def handler(request: _Request) -> Any:
+            calls.append(request)
+            raise TimeoutError("server went away")
+
+        middleware = build_settled_answer_middleware(_Answer, "test_round_1", step_limit=40)
+        with pytest.raises(TimeoutError):
+            middleware.wrap_model_call(
+                _Request([HumanMessage(content="Run the tests."), _spiral()], _local_model()), handler
+            )
+        assert len(calls) == 1

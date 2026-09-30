@@ -1065,6 +1065,14 @@ _READ_TOOL_WITHHELD_NOTICE = (
 )
 
 
+def _the_server_refused_the_request(error: BaseException) -> bool:
+    """Whether `error` is the server rejecting the request as malformed (400/422)."""
+    status = getattr(error, "status_code", None)
+    if status is None:
+        status = getattr(getattr(error, "response", None), "status_code", None)
+    return status in (400, 422)
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -1082,6 +1090,10 @@ def build_settled_answer_middleware(
             needs on this call, and appending to history after an assistant
             message that has pending tool calls would break their pairing.
             """
+            # The same call without the reasoning-effort field, for a server
+            # that refuses the request because of it. Set only when thinking is
+            # switched off below.
+            refused_fallback = None
             try:
                 messages = getattr(request, "messages", None)
                 if not isinstance(messages, list) or not messages:
@@ -1194,7 +1206,10 @@ def build_settled_answer_middleware(
                     if spiralled:
                         # Without tools the model can still spend the reply
                         # reasoning, and did. See `answering_without_reasoning`.
-                        from app.agents.thinking import answering_without_reasoning
+                        from app.agents.thinking import (
+                            answering_without_reasoning,
+                            without_the_effort_field,
+                        )
 
                         quiet = answering_without_reasoning(getattr(request, "model", None))
                         if quiet:
@@ -1202,6 +1217,9 @@ def build_settled_answer_middleware(
                                 **(getattr(request, "model_settings", None) or {}),
                                 **quiet,
                             }
+                            plainer = without_the_effort_field(overrides["model_settings"])
+                            if plainer is not None:
+                                refused_fallback = {**overrides, "model_settings": plainer}
                             logger.warning(
                                 "Stage %s: thinking switched off for this one call "
                                 "so the reply can be the answer",
@@ -1236,13 +1254,25 @@ def build_settled_answer_middleware(
                         # Nothing was removed, so a notice would describe a tool
                         # the model can still see and call.
                         return handler(request)
-                request = request.override(
-                    messages=[*messages, {"role": "user", "content": correction}],
-                    **overrides,
-                )
+                corrected = [*messages, {"role": "user", "content": correction}]
+                if refused_fallback is not None:
+                    refused_fallback = request.override(messages=corrected, **refused_fallback)
+                request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
-            return handler(request)
+            if refused_fallback is None:
+                return handler(request)
+            try:
+                return handler(request)
+            except Exception as error:
+                if not _the_server_refused_the_request(error):
+                    raise
+                logger.warning(
+                    "Stage %s: the model server refused `reasoning_effort` (%s); "
+                    "asking again with the chat-template switch alone",
+                    stage_name or "?", type(error).__name__,
+                )
+                return handler(refused_fallback)
 
         @hook_config(can_jump_to=["end"])
         def after_model(self, state: Any, runtime: Any = None) -> dict[str, Any] | None:

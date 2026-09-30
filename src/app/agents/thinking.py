@@ -174,11 +174,20 @@ def answering_without_reasoning(model: object) -> dict:
     spiral, with nothing else tried.
 
     Only an OpenAI-compatible server reached through a base URL can be switched
-    per call - it takes the llama.cpp chat-template flag in `extra_body`, merged
-    over whatever the client already sends there. Anthropic ignores a per-call
-    `thinking` override, but it does not need one: its thinking budget is always
-    set below the reply ceiling, so a reply there always has room left to
-    answer. Every other client gets nothing, rather than a field it may reject.
+    per call. Servers differ in which switch they read, so both are sent in
+    `extra_body`, merged over whatever the client already sends there: the
+    llama.cpp chat-template flag, and the chat-completions field
+    `reasoning_effort`. Measured against an LM Studio server running a GLM
+    model: it ignored the template flag entirely - one run's stack selector
+    reasoned through the whole 25,000-token budget on the switched-off call
+    too - and answered a probe in two tokens with `reasoning_effort: "none"`.
+    A server that rejects the field is asked again without it
+    (`without_the_effort_field`), so no deployment is worse off for it.
+
+    Anthropic ignores a per-call `thinking` override, but it does not need one:
+    its thinking budget is always set below the reply ceiling, so a reply there
+    always has room left to answer. Every other client gets nothing, rather
+    than a field it may reject.
     """
     if not getattr(model, "openai_api_base", None):
         return {}
@@ -186,11 +195,31 @@ def answering_without_reasoning(model: object) -> dict:
     template = dict(extra.get("chat_template_kwargs") or {})
     template["enable_thinking"] = False
     extra["chat_template_kwargs"] = template
+    extra[_EFFORT_FIELD] = NO_REASONING_EFFORT
     return {"extra_body": extra}
 
 
+#: The chat-completions field that sets how hard a model reasons, and the value
+#: that asks for no reasoning at all.
+_EFFORT_FIELD = "reasoning_effort"
+NO_REASONING_EFFORT = "none"
+
+
+def without_the_effort_field(settings: dict) -> dict | None:
+    """`settings` without the `reasoning_effort` that `answering_without_reasoning`
+    added, or None when it carries none - for a server that refused the request.
+    """
+    extra = dict((settings or {}).get("extra_body") or {})
+    if _EFFORT_FIELD not in extra:
+        return None
+    extra.pop(_EFFORT_FIELD)
+    return {**settings, "extra_body": extra}
+
+
 __all__ = [
+    "NO_REASONING_EFFORT",
     "answering_without_reasoning",
+    "without_the_effort_field",
     "DEFAULT_EFFORT",
     "DEFAULT_MODE",
     "ThinkingMode",

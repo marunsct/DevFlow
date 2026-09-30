@@ -32,6 +32,7 @@ from psycopg2.pool import ThreadedConnectionPool
 
 from app.server.runner import RunRecord
 
+from app.server.process_local import owned_here
 from app.server.schema_lock import lock_schema
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,7 @@ class RunStore:
     """Durable store for ``RunRecord`` metadata."""
 
     _shared: Optional["RunStore"] = None
+    _shared_owner: Optional[int] = None
     _shared_lock = threading.Lock()
 
     def __init__(self, db_url: str | None = None) -> None:
@@ -139,17 +141,24 @@ class RunStore:
         up to 20 connections and never closing it, which exhausted Postgres after
         a few dozen tasks.
         """
+        # Per process, not per class: a store built in the Celery parent is
+        # inherited by every worker it forks later, and two processes on one
+        # connection is a dropped connection. See `app.server.process_local`.
         with cls._shared_lock:
-            if cls._shared is None:
+            if cls._shared is None or not owned_here(cls._shared_owner):
                 cls._shared = cls()
+                cls._shared_owner = os.getpid()
             return cls._shared
 
     @classmethod
     def reset_shared(cls) -> None:
         with cls._shared_lock:
-            if cls._shared is not None:
+            # An inherited store is dropped, never closed: closing it here
+            # closes the parent's connections.
+            if cls._shared is not None and owned_here(cls._shared_owner):
                 cls._shared.close()
             cls._shared = None
+            cls._shared_owner = None
 
     def _ensure_schema(self) -> None:
         """Create the runs table and apply the additive migrations.

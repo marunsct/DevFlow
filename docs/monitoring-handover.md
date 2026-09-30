@@ -57,7 +57,7 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |
-| clean runs toward the gate | **0 of 2** on brief_low (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset) |
+| clean runs toward the gate | **0 of 2** on brief_low (run-fb102e16 looked clean, but the product audit found a sprint-summary counting bug and a missed empty-title-on-edit defect; both fixed, count reset. The next run failed 9 minutes in on `server closed the connection unexpectedly`: a worker forked by the Celery parent shared the parent's Postgres pool; fixed, count still 0) |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |
@@ -178,6 +178,13 @@ working (the tool-approval check can fail transiently), schedule a retry about
   credentials. Any other failure is real - unless `src/` was edited while the
   suite ran (tests that read source with `inspect` then see shifted lines).
 - A tool call id run twice, or a stage that restarts, is always worth a trace.
+- A run that fails on `psycopg.OperationalError: ... server closed the
+  connection unexpectedly` while `db` logs nothing is two processes on one
+  socket, not a database fault. Check with a socket-to-pid map inside
+  `worker` (`/proc/net/tcp` port 5432 against `/proc/<pid>/fd`): a socket held
+  by both pid 1 and a pool child is the defect. Every shared pool and the
+  worker's runner are per process (`app.server.process_local`); a new one must
+  be too.
 
 ### 0.5.1 Parked: known, not fixed
 

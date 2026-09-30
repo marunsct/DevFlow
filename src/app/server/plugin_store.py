@@ -8,6 +8,7 @@ from typing import Any, Optional, Dict
 import psycopg2
 from psycopg2.pool import ThreadedConnectionPool
 
+from app.server.process_local import owned_here
 from app.server.schema_lock import lock_schema
 
 _CREATE_TABLE = """
@@ -26,6 +27,7 @@ class PluginStore:
     """Store for framework-specific plugin instructions."""
 
     _shared: Optional["PluginStore"] = None
+    _shared_owner: Optional[int] = None
     _shared_lock = threading.Lock()
 
     def __init__(self, db_url: str | None = None) -> None:
@@ -35,9 +37,13 @@ class PluginStore:
 
     @classmethod
     def shared(cls) -> "PluginStore":
+        # Per process, not per class: a store built in the Celery parent is
+        # inherited by every worker it forks later, and two processes on one
+        # connection is a dropped connection. See `app.server.process_local`.
         with cls._shared_lock:
-            if cls._shared is None:
+            if cls._shared is None or not owned_here(cls._shared_owner):
                 cls._shared = cls()
+                cls._shared_owner = os.getpid()
             return cls._shared
 
     def _ensure_schema(self) -> None:

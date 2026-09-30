@@ -35,6 +35,7 @@ import psycopg
 from psycopg_pool import ConnectionPool
 import sqlite3
 from app.config import load_settings
+from app.server.process_local import PerProcess
 
 from app.agents.architecture_reviewer import ArchitectureReviewFinding, ArchitectureReviewOutput
 from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
@@ -107,15 +108,14 @@ def build_serializer() -> JsonPlusSerializer:
     return JsonPlusSerializer(allowed_msgpack_modules=list(CHECKPOINTED_TYPES))
 
 
-# Create a global connection pool for the app lifecycle
-_pool = None
+# One connection pool per process. Per process, not per module: a pool built in
+# the Celery parent is inherited by every worker it forks later, and two
+# processes on one socket is a dropped connection. See `app.server.process_local`.
+_pool: PerProcess[ConnectionPool] = PerProcess()
 
 def get_connection_pool() -> ConnectionPool:
-    global _pool
-    if _pool is None:
-        db_url = os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
-        _pool = ConnectionPool(conninfo=db_url, max_size=20, kwargs={"autocommit": True})
-    return _pool
+    db_url = os.environ.get("DB_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
+    return _pool.get(lambda: ConnectionPool(conninfo=db_url, max_size=20, kwargs={"autocommit": True}))
 
 def build_checkpointer():
     """Build the checkpointer based on configuration with the allowlist applied."""

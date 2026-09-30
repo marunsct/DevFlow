@@ -71,6 +71,8 @@ celery_app.conf.update(
 _RETRYABLE = (ConnectionError, TimeoutError, OSError)
 
 _runner = None
+#: The pid that built `_runner`. See `_get_runner`.
+_runner_owner: int | None = None
 
 
 #: How long the recovery lock is held. Long enough that a second worker
@@ -235,7 +237,9 @@ def _init_worker_process(**_kwargs) -> None:
     from app.server.run_store import RunStore
     from app.server.runner import WorkflowRunner
 
+    global _runner_owner
     _runner = WorkflowRunner(event_bus=EventBus(), run_store=RunStore.shared())
+    _runner_owner = os.getpid()
     logger.info("Worker process initialised")
 
 
@@ -266,9 +270,14 @@ def _shutdown_worker_process(**_kwargs) -> None:
 
 
 def _get_runner():
-    """Return the process-wide runner, building it if a signal did not fire."""
+    """Return this process's runner, building it if a signal did not fire.
+
+    One built in another process is never returned. The orphan sweep runs in
+    the Celery parent and builds a runner there; a worker forked from it later
+    must not drive runs through the parent's connections.
+    """
     global _runner
-    if _runner is None:
+    if _runner is None or _runner_owner != os.getpid():
         _init_worker_process()
     return _runner
 

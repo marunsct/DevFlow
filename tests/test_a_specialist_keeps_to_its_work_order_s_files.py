@@ -67,3 +67,72 @@ def test_stages_outside_the_fan_out_are_not_held_to_it(workspace: Path, monkeypa
 
 def test_the_record_is_harness_bookkeeping() -> None:
     assert WORK_ORDER_FILES in HARNESS_FILES
+
+
+# --- taking the file away instead ---------------------------------------
+#
+# Measured on one run: the interface task, refused a write to the data task's
+# `taskModel.js`, deleted it with `delete_artifact`, and wrote it again.
+
+
+def test_another_work_order_s_file_cannot_be_deleted(workspace: Path, monkeypatch) -> None:
+    from app.tools.repository import delete_approved_artifact
+
+    (workspace / "shop" / "core.py").write_text("X = 1\n", encoding="utf-8")
+    _as(monkeypatch, "specialist_ui_ux_0")
+
+    with pytest.raises(RepositoryToolError, match="the plan gave it to specialist_backend_1") as refused:
+        delete_approved_artifact(workspace, "shop/core.py")
+
+    assert "Nothing was deleted." in str(refused.value)
+    assert (workspace / "shop" / "core.py").read_text(encoding="utf-8") == "X = 1\n"
+
+
+def test_another_work_order_s_file_cannot_be_moved_away(workspace: Path, monkeypatch) -> None:
+    from app.tools.repository import move_approved_artifact
+
+    (workspace / "shop" / "core.py").write_text("X = 1\n", encoding="utf-8")
+    _as(monkeypatch, "specialist_ui_ux_0")
+
+    with pytest.raises(RepositoryToolError, match="Nothing was moved."):
+        move_approved_artifact(workspace, "shop/core.py", "shop/old_core.py")
+
+    assert (workspace / "shop" / "core.py").is_file()
+    assert not (workspace / "shop" / "old_core.py").exists()
+
+
+def test_a_file_cannot_be_moved_onto_another_work_order_s_path(workspace: Path, monkeypatch) -> None:
+    from app.tools.repository import move_approved_artifact
+
+    (workspace / "shop" / "draft.py").write_text("X = 2\n", encoding="utf-8")
+    _as(monkeypatch, "specialist_ui_ux_0")
+
+    with pytest.raises(RepositoryToolError, match="specialist_backend_1"):
+        move_approved_artifact(workspace, "shop/draft.py", "shop/core.py")
+
+    assert not (workspace / "shop" / "core.py").exists()
+
+
+def test_the_owner_still_deletes_and_moves_its_own_file(workspace: Path, monkeypatch) -> None:
+    from app.tools.repository import delete_approved_artifact, move_approved_artifact
+
+    (workspace / "shop" / "core.py").write_text("X = 1\n", encoding="utf-8")
+    (workspace / "shop" / "scratch.py").write_text("print(1)\n", encoding="utf-8")
+    _as(monkeypatch, "specialist_backend_1")
+
+    move_approved_artifact(workspace, "shop/scratch.py", "shop/core_draft.py")
+    delete_approved_artifact(workspace, "shop/core.py")
+
+    assert not (workspace / "shop" / "core.py").exists()
+    assert (workspace / "shop" / "core_draft.py").is_file()
+
+
+def test_a_file_no_work_order_lists_is_still_anyone_s_to_delete(workspace: Path, monkeypatch) -> None:
+    from app.tools.repository import delete_approved_artifact
+
+    (workspace / "shop" / "probe.py").write_text("print(1)\n", encoding="utf-8")
+    _as(monkeypatch, "specialist_ui_ux_0")
+
+    delete_approved_artifact(workspace, "shop/probe.py")
+
+    assert not (workspace / "shop" / "probe.py").exists()

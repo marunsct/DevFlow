@@ -1503,6 +1503,25 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     )
 
 
+def _not_this_stage_s_to_take(root: Path, target: Path, *, done: str) -> str | None:
+    """Either refusal that holds a stage to its own files, for a delete or a move.
+
+    `write_artifact` and the targeted changes asked both questions and
+    `delete_artifact` and `move_artifact` asked neither, so a stage refused a
+    write could take the file away instead. Measured on one run: the interface
+    task, refused a write to the data task's `taskModel.js`, deleted it, and
+    wrote it again - refused again, with the data task's module now gone and
+    every import of it broken.
+    """
+    for refusal in (
+        _a_test_round_changing_the_product(root, target),
+        _another_work_order_s_file(root, target),
+    ):
+        if refusal is not None:
+            return refusal.replace("Nothing was written.", f"Nothing was {done}.")
+    return None
+
+
 def _guard_a_targeted_change(
     repo_root: str | Path, relative_path: str, replacement: str
 ) -> tuple[Path, Path]:
@@ -5143,6 +5162,9 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
             "Removing it only makes it missing until then, and every stage that "
             "reads it in between finds nothing."
         )
+    not_its_own = _not_this_stage_s_to_take(root, target, done="deleted")
+    if not_its_own is not None:
+        raise RepositoryToolError(not_its_own)
 
     planned = _the_plan_says_to_delete(root, shown)
     written_by = "" if planned else _another_stage_s_test(root, shown)
@@ -5268,6 +5290,12 @@ def move_approved_artifact(
         raise RepositoryToolError(
             f"'{from_shown}' is already where you are asking to put it."
         )
+    # Moving another work order's file away takes it from its owner as surely
+    # as deleting it; moving a file onto one of its paths writes it.
+    for path in (source, target):
+        not_its_own = _not_this_stage_s_to_take(root, path, done="moved")
+        if not_its_own is not None:
+            raise RepositoryToolError(not_its_own)
     # A move to a name no test runner collects is a delete by another route.
     # See `_another_stage_s_test`. Judged by the name's suffixes, not by
     # `looks_like_a_test`: the run that did it moved the suite to

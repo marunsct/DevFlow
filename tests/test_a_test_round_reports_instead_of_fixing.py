@@ -46,3 +46,16 @@ def test_every_other_stage_changes_product_code_as_before(project: Path, monkeyp
     _in_stage(monkeypatch, stage)
     edit_approved_artifact(project, "shop/cart.py", "TOTAL = 0", "TOTAL = 1")
     assert (project / "shop" / "cart.py").read_text(encoding="utf-8") == "TOTAL = 1\n"
+
+
+def test_a_test_round_may_not_delete_or_move_product_code(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refused the write, a stage can take the file away instead - one run's
+    specialist did exactly that with another task's module."""
+    from app.tools.repository import delete_approved_artifact, move_approved_artifact
+
+    _in_stage(monkeypatch, "test_round_0")
+    with pytest.raises(RepositoryToolError, match="Nothing was deleted."):
+        delete_approved_artifact(project, "shop/cart.py")
+    with pytest.raises(RepositoryToolError, match="Nothing was moved."):
+        move_approved_artifact(project, "shop/cart.py", "shop/cart_old.py")
+    assert (project / "shop" / "cart.py").read_text(encoding="utf-8") == "TOTAL = 0\n"

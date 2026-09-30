@@ -1497,16 +1497,28 @@ def _the_same_range_somewhere_else(
         return None
 
     wanted_start = _the_one_line_it_pins(expect_start).strip()
-    wanted_end = _the_one_line_it_pins(expect_end).strip()
     if not wanted_start:
         return None
 
     starts = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_start]
+    if len(starts) != 1:
+        return None
+    for wanted_end in _the_lines_expect_end_may_pin(expect_end):
+        found = _the_range_ending_at(lines, starts[0], wanted_end, start_line, end_line)
+        if found is not None:
+            return found
+    return None
+
+
+def _the_range_ending_at(
+    lines: list[str], new_start: int, wanted_end: str, start_line: int, end_line: int,
+) -> tuple[int, int] | None:
+    """`_the_same_range_somewhere_else` for one reading of `expect_end`."""
     ends = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_end]
-    if len(starts) != 1 or len(ends) != 1:
+    if len(ends) != 1:
         return None
 
-    new_start, new_end = starts[0], ends[0]
+    new_end = ends[0]
     if new_end < new_start:
         return None
     if (new_end - new_start) != (end_line - start_line):
@@ -1515,6 +1527,67 @@ def _the_same_range_somewhere_else(
         # was written against a range that no longer exists.
         return None
     return new_start, new_end
+
+
+def _the_lines_expect_end_may_pin(expected: str) -> list[str]:
+    """The lines a multi-line `expect_end` can mean, stripped, first reading first.
+
+    `expect_end` pins one line, and callers that send several mean one of two
+    things. Some send the pinned line and what follows it (the first line is
+    the pin - see `_the_one_line_it_pins`). Others send the range's last lines
+    and mean the final one: one run's `specialist_backend_2` sent
+    `expect_end="  init();\n}"` for a range ending at the file's closing
+    brace, and reading only the first line looked for `init();`, the line
+    before it. Both are tried; neither is ever applied unless it matches the
+    file exactly where the rest of the call says.
+    """
+    kept = [line.strip() for line in expected.splitlines() if line.strip()]
+    if not kept:
+        return [expected.strip()]
+    return list(dict.fromkeys([kept[0], kept[-1]]))
+
+
+#: How far a start line may be from where the call put it and still be taken as
+#: miscounted rather than a different place. Reads come back without line
+#: numbers, so a model counts them; the misses measured are one and two lines,
+#: most often a blank line at the top of the window taken for none.
+_MISCOUNT_TOLERANCE = 3
+
+
+def _the_start_miscounted(
+    lines: list[str],
+    expect_start: str,
+    expect_end: str,
+    start_line: int,
+    end_line: int,
+) -> int | None:
+    """The real first line of a range whose END is right and whose start is not.
+
+    `_the_same_range_somewhere_else` moves a range only when both ends moved
+    together, which is the file changing. A miscount moves one end. One run's
+    `specialist_backend_2` read lines 201-254 of `app.js`, whose line 201 is
+    blank, and sent `start_line=201` for the comment on line 202 with
+    `end_line=254` and `expect_end` naming line 254 correctly. It was refused,
+    re-read the file, and sent the identical call again.
+
+    Applied only when every part of it is pinned: the end is exactly where the
+    call says, `expect_start` is on exactly one line of the file, and that line
+    is within `_MISCOUNT_TOLERANCE` of `start_line` and before the end.
+    """
+    if not expect_end.strip() or not 1 <= end_line <= len(lines):
+        return None
+    wanted_start = _the_one_line_it_pins(expect_start).strip()
+    if not wanted_start:
+        return None
+    if lines[end_line - 1].strip() not in _the_lines_expect_end_may_pin(expect_end):
+        return None
+    starts = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_start]
+    if len(starts) != 1:
+        return None
+    found = starts[0]
+    if found > end_line or abs(found - start_line) > _MISCOUNT_TOLERANCE:
+        return None
+    return found
 
 
 def _what_went_unchecked(expect_start: str, replaced: str, content: str) -> str:
@@ -1776,7 +1849,19 @@ def replace_approved_lines(
                 moved = _the_same_range_somewhere_else(
                     lines, expect_start, expect_end, start_line, end_line
                 )
-                if moved is None:
+                real_start = (
+                    _the_start_miscounted(lines, expect_start, expect_end, start_line, end_line)
+                    if moved is None else None
+                )
+                if real_start is not None:
+                    shifted_note += (
+                        f" Line {start_line} was miscounted: the line you pinned "
+                        f"with `expect_start` is line {real_start}, and line "
+                        f"{end_line} is the last line you pinned, as you said. "
+                        f"Lines {real_start}-{end_line} were replaced."
+                    )
+                    moved = (real_start, end_line)
+                elif moved is None:
                     # The range is gone and what was to replace it is there:
                     # the edit has been made, usually by this stage. One run's
                     # `specialist_backend_0` changed an import line with
@@ -1799,7 +1884,7 @@ def replace_approved_lines(
                     )
                 new_start, new_end = moved
                 shift = new_start - start_line
-                shifted_note += (
+                shifted_note += "" if real_start is not None else (
                     f" The numbering had moved: lines {start_line}-{end_line} are "
                     f"now {new_start}-{new_end}, "
                     f"{abs(shift)} line{'s' if abs(shift) != 1 else ''} "

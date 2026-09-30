@@ -169,59 +169,64 @@ def with_the_measures_the_brief_states(
     return output.model_copy(update={"success_measures": [*output.success_measures, *missing]})
 
 
-def without_deferring_what_the_measures_require(output: ProductManagerOutput) -> ProductManagerOutput:
-    """`output`, with no deferred item or open question that its measures settle.
+def with_what_the_brief_requires_marked_in_deferred_scope(
+    output: ProductManagerOutput, document_text: str
+) -> ProductManagerOutput:
+    """`output`, with each deferral that touches a brief-required capability marked.
 
-    A deferred item that names a capability a success measure requires - every
-    item of an "and" list, or of a list with no conjunction - contradicts the
-    measure, and the stages after the intake followed the deferral: the
-    specification's scope read "excludes ... task editing beyond status" for a
-    brief whose acceptance criteria say "Users can add, edit, delete tasks".
+    A deferred item naming a capability the brief's acceptance criteria require
+    reads as excluding it, and the stages after the intake followed it: one
+    run's specification scope read "excludes ... task editing beyond status"
+    for a brief whose acceptance criteria say "Users can add, edit, delete
+    tasks".
 
-    The deferred item is removed, and the evidence list says why, so the
-    removal is visible in `docs/product_intake.md` and to every stage that
-    reads the intake. An open question naming a capability whose deferral was
-    removed is kept - it may ask something the measure does not answer - with
-    the measure quoted after it. Nothing is added to the product's scope; a
-    deferred item that names no required capability is left alone.
+    The item is kept and marked with the requirement, because an item can name
+    a required capability and still defer something real - "Add attachments"
+    under a brief that requires "add". An earlier version removed such items,
+    matched against the model's own measures and on word prefixes: a measure
+    "ease of use and error-free operations" made "use" required, "use" matched
+    "User authentication ...", and a deferral of authentication, sync and
+    notifications was deleted as "not deferred".
+
+    So only the brief's own acceptance criteria are read, only the items of
+    their "and" lists and conjunction-free lists, and a word is matched whole,
+    inflections allowed ("edit" names "editing", never "credit"; "use" never
+    names "User"). An open question on a marked capability gets the same
+    note. Nothing is removed and nothing is added to scope.
     """
-    from app.agents.success_measures import enumerations, named_in
+    from app.agents.success_measures import enumerations, names_the_word
 
-    required: list[tuple[str, str]] = []
-    for measure in output.success_measures:
-        for every_item, words in enumerations(str(measure)):
-            if every_item:
-                required += [(word, str(measure)) for word in words]
+    required = [
+        (word, line)
+        for line in acceptance_lines(document_text)
+        for every_item, words in enumerations(line)
+        if every_item
+        for word in words
+    ]
     if not required:
         return output
 
-    def settled_by(text: str) -> tuple[str, str] | None:
-        return next(((w, m) for w, m in required if named_in(w, text)), None)
+    def touches(text: str, among: list[tuple[str, str]]) -> tuple[str, str] | None:
+        return next(((w, line) for w, line in among if names_the_word(w, text)), None)
 
-    kept: list[str] = []
-    evidence: list[str] = []
-    undeferred: list[tuple[str, str]] = []
+    deferred: list[str] = []
+    marked: list[tuple[str, str]] = []
     for item in output.deferred_scope:
-        hit = settled_by(str(item))
+        hit = touches(str(item), required)
         if hit is None:
-            kept.append(item)
+            deferred.append(item)
             continue
-        word, measure = hit
-        undeferred.append(hit)
-        evidence.append(
-            f'Evidence: "{item}" is not deferred - the success measure "{measure}" requires {word}'
+        marked.append(hit)
+        deferred.append(
+            f'{item} (the brief requires {hit[0]}: "{hit[1]}" - only what goes beyond that is deferred)'
         )
-    if not evidence:
+    if not marked:
         return output
-    questions: list[str] = []
+    questions = []
     for question in output.open_questions:
-        hit = next(((w, m) for w, m in undeferred if named_in(w, str(question))), None)
-        questions.append(question if hit is None else f'{question} (the success measure "{hit[1]}" bears on this)')
-    return output.model_copy(update={
-        "deferred_scope": kept,
-        "evidence_vs_assumptions": [*output.evidence_vs_assumptions, *evidence],
-        "open_questions": questions,
-    })
+        hit = touches(str(question), marked)
+        questions.append(question if hit is None else f'{question} (the brief says: "{hit[1]}")')
+    return output.model_copy(update={"deferred_scope": deferred, "open_questions": questions})
 
 
 def _truncate(text: str, max_chars: int | None = None) -> str:
@@ -385,5 +390,5 @@ __all__ = [
     "reject_write_decision",
     "resume_with_decision",
     "with_the_measures_the_brief_states",
-    "without_deferring_what_the_measures_require",
+    "with_what_the_brief_requires_marked_in_deferred_scope",
 ]

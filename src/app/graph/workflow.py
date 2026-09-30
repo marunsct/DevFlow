@@ -97,7 +97,7 @@ from app.agents.product_manager import (
     with_the_constraints_the_brief_states,
     with_the_measures_the_brief_states,
     with_the_workflows_its_measures_require,
-    without_deferring_what_the_measures_require,
+    with_what_the_brief_requires_marked_in_deferred_scope,
 )
 from app.agents.role_agent import create_role_agent
 from app.agents.scrum_master import (
@@ -3257,9 +3257,11 @@ def build_workflow_graph(
         )
         # And no contradiction between its own lists: a capability a success
         # measure names is a workflow, whatever the workflow list left out,
-        # and is not deferred scope.
+        # and a deferral that touches what the brief requires says so.
         update["product_intake"] = with_the_workflows_its_measures_require(update["product_intake"])
-        update["product_intake"] = without_deferring_what_the_measures_require(update["product_intake"])
+        update["product_intake"] = with_what_the_brief_requires_marked_in_deferred_scope(
+            update["product_intake"], getattr(state.get("document"), "text", "") or ""
+        )
 
         _record_document(
             state,

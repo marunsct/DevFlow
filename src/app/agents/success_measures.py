@@ -77,6 +77,20 @@ def named_in(word: str, text: str) -> bool:
     return False
 
 
+def names_the_word(word: str, text: str) -> bool:
+    """Whether `text` names `word` as a whole word, inflections allowed.
+
+    Stricter than `named_in`, which accepts any word that starts with the stem
+    ("use" in "User"). For a check whose result is written into a document:
+    "edit" names "editing" and "edited", "delete" names "deletion", "create"
+    names "creation"; "use" does not name "User", "add" does not name
+    "address".
+    """
+    stem = _stem(word)
+    pattern = rf"(?<![A-Za-z]){re.escape(stem)}(?:e|es|ed|d|s|ing|ion|ions|ation|ations)?(?![A-Za-z])"
+    return re.search(pattern, text, re.I) is not None
+
+
 def _item_named_in(item: str, text: str) -> bool:
     """`named_in`, letting a hyphenated item be named by its leading word.
 
@@ -130,4 +144,4 @@ def capabilities_never_named(text: str, measures: list[str]) -> dict[int, list[s
     return missing
 
 
-__all__ = ["capabilities_never_named", "enumerations", "named_in"]
+__all__ = ["capabilities_never_named", "enumerations", "named_in", "names_the_word"]

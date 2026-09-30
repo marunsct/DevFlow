@@ -9,8 +9,8 @@ word "edit" again - and the brief's line has no "and", so it was not read as a
 list at all.
 
 So the brief's acceptance criteria join the success measures verbatim, a list
-without a conjunction is a list, and a deferred item naming a capability a
-measure requires is removed with the reason written into the intake. Nothing
+without a conjunction is a list, and a deferred item naming a capability the
+brief's criteria require is marked with that requirement. Nothing
 here names a language, a framework or a kind of product.
 """
 from __future__ import annotations
@@ -19,9 +19,9 @@ from app.agents.brief_constraints import acceptance_lines
 from app.agents.product_manager import (
     ProductManagerOutput,
     with_the_measures_the_brief_states,
-    without_deferring_what_the_measures_require,
+    with_what_the_brief_requires_marked_in_deferred_scope,
 )
-from app.agents.success_measures import capabilities_never_named, enumerations
+from app.agents.success_measures import capabilities_never_named, enumerations, names_the_word
 
 BRIEF = """# Product Brief: Something
 
@@ -71,34 +71,52 @@ class TestTheBriefsCriteria:
 
 
 class TestDeferredScope:
-    def _intake(self, deferred: list[str], questions: list[str] = ()) -> ProductManagerOutput:
+    def _intake(self, deferred: list[str], questions: list[str] = (), measures: list[str] = ()) -> ProductManagerOutput:
         return ProductManagerOutput(
             product_name="p",
-            success_measures=["Operators can create, rename, archive projects"],
+            success_measures=list(measures),
             deferred_scope=deferred,
             open_questions=list(questions),
         )
 
-    def test_an_item_naming_a_required_capability_is_not_deferred(self) -> None:
-        out = without_deferring_what_the_measures_require(
+    def test_a_deferral_touching_a_required_capability_is_marked_not_removed(self) -> None:
+        out = with_what_the_brief_requires_marked_in_deferred_scope(
             self._intake(["Renaming projects later", "Scheduled exports"],
-                         ["Should renaming keep the old name?", "How often are exports run?"])
+                         ["Should renaming keep the old name?", "How often are exports run?"]),
+            BRIEF,
         )
-        assert out.deferred_scope == ["Scheduled exports"]
-        assert out.evidence_vs_assumptions == [
-            'Evidence: "Renaming projects later" is not deferred - the success measure '
-            '"Operators can create, rename, archive projects" requires rename'
+        assert out.deferred_scope == [
+            'Renaming projects later (the brief requires rename: "Operators can create, rename, archive '
+            'projects" - only what goes beyond that is deferred)',
+            "Scheduled exports",
         ]
-        assert out.open_questions[0].endswith('(the success measure "Operators can create, rename, archive projects" bears on this)')
-        assert out.open_questions[1] == "How often are exports run?"
+        assert out.open_questions == [
+            'Should renaming keep the old name? (the brief says: "Operators can create, rename, archive projects")',
+            "How often are exports run?",
+        ]
+
+    def test_only_the_brief_s_criteria_count_not_the_model_s_measures(self) -> None:
+        """One run's own measure "ease of use and error-free operations" made
+        "use" required, and "User authentication ..." was deleted from scope."""
+        intake = self._intake(
+            ["User authentication or multi-user sync, notifications"],
+            measures=["User satisfaction measured by ease of use and error-free operations."],
+        )
+        assert with_what_the_brief_requires_marked_in_deferred_scope(intake, BRIEF) is intake
+
+    def test_a_word_is_matched_whole(self) -> None:
+        intake = self._intake(["Created-by audit trail", "Archived-item recovery"])
+        out = with_what_the_brief_requires_marked_in_deferred_scope(intake, BRIEF)
+        assert out.deferred_scope[0] == "Created-by audit trail (the brief requires create: \"Operators can create, rename, archive projects\" - only what goes beyond that is deferred)"
+        assert not names_the_word("use", "User authentication")
+        assert not names_the_word("add", "Address book")
+        assert names_the_word("edit", "Task editing (beyond status)")
+        assert names_the_word("delete", "No deletion of archived items")
 
     def test_an_intake_with_no_conflict_is_returned_unchanged(self) -> None:
         intake = self._intake(["Scheduled exports"], ["Should creation be audited?"])
-        assert without_deferring_what_the_measures_require(intake) is intake
+        assert with_what_the_brief_requires_marked_in_deferred_scope(intake, BRIEF) is intake
 
-    def test_an_or_list_requires_no_single_item(self) -> None:
-        intake = ProductManagerOutput(
-            product_name="p", success_measures=["Data is kept in a file or a database"],
-            deferred_scope=["A hosted database"],
-        )
-        assert without_deferring_what_the_measures_require(intake) is intake
+    def test_a_brief_without_criteria_changes_nothing(self) -> None:
+        intake = self._intake(["Renaming projects later"])
+        assert with_what_the_brief_requires_marked_in_deferred_scope(intake, "# Brief\n\nNothing.") is intake

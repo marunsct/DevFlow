@@ -438,14 +438,30 @@ def build_milestone_review_request(
     previous_review: Any = None,
     revisions_used: int = 0,
     revisions_allowed: int = 0,
+    sprint_scope: str = "",
 ) -> dict[str, list[dict[str, str]]]:
-    """Build the Deep Agent input from the milestone artifacts awaiting review."""
+    """Build the Deep Agent input from the milestone artifacts awaiting review.
+
+    `sprint_scope` is this sprint's goal, scope, what the plan deferred and the
+    later sprints' goals. Without it the reviewer had the brief and the
+    milestone goal only, and blocked one run's first sprint for not editing or
+    deleting - the work its own plan gave to sprint 2.
+    """
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
+    scope_text = (
+        f"--- This sprint's scope, from the sprint plan ---\n{sprint_scope}\n\n"
+        "Judge the work against this sprint's scope. Work the plan gives to a later "
+        "sprint is not missing yet: do not raise it as blocking or major - at most "
+        "a suggestion. The last sprint's review checks the whole brief.\n\n"
+        if sprint_scope.strip()
+        else ""
+    )
     brief = (
         WORKSPACE_ROOT_NOTE
         + _against_the_brief(document_text, repository_root)
         + what_the_specialists_reported(specialist_outputs)
         + what_you_said_last_time(previous_review, revisions_used, revisions_allowed)
+        + scope_text
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"

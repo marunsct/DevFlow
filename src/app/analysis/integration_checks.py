@@ -4454,6 +4454,62 @@ def _where_the_run_deferred_it(root: Path, action: str, words: tuple[str, ...]) 
 _A_REQUIRED_ACTION_FINDING = re.compile(r"a user can `([a-z]+)`|No test names `([a-z]+)`")
 
 
+def _own_spellings(action: str) -> tuple[str, ...]:
+    """The action's own word, with the `-ing` form of a word ending in a silent e."""
+    return (action, action[:-1] + "ing") if action.endswith("e") else (action,)
+
+
+def _group_spellings(action: str) -> tuple[str, ...]:
+    """Every accepted spelling of the action, silent-e `-ing` forms included."""
+    words = list(_SAME_ACTION.get(action, (action,)))
+    words += [word[:-1] + "ing" for word in words if word.endswith("e")]
+    return tuple(dict.fromkeys(words))
+
+
+def _the_claim(finding: str) -> str:
+    """A review finding's first sentence, without the text it quotes.
+
+    The claim is what the finding says is wrong; the rest is remediation. A
+    quotation is what it cites - one review's finding about editing quoted the
+    success measure "Users can add, edit, delete tasks", which names three
+    actions the claim was not about.
+    """
+    first = re.split(r"(?<=[.!?])\s", str(finding or "").strip(), maxsplit=1)[0]
+    return re.sub(r'"[^"]*"|\u201c[^\u201d]*\u201d', " ", first)
+
+
+def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> list[str]:
+    """The actions a review finding is about, when they are later sprints' work; else [].
+
+    A milestone review is given the brief, and reads it as the milestone's
+    requirement. One run's sprint 1 - "basic UI skeleton, state management,
+    persistence, and addTask", with "Editing, deleting or toggling tasks"
+    listed as out of scope and sprint 2 building exactly those - was blocked
+    twice: "The application does not support editing of existing tasks" and
+    "lacks the ability to delete tasks". That review would have had sprint 1
+    build sprint 2.
+
+    Returned only when every action the claim names by its own word is built
+    by a later sprint and named nowhere in this sprint's goal, scope or
+    acceptance criteria - a finding about work this sprint does stays exactly
+    as it was. Nothing here names a product; the actions are the table of user
+    actions every other check reads.
+    """
+    if not (later_sprints or "").strip():
+        return []
+    claim = _the_claim(finding)
+    claimed = [action for action in _SAME_ACTION if _names_the_action(claim, _own_spellings(action), inflected=True)]
+    if not claimed:
+        return []
+    for action in claimed:
+        spellings = _group_spellings(action)
+        if not _names_the_action(later_sprints, spellings, inflected=True):
+            return []
+        if _names_the_action(this_sprint or "", spellings, inflected=True):
+            return []
+    return claimed
+
+
 def planned_for_a_later_sprint(problem: str, later_sprints: str) -> bool:
     """Whether `problem` is a missing action a later sprint of the plan builds.
 

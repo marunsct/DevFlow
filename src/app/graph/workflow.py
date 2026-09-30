@@ -2919,6 +2919,93 @@ def _what_later_sprints_build(state: Any) -> str:
         return ""
 
 
+def _what_this_sprint_builds(state: Any) -> str:
+    """The goal, in-scope work and acceptance criteria of the current sprint, or ""."""
+    try:
+        sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+        index = int(state.get("current_sprint_index", 0) or 0)
+        if index >= len(sprints):
+            return ""
+        sprint = sprints[index]
+        parts = [str(getattr(sprint, "goal", "") or "")]
+        parts.extend(str(item) for item in getattr(sprint, "in_scope", None) or ())
+        parts.extend(str(item) for item in getattr(sprint, "acceptance_criteria", None) or ())
+        return "\n".join(parts)
+    except Exception:  # noqa: BLE001 - "" leaves every finding in place
+        return ""
+
+
+def _this_sprint_s_scope_for_review(state: Any) -> str:
+    """This sprint's scope as the milestone reviewer reads it, or "" without a plan."""
+    try:
+        sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+        index = int(state.get("current_sprint_index", 0) or 0)
+        if index >= len(sprints):
+            return ""
+        sprint = sprints[index]
+        lines = [f"Sprint {index + 1} of {len(sprints)}: {getattr(sprint, 'goal', '')}"]
+        in_scope = [str(item) for item in getattr(sprint, "in_scope", None) or ()]
+        deferred = [str(item) for item in getattr(sprint, "out_of_scope", None) or ()]
+        if in_scope:
+            lines += ["In scope:", *(f"- {item}" for item in in_scope)]
+        if deferred:
+            lines += ["Deferred by the plan, not part of this sprint:", *(f"- {item}" for item in deferred)]
+        later = [
+            f"- Sprint {number}: {getattr(later_sprint, 'goal', '')}"
+            for number, later_sprint in enumerate(sprints[index + 1:], index + 2)
+        ]
+        if later:
+            lines += ["Later sprints:", *later]
+        return "\n".join(lines)
+    except Exception:  # noqa: BLE001 - a review without the scope is the old review
+        return ""
+
+
+def _findings_a_later_sprint_builds(review: Any, state: Any) -> Any:
+    """`review` with each gating finding about later sprints' work made minor.
+
+    Kept, not dropped: the finding stays in the review, the document and the
+    Sprint Record, where a non-gating finding of an accepted sprint is carried
+    to the next sprint's lead. It only stops being a reason to send this sprint
+    back to build what the plan put in a later one. See
+    `app.analysis.integration_checks.later_sprint_work_in`; the last sprint's
+    whole-brief check (`_a_brief_requirement_the_run_never_built`) still
+    catches work no sprint builds.
+    """
+    try:
+        from app.analysis.integration_checks import later_sprint_work_in
+
+        later = _what_later_sprints_build(state)
+        if not later:
+            return review
+        now = _what_this_sprint_builds(state)
+        findings = []
+        moved = 0
+        for finding in getattr(review, "findings", None) or []:
+            actions = (
+                later_sprint_work_in(getattr(finding, "description", ""), now, later)
+                if _severity_gates(getattr(finding, "severity", ""))
+                else []
+            )
+            if actions:
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": f"Planned for a later sprint ({', '.join(actions)}): {finding.description}",
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning(
+            "Milestone review raised %d gating finding(s) about work a later sprint "
+            "builds; recorded as minor so this sprint is not sent back to build it",
+            moved,
+        )
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
 def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     """What the brief asked for that the product still does not do, or "".
 
@@ -4604,6 +4691,7 @@ def build_workflow_graph(
             ),
             revisions_used=state.get("milestone_revision_count", 0),
             revisions_allowed=MAX_MILESTONE_REVISIONS,
+            sprint_scope=_this_sprint_s_scope_for_review(state),
         )
         update = _run_gated_agent(
             state,
@@ -4618,7 +4706,7 @@ def build_workflow_graph(
             return update
             
         review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
-            update.pop("__milestone_review__"),
+            _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
             state["repository"].root_path,
             "accepted",
             "milestone_review",

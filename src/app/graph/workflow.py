@@ -764,8 +764,10 @@ def _that_do_not_share_a_file(
     superstep and removes the contention, and the deferred task is dispatched on
     the next pass, against a file that has stopped moving.
 
-    Parallelism is kept where it is real: tasks naming different files, or no
-    files at all, all go at once. The first pending task always goes, so a
+    Parallelism is kept where it is real: tasks naming different files all go
+    at once, and so do tasks naming no file at all - but not with each other,
+    because a task with no named file may change any of them. The first
+    pending task always goes, so a
     milestone whose every task names one file still makes progress - one at a
     time, which is what it asked for.
 
@@ -778,9 +780,22 @@ def _that_do_not_share_a_file(
     except Exception:  # noqa: BLE001 - never hold up a dispatch over a hint
         return pending
 
-    def named_by(task: Any) -> set[str]:
+    def named_by(task: Any) -> set[str] | None:
+        """The files a task names, by basename; None when it could not be read.
+
+        None is not "no files": a task that could not be read is a broken hint,
+        and a hint must never hold a dispatch up, so it neither waits nor makes
+        anything wait.
+        """
+        # The work order's own `files` first - the structured list the lead is
+        # asked for - and whatever its prose names besides.
+        declared = {
+            str(path).strip().rstrip("/").rsplit("/", 1)[-1].lower()
+            for path in (getattr(task, "files", None) or ())
+            if str(path).strip()
+        }
         try:
-            return {
+            return declared | {
                 path.rsplit("/", 1)[-1].lower()
                 for path in paths_a_plan_named(
                     [
@@ -790,23 +805,44 @@ def _that_do_not_share_a_file(
                 )
             }
         except Exception:  # noqa: BLE001 - a task whose files cannot be read runs
-            return set()
+            return declared or None
 
     going: list[tuple[int, Any]] = list(already_going)
     claimed: set[str] = set()
+    # Whether a task that names no file is going. Such a task may change any
+    # file - one run's security task, with no `files` in its work order, wrote
+    # `index.html` three times over the interface task that owned it, in the
+    # same superstep - so it does not share a superstep with a task that has
+    # claimed files, in either order. Tasks that name no file still go
+    # together: nothing is known to collide, and a review that writes nothing
+    # is the usual one.
+    unknown_going = False
     for _, task in going:
-        claimed |= named_by(task)
+        named = named_by(task)
+        if named is None:
+            continue
+        claimed |= named
+        unknown_going = unknown_going or not named
     committed = {index for index, _ in going}
     for index, task in pending:
         if index in committed:
             continue
         named = named_by(task)
-        # Compared by basename: one task writes `app/app.js` and another
-        # `app.js`, and the plan's prose spells the same file both ways.
-        if going and named & claimed:
+        if named is None:
+            going.append((index, task))
             continue
+        if going:
+            if not named and claimed:
+                continue
+            if named and unknown_going:
+                continue
+            # Compared by basename: one task writes `app/app.js` and another
+            # `app.js`, and the plan's prose spells the same file both ways.
+            if named & claimed:
+                continue
         going.append((index, task))
         claimed |= named
+        unknown_going = unknown_going or not named
     return going or pending
 
 

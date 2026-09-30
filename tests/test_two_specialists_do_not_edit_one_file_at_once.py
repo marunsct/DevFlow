@@ -231,3 +231,40 @@ class TestAResumeDispatchesThePausedWorker:
         ))
 
         assert sorted(s.arg["__worker_index"] for s in sent) == [0, 1]
+
+
+@dataclass
+class Order(Task):
+    files: list[str] = field(default_factory=list)
+
+
+class TestAWorkOrderWithNoFiles:
+    """One run's security task, with no `files` in its work order, wrote
+    `index.html` three times over the interface task that owned it."""
+
+    def test_it_waits_for_the_tasks_that_claim_files(self) -> None:
+        pending = _pending(
+            Order("ui_ux", "Create the page.", files=["shop/index.html", "shop/app.js"]),
+            Order("documentation", "Write the readme.", files=["shop/README.md"]),
+            Order("security_reliability", "Basic security checks."),
+            Order("testing", "Write automated tests."),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending)) == ["ui_ux", "documentation"]
+        assert _roles(_that_do_not_share_a_file(pending[2:])) == ["security_reliability", "testing"]
+
+    def test_a_task_claiming_files_waits_for_one_that_names_none(self) -> None:
+        pending = _pending(
+            Order("security_reliability", "Basic security checks."),
+            Order("ui_ux", "Create the page.", files=["shop/index.html"]),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending)) == ["security_reliability"]
+
+    def test_the_structured_files_are_read(self) -> None:
+        pending = _pending(
+            Order("ui_ux", "Create the page.", files=["shop/app.js"]),
+            Order("backend", "Add the storage layer.", files=["shop/app.js"]),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending)) == ["ui_ux"]

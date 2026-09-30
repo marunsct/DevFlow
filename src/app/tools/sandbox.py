@@ -2173,10 +2173,19 @@ def _a_relative_path_missing_from_where_it_ran(
 def _timeout_advice(
     repo_root: str, working_directory: str | None, command: Sequence[str] = ()
 ) -> str:
-    """Which of the advice above this command and workspace have earned."""
+    """Which of the advice above this command and workspace have earned.
+
+    The browser advice is about a test run - "the whole suite run at once ...
+    or a `webServer` that never came up" - so it goes only to a command that
+    runs tests. One run's testing specialist started its own `node server.js`,
+    which never exits, and was told "the likely causes are different" from the
+    server its command was.
+    """
     if command and _fetches_dependencies(command):
         return _INSTALL_TIMEOUT_ADVICE
-    if _a_browser_runner_is_installed(repo_root, working_directory):
+    if (not command or _runs_tests(command)) and _a_browser_runner_is_installed(
+        repo_root, working_directory
+    ):
         return _TIMEOUT_ADVICE_WITH_A_BROWSER
     return _TIMEOUT_ADVICE
 

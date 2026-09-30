@@ -47,6 +47,7 @@ import os
 import logging
 import uuid
 import operator
+import time
 from datetime import datetime, timezone
 from typing import Any, Mapping, TypedDict, Annotated
 
@@ -613,6 +614,42 @@ def _queued_pauses(state: Any) -> dict[str, dict[str, Any]]:
         for stage, pause in (state.get("specialist_pauses") or {}).items()
         if pause
     }
+
+
+#: When a parallel pause joined the queue, kept on its entry so the queue can be
+#: drained oldest first. Stripped before a pause is surfaced into state.
+_QUEUED_AT = "__queued_at"
+
+
+def _as_a_queued_pause(state: Any, stage_name: str, update: dict[str, Any]) -> dict[str, Any]:
+    """`update`, the pause a worker returns, stamped with when it joined the queue.
+
+    A pause still queued from an earlier superstep keeps its original time: the
+    dispatcher re-sends every paused worker, each hands the same pause straight
+    back, and a fresh stamp on every pass would send it to the back each time.
+    A pause for a new gate - the entry was surfaced and cleared - joins the back.
+    """
+    earlier = (state.get("specialist_pauses") or {}).get(stage_name) or {}
+    queued_at = earlier.get(_QUEUED_AT) if isinstance(earlier, dict) else None
+    return {**dict(update), _QUEUED_AT: queued_at or time.time()}
+
+
+def _the_pause_to_surface(pauses: dict[str, dict[str, Any]]) -> str:
+    """The queued pause that has waited longest; stage name breaks a tie.
+
+    It was `sorted(pauses)[0]` - the stage name - under a docstring that said
+    "oldest task first". On one run a testing task and three interface tasks
+    paused in the same superstep. `specialist_testing_4` sorts before every
+    `specialist_ui_ux_*`, so it was surfaced, approved, ran one gated call,
+    paused again and was surfaced again - at least eleven times - while the
+    three interface tasks, queued since the first minute of the fan-out, never
+    got their turn. The testing task, finding no page to test, wrote the page,
+    the script and a server itself.
+    """
+    return min(
+        pauses,
+        key=lambda stage: ((pauses[stage] or {}).get(_QUEUED_AT) or float("inf"), stage),
+    )
 
 
 def _the_stage_that_paused(state: Any) -> str | None:
@@ -4032,7 +4069,7 @@ def build_workflow_graph(
             # is `InvalidUpdateError: Can receive only one value per step` - the
             # fan-out dying instead of pausing. `specialist_gather` reads these
             # and surfaces them one at a time.
-            return {"specialist_pauses": {stage_name: dict(update)}}
+            return {"specialist_pauses": {stage_name: _as_a_queued_pause(state, stage_name, update)}}
 
         # One key of a merged dictionary, so every worker's result survives the
         # superstep. Returning `stage` here instead is what made the fan-out
@@ -4049,14 +4086,14 @@ def build_workflow_graph(
         what makes it safe to set `stage` at all.
 
         A worker that paused left its pause here instead of on `stage`. They are
-        surfaced one at a time, oldest task first: the run pauses, a human
+        surfaced one at a time, the longest-waiting first (`_the_pause_to_surface`): the run pauses, a human
         answers, the dispatcher re-derives the fan-out, and the tasks that
         already have outputs are not re-sent. Several pauses therefore drain one
         after another rather than racing each other for one `stage` value.
         """
         pauses = _queued_pauses(state)
         if pauses:
-            first = sorted(pauses)[0]
+            first = _the_pause_to_surface(pauses)
             # The pause update verbatim - not through `_handing_on`, which clears
             # exactly the pause fields this has to carry.
             #
@@ -4068,7 +4105,8 @@ def build_workflow_graph(
             # subset cannot remove a key and an empty dict would reset the lot;
             # one key set to `None` says "this one is answered" and leaves the
             # rest queued for the supersteps after it.
-            return {**pauses[first], "specialist_pauses": {first: None}}
+            surfaced = {key: value for key, value in pauses[first].items() if key != _QUEUED_AT}
+            return {**surfaced, "specialist_pauses": {first: None}}
 
         # Nothing is paused. A task the fan-out held back because it shares a
         # file with one that was running has not been dispatched yet, and this

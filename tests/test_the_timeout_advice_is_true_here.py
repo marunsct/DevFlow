@@ -132,3 +132,12 @@ def test_the_plain_advice_names_a_runner_left_watching() -> None:
     assert "watches for changes by default" in _TIMEOUT_ADVICE
     assert "run-once mode" in _TIMEOUT_ADVICE
     assert "vitest" not in _TIMEOUT_ADVICE.lower()
+
+
+def test_a_command_that_is_not_a_test_run_gets_the_general_advice(workspace: Path) -> None:
+    """One run's testing specialist started `node server.js`, which never exits,
+    and was told "the likely causes are different" from the server it was."""
+    _manifest(workspace / "app", {"@playwright/test": "^1"})
+
+    assert _timeout_advice(str(workspace), "app", ["node", "server.js"]) == _TIMEOUT_ADVICE
+    assert _timeout_advice(str(workspace), "app", ["npx", "playwright", "test"]) == _TIMEOUT_ADVICE_WITH_A_BROWSER

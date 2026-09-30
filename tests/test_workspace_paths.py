@@ -275,3 +275,117 @@ def test_the_default_mode_carries_what_matched(tmp_path) -> None:
 
     assert "2: The title field is required." in answer
     assert "/docs/spec.md" in answer
+
+
+# --- a file name searched for by part of it -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("given", "searched"),
+    [
+        ("taskStore", "**/*taskStore*"),
+        (".js", "**/*.js*"),
+        ("index.html", "**/*index.html*"),
+        ("  playwright ", "**/*playwright*"),
+    ],
+)
+def test_a_bare_fragment_is_searched_as_part_of_a_name(given, searched):
+    """36 of 71 `glob` calls over twenty runs were a fragment with no
+    wildcard; 34 found nothing, `.js` among them in a project of `.js` files."""
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    arguments = rewrite_tool_arguments("glob", {"pattern": given, "path": "/"}, "/ws")
+
+    assert arguments["pattern"] == searched
+
+
+@pytest.mark.parametrize("pattern", ["**/*.js", "*.md", "src/?.py", "[ab].txt", "docs/spec.md", ""])
+def test_a_real_pattern_or_a_path_is_left_to_mean_what_it_says(pattern):
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    arguments = {"pattern": pattern, "path": "/"}
+
+    assert rewrite_tool_arguments("glob", arguments, "/ws") is arguments
+
+
+def test_the_rewritten_fragment_finds_the_file_it_names(tmp_path) -> None:
+    """Against the real backend: the fragment as written finds nothing, the
+    rewrite finds the file the model was looking for."""
+    pytest.importorskip("deepagents")
+    from deepagents.backends import FilesystemBackend
+
+    from app.agents.workspace_paths import rewrite_tool_arguments
+
+    (tmp_path / "app" / "modules").mkdir(parents=True)
+    (tmp_path / "app" / "tests").mkdir()
+    (tmp_path / "app" / "modules" / "taskStore.js").write_text("x")
+    (tmp_path / "app" / "tests" / "store.test.js").write_text("x")
+    backend = FilesystemBackend(root_dir=str(tmp_path), virtual_mode=True)
+
+    def found(pattern: str) -> list[str]:
+        return [match["path"] for match in backend.glob(pattern, "/").matches]
+
+    assert found("taskStore") == []
+    assert found(rewrite_tool_arguments("glob", {"pattern": "taskStore"}, str(tmp_path))["pattern"]) == [
+        "/app/modules/taskStore.js"
+    ]
+    assert found(rewrite_tool_arguments("glob", {"pattern": ".test"}, str(tmp_path))["pattern"]) == [
+        "/app/tests/store.test.js"
+    ]
+
+
+class _Request:
+    def __init__(self, name: str, args: dict) -> None:
+        self.tool_call = {"name": name, "args": args, "id": "call-1"}
+
+    def override(self, tool_call: dict) -> "_Request":
+        return _Request(tool_call["name"], tool_call["args"])
+
+
+def _answer(content: str):
+    from langchain_core.messages import ToolMessage
+
+    return ToolMessage(content=content, name="glob", tool_call_id="call-1")
+
+
+def test_an_empty_name_search_says_what_glob_cannot_find():
+    """The rest were a directory name or words from inside a file, which no
+    file name contains however the pattern is written: the answer says which
+    tool finds those instead of only "No files found"."""
+    from app.agents.workspace_paths import build_workspace_path_middleware
+
+    middleware = build_workspace_path_middleware("/ws")
+    seen: list[dict] = []
+
+    def handler(request):
+        seen.append(request.tool_call["args"])
+        return _answer("No files found")
+
+    result = middleware.wrap_tool_call(_Request("glob", {"pattern": "addTask", "path": "app"}), handler)
+
+    assert seen == [{"pattern": "**/*addTask*", "path": "app"}]
+    assert "No file in 'app' has a name containing 'addTask'" in result.content
+    assert "`ls`" in result.content and "`grep`" in result.content
+
+
+def test_a_name_search_that_found_something_is_untouched():
+    from app.agents.workspace_paths import build_workspace_path_middleware
+
+    middleware = build_workspace_path_middleware("/ws")
+    answer = _answer("/app/modules/taskStore.js")
+
+    result = middleware.wrap_tool_call(_Request("glob", {"pattern": "taskStore"}), lambda _: answer)
+
+    assert result is answer
+
+
+def test_an_empty_answer_to_a_real_pattern_is_untouched():
+    """A wildcard pattern that matched nothing means what it says."""
+    from app.agents.workspace_paths import build_workspace_path_middleware
+
+    middleware = build_workspace_path_middleware("/ws")
+    answer = _answer("No files found")
+
+    result = middleware.wrap_tool_call(_Request("glob", {"pattern": "**/*.py"}), lambda _: answer)
+
+    assert result is answer

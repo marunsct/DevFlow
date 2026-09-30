@@ -165,6 +165,48 @@ DEFAULT_READ_LINES = 400
 #: that asks for file names or counts still gets them.
 DEFAULT_GREP_OUTPUT = "content"
 
+#: Characters that make a `glob` pattern a pattern rather than a name.
+_GLOB_WILDCARDS = frozenset("*?[")
+
+
+def a_name_fragment(pattern: Any) -> str:
+    """The text a `glob` pattern with no wildcard in it is looking for, or ''.
+
+    `glob` matches a pattern against whole file names, so `taskStore` finds a
+    file named exactly `taskStore` and never `taskStore.js`, and `.js` finds
+    nothing at all. The model writes it as a search for names that contain it.
+
+    Measured over twenty runs: 36 of 71 `glob` calls were a bare fragment like
+    that - `.js`, `playwright`, `addTask`, `.config` - and 34 came back "No
+    files found", including `.js` three times in a project full of `.js`
+    files. 62 of the 71 found nothing.
+
+    Only a fragment without a directory in it: `docs/spec.md` names a place,
+    and is left to mean what it says.
+    """
+    if not isinstance(pattern, str):
+        return ""
+    text = pattern.strip()
+    if not text or "/" in text or _GLOB_WILDCARDS & set(text):
+        return ""
+    return text
+
+
+def nothing_is_named(fragment: str, path: Any) -> str:
+    """What an empty search for names containing `fragment` means, and what to use instead.
+
+    The rest of those empty answers were a directory name (`tests`, `modules`)
+    or words from inside a file (`addTask`, `export`) - neither of which a
+    file name ever contains, however the pattern is written.
+    """
+    where = f"'{path}'" if isinstance(path, str) and path.strip("/ ") else "the workspace"
+    return (
+        f"No file in {where} has a name containing '{fragment}'. `glob` matches "
+        "file names only - not directory names, and not the text inside files. "
+        "To see what a directory holds, use `ls`; to find where something is "
+        "written, use `grep`."
+    )
+
 
 def rewrite_tool_arguments(
     name: str, arguments: dict[str, Any], repo_root: str
@@ -192,7 +234,23 @@ def rewrite_tool_arguments(
     if name == "grep" and "output_mode" not in arguments:
         changed["output_mode"] = DEFAULT_GREP_OUTPUT
 
+    if name == "glob":
+        fragment = a_name_fragment(arguments.get("pattern"))
+        if fragment:
+            changed["pattern"] = f"**/*{fragment}*"
+
     return arguments if changed == arguments else changed
+
+
+def _explained_if_empty(result: Any, fragment: str, path: Any) -> Any:
+    """`result`, with "No files found" replaced by what that means for a name search."""
+    content = getattr(result, "content", None)
+    if not isinstance(content, str) or not content.strip().startswith("No files found"):
+        return result
+    try:
+        return result.model_copy(update={"content": nothing_is_named(fragment, path)})
+    except Exception:  # noqa: BLE001 - a Command, or some other shape
+        return result
 
 
 def build_workspace_path_middleware(repo_root: str) -> Any:
@@ -216,6 +274,12 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
                         request = request.override(
                             tool_call={**call, "args": rewritten}
                         )
+                    if call.get("name") == "glob":
+                        fragment = a_name_fragment(arguments.get("pattern"))
+                        if fragment:
+                            return _explained_if_empty(
+                                handler(request), fragment, arguments.get("path")
+                            )
             return handler(request)
 
     return WorkspacePathMiddleware()
@@ -224,7 +288,9 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
 __all__ = [
     "DEFAULT_GREP_OUTPUT",
     "DEFAULT_READ_LINES",
+    "a_name_fragment",
     "build_workspace_path_middleware",
+    "nothing_is_named",
     "rewrite_tool_arguments",
     "workspace_relative",
 ]

@@ -328,3 +328,59 @@ def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
     assert "if not correction:" in guarded[:read_rung], (
         "a schema or budget correction should still take priority over both"
     )
+
+
+class TestAQueryThatKeepsAnsweringTheSame:
+    """One run's technical lead called `ls {"path": "./"}` about twenty times in
+    three minutes; every call succeeded with the same listing, so the refusal
+    rung never saw it."""
+
+    SAME = "['/docs/', '/shop/']\n\n[This `ls` returned exactly what it returned the 3 previous times ...]"
+
+    def test_it_is_named_at_the_threshold(self) -> None:
+        from app.agents.settled_answer import (
+            IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL,
+            _a_query_answered_identically,
+        )
+
+        messages = _conversation(
+            IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL, tool="ls", args={"path": "./"}, result=self.SAME
+        )
+        assert _a_query_answered_identically(messages) == ("ls", IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL)
+        assert _a_query_answered_identically(messages[:-2]) is None
+
+    def test_a_listing_without_the_note_is_not_counted(self) -> None:
+        from app.agents.settled_answer import _a_query_answered_identically
+
+        messages = _conversation(8, tool="ls", args={"path": "./"}, result="['/docs/', '/shop/']")
+        assert _a_query_answered_identically(messages) is None
+
+    def test_the_middleware_takes_that_tool_away(self) -> None:
+        from types import SimpleNamespace
+
+        from pydantic import BaseModel
+
+        from app.agents.settled_answer import build_settled_answer_middleware
+
+        class _Answer(BaseModel):
+            ok: bool = True
+
+        class _Request:
+            def __init__(self, messages, tools):
+                self.messages, self.tools, self.model, self.model_settings = messages, tools, None, {}
+
+            def override(self, **changes):
+                request = _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
+                return request
+
+        sent: list = []
+        tools = [SimpleNamespace(name="ls"), SimpleNamespace(name="read_file"), SimpleNamespace(name="glob")]
+        messages = [
+            SimpleNamespace(type="human", content="Plan the milestone."),
+            *_conversation(5, tool="ls", args={"path": "./"}, result=self.SAME),
+        ]
+        middleware = build_settled_answer_middleware(_Answer, "technical_lead", step_limit=60)
+        middleware.wrap_model_call(_Request(messages, tools), lambda request: sent.append(request))
+
+        assert [tool.name for tool in sent[0].tools] == ["read_file", "glob"]
+        assert "`ls` has been withheld" in str(sent[0].messages[-1]["content"])

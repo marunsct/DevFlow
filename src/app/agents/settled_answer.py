@@ -484,6 +484,11 @@ _READ_TOOLS = frozenset({"read_file", "read_repository_file"})
 #: work the stage still has to land, where a refused read is work already done.
 IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL = 4
 
+#: How many times a query may be answered with the note that nothing changed
+#: before the tool is withheld. The note first appears on the third identical
+#: call, so this is the sixth.
+IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL = 4
+
 #: A tool result that is a refusal rather than an answer. Every guard in this
 #: harness opens one of these ways, and the bracketed group is the repeat note
 #: some of them prepend - an anchored match without it stopped counting a call
@@ -1004,6 +1009,58 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     return name, count
 
 
+def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None:
+    """The query tool this stage keeps asking the same thing, and how often.
+
+    The refusal rung above counts calls that fail. A query that succeeds and
+    changes nothing had no rung at all: `repeated_queries` notes it, and the
+    note is all. One run's technical lead called `ls {"path": "./"}` about
+    twenty times in three minutes, every one answered with the same listing
+    and, from the third, "[This `ls` returned exactly what it returned the N
+    previous times ...]". None of them was a failed call, so nothing escalated.
+
+    Counted like the refusals - each result paired with its call through
+    `tool_call_id`, identical `(name, arguments)` tallied - on the marker
+    `repeated_queries` writes, not on this module's reading of the listing.
+    """
+    from app.agents.repeated_queries import SAME_ANSWER_MARKER
+
+    asked: dict[str, tuple[str, str]] = {}
+    repeats: dict[tuple[str, str], int] = {}
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = str((call or {}).get("name") or "")
+            called = str((call or {}).get("id") or "")
+            if name and called:
+                asked[called] = (
+                    name, json.dumps((call or {}).get("args") or {}, sort_keys=True, default=str)
+                )
+        if getattr(message, "type", None) != "tool":
+            continue
+        pair = asked.get(str(getattr(message, "tool_call_id", "") or ""))
+        if pair is None or SAME_ANSWER_MARKER not in str(getattr(message, "content", "") or ""):
+            continue
+        repeats[pair] = repeats.get(pair, 0) + 1
+    if not repeats:
+        return None
+    (name, _identity), count = max(repeats.items(), key=lambda item: item[1])
+    if count < IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL:
+        return None
+    return name, count
+
+
+def _a_query_withheld_notice(name: str, repeats: int) -> str:
+    """Why a query tool is gone: it kept answering the same question the same way."""
+    return (
+        f"`{name}` has been withheld for the rest of this stage. You have asked it "
+        f"the same thing {repeats + 2} times or more and it has answered identically "
+        "every time, because nothing it reports on has changed. The answer is "
+        "already in this conversation above.\n"
+        "Everything else still works. Act on what you have: make the change, run "
+        "the check, or return your structured response."
+    )
+
+
 def _named(tool: Any) -> str:
     """A tool's name, whether it is an object or a mapping."""
     return str(
@@ -1183,8 +1240,11 @@ def build_settled_answer_middleware(
                     if reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
                         correction = _READ_TOOL_WITHHELD_NOTICE
                     repeated = _a_tool_refused_identically(messages)
-                    if repeated is not None:
-                        notice = _a_tool_withheld_notice(*repeated)
+                    notice = _a_tool_withheld_notice(*repeated) if repeated is not None else ""
+                    if repeated is None:
+                        repeated = _a_query_answered_identically(messages)
+                        notice = _a_query_withheld_notice(*repeated) if repeated is not None else ""
+                    if notice:
                         correction = f"{correction}\n\n{notice}" if correction else notice
                 if not correction:
                     return handler(request)
@@ -1236,7 +1296,7 @@ def build_settled_answer_middleware(
                             kept, narrowed = without_it, True
                             logger.warning(
                                 "Stage %s has called `%s` %d times to the same "
-                                "refusal; withholding that one tool for the rest "
+                                "result; withholding that one tool for the rest "
                                 "of it",
                                 stage_name or "?", repeated[0], repeated[1],
                             )

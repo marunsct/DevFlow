@@ -33,6 +33,11 @@ from app.agents.workspace_paths import the_same_place
 #: two notices should not disagree about what counts as circling.
 REPEATS_BEFORE_SAYING_SO = 2
 
+#: The words that mark a repeated query's identical, successful answer. Matched
+#: by `app.agents.settled_answer`, which withholds a tool asked the same thing
+#: past `IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL` times.
+SAME_ANSWER_MARKER = "returned exactly what it returned"
+
 #: Read-only queries with no note of their own. `read_file` is excluded because
 #: the backend already gives it a better one, keyed on the file's identity as
 #: well as the bytes, and two notices on one result would just be noise.
@@ -349,7 +354,7 @@ def build_repeated_query_middleware() -> Any:
                     "create what is missing, or carry on without it.]"
                 )
             return (
-                f"\n\n[This `{name}` returned exactly what it returned the {count} "
+                f"\n\n[This `{name}` {SAME_ANSWER_MARKER} the {count} "
                 "previous times you ran it in this stage. A listing reports each "
                 "entry's size and modification time, a search reports the lines it "
                 "matched, and a read returns the file's bytes - so an identical "
@@ -367,4 +372,4 @@ def _refuses_instead(request: Any, result: Any) -> bool:
     return name in MUTATING_TOOLS and _changed_nothing(content)
 
 
-__all__ = ["QUERY_TOOLS", "REPEATS_BEFORE_SAYING_SO", "build_repeated_query_middleware"]
+__all__ = ["QUERY_TOOLS", "REPEATS_BEFORE_SAYING_SO", "SAME_ANSWER_MARKER", "build_repeated_query_middleware"]

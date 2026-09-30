@@ -30,11 +30,23 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN uv venv "$VIRTUAL_ENV"
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
 # Runtime dependencies only: the previous image also installed pytest into the
 # production layer.
-RUN uv pip install --no-cache .
+#
+# Exactly the versions `uv.lock` pins - the ones the test suite runs against.
+# `uv pip install .` resolved the newest release each range in pyproject.toml
+# allows and ignored the lock, so on 2026-09-30 production was running 38
+# packages at versions no test had seen: deepagents 0.7.20 against 0.7.13 in
+# the suite, among them. 0.7.20 dropped the line-number gutter from
+# `read_file`, and every line-addressed edit a model made from then on was
+# counted by hand from unnumbered text - the largest class of failed edits
+# that day, invisible to a suite running the older release. `--frozen` fails
+# the build if the lock is out of date rather than resolving around it.
+RUN uv export --frozen --no-dev --no-emit-project --format requirements-txt > /tmp/requirements.txt \
+    && uv pip install --no-cache -r /tmp/requirements.txt \
+    && uv pip install --no-cache --no-deps .
 
 # ---------------------------------------------------------------------------
 # Stage 3: runtime

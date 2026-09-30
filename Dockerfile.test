@@ -25,9 +25,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip install --no-cache-dir uv
 
 # Dependencies first, so editing a test does not reinstall the tree.
-COPY pyproject.toml ./
+COPY pyproject.toml uv.lock ./
 COPY src/ ./src/
-RUN uv pip install --system ".[test]"
+# The locked versions, the same set the production image installs - see the
+# note in Dockerfile.
+RUN uv export --frozen --no-dev --extra test --no-emit-project --format requirements-txt > /tmp/requirements.txt \
+    && uv pip install --system -r /tmp/requirements.txt \
+    && uv pip install --system --no-deps .
 
 ENV PYTHONPATH=/app/src \
     ENV=development

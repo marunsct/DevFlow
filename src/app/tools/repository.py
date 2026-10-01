@@ -1556,7 +1556,7 @@ def _another_work_order_s_file(root: Path, target: Path) -> str | None:
     )
     if owner is None or owner == stage:
         return None
-    return (
+    return _again_and_again(shown) + (
         f"'{shown}' belongs to another work order in this milestone: the plan gave it "
         f"to {owner}, which writes it. Change only the files your own work order "
         "lists. If your task needs something in that file - an export, an element, a "
@@ -1573,6 +1573,35 @@ def _created_here(root: Path, shown: str, stage: str) -> bool:
         return bool(stage) and project_memory.who_created(root, shown) == stage
     except Exception:  # noqa: BLE001 - unknown is not "its own"
         return False
+
+
+#: Refusals of one file to one stage before the refusal says how many.
+_REFUSALS_BEFORE_COUNTING = 3
+
+
+def _again_and_again(shown: str) -> str:
+    """A lead for the refusal when this stage has been refused this file before, or "".
+
+    Each attempt was a different change, so the repeat notes - which compare
+    the arguments - never fired. Measured on one run: `specialist_backend_1`
+    was refused `src/ui.js`, the interface work order's file, six times with
+    six different `replace_lines`, the same refusal each time.
+    """
+    try:
+        from app.agents.stage_memory import store
+
+        refused = store("files_refused_as_another_work_order_s", {})
+        refused[shown] = refused.get(shown, 0) + 1
+        count = refused[shown]
+    except Exception:  # noqa: BLE001 - a count is a courtesy
+        return ""
+    if count < _REFUSALS_BEFORE_COUNTING:
+        return ""
+    return (
+        f"This stage has now been refused '{shown}' {count} times. Rewording the "
+        "change does not change whose file it is: stop changing it, put what your "
+        "work needs from it in `blockers`, and finish the files that are yours. "
+    )
 
 
 def _not_this_stage_s_to_take(

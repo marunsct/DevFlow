@@ -136,3 +136,22 @@ def test_a_file_no_work_order_lists_is_still_anyone_s_to_delete(workspace: Path,
     delete_approved_artifact(workspace, "shop/probe.py")
 
     assert not (workspace / "shop" / "probe.py").exists()
+
+
+def test_a_file_refused_again_and_again_says_how_many_times(workspace: Path, monkeypatch) -> None:
+    """One run's backend specialist was refused the interface's `src/ui.js` six
+    times, each a different change, so no repeat note ever fired."""
+    from app.agents.stage_memory import forget_everything, remembering
+
+    forget_everything()
+    _as(monkeypatch, "specialist_testing_2")
+    messages = []
+    with remembering("thread-1:specialist_testing_2:abc"):
+        for n in range(3):
+            with pytest.raises(RepositoryToolError) as refused:
+                write_approved_artifact(workspace, "shop/core.py", f"X = {n}\n")
+            messages.append(str(refused.value))
+
+    assert "times" not in messages[0] and "times" not in messages[1]
+    assert messages[2].startswith("This stage has now been refused 'shop/core.py' 3 times")
+    assert "the plan gave it to specialist_backend_1" in messages[2]

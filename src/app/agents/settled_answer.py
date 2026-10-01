@@ -1122,6 +1122,41 @@ _READ_TOOL_WITHHELD_NOTICE = (
 )
 
 
+def _note_a_reply_that_was_all_reasoning(stage_name: str) -> None:
+    try:
+        from app.agents.thinking import note_a_reply_that_was_all_reasoning
+
+        note_a_reply_that_was_all_reasoning(stage_name)
+    except Exception:  # noqa: BLE001 - a memo must never fail a model call
+        pass
+
+
+def _without_reasoning_where_it_keeps_running_out(request: Any, stage_name: str) -> Any:
+    """`request` with thinking switched off, for a stage that keeps losing whole
+    replies to it in this run; otherwise `request` unchanged.
+
+    The tools stay: this is the stage's ordinary work, done without the
+    reasoning that has produced nothing on its earlier visits. See
+    `app.agents.thinking.note_a_reply_that_was_all_reasoning`.
+    """
+    try:
+        from app.agents.thinking import (
+            answering_without_reasoning,
+            reasoning_keeps_running_out_for,
+        )
+
+        if not reasoning_keeps_running_out_for(stage_name):
+            return request
+        quiet = answering_without_reasoning(getattr(request, "model", None))
+        if not quiet:
+            return request
+        return request.override(
+            model_settings={**(getattr(request, "model_settings", None) or {}), **quiet}
+        )
+    except Exception:  # noqa: BLE001 - never fail the call over a saving
+        return request
+
+
 def build_settled_answer_middleware(
     schema: Any, stage_name: str = "", step_limit: int = 0
 ) -> Any:
@@ -1143,6 +1178,7 @@ def build_settled_answer_middleware(
             # that refuses the request because of it. Set only when thinking is
             # switched off below.
             refused_fallback = None
+            request = _without_reasoning_where_it_keeps_running_out(request, stage_name)
             try:
                 messages = getattr(request, "messages", None)
                 if not isinstance(messages, list) or not messages:
@@ -1199,6 +1235,7 @@ def build_settled_answer_middleware(
                 # answer now - and a stage can be in both states at once.
                 spiralled = _the_last_reply_was_all_reasoning(messages)
                 if spiralled:
+                    _note_a_reply_that_was_all_reasoning(stage_name)
                     correction = (
                         f"{correction}\n\n{_REASONED_PAST_THE_BUDGET_NOTICE}"
                         if correction

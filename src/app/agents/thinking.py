@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Literal
 
@@ -204,6 +205,81 @@ def answering_without_reasoning(model: object) -> dict:
     return {"extra_body": extra}
 
 
+#: Visits of one stage that must each have lost a whole reply to reasoning
+#: before that stage is asked without it from its first call. One is not enough:
+#: a single runaway reply happens to models that reason well, and the call after
+#: it already recovers the answer.
+ALL_REASONING_VISITS_BEFORE_ASKING_WITHOUT = 2
+
+#: Stages remembered before the oldest is dropped.
+_MOST_STAGES_REMEMBERED = 256
+
+_all_reasoning_visits: "OrderedDict[tuple[str, str], set[str]]" = OrderedDict()
+
+
+def _this_run_and_visit() -> tuple[str | None, str | None]:
+    """The running graph's run id and the running stage's own key, or None each."""
+    try:
+        from langgraph.config import get_config
+
+        from app.agents.stage_memory import current_stage_key
+        from app.tracing import APP_RUN_ID_KEY
+
+        run = (get_config() or {}).get("configurable", {}).get(APP_RUN_ID_KEY)
+        return (str(run) if run else None), current_stage_key()
+    except Exception:  # noqa: BLE001 - outside a graph run there is nothing to key on
+        return None, None
+
+
+def note_a_reply_that_was_all_reasoning(stage_name: str) -> None:
+    """Remember that this visit of `stage_name` lost a whole reply to reasoning.
+
+    Kept per run and per stage name, across that stage's visits, because the
+    recovery in `answering_without_reasoning` starts from nothing each visit.
+    Measured on one run: a reviewing stage reasoned through its whole
+    25,000-token reply on each of its three visits, seven and a half minutes a
+    time, and every verdict it gave came from the switched-off call after.
+    Outside a graph run nothing is remembered.
+    """
+    run, visit = _this_run_and_visit()
+    if not run or not visit or not stage_name:
+        return
+    with _all_reasoning_lock:
+        visits = _all_reasoning_visits.setdefault((run, stage_name), set())
+        _all_reasoning_visits.move_to_end((run, stage_name))
+        before = len(visits)
+        visits.add(visit)
+        after = len(visits)
+        while len(_all_reasoning_visits) > _MOST_STAGES_REMEMBERED:
+            _all_reasoning_visits.popitem(last=False)
+    if before < ALL_REASONING_VISITS_BEFORE_ASKING_WITHOUT <= after:
+        logger.warning(
+            "Stage %s has lost a whole reply to reasoning on %d visits in this "
+            "run; asking it without reasoning from here on",
+            stage_name, after,
+        )
+
+
+def reasoning_keeps_running_out_for(stage_name: str) -> bool:
+    """Whether `stage_name` has lost a reply to reasoning on enough visits of
+    this run that reasoning is not worth asking it for again."""
+    run, _visit = _this_run_and_visit()
+    if not run or not stage_name:
+        return False
+    with _all_reasoning_lock:
+        visits = _all_reasoning_visits.get((run, stage_name)) or ()
+        return len(visits) >= ALL_REASONING_VISITS_BEFORE_ASKING_WITHOUT
+
+
+def forget_the_replies_that_were_all_reasoning() -> None:
+    """Drop what was remembered. For tests, which must not leak into each other."""
+    with _all_reasoning_lock:
+        _all_reasoning_visits.clear()
+
+
+_all_reasoning_lock = threading.Lock()
+
+
 def _without_the_template_switch(model: object) -> dict:
     """The client's own `extra_body`, with the chat-template thinking flag off."""
     extra = dict(getattr(model, "extra_body", None) or {})
@@ -337,6 +413,9 @@ def without_the_effort_field(settings: dict) -> dict | None:
 __all__ = [
     "NO_REASONING_EFFORT",
     "answering_without_reasoning",
+    "forget_the_replies_that_were_all_reasoning",
+    "note_a_reply_that_was_all_reasoning",
+    "reasoning_keeps_running_out_for",
     "least_reasoning_effort",
     "without_the_effort_field",
     "DEFAULT_EFFORT",

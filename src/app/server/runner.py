@@ -32,6 +32,7 @@ from app.graph.workflow import (
     RunCancelled,
     approve_decision,
     build_workflow_graph,
+    queued_parallel_pauses,
     request_changes_decision,
     resume_pending_approval,
     resume_pending_review,
@@ -541,6 +542,96 @@ def _repeat_is_a_loop(approval: Any) -> bool:
     ceiling for work that is expensive rather than stuck.
     """
     return getattr(approval, "action_kind", "unknown") != "command"
+
+
+@dataclass
+class _GateCount:
+    """One paused stage's auto-approvals: its gate budget and its loop check.
+
+    Kept per stage, so a parallel fan-out's workers each have their own count
+    when several of their pauses are answered in one resume. It used to be one
+    set of counters for "the current stage", reset whenever the surfaced stage
+    changed - which in a fan-out, where the surfaced stage alternates between
+    workers, reset it nearly every gate.
+    """
+
+    gates: int = 0
+    repeats: int = 0
+    last: tuple[str, str] | None = None
+    signatures: dict[Any, int] = field(default_factory=dict)
+    loops_answered: int = 0
+    looping: bool = False
+
+    def observe(self, approval: Any) -> tuple[str, tuple[str, str]]:
+        """Count one gate: ("approve" | "deny" | "fail", what it asked for).
+
+        A read-only look at the workspace is approved and recorded, but does
+        not spend the budget meant for writes and builds. On one run a testing
+        specialist used all 120 gates on `ls -la`, `find` and `cat` - work its
+        ungated filesystem tools could have done - and was stopped before
+        writing anything.
+        """
+        signature = _approval_signature(approval)
+        if getattr(approval, "action_kind", "") != "read":
+            self.gates += 1
+        self.repeats = self.repeats + 1 if signature == self.last else 0
+        self.signatures[signature] = self.signatures.get(signature, 0) + 1
+        self.last = signature
+        self.looping = self.repeats >= MAX_IDENTICAL_GATES and _repeat_is_a_loop(approval)
+        if self.looping and self.loops_answered < MAX_LOOPS_ANSWERED_BY_DENIAL:
+            # Answer the request instead of ending the run. See
+            # `MAX_LOOPS_ANSWERED_BY_DENIAL`.
+            self.loops_answered += 1
+            self.repeats = 0
+            return "deny", signature
+        if self.looping or self.gates > MAX_GATES_PER_STAGE:
+            return "fail", signature
+        return "approve", signature
+
+
+def _gate_failure_message(stage_name: str, count: _GateCount, signature: tuple[str, str]) -> str:
+    """Why a stage was stopped at its gates: a loop, or its budget spent."""
+    if count.looping:
+        return (
+            f"The '{stage_name}' stage asked to write the same thing "
+            f"{count.repeats + 1} times in a row without moving on, so it was "
+            f"stopped. The repeated request was: "
+            f"{signature[0] if signature[0] and 'unknown' not in signature[0] else (signature[1] or 'an artifact write')}. "
+            "An agent re-requesting an identical write is looping, and every "
+            "attempt costs a model call."
+        )
+    # What it kept doing is the part worth reporting. "Raise the ceiling" alone
+    # was the whole message, and on one run that was the wrong advice: the stage
+    # ran `node test.js` over and over against a test whose assertion could not
+    # be satisfied, so a larger budget would only have bought more of it.
+    busiest = max(count.signatures.items(), key=lambda kv: kv[1], default=(None, 0))
+    repeated = ""
+    if busiest[0] and busiest[1] > 2:
+        # A command approval carries no artifact path, so the path half is a
+        # placeholder. Prefer whichever half actually says something: on one run
+        # this read "<unknown path>, 21 times", which names the repetition
+        # without naming the thing.
+        path, notes = busiest[0]
+        what = next(
+            (part for part in (path, notes) if part and "unknown" not in part.lower()),
+            "",
+        )
+        if what:
+            repeated = f" Its most repeated request was {what[:120]}, {busiest[1]} times."
+        else:
+            repeated = (
+                f" It made the same request {busiest[1]} times; "
+                "the event log for this stage says which."
+            )
+    return (
+        f"The '{stage_name}' stage used all "
+        f"{MAX_GATES_PER_STAGE} of its approvals without finishing, so it "
+        "was stopped. The requests were not identical, so this is either a "
+        "stage doing more work than the ceiling allows, or an edit-and-retest "
+        f"cycle that is not converging.{repeated} Check whether the same "
+        "check keeps failing before raising WORKFLOW_MAX_GATES_PER_STAGE - "
+        "a larger budget only helps the first case."
+    )
 
 
 def _approval_metadata(approval: Any) -> dict[str, Any]:
@@ -1080,21 +1171,13 @@ class WorkflowRunner:
         by MAX_GATES with a real re-invoke on each pass.
         """
         run_id = record.run_id
-        # Consecutive auto-approvals at one stage. Reset whenever the stage
-        # changes, so a long but progressing run is unaffected.
-        gate_stage: str | None = None
-        # Which request this stage made most often, for the message if its
-        # gate budget runs out - non-convergence is invisible without it.
-        stage_signatures: dict[Any, int] = {}
-        gates_at_stage = 0
-        # Consecutive gates asking for the exact same thing. A stage that varies
-        # what it asks for is working; one that repeats itself is looping, and
-        # only the second is worth failing fast on.
-        last_signature: tuple[str, str] | None = None
-        repeats = 0
-        # How many loops at the current stage have been answered with a denial
-        # rather than by ending the run. See `MAX_LOOPS_ANSWERED_BY_DENIAL`.
-        loops_answered = 0
+        # Each paused stage's auto-approvals, for its gate budget and its loop
+        # check (`_GateCount`). A stage's counts go when it has nothing paused,
+        # so a long but progressing run is unaffected.
+        gate_counts: dict[str, _GateCount] = {}
+        # The decision given to a queued parallel pause, by stage, with the
+        # pause's queue time - so a pause seen twice is answered once.
+        answered: dict[str, tuple[Any, dict[str, Any]]] = {}
         # Consecutive re-invokes that returned the same stage without running
         # anything. Distinct from `repeats`, which counts *gates*; this counts
         # rounds where the graph did not even reach one.
@@ -1216,59 +1299,60 @@ class WorkflowRunner:
             if stage.startswith(APPROVAL_PAUSE_PREFIX):
                 approval = state.get("pending_approval")
                 if record.auto_approve:
-                    await self.event_bus.publish(
-                        run_id,
-                        RunEvent(
-                            run_id=run_id,
-                            sequence=await self.event_bus.next_sequence(run_id),
-                            stage=stage,
-                            event_type="approval_auto",
-                            message=f"Auto-approved: {approval.notes if approval else 'artifact write'}",
-                            metadata=redact_metadata(_approval_metadata(approval)),
-                        ),
-                    )
-                    signature = _approval_signature(approval)
-                    # A read-only look at the workspace is approved and
-                    # recorded, but does not spend the budget meant for writes
-                    # and builds. On one run a testing specialist used all
-                    # 120 gates on `ls -la`, `find` and `cat` - work its ungated
-                    # filesystem tools could have done - and was stopped before
-                    # writing anything.
-                    costs_budget = getattr(approval, "action_kind", "") != "read"
-                    if stage == gate_stage:
-                        if costs_budget:
-                            gates_at_stage += 1
-                        repeats = repeats + 1 if signature == last_signature else 0
-                        stage_signatures[signature] = stage_signatures.get(signature, 0) + 1
-                    else:
-                        gate_stage, repeats = stage, 0
-                        gates_at_stage = 1 if costs_budget else 0
-                        stage_signatures = {signature: 1}
-                        loops_answered = 0
-                    last_signature = signature
-
-                    looping = repeats >= MAX_IDENTICAL_GATES and _repeat_is_a_loop(approval)
-                    if looping and loops_answered < MAX_LOOPS_ANSWERED_BY_DENIAL:
-                        # Answer the request instead of ending the run. See
-                        # `MAX_LOOPS_ANSWERED_BY_DENIAL`.
-                        loops_answered += 1
-                        repeats = 0
-                        what = _what_was_asked_for(signature)
+                    # Every pause this resume can answer: the surfaced one and,
+                    # in a parallel fan-out, every pause queued behind it - so
+                    # the workers go on together instead of one per superstep.
+                    # Each is counted against its own stage's gate budget and
+                    # loop check, exactly as a lone pause always was.
+                    batch: list[tuple[str, Any, Any]] = [
+                        (stage.removeprefix(APPROVAL_PAUSE_PREFIX), approval, None)
+                    ]
+                    for queued_stage, pause in queued_parallel_pauses(state).items():
+                        batch.append((queued_stage, pause.get("pending_approval"), pause.get("queued_at")))
+                    # A stage with nothing paused has finished: its counts go,
+                    # as they always did when the stage changed. One stage at a
+                    # time - linear mode, or a fan-out down to its last worker -
+                    # is exactly the old reset.
+                    live = {name for name, _, _ in batch}
+                    for name in list(gate_counts):
+                        if name not in live:
+                            gate_counts.pop(name, None)
+                            answered.pop(name, None)
+                    decisions: dict[str, dict[str, Any]] = {}
+                    for name, pending, queued_at in batch:
+                        remembered = answered.get(name)
+                        if queued_at is not None and remembered and remembered[0] == queued_at:
+                            # The same pause, not yet consumed: the same answer,
+                            # not counted a second time.
+                            decisions[name] = remembered[1]
+                            continue
+                        paused_stage = f"{APPROVAL_PAUSE_PREFIX}{name}"
                         await self.event_bus.publish(
                             run_id,
                             RunEvent(
                                 run_id=run_id,
                                 sequence=await self.event_bus.next_sequence(run_id),
-                                stage=stage,
-                                event_type="approval_denied",
-                                message=f"Denied a repeated request: {what}",
+                                stage=paused_stage,
+                                event_type="approval_auto",
+                                message=f"Auto-approved: {getattr(pending, 'notes', None) or 'artifact write'}",
+                                metadata=redact_metadata(_approval_metadata(pending)),
                             ),
                         )
-                        state = await asyncio.to_thread(
-                            resume_pending_approval,
-                            graph,
-                            record.thread_id,
-                            reject_write_decision(
+                        count = gate_counts.setdefault(name, _GateCount())
+                        verdict, signature = count.observe(pending)
+                        if verdict == "deny":
+                            what = _what_was_asked_for(signature)
+                            await self.event_bus.publish(
+                                run_id,
+                                RunEvent(
+                                    run_id=run_id,
+                                    sequence=await self.event_bus.next_sequence(run_id),
+                                    stage=paused_stage,
+                                    event_type="approval_denied",
+                                    message=f"Denied a repeated request: {what}",
+                                ),
+                            )
+                            decision = reject_write_decision(
                                 f"Denied. You have asked for this same thing "
                                 f"{MAX_IDENTICAL_GATES + 1} times in a row ({what}) and "
                                 "nothing has changed between the attempts, so it will be "
@@ -1276,85 +1360,35 @@ class WorkflowRunner:
                                 "be. Stop repeating it and return your structured response "
                                 "now, with whatever you have - put anything you could not "
                                 "do in `blockers`."
-                            ),
-                            metadata=trace_meta,
-                            run_id=run_id,
-                        )
-                        continue
-
-                    if looping or gates_at_stage > MAX_GATES_PER_STAGE:
-                        stage_name = stage.removeprefix(APPROVAL_PAUSE_PREFIX)
-                        record.status = "failed"
-                        if looping:
-                            record.error = (
-                                f"The '{stage_name}' stage asked to write the same thing "
-                                f"{repeats + 1} times in a row without moving on, so it was "
-                                f"stopped. The repeated request was: "
-                                f"{signature[0] if signature[0] and 'unknown' not in signature[0] else (signature[1] or 'an artifact write')}. "
-                                "An agent re-requesting an identical write is looping, and every "
-                                "attempt costs a model call."
                             )
+                        elif verdict == "fail":
+                            record.status = "failed"
+                            record.error = _gate_failure_message(name, count, signature)
+                            record.updated_at = datetime.now(timezone.utc).isoformat()
+                            self._persist(record)
+                            await self.event_bus.publish(
+                                run_id,
+                                RunEvent(
+                                    run_id=run_id,
+                                    sequence=await self.event_bus.next_sequence(run_id),
+                                    stage=paused_stage,
+                                    event_type="error",
+                                    message=record.error,
+                                ),
+                            )
+                            await self.event_bus.close(run_id)
+                            return
                         else:
-                            # What it kept doing is the part worth reporting.
-                            # "Raise the ceiling" alone was the whole message,
-                            # and on one run that was the wrong advice: the
-                            # stage ran `node test.js` over and over against a
-                            # test whose assertion could not be satisfied, so a
-                            # larger budget would only have bought more of it.
-                            busiest = max(stage_signatures.items(), key=lambda kv: kv[1], default=(None, 0))
-                            repeated = ""
-                            if busiest[0] and busiest[1] > 2:
-                                # A command approval carries no artifact path, so
-                                # the path half is a placeholder. Prefer whichever
-                                # half actually says something: on one run
-                                # this read "<unknown path>, 21 times", which
-                                # names the repetition without naming the thing.
-                                path, notes = busiest[0]
-                                what = next(
-                                    (
-                                        part
-                                        for part in (path, notes)
-                                        if part and "unknown" not in part.lower()
-                                    ),
-                                    "",
-                                )
-                                if what:
-                                    repeated = (
-                                        f" Its most repeated request was "
-                                        f"{what[:120]}, {busiest[1]} times."
-                                    )
-                                else:
-                                    repeated = (
-                                        f" It made the same request {busiest[1]} times; "
-                                        "the event log for this stage says which."
-                                    )
-                            record.error = (
-                                f"The '{stage_name}' stage used all "
-                                f"{MAX_GATES_PER_STAGE} of its approvals without finishing, so it "
-                                "was stopped. The requests were not identical, so this is either a "
-                                "stage doing more work than the ceiling allows, or an edit-and-retest "
-                                f"cycle that is not converging.{repeated} Check whether the same "
-                                "check keeps failing before raising WORKFLOW_MAX_GATES_PER_STAGE - "
-                                "a larger budget only helps the first case."
-                            )
-                        record.updated_at = datetime.now(timezone.utc).isoformat()
-                        self._persist(record)
-                        await self.event_bus.publish(
-                            run_id,
-                            RunEvent(
-                                run_id=run_id,
-                                sequence=await self.event_bus.next_sequence(run_id),
-                                stage=stage,
-                                event_type="error",
-                                message=record.error,
-                            ),
-                        )
-                        await self.event_bus.close(run_id)
-                        return
+                            decision = approve_write_decision()
+                        decisions[name] = decision
+                        if queued_at is not None:
+                            answered[name] = (queued_at, decision)
 
+                    surfaced = batch[0][0]
                     state = await asyncio.to_thread(
                         resume_pending_approval, graph, record.thread_id,
-                        approve_write_decision(), metadata=trace_meta, run_id=run_id,
+                        decisions.pop(surfaced), metadata=trace_meta, run_id=run_id,
+                        queued_decisions=decisions or None,
                     )
                     continue
 

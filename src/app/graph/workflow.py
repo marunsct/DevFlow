@@ -465,6 +465,11 @@ class WorkflowGraphState(TypedDict, total=False):
     # `stage` has no reducer, so two workers pausing is an `InvalidUpdateError`
     # rather than a pause.
     specialist_pauses: Annotated[dict[str, dict[str, Any]], _merge_or_reset]
+    # Decisions for queued parallel pauses, answered in the same resume as the
+    # surfaced one - see `_only_this_worker_s_pause`. Written only by the
+    # runner under auto-approve, cleared by `specialist_gather` after every
+    # fan-out superstep, so a decision is never carried to a worker's next gate.
+    queued_decisions: Annotated[dict[str, dict[str, Any]], _merge_or_reset]
     remediation: RemediationCycle
     defect_cursor: int
     test_round: int
@@ -621,7 +626,9 @@ def _queued_pauses(state: Any) -> dict[str, dict[str, Any]]:
 _QUEUED_AT = "__queued_at"
 
 
-def _as_a_queued_pause(state: Any, stage_name: str, update: dict[str, Any]) -> dict[str, Any]:
+def _as_a_queued_pause(
+    state: Any, stage_name: str, update: dict[str, Any], *, answered: bool = False
+) -> dict[str, Any]:
     """`update`, the pause a worker returns, stamped with when it joined the queue.
 
     A pause still queued from an earlier superstep keeps its original time: the
@@ -629,7 +636,9 @@ def _as_a_queued_pause(state: Any, stage_name: str, update: dict[str, Any]) -> d
     back, and a fresh stamp on every pass would send it to the back each time.
     A pause for a new gate - the entry was surfaced and cleared - joins the back.
     """
-    earlier = (state.get("specialist_pauses") or {}).get(stage_name) or {}
+    # `answered`: this worker's last pause was decided in a batch and it has
+    # reached a new gate, so it joins the back like any other new gate.
+    earlier = {} if answered else (state.get("specialist_pauses") or {}).get(stage_name) or {}
     queued_at = earlier.get(_QUEUED_AT) if isinstance(earlier, dict) else None
     return {**dict(update), _QUEUED_AT: queued_at or time.time()}
 
@@ -717,6 +726,20 @@ def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
     if _the_stage_that_paused(state) == stage_name:
         return {}
     queued = _queued_pauses(state).get(stage_name) or {}
+    decided = (state.get("queued_decisions") or {}).get(stage_name)
+    if queued and decided:
+        # Answered in the same resume as the surfaced pause. Under auto-approve
+        # the runner decides every queued pause at once, each through the same
+        # gate budget and loop checks, so the fan-out's workers go on together
+        # instead of one per superstep. Measured on one run: more than one
+        # model call was in flight for 13-28% of the specialists' time, and
+        # LM Studio's other parallel slots sat idle.
+        return {
+            "pending_decision": decided,
+            "pending_inner_thread_id": queued.get("pending_inner_thread_id"),
+            "pending_approval": queued.get("pending_approval"),
+            "stage": f"{APPROVAL_PAUSE_PREFIX}{stage_name}",
+        }
     override: dict[str, Any] = {
         "pending_decision": None,
         # Our own paused thread if we have one, and otherwise none at all. Never
@@ -2069,6 +2092,22 @@ def _run_gated_agent(
         # without them each attempt re-read the same files and re-ran the same
         # commands. Prepended, so it is the first thing the attempt reads
         # rather than something it reaches after its own instructions.
+        # A small project's files, before the stage's own request - read once
+        # and kept in the server's prompt cache for the stage, instead of found
+        # out one read at a time. Before the request, not after: the last
+        # message a model reads is the one it answers. See
+        # `app.agents.project_snapshot`.
+        from app.agents.project_snapshot import project_snapshot
+
+        snapshot = project_snapshot(getattr(state.get("repository"), "root_path", None))
+        if snapshot:
+            initial_request = {
+                **initial_request,
+                "messages": [
+                    {"role": "user", "content": snapshot},
+                    *(initial_request.get("messages") or []),
+                ],
+            }
         carried = (state.get("stage_carry_over") or {}).get(stage_name)
         if carried:
             initial_request = {
@@ -4288,6 +4327,7 @@ def build_workflow_graph(
             next_stage="specialist_dispatch", # doesn't matter for the map-reduce worker
         )
         
+        answered_in_a_batch = bool((state.get("queued_decisions") or {}).get(stage_name))
         if "__specialist_result__" not in update:
             # Paused, waiting on a human for one of this task's writes. The pause
             # is recorded rather than returned: a pause update carries `stage`,
@@ -4295,14 +4335,22 @@ def build_workflow_graph(
             # is `InvalidUpdateError: Can receive only one value per step` - the
             # fan-out dying instead of pausing. `specialist_gather` reads these
             # and surfaces them one at a time.
-            return {"specialist_pauses": {stage_name: _as_a_queued_pause(state, stage_name, update)}}
+            return {"specialist_pauses": {stage_name: _as_a_queued_pause(
+                state, stage_name, update, answered=answered_in_a_batch
+            )}}
 
         # One key of a merged dictionary, so every worker's result survives the
         # superstep. Returning `stage` here instead is what made the fan-out
         # loop: the dispatcher left `stage` as `specialist_dispatch_parallel`,
         # the worker did not change it, and the router fanned the same tasks out
         # again on every pass until the recursion limit ended the run.
-        return {"specialist_outputs": {stage_name: update["__specialist_result__"]}}
+        finished: dict[str, Any] = {"specialist_outputs": {stage_name: update["__specialist_result__"]}}
+        if answered_in_a_batch:
+            # Its pause was answered in a batch and never surfaced, so its queue
+            # entry is still there; left, `specialist_gather` would surface a
+            # pause for a task that has finished.
+            finished["specialist_pauses"] = {stage_name: None}
+        return finished
 
     def specialist_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
         """Where the parallel fan-out joins, and the only writer of `stage` in it.
@@ -4332,7 +4380,7 @@ def build_workflow_graph(
             # one key set to `None` says "this one is answered" and leaves the
             # rest queued for the supersteps after it.
             surfaced = {key: value for key, value in pauses[first].items() if key != _QUEUED_AT}
-            return {**surfaced, "specialist_pauses": {first: None}}
+            return {**surfaced, "specialist_pauses": {first: None}, "queued_decisions": {}}
 
         # Nothing is paused. A task the fan-out held back because it shares a
         # file with one that was running has not been dispatched yet, and this
@@ -4353,8 +4401,9 @@ def build_workflow_graph(
                 "pending_decision": None,
                 "pending_inner_thread_id": None,
                 "pending_approval": None,
+                "queued_decisions": {},
             }
-        return _handing_on(stage="test_and_triage", specialist_pauses={})
+        return _handing_on(stage="test_and_triage", specialist_pauses={}, queued_decisions={})
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "milestone_plan")
@@ -5462,6 +5511,7 @@ def resume_pending_approval(
     recursion_limit: int = DEFAULT_RECURSION_LIMIT,
     metadata: dict | None = None,
     run_id: str | None = None,
+    queued_decisions: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Resume a run paused on a mandatory artifact-write approval.
 
@@ -5473,8 +5523,35 @@ def resume_pending_approval(
     Build `decision` with the helpers in `app.agents.approval`:
     `approve_write_decision()`, `edit_write_decision(...)`, or
     `reject_write_decision(...)`.
+
+    `queued_decisions`: decisions for parallel pauses queued behind this one,
+    by stage name (see `queued_parallel_pauses`). Each queued worker resumes
+    its own paused thread with its own decision in the same superstep.
     """
-    return graph.invoke({"pending_decision": decision}, config=_run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id))
+    update: dict[str, Any] = {"pending_decision": decision}
+    if queued_decisions:
+        update["queued_decisions"] = dict(queued_decisions)
+    return graph.invoke(update, config=_run_config(thread_id, recursion_limit, metadata=metadata, run_id=run_id))
+
+
+def queued_parallel_pauses(state: Any) -> dict[str, dict[str, Any]]:
+    """The parallel pauses queued behind the surfaced one, by stage name.
+
+    For the runner, which under auto-approve answers all of them in the same
+    resume (`resume_pending_approval(..., queued_decisions=...)`). Each value
+    carries the pause's `pending_approval`, `pending_inner_thread_id` and when
+    it joined the queue. Empty outside a parallel fan-out.
+    """
+    surfaced = _the_stage_that_paused(state)
+    return {
+        stage: {
+            "pending_approval": pause.get("pending_approval"),
+            "pending_inner_thread_id": pause.get("pending_inner_thread_id"),
+            "queued_at": pause.get(_QUEUED_AT),
+        }
+        for stage, pause in _queued_pauses(state).items()
+        if stage != surfaced
+    }
 
 
 def resume_pending_review(
@@ -5535,6 +5612,7 @@ __all__ = [
     "SPRINT_REVIEW",
     "WorkflowGraphState",
     "approve_decision",
+    "queued_parallel_pauses",
     "build_workflow_graph",
     "request_changes_decision",
     "resume_failed_run",

@@ -272,3 +272,41 @@ class TestIndependentTasksStillRunTogether:
         # Both dispatched in the first fan-out, before anyone answered anything.
         assert len(_of(calls, "database")) == 1
         assert len(_of(calls, "backend")) == 1
+
+
+class TestAnsweredTogether:
+    """Under auto-approve the runner answers every queued pause in one resume
+    (`queued_parallel_pauses`, `resume_pending_approval(..., queued_decisions=)`),
+    so both workers go on in the same superstep instead of one after the other."""
+
+    def test_both_paused_workers_resume_in_one_resume_on_their_own_threads(
+        self, agents: ScriptedAgents, parallel: None, calls: list, tmp_path: Any
+    ) -> None:
+        from app.graph.workflow import queued_parallel_pauses
+
+        _script(agents, _plan(("backend", "Create api.py."), ("database", "Create schema.sql.")))
+        agents.script("specialist_backend", [
+            pause_for_approval("api.py", "Backend write"),
+            responds_with(_specialist()),
+        ])
+        agents.script("specialist_database", [
+            pause_for_approval("schema.sql", "Schema write"),
+            responds_with(_specialist()),
+        ])
+        agents.script("specialist_testing", [responds_with(_specialist())])
+        graph = _graph()
+
+        state = start_workflow(graph, _document(), _repository(tmp_path), "run-together")
+        assert str(state["stage"]).startswith("awaiting_approval:")
+        queued = queued_parallel_pauses(state)
+        assert len(queued) == 1, queued
+        state = resume_pending_approval(
+            graph, "run-together", approve_write_decision(),
+            queued_decisions={stage: approve_write_decision() for stage in queued},
+        )
+
+        assert state["stage"] == "complete", state.get("error")
+        for role in ("backend", "database"):
+            mine = _of(calls, role)
+            assert [kind for kind, _ in mine] == ["fresh", "resume"], mine
+            assert mine[1][1] == mine[0][1], f"{role} must resume its own thread: {mine}"

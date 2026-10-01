@@ -1,6 +1,6 @@
 # Handover - the harness improvement loop
 
-Written 2026-10-01 16:20 JST and last updated 23:46 JST, for the next Claude Code session (a different
+Written 2026-10-01 16:20 JST and last updated 01:10 JST (2026-10-02), for the next Claude Code session (a different
 account on a different desktop) and for the owner. Read this first, then
 `docs/monitoring-handover.md` §0 (mechanics and the full gate history),
 §0.4.1 (product audit checklist), §0.7 (how a sprint runs) and §0.9 (where a
@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `6df0d5f`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `6df0d5f` |
-| current run | `run-f79731fb-59cc-412b-a5a4-9f9dc3fe5218`, started 23:44 JST by the loop account, `brief_low.md`, auto-approve on, on the unsloth server (see model). Cancelled today, each for a harness bug found in its first 40 minutes: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`), run-f1a81dbe 18:31 (`html5`/`css3` got generated notes, `1024cc3`), run-3bfa5ffc 23:09 (the stack document argued against the runner the workflow had recorded in it, `acf55ea`), run-d749dad2 23:37 (`store.read()` in a sprint's scope read as a file no work order lists, `6df0d5f`) |
+| branch | `harness-hardening-session`, last code commit `8c856b0`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `8c856b0` |
+| current run | `run-d7970a62-85fc-4fc3-a056-74ce3913fb75`, started 01:08 JST (2026-10-02) by the loop account, `brief_low.md`, auto-approve on, on the unsloth server (see model). Cancelled today, each for a harness bug found in its first 40 minutes: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`), run-f1a81dbe 18:31 (`html5`/`css3` got generated notes, `1024cc3`), run-3bfa5ffc 23:09 (the stack document argued against the runner the workflow had recorded in it, `acf55ea`), run-d749dad2 23:37 (`store.read()` in a sprint's scope read as a file no work order lists, `6df0d5f`). run-f79731fb FAILED 00:58 on 2026-10-02 after a clean sprint 1 (a tool call cut off at the output limit stayed in the history and llama-server refused every later request, `8c856b0`). A session heartbeat (CronCreate, every 15 minutes) now re-prompts the loop after a failed turn such as an API 529; it dies with the session, so recreate it |
 | model | changed by the owner at 22:55 JST: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` at `http://host.docker.internal:8888/v1` (the owner's unsloth server, which needs the key the harness is configured with and lists every model it can serve, not only the loaded one), `thinking_effort` medium, execution mode **parallel**, context 126,000, max output 20,000. Earlier today: gpt-oss-20b on LM Studio (:1234), then qwen on :9090, then gpt-oss again. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

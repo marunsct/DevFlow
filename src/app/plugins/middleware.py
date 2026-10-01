@@ -221,19 +221,87 @@ def _named_in_the_selected_stack(content: str, known: set[str]) -> List[str]:
     folded, with dots dropped so "Next.js" reads as `nextjs`. Only that section
     is read, because the rationale also names the options it turned down.
     """
+    chosen, _ = _what_the_selected_stack_says(content)
+    if chosen is None:
+        return []
+    return [name for name in sorted(known) if name and _names(chosen, name)]
+
+
+#: A clause boundary inside the selected section. "instead of" and "rather than"
+#: open a clause of their own, so "Vue instead of React" keeps Vue.
+_A_CLAUSE_BREAK = re.compile(
+    r"[\n;()\[\],]|\.\s|:\s|\s[-–—]\s|\bbut\b|(?=\binstead of\b|\brather than\b)",
+    re.I,
+)
+
+#: Words that turn a clause into a rejection: "no TypeScript", "rules out
+#: Vue/React", "React is not used", "instead of Angular".
+_REJECTS = re.compile(
+    r"\b(?:no|not|none|without|never|neither|nor|avoid\w*|exclud\w*|reject\w*"
+    r"|rules? out|ruled out|instead of|rather than|passed over|unlike)\b",
+    re.I,
+)
+
+#: A field label as `artifact_document` writes it: `**Additional tools:**`.
+_A_FIELD_LABEL = re.compile(r"\*\*\s*([^*:]+?)\s*:\s*\*\*")
+
+
+def _what_the_selected_stack_says(content: str) -> tuple[str | None, str]:
+    """The selected section's text split into (chosen, set aside), lowercased.
+
+    Set aside is every clause that rejects what it names, and the tools field.
+
+    `chosen` is None when the document has no selected section.
+
+    The section was read whole, and it says what it turns down as well as what
+    it takes. One run's selected stack read "vanilla JavaScript (ES2020 ...; no
+    TypeScript ...)" and "The brief's 'no external dependencies ...' rules out
+    Vue/Svelte/React/Alpine outright", and its agents were given the React,
+    Vue and TypeScript instructions. The same run's "Additional tools" listed
+    `python3 -m http.server`, which brought the Python instructions - "You are
+    working in a Python environment" - into a JavaScript project. A command a
+    stack uses is a tool, and the extraction model is already told to leave
+    tools out; so is this.
+    """
     match = _SELECTED_SECTION.search(content)
     if not match:
-        return []
-    body = match.group("body").lower()
-    text = f"{body}\n{body.replace('.', '')}"
-    return [
-        name
-        for name in sorted(known)
-        # A version number may follow: "HTML5/CSS3/JS" selected `html` and
-        # `css` on one run and matched neither while the boundary was a bare
-        # word boundary, because a digit is a word character.
-        if name and re.search(rf"(?<![\w-]){re.escape(name)}(?:\d[\d.]*)?(?![\w-])", text)
-    ]
+        return None, ""
+    chosen: list[str] = []
+    set_aside: list[str] = []
+    label = ""
+    for line in match.group("body").splitlines():
+        labelled = _A_FIELD_LABEL.search(line)
+        if labelled:
+            label = labelled.group(1).lower()
+            line = line[labelled.end():]
+        if "tool" in label:
+            set_aside.append(line.lower())
+            continue
+        for clause in _A_CLAUSE_BREAK.split(line):
+            (set_aside if _REJECTS.search(clause) else chosen).append(clause.lower())
+    return "\n".join(chosen), "\n".join(set_aside)
+
+
+def _names(text: str, name: str) -> bool:
+    """Whether `text` names `name` as a whole word, dots dropped, version allowed."""
+    spaced = f"{text}\n{text.replace('.', '')}"
+    # A version number may follow: "HTML5/CSS3/JS" selected `html` and `css` on
+    # one run and matched neither while the boundary was a bare word boundary,
+    # because a digit is a word character.
+    return re.search(rf"(?<![\w-]){re.escape(name)}(?:\d[\d.]*)?(?![\w-])", spaced) is not None
+
+
+def _turned_down_by_the_selected_stack(content: str, name: str) -> bool:
+    """Whether the selected section names `name` only to reject it or as a tool.
+
+    A name it never mentions is not turned down: the model may infer
+    `javascript` from "Vanilla JS", which is what it is asked to do.
+    """
+    chosen, set_aside = _what_the_selected_stack_says(content)
+    if chosen is None:
+        return False
+    lowered = name.lower()
+    return _names(set_aside, lowered) and not _names(chosen, lowered)
 
 
 def _extract_stack_keywords(repo_root: str) -> List[str]:
@@ -281,7 +349,14 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
             )),
             HumanMessage(content=content),
         ])
-        detected = _framework_names(_text_of(reply))
+        # The model reads the whole document, rationale included, and the
+        # rationale names what was turned down. A name the selected stack itself
+        # rejects is not one it mandates, whoever read it out.
+        detected = [
+            name
+            for name in _framework_names(_text_of(reply))
+            if not _turned_down_by_the_selected_stack(content, name)
+        ]
         if not detected:
             logger.info("No frameworks could be read from the stack document")
 

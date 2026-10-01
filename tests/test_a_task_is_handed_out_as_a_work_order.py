@@ -447,3 +447,35 @@ class TestAVerificationThatBorrowsAFile:
         from app.analysis.work_orders import with_borrowed_files_noted
 
         assert with_borrowed_files_noted(plan) is plan
+
+
+class TestEveryFileTheSprintNamesHasAnOwner:
+    """One run's sprint scope named index.html, style.css, app.js, ui.js and
+    model.js; the plan covered only the state and storage modules, and the gap
+    was found by the milestone review after the sprint had been built."""
+
+    SCOPE = "Build the app.\nCreate index.html, style.css, app.js and state.js.\nAdd state.test.js."
+
+    def test_a_named_file_no_work_order_lists_is_a_problem(self, enforced, project):
+        problems = readiness_problems(
+            _plan(_order("backend", files=["app/state.js"]), _order("testing", files=["app/state.test.js"])),
+            project, sprint_scope=self.SCOPE,
+        )
+
+        found = [p for p in problems if "no work order lists" in p]
+        assert found and "index.html" in found[0] and "style.css" in found[0] and "app.js" in found[0]
+        assert "state.js" not in found[0].split("lists")[0].replace("state.test.js", "")
+
+    def test_a_file_that_already_exists_needs_no_work_order(self, enforced, project):
+        for name in ("index.html", "style.css", "app.js"):
+            (project / "app" / name).write_text("x", encoding="utf-8")
+
+        problems = readiness_problems(
+            _plan(_order("backend", files=["app/state.js"]), _order("testing", files=["app/state.test.js"])),
+            project, sprint_scope=self.SCOPE,
+        )
+
+        assert not any("no work order lists" in p for p in problems)
+
+    def test_without_a_scope_nothing_changes(self, enforced, project):
+        assert readiness_problems(_plan(_order("backend"), _order("testing", test_cases=[])), project) == []

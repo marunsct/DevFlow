@@ -4517,7 +4517,10 @@ def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> 
 #: characters, optionally under directories. Lower case so that a technology
 #: written with a dot - "a Node.js module", which one run's blocking finding
 #: about a browser module began with - and "e.g." are never read as files.
-_A_FILE_NAMED = re.compile(r"(?<![\w/.-])((?:[\w-]+/)*[a-z0-9_-]+\.[a-z][a-z0-9]{1,5})(?![\w/-])")
+#: Several dotted parts are one name: `state.test.js` is not `state.test`.
+_A_FILE_NAMED = re.compile(
+    r"(?<![\w/.-])((?:[\w-]+/)*[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.[a-z][a-z0-9]{1,5})(?![\w/-]|\.\w)"
+)
 
 
 def later_sprint_files_in(finding: str, this_sprint: str, later_sprints: str) -> list[str]:

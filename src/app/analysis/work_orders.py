@@ -234,6 +234,42 @@ def _pinned_project_directory(repo_root: str | Path | None) -> str:
         return ""
 
 
+def _files_the_sprint_names_and_nobody_is_given(
+    sprint_scope: str, tasks: Sequence[Any], repo_root: str | Path | None, project_dir: str
+) -> list[str]:
+    """Files the sprint's goal, scope or criteria name that no work order lists and that do not exist.
+
+    Measured on one run: the sprint's scope named `index.html`, `style.css`,
+    `app.js`, `ui.js` and `model.js`, the plan's work orders covered only the
+    state and storage modules, and the gap was found by the milestone review
+    after the whole sprint had been built and tested - a full cycle spent on a
+    plan with no user interface in it. A file that already exists was built
+    earlier and needs no work order. Never raises.
+    """
+    try:
+        from app.analysis.integration_checks import _A_FILE_NAMED
+
+        named = {PurePosixPath(match).name for match in _A_FILE_NAMED.findall(sprint_scope or "")}
+        if not named:
+            return []
+        listed = {
+            PurePosixPath(str(path)).name.lower()
+            for task in tasks
+            for path in getattr(task, "files", None) or []
+        }
+        base = Path(repo_root or "") / project_dir if project_dir else Path(repo_root or "")
+        existing: set[str] = set()
+        if repo_root and base.is_dir():
+            from app.tools.repository import IGNORED_DIRECTORIES
+
+            for path in base.rglob("*"):
+                if path.is_file() and not any(part in IGNORED_DIRECTORIES for part in path.parts):
+                    existing.add(path.name.lower())
+        return sorted(name for name in named if name.lower() not in listed and name.lower() not in existing)
+    except Exception:  # noqa: BLE001 - the plan is still checked for everything else
+        return []
+
+
 def _touches_product_code(files: Sequence[str]) -> bool:
     """Whether a work order changes anything a test could exercise.
 
@@ -271,7 +307,10 @@ def readiness_enforced() -> bool:
 
 
 def readiness_problems(
-    milestone: Any, repo_root: str | Path | None, carried_forward: Sequence[str] = ()
+    milestone: Any,
+    repo_root: str | Path | None,
+    carried_forward: Sequence[str] = (),
+    sprint_scope: str = "",
 ) -> list[str]:
     """What stops this plan being handed out as it stands. Never raises.
 
@@ -336,6 +375,14 @@ def readiness_problems(
             refused = []
         for note in refused:
             problems.append(f"{label} `verification`: {note}")
+
+    unassigned = _files_the_sprint_names_and_nobody_is_given(sprint_scope, tasks, repo_root, project_dir)
+    if unassigned:
+        problems.append(
+            f"The sprint's scope names {', '.join(unassigned)} and no work order lists "
+            f"{'it' if len(unassigned) == 1 else 'them'}. A file nobody is given is a file "
+            "nobody writes: give each to the work order that builds it."
+        )
 
     carried = [str(item) for item in carried_forward or () if str(item).strip()]
     decided = [str(d) for d in getattr(milestone, "carried_forward_decisions", None) or [] if str(d).strip()]

@@ -4081,6 +4081,7 @@ def build_workflow_graph(
             update["milestone_plan"],
             state["repository"].root_path,
             carried_forward=[] if revising else (state.get("carried_forward") or []),
+            sprint_scope=_what_this_sprint_builds(state),
         )
         if problems:
             retries = dict(state.get("structured_retries") or {})

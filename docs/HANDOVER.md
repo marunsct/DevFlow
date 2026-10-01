@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `c0fea69`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `c0fea69` |
-| current run | `run-7cc2f3a6-ebef-425a-9d07-41aa4f413581`, started 17:47 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP feature sentences word-checked, `c0fea69`) |
+| branch | `harness-hardening-session`, last code commit `ce4f12d`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `ce4f12d` |
+| current run | `run-c49e59b0-70cc-4a08-88db-fd20dc728f80`, started 18:03 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it today: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`) |
 | model | the owner switched back at about 17:45 JST: `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`. The qwen server on port 9090 is down. Check `runtime_settings` and the loaded model before every start - the owner changes them |
 | gate | 0 of 2 on brief_low |
 
@@ -81,7 +81,9 @@ not show, and separate "the model did something odd" from "the harness let it"
 before fixing. The reasoning switch is measured once per endpoint and model and
 logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
 
-**What `2beaf2e`, `a754eb7`, `904ecf8` and `c0fea69` changed - verify them on this run:**
+**What `2beaf2e`, `a754eb7`, `904ecf8`, `c0fea69` and `ce4f12d` changed - verify them on this run:**
+- An `edit_artifact`/`replace_lines` result now carries the same
+  module-system notes as a write (CommonJS under `"type": "module"`, etc.).
 - A sprint plan is handed back only for a success measure's own list items
   (an MVP feature needs only a sprint assigned), and never for a function
   word such as "does" - check the worker's "Sprint plan left success

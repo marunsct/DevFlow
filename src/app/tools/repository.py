@@ -2019,6 +2019,46 @@ _HOW_TO_ADD_AROUND_A_LINE = (
 )
 
 
+#: A line that opens with one diff marker, then the text it marks. `--` and
+#: `++` are left alone: they open decrements, comments and separators in many
+#: languages, and a diff marks a line with one character.
+_A_DIFF_LINE = re.compile(r"^([+-])(?![+-])(.*\S.*)$")
+
+
+def _written_as_a_diff(content: str, original: str) -> str:
+    """A note when a refused `content` reads as a diff rather than new text, or "".
+
+    Measured on one run: `defect_fix_1_1` sent
+    `-      }));\\n+      completed: Boolean(t.completed)\\n+      }));` as the
+    content of a `replace_lines` - a patch, which `content` is not - and was
+    told "Unexpected token '-'" four times in a row, the last two by the repeat
+    guard, without ever learning why. `defect_fix_1_2` then did the same.
+
+    Asked only of an edit already refused for breaking the file, so it can
+    never stop one that would have worked. It names markers only on lines whose
+    marked text is in the file already, or when both `+` and `-` lines appear:
+    a lone `- item` in a list is not a diff.
+    """
+    held = {line.strip() for line in original.splitlines() if line.strip()}
+    marked = []
+    for number, line in enumerate(content.splitlines(), 1):
+        found = _A_DIFF_LINE.match(line)
+        if found:
+            marked.append((number, found.group(1), found.group(2).strip()))
+    if not marked:
+        return ""
+    both = {sign for _, sign, _ in marked} == {"+", "-"}
+    if not both and not any(text in held for _, _, text in marked):
+        return ""
+    number, sign, _ = marked[0]
+    return (
+        f"\n\nLine {number} of your `content` begins with '{sign}', which reads as a "
+        "diff marker. `content` is the new text of those lines exactly as the file "
+        "should hold them, not a patch: leave out every line you meant to remove "
+        "(the '-' lines), and drop the leading '+' from every line you meant to add."
+    )
+
+
 def _what_the_range_held(
     lines: list[str], start: int, last: int, expect_start: str, content: str = ""
 ) -> str:
@@ -2231,7 +2271,8 @@ def replace_approved_lines(
             if "parse" not in str(exc).lower():
                 raise
             raise RepositoryToolError(
-                f"{exc}{_what_the_range_held(lines, start_line, last, expect_start, content)}"
+                f"{exc}{_written_as_a_diff(content, original)}"
+                f"{_what_the_range_held(lines, start_line, last, expect_start, content)}"
             ) from exc
         note = (
             f"Replaced lines {start_line}-{last} of {total}. "

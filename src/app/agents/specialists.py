@@ -876,7 +876,8 @@ def build_defect_fix_request(
         "passes after it, and name that test in your `tests` field. A fix with no named "
         "regression test cannot be accepted."
         if regression_test_required
-        else "A regression test is not required for this defect, but name any test you did run."
+        else _not_the_product_clause(affected_files)
+        or "A regression test is not required for this defect, but name any test you did run."
     )
     brief = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
@@ -893,6 +894,42 @@ def build_defect_fix_request(
         "claiming it is resolved."
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _not_the_product_clause(affected_files: list[str]) -> str:
+    """What to do about a defect that lies only in tests or throwaway scripts, or "".
+
+    The workflow already drops the regression-test requirement for these (see
+    `workflow._needs_a_regression_test`); this says what replaces it. Without
+    it, one run's fix stages repaired a debugging script four rounds running
+    and wrote a "regression test" for it each time, and the next round tested
+    those.
+    """
+    from app.analysis.file_kinds import is_scratch, is_test
+
+    names = [str(name) for name in affected_files or [] if str(name).strip()]
+    if not names or not all(is_test(name) or is_scratch(name) for name in names):
+        return ""
+    throwaway = [name for name in names if is_scratch(name) and not is_test(name)]
+    tests = [name for name in names if is_test(name)]
+    parts = []
+    if throwaway:
+        listed = ", ".join(f"'{name}'" for name in throwaway)
+        parts.append(
+            f"{listed} {'is' if len(throwaway) == 1 else 'are'} named like a debugging "
+            "script, which is not part of what this run delivers. If nothing in the "
+            "product, its manifest or its tests runs it, the fix is to delete it with "
+            "`delete_artifact` - not to repair it, and not to write tests for it."
+        )
+    if tests:
+        parts.append(
+            "A defect in a test is not a defect in the product, so the corrected test is "
+            "its own proof: fix it, run it, and name it in your `tests` field. Do not "
+            "write another test about it."
+        )
+    else:
+        parts.append("No regression test is needed; name any test you did run.")
+    return " ".join(parts)
 
 
 #: Only the testing role is given `run_validation` - it runs under the testing

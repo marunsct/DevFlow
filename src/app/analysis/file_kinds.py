@@ -131,4 +131,35 @@ def is_application(relative_path: str) -> bool:
     return classify_file(relative_path) == "application"
 
 
-__all__ = ["FileKind", "classify_file", "is_application", "is_test"]
+#: A file name that says it was written to be thrown away. Matched against the
+#: name only, never the directory.
+SCRATCH_NAME = re.compile(
+    r"^(?:tmp|temp|scratch|debug)[_.-]|^test[_-]debug"
+    # A `debug` segment anywhere in the name: `play_debug_e2e.js`,
+    # `run_debug_console.js`, `check-debug2.mjs`. One run left these beside
+    # `tmp_get_tasks.js` and `temp_open_file.js`, and only the prefixed two were
+    # recognised. The separator on both sides keeps `debugger.js` out.
+    r"|[_.-]debug(?:\d+|[_.-])"
+    # `test2.mjs`, `test4.mjs` - a numbered throwaway, which one run left
+    # two of. Anchored and digit-suffixed so `app.test.js` and `test.mjs` are
+    # untouched: a bare `test.mjs` is a plausible entry point, `test2` is not.
+    r"|^test\d+\.[cm]?js$"
+    # The suffix the delete guard tells a stage to rename a throwaway probe to
+    # on its way out - see `repository._somewhere_this_rule_will_let_go_of`.
+    r"|\.probe$",
+    re.I,
+)
+
+
+def is_scratch(relative_path: str) -> bool:
+    """Whether this file's name says it is a throwaway - a probe, not the product.
+
+    Separate from `classify_file`, because a scratch script still counts as
+    application code against the size budget: that is the point of reporting it.
+    What this answers is narrower: is work *on* this file work on the product?
+    """
+    name = str(relative_path or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    return bool(name) and SCRATCH_NAME.search(name) is not None
+
+
+__all__ = ["FileKind", "SCRATCH_NAME", "classify_file", "is_application", "is_scratch", "is_test"]

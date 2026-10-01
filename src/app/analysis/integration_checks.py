@@ -26,7 +26,7 @@ it could not be scanned.
 
 from __future__ import annotations
 
-from app.analysis.file_kinds import is_application, is_test
+from app.analysis.file_kinds import SCRATCH_NAME, is_application, is_test
 
 import json
 import re
@@ -2377,14 +2377,8 @@ def how_the_page_receives_text(root: str | Path) -> str:
 
 #: Names an agent gives a throwaway script while it is debugging. Narrow on
 #: purpose: a product file is not called `tmp_debug5`.
-_A_SCRATCH_SCRIPT = re.compile(
-    r"""^(?:tmp|temp|scratch|debug)[_.-]|^test[_-]debug|[_-]debug\d*\.[cm]?js$"""
-    # `test2.mjs`, `test4.mjs` - a numbered throwaway, which one run left
-    # two of. Anchored and digit-suffixed so `app.test.js` and `test.mjs` are
-    # untouched: a bare `test.mjs` is a plausible entry point, `test2` is not.
-    r"""|^test\d+\.[cm]?js$""",
-    re.I,
-)
+#: One answer for every consumer: see `app.analysis.file_kinds.SCRATCH_NAME`.
+_A_SCRATCH_SCRIPT = SCRATCH_NAME
 
 
 def _scratch_scripts_left_behind(files: list[Path], root: Path) -> list[str]:

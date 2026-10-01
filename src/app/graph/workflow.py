@@ -2995,17 +2995,78 @@ def _a_round_that_found_a_product_defect(defects: list[Any]) -> bool:
     not known to be anything - reading silence as good news is the mistake
     every other check in this codebase is written against.
     """
-    from app.analysis.file_kinds import is_test
-
     if not defects:
         return True
-    for defect in defects:
-        files = list(getattr(defect, "affected_files", None) or [])
-        if not files:
-            return True
-        if any(not is_test(str(name)) for name in files):
-            return True
-    return False
+    return not all(
+        _only_tests_or_scratch(getattr(defect, "affected_files", None)) for defect in defects
+    )
+
+
+def _only_tests_or_scratch(files: Any) -> bool:
+    """Whether every file a defect names is a test or a throwaway script.
+
+    False when it names none: an unlocated defect is not known to be anything.
+    A debugging script is no more the product than a test is - one run's
+    sprint spent four rounds on `play_debug_e2e.js` and the tests written
+    about it.
+    """
+    from app.analysis.file_kinds import is_scratch, is_test
+
+    names = [str(name) for name in (files or []) if str(name).strip()]
+    return bool(names) and all(is_test(name) or is_scratch(name) for name in names)
+
+
+def _needs_a_regression_test(reported: Any) -> bool:
+    """Whether closing this reported defect should wait for a new regression test.
+
+    Not when the defect is in the tests or a throwaway script itself. A
+    regression test exists to prove a change to the product; for a defect in a
+    test, the corrected test is its own proof, and demanding another is a test
+    of a test. Measured on one run: `test_round_2` reported that
+    `play_debug_e2e_regression.test.js` asserted nothing, and the fix stage -
+    told it MUST add a regression test - wrote
+    `play_debug_e2e_regression_test_has_expect.test.js`, a suite that reads the
+    first one and checks it contains `expect`. The suite before it had been
+    written as the "regression test" for a debugging script.
+    """
+    if not getattr(reported, "regression_test_required", True):
+        return False
+    return not _only_tests_or_scratch(getattr(reported, "affected_files", None))
+
+
+#: How an MVP feature is told apart from a success measure in the planner's
+#: checklist. Free of list words, so `capabilities_never_named` reads only the
+#: feature's own text.
+MVP_FEATURE_LABEL = " (an MVP feature the product intake selected)"
+
+
+def _what_the_sprints_must_deliver(intake: Any) -> list[str]:
+    """The intake's success measures, then each MVP feature they do not repeat.
+
+    The sprint plan is checked line by line against this list, and it was the
+    success measures alone. Measured on one run: the intake's MVP candidates
+    held "Toggle complete/incomplete with visual cue", the specification
+    specified `toggleComplete(id)` and a `task:toggled` event, and no sprint
+    planned either - the brief's acceptance criteria never said "complete", so
+    nothing asked. The last sprint's milestone plan then "declined to add ...
+    complete toggle functionality (future work)" with no sprint after it, and
+    the run was accepted with a Completed filter that could never show a task.
+
+    The MVP candidates are the intake's own choice of what this release
+    contains - for a large brief, the part it did not defer - so assigning
+    each to a sprint asks for nothing the intake did not already commit to.
+    """
+    measures = [
+        str(m).strip() for m in (getattr(intake, "success_measures", None) or []) if str(m).strip()
+    ]
+    already = {m.lower() for m in measures}
+    features = []
+    for candidate in getattr(intake, "mvp_candidates", None) or []:
+        text = str(candidate).strip()
+        if text and text.lower() not in already:
+            already.add(text.lower())
+            features.append(f"{text}{MVP_FEATURE_LABEL}")
+    return [*measures, *features]
 
 
 def _what_later_sprints_build(state: Any) -> str:
@@ -3949,9 +4010,7 @@ def build_workflow_graph(
             return missing
         agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
-        measures = [
-            str(m) for m in (getattr(state.get("product_intake"), "success_measures", None) or []) if str(m).strip()
-        ]
+        measures = _what_the_sprints_must_deliver(state.get("product_intake"))
         gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
         request = build_sprint_planning_request(
             spec_text,
@@ -4534,7 +4593,7 @@ def build_workflow_graph(
                 actual_behavior=item.actual_behavior,
                 affected_files=item.affected_files,
                 owner=item.owner,
-                regression_test_required=item.regression_test_required,
+                regression_test_required=_needs_a_regression_test(item),
             )
             for item in reported
         ]

@@ -152,10 +152,12 @@ def _the_success_measures(measures: list[str], gaps: list[Any]) -> str:
     section = (
         "--- Success measures from the product intake ---\n"
         f"{numbered}\n\n"
-        "These are what the finished product is judged against, and the "
-        "specification may state some of them only in passing. Every one must "
-        "be delivered by a sprint. In `success_measure_coverage`, write one line "
-        "per measure - '1: Sprint 1', '2: Sprint 2', '4: every sprint' for a "
+        "These are what the finished product is judged against, with the MVP "
+        "features the intake selected for this release, and the specification "
+        "may state some of them only in passing. Every one must be delivered by "
+        "a sprint - there is no release after this one to defer an MVP feature "
+        "to. In `success_measure_coverage`, write one line per measure - "
+        "'1: Sprint 1', '2: Sprint 2', '4: every sprint' for a "
         "constraint every sprint keeps - and make sure the sprint you name has "
         "that work in its scope and acceptance criteria.\n"
     )

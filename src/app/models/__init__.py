@@ -10,6 +10,7 @@ changes.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -219,6 +220,70 @@ def _max_output_tokens() -> int:
     return ContextBudget.resolve().max_output_tokens
 
 
+#: What stands in for a tool call that was cut off before it was whole.
+CUT_OFF_CALL_NOTE = (
+    "[A tool call here was cut off at the output limit before its arguments were "
+    "complete. It was not run.]"
+)
+
+
+def _is_json(text: Any) -> bool:
+    try:
+        json.loads(text if isinstance(text, str) else "")
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def without_cut_off_tool_calls(messages: list[Any]) -> None:
+    """Take half-written tool calls out of the request's history, in place.
+
+    A reply cut off at its output limit in the middle of a tool call leaves that
+    call in the conversation with arguments that are not JSON. Some servers
+    accept such a history; llama-server refuses the whole request with 500
+    "Failed to parse tool call arguments as JSON". Measured on one run: the
+    technical lead's plan was cut off inside its answer, and the nudge, the
+    retry and the recovery call with tools withheld each re-sent that history
+    and were refused within milliseconds - four 500s in three seconds, and the
+    run failed on a stage that had never been given a chance to answer.
+
+    A cut-off call nobody answered is removed and said to have been cut off; one
+    a tool message answers keeps its place with empty arguments, because a
+    tool message must follow the call it answers.
+    """
+    answered = {
+        message.get("tool_call_id")
+        for message in messages
+        if isinstance(message, dict) and message.get("role") == "tool"
+    }
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        calls = message.get("tool_calls")
+        if not isinstance(calls, list) or not calls:
+            continue
+        kept = []
+        dropped = False
+        for call in calls:
+            function = call.get("function") if isinstance(call, dict) else None
+            if not isinstance(function, dict) or _is_json(function.get("arguments")):
+                kept.append(call)
+            elif call.get("id") in answered:
+                function["arguments"] = "{}"
+                kept.append(call)
+            else:
+                dropped = True
+        if not dropped:
+            continue
+        if kept:
+            message["tool_calls"] = kept
+        else:
+            message.pop("tool_calls", None)
+        text = message.get("content")
+        if isinstance(text, str) or text is None:
+            message["content"] = f"{text}\n\n{CUT_OFF_CALL_NOTE}".strip() if text else CUT_OFF_CALL_NOTE
+
+
 class CompatibleChatOpenAI(ChatOpenAI):
     """`ChatOpenAI` that omits ``name`` on everything except tool messages.
 
@@ -250,6 +315,10 @@ class CompatibleChatOpenAI(ChatOpenAI):
                 self._convert_input(input_).to_messages(), payload.get("messages") or []
             )
         except Exception:  # noqa: BLE001 - a missing note must never cost the call
+            pass
+        try:
+            without_cut_off_tool_calls(payload.get("messages") or [])
+        except Exception:  # noqa: BLE001 - a repair that cannot run changes nothing
             pass
         return payload
 

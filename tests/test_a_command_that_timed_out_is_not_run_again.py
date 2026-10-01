@@ -174,3 +174,23 @@ def test_its_own_refusals_are_not_counted_as_timeouts(tmp_path):
 
     assert timed_out_this_way_before(str(tmp_path), SUITE, category="default") == 1
     assert timed_out_this_way_before(str(tmp_path), SUITE, category="test") == 0
+
+
+def test_a_change_since_the_timeout_lets_it_run_again(tmp_path):
+    """A change can be the fix for the hang. One run's `npm test` timed out
+    twice and was then refused five times - to the stages fixing the hang and
+    the test rounds after them - so nothing could check the fix."""
+    import os
+    import time
+
+    (tmp_path / "app").mkdir()
+    entry = {**_timeout_entry(), "at": "2026-09-16T20:00:00+00:00"}
+    _ledger(tmp_path, [entry, entry])
+    assert timed_out_this_way_before(str(tmp_path), SERVER) == 2
+
+    changed = tmp_path / "app" / "index.js"
+    changed.write_text("process.exit(0)\n", encoding="utf-8")
+    later = time.time()
+    os.utime(changed, (later, later))
+
+    assert timed_out_this_way_before(str(tmp_path), SERVER) == 0

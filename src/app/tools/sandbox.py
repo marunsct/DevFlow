@@ -2909,7 +2909,7 @@ def timed_out_this_way_before(
     working_directory: str | None = None,
     category: str | None = None,
 ) -> int:
-    """How many times this exact command has already timed out in this run.
+    """How many times this exact command has timed out with nothing written since.
 
     Separate from `failed_this_way_before` because a timeout records no exit
     code - the process never exited - so that function's `returncode not in
@@ -2944,6 +2944,13 @@ def timed_out_this_way_before(
         # "timed out 2 time(s)" became 3, 4, 5, 6 with nothing timing out.
         and str(entry.get("error") or "").lstrip().startswith("Command timed out")
         and TIMEOUTS.get(str(entry.get("category") or "default"), TIMEOUTS["default"]) >= allowed
+        # Only with nothing written since, as `failed_this_way_before` counts.
+        # A change can be the fix for the hang. Measured on one run: `npm test`
+        # timed out twice in sprint 1's first defect fix, and from then on it
+        # was refused as "would time out again" - five times, to the stages
+        # fixing the hang and to the test rounds after them - so nothing could
+        # check whether the fix had worked.
+        and not _written_since(repo_root, entry.get("at"), working_directory)
     )
 
 

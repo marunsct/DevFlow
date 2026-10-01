@@ -128,3 +128,58 @@ def test_what_the_model_reads_out_of_a_rejection_is_dropped(tmp_path, monkeypatc
 
     assert not {"react", "vue", "typescript", "python"} & set(keywords)
     assert {"javascript", "html", "playwright", "node"} <= set(keywords)
+
+
+# --- a version written onto a name ------------------------------------------
+
+
+def test_a_versioned_name_is_read_as_the_known_one() -> None:
+    """One run's extraction returned `html5` and `css3`, and generated notes
+    for both - `<canvas>`, `<video>`, animations - beside the seeded ones."""
+    from app.plugins.middleware import _the_known_name_for
+
+    known = {"html", "css", "python", "vue"}
+
+    assert [_the_known_name_for(n, known) for n in ("html5", "css3", "python3", "vue 3")] == [
+        "html", "css", "python", "vue",
+    ]
+
+
+def test_an_unknown_or_unversioned_name_is_kept() -> None:
+    from app.plugins.middleware import _the_known_name_for
+
+    assert _the_known_name_for("es2020", {"html"}) == "es2020"
+    assert _the_known_name_for("html", {"html"}) == "html"
+
+
+class _VersionedModel:
+    def invoke(self, messages):
+        return _Reply("html5, css3, javascript")
+
+
+class _StoreWithAStaleNote(_Store):
+    """`html5` was generated and stored by the run before this fix."""
+
+    def get_all_framework_names(self):
+        return sorted(KNOWN | {"html5"})
+
+
+def test_nothing_is_generated_for_a_versioned_name(tmp_path, monkeypatch) -> None:
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "technology_stack.md").write_text(
+        "## Selected Technology Stack\n- **Language:** HTML5, CSS3, JavaScript\n## Rationale\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plugin_middleware, "_extraction_model", lambda: _VersionedModel())
+
+    class Shared:
+        @staticmethod
+        def shared():
+            return _StoreWithAStaleNote()
+
+    monkeypatch.setattr("app.server.plugin_store.PluginStore", Shared)
+
+    keywords = _extract_stack_keywords(str(tmp_path))
+
+    assert "html5" not in keywords and "css3" not in keywords
+    assert {"html", "css", "javascript"} <= set(keywords)

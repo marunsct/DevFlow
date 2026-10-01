@@ -224,7 +224,8 @@ def _named_in_the_selected_stack(content: str, known: set[str]) -> List[str]:
     chosen, _ = _what_the_selected_stack_says(content)
     if chosen is None:
         return []
-    return [name for name in sorted(known) if name and _names(chosen, name)]
+    named = [name for name in sorted(known) if name and _names(chosen, name)]
+    return sorted(dict.fromkeys(_the_known_name_for(name, known) for name in named))
 
 
 #: A clause boundary inside the selected section. "instead of" and "rather than"
@@ -289,6 +290,27 @@ def _names(text: str, name: str) -> bool:
     # one run and matched neither while the boundary was a bare word boundary,
     # because a digit is a word character.
     return re.search(rf"(?<![\w-]){re.escape(name)}(?:\d[\d.]*)?(?![\w-])", spaced) is not None
+
+
+#: A version written onto a name: `html5`, `css3`, `python3`, `es2020`.
+_A_VERSION_SUFFIX = re.compile(r"[\s-]*v?\d[\d.]*$")
+
+
+def _the_known_name_for(name: str, known: set[str]) -> str:
+    """`name` without a version written onto it, when that is a known framework.
+
+    One run's extraction returned `html5` and `css3`. Neither was stored, so
+    notes were generated for both - spec trivia about `<canvas>`, `<video>`,
+    animations and Flexbox - and appended to every prompt beside the seeded
+    `html` and `css` instructions, which are the ones the harness maintains.
+    The word match already reads `HTML5` as `html`; this reads the model's
+    answer the same way. Preferred even when the versioned name is stored too,
+    so a note generated before this existed is not used again.
+    """
+    bare = _A_VERSION_SUFFIX.sub("", name).strip()
+    if bare and bare != name and bare in known:
+        return bare
+    return name
 
 
 def _turned_down_by_the_selected_stack(content: str, name: str) -> bool:
@@ -362,6 +384,7 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
 
         store = PluginStore.shared()
         known = set(store.get_all_framework_names())
+        detected = list(dict.fromkeys(_the_known_name_for(name, known) for name in detected))
         detected += [
             name for name in _named_in_the_selected_stack(content, known) if name not in detected
         ]

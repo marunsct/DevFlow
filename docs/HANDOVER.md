@@ -1,6 +1,6 @@
 # Handover - the harness improvement loop
 
-Written 2026-10-01 16:20 JST, for the next Claude Code session (a different
+Written 2026-10-01 16:20 JST and last updated 22:50 JST, for the next Claude Code session (a different
 account on a different desktop) and for the owner. Read this first, then
 `docs/monitoring-handover.md` §0 (mechanics and the full gate history),
 §0.4.1 (product audit checklist), §0.7 (how a sprint runs) and §0.9 (where a
@@ -70,10 +70,10 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `ae2e040`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `ae2e040` |
-| current run | `run-f1a81dbe-baf5-4ef2-b7d2-8f83237fadca`, started 18:20 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it today: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`) |
-| model | the owner switched back at about 17:45 JST: `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`. The qwen server on port 9090 is down. Check `runtime_settings` and the loaded model before every start - the owner changes them |
+| branch | `harness-hardening-session`, last code commit `1024cc3`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `1024cc3` |
+| current run | **none - waiting for a model** (22:50 JST). The last run, `run-f1a81dbe-baf5-4ef2-b7d2-8f83237fadca`, was cancelled at 18:31 JST. Cancelled today, each for a harness bug found in its first 40 minutes: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`), run-f1a81dbe 18:31 (`html5`/`css3` got generated notes, `1024cc3`) |
+| model | settings (unchanged since 17:46 JST): `openai/gpt-oss-20b` at `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 131,000, max output 20,000. **At 22:44 JST LM Studio had been restarted and had no model loaded**, and the qwen server on port 9090 was down, so no run was started. Start one only when `lms ps` (or the server's `/v1/models`) shows the model `runtime_settings.model_name` names. The owner loads models and changes these settings; do not load one yourself - a default load would not have the 131,072 context and 8 parallel slots the owner's load had |
 | gate | 0 of 2 on brief_low |
 
 Runs b69802cd, 391a8b68 and d9642862 were on qwen; the current one is back on gpt-oss. Expect behaviour the gpt-oss runs did
@@ -84,6 +84,11 @@ logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
 **What `2beaf2e`, `a754eb7`, `904ecf8`, `c0fea69` and `ce4f12d` changed - verify them on this run:**
 - An `edit_artifact`/`replace_lines` result now carries the same
   module-system notes as a write (CommonJS under `"type": "module"`, etc.).
+- A `replace_lines` pin copied with the harness's own `N | ` gutter is
+  accepted (`ae2e040`).
+- The framework list holds `html` and `css`, never `html5` or `css3`
+  beside them (`1024cc3`). Two generated rows named `html5` and `css3`
+  are still in `plugin_instructions`; they are no longer selected.
 - A sprint plan is handed back only for a success measure's own list items
   (an MVP feature needs only a sprint assigned), and never for a function
   word such as "does" - check the worker's "Sprint plan left success

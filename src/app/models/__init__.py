@@ -11,6 +11,9 @@ changes.
 from __future__ import annotations
 
 import json
+import logging
+import threading
+import time
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -220,6 +223,46 @@ def _max_output_tokens() -> int:
     return ContextBudget.resolve().max_output_tokens
 
 
+logger = logging.getLogger(__name__)
+
+#: The reply cap in force for the call this thread is making, if any.
+_REPLY_CAP = threading.local()
+
+#: A failure after this long is the reply being cut off, not the call failing.
+SLOW_FAILURE_SECONDS = 60.0
+
+#: How often a call that fails at once is tried again, as the client would.
+QUICK_RETRIES = 3
+
+#: Below this a reply is too short to be worth asking for.
+SMALLEST_REPLY_CAP = 2_000
+
+#: Status codes a proxy answers with when the server behind it took too long.
+_PROXY_GAVE_UP = frozenset({502, 504, 524})
+
+
+def after_a_failed_call(
+    error: Exception, elapsed: float, reply_tokens: int | None, quick_failures: int
+) -> tuple[float, int | None, int] | None:
+    """What to do after a model call failed: (wait, reply cap, quick failures), or None to give up.
+
+    A slow failure with a proxy's status, or a timeout, is the reply taking
+    too long: try again asking for half as much, until that is too little to
+    be an answer. A failure that came back at once is tried again unchanged a
+    few times, as the client's own retry did. Anything else is raised.
+    """
+    status = getattr(error, "status_code", None)
+    timed_out = "timeout" in type(error).__name__.lower()
+    if elapsed >= SLOW_FAILURE_SECONDS and (status in _PROXY_GAVE_UP or timed_out):
+        if not reply_tokens or reply_tokens // 2 < SMALLEST_REPLY_CAP:
+            return None
+        return 1.0, reply_tokens // 2, quick_failures
+    retryable = status is None or status == 429 or (isinstance(status, int) and status >= 500)
+    if elapsed < SLOW_FAILURE_SECONDS and retryable and quick_failures < QUICK_RETRIES:
+        return min(8.0, 0.5 * 2**quick_failures), None, quick_failures + 1
+    return None
+
+
 #: What stands in for a tool call that was cut off before it was whole.
 CUT_OFF_CALL_NOTE = (
     "[A tool call here was cut off at the output limit before its arguments were "
@@ -320,7 +363,52 @@ class CompatibleChatOpenAI(ChatOpenAI):
             without_cut_off_tool_calls(payload.get("messages") or [])
         except Exception:  # noqa: BLE001 - a repair that cannot run changes nothing
             pass
+        cap = getattr(_REPLY_CAP, "tokens", None)
+        if cap:
+            for key in ("max_tokens", "max_completion_tokens"):
+                if isinstance(payload.get(key), int):
+                    payload[key] = min(payload[key], cap)
         return payload
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]
+        """One call, retried by this class when the client is told not to retry.
+
+        The client's own retry sends the same request again, which is right for
+        a dropped connection and wrong for a reply a proxy cut off for taking
+        too long: the same request takes as long again. Measured on one run: a
+        proxy in front of the model server allowed a reply twenty minutes, the
+        technical lead's did not finish in that, and the identical request was
+        sent three more times - eighty minutes for nothing. After a slow cut-off
+        the next attempt asks for a shorter reply instead.
+
+        Only when `max_retries` is 0, which is how the local model is built;
+        any other client keeps the retries it has.
+        """
+        if self.max_retries:
+            return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+        ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
+        cap = None
+        quick_failures = 0
+        while True:
+            started = time.monotonic()
+            _REPLY_CAP.tokens = cap
+            try:
+                return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+            except Exception as error:  # noqa: BLE001 - re-raised unless a retry can help
+                elapsed = time.monotonic() - started
+                step = after_a_failed_call(error, elapsed, cap or ceiling, quick_failures)
+                if step is None:
+                    raise
+                wait, cap, quick_failures = step
+                if cap:
+                    logger.warning(
+                        "The model server's reply was cut off after %.0f s (%s); asking "
+                        "again for at most %d tokens, since the same request would take "
+                        "as long again.", elapsed, type(error).__name__, cap,
+                    )
+                time.sleep(wait)
+            finally:
+                _REPLY_CAP.tokens = None
 
     def _create_chat_result(self, response, generation_info=None):  # type: ignore[override]
         """The result, with the reasoning the server returned kept on each message.
@@ -502,7 +590,9 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             base_url=resolved_settings.openai_base_url,
             api_key=resolved_settings.openai_api_key,
             model=resolved_settings.model_name,
-            max_retries=3,
+            # Retried by `CompatibleChatOpenAI._generate`, which asks for less
+            # after a reply a proxy cut off; the client would resend it whole.
+            max_retries=0 if speaks_llama_cpp else 3,
             timeout=_request_timeout(),
             max_tokens=_max_output_tokens(),
             **thinking.openai_arguments(local=speaks_llama_cpp),

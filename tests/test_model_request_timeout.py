@@ -69,7 +69,7 @@ def test_every_model_built_here_carries_it() -> None:
 
     source = inspect.getsource(models)
 
-    assert source.count("max_retries=3,") == source.count("timeout=_request_timeout(),")
+    assert source.count("max_retries=") == source.count("timeout=_request_timeout(),")
 
 
 def test_the_live_model_has_a_timeout() -> None:

@@ -73,7 +73,7 @@ step that fails must never stop the testing.
 | branch | `harness-hardening-session`, last code commit `1024cc3`, pushed to `https://github.com/marunsct/DevFlow.git` |
 | deployed | yes - the running image matches `1024cc3` |
 | current run | **none - waiting for a model** (22:50 JST). The last run, `run-f1a81dbe-baf5-4ef2-b7d2-8f83237fadca`, was cancelled at 18:31 JST. Cancelled today, each for a harness bug found in its first 40 minutes: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`), run-f1a81dbe 18:31 (`html5`/`css3` got generated notes, `1024cc3`) |
-| model | settings (unchanged since 17:46 JST): `openai/gpt-oss-20b` at `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 131,000, max output 20,000. **At 22:44 JST LM Studio had been restarted and had no model loaded**, and the qwen server on port 9090 was down, so no run was started. Start one only when `lms ps` (or the server's `/v1/models`) shows the model `runtime_settings.model_name` names. The owner loads models and changes these settings; do not load one yourself - a default load would not have the 131,072 context and 8 parallel slots the owner's load had |
+| model | settings (unchanged since 17:46 JST): `openai/gpt-oss-20b` at `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 131,000, max output 20,000. **At 22:44 JST LM Studio had been restarted and had no model loaded**, and the qwen server on port 9090 was down, so no run was started. Start one only when the server's `/v1/models` shows the model `runtime_settings.model_name` names. The owner loads models and changes these settings; do not load one yourself - a default load would not have the 131,072 context and 8 parallel slots the owner's load had |
 | gate | 0 of 2 on brief_low |
 
 Runs b69802cd, 391a8b68 and d9642862 were on qwen; the current one is back on gpt-oss. Expect behaviour the gpt-oss runs did
@@ -182,7 +182,14 @@ so, ask the owner to cancel it from the UI.
 - Transcript `model_request` records are windowed; use the `carried` offset
   for absolute message positions.
 - Never start a run while the model server's loaded model differs from
-  `runtime_settings.model_name`.
+  `runtime_settings.model_name`. The owner changes both without saying so:
+  compare them before every `loop.sh start`. Check passively, with
+  `curl <base url>/v1/models` - `lms ps` wakes LM Studio's background service
+  when the app is closed. With no model loaded, do not load one: leave one
+  long background watcher on that endpoint, on `runtime_settings` and on
+  live runs, and start when they agree.
+- Scheduled heartbeats and background waits belong to the session. After a
+  restart there are none: start the wait (or the watcher) again.
 - A test must reproduce the state production really produces. Prove a new
   test fails on the old code before trusting it.
 

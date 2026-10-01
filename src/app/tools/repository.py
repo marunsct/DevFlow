@@ -154,6 +154,44 @@ IGNORED_DIRECTORIES = frozenset({
 })
 """Directories never descended into."""
 
+#: Directories a tool fills - a package manager, an interpreter, version
+#: control, the sandbox's own caches. Nothing in them is written by hand.
+#: `dist`, `build`, `target` and a bare `env` are left out: a project may keep
+#: sources under those names.
+INSTALLED_DIRECTORIES = frozenset({
+    "node_modules", ".venv", "venv", "site-packages", "__pycache__",
+    ".git", ".hg", ".svn", ".agent-home", ".tox", ".mypy_cache", ".pytest_cache",
+    ".ruff_cache", ".gradle", ".terraform",
+})
+
+
+def _installed_by_a_tool(root: Path, target: Path, *, done: str = "written") -> str | None:
+    """The refusal for changing a file inside a directory a tool fills, or None.
+
+    Measured on one run: `npm install jsdom` was refused - the brief ruled out
+    product dependencies, and the refusal said `npm i -D` for a package only the
+    tests use - and the backend specialist wrote its own `jsdom` instead:
+    `node_modules/jsdom/package.json` and `node_modules/jsdom/index.js`, both
+    accepted. The tests would then have run against a counterfeit nobody
+    installed, which the next real install overwrites.
+    """
+    try:
+        parts = target.relative_to(root).parts
+    except ValueError:
+        return None
+    inside = next((part for part in parts[:-1] if part in INSTALLED_DIRECTORIES), None)
+    if inside is None:
+        return None
+    shown = target.relative_to(root).as_posix()
+    return (
+        f"'{shown}' is inside `{inside}`, which a tool fills - a package manager, an "
+        "interpreter or version control - and nothing in it is written by hand. A "
+        "file put there is overwritten at the next install and makes the code run "
+        "against something nobody installed. Install the package properly (`npm i -D "
+        "<pkg>` or its equivalent for something only the tests use), or change the "
+        f"code so it does not need it. Nothing was {done}."
+    )
+
 SECRET_FILE_PATTERNS = (
     ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa*", "id_ed25519*",
     "*.keystore", "credentials", "credentials.*", ".npmrc", ".pypirc", ".netrc",
@@ -1550,6 +1588,7 @@ def _not_this_stage_s_to_take(
     every import of it broken.
     """
     for refusal in (
+        _installed_by_a_tool(root, target, done=done),
         _another_work_order_s_file(root, target),
         _a_tester_changing_the_product(root, target) if product_code else None,
     ):
@@ -1582,6 +1621,9 @@ def _guard_a_targeted_change(
         raise RepositoryToolError(
             f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
         )
+    installed = _installed_by_a_tool(root, target)
+    if installed is not None:
+        raise RepositoryToolError(installed)
     # The owner first: it names who writes the file, which says more.
     someone_else_s = _another_work_order_s_file(root, target)
     if someone_else_s is not None:
@@ -4773,6 +4815,9 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
+    installed = _installed_by_a_tool(artifact_root, target)
+    if installed is not None:
+        raise RepositoryToolError(installed)
     # The owner first: it names who writes the file, which says more.
     someone_else_s = _another_work_order_s_file(artifact_root, target)
     if someone_else_s is not None:

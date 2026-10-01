@@ -70,18 +70,21 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last commit `2beaf2e`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `2beaf2e` |
-| current run | `run-b69802cd-e35b-4433-8e9b-090b7a5d3bf1`, started by the **owner** at 16:10 JST from the admin account, `brief_low.md`, auto-approve on |
+| branch | `harness-hardening-session`, last code commit `a754eb7`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `a754eb7` |
+| current run | `run-391a8b68-db4d-44ad-91b3-827a7f286436`, started 16:35 JST by the loop account, `brief_low.md`, auto-approve on. The owner's run-b69802cd (16:10) was cancelled at 16:28 for the framework-instructions bug fixed in `a754eb7` |
 | model | changed by the owner just before this run: `qwen3.8-flash-next-coder-iq1_m` at `http://host.docker.internal:9090/v1` (not LM Studio), `thinking_effort` medium, execution mode **parallel**, context 131,000, max output 20,000 |
 | gate | 0 of 2 on brief_low |
 
-This is the first run on the new model. Expect behaviour the gpt-oss runs did
+These are the first runs on the new model. Expect behaviour the gpt-oss runs did
 not show, and separate "the model did something odd" from "the harness let it"
 before fixing. The reasoning switch is measured once per endpoint and model and
 logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
 
-**What `2beaf2e` changed - verify it on this run:**
+**What `2beaf2e` and `a754eb7` changed - verify them on this run:**
+- The worker's "Framework instructions resolved for this stack: ..." line
+  must name only what the stack chose - no framework the stack document
+  rejects, and no language that appears only as a tool command.
 - The sprint planner's checklist now holds the intake's MVP candidates after
   its success measures, each to be assigned a sprint. In
   `docs/sprint_plan.md` every MVP feature should have a coverage line.

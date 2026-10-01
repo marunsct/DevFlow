@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `ce4f12d`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `ce4f12d` |
-| current run | `run-c49e59b0-70cc-4a08-88db-fd20dc728f80`, started 18:03 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it today: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`) |
+| branch | `harness-hardening-session`, last code commit `ae2e040`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `ae2e040` |
+| current run | `run-f1a81dbe-baf5-4ef2-b7d2-8f83237fadca`, started 18:2x JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it today: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`) |
 | model | the owner switched back at about 17:45 JST: `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`. The qwen server on port 9090 is down. Check `runtime_settings` and the loaded model before every start - the owner changes them |
 | gate | 0 of 2 on brief_low |
 

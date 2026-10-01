@@ -450,6 +450,11 @@ class WorkflowGraphState(TypedDict, total=False):
     # to the lead once. See `app.analysis.work_orders`.
     work_order_problems: list[str]
     unready_plan: str
+    # The best plan of this planning cycle's unready attempts, and its
+    # problems - dispatched instead of the last one when the attempts run out.
+    # See `_the_better_plan`.
+    best_unready_plan: str
+    best_unready_problems: list[str]
     # The Sprint Record. Every review finding of this sprint, round by round;
     # what the last sprint left for this one's lead to take or decline; and what
     # the harness saw fail repeatedly. See `app.sprint.record`.
@@ -1143,6 +1148,37 @@ def _owning_node(stage_name: str) -> str:
         if stage_name.startswith(prefix):
             return owning_node
     return "failed"
+
+
+def _the_better_plan(
+    current: tuple[Any, list[str]], earlier: tuple[str, list[str]]
+) -> tuple[Any, list[str]]:
+    """Of this attempt and the best earlier one, the plan to keep, with its problems.
+
+    Fewer readiness problems wins, then more work orders. When the attempts ran
+    out, the last plan was dispatched whatever it was. Measured on one run:
+    the second attempt was a six-work-order plan covering the page, the five
+    modules of the sprint's scope, the manifest, the tests and the README, with
+    three small problems; the lead then reasoned to its ceiling, the recovery
+    call answered with two work orders - the page skeleton and the manifest -
+    and that was the plan the sprint built. `earlier` is the stored JSON of the
+    best unready plan so far, "" when there is none or it cannot be read.
+    """
+    plan, problems = current
+    stored, stored_problems = earlier
+    if not stored:
+        return plan, problems
+    try:
+        previous = type(plan).model_validate_json(stored)
+    except Exception:  # noqa: BLE001 - an unreadable record is no better plan
+        return plan, problems
+
+    def rank(candidate: Any, found: list[str]) -> tuple[int, int]:
+        return (len(found), -len(getattr(candidate, "delegated_tasks", None) or []))
+
+    if rank(previous, stored_problems) < rank(plan, problems):
+        return previous, stored_problems
+    return plan, problems
 
 
 #: Retry budgets the technical lead's node keeps under its own keys, beside the
@@ -4050,6 +4086,10 @@ def build_workflow_graph(
             retries = dict(state.get("structured_retries") or {})
             key = _READINESS_RETRIES
             attempted = retries.get(key, 0)
+            best_plan, best_problems = _the_better_plan(
+                (update["milestone_plan"], problems),
+                (state.get("best_unready_plan") or "", list(state.get("best_unready_problems") or [])),
+            )
             if attempted < _max_structured_retries():
                 retries[key] = attempted + 1
                 logger.warning(
@@ -4064,7 +4104,17 @@ def build_workflow_graph(
                     revision_comments=revision_comments,
                     work_order_problems=problems,
                     unready_plan=update["milestone_plan"].model_dump_json(indent=2),
+                    best_unready_plan=best_plan.model_dump_json(),
+                    best_unready_problems=best_problems,
                 )
+            if best_plan is not update["milestone_plan"]:
+                logger.warning(
+                    "The last attempt was worse than an earlier one (%d problem(s) and "
+                    "%d work order(s), against %d and %d); dispatching the earlier plan",
+                    len(problems), len(update["milestone_plan"].delegated_tasks or []),
+                    len(best_problems), len(best_plan.delegated_tasks or []),
+                )
+                update["milestone_plan"], problems = best_plan, best_problems
             logger.warning(
                 "Milestone plan still not ready after %d attempts; dispatching it with "
                 "the problems noted: %s", attempted + 1, "; ".join(p[:80] for p in problems[:3]),
@@ -4077,6 +4127,8 @@ def build_workflow_graph(
             })
         update["work_order_problems"] = []
         update["unready_plan"] = ""
+        update["best_unready_plan"] = ""
+        update["best_unready_problems"] = []
         # A budget per plan, not per run. The success path clears the stage's
         # own key and nothing cleared this one, so sprint 1's three attempts
         # were still counted when sprint 2's plan arrived: measured on one run,

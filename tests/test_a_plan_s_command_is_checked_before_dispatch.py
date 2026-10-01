@@ -74,3 +74,27 @@ def test_a_fenced_command_is_checked_too(project):
 def test_it_never_raises_on_a_malformed_plan(project):
     assert with_refused_commands_noted(object(), project) is not None
     assert commands_the_sandbox_would_refuse("`unterminated \"quote`", "x", project) == []
+
+
+class TestQuotedTextIsNotAShellOperator:
+    """One run's plan said `grep -q '<form' simple-to-do-list-app/index.html`,
+    which runs as written, and was sent back as "will not run as written"."""
+
+    def test_a_quoted_angle_bracket_is_an_argument(self):
+        from app.analysis.planned_commands import _commands_in
+
+        assert _commands_in("grep -q '<form' app/index.html") == ([["grep", "-q", "<form", "app/index.html"]], False)
+        assert _commands_in("echo 'a|b' x") == ([["echo", "a|b", "x"]], False)
+
+    def test_an_operator_outside_quotes_still_is(self):
+        from app.analysis.planned_commands import _commands_in
+
+        assert _commands_in("node app.js > out.txt") == ([["node", "app.js"]], True)
+        assert _commands_in("npm test 2>&1") == ([["npm", "test"]], True)
+        assert _commands_in("npm test && npm run e2e") == ([["npm", "test"], ["npm", "run", "e2e"]], True)
+
+    def test_the_run_s_command_is_not_reported(self):
+        from app.analysis.planned_commands import commands_the_sandbox_would_refuse
+
+        notes = commands_the_sandbox_would_refuse("`grep -q '<form' simple-to-do-list-app/index.html`", "ui_ux_specialist")
+        assert not any("no shell" in note for note in notes)

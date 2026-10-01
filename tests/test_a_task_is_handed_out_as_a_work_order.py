@@ -345,3 +345,67 @@ class TestCasesFromTheCriteria:
         )
 
         assert readiness_problems(plan, project) == []
+
+
+class TestTheBestAttemptIsDispatched:
+    """One run's second attempt was six work orders with three small problems;
+    the third, after a reasoning spiral, was two - and the third was dispatched."""
+
+    def test_fewer_problems_wins_then_more_work_orders(self):
+        from app.graph.workflow import _the_better_plan
+
+        good = _plan(_order("backend"), _order("ui_ux"), _order("testing"))
+        thin = _plan(_order("ui_ux"))
+
+        kept, problems = _the_better_plan((thin, ["a"]), (good.model_dump_json(), ["b"]))
+        assert len(kept.delegated_tasks) == 3 and problems == ["b"]
+
+        kept, problems = _the_better_plan((thin, ["a"]), (good.model_dump_json(), ["b", "c"]))
+        assert kept is thin and problems == ["a"]
+
+    def test_with_nothing_earlier_or_nothing_readable_the_current_one_stays(self):
+        from app.graph.workflow import _the_better_plan
+
+        plan = _plan(_order("backend"))
+
+        assert _the_better_plan((plan, ["a"]), ("", []))[0] is plan
+        assert _the_better_plan((plan, ["a"]), ("{not json", ["b"]))[0] is plan
+
+
+def test_when_the_attempts_run_out_the_best_one_is_dispatched(
+    agents: ScriptedAgents, tmp_path: Any, enforced
+) -> None:
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    # Each has one problem - no testing work order - and the first has the most
+    # work orders, so it is the one the sprint gets.
+    best = _plan(_order("backend", files=["acme-scheduling/a.src"]), _order("database", files=["acme-scheduling/b.src"]))
+    thin = _plan(_order("backend", files=["acme-scheduling/a.src"]))
+    agents.script("technical_lead", [responds_with(best), responds_with(thin), responds_with(thin)])
+    agents.script("specialist_backend", [responds_with(_specialist())] * 3)
+    agents.script("specialist_database", [responds_with(_specialist())] * 3)
+    agents.script("specialist_testing", [responds_with(_specialist())] * 3)
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-best-attempt")
+
+    assert len(agents.requests["technical_lead"]) == 3
+    assert agents.requests["specialist_database"], "the best attempt's database work order was never dispatched"
+    assert state["stage"] == "complete", state.get("error")
+
+
+class TestAWorkOrderWithNothingToTest:
+    def test_a_manifest_only_work_order_needs_no_test_cases(self, enforced, project):
+        problems = readiness_problems(
+            _plan(_order("backend", files=["app/package.json"], test_cases=[], acceptance_criteria=[]), _order("testing", files=["app/t.src"])),
+            project,
+        )
+        assert not any("no `test_cases`" in p for p in problems)
+
+    def test_one_that_also_writes_product_code_still_does(self, enforced, project):
+        problems = readiness_problems(
+            _plan(_order("backend", files=["app/package.json", "app/cart.js"], test_cases=[], acceptance_criteria=[]), _order("testing", files=["app/t.src"])),
+            project,
+        )
+        assert any("no `test_cases`" in p for p in problems)

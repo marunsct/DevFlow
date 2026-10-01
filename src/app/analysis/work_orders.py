@@ -165,6 +165,29 @@ def _pinned_project_directory(repo_root: str | Path | None) -> str:
         return ""
 
 
+def _touches_product_code(files: Sequence[str]) -> bool:
+    """Whether a work order changes anything a test could exercise.
+
+    A work order that only writes the package manifest or configuration has no
+    behaviour of its own to give cases for. One run's plan was sent back for
+    "work order 3 (backend: Create project package.json ...) has no
+    `test_cases`" - one of three problems that cost a six-work-order plan its
+    place to a two-work-order one. A work order that names no files is still
+    held to it, as before.
+    """
+    if not files:
+        return True
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.tools.repository import PACKAGE_MANIFESTS
+    except Exception:  # noqa: BLE001 - no way to tell, so hold it to the rule
+        return True
+    return any(
+        PurePosixPath(path).name not in PACKAGE_MANIFESTS and classify_file(path) == "application"
+        for path in files
+    )
+
+
 def readiness_enforced() -> bool:
     """Whether an unready plan is sent back. `WORKFLOW_WORK_ORDER_READINESS=off` disables it.
 
@@ -222,7 +245,12 @@ def readiness_problems(
             why = _outside_the_project(path, project_dir)
             if why:
                 problems.append(f"{label}: file '{path}' {why}.")
-        if role not in _NOT_CODE and role != _TESTING and not (getattr(task, "test_cases", None) or []):
+        if (
+            role not in _NOT_CODE
+            and role != _TESTING
+            and not (getattr(task, "test_cases", None) or [])
+            and _touches_product_code(files)
+        ):
             problems.append(
                 f"{label} has no `test_cases`. Give the given/when/then cases that prove its "
                 "acceptance criteria - the testing task writes the tests from them."

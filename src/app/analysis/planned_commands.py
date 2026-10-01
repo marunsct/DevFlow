@@ -28,9 +28,11 @@ from typing import Any, Iterable
 #: An inline code span, `like this`, or one line inside a fenced block.
 _INLINE = re.compile(r"(?<!`)`([^`\n]+)`(?!`)")
 _FENCE = re.compile(r"```[^\n]*\n(.*?)```", re.S)
-#: What a shell would join or redirect, and this sandbox has no shell to do.
-_SHELL_JOIN = re.compile(r"\s(?:&&|\|\||;|\|)\s")
-_REDIRECT = re.compile(r"^\d?(?:>>?|<)(?:&\d|\S*)$")
+#: The characters a shell reads as joining or redirecting, and this sandbox has
+#: no shell to read. Only a token made of nothing else is one: `shlex` in
+#: punctuation mode keeps a quoted `'<form'` whole, as an argument.
+_OPERATOR_CHARS = frozenset("<>|&;")
+_JOINS = frozenset({"&&", "||", ";", "|", "&"})
 
 
 def _known_programs() -> frozenset[str]:
@@ -55,19 +57,47 @@ def _spans(text: str) -> Iterable[str]:
 
 
 def _commands_in(span: str) -> tuple[list[list[str]], bool]:
-    """Each command a span holds as argv, and whether it leaned on a shell."""
-    pieces = _SHELL_JOIN.split(f" {span} ")
-    shell = len(pieces) > 1
+    """Each command a span holds as argv, and whether it leaned on a shell.
+
+    Split with `shlex` in punctuation mode, so an operator inside quotes is
+    text. The first version split the span with a plain `shlex.split`, which
+    removes the quotes before anything looks at them, and then read every
+    argument starting with `<` or `>` as a redirection: one run's plan said
+    `grep -q '<form' simple-to-do-list-app/index.html`, which runs exactly as
+    written, and was sent back as "will not run as written" - one of the three
+    problems that cost that plan its place, and the plan dispatched in its
+    stead built nothing but the page skeleton.
+    """
+    try:
+        lexer = shlex.shlex(span, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+    except ValueError:
+        return [], False
     commands: list[list[str]] = []
-    for piece in pieces:
-        try:
-            argv = shlex.split(piece)
-        except ValueError:
+    current: list[str] = []
+    shell = False
+    redirect_target = False
+    for token in tokens:
+        if token and set(token) <= _OPERATOR_CHARS:
+            shell = True
+            if token in _JOINS:
+                if current:
+                    commands.append(current)
+                current = []
+            else:
+                # A redirection: `2>` leaves its descriptor as the token before,
+                # and the file or descriptor after it is not an argument either.
+                if current and current[-1].isdigit():
+                    current.pop()
+                redirect_target = True
             continue
-        kept = [part for part in argv if not _REDIRECT.match(part)]
-        shell = shell or len(kept) != len(argv)
-        if kept:
-            commands.append(kept)
+        if redirect_target:
+            redirect_target = False
+            continue
+        current.append(token)
+    if current:
+        commands.append(current)
     return commands, shell
 
 

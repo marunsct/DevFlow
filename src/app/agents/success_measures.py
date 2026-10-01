@@ -111,6 +111,21 @@ def _item_named_in(item: str, text: str) -> bool:
     return "-" in item and len(head) >= 5 and named_in(head, text)
 
 
+def _a_clause_joined_to_a_noun(words: list[str]) -> bool:
+    """Whether two "listed" words are a thing and the start of a new clause.
+
+    A list names like things. One run's measure read "(verified by refreshing
+    the browser and confirming data remains)", which pairs the end of one
+    clause with the verb that opens the next, and its plan was handed back
+    because no sprint delivered "confirming". Two words of which exactly one is
+    an -ing form are not read as a list.
+    """
+    if len(words) != 2:
+        return False
+    first, second = (w.lower().endswith("ing") for w in words)
+    return first != second
+
+
 def enumerations(measure: str) -> list[tuple[bool, list[str]]]:
     """Each list inside a measure, as (every item required, items)."""
     found: list[tuple[bool, list[str]]] = []
@@ -121,7 +136,7 @@ def enumerations(measure: str) -> list[tuple[bool, list[str]]]:
         words += [w.strip() for w in match.group(2).split(",") if w.strip()]
         words.append(match.group(4))
         words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY]
-        if len(words) >= 2:
+        if len(words) >= 2 and not _a_clause_joined_to_a_noun(words):
             found.append((match.group(3).lower() == "and", words))
     for match in _UNJOINED_LIST.finditer(str(measure)):
         start, end = match.span()

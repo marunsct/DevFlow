@@ -140,3 +140,14 @@ def test_a_verb_after_and_is_not_a_capability() -> None:
     from app.agents.success_measures import enumerations
 
     assert enumerations("opening the page shows an empty list and does not error") == []
+
+
+def test_a_clause_after_and_is_not_a_second_capability() -> None:
+    """A plan was handed back because no sprint delivered "confirming"."""
+    from app.agents.success_measures import enumerations
+
+    measure = "Tasks persist between page refreshes (verified by refreshing the browser and confirming data remains)"
+
+    assert enumerations(measure) == []
+    assert enumerations("Supports sorting and filtering") == [(True, ["sorting", "filtering"])]
+    assert enumerations("Responsive design for mobile and desktop") == [(True, ["mobile", "desktop"])]

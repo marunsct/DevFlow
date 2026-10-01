@@ -66,6 +66,8 @@ knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
 
 ### 0.2 Where it stands
 
+A new session or account starts at `docs/HANDOVER.md` (written 2026-10-01): the standing instruction, the current run, setting up on another desktop, and the security rules. From run-b69802cd (16:10 JST, 2026-10-01) the model is `qwen3.8-flash-next-coder-iq1_m` on port 9090, chosen by the owner.
+
 | | |
 |---|---|
 | brief | `tests/brief_low.md` |

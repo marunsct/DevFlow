@@ -4148,6 +4148,11 @@ def build_workflow_graph(
         update["milestone_plan"] = with_refused_commands_noted(
             update["milestone_plan"], state["repository"].root_path
         )
+        # And a command whose file another work order writes - see
+        # `app.analysis.work_orders.with_borrowed_files_noted`.
+        from app.analysis.work_orders import with_borrowed_files_noted
+
+        update["milestone_plan"] = with_borrowed_files_noted(update["milestone_plan"])
 
         # Which stage owns each file the work orders list, so a specialist
         # writing another work order's file is told whose it is. A file two

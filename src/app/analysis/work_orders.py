@@ -63,6 +63,75 @@ def _outside_the_project(path: str, project_dir: str) -> str:
     return ""
 
 
+def with_borrowed_files_noted(milestone: Any) -> Any:
+    """The plan with each work order told which files its `verification` borrows.
+
+    A work order can be told to verify with a file another work order writes -
+    usually the tests. Measured on one run: the backend work order said
+    "Verify with: node --test simple-to-do-list-app/tests/tasks.test.js", the
+    testing work order owned that file and had not written it yet, and the
+    backend specialist tried to write it seven times in two and a half
+    minutes, refused each time as another work order's file. The plan asked
+    for something the specialist was not allowed to do.
+
+    In linear mode the testing task runs after the code it tests; in parallel
+    mode it may not have reached the file. Either way the specialist is told up
+    front whose the file is and what to do when it is not there. Never raises.
+    """
+    try:
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        owners: dict[str, tuple[int, Any]] = {}
+        for index, task in enumerate(tasks, 1):
+            for path in getattr(task, "files", None) or []:
+                cleaned = str(PurePosixPath(str(path).strip().lstrip("/")))
+                if cleaned and cleaned != ".":
+                    owners.setdefault(cleaned, (index, task))
+        if not owners:
+            return milestone
+        changed = False
+        noted = []
+        for index, task in enumerate(tasks, 1):
+            borrowed: dict[str, tuple[int, Any]] = {}
+            for command in getattr(task, "verification", None) or []:
+                for token in _words_of(str(command)):
+                    for path, (owner_index, owner) in owners.items():
+                        if owner_index != index and (path == token or path.endswith("/" + token)):
+                            borrowed.setdefault(path, (owner_index, owner))
+            if borrowed:
+                lines = [
+                    f"`{path}` is written by {_label(owner_index, owner)}"
+                    for path, (owner_index, owner) in borrowed.items()
+                ]
+                task = task.model_copy(update={
+                    "task_description": str(getattr(task, "task_description", "") or "")
+                    + "\n\nYour verification uses files another work order writes: "
+                    + "; ".join(lines) + ". It may not exist yet when you get there. Do not "
+                    "write it yourself - a file another work order owns is refused. If it "
+                    "is not there, finish your own work, run the checks you can, and say in "
+                    "your answer which check waits on that work order."
+                })
+                changed = True
+            noted.append(task)
+        return milestone.model_copy(update={"delegated_tasks": noted}) if changed else milestone
+    except Exception:  # noqa: BLE001 - a note must never cost the plan
+        return milestone
+
+
+def _words_of(command: str) -> list[str]:
+    """The path-like words of a command line, without quotes or a leading `./`."""
+    import shlex
+
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        words = command.split()
+    return [
+        str(PurePosixPath(word.lstrip("./") if word.startswith("./") else word.lstrip("/")))
+        for word in words
+        if "/" in word or "." in word.lstrip(".")
+    ]
+
+
 def with_test_cases_from_its_criteria(milestone: Any) -> Any:
     """The plan with each code work order that has no test cases given its
     acceptance criteria as them.
@@ -364,6 +433,7 @@ __all__ = [
     "contract_for_testing",
     "readiness_feedback",
     "readiness_problems",
+    "with_borrowed_files_noted",
     "with_paths_inside_the_project",
     "with_test_cases_from_its_criteria",
 ]

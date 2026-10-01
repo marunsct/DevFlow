@@ -409,3 +409,41 @@ class TestAWorkOrderWithNothingToTest:
             project,
         )
         assert any("no `test_cases`" in p for p in problems)
+
+
+class TestAVerificationThatBorrowsAFile:
+    """One run's backend work order said "Verify with: node --test
+    simple-to-do-list-app/tests/tasks.test.js"; the testing work order owned
+    that file, and the backend specialist tried to write it seven times."""
+
+    def _noted(self, *tasks):
+        from app.analysis.work_orders import with_borrowed_files_noted
+
+        return with_borrowed_files_noted(_plan(*tasks)).delegated_tasks
+
+    def test_the_owner_is_named_and_writing_it_is_ruled_out(self):
+        backend, testing = self._noted(
+            _order("backend", files=["app/tasks.js"], verification=["node --test app/tests/tasks.test.js"]),
+            _order("testing", title="Unit tests", files=["app/tests/tasks.test.js"], verification=["node --test"]),
+        )
+
+        assert "`app/tests/tasks.test.js` is written by work order 2 (testing: Unit tests)" in backend.task_description
+        assert "Do not write it yourself" in backend.task_description
+        assert "written by" not in testing.task_description
+
+    def test_a_path_relative_to_the_project_is_recognised(self):
+        backend, _ = self._noted(
+            _order("backend", files=["app/tasks.js"], verification=["node --test ./tests/tasks.test.js"]),
+            _order("testing", files=["app/tests/tasks.test.js"]),
+        )
+
+        assert "app/tests/tasks.test.js" in backend.task_description
+
+    def test_its_own_files_and_plain_commands_add_nothing(self):
+        plan = _plan(
+            _order("backend", files=["app/tasks.js"], verification=["node --check app/tasks.js", "npm test"]),
+            _order("testing", files=["app/tests/tasks.test.js"]),
+        )
+        from app.analysis.work_orders import with_borrowed_files_noted
+
+        assert with_borrowed_files_noted(plan) is plan

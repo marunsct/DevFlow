@@ -1,6 +1,6 @@
 # Handover - the harness improvement loop
 
-Written 2026-10-01 16:20 JST and last updated 23:00 JST, for the next Claude Code session (a different
+Written 2026-10-01 16:20 JST and last updated 23:17 JST, for the next Claude Code session (a different
 account on a different desktop) and for the owner. Read this first, then
 `docs/monitoring-handover.md` §0 (mechanics and the full gate history),
 §0.4.1 (product audit checklist), §0.7 (how a sprint runs) and §0.9 (where a
@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `1024cc3`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `1024cc3` |
-| current run | `run-3bfa5ffc-40e4-46c6-9714-fe4e1b02be16`, started 22:56 JST by the loop account, `brief_low.md`, auto-approve on - the first run on the unsloth server (see model). Cancelled today, each for a harness bug found in its first 40 minutes: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`), run-f1a81dbe 18:31 (`html5`/`css3` got generated notes, `1024cc3`) |
+| branch | `harness-hardening-session`, last code commit `acf55ea`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `acf55ea` |
+| current run | `run-d749dad2-536a-4a58-a180-5b86ac78ef32`, started 23:15 JST by the loop account, `brief_low.md`, auto-approve on, on the unsloth server (see model). Cancelled today, each for a harness bug found in its first 40 minutes: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP sentences word-checked, `c0fea69`), run-7cc2f3a6 17:59 (edit path missing the module-system notes, `ce4f12d`), run-c49e59b0 18:15 (a copied `N | ` gutter in a `replace_lines` pin, `ae2e040`), run-f1a81dbe 18:31 (`html5`/`css3` got generated notes, `1024cc3`), run-3bfa5ffc 23:09 (the stack document argued against the runner the workflow had recorded in it, `acf55ea`) |
 | model | changed by the owner at 22:55 JST: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` at `http://host.docker.internal:8888/v1` (the owner's unsloth server, which needs the key the harness is configured with and lists every model it can serve, not only the loaded one), `thinking_effort` medium, execution mode **parallel**, context 126,000, max output 20,000. Earlier today: gpt-oss-20b on LM Studio (:1234), then qwen on :9090, then gpt-oss again. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 
@@ -86,6 +86,10 @@ logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
   module-system notes as a write (CommonJS under `"type": "module"`, etc.).
 - A `replace_lines` pin copied with the harness's own `N | ` gutter is
   accepted (`ae2e040`).
+- `docs/technology_stack.md` does not argue against its own testing field:
+  when the worker logs "Stack selection named ... recording ...", the
+  rationale must not say the browser runner is not needed (`acf55ea`), and
+  the architecture review must not loop on that contradiction.
 - The framework list holds `html` and `css`, never `html5` or `css3`
   beside them (`1024cc3`). Two generated rows named `html5` and `css3`
   are still in `plugin_instructions`; they are no longer selected.

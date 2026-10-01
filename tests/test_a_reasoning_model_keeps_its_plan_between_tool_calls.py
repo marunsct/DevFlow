@@ -14,7 +14,6 @@ from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from app.models import (
     REASONING_CARRIED_CHARS,
     REASONING_FIELD,
-    REPLIES_CARRYING_REASONING,
     CompatibleChatOpenAI,
 )
 
@@ -69,14 +68,37 @@ class TestSendingItBack:
         assistant = [m for m in payload["messages"] if m["role"] == "assistant"][0]
         assert assistant["content"] == "PLAN: read app.js, then edit line 12."
 
-    def test_only_the_most_recent_replies_carry_it(self) -> None:
+    def test_every_reply_since_the_last_answer_carries_it(self) -> None:
         conversation = [HumanMessage(content="Go.")]
-        for n in range(REPLIES_CARRYING_REASONING + 3):
+        for n in range(7):
             conversation += _turn(n, f"plan {n}")
         payload = _model()._get_request_payload(conversation)
         carried = [m["content"] for m in payload["messages"] if m["role"] == "assistant"]
-        assert carried[:3] == [None, None, None]
-        assert carried[3:] == [f"plan {n}" for n in range(3, REPLIES_CARRYING_REASONING + 3)]
+        assert carried == [f"plan {n}" for n in range(7)]
+
+    def test_an_answer_ends_the_stretch_its_reasoning_belongs_to(self) -> None:
+        conversation = [HumanMessage(content="Go."), *_turn(1, "old plan"),
+                        AIMessage(content="Done with that."), HumanMessage(content="Next."), *_turn(2, "new plan")]
+        payload = _model()._get_request_payload(conversation)
+        carried = [m["content"] for m in payload["messages"] if m["role"] == "assistant"]
+        assert carried == [None, "Done with that.", "new plan"]
+
+    def test_a_message_once_sent_is_sent_the_same_way_every_time(self) -> None:
+        """The first version carried the last four replies only, so the oldest
+        lost its reasoning on every call and the server re-read the prompt from
+        there: 6,390 tokens a request against 1,068 before it."""
+        model, conversation, sent = _model(), [HumanMessage(content="Go.")], []
+        for n in range(8):
+            conversation += _turn(n, f"plan {n}")
+            sent.append(model._get_request_payload(conversation)["messages"])
+        for earlier, later in zip(sent, sent[1:]):
+            assert later[: len(earlier)] == earlier
+
+    def test_each_reply_carries_the_end_of_its_reasoning(self) -> None:
+        long = "x" * (REASONING_CARRIED_CHARS * 3) + "NEXT: edit line 12"
+        payload = _model()._get_request_payload([HumanMessage(content="Go."), *_turn(1, long)])
+        carried = [m["content"] for m in payload["messages"] if m["role"] == "assistant"][0]
+        assert len(carried) == REASONING_CARRIED_CHARS and carried.endswith("NEXT: edit line 12")
 
     def test_a_reply_that_said_something_keeps_its_own_words(self) -> None:
         conversation = [HumanMessage(content="Go."), *_turn(1, "hidden plan", content="Reading the file now.")]

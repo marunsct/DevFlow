@@ -279,53 +279,63 @@ class CompatibleChatOpenAI(ChatOpenAI):
 REASONING_FIELD = "reasoning_content"
 
 #: How much of one reply's reasoning is kept and carried forward - its end,
-#: where a model states what it has decided to do next.
-REASONING_CARRIED_CHARS = 1_500
-
-#: How many of the most recent tool-calling replies carry theirs.
-REPLIES_CARRYING_REASONING = 4
+#: where a model states what it has decided to do next. Every tool-calling
+#: reply since the last answer carries this much (see
+#: `with_the_reasoning_carried`), so it is what each call adds to the prompt
+#: for the rest of the stage: about 200 tokens, against the 1,000 or more of
+#: reasoning the call produced.
+REASONING_CARRIED_CHARS = 800
 
 
 def with_the_reasoning_carried(messages: list[Any], dicts: list[dict]) -> None:
-    """Put each recent tool-calling reply's reasoning back where the model will read it.
+    """Put each tool-calling reply's reasoning back where the model will read it.
 
     A reasoning model thinks before every tool call, and in an agent loop that
     thinking is the plan: which file next, what the last result meant. OpenAI's
-    guide for its open-weight reasoning models says the previous chain of
-    thought must be passed back while the model is calling tools. Nothing here
-    did. `ChatOpenAI` discarded it, and an LM Studio server ignores it in every
-    reasoning field - measured: a plan placed in `reasoning_content`,
-    `reasoning` or `thinking` was invisible to the model, while the same plan in
-    the assistant message's `content` was read back word for word. The chat
-    template renders a tool-calling message's `content` as that model's
-    analysis channel.
+    guide for its open-weight reasoning models says the chain of thought must
+    be preserved while the model is calling tools - "the analysis messages
+    until the previous final message should be preserved on subsequent
+    sampling until a final message gets issued". `ChatOpenAI` discarded it,
+    and an LM Studio server ignores it in every reasoning field - measured: a
+    plan placed in `reasoning_content`, `reasoning` or `thinking` was invisible
+    to the model, while the same plan in the assistant message's `content` was
+    read back word for word. The chat template renders a tool-calling
+    message's `content` as that model's analysis channel.
 
-    On one run 82% of every token the model produced was reasoning, all of it
-    thrown away before the next call; 26% of that day's tool calls were a read,
-    listing or search the same stage had already made with the same arguments.
+    Every tool-calling reply since the last reply that was an answer carries
+    it, not only the last few. The first version carried the last four, so the
+    oldest of them lost its reasoning on every call: the prompt changed four
+    replies back each time and the server could no longer reuse what it had
+    already read. Measured on one LM Studio server running
+    `openai/gpt-oss-20b`: the median request re-read 6,390 tokens of prompt
+    against 1,068 before the change, 44 minutes of one run against 6 for a
+    comparable one. Carried on every reply, a message never changes once it has
+    been sent, which is both what the guide describes and what lets the server
+    keep the prompt it has read.
 
-    So the end of each of the last few tool-calling replies' reasoning goes into
-    that reply's `content` on the way out, where it is empty. Changed in the
-    request only - the stored conversation is untouched, so nothing that reads a
-    reply's content as an answer ever sees it. Bounded in length and in how many
-    replies carry it. A server that returns no reasoning is unaffected.
+    Changed in the request only - the stored conversation is untouched, so
+    nothing that reads a reply's content as an answer ever sees it. A server
+    that returns no reasoning is unaffected.
     """
     from langchain_core.messages import AIMessage
 
-    carrying = [
-        index
-        for index, message in enumerate(messages)
-        if isinstance(message, AIMessage)
-        and message.tool_calls
-        and not str(message.content or "").strip()
-        and message.additional_kwargs.get(REASONING_FIELD)
-    ]
-    for index in carrying[-REPLIES_CARRYING_REASONING:]:
-        if index >= len(dicts):
+    since = 0
+    for index, message in enumerate(messages):
+        # An answer ends the stretch the reasoning belongs to.
+        if isinstance(message, AIMessage) and not message.tool_calls:
+            since = index + 1
+    for index in range(since, min(len(messages), len(dicts))):
+        message = messages[index]
+        if not (
+            isinstance(message, AIMessage)
+            and message.tool_calls
+            and not str(message.content or "").strip()
+            and message.additional_kwargs.get(REASONING_FIELD)
+        ):
             continue
         outgoing = dicts[index]
         if isinstance(outgoing, dict) and outgoing.get("role") == "assistant" and not outgoing.get("content"):
-            outgoing["content"] = str(messages[index].additional_kwargs[REASONING_FIELD])
+            outgoing["content"] = str(message.additional_kwargs[REASONING_FIELD])[-REASONING_CARRIED_CHARS:]
 
 
 def _fallback_model(env_var: str, default: str) -> str:

@@ -328,9 +328,9 @@ line-number edits. What changed, and what to audit on the next runs:
 ### 0.9 Why a run takes ~3 hours (review of 2026-10-01, run-482cd03b)
 
 163 minutes for a 347-line app: 1,024 model calls, 950 tool calls. The model
-is busy 98% of the wall clock; tools 2%, idle ~0%. Measure a run with the
-timing script kept in the session scratchpad (`timing.py`: per phase, per
-stage family, model vs tool time, reasoning share, concurrency) and LM
+is busy 98% of the wall clock; tools 2%, idle ~0%. Measure a run with
+`loop.sh timing [run-id]` (per phase, per stage family, model vs tool time,
+reasoning share, how far model calls overlapped) and LM
 Studio's `print_timing` lines (`prompt eval time = ... / N tokens` is the
 part of the prompt re-read; `f_keep` is the share of the cache kept).
 

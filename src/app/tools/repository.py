@@ -3421,6 +3421,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
         a_call_the_signature_does_not_accept,
         a_name_this_test_defines_instead_of_importing,
         a_suite_calling_a_global_node_does_not_define,
+        a_suite_that_asserts_only_constants,
         a_suite_that_only_checks_things_exist,
         a_test_that_asserts_nothing,
         a_test_that_needs_a_dom,
@@ -3438,6 +3439,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             a_test_that_asserts_nothing(relative_path, content),
             tests_the_runner_will_never_call(relative_path, content),
             a_suite_that_only_checks_things_exist(relative_path, content),
+            a_suite_that_asserts_only_constants(relative_path, content),
             _a_dom_built_by_hand_and_remember(relative_path, content),
             a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
             a_call_the_signature_does_not_accept(

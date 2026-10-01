@@ -437,6 +437,7 @@ def _is_test_name(relative_path: str) -> bool:
 __all__ = [
     "a_dom_built_by_hand",
     "a_test_that_needs_a_dom",
+    "a_suite_that_asserts_only_constants",
     "a_suite_that_only_checks_things_exist",
     "tests_nothing_of_the_project",
     "tests_the_runner_will_never_call",
@@ -665,6 +666,56 @@ def a_suite_that_only_checks_things_exist(relative_path: str, content: str) -> s
         "their bodies do, so it cannot fail for a stub or an empty function "
         "and is not evidence that anything works. Assert what each function "
         "returns or changes, for an input you choose."
+    )
+
+
+#: One assertion call and what it is given, when that is a single parenthesised
+#: argument list with nothing nested in it.
+_AN_ASSERTION_CALL = re.compile(
+    r"""(?<![\w.$])(?:assert(?:\.\w+)?|expect|(?:\w+\.)?(?:strictEqual|deepStrictEqual|equal|ok)|\.toBe\w*|\.toEqual)"""
+    r"""\s*\(([^()]*)\)"""
+)
+
+#: Arguments made of literals alone: numbers, booleans, null, quoted strings,
+#: arithmetic and comparison. Nothing named, so nothing from the product.
+_ONLY_LITERALS = re.compile(
+    r"""^(?:\s|\d+(?:\.\d+)?|true|false|null|undefined|None|True|False"""
+    r"""|'[^']*'|"[^"]*"|[-+*/%=!<>,&|])*$"""
+)
+
+
+def a_suite_that_asserts_only_constants(relative_path: str, content: str) -> str | None:
+    """Why this suite proves nothing, or None if it may prove something.
+
+    One run finished with 26 passing tests in its Sprint Record, and 4 of its
+    20 unit tests were files like this, written by stages clearing their own
+    debugging:
+
+        test('quick placeholder', () => {
+          assert.strictEqual(1 + 1, 2);
+        });
+
+    `a_test_that_asserts_nothing` passes it - there is an assertion - and
+    `a_suite_that_only_checks_things_exist` does too, because what it checks is
+    not an export. An assertion whose arguments name nothing can only ever
+    pass. Fires only when every assertion in the file is one.
+    """
+    if not _DECLARES_TESTS.search(content or "") and not _A_TEST_CASE_IN_ANY_FORM.search(content or ""):
+        return None
+    assertions = _AN_ASSERTION.findall(content or "")
+    if not assertions:
+        return None
+    calls = _AN_ASSERTION_CALL.findall(content or "")
+    if len(calls) < len(assertions) or not all(_ONLY_LITERALS.match(arguments) for arguments in calls):
+        return None
+    cases = _A_TEST_CASE_IN_ANY_FORM.findall(content or "")
+    named = ", ".join(f"'{name}'" for name in cases[:3] if name)
+    return (
+        f"{relative_path} asserts only constants - `assert.ok(true)`, `1 + 1 === 2` "
+        "and the like" + (f" ({named})" if named else "") + ". It passes whatever "
+        "the product does, so it is not evidence of anything and adds a passing "
+        "test to every count. Assert on what the product's code returns or "
+        "changes, or delete it."
     )
 
 

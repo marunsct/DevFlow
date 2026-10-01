@@ -3304,6 +3304,7 @@ _BREAKS_BEHAVIOUR = (
     "does nothing when a user",          # a page no script ever wires
     "the page never runs it",            # a module only its tests load
     "only checks that something exists",  # a suite of existence checks
+    "asserts only constants",            # a suite that can only ever pass
     "none of the cases execute",         # a suite the runner never calls
     # A page that throws on load. Both of these were graded untidy the day
     # they were written - the summary invited the milestone reviewer to wave
@@ -3557,6 +3558,7 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
     `app.analysis.test_discovery.a_test_that_asserts_nothing`.
     """
     from app.analysis.test_discovery import (
+        a_suite_that_asserts_only_constants,
         a_suite_that_only_checks_things_exist,
         a_test_that_asserts_nothing,
         assertions_called_on_the_test_module,
@@ -3578,6 +3580,7 @@ def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
             a_test_that_asserts_nothing(relative, content),
             tests_the_runner_will_never_call(relative, content),
             a_suite_that_only_checks_things_exist(relative, content),
+            a_suite_that_asserts_only_constants(relative, content),
         ):
             if problem:
                 problems.append(problem)

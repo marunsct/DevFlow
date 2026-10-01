@@ -1735,6 +1735,30 @@ def _the_line_it_cut_short(expected: str, actual: str) -> str:
     return expected
 
 
+def _without_a_copied_gutter(expected: str, lines: list[str]) -> str:
+    """`expect_start`/`expect_end` without a line-number gutter copied into it.
+
+    This module quotes a file back as `   93 | text`, and a model copies what it
+    is shown. One run's `specialist_ui_ux_0` sent
+    `expect_start=" 1 | export class TaskItem extends HTMLElement{"` for a line
+    reading `export class TaskItem extends HTMLElement{`, and was told the line
+    was not what it expected - by the tool whose quoting it had copied.
+    `find` already forgives this (`_READ_LINE_NUMBER`); the pins did not.
+
+    Only when every line sent carries a gutter and none of them is in the file
+    as sent, so a real line that starts with a number is compared as written.
+    """
+    written = [line for line in str(expected or "").splitlines() if line.strip()]
+    if not written or not all(_READ_LINE_NUMBER.match(line) for line in written):
+        return expected
+    held = {line.strip() for line in lines}
+    if any(line.strip() in held for line in written):
+        return expected
+    return "\n".join(
+        _READ_LINE_NUMBER.sub("", line, count=1) for line in str(expected).splitlines()
+    )
+
+
 def _the_one_line_it_pins(expected: str) -> str:
     """`expect_start`/`expect_end` reduced to the single line they name.
 
@@ -2182,6 +2206,8 @@ def replace_approved_lines(
         last = min(end_line, total)
 
         shifted_note = ""
+        expect_start = _without_a_copied_gutter(expect_start, lines)
+        expect_end = _without_a_copied_gutter(expect_end, lines)
         if expect_start:
             actual_first = lines[start_line - 1]
             # One line, whatever arrived. A caller that sent two could not match

@@ -162,4 +162,53 @@ def is_scratch(relative_path: str) -> bool:
     return bool(name) and SCRATCH_NAME.search(name) is not None
 
 
-__all__ = ["FileKind", "SCRATCH_NAME", "classify_file", "is_application", "is_scratch", "is_test"]
+#: Extensions a file is commonly given, across languages and the documents,
+#: data and configuration around them. Not a list of what is supported: a
+#: caller adds the extensions the project at hand already uses, so a language
+#: missing here is still recognised wherever it is in use.
+FILE_EXTENSIONS = frozenset({
+    # code
+    "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "rb", "php", "go", "rs", "java", "kt",
+    "kts", "scala", "cs", "fs", "swift", "c", "h", "cc", "cpp", "hpp", "m", "mm", "dart",
+    "lua", "pl", "r", "jl", "ex", "exs", "erl", "hs", "clj", "elm", "vue", "svelte", "sql",
+    "sh", "bash", "zsh", "ps1", "bat",
+    # pages and styling
+    "html", "htm", "css", "scss", "sass", "less",
+    # data and configuration
+    "json", "yaml", "yml", "toml", "ini", "cfg", "conf", "env", "xml", "csv", "tsv",
+    "lock", "gradle", "properties", "tf", "proto", "graphql",
+    # documents and assets
+    "md", "markdown", "rst", "txt", "adoc", "svg", "png", "jpg", "jpeg", "gif", "ico", "webp",
+})
+
+
+def names_a_file(token: str, also: "set[str] | frozenset[str]" = frozenset()) -> bool:
+    """Whether a dotted name written in prose is a file, not `object.member`.
+
+    `store.read` and `styles.css` have the same shape, and a plan was handed
+    back twice - then dispatched as not ready - because its sprint's scope
+    said "task-store.mjs: createTask(), ..., store.read(), store.write()" and
+    no work order "listed" `store.read`. What tells them apart is the last
+    part: a file's is an extension files are given, here or in general.
+
+    `also` is the extensions the project already uses (its work orders' files,
+    its workspace), without the dot. An extension in neither is not taken for
+    a file - the safe side for a check that sends work back.
+    """
+    name = str(token or "").replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+    if "." not in name.strip("."):
+        return False
+    extension = name.rsplit(".", 1)[-1].lower()
+    return extension in FILE_EXTENSIONS or extension in {str(e).lower().lstrip(".") for e in also}
+
+
+__all__ = [
+    "FILE_EXTENSIONS",
+    "FileKind",
+    "SCRATCH_NAME",
+    "classify_file",
+    "is_application",
+    "is_scratch",
+    "is_test",
+    "names_a_file",
+]

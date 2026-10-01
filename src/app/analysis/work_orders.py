@@ -247,11 +247,8 @@ def _files_the_sprint_names_and_nobody_is_given(
     earlier and needs no work order. Never raises.
     """
     try:
-        from app.analysis.integration_checks import _A_FILE_NAMED
+        from app.analysis.integration_checks import files_named_in
 
-        named = {PurePosixPath(match).name for match in _A_FILE_NAMED.findall(sprint_scope or "")}
-        if not named:
-            return []
         listed = {
             PurePosixPath(str(path)).name.lower()
             for task in tasks
@@ -265,6 +262,10 @@ def _files_the_sprint_names_and_nobody_is_given(
             for path in base.rglob("*"):
                 if path.is_file() and not any(part in IGNORED_DIRECTORIES for part in path.parts):
                     existing.add(path.name.lower())
+        # What this project calls a file, beside what files are generally
+        # called: `store.read()` in a scope is a call, not a file to hand out.
+        in_use = {name.rsplit(".", 1)[-1] for name in listed | existing if "." in name}
+        named = files_named_in(sprint_scope, in_use)
         return sorted(name for name in named if name.lower() not in listed and name.lower() not in existing)
     except Exception:  # noqa: BLE001 - the plan is still checked for everything else
         return []

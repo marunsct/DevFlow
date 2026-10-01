@@ -479,3 +479,32 @@ class TestEveryFileTheSprintNamesHasAnOwner:
 
     def test_without_a_scope_nothing_changes(self, enforced, project):
         assert readiness_problems(_plan(_order("backend"), _order("testing", test_cases=[])), project) == []
+
+    def test_a_method_the_scope_mentions_is_not_a_file(self, enforced, project):
+        """One run's plan covered every file and was handed back twice, then
+        dispatched as not ready, for not listing `store.read` and `store.write`."""
+        scope = (
+            "- task-store.mjs: createTask(), parseTask(), serializeTask(), store.read(), store.write()\n"
+            "- Unit tests for createTask(), store.read/write()\n"
+            "- store.read returns an empty array on missing data."
+        )
+
+        problems = readiness_problems(
+            _plan(
+                _order("backend", files=["app/task-store.mjs"]),
+                _order("testing", files=["app/task-store.test.mjs"]),
+            ),
+            project, sprint_scope=scope,
+        )
+
+        assert not any("no work order lists" in p for p in problems)
+
+    def test_an_extension_the_project_uses_is_still_a_file(self, enforced, project):
+        """Not a fixed list of languages: what the work orders already write counts."""
+        problems = readiness_problems(
+            _plan(_order("backend", files=["app/main.zig"]), _order("testing", files=["app/main_test.zig"])),
+            project, sprint_scope="Create main.zig and parser.zig.",
+        )
+
+        found = [p for p in problems if "no work order lists" in p]
+        assert found and "parser.zig" in found[0] and "main.zig" not in found[0].replace("parser.zig", "")

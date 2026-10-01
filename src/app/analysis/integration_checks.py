@@ -4512,9 +4512,26 @@ def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> 
 #: written with a dot - "a Node.js module", which one run's blocking finding
 #: about a browser module began with - and "e.g." are never read as files.
 #: Several dotted parts are one name: `state.test.js` is not `state.test`.
+#: Never followed by `(`: `store.read()` is a call.
 _A_FILE_NAMED = re.compile(
-    r"(?<![\w/.-])((?:[\w-]+/)*[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.[a-z][a-z0-9]{1,5})(?![\w/-]|\.\w)"
+    r"(?<![\w/.-])((?:[\w-]+/)*[a-z0-9_-]+(?:\.[a-z0-9_-]+)*\.[a-z][a-z0-9]{1,5})(?![\w/(-]|\.\w)"
 )
+
+
+def files_named_in(prose: str, also: "set[str] | frozenset[str]" = frozenset()) -> set[str]:
+    """The file names `prose` mentions, by base name.
+
+    `_A_FILE_NAMED` finds every lower-case dotted name, and `object.member` is
+    one: see `app.analysis.file_kinds.names_a_file`, which is what decides.
+    `also` is the extensions the project already uses.
+    """
+    from app.analysis.file_kinds import names_a_file
+
+    return {
+        PurePosixPath(match).name
+        for match in _A_FILE_NAMED.findall(prose or "")
+        if names_a_file(match, also)
+    }
 
 
 def later_sprint_files_in(finding: str, this_sprint: str, later_sprints: str) -> list[str]:
@@ -4533,7 +4550,7 @@ def later_sprint_files_in(finding: str, this_sprint: str, later_sprints: str) ->
     """
     if not (later_sprints or "").strip():
         return []
-    named = {PurePosixPath(match).name for match in _A_FILE_NAMED.findall(_the_claim(finding))}
+    named = files_named_in(_the_claim(finding))
     if not named:
         return []
     later = (later_sprints or "").lower()

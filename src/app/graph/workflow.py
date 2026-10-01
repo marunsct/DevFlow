@@ -3069,6 +3069,19 @@ def _what_the_sprints_must_deliver(intake: Any) -> list[str]:
     return [*measures, *features]
 
 
+def _without_the_mvp_features(checklist: list[str]) -> list[str]:
+    """The checklist with each MVP feature blanked, numbering kept.
+
+    An MVP feature has to be assigned to a sprint; its words are not checked
+    against the plan. The word check reads the lists inside a short success
+    measure, and an intake's feature lines are sentences: one run's "One HTML
+    file with embedded or sibling CSS/JS ..." and "reject empty titles, ignore
+    no-op toggles, and confirm deletion acts on the selected task only" handed
+    a complete plan back for not delivering "embedded", "sibling" and "confirm".
+    """
+    return ["" if item.endswith(MVP_FEATURE_LABEL) else item for item in checklist]
+
+
 def _what_later_sprints_build(state: Any) -> str:
     """The goal, in-scope work and acceptance criteria of every sprint after this one.
 
@@ -4028,7 +4041,9 @@ def build_workflow_graph(
             next_stage="technical_lead",
         )
         if not _hand_back(update, "sprint_plan"):
-            unnamed = capabilities_the_plan_never_names(update["sprint_plan"], measures)
+            unnamed = capabilities_the_plan_never_names(
+                update["sprint_plan"], _without_the_mvp_features(measures)
+            )
             unassigned = unaccounted_success_measures(update["sprint_plan"], measures)
             missing = [
                 {"measure": n, "missing": unnamed.get(n, [])}

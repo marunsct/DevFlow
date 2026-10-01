@@ -86,3 +86,57 @@ def test_the_planner_is_shown_the_feature_and_told_it_cannot_wait() -> None:
 
     assert "6. Toggle complete/incomplete with visual cue (an MVP feature" in text
     assert "no release after this one" in text
+
+
+# --- the feature lines are assigned, not word-checked -----------------------
+
+#: Another run's intake: sentences, not short measures.
+SENTENCES = [
+    "One HTML file with embedded or sibling CSS/JS holding the task list UI",
+    "Inline validation: reject empty titles, ignore no-op toggles, and confirm "
+    "deletion acts on the selected task only.",
+]
+
+
+def test_a_feature_line_s_words_are_not_required_of_the_plan() -> None:
+    """That run's complete plan was handed back for "embedded", "sibling" and "confirm"."""
+    from app.agents.scrum_master import capabilities_the_plan_never_names
+    from app.graph.workflow import _without_the_mvp_features
+
+    checklist = _what_the_sprints_must_deliver(_intake(measures=MEASURES, mvp=SENTENCES))
+    plan = SprintPlanOutput(
+        sprints=[SprintDefinition(goal="Add, edit, delete; persist; filter; mobile and desktop", user_value="v")],
+        success_measure_coverage=[],
+    )
+
+    assert capabilities_the_plan_never_names(plan, _without_the_mvp_features(checklist)) == {}
+
+
+def test_blanking_the_features_keeps_the_numbering() -> None:
+    from app.graph.workflow import _without_the_mvp_features
+
+    checklist = _what_the_sprints_must_deliver(_intake())
+
+    blanked = _without_the_mvp_features(checklist)
+    assert blanked[:4] == MEASURES
+    assert blanked[4:] == [""] * 5
+
+
+def test_a_measure_s_list_is_still_checked() -> None:
+    from app.agents.scrum_master import capabilities_the_plan_never_names
+    from app.graph.workflow import _without_the_mvp_features
+
+    plan = SprintPlanOutput(
+        sprints=[SprintDefinition(goal="Add and delete tasks", user_value="v")],
+        success_measure_coverage=[],
+    )
+    checklist = _without_the_mvp_features(_what_the_sprints_must_deliver(_intake()))
+
+    assert capabilities_the_plan_never_names(plan, checklist)[1] == ["edit"]
+
+
+def test_a_verb_after_and_is_not_a_capability() -> None:
+    """"shows an empty list and does not error" asked the plan to deliver "does"."""
+    from app.agents.success_measures import enumerations
+
+    assert enumerations("opening the page shows an empty list and does not error") == []

@@ -44,10 +44,15 @@ _UNJOINED_LIST = re.compile(
     re.I,
 )
 
-#: Words that can sit in an enumeration without naming a capability.
+#: Words that can sit in an enumeration without naming a capability. The
+#: auxiliaries and negations came from one run's "shows an empty list and does
+#: not error", whose plan was handed back because no sprint delivered "does".
 _NOT_A_CAPABILITY = {
     "a", "all", "an", "are", "be", "both", "can", "either", "for", "in", "is", "of",
     "on", "only", "task", "tasks", "the", "to", "user", "users", "with",
+    "also", "could", "did", "do", "does", "has", "have", "had", "it", "its", "may",
+    "might", "must", "never", "no", "not", "should", "so", "that", "then", "this",
+    "was", "were", "will", "would",
 }
 
 

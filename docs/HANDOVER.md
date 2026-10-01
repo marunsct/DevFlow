@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `a754eb7`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `a754eb7` |
-| current run | `run-391a8b68-db4d-44ad-91b3-827a7f286436`, started 16:35 JST by the loop account, `brief_low.md`, auto-approve on. The owner's run-b69802cd (16:10) was cancelled at 16:28 for the framework-instructions bug fixed in `a754eb7` |
+| branch | `harness-hardening-session`, last code commit `904ecf8`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `904ecf8` |
+| current run | `run-d9642862-3b71-4e27-9e77-9d34c6116e6e`, started 17:08 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it: the owner's run-b69802cd at 16:28 (framework instructions, `a754eb7`) and run-391a8b68 at 16:58 (empty-project snapshot and the directory name, `904ecf8`) |
 | model | changed by the owner just before this run: `qwen3.8-flash-next-coder-iq1_m` at `http://host.docker.internal:9090/v1` (not LM Studio), `thinking_effort` medium, execution mode **parallel**, context 131,000, max output 20,000 |
 | gate | 0 of 2 on brief_low |
 
@@ -81,7 +81,10 @@ not show, and separate "the model did something odd" from "the harness let it"
 before fixing. The reasoning switch is measured once per endpoint and model and
 logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
 
-**What `2beaf2e` and `a754eb7` changed - verify them on this run:**
+**What `2beaf2e`, `a754eb7` and `904ecf8` changed - verify them on this run:**
+- The project directory is the product's name alone, cut between words
+  (it was `...-single-page-tas`), and early stages do not `ls`/`glob` an
+  empty project - the snapshot now says it is empty.
 - The worker's "Framework instructions resolved for this stack: ..." line
   must name only what the stack chose - no framework the stack document
   rejects, and no language that appears only as a tool command.

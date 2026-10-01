@@ -70,18 +70,22 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `904ecf8`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `904ecf8` |
-| current run | `run-d9642862-3b71-4e27-9e77-9d34c6116e6e`, started 17:08 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it: the owner's run-b69802cd at 16:28 (framework instructions, `a754eb7`) and run-391a8b68 at 16:58 (empty-project snapshot and the directory name, `904ecf8`) |
-| model | changed by the owner just before this run: `qwen3.8-flash-next-coder-iq1_m` at `http://host.docker.internal:9090/v1` (not LM Studio), `thinking_effort` medium, execution mode **parallel**, context 131,000, max output 20,000 |
+| branch | `harness-hardening-session`, last code commit `c0fea69`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `c0fea69` |
+| current run | `run-7cc2f3a6-ebef-425a-9d07-41aa4f413581`, started 17:47 JST by the loop account, `brief_low.md`, auto-approve on. Cancelled before it: run-b69802cd 16:28 (framework instructions, `a754eb7`), run-391a8b68 16:58 (empty project, directory name, `904ecf8`), run-d9642862 17:39 (MVP feature sentences word-checked, `c0fea69`) |
+| model | the owner switched back at about 17:45 JST: `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`. The qwen server on port 9090 is down. Check `runtime_settings` and the loaded model before every start - the owner changes them |
 | gate | 0 of 2 on brief_low |
 
-These are the first runs on the new model. Expect behaviour the gpt-oss runs did
+Runs b69802cd, 391a8b68 and d9642862 were on qwen; the current one is back on gpt-oss. Expect behaviour the gpt-oss runs did
 not show, and separate "the model did something odd" from "the harness let it"
 before fixing. The reasoning switch is measured once per endpoint and model and
 logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
 
-**What `2beaf2e`, `a754eb7` and `904ecf8` changed - verify them on this run:**
+**What `2beaf2e`, `a754eb7`, `904ecf8` and `c0fea69` changed - verify them on this run:**
+- A sprint plan is handed back only for a success measure's own list items
+  (an MVP feature needs only a sprint assigned), and never for a function
+  word such as "does" - check the worker's "Sprint plan left success
+  measures" warning, if any, names real capabilities.
 - The project directory is the product's name alone, cut between words
   (it was `...-single-page-tas`), and early stages do not `ls`/`glob` an
   empty project - the snapshot now says it is empty.

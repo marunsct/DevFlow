@@ -2626,6 +2626,14 @@ def _edited(
         # and it has no `relative_parts` of its own.
         _nearly_a_workflow_document(_repo_relative_path(root, relative_path).parts),
         _unrunnable_script_note(relative_path),
+        # The module-system notes the write path gives, on the whole file as it
+        # now stands. They were on the write path only: one run's
+        # `defect_fix_1_2` used `replace_lines` to turn a test's `import` lines
+        # into `require(...)` under `"type": "module"`, was told nothing, and
+        # the next test round reported "require is not defined".
+        _the_module_type_this_declares_breaks_files_here(target, written),
+        _the_module_type_here_rejects_this_file(target, written),
+        _the_page_and_this_module_disagree_on_how_it_loads(root, target, written),
         _budget_note(root, str(target.relative_to(root))).strip(),
     ]
     if find is not None:

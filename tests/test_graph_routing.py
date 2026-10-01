@@ -97,9 +97,13 @@ class ScriptedAgents:
         return _FakeAgent(role, self)
 
     def last_request_text(self, role: str) -> str:
-        """Return the text of the most recent `{"messages": [...]}` request for a role."""
+        """Return the text of the most recent `{"messages": [...]}` request for a role.
+
+        Every message of it: a stage's opening request can be preceded by the
+        project snapshot, which an empty project now carries too.
+        """
         payload = self.requests[role][-1]
-        return payload["messages"][0]["content"]
+        return "\n\n".join(str(message["content"]) for message in payload["messages"])
 
 
 class _FakeAgent:
@@ -454,7 +458,7 @@ def test_a_specification_missing_sections_goes_straight_back_to_the_architect(
     assert state.get("architecture_revision_count", 0) == 0
     assert state["specification_repair_count"] == 0
 
-    repair_request = agents.requests["principal_architect"][1]["messages"][0]["content"]
+    repair_request = agents.requests["principal_architect"][1]["messages"][-1]["content"]
     for section in ("security_and_privacy", "testing", "deployment"):
         assert section in repair_request
 
@@ -1050,7 +1054,7 @@ def test_a_changes_required_with_no_findings_is_re_reviewed_not_acted_on(
     # contain the module/commonjs sentence from `acceptance_evidence` and no
     # remediation instruction at all.
     lead_requests = agents.requests["technical_lead"]
-    assert "classic script" in lead_requests[1]["messages"][0]["content"]
+    assert "classic script" in lead_requests[1]["messages"][-1]["content"]
 
 
 def test_sprint_review_pauses_after_tests_pass_and_can_be_approved(

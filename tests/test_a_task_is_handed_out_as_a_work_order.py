@@ -298,7 +298,7 @@ def test_each_sprint_s_plan_gets_its_own_readiness_attempts(
 
     start_workflow(_graph(), _document(), _repository(tmp_path), "run-work-orders-per-sprint")
 
-    asked = [payload["messages"][0]["content"] for payload in agents.requests["technical_lead"]]
+    asked = [payload["messages"][-1]["content"] for payload in agents.requests["technical_lead"]]
     assert len(asked) == 5, len(asked)
     assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" not in asked[3]
     assert "YOUR PREVIOUS PLAN WAS NOT READY TO HAND OUT" in asked[4]

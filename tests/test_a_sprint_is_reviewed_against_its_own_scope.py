@@ -84,7 +84,7 @@ def test_sprint_one_is_not_sent_back_for_sprint_two_s_work(agents: ScriptedAgent
     assert state.get("milestone_revision_count", 0) == 0
     record = (tmp_path / "docs" / "sprint_1_summary.md").read_text(encoding="utf-8")
     assert "Planned for a later sprint (edit)" in record
-    first_review = agents.requests["milestone_reviewer"][0]["messages"][0]["content"]
+    first_review = agents.requests["milestone_reviewer"][0]["messages"][-1]["content"]
     assert "Deferred by the plan, not part of this sprint:\n- Editing or deleting tasks" in first_review
     assert "Sprint 2: Edit and delete tasks" in first_review
 

@@ -8,6 +8,8 @@ and `specialist_ui_ux_0`, whose task said only "Write index.html", wrote
 
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 from app.agents.workspace_digest import render_workspace_digest
@@ -128,3 +130,36 @@ class TestTheProductNamesItFirst:
         from app.tools.repository import pin_the_directory_the_product_names
 
         assert pin_the_directory_the_product_names(tmp_path, "待办事项") is None
+
+    def test_a_description_after_the_name_is_not_the_directory(self, tmp_path):
+        """One run's intake: the name, an em dash, and a description of the product."""
+        from app.tools.repository import pin_the_directory_the_product_names
+
+        named = (
+            "Simple To-Do List App — greenfield single-page task manager "
+            "(create/read/update/delete + status filter, browser-only persistence)"
+        )
+
+        assert pin_the_directory_the_product_names(tmp_path, named) == "simple-to-do-list-app"
+
+    @pytest.mark.parametrize(
+        ("named", "directory"),
+        [
+            ("Task Management Dashboard: team edition", "task-management-dashboard"),
+            ("Enterprise E-Commerce Platform", "enterprise-e-commerce-platform"),
+            ("Inventory Service (internal)", "inventory-service"),
+        ],
+    )
+    def test_the_name_ends_where_its_description_begins(self, named, directory):
+        from app.tools.repository import _directory_name_for
+
+        assert _directory_name_for(named) == directory
+
+    def test_a_long_name_is_cut_between_words(self):
+        """It became `...-single-page-tas`, the last word cut in half."""
+        from app.tools.repository import _MOST_NAME_CHARACTERS, _directory_name_for
+
+        name = _directory_name_for("simple to do list app greenfield single page task manager")
+
+        assert len(name) <= _MOST_NAME_CHARACTERS
+        assert name == "simple-to-do-list-app-greenfield-single-page"

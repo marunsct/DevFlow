@@ -70,11 +70,23 @@ def test_no_project_directory_yet_means_nothing(tmp_path: Path) -> None:
     assert project_snapshot(None) == ""
 
 
-def test_an_empty_project_means_nothing(tmp_path: Path) -> None:
+def test_an_empty_project_is_said_to_be_empty(tmp_path: Path) -> None:
+    """One run's architect spent three turns finding an empty directory."""
     (tmp_path / ".project-directory").write_text("shop\n", encoding="utf-8")
     (tmp_path / "shop").mkdir()
 
-    assert project_snapshot(tmp_path) == ""
+    text = project_snapshot(tmp_path)
+
+    assert "`shop/` has no files yet" in text
+    assert "nothing in it to list, search or read" in text
+
+
+def test_a_project_holding_only_harness_files_is_empty_too(tmp_path: Path) -> None:
+    (tmp_path / ".project-directory").write_text("shop\n", encoding="utf-8")
+    (tmp_path / "shop").mkdir()
+    (tmp_path / "shop" / "package-lock.json").write_text("{}", encoding="utf-8")
+
+    assert "has no files yet" in project_snapshot(tmp_path)
 
 
 def test_a_stage_s_opening_request_carries_it_before_its_own_request(tmp_path: Path, agents) -> None:  # noqa: F811

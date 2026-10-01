@@ -4361,6 +4361,31 @@ def pin_the_directory_a_plan_names(root: str | Path, plan_text: str) -> str | No
 _MOST_NAME_CHARACTERS = 48
 
 
+#: Where a product's name ends and a description of it begins: a spaced dash,
+#: a colon, or an opening bracket. "To-Do" keeps its hyphen.
+_A_SUBTITLE = re.compile(r"\s+[\u2014\u2013-]\s+|:\s|\s*[(\[|]")
+
+
+def _directory_name_for(product_name: str) -> str:
+    """The product's name as a directory: lowercase, words joined by hyphens.
+
+    The name only, and cut between words. One run's intake named the product
+    "Simple To-Do List App — greenfield single-page task manager
+    (create/read/update/delete + status filter, browser-only persistence)", and
+    the directory became `simple-to-do-list-app-greenfield-single-page-tas` -
+    the description included and the last word cut in half.
+    """
+    text = str(product_name or "")
+    title = _A_SUBTITLE.split(text, 1)[0].strip() or text
+    name = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+    if len(name) > _MOST_NAME_CHARACTERS:
+        cut = name[:_MOST_NAME_CHARACTERS]
+        if name[_MOST_NAME_CHARACTERS] != "-" and "-" in cut:
+            cut = cut[: cut.rfind("-")]
+        name = cut
+    return name.rstrip("-")
+
+
 def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> str | None:
     """Pin the product's name, as a directory, before any stage looks for one.
 
@@ -4387,8 +4412,7 @@ def pin_the_directory_the_product_names(root: str | Path, product_name: str) -> 
             return None
     except OSError:
         return None
-    name = re.sub(r"[^a-z0-9]+", "-", str(product_name or "").lower()).strip("-")
-    name = name[:_MOST_NAME_CHARACTERS].rstrip("-")
+    name = _directory_name_for(product_name)
     if not name or name in _SUBDIRECTORY_NAMES or not _is_project_directory(name):
         return None
     _pin_project_directory(base, name)

@@ -92,7 +92,16 @@ def project_snapshot(repo_root: str | Path) -> str:
             if text is not None and text.strip():
                 files.append((name, text))
         if not files:
-            return ""
+            # Said, not left silent. With no snapshot a stage goes to look: one
+            # run's architect spent three turns - `ls` twice, a change query
+            # and `glob **/*` - finding an empty directory, about four minutes
+            # on a model that writes 2,000-4,000 tokens a turn.
+            return (
+                f"The project directory `{project}/` has no files yet "
+                f"({time.strftime('%H:%M:%S')}): nothing has been built, so there is "
+                "nothing in it to list, search or read. What this stage works from is "
+                "in this request and the documents under `docs/`."
+            )
         # The product's own code first, so the budget cuts tests and
         # configuration before it cuts what they are about.
         files.sort(key=lambda item: (classify_file(item[0]) != "application", item[0]))

@@ -168,3 +168,82 @@ def test_the_node_applies_the_repair_before_rendering_the_document() -> None:
 
     assert repair != -1 and render != -1
     assert repair < render
+
+
+# --- the prose is corrected with the field -----------------------------------
+
+#: One run's rationale, as the stage wrote it. The workflow recorded
+#: "node:test for the logic, Playwright for the page" eleven lines above it,
+#: and the architecture review raised the two as a blocking contradiction three
+#: reviews running - against a document the architect cannot edit.
+RATIONALE = (
+    "Framework: None — vanilla HTML5 + CSS3. The app is a single list view.\n"
+    "\n"
+    "Testing framework: node:test — Node.js's built-in test runner (available since v18) "
+    "with zero installation cost. It tests pure logic functions headlessly without any "
+    "browser. Playwright is not needed because this product has no separate frontend layer "
+    "to automate — the entire app IS the frontend, and its DOM interactions are verified by "
+    "opening the single HTML file in a browser. Adding Playwright would install a browser "
+    "binary (~300MB+) and its dependencies for an app that fits in 500 lines.\n"
+    "\n"
+    "Additional tools: None."
+)
+CORRECTED = "node:test for the logic, Playwright for the page"
+
+
+class TestTheRationaleNoLongerArguesAgainstTheField:
+    def _corrected(self) -> str:
+        from app.agents.stack_selector import the_rationale_for_the_corrected_runner
+
+        return the_rationale_for_the_corrected_runner(RATIONALE, CORRECTED)
+
+    def test_the_case_against_the_runner_is_gone(self) -> None:
+        text = self._corrected()
+
+        assert "Playwright is not needed" not in text
+        assert "Adding Playwright would install" not in text
+
+    def test_what_was_recorded_is_said_and_why(self) -> None:
+        text = self._corrected()
+
+        assert f"as recorded by the workflow: {CORRECTED}" in text
+        assert "no display" in text
+
+    def test_the_rest_of_the_rationale_is_kept(self) -> None:
+        text = self._corrected()
+
+        assert "Framework: None — vanilla HTML5 + CSS3. The app is a single list view." in text
+        assert "Node.js's built-in test runner (available since v18)" in text
+        assert "It tests pure logic functions headlessly without any browser." in text
+        assert "Additional tools: None." in text
+
+    def test_a_sentence_that_checks_the_product_by_hand_is_dropped(self) -> None:
+        from app.agents.stack_selector import the_rationale_for_the_corrected_runner
+
+        text = the_rationale_for_the_corrected_runner(
+            "A page this small is adequately verified by testing its core logic and manual "
+            "browser verification. The logic is plain functions.",
+            CORRECTED,
+        )
+
+        assert "manual" not in text
+        assert "The logic is plain functions." in text
+
+    def test_an_empty_rationale_still_says_what_was_recorded(self) -> None:
+        from app.agents.stack_selector import the_rationale_for_the_corrected_runner
+
+        assert the_rationale_for_the_corrected_runner("", CORRECTED).startswith(
+            "Testing framework, as recorded by the workflow"
+        )
+
+
+def test_the_node_corrects_the_rationale_with_the_field() -> None:
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow.build_workflow_graph)
+    node = source.split("def stack_selector_node", 1)[1].split("def principal_architect_node", 1)[0]
+
+    assert "the_rationale_for_the_corrected_runner" in node
+    assert node.find("the_rationale_for_the_corrected_runner") < node.find("docs/technology_stack.md")

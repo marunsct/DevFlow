@@ -346,9 +346,64 @@ def the_browser_runner_this_stack_forgot(stack: Any) -> str | None:
     return f"{declared} for the logic, Playwright for the page"
 
 
+#: Where one sentence of a rationale ends and the next begins.
+_BETWEEN_SENTENCES = re.compile(r"(?<=[.!?])\s+")
+
+#: A sentence saying the product is checked by a person looking at it.
+_CHECKED_BY_HAND = re.compile(
+    r"\bmanual(?:ly)?\b[^.!?]*\b(?:test|verif|check|inspect|browser)"
+    r"|\b(?:test|verif|check|inspect)\w*\b[^.!?]*\bmanual(?:ly)?\b",
+    re.I,
+)
+
+
+def the_rationale_for_the_corrected_runner(rationale: str, corrected: str) -> str:
+    """The rationale, once the workflow has added the browser runner it argued against.
+
+    `the_browser_runner_this_stack_forgot` corrects one field and the stage's
+    prose was left as written - and the prose is where the stage explained why
+    it had left the runner out. One run's document then read, eleven lines
+    apart, "Testing framework: node:test for the logic, Playwright for the
+    page" and "Playwright is not needed because this product has no separate
+    frontend layer to automate ... verified by opening the single HTML file in
+    a browser". The architect specified Playwright, as the field says; the
+    reviewer raised the contradiction with the rationale as blocking three
+    reviews running, and the architect cannot edit this document.
+
+    So the case against is taken out with the field it argued for: every
+    sentence naming a browser runner - the stack named none, so each is about
+    not using one - and every sentence that has the product checked by hand.
+    What was recorded, and why, is said in its place.
+    """
+    paragraphs: list[str] = []
+    for paragraph in str(rationale or "").split("\n"):
+        if not paragraph.strip():
+            paragraphs.append(paragraph)
+            continue
+        kept = [
+            sentence
+            for sentence in _BETWEEN_SENTENCES.split(paragraph)
+            if not _NAMES_A_BROWSER_RUNNER.search(sentence)
+            and not _CHECKED_BY_HAND.search(sentence)
+        ]
+        if kept:
+            paragraphs.append(" ".join(kept))
+    note = (
+        f"Testing framework, as recorded by the workflow: {corrected}. This product "
+        "runs in a browser, and nothing here can open it and look: there is no display "
+        "and nobody watching, so what the browser shows is tested by a browser runner, "
+        "beside the runner the logic uses. A runner used only for testing is not part "
+        "of what ships, so a limit on the product's dependencies or size does not "
+        "rule it out."
+    )
+    body = "\n".join(paragraphs).rstrip()
+    return f"{body}\n\n{note}" if body else note
+
+
 __all__ = [
     "StackSelectorOutput",
     "build_stack_selector_request",
     "create_stack_selector_agent",
     "the_browser_runner_this_stack_forgot",
+    "the_rationale_for_the_corrected_runner",
 ]

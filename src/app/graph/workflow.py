@@ -63,7 +63,10 @@ from langgraph.types import Send
 
 from app.agents.approval import extract_pending_approval, resume_with_decision
 from app.agents.stage_memory import remembering
-from app.agents.stack_selector import the_browser_runner_this_stack_forgot
+from app.agents.stack_selector import (
+    the_browser_runner_this_stack_forgot,
+    the_rationale_for_the_corrected_runner,
+)
 from app.agents.architecture_reviewer import (
     ArchitectureReviewOutput,
     build_architecture_review_request,
@@ -3803,7 +3806,12 @@ def build_workflow_graph(
                 update={
                     "technology_stack": stack.model_copy(
                         update={"testing_framework": corrected}
-                    )
+                    ),
+                    # The prose with it, or the document argues against its
+                    # own field. See `the_rationale_for_the_corrected_runner`.
+                    "rationale": the_rationale_for_the_corrected_runner(
+                        getattr(chosen, "rationale", ""), corrected
+                    ),
                 }
             )
 

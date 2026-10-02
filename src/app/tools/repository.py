@@ -1424,7 +1424,23 @@ _A_TEST_ROUND = "test_round_"
 _THE_TESTING_TASK = "specialist_testing_"
 
 
-def _a_tester_changing_the_product(root: Path, target: Path) -> str | None:
+#: What a defect is reported with. A document carrying most of these is a
+#: defect report, whatever it is called.
+_PARTS_OF_A_DEFECT_REPORT = (
+    "severity", "reproduc", "expected", "actual", "owner", "affected file",
+)
+_PARTS_THAT_MAKE_IT_A_DEFECT_REPORT = 4
+
+
+def _reads_as_a_defect_report(content: str) -> bool:
+    lowered = str(content or "").lower()
+    return (
+        sum(1 for part in _PARTS_OF_A_DEFECT_REPORT if part in lowered)
+        >= _PARTS_THAT_MAKE_IT_A_DEFECT_REPORT
+    )
+
+
+def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") -> str | None:
     """The refusal for a testing stage changing application code, or None.
 
     A test round finds what fails and reports each failure as a defect for the
@@ -1457,6 +1473,26 @@ def _a_tester_changing_the_product(root: Path, target: Path) -> str | None:
         shown = target.relative_to(root).as_posix()
     except ValueError:
         return None
+    if (
+        stage.startswith(_A_TEST_ROUND)
+        and classify_file(shown) == "document"
+        and not target.exists()
+        and _reads_as_a_defect_report(content)
+    ):
+        # A round's findings written as a file. One run's test round wrote
+        # `defects_report.md` into the project - two defects with severity,
+        # reproduction and owner, which is the `defects` field word for word -
+        # and it shipped with the product. By its content, and only a new
+        # document: a round's own notes, and corrections to a document already
+        # there, are still its to write.
+        return (
+            f"'{shown}' would be a new document in the product, and this is a test "
+            "round: what it finds is returned in `defects`, not written to a file. "
+            "The workflow reads the defects from your structured response, routes "
+            "each to its owner and logs it in the Sprint Record; a report file is "
+            "read by none of them and ships with the product. Put each finding in "
+            "`defects` and return. Nothing was written."
+        )
     if target.name in PACKAGE_MANIFESTS or classify_file(shown) != "application":
         return None
     if stage.startswith(_THE_TESTING_TASK) and _created_here(root, shown, stage):
@@ -5260,7 +5296,7 @@ def write_approved_artifact(
     someone_else_s = _another_work_order_s_file(artifact_root, target)
     if someone_else_s is not None:
         raise RepositoryToolError(someone_else_s)
-    not_this_round_s = _a_tester_changing_the_product(artifact_root, target)
+    not_this_round_s = _a_tester_changing_the_product(artifact_root, target, content)
     if not_this_round_s is not None:
         raise RepositoryToolError(not_this_round_s)
 

@@ -130,3 +130,34 @@ def test_the_testing_work_order_deletes_only_code_it_created(project: Path, monk
 
     assert not (project / "shop" / "probe.py").exists()
     assert (project / "shop" / "cart.py").is_file()
+
+
+DEFECT_REPORT = (
+    "# Defect Report\n\n"
+    "## 1. End-to-end tests fail\n"
+    "- **Severity**: Critical\n"
+    "- **Reproduction Steps**: run the suite\n"
+    "- **Expected Behavior**: the server starts\n"
+    "- **Actual Behavior**: it does not\n"
+    "- **Affected Files**: shop/package.json\n"
+    "- **Owner**: testing\n"
+)
+
+
+def test_a_test_round_does_not_write_its_findings_as_a_file(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One run's test round wrote `defects_report.md` into the project - the
+    `defects` field, word for word - and it shipped with the product."""
+    _in_stage(monkeypatch, "test_round_0")
+
+    with pytest.raises(RepositoryToolError, match="returned in `defects`, not written to a file"):
+        write_approved_artifact(project, "shop/defects_report.md", DEFECT_REPORT)
+
+    assert not (project / "shop" / "defects_report.md").exists()
+
+
+def test_another_stage_may_write_such_a_document(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _in_stage(monkeypatch, "specialist_documentation_1")
+
+    write_approved_artifact(project, "shop/KNOWN_ISSUES.md", DEFECT_REPORT)
+
+    assert (project / "shop" / "KNOWN_ISSUES.md").is_file()

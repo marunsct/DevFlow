@@ -164,7 +164,8 @@ def sprints_that_deliver_nothing(plan: Any, measures: list[str]) -> list[int]:
     test it - and never reached the second.
 
     The system prompt already says setup is not a sprint. This is the same
-    rule read off the plan's own accounting instead of asked for in prose.
+    rule read off the plan's own accounting instead of asked for in prose, and
+    `with_setup_folded_into_the_sprint_that_needs_it` is what acts on it.
 
     Nothing when the plan assigns no measure to any sprint by number: that is
     a different fault with its own handling, and every sprint would be listed.
@@ -186,6 +187,99 @@ def sprints_that_deliver_nothing(plan: Any, measures: list[str]) -> list[int]:
     if not delivering:
         return []
     return [k for k in range(1, sprint_count + 1) if k not in delivering]
+
+
+def _renumbered(text: str, removed: int) -> str:
+    """`text` with every "Sprint N" after the removed sprint counted one lower."""
+    def lower(match: re.Match[str]) -> str:
+        number = int(match.group(1))
+        return match.group(0).replace(str(number), str(number - 1)) if number > removed else match.group(0)
+
+    return _NAMES_A_SPRINT.sub(lower, str(text))
+
+
+def with_setup_folded_into_the_sprint_that_needs_it(
+    plan: Any, measures: list[str]
+) -> tuple[Any, list[str]]:
+    """`plan` with each sprint that delivers nothing merged into its neighbour, and their goals.
+
+    What `sprints_that_deliver_nothing` finds, put right here instead of asked
+    for. It was asked for at first: the plan was sent back with the sprint
+    named. One run's plan assigned all ten of its measures, to sprints 2, 3 and
+    4, behind a first sprint of "file layout, module boundaries, and test
+    harness"; sent back, the model returned three sprints and no coverage
+    lines at all, and the run was failed for a plan that "assigns none of the
+    10 things" - one minute in, on a plan worse than the one it replaced.
+
+    Folding needs no second answer. The sprint's work goes to the front of the
+    next sprint - the last sprint's, to the end of the one before it - which
+    keeps its own goal and user value; the scope the folded sprint ruled out is
+    dropped, since it ruled out what its neighbour builds. Coverage lines and
+    dependencies are renumbered to match. A plan in which every sprint
+    delivers is returned as it came.
+    """
+    folded: list[str] = []
+    try:
+        while True:
+            empty = sprints_that_deliver_nothing(plan, measures)
+            if not empty:
+                return plan, folded
+            sprints = list(plan.sprints)
+            k = empty[0]
+            gone = sprints[k - 1]
+            into = k if k < len(sprints) else k - 2  # index of the neighbour
+            target = sprints[into]
+            first, second = (gone, target) if into == k else (target, gone)
+
+            def both(field: str) -> list[str]:
+                merged: list[str] = []
+                for item in [*getattr(first, field), *getattr(second, field)]:
+                    if item not in merged:
+                        merged.append(item)
+                return merged
+
+            merged_sprint = target.model_copy(update={
+                "in_scope": both("in_scope"),
+                "acceptance_criteria": both("acceptance_criteria"),
+                "test_strategy": both("test_strategy"),
+                "security_checks": both("security_checks"),
+                "documentation_work": both("documentation_work"),
+                "risks": both("risks"),
+            })
+            sprints[into] = merged_sprint
+            del sprints[k - 1]
+            kept = []
+            for index, sprint in enumerate(sprints, start=1):
+                dependencies = [
+                    _renumbered(item, k) for item in sprint.dependencies
+                    # A sprint does not depend on the one folded into it.
+                    if not (
+                        index == (k if into == k else k - 1)
+                        and [int(n) for n in _NAMES_A_SPRINT.findall(str(item))] == [k]
+                    )
+                ]
+                dependencies = list(dict.fromkeys(
+                    item for item in dependencies
+                    if index not in [int(n) for n in _NAMES_A_SPRINT.findall(item)]
+                ))
+                kept.append(sprint.model_copy(update={"dependencies": dependencies}))
+            plan = plan.model_copy(update={
+                "sprints": kept,
+                "success_measure_coverage": [
+                    _renumbered(line, k) for line in plan.success_measure_coverage
+                ],
+            })
+            folded.append(str(getattr(gone, "goal", "")).strip())
+    except Exception:  # noqa: BLE001 - the plan as it came stands
+        return plan, folded
+
+
+def how_much_a_plan_leaves_out(plan: Any, measures: list[str]) -> int:
+    """How many success measures a plan fails to assign or to deliver in full."""
+    return len(
+        set(unaccounted_success_measures(plan, measures))
+        | set(capabilities_the_plan_never_names(plan, measures))
+    )
 
 
 def _delivered_text(plan: Any) -> str:
@@ -240,26 +334,6 @@ def _the_success_measures(measures: list[str], gaps: list[Any]) -> str:
         "constraint every sprint keeps - and make sure the sprint you name has "
         "that work in its scope and acceptance criteria.\n"
     )
-    empty = [
-        gap for gap in gaps
-        if isinstance(gap, dict) and isinstance(gap.get("sprint"), int)
-    ]
-    gaps = [gap for gap in gaps if gap not in empty]
-    if empty:
-        named = "\n".join(
-            f"  Sprint {gap['sprint']}: {str(gap.get('goal') or '').strip()}" for gap in empty
-        )
-        section += (
-            "\nYOUR LAST PLAN HAD SPRINTS THAT DELIVER NONE OF THE MEASURES ABOVE - your own "
-            "coverage lines assign nothing to them:\n"
-            f"{named}\n"
-            "Every sprint costs a full build, test round and review, so every sprint must "
-            "deliver at least one measure. If such a sprint is setup - structure, tooling, "
-            "a skeleton - it is not a sprint: fold that work into the first sprint that "
-            "needs it. If it builds part of a measure another sprint finishes, the two "
-            "are one sprint: merge them. Return the complete plan again with fewer "
-            "sprints, and a coverage line for every measure.\n"
-        )
     if gaps:
         lines = []
         for gap in gaps:

@@ -1,4 +1,4 @@
-"""A sprint that no success measure is assigned to is sent back to be folded in.
+"""A sprint that no success measure is assigned to is folded into its neighbour.
 
 Measured over one day's runs of the same small brief, by each plan's own
 coverage lines. The two that shipped a sound product assigned a measure to
@@ -14,9 +14,12 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from app.agents.scrum_master import (
-    _the_success_measures,
-    build_sprint_planning_request,
+    SprintDefinition,
+    SprintPlanOutput,
+    how_much_a_plan_leaves_out,
     sprints_that_deliver_nothing,
+    unaccounted_success_measures,
+    with_setup_folded_into_the_sprint_that_needs_it,
 )
 
 MEASURES = [
@@ -68,29 +71,124 @@ def test_a_line_naming_a_sprint_that_does_not_exist_delivers_nothing() -> None:
     assert sprints_that_deliver_nothing(plan, MEASURES) == [2]
 
 
-def test_the_second_request_names_the_sprint_and_what_to_do_with_it() -> None:
-    gaps = [{"sprint": 1, "goal": "Set up project structure and initial render"}]
-
-    section = _the_success_measures(MEASURES, gaps)
-
-    assert "Sprint 1: Set up project structure and initial render" in section
-    assert "fold that work into the first sprint that needs it" in section
-    # A sprint that is not setup but builds half of what another finishes -
-    # one run's "Add the task creation form" - is told what to do as well.
-    assert "merge them" in section
-    assert "fewer sprints" in section
-    # And it is not also listed as an unassigned measure.
-    assert "LEFT THESE UNASSIGNED" not in section
+# --- and it is put right here, not asked for ----------------------------------
 
 
-def test_both_kinds_of_gap_can_be_asked_about_at_once() -> None:
-    gaps = [{"measure": 3, "missing": []}, {"sprint": 1, "goal": "Foundation"}]
+def _real_plan(goals_and_scope: list[tuple[str, list[str]]], coverage: list[str]) -> SprintPlanOutput:
+    return SprintPlanOutput(
+        sprints=[
+            SprintDefinition(
+                goal=goal, user_value=f"value of {goal}", in_scope=scope,
+                out_of_scope=[f"not in {goal}"], acceptance_criteria=[f"{goal} works"],
+                dependencies=[f"Sprint {k}" for k in range(1, index)],
+            )
+            for index, (goal, scope) in enumerate(goals_and_scope, start=1)
+        ],
+        success_measure_coverage=coverage,
+    )
 
-    request = build_sprint_planning_request("the spec", "/", success_measures=MEASURES, gaps=gaps)
-    text = request["messages"][0]["content"]
 
-    assert "Sprint 1: Foundation" in text
-    assert "LEFT THESE UNASSIGNED" in text and "3. Filter functionality works correctly" in text
+AS_THE_RUN_PLANNED_IT = [
+    ("Establish the project foundation", ["Set up package.json", "Create placeholders"]),
+    ("Implement core logic and persistence", ["Implement CRUD functions"]),
+    ("Build the UI layer", ["Render the task list"]),
+    ("Finalize polish", ["Refine the filter"]),
+]
+
+
+def test_the_foundation_sprint_is_folded_into_the_one_that_needs_it() -> None:
+    plan = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 3", "3: Sprint 2", "4: every sprint"])
+
+    folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert folded == ["Establish the project foundation"]
+    assert [sprint.goal for sprint in folded_plan.sprints] == [
+        "Implement core logic and persistence", "Build the UI layer", "Finalize polish",
+    ]
+    first = folded_plan.sprints[0]
+    # The setup comes first, in the sprint that needs it, and nothing it did is lost.
+    assert first.in_scope == ["Set up package.json", "Create placeholders", "Implement CRUD functions"]
+    assert "Establish the project foundation works" in first.acceptance_criteria
+    # What the folded sprint ruled out was its neighbour's own work.
+    assert first.out_of_scope == ["not in Implement core logic and persistence"]
+
+
+def test_the_plan_s_own_references_are_renumbered() -> None:
+    plan = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 3", "3: Sprint 2", "4: every sprint"])
+
+    folded_plan, _ = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert folded_plan.success_measure_coverage == ["1: Sprint 3", "2: Sprint 2", "3: Sprint 1", "4: every sprint"]
+    assert folded_plan.sprints[0].dependencies == []
+    assert folded_plan.sprints[1].dependencies == ["Sprint 1"]
+    assert folded_plan.sprints[2].dependencies == ["Sprint 1", "Sprint 2"]
+    # And nothing is left for a second pass to find.
+    assert sprints_that_deliver_nothing(folded_plan, MEASURES) == []
+    assert unaccounted_success_measures(folded_plan, MEASURES) == []
+
+
+def test_a_last_sprint_that_delivers_nothing_goes_into_the_one_before() -> None:
+    plan = _real_plan(
+        [("Build everything", ["Build it"]), ("Write the documentation", ["Write the README"])],
+        ["1: Sprint 1", "2: Sprint 1", "3: Sprint 1", "4: every sprint"],
+    )
+
+    folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert folded == ["Write the documentation"]
+    assert [sprint.goal for sprint in folded_plan.sprints] == ["Build everything"]
+    assert folded_plan.sprints[0].in_scope == ["Build it", "Write the README"]
+
+
+def test_several_are_folded_until_every_sprint_delivers() -> None:
+    plan = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 4", "3: Sprint 4", "4: every sprint"])
+
+    folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert len(folded) == 3 and len(folded_plan.sprints) == 1
+    assert folded_plan.sprints[0].goal == "Finalize polish"
+    assert folded_plan.success_measure_coverage[0] == "1: Sprint 1"
+
+
+def test_a_plan_whose_sprints_all_deliver_is_returned_as_it_came() -> None:
+    plan = _real_plan(AS_THE_RUN_PLANNED_IT[:2], ["1: Sprint 2", "2: Sprint 1", "3: Sprint 1", "4: Sprint 2"])
+
+    folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert folded == [] and folded_plan is plan
+
+
+def test_a_plan_with_no_coverage_lines_is_not_folded_into_one_sprint() -> None:
+    """Nothing says which sprint delivers what, so nothing can be called setup."""
+    plan = _real_plan(AS_THE_RUN_PLANNED_IT, [])
+
+    folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert folded == [] and len(folded_plan.sprints) == 4
+
+
+def test_how_much_a_plan_leaves_out_is_what_decides_between_two() -> None:
+    """One run's second plan dropped its coverage lines altogether, and the run
+    was failed for a plan that "assigns none" when the first had assigned all."""
+    first = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 3", "3: Sprint 2", "4: every sprint"])
+    second = _real_plan(AS_THE_RUN_PLANNED_IT[1:], [])
+
+    assert how_much_a_plan_leaves_out(second, MEASURES) > how_much_a_plan_leaves_out(first, MEASURES)
+
+
+def test_the_workflow_keeps_the_better_plan_and_folds_before_it_checks() -> None:
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    node = source[source.index("def scrum_master_node("):source.index("def technical_lead_node(")]
+
+    assert "how_much_a_plan_leaves_out(earlier, measures)" in node
+    assert 'update["sprint_plan"] = earlier' in node
+    assert node.index("with_setup_folded_into_the_sprint_that_needs_it(") < node.index("unaccounted_success_measures(")
+    # The first plan is kept in state when the second is asked for.
+    assert 'sprint_plan=update["sprint_plan"]' in node
 
 
 def test_a_plan_is_not_handed_back_for_a_verb_it_uses_in_another_person() -> None:

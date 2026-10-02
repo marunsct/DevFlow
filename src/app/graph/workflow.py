@@ -109,8 +109,9 @@ from app.agents.scrum_master import (
     build_sprint_planning_request,
     capabilities_the_plan_never_names,
     create_scrum_master_agent,
-    sprints_that_deliver_nothing,
+    how_much_a_plan_leaves_out,
     unaccounted_success_measures,
+    with_setup_folded_into_the_sprint_that_needs_it,
 )
 from app.agents.sprint_summary import (
     a_suite_that_did_not_pass,
@@ -4506,6 +4507,29 @@ def build_workflow_graph(
             next_stage="technical_lead",
         )
         if not _hand_back(update, "sprint_plan"):
+            earlier = state.get("sprint_plan") if gaps_already_asked_about else None
+            if earlier is not None and how_much_a_plan_leaves_out(
+                update["sprint_plan"], measures
+            ) > how_much_a_plan_leaves_out(earlier, measures):
+                # Asked once more, and the answer leaves out more than the plan
+                # it replaces. One run's second plan dropped its coverage lines
+                # altogether, and the run was failed for a plan that "assigns
+                # none" when the first had assigned all ten. The milestone plan
+                # already keeps the better of its attempts; so does this.
+                logger.warning(
+                    "The re-planned sprint plan leaves out more than the plan it "
+                    "replaces; keeping the earlier plan"
+                )
+                update["sprint_plan"] = earlier
+            update["sprint_plan"], folded = with_setup_folded_into_the_sprint_that_needs_it(
+                update["sprint_plan"], measures
+            )
+            if folded:
+                logger.warning(
+                    "Sprint plan held %d sprint(s) no success measure is assigned to; "
+                    "folded into the next sprint: %s",
+                    len(folded), "; ".join(goal[:80] for goal in folded),
+                )
             unnamed = capabilities_the_plan_never_names(
                 update["sprint_plan"], _without_the_mvp_features(measures)
             )
@@ -4513,13 +4537,6 @@ def build_workflow_graph(
             missing = [
                 {"measure": n, "missing": unnamed.get(n, [])}
                 for n in sorted(set(unassigned) | set(unnamed))
-            ]
-            # And the sprints the plan's own accounting assigns nothing to. See
-            # `sprints_that_deliver_nothing`.
-            sprints = getattr(update["sprint_plan"], "sprints", None) or []
-            missing += [
-                {"sprint": k, "goal": str(getattr(sprints[k - 1], "goal", ""))}
-                for k in sprints_that_deliver_nothing(update["sprint_plan"], measures)
             ]
             if missing and not gaps_already_asked_about:
                 # Once. A plan that omits a success measure is caught at the
@@ -4530,7 +4547,12 @@ def build_workflow_graph(
                 logger.warning(
                     "Sprint plan left success measures %s unassigned; asking once more", missing
                 )
-                return _handing_on(stage="scrum_master", sprint_plan_gaps=missing)
+                # The plan is kept, so the answer to this can be compared with it.
+                return _handing_on(
+                    stage="scrum_master",
+                    sprint_plan_gaps=missing,
+                    sprint_plan=update["sprint_plan"],
+                )
             if _the_plan_assigns_nothing(unassigned, measures):
                 # Not let through. A plan that leaves one measure out is judged
                 # by the milestone review; a plan that assigns none has no

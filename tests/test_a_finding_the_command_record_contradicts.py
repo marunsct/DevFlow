@@ -85,3 +85,57 @@ def test_with_no_command_record_the_review_stands(monkeypatch) -> None:
     review = _Review(findings=[_Finding(severity="major", description=STALE)])
 
     assert _findings_the_command_record_contradicts(review, "/somewhere") is review
+
+
+from app.graph.workflow import _the_passing_suite_it_says_fails
+
+PASSING = {"npm test": True}
+
+READ_NOT_RUN = (
+    "jest.setup.js uses CommonJS `require` statements in an ES module context due to "
+    'package.json "type": "module". This causes test suites to fail with ReferenceError '
+    "before any tests run."
+)
+
+
+def test_a_claim_that_the_tests_fail_is_checked_against_the_suite_s_last_run() -> None:
+    """One run's reviewer read a setup file and wrote that the suites fail. The
+    suite's last run had passed: nine suites, eighteen tests."""
+    assert _the_passing_suite_it_says_fails(READ_NOT_RUN, PASSING) == "npm test"
+
+
+@pytest.mark.parametrize("description", [
+    # A kind of test the passing command is not.
+    "The Playwright end-to-end tests fail because the server never starts.",
+    "Browser tests fail to find the task list.",
+    # Not about the tests failing.
+    "The delete button does nothing when clicked.",
+    "Unit tests pass but do not cover deleteTask.",
+    "There are no tests for the filter.",
+])
+def test_other_findings_are_left_alone(description) -> None:
+    assert _the_passing_suite_it_says_fails(description, PASSING) == ""
+
+
+def test_a_kind_of_test_that_did_pass_is_answered() -> None:
+    both = {"npm test": True, "npx playwright test": True}
+
+    assert _the_passing_suite_it_says_fails(
+        "The Playwright tests fail on load with a ReferenceError.", both
+    ) == "npx playwright test"
+
+
+def test_one_failing_test_command_and_nothing_is_contradicted() -> None:
+    assert _the_passing_suite_it_says_fails(READ_NOT_RUN, {"npm test": True, "npm run e2e": False}) == ""
+    assert _the_passing_suite_it_says_fails(READ_NOT_RUN, {}) == ""
+
+
+def test_such_a_finding_stops_gating(monkeypatch) -> None:
+    monkeypatch.setattr(workflow, "_where_each_command_stands", lambda root: PASSING)
+    monkeypatch.setattr(workflow, "_where_each_test_command_stands", lambda root: PASSING)
+    review = _Review(findings=[_Finding(severity="major", description=READ_NOT_RUN)])
+
+    after = _findings_the_command_record_contradicts(review, "/somewhere")
+
+    assert after.findings[0].severity == "minor"
+    assert "most recent run of `npm test`" in after.findings[0].description

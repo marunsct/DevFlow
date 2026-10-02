@@ -3350,6 +3350,65 @@ def _the_passing_command_it_says_fails(description: str, standing: dict[str, boo
     return ""
 
 
+_SAYS_THE_TESTS_FAIL = re.compile(
+    r"\b(?:tests?|test suites?|suites?|specs?)\b[^.\n]{0,80}?"
+    r"\b(?:fail\w*|cannot run|can't run|do(?:es)? not run|never runs?|crash\w*"
+    r"|throws?|referenceerror|typeerror|syntaxerror)\b",
+    re.I,
+)
+
+#: Kinds of test a finding can be about that one command's passing says
+#: nothing of. A unit suite passing does not answer "the browser tests fail".
+_A_KIND_OF_TEST = re.compile(
+    r"\b(e2e|end[- ]to[- ]end|playwright|cypress|selenium|browser|integration|ui tests?)\b", re.I
+)
+
+
+def _where_each_test_command_stands(repo_root: str) -> dict[str, bool]:
+    """Each command the ledger ran as a test, by whether its last run passed."""
+    from app.tools.sandbox import read_execution_ledger
+
+    latest: dict[str, bool] = {}
+    for entry in read_execution_ledger(repo_root, limit=10_000):
+        argv = [str(part) for part in entry.get("command") or []]
+        if entry.get("category") != "test" or not argv:
+            continue
+        timed_out = str(entry.get("error") or "").lstrip().startswith("Command timed out")
+        if entry.get("returncode") is None and not timed_out:
+            continue
+        latest[" ".join(argv)] = entry.get("returncode") == 0
+    return latest
+
+
+def _the_passing_suite_it_says_fails(description: str, tests: dict[str, bool]) -> str:
+    """The test command whose last run passed, when a finding says the tests
+    fail and names no command at all; or "".
+
+    One run's reviewer read a setup file, saw `require` in a project declared
+    as ES modules, and wrote "this causes test suites to fail with
+    ReferenceError before any tests run". The suite's last run had passed -
+    nine suites, eighteen tests - and that was in front of it. It was the
+    last revision allowed, and the run ended on it.
+
+    Narrower than it looks. Every test command the ledger holds must have
+    passed on its last run. The sentence must say the tests fail and not that
+    anything passes. And a finding about a kind of test - browser, end-to-end -
+    is left alone unless a command that passed is of that kind: a unit suite
+    passing does not answer it.
+    """
+    if not tests or not all(tests.values()):
+        return ""
+    commands = " ".join(tests).lower()
+    for sentence in _A_SENTENCE_END.split(description):
+        if not _SAYS_THE_TESTS_FAIL.search(sentence) or _SAYS_IT_PASSES.search(sentence):
+            continue
+        kinds = {kind.lower() for kind in _A_KIND_OF_TEST.findall(description)}
+        if any(kind.split()[0].replace("-", "") not in commands.replace("-", "") for kind in kinds):
+            return ""
+        return list(tests)[-1]
+    return ""
+
+
 def _findings_the_command_record_contradicts(review: Any, repo_root: str) -> Any:
     """`review` with each gating finding the command record contradicts made minor.
 
@@ -3368,11 +3427,14 @@ def _findings_the_command_record_contradicts(review: Any, repo_root: str) -> Any
         standing = _where_each_command_stands(repo_root)
         if not standing:
             return review
+        tests = _where_each_test_command_stands(repo_root)
         findings = []
         moved = 0
         for finding in getattr(review, "findings", None) or []:
+            described = getattr(finding, "description", "")
             command = (
-                _the_passing_command_it_says_fails(getattr(finding, "description", ""), standing)
+                _the_passing_command_it_says_fails(described, standing)
+                or _the_passing_suite_it_says_fails(described, tests)
                 if _severity_gates(getattr(finding, "severity", ""))
                 else ""
             )

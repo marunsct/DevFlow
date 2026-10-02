@@ -5449,6 +5449,19 @@ def _the_plan_says_to_delete(root: Path, shown: str) -> bool:
     return False
 
 
+def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:
+    """Whether `target` is a package manifest at the top of the pinned project.
+
+    Only there. A second manifest left at the workspace root, or in a
+    directory beside the project, is the duplicate a cleanup is right to
+    remove.
+    """
+    if target.name not in PACKAGE_MANIFESTS or not target.is_file():
+        return False
+    pinned = pinned_project_directory(root)
+    return bool(pinned) and target.parent == root / pinned
+
+
 def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[str, str]:
     """Delete one file the agent created inside the workspace.
 
@@ -5516,6 +5529,20 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         raise RepositoryToolError(not_its_own)
 
     planned = _the_plan_says_to_delete(root, shown)
+    if not planned and _is_the_project_s_own_manifest(root, target):
+        # Deleting it is not a way to replace it. Measured on one run: a test
+        # round had an edit of `package.json` refused as invalid JSON, deleted
+        # the file, had two whole-file writes refused for a path in the test
+        # script, and returned saying it could not finish - leaving a project
+        # with no manifest, so the next `npm test` could resolve nothing.
+        raise RepositoryToolError(
+            f"Refusing to delete '{shown}': it is this project's manifest, and "
+            "every command that installs, runs or tests the project reads it. "
+            "Deleting it does not clear the way for a new one - a write that is "
+            "refused afterwards leaves the project with none. Change it in place: "
+            "read it, then `edit_artifact` the part that is wrong, or "
+            "`write_artifact` the whole file once you have read it."
+        )
     written_by = "" if planned else _another_stage_s_test(root, shown)
     if written_by:
         raise RepositoryToolError(_ANOTHER_STAGE_S_TEST.format(shown=shown, stage=written_by))

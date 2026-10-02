@@ -91,3 +91,17 @@ def test_both_kinds_of_gap_can_be_asked_about_at_once() -> None:
 
     assert "Sprint 1: Foundation" in text
     assert "LEFT THESE UNASSIGNED" in text and "3. Filter functionality works correctly" in text
+
+
+def test_a_plan_is_not_handed_back_for_a_verb_it_uses_in_another_person() -> None:
+    """One run's measure ended "stays under 500 lines and runs on the latest
+    browsers". The sprint that held it said "run comprehensive E2E tests", and
+    the plan was handed back - twice - for never delivering "runs"."""
+    from app.agents.success_measures import capabilities_never_named
+
+    measure = ["Code stays under 500 lines and runs on latest Chrome and Firefox browsers."]
+    plan = "Run comprehensive E2E tests on Chrome and Firefox, and confirm the code stays under 500 lines."
+
+    assert capabilities_never_named(plan, measure) == {}
+    # Still asked for when the plan says nothing of the kind.
+    assert capabilities_never_named("Polish the page.", measure) != {}

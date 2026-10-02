@@ -67,6 +67,13 @@ def _stem(word: str) -> str:
     # three letters: "used" and "need" are left alone.
     if word.endswith("ed") and len(word) == 5:
         return word[:-2]
+    # And a three-letter verb with an "s": "runs", "adds", "logs". One run's
+    # measure ended "stays under 500 lines and runs on the latest browsers";
+    # the sprint that held it said "run comprehensive E2E tests", and the plan
+    # was handed back twice for never delivering "runs". Not "ss": "pass" and
+    # "less" are whole words.
+    if len(word) == 4 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
     # A silent "e" goes too, or "rename" is never named by "Renaming" nor
     # "delete" by "deleting". Only where five letters remain, so "store" is
     # not named by "story".

@@ -1729,10 +1729,24 @@ def _the_line_it_cut_short(expected: str, actual: str) -> str:
     `_A_PREFIX_THAT_PINS` characters counts, compared as the rest of the check
     is, with the surrounding whitespace ignored.
     """
-    wanted, there = expected.strip(), actual.strip()
+    wanted, there = _without_the_ellipsis_it_ended_on(expected), actual.strip()
     if len(wanted) >= _A_PREFIX_THAT_PINS and wanted != there and there.startswith(wanted):
         return actual
     return expected
+
+
+def _without_the_ellipsis_it_ended_on(expected: str) -> str:
+    """A pin, stripped, without the `...` a shortened line was closed with.
+
+    A model that leaves off the end of a line sometimes says so: one run
+    pinned its first line as `// state_and_...`, at the right line number.
+    Only when something is left in front of it: `...args` is code.
+    """
+    wanted = str(expected or "").strip()
+    for ending in ("...", "\u2026"):
+        if wanted.endswith(ending) and wanted[: -len(ending)].strip():
+            return wanted[: -len(ending)].rstrip()
+    return wanted
 
 
 def _without_a_copied_gutter(expected: str, lines: list[str]) -> str:
@@ -2002,6 +2016,13 @@ def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> st
     if not wanted:
         return "Read the file again and use the new line numbers. Nothing was changed."
     found = [n for n, line in enumerate(lines, 1) if line.strip() == wanted]
+    if not found:
+        # The line with its end left off, somewhere else: `function reset()`
+        # for `function reset() {`. At the line asked for that is forgiven
+        # (`_the_line_it_cut_short`); here it was reported as gone.
+        start = _without_the_ellipsis_it_ended_on(expected)
+        if len(start) >= _A_PREFIX_THAT_PINS:
+            found = [n for n, line in enumerate(lines, 1) if line.strip().startswith(start)]
     if not found:
         return (
             "That line is not in the file at all now - it may have been "

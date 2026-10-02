@@ -91,6 +91,44 @@ def testing_nobody_can_run(specification: Any) -> list[str]:
     return found
 
 
+def the_sections_a_specification_has(*, reader: str) -> str:
+    """The specification's fixed sections, said to whoever is about to ask for,
+    or be asked for, one it does not have.
+
+    The specification is a schema, and its sections are that schema's fields.
+    Neither side was told. Measured on one run: the reviewer required a
+    "ui_design" section, then "code_size_governance", "testing_infrastructure"
+    and "deployment_artifacts"; the architect, who cannot add a field, wrote
+    what it could into the sections that exist; the reviewer found the named
+    sections still missing; and after six revisions of the same four findings
+    the run ended without a line of code.
+
+    Read off `TechnicalSpecificationOutput`, so it cannot drift from it.
+    """
+    names = ", ".join(
+        f"`{name}`" for name in TechnicalSpecificationOutput.model_fields
+    )
+    fixed = (
+        "The specification has a fixed set of sections, and no revision can add "
+        f"one: {names}.\n"
+    )
+    if reader == "reviewing":
+        return (
+            fixed
+            + "So do not require a new section by name - it cannot be created, "
+            "and the finding would come back unresolved however good the revision "
+            "is. Say what is missing and which of those sections it belongs in, "
+            "and judge the next revision by whether the content is there, "
+            "wherever it was put.\n\n"
+        )
+    return (
+        fixed
+        + "Where a required change asks for a new section, put what it asks for "
+        "in the existing section it belongs to, in full - the review reads for "
+        "the content, not for the heading.\n\n"
+    )
+
+
 class TechnicalSpecificationOutput(BaseModel):
     """Structured technical specification produced by the Principal Architect.
 
@@ -319,7 +357,8 @@ def build_architecture_revision_request(
         "revision that resolves every required change listed below.\n\n"
         f"--- Your previous specification ---\n{previous_specification_text}\n\n"
         f"--- Required changes ---\n{changes_text}\n\n"
-        "Address every item explicitly. Do not silently drop specification "
+        + the_sections_a_specification_has(reader="revising")
+        + "Address every item explicitly. Do not silently drop specification "
         "content or ADRs that were not flagged, and do not add scope that was "
         "not asked for: a revision resolves the listed findings and changes "
         "nothing else. New sections, new features and new behaviours added "

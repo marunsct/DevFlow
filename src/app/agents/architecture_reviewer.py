@@ -151,10 +151,21 @@ def build_architecture_review_request(
         WORKSPACE_ROOT_NOTE
         + constraints_note(document_text, reader="reviewing")
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
+        + "\n" + _the_sections_it_can_have()
         + _what_the_brief_requires_that_this_defers(document_text, technical_specification_text)
         + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _the_sections_it_can_have() -> str:
+    """See `principal_architect.the_sections_a_specification_has`. Never raises."""
+    try:
+        from app.agents.principal_architect import the_sections_a_specification_has
+
+        return the_sections_a_specification_has(reader="reviewing")
+    except Exception:  # noqa: BLE001 - a note must never fail a review
+        return ""
 
 
 def _what_the_brief_requires_that_this_defers(document_text: str, specification: str) -> str:

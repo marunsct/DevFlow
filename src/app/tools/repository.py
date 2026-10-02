@@ -1938,6 +1938,37 @@ def _the_lines_expect_end_may_pin(expected: str) -> list[str]:
 _MISCOUNT_TOLERANCE = 3
 
 
+def _both_pins_found(
+    lines: list[str], expect_start: str, expect_end: str
+) -> tuple[int, int] | None:
+    """The range two pins name, when each is the only such line in the file.
+
+    A range whose ends are both miscounted, by different amounts, fits neither
+    `_the_same_range_somewhere_else` (both moved together) nor
+    `_the_start_miscounted` (the end is right). Measured on one run:
+    `start_line=22, end_line=29` for a block whose first line was 18 and whose
+    last was 22 - both pinned exactly. The refusal said "it is line 18 now ...
+    send the same call with start_line=18 and end_line adjusted by the same
+    amount", which would have replaced three lines too many.
+
+    Only when nothing is left to guess: both pins given, each matching exactly
+    one line, the end not before the start. The caller also declines a pinned
+    range longer than the one asked for - that is a line added between the
+    pins, not a miscount.
+    """
+    wanted_start = _the_one_line_it_pins(expect_start).strip()
+    if not wanted_start or not expect_end.strip():
+        return None
+    starts = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_start]
+    if len(starts) != 1:
+        return None
+    for wanted_end in _the_lines_expect_end_may_pin(expect_end):
+        ends = [n for n, line in enumerate(lines, 1) if line.strip() == wanted_end]
+        if len(ends) == 1 and ends[0] >= starts[0]:
+            return starts[0], ends[0]
+    return None
+
+
 def _the_start_miscounted(
     lines: list[str],
     expect_start: str,
@@ -2488,7 +2519,25 @@ def replace_approved_lines(
                     _the_start_miscounted(lines, expect_start, expect_end, start_line, end_line)
                     if moved is None else None
                 )
-                if real_start is not None:
+                both = (
+                    _both_pins_found(lines, expect_start, expect_end)
+                    if moved is None and real_start is None else None
+                )
+                if both is not None and both[1] - both[0] > end_line - start_line:
+                    # Longer than the range that was asked for: something has
+                    # been put between the pins since they were read, and the
+                    # replacement was not written with it in view.
+                    both = None
+                if both is not None:
+                    shifted_note += (
+                        f" Neither line number was where its pin is: `expect_start` "
+                        f"is line {both[0]} and `expect_end` is line {both[1]}, each "
+                        f"the only such line in the file. Lines {both[0]}-{both[1]} "
+                        f"were replaced, not {start_line}-{end_line}."
+                    )
+                    moved = both
+                    real_start = both[0]
+                elif real_start is not None:
                     shifted_note += (
                         f" Line {start_line} was miscounted: the line you pinned "
                         f"with `expect_start` is line {real_start}, and line "

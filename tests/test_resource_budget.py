@@ -78,13 +78,48 @@ def test_no_cgroup_limit_means_do_not_restrict():
 
 def test_the_heap_is_divided_by_the_cpus_that_will_fork():
     """`--max-old-space-size` applies per worker, so the tree is heap x workers.
-    Setting it from the ceiling alone is what let twenty workers reach 8 GiB."""
-    environment = concurrency_environment(2 * GiB, _state(cpus=4, in_use=256 * 1024**2))
+    Setting it from the ceiling alone is what let twenty workers reach 8 GiB.
+
+    What is divided is the tree's budget, and no worker gets more than one
+    process may have."""
+    from app.tools.resources import tree_budget
+
+    state = _state(cpus=4, in_use=256 * 1024**2)
+    environment = concurrency_environment(2 * GiB, state)
 
     per_worker = int(environment["NODE_OPTIONS"].rsplit("=", 1)[1])
 
     assert environment["VITEST_MAX_FORKS"] == "4"
-    assert per_worker * 4 <= 2 * GiB / 1024**2
+    assert per_worker * 4 <= tree_budget(2 * GiB, state) / 1024**2
+    assert per_worker <= 2 * GiB / 1024**2
+
+
+def test_one_process_is_not_held_to_a_share_of_a_share():
+    """One run's suite ran in a single process to save memory and aborted at
+    512 MB - a 1 GiB ceiling divided by two CPUs - with six gigabytes free."""
+    environment = concurrency_environment(GiB, _state(cpus=2, in_use=GiB + GiB // 2))
+
+    assert environment["NODE_OPTIONS"] == "--max-old-space-size=1024"
+
+
+def test_a_tree_may_have_more_than_one_process_may():
+    from app.tools.resources import tree_budget
+
+    assert tree_budget(GiB, _state(in_use=GiB)) == 4 * GiB
+
+
+def test_a_busy_container_gives_a_tree_what_is_left_but_never_less_than_a_process():
+    from app.tools.resources import tree_budget
+
+    busy = _state(in_use=6 * GiB)
+    assert GiB <= tree_budget(GiB, busy) < 2 * GiB
+    assert tree_budget(GiB, _state(in_use=8 * GiB)) == GiB
+
+
+def test_with_no_limits_to_read_a_tree_gets_the_ceiling():
+    from app.tools.resources import tree_budget
+
+    assert tree_budget(GiB, ResourceState(None, None, None, 0, 4, None)) == GiB
 
 
 def test_a_quota_of_two_is_not_the_hosts_twenty():

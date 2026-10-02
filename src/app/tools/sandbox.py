@@ -919,9 +919,9 @@ def _tree_budget_bytes() -> int:
     """What one command's whole process tree may use, from what is free now."""
     ceiling = _memory_limit_bytes()
     try:
-        from app.tools.resources import memory_budget
+        from app.tools.resources import tree_budget
 
-        return max(_LEAST_TREE_BUDGET_BYTES, memory_budget(ceiling))
+        return max(_LEAST_TREE_BUDGET_BYTES, tree_budget(ceiling))
     except Exception:  # noqa: BLE001 - then the configured ceiling stands
         return ceiling
 

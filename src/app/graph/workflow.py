@@ -2778,6 +2778,55 @@ def _record_sprint_summary(
     return {"sprint_attempts": attempts}
 
 
+def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any | None:
+    """A defect for a test round whose own last run of the suite failed, or None.
+
+    A round with no defects sends the sprint on to its reviews. Measured on one
+    run: two rounds in a row ran `npm test`, were answered with exit 134 and a
+    heap-exhaustion trace, and returned an empty defect list. The sprint went
+    to its milestone review as passing, the review found the suite failing, and
+    the run ended on its last revision - with nobody ever asked to fix it.
+
+    Read from the execution ledger: the last command this stage ran in the
+    `test` category. Only that one - a suite that failed and was then run again
+    and passed has been dealt with. Never raises.
+    """
+    try:
+        from app.tools.sandbox import _ran_and_answered, read_execution_ledger
+
+        mine = [
+            entry for entry in read_execution_ledger(repo_root, limit=2000)
+            if entry.get("stage") == stage and entry.get("category") == "test"
+        ]
+        if not mine:
+            return None
+        last = mine[-1]
+        argv = [str(part) for part in last.get("command") or []]
+        code = last.get("returncode")
+        timed_out = str(last.get("error") or "").lstrip().startswith("Command timed out")
+        if not argv or (code in (0, None) and not timed_out):
+            return None
+        if code is not None and _ran_and_answered(argv, code):
+            return None
+        command = " ".join(argv)
+        how = "timed out" if timed_out else f"exited {code}"
+        return ReportedDefect(
+            description=(
+                f"The suite does not pass: `{command}` {how} on this round's last run "
+                "of it, and the round reported no defect for that."
+            ),
+            severity="major",
+            reproduction_steps=f"Run `{command}` in the project directory.",
+            expected_behavior=f"`{command}` exits 0.",
+            actual_behavior=f"`{command}` {how}.",
+            affected_files=[],
+            owner="testing",
+        )
+    except Exception:  # noqa: BLE001 - the round as reported stands
+        logger.debug("Could not check the round's last run of the suite", exc_info=True)
+        return None
+
+
 def _clear_the_throwaways(repo_root: str) -> None:
     """See `repository.clear_the_throwaways_left_behind`. Never raises."""
     try:
@@ -4736,6 +4785,16 @@ def build_workflow_graph(
 
         test_result: SpecialistOutput = update.pop("__test_result__")
         reported: list[ReportedDefect] = list(test_result.defects)
+        if not reported:
+            unreported = _a_suite_failure_the_round_did_not_report(
+                state["repository"].root_path, f"test_round_{test_round}"
+            )
+            if unreported is not None:
+                logger.warning(
+                    "test_round_%d reported no defects, but its last run of the suite "
+                    "failed; recording that as a defect", test_round,
+                )
+                reported = [unreported]
         cycle = state.get("remediation") or start_remediation(
             milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
         )

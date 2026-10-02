@@ -233,6 +233,31 @@ def memory_budget(ceiling: int, state: ResourceState | None = None) -> int:
     return max(0, min(ceiling, headroom - reserve))
 
 
+#: The share of the container one command's whole process tree may take.
+_TREE_SHARE_OF_THE_CONTAINER = 0.5
+
+
+def tree_budget(ceiling: int, state: ResourceState | None = None) -> int:
+    """What one command's whole process tree may use: never less than `ceiling`.
+
+    `ceiling` bounds a process; a command is several. A test run is a package
+    manager, a runner, its workers and often a browser, and holding all of them
+    to what one process may have stops work that fits easily: one deployment
+    sets the per-process ceiling to 1 GiB inside an 8 GiB container.
+
+    Half the container, or what is free less the worker's reserve, whichever is
+    smaller - and where the container's limits cannot be read, `ceiling`, which
+    is the bound there was before.
+    """
+    state = state or read_resource_state()
+    headroom = state.headroom
+    if headroom is None or not state.memory_limit:
+        return ceiling
+    reserve = max(_RESERVE_FLOOR_BYTES, int(state.memory_limit * _RESERVE_FRACTION))
+    share = int(state.memory_limit * _TREE_SHARE_OF_THE_CONTAINER)
+    return max(ceiling, min(share, headroom - reserve))
+
+
 def enough_headroom(ceiling: int, state: ResourceState | None = None) -> tuple[bool, str]:
     """Whether a command should start at all, and why not when it should not.
 
@@ -269,7 +294,16 @@ def concurrency_environment(ceiling: int, state: ResourceState | None = None) ->
     state = state or read_resource_state()
     cpus = state.cpus
     budget = memory_budget(ceiling, state) or ceiling
-    per_worker_mb = max(256, int(budget / 1024**2 / max(cpus, 1)))
+    # A worker's heap is its share of what the whole tree may have, and never
+    # more than one process may have. It was `budget / cpus` - the per-process
+    # ceiling divided again - which on a 1 GiB ceiling and two CPUs gave every
+    # Node process 512 MB. One run's suite, run in a single process precisely
+    # to save memory, aborted there ("JavaScript heap out of memory", exit
+    # 134) with six gigabytes free. The tree is bounded as a tree now
+    # (`sandbox._run_and_watch_the_tree`), so the division is of the tree's
+    # budget.
+    tree = tree_budget(ceiling, state)
+    per_worker_mb = max(256, int(min(budget, tree / max(cpus, 1)) / 1024**2))
     return {
         "NODE_OPTIONS": f"--max-old-space-size={per_worker_mb}",
         "VITEST_MAX_THREADS": str(cpus),
@@ -285,5 +319,6 @@ __all__ = [
     "enough_headroom",
     "memory_budget",
     "read_resource_state",
+    "tree_budget",
     "usable_cpus",
 ]

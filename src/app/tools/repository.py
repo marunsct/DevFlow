@@ -5217,6 +5217,24 @@ def write_approved_artifact(
                 "workspace root creates a second project, and the two then disagree "
                 "about which dependency versions and test configuration apply."
             )
+    if len(relative_parts) > 2 and relative_parts[0] == relative_parts[1]:
+        # The project directory inside itself. Never a place anything belongs:
+        # it is what a path looks like when it is given relative to the
+        # workspace to something already running in the project. One run's test
+        # read `simple-to-do-list-app/simple-to-do-list-app/index.html`, failed
+        # with ENOENT, and the fix stage wrote a second copy of the page there
+        # and a test asserting the copy exists.
+        pinned_inside = pinned_project_directory(artifact_root)
+        if pinned_inside and pinned_inside == relative_parts[0]:
+            real = "/".join(relative_parts[1:])
+            raise RepositoryToolError(
+                f"Refusing to write '{relative_path}': that is the project directory "
+                f"'{pinned_inside}/' inside itself, and nothing belongs there. The "
+                f"file is '{real}'. If a test or a command looks for the doubled "
+                "path, it is building a path relative to the workspace while "
+                f"running inside '{pinned_inside}/' - fix the path it builds, "
+                "do not make a second copy of the file to satisfy it."
+            )
     if len(relative_parts) > 1 and _is_project_directory(relative_parts[0]):
         wanted_directory = relative_parts[0]
         pinned = pinned_project_directory(artifact_root)

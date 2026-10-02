@@ -2490,6 +2490,60 @@ def _the_range_its_content_overlaps(
     return None
 
 
+#: A line that only closes brackets: `}`, `});`, `],`, `)`.
+_ONLY_CLOSING = re.compile(r"^\s*[\]\)\}]+\s*[;,]?\s*$")
+
+#: The most closing lines at the end of a range that its `content` may be
+#: found to have left out.
+MOST_CLOSING_LINES_LEFT_OUT = 3
+
+
+def _the_closing_lines_it_left_out(
+    target: Path, lines: list[str], start_line: int, last: int, content: str, relative_path: str
+) -> tuple[int, str] | None:
+    """The shorter range a refused `content` was written for, and the file it gives.
+
+    The opposite slip to `_the_range_its_content_overlaps`: a range that runs
+    one line past what `content` replaces, over a line that only closes a
+    bracket. Measured on one run: `package.json` lines 17-18 held
+    `"playwright": "^1.45.0"` and the `}` closing `devDependencies`; the
+    content was that line with a comma and one new dependency, and no `}`.
+    Refused twice, identically, for invalid JSON - the stage was told the
+    lines closed one more bracket than its content, and sent the same call.
+
+    Asked only of an edit already refused for breaking the file, and answered
+    only when keeping those closing lines gives a file the parser accepts, so
+    it never changes an edit that would have worked. Returns `(last, updated)`
+    or None.
+    """
+    sent = [line.strip() for line in content.splitlines() if line.strip()]
+    for k in range(1, min(MOST_CLOSING_LINES_LEFT_OUT, last - start_line) + 1):
+        kept = lines[last - k:last]
+        if not all(_ONLY_CLOSING.match(line) for line in kept):
+            break
+        if sent[-k:] == [line.strip() for line in kept]:
+            # It does close them itself; the fault is elsewhere.
+            break
+        new_last = last - k
+        if len(sent) < sum(1 for line in lines[start_line - 1:new_last] if line.strip()):
+            # Shorter than what it would still replace: it leaves lines out, and
+            # which ones is a guess. Replacing `it(...) {` and its body with the
+            # `it(...) {` line alone parses, and silently deletes the body.
+            break
+        body = content
+        if body and not body.endswith("\n"):
+            body += "\n"
+        updated = "".join(lines[:start_line - 1]) + body + "".join(lines[new_last:])
+        updated = _json_with_its_commas_put_right(target, relative_path, updated)
+        try:
+            _refuse_if_broken(relative_path, updated, editing=True)
+            _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
+        except RepositoryToolError:
+            continue
+        return new_last, updated
+    return None
+
+
 def _the_overlap_in_words(above: int, below: int) -> str:
     def count(n: int) -> str:
         return f"{n} line{'s' if n != 1 else ''}"
@@ -2817,6 +2871,28 @@ def replace_approved_lines(
                 return _edited(
                     target, root, relative_path, content, note,
                     "".join(lines[new_start - 1:new_last]),
+                )
+            shorter = _the_closing_lines_it_left_out(
+                target, lines, start_line, last, content, relative_path
+            )
+            if shorter is not None:
+                new_last, updated = shorter
+                _write_unless_it_changes_nothing(target, original, updated, relative_path)
+                kept = last - new_last
+                note = (
+                    f"Replaced lines {start_line}-{new_last} of {total}, not "
+                    f"{start_line}-{last}: the last {kept} line"
+                    f"{'s' if kept != 1 else ''} of that range only close"
+                    f"{'' if kept != 1 else 's'} a bracket, and your `content` does "
+                    "not, so replacing the whole range would have left the file "
+                    "unparseable. Kept: "
+                    + " ".join(line.strip() for line in lines[new_last:last])
+                    + f". The file now has {len(updated.splitlines())} lines."
+                    + shifted_note
+                )
+                return _edited(
+                    target, root, relative_path, content, note,
+                    "".join(lines[start_line - 1:new_last]),
                 )
             raise RepositoryToolError(
                 f"{exc}{_written_as_a_diff(content, original)}"

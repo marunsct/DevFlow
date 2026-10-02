@@ -21,6 +21,9 @@ def _stack(testing: str) -> TechnologyStack:
     "console.assert checks in the page",
     "Print statements comparing expected output",
     "Logging assertions to the console",
+    # One run's selector, of "a lightweight custom assert harness" in the page.
+    "Custom asserts",
+    "A hand-written assert helper",
 ])
 def test_an_approach_that_never_fails_is_refused(approach):
     with pytest.raises(ValueError, match="is not a test runner"):

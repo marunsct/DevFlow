@@ -105,8 +105,13 @@ class TechnologyStack(BaseModel):
         # specification then read "use console.assert and manual verification".
         # Only when no real runner is named: "pytest, with plain assert" is a
         # runner that happens to mention its assertions.
-        never_fails = ("console", "assertion", "assert statements", "print", "logging", "log output")
-        if any(marker in lowered for marker in never_fails) and not names_a_runner:
+        never_fails = ("console", "print", "logging", "log output")
+        # Assertions in any form of the word, with no runner beside them. The
+        # list held "assertion" and "assert statements", and one run's selector
+        # answered "Custom asserts" - "a lightweight custom assert harness" run
+        # in the browser - which neither spelled.
+        only_asserts = re.search(r"\bassert", lowered) is not None
+        if (only_asserts or any(marker in lowered for marker in never_fails)) and not names_a_runner:
             raise ValueError(
                 f"'{text}' is not a test runner: assertions written to a console, a "
                 "log or standard output leave the command's exit code at 0 whatever "

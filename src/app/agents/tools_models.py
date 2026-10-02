@@ -111,7 +111,22 @@ class TechnologyStack(BaseModel):
         # answered "Custom asserts" - "a lightweight custom assert harness" run
         # in the browser - which neither spelled.
         only_asserts = re.search(r"\bassert", lowered) is not None
-        if (only_asserts or any(marker in lowered for marker in never_fails)) and not names_a_runner:
+        # A harness the project is to write for itself, by any name for it.
+        # After "Custom asserts" was refused, one run's selector answered
+        # "Custom harness": the same thing, with the word the check looked for
+        # taken out. What makes it not a runner is that nothing exists yet to
+        # execute a test or report a count - not what its assertions are called.
+        # Only words that say hand-made: "a lightweight framework" describes
+        # real runners this table has never heard of.
+        hand_made = re.search(
+            r"\b(custom|bespoke|hand[- ]?(?:written|rolled|made)|home[- ]?(?:grown|made)"
+            r"|in[- ]house|diy)\b[^,;]{0,40}"
+            r"\b(harness|runner|framework|test(?:ing)? (?:script|utility|helper)s?|suite)\b",
+            lowered,
+        ) is not None
+        if (
+            only_asserts or hand_made or any(marker in lowered for marker in never_fails)
+        ) and not names_a_runner:
             raise ValueError(
                 f"'{text}' is not a test runner: assertions written to a console, a "
                 "log or standard output leave the command's exit code at 0 whatever "

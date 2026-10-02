@@ -24,6 +24,10 @@ def _stack(testing: str) -> TechnologyStack:
     # One run's selector, of "a lightweight custom assert harness" in the page.
     "Custom asserts",
     "A hand-written assert helper",
+    # And the same thing with the word the check looked for taken out.
+    "Custom harness",
+    "An in-house test runner",
+    "Hand-rolled testing framework",
 ])
 def test_an_approach_that_never_fails_is_refused(approach):
     with pytest.raises(ValueError, match="is not a test runner"):
@@ -35,6 +39,10 @@ def test_an_approach_that_never_fails_is_refused(approach):
     "node --test with node:assert",
     "Playwright, asserting on console output",
     "go test",
+    "A custom harness run with node --test",
+    "pytest with a simple conftest",
+    # A real runner this table has never heard of, described as people do.
+    "QUnit, a lightweight framework",
 ])
 def test_a_named_runner_is_kept_whatever_it_mentions(approach):
     assert _stack(approach).testing_framework == approach

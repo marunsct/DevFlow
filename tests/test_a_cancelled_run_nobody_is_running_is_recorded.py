@@ -12,7 +12,14 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.server import tasks
+
+def _tasks():
+    """Imported when a test runs, not when this file is collected: importing it
+    builds the Celery app from whatever the environment holds at that moment,
+    and at collection that is not yet what the API tests configure."""
+    from app.server import tasks
+
+    return tasks
 
 
 class _Store:
@@ -34,8 +41,12 @@ class _Store:
 
 
 def _run_task(monkeypatch, store) -> None:
-    monkeypatch.setattr(tasks, "_get_runner", lambda: SimpleNamespace(run_store=store))
-    tasks.execute_workflow_run.run("run-x", True)
+    """What the task does on finding the cancel flag. Called as the task calls
+    it, not through the Celery task object: invoking that in-process finalises
+    the app against a broker and breaks the API tests that follow."""
+    _tasks()._record_a_cancellation_nothing_else_will(
+        SimpleNamespace(run_store=store), "run-x", store.record.status
+    )
 
 
 def test_a_running_row_with_a_cancel_request_becomes_cancelled(monkeypatch) -> None:
@@ -57,7 +68,7 @@ def test_a_run_that_already_ended_is_left_as_it_ended(monkeypatch, status) -> No
     assert store.record.status == status
 
 
-def test_a_store_that_cannot_record_it_does_not_run_the_graph(monkeypatch) -> None:
+def test_a_store_that_cannot_record_it_does_not_raise(monkeypatch) -> None:
     store = _Store("running")
 
     def broken(*args, **kwargs):
@@ -65,4 +76,14 @@ def test_a_store_that_cannot_record_it_does_not_run_the_graph(monkeypatch) -> No
 
     store.compare_and_set_status = broken
 
-    _run_task(monkeypatch, store)  # returns without raising and without executing
+    _run_task(monkeypatch, store)
+
+
+def test_the_task_records_it_on_the_path_that_returns_early() -> None:
+    """The helper is only worth having where the task gives up on the flag."""
+    import inspect
+
+    source = inspect.getsource(_tasks())
+    early = source[source.index("was cancelled before execution started"):]
+
+    assert early.index("_record_a_cancellation_nothing_else_will(") < early.index("return")

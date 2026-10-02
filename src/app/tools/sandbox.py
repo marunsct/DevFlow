@@ -654,6 +654,53 @@ def timeout_for(category: str, repo_root: str | Path | None = None) -> int:
     scale = max((TOOLCHAIN_TIMEOUT_SCALE.get(key, 1.0) for key in pinned), default=1.0)
     return int(min(base * scale, MAX_TIMEOUT_SECONDS))
 
+#: The least a command is given after its last run used the whole limit, and
+#: the share of the limit it gets.
+SHORTEST_RETRY_TIMEOUT_SECONDS = 60
+RETRY_TIMEOUT_SHARE = 0.2
+
+
+def after_a_run_that_never_finished(
+    repo_root: str | Path | None,
+    argv: Sequence[str],
+    working_directory: str | None,
+    timeout: int,
+) -> int:
+    """`timeout`, or a fraction of it when this command's last run used it all.
+
+    A command that ran the whole limit and was stopped is usually one that
+    cannot finish - a test with a loop that never ends, a server left
+    listening - and the stage that ran it runs it again to see. Measured on
+    one run: a suite with `while (state.tasks.length)` over a stale copy was
+    run three times in one sprint, 300 seconds each, a quarter of an hour in
+    which nothing else happened.
+
+    So the next run of the same command, in the same directory, gets a short
+    limit: enough for a command that now finishes, a fifth of the wait for one
+    that still does not. Only the next one. A run stopped at the short limit
+    is followed by a full one, so a command that is merely slow is never held
+    to the short limit twice running. Never raises.
+    """
+    try:
+        wanted = [str(part) for part in argv]
+        for entry in reversed(read_execution_ledger(str(repo_root), limit=400)):
+            if entry.get("command") != wanted or not _same_invocation(
+                entry, wanted, working_directory
+            ):
+                continue
+            spent = entry.get("duration_seconds")
+            if (
+                str(entry.get("error") or "").lstrip().startswith("Command timed out")
+                and isinstance(spent, (int, float))
+                and spent >= timeout * 0.9
+            ):
+                return max(SHORTEST_RETRY_TIMEOUT_SECONDS, int(timeout * RETRY_TIMEOUT_SHARE))
+            return timeout
+    except Exception:  # noqa: BLE001 - a timeout must not fail the command
+        return timeout
+    return timeout
+
+
 # Resource ceilings. A fork bomb or a runaway build hits these instead of the host.
 MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "4g")
 CPU_LIMIT = os.environ.get("SANDBOX_CPU_LIMIT", "2")
@@ -4059,7 +4106,9 @@ class SandboxExecutor:
             )
             return {"error": why}
 
-        timeout = timeout_for(category, repo_root)
+        timeout = after_a_run_that_never_finished(
+            repo_root, argv, working_directory, timeout_for(category, repo_root)
+        )
 
         if execution_mode() == IN_CONTAINER_MODE:
             return cls._execute_here(

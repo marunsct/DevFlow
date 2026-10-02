@@ -369,3 +369,37 @@ def test_an_undeclared_package_only_the_tests_import_is_a_test_setup_gap(tmp_pat
     assert "gap in the test setup" in found[0]
     assert "rules that out" not in found[0]
     assert "cannot accept the milestone" not in found[0]
+
+
+def test_the_reviewer_is_not_told_the_brief_is_broken_when_it_is_not(project):
+    """A note that only test-only packages are declared used to be followed by
+    "a milestone whose product does not have what the brief asks for is not
+    complete"."""
+    from app.agents.milestone_reviewer import build_milestone_review_request
+
+    root = project({"name": "t", "devDependencies": {"@playwright/test": "^1.49"}})
+    (root / "todo" / "app.js").write_text("export const x = 1;\n")
+    (root / "todo" / "index.html").write_text("<!DOCTYPE html><html><body></body></html>\n")
+    (root / "todo" / "styles.css").write_text("body { margin: 0; }\n")
+    (root / "todo" / "app.test.mjs").write_text("import { test } from '@playwright/test';\n")
+
+    body = build_milestone_review_request(
+        "goal", ["todo/app.js", "todo/index.html"], "tests pass", "none", str(root), None, FORBIDS
+    )["messages"][0]["content"]
+
+    assert "it is not a finding" in body
+    assert "Nothing in it is the product breaking the brief." in body
+    assert "does not have what the brief asks" not in body.split("Checked deterministically")[1].split("---")[0]
+
+
+def test_the_reviewer_is_still_told_when_it_is(project):
+    from app.agents.milestone_reviewer import build_milestone_review_request
+
+    root = project({"name": "t", "dependencies": {"express": "^4"}})
+    (root / "todo" / "index.js").write_text("const express = require('express');\n")
+
+    body = build_milestone_review_request(
+        "goal", ["todo/app.js"], "tests pass", "none", str(root), None, FORBIDS
+    )["messages"][0]["content"]
+
+    assert "is not complete, whatever its tests do" in body

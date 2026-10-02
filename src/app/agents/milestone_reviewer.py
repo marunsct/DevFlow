@@ -274,12 +274,23 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
             + "\n\n"
         )
     if missing:
+        # The closing sentences are for a product that breaks the brief. Two
+        # of the things listed here are not that - a note that only test-only
+        # packages are declared, and a gap in the test setup - and following
+        # "it is not a finding" with "a milestone whose product does not have
+        # what the brief asks for is not complete" told the reviewer both.
+        breaks_the_brief = [item for item in missing if not _is_only_a_note(item)]
         parts.append(
             "Checked deterministically against what was built:\n"
             + "\n".join(f"- {item}" for item in missing)
-            + "\n\nThat is not a reading of the brief; it is what is on disk. "
-            "A milestone whose product does not have what the brief asks for is "
-            "not complete, whatever its tests do.\n\n"
+            + "\n\nThat is not a reading of the brief; it is what is on disk."
+            + (
+                " A milestone whose product does not have what the brief asks "
+                "for is not complete, whatever its tests do."
+                if breaks_the_brief
+                else " Nothing in it is the product breaking the brief."
+            )
+            + "\n\n"
         )
     else:
         parts.append(
@@ -287,6 +298,16 @@ def _against_the_brief(document_text: str, repository_root: str) -> str:
             "its tests do.\n\n"
         )
     return "".join(parts)
+
+
+def _is_only_a_note(item: str) -> bool:
+    """Whether a checked statement says the brief is NOT broken.
+
+    `what_the_brief_forbids_that_is_there` writes two of these, each ending in
+    words this matches; everything else it and its sibling return is a
+    violation.
+    """
+    return "it is not a finding" in item or "gap in the test setup" in item
 
 
 #: How many of each kind to carry. A milestone has a handful of specialists.

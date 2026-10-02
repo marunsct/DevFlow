@@ -270,8 +270,16 @@ def record_test_run(
                 TestRunRecord(command=command, passed=passed, summary=summary),
             ],
             "defects": [*cycle.defects, *(new_defects or [])],
+            # Not cleared, rather than not passed. A round that passes while an
+            # earlier defect is still open is charged an attempt like any other,
+            # and when that attempt was the last, the sprint is out of them. It
+            # used to be marked exhausted only by a round with defects of its
+            # own, so this one left the count at its limit and said nothing:
+            # the next failing round raised `RemediationLimitExceeded`, and one
+            # run ended there - no re-plan, no Sprint Record - where every
+            # other exhausted sprint is planned again.
             "escalated": (
-                next_attempt >= cycle.max_attempts and not passed and charge_the_budget
+                next_attempt >= cycle.max_attempts and not cleared and charge_the_budget
             ),
         }
     )

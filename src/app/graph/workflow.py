@@ -4912,11 +4912,38 @@ def build_workflow_graph(
                 charge_the_budget=_a_round_that_found_a_product_defect(new_defects),
             )
         except RemediationLimitExceeded as exc:
-            return _escalate_to_a_human(
+            # The same exit as every other exhausted sprint: planned again,
+            # as often as the revision limit allows, with this round on its
+            # record. Failing the run from here skipped both.
+            logger.warning("Sprint is out of remediation attempts: %s", exc)
+            try:
+                from app.sprint import TestRunRecord
+
+                spent = cycle.model_copy(update={
+                    "test_runs": [
+                        *cycle.test_runs,
+                        TestRunRecord(
+                            command=["specialist", "testing", f"round-{test_round}"],
+                            passed=not new_defects,
+                            summary=f"{len(new_defects)} defect(s) found",
+                        ),
+                    ],
+                    "defects": [*cycle.defects, *new_defects],
+                    "escalated": True,
+                })
+            except Exception:  # noqa: BLE001 - the cycle as it stood is still evidence
+                spent = cycle
+            return _replan_or_escalate(
                 state,
-                error=str(exc),
-                remediation=cycle,
-                test_round=test_round + 1,
+                {
+                    "remediation": spent,
+                    "test_round": test_round + 1,
+                    "pending_approval": None,
+                    "pending_inner_thread_id": None,
+                    "pending_decision": None,
+                },
+                spent,
+                "exhausted remediation attempts",
             )
 
         base_update: dict[str, Any] = {

@@ -1804,6 +1804,34 @@ def _without_the_ellipsis_it_ended_on(expected: str) -> str:
     return wanted
 
 
+def _without_the_escapes_it_doubled(expected: str, lines: list[str]) -> str:
+    """`expect_start`/`expect_end` with `\\"` read as `"`, when only that makes it a line of the file.
+
+    A pin is a line of the file inside a JSON string, and a line with quotes in
+    it is where a model escapes twice. One run's fix stage sent
+
+        expect_start: '"test\\": \\"node --test simple-to-do-list-app/store.test.js\\"'
+
+    for line 8 of `package.json`, which reads `"test": "node --test ..."`. The
+    line number was right and so was the replacement; it was told the line
+    "is not in the file at all now" and to read the file again.
+
+    Only when the pin as sent is no line of the file and the unescaped one is:
+    a file that really holds a backslash before a quote matches as sent, and is
+    never touched.
+    """
+    wanted = expected.strip()
+    if "\\" not in wanted:
+        return expected
+    there = {line.strip() for line in lines}
+    if wanted in there:
+        return expected
+    unescaped = re.sub(r"\\+([\"'])", r"\1", wanted)
+    if unescaped != wanted and unescaped in there:
+        return unescaped
+    return expected
+
+
 def _without_a_copied_gutter(expected: str, lines: list[str]) -> str:
     """`expect_start`/`expect_end` without a line-number gutter copied into it.
 
@@ -2078,6 +2106,51 @@ _EITHER_IT_CHANGED_OR_IT_WAS_MISCOUNTED = (
     "Either the file changed after you read it or the line was counted wrong; "
     "the position below is read from the file as it is now."
 )
+
+
+def _the_line_its_content_rewrites(
+    lines: list[str], expected: str, start_line: int, end_line: int, content: str
+) -> str:
+    """Advice for a one-line edit whose pin is the line *before* the one it rewrites, or "".
+
+    `expect_start` is the first line being replaced. A model sometimes sends
+    the line above instead, as an anchor - "the line after this one". Measured
+    on one run: `start_line` 13, a `content` that commented out line 13's
+    assertion, and `expect_start` quoting line 12. The refusal found the pin at
+    line 12 and said "send the same call with start_line=12", which would have
+    replaced the wrong assertion with the commented-out other one. The stage
+    sent the identical call twice more.
+
+    Only when the line number is the one the content belongs to: one line
+    replacing one line, the replacement closer to the line at `start_line`
+    than to the pinned line, and the pin sitting directly above.
+    """
+    import difflib
+
+    if start_line != end_line or not 1 <= start_line <= len(lines):
+        return ""
+    new = content.strip()
+    if not new or "\n" in new:
+        return ""
+    here = lines[start_line - 1].strip()
+    pinned = expected.strip()
+    if not here or start_line < 2 or lines[start_line - 2].strip() != pinned:
+        return ""
+
+    def alike(a: str, b: str) -> float:
+        return difflib.SequenceMatcher(None, a, b).ratio()
+
+    if not (here in new or alike(new, here) >= 0.7) or alike(new, here) <= alike(new, pinned):
+        return ""
+    return (
+        f"Your `content` reads as line {start_line} rewritten, and line {start_line} is "
+        f"what this call would replace - so the line number is right and the pin is "
+        f"not: `expect_start` quotes the first line being REPLACED, and you sent the "
+        f"line above it (line {start_line - 1}). Send the same call with "
+        f"`expect_start` set to line {start_line} as it is now:\n"
+        f"  {_clip(here)}\n"
+        "Do not move `start_line`. Nothing was changed."
+    )
 
 
 def _where_that_line_went(lines: list[str], expected: str, asked_for: int) -> str:
@@ -2513,8 +2586,12 @@ def replace_approved_lines(
         last = min(end_line, total)
 
         shifted_note = ""
-        expect_start = _without_a_copied_gutter(expect_start, lines)
-        expect_end = _without_a_copied_gutter(expect_end, lines)
+        expect_start = _without_the_escapes_it_doubled(
+            _without_a_copied_gutter(expect_start, lines), lines
+        )
+        expect_end = _without_the_escapes_it_doubled(
+            _without_a_copied_gutter(expect_end, lines), lines
+        )
         if expect_start:
             actual_first = lines[start_line - 1]
             # One line, whatever arrived. A caller that sent two could not match
@@ -2583,7 +2660,12 @@ def replace_approved_lines(
                         f"expected. {_EITHER_IT_CHANGED_OR_IT_WAS_MISCOUNTED}\n"
                         f"  you expected: {_clip(expect_start.strip())}\n"
                         f"  line {start_line} is:  {_clip(actual_first.strip())}\n"
-                        + _where_that_line_went(lines, expect_start, start_line)
+                        + (
+                            _the_line_its_content_rewrites(
+                                lines, expect_start, start_line, end_line, content
+                            )
+                            or _where_that_line_went(lines, expect_start, start_line)
+                        )
                     )
                 new_start, new_end = moved
                 shift = new_start - start_line

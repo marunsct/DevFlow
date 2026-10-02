@@ -454,7 +454,32 @@ def what_the_brief_forbids_that_is_there(
                 for name in undeclared
                 if not (name in locked and _imported_only_by_tests(manifest.parent, name))
             ]
+            # An undeclared package only the tests import is a gap in the test
+            # setup, and is said as one. It used to be reported in the words of
+            # a product dependency - "The brief rules that out ... a reviewer
+            # cannot accept the milestone" - and one run's reviewer, told that
+            # about `@playwright/test`, required every reference to Playwright
+            # removed "so the product has no external dependencies", on the
+            # last revision the run was allowed.
+            for_the_tests_only = [
+                name for name in undeclared if _imported_only_by_tests(manifest.parent, name)
+            ]
+            undeclared = [name for name in undeclared if name not in for_the_tests_only]
+            if for_the_tests_only:
+                found.append(
+                    f"{manifest.parent.name}/package.json: the tests import "
+                    + ", ".join(f"`{name}`" for name in for_the_tests_only[:6])
+                    + " without declaring it, so `npm ci` will not install it and the "
+                    "suite fails on any other machine. That is a gap in the test "
+                    "setup - declare it under `devDependencies` - and not the product "
+                    "taking a dependency: nothing the product ships imports it, so "
+                    "the brief's constraint on dependencies is not what it breaks."
+                )
             if not packages and not undeclared and not test_only:
+                continue
+            if not packages and not undeclared and for_the_tests_only:
+                # Said above; the note that everything is declared and test-only
+                # would contradict it.
                 continue
             how = []
             if packages:

@@ -349,3 +349,23 @@ def test_the_same_package_imported_by_the_product_is_still_reported(tmp_path):
     found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
 
     assert found and "@jest/globals" in found[0] and "without declaring it" in found[0]
+
+
+def test_an_undeclared_package_only_the_tests_import_is_a_test_setup_gap(tmp_path):
+    """One run's reviewer, told `@playwright/test` was imported without being
+    declared and that "the brief rules that out", required every reference to
+    Playwright removed so "the product has no external dependencies" - on the
+    last revision the run was allowed."""
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "package.json").write_text(json.dumps({"devDependencies": {}}))
+    (project / "app.js").write_text("export const x = 1;\n")
+    (project / "e2e.spec.js").write_text("import { test } from '@playwright/test';\n")
+
+    found = what_the_brief_forbids_that_is_there(FORBIDS, tmp_path)
+
+    assert len(found) == 1
+    assert "the tests import `@playwright/test` without declaring it" in found[0]
+    assert "gap in the test setup" in found[0]
+    assert "rules that out" not in found[0]
+    assert "cannot accept the milestone" not in found[0]

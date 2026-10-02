@@ -64,3 +64,28 @@ def test_other_files_in_the_project_are_unaffected(workspace) -> None:
     delete_approved_artifact(workspace, "the-app/notes.tmp")
 
     assert not (workspace / "the-app" / "notes.tmp").exists()
+
+
+def test_the_project_s_manifest_is_not_moved_out_of_the_project(workspace) -> None:
+    """One run's stage, refused a manifest at the workspace root four times,
+    moved the project's own there instead."""
+    from app.tools.repository import move_approved_artifact
+
+    with pytest.raises(RepositoryToolError) as caught:
+        move_approved_artifact(workspace, "the-app/package.json", "package.json")
+
+    assert "this project's manifest" in str(caught.value)
+    assert (workspace / "the-app" / "package.json").exists()
+    assert not (workspace / "package.json").exists()
+
+
+def test_nothing_is_moved_to_a_manifest_at_the_workspace_root(workspace) -> None:
+    from app.tools.repository import move_approved_artifact
+
+    (workspace / "the-app" / "old.json").write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        move_approved_artifact(workspace, "the-app/old.json", "package.json")
+
+    assert "second project" in str(caught.value)
+    assert not (workspace / "package.json").exists()

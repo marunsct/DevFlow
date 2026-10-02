@@ -5879,6 +5879,34 @@ def move_approved_artifact(
                 "Moving it would point every later stage at the wrong place."
             )
 
+    # A move is a delete and a write, and both of those are guarded for the
+    # project's manifest. One run's stage was refused a `package.json` at the
+    # workspace root four times, then moved the project's own manifest there:
+    # the project had none, the root had a second project, and two stages
+    # after it edited the wrong file.
+    if (
+        _is_the_project_s_own_manifest(root, source)
+        and target.parent != source.parent
+        and not _the_plan_says_to_delete(root, from_shown)
+    ):
+        raise RepositoryToolError(
+            f"Refusing to move '{from_shown}': it is this project's manifest, and "
+            "every command that installs, runs or tests the project reads it from "
+            f"'{source.parent.relative_to(root).as_posix()}/'. Moved elsewhere, the "
+            "project has none. Leave it where it is; if a command cannot find it, "
+            "run that command with the project as its working directory."
+        )
+    to_parts = target.relative_to(root).parts
+    if len(to_parts) == 1 and _is_project_manifest(to_parts[0]):
+        pinned_here = pinned_project_directory(root)
+        if pinned_here:
+            raise RepositoryToolError(
+                f"Refusing to move a file to '{to_shown}': that is a project manifest "
+                f"at the workspace root, and this run's project is '{pinned_here}'. "
+                "A manifest there creates a second project, and the two then "
+                "disagree about which dependencies and test configuration apply. "
+                f"It belongs at '{pinned_here}/{to_parts[0]}'."
+            )
     if source == target:
         raise RepositoryToolError(
             f"'{from_shown}' is already where you are asking to put it."

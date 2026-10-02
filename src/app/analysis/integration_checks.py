@@ -375,6 +375,72 @@ def _a_delegated_handler_for_an_event_that_does_not_bubble(
     return problems
 
 
+_LISTENS_FOR = re.compile(r"""\.addEventListener\(\s*(['"])([^'"\n]+)\1""")
+_AN_EVENT_MADE = re.compile(r"""new\s+(?:Custom)?Event\(\s*(?:(['"`])([^'"`\n]+)\1)?""")
+_SENT_BY_NAME = re.compile(r"""\.(?:emit|trigger|dispatch|fire)\(\s*(['"])([^'"\n]+)\1""")
+
+
+def _is_a_name_the_browser_never_fires(event: str) -> bool:
+    """Whether an event name is one only the application's own code could send.
+
+    Every event a browser fires is lower-case and unpunctuated, apart from a
+    few prefixed legacy names. A name with a capital inside it, or a colon, a
+    hyphen or a dot - `taskEdited`, `task:added`, `state-change` - is the
+    application's.
+    """
+    if event.startswith(("DOM", "webkit", "MS", "moz")):
+        return False
+    return any(ch.isupper() for ch in event[1:]) or any(ch in event for ch in ":-.")
+
+
+def _a_listener_for_an_event_nothing_dispatches(files: list[Path], root: Path) -> list[str]:
+    """A handler waiting on the application's own event, which nothing sends.
+
+    Measured on one completed run. `app.js` held
+
+        document.addEventListener('taskEdited', e => { ... editTask(...) ... })
+
+    "dispatched from ui.js double-click", its comment said. `ui.js` dispatched
+    nothing and had no double-click handler: there was no way to edit a task,
+    in a product whose brief says users can. `editTask` existed and was unit
+    tested, the listener existed, every suite passed, and the last review
+    accepted it.
+
+    Only names the browser itself never fires, so a `click` listener is never
+    questioned. And silent whenever an event is constructed from something
+    other than a literal name, or sent through an emitter by a computed one:
+    then the name may be made at run time, and this cannot know.
+    """
+    waiting: list[tuple[str, int, str]] = []
+    sent: set[str] = set()
+    for path in files:
+        if path.suffix.lower() not in _CLIENT_LOGIC_SUFFIXES:
+            continue
+        relative = str(path.relative_to(root))
+        if is_test(relative):
+            continue
+        text = _read(path)
+        for made in _AN_EVENT_MADE.finditer(text):
+            if made.group(2) is None:
+                return []
+            sent.add(made.group(2))
+        sent.update(match.group(2) for match in _SENT_BY_NAME.finditer(text))
+        for match in _LISTENS_FOR.finditer(text):
+            event = match.group(2)
+            if _is_a_name_the_browser_never_fires(event):
+                waiting.append((relative, text.count("\n", 0, match.start()) + 1, event))
+    return [
+        f"{relative} line {line} listens for `{event}`, and nothing in the product "
+        f"dispatches an event of that name. `{event}` is not an event a browser "
+        "fires, so this handler never runs and whatever it does cannot be reached "
+        "by a user: nothing throws and no test of the function behind it fails. "
+        "Dispatch the event from the control that is meant to cause it, or handle "
+        "the control's own event directly."
+        for relative, line, event in waiting
+        if event not in sent
+    ]
+
+
 #: `describe('name'`, `test('name'` and `it('name'` at a test file's top level.
 #: `[ \t]*`, not `\s*`: `\s` matches a newline, so the match could start on the
 #: line before and every reported line number came out one too low. The message
@@ -5324,6 +5390,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _a_required_action_nothing_implements(files, root, brief)),
     ("clickable controls against the scripts that should operate them",
      lambda files, root, stack, brief: _a_control_group_no_script_operates(files, root)),
+    ("listeners for the product's own events against what dispatches them",
+     lambda files, root, stack, brief: _a_listener_for_an_event_nothing_dispatches(files, root)),
     ("delegated handlers against the events that do not bubble to them",
      lambda files, root, stack, brief: _a_delegated_handler_for_an_event_that_does_not_bubble(files, root)),
     ("suites a test file registers more than once",

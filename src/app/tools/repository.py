@@ -5576,6 +5576,78 @@ def _is_a_probe_with_a_test_s_name(target: Path) -> bool:
         return False
 
 
+#: Directories a throwaway is never looked for in: installed or generated
+#: content, and the places a project keeps scripts on purpose.
+_NOT_SWEPT = frozenset({"tools", "scripts", "bin", "test-results", "playwright-report"})
+
+#: The largest file read when checking whether a throwaway is still referred to.
+_MOST_BYTES_READ_FOR_A_REFERENCE = 400_000
+
+
+def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
+    """Delete the debugging scripts finished stages left in the project.
+
+    A stage that cannot see why a test fails writes a small script, runs it and
+    learns something. It is told to delete it and often does not: measured over
+    one day, every run that reached a second fix stage carried them into its
+    test rounds - `tmp_test.js`, `tmp_simulate.js`, `debug_run.js`, twenty in
+    one project - where they count against the product's size, are read by the
+    reviewer as part of it, and are picked up by a runner when the name fits.
+    A finding that asks for them to be deleted costs a stage; this does not.
+
+    Narrow, because it deletes. Only inside the pinned project; only a name
+    that says throwaway (`file_kinds.is_scratch`); only a file a stage of this
+    run created, so nothing a seeded codebase arrived with is touched; and
+    only when no other file there mentions it by name - a script something
+    still runs or imports is not finished with. Returns what was removed.
+    Never raises.
+    """
+    removed: list[str] = []
+    try:
+        from app.analysis import project_memory
+        from app.analysis.file_kinds import is_scratch
+
+        root = _normalize_repo_root(repo_root)
+        pinned = pinned_project_directory(root)
+        if not pinned:
+            return removed
+        project = root / pinned
+        everything = [
+            path for path in project.rglob("*")
+            if path.is_file()
+            and not any(
+                part in IGNORED_DIRECTORIES or part in _NOT_SWEPT or part == "node_modules"
+                for part in path.relative_to(project).parts[:-1]
+            )
+        ]
+        candidates = [path for path in everything if is_scratch(path.name)]
+        if not candidates:
+            return removed
+        kept_text: list[str] = []
+        for path in everything:
+            if path in candidates:
+                continue
+            try:
+                if path.stat().st_size <= _MOST_BYTES_READ_FOR_A_REFERENCE:
+                    kept_text.append(path.read_text(encoding="utf-8", errors="ignore"))
+            except OSError:
+                continue
+        for path in candidates:
+            shown = path.relative_to(root).as_posix()
+            if not project_memory.who_created(root, shown):
+                continue
+            if any(path.name in text for text in kept_text):
+                continue
+            try:
+                path.unlink()
+            except OSError:
+                continue
+            removed.append(shown)
+    except Exception:  # noqa: BLE001 - tidying must never fail the stage after it
+        return removed
+    return removed
+
+
 def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:
     """Whether `target` is a package manifest at the top of the pinned project.
 

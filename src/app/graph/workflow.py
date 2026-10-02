@@ -2778,6 +2778,21 @@ def _record_sprint_summary(
     return {"sprint_attempts": attempts}
 
 
+def _clear_the_throwaways(repo_root: str) -> None:
+    """See `repository.clear_the_throwaways_left_behind`. Never raises."""
+    try:
+        from app.tools.repository import clear_the_throwaways_left_behind
+
+        removed = clear_the_throwaways_left_behind(repo_root)
+        if removed:
+            logger.warning(
+                "Removed %d debugging script(s) finished stages left in the project: %s",
+                len(removed), ", ".join(removed[:8]),
+            )
+    except Exception:  # noqa: BLE001 - tidying must never fail a test round
+        logger.debug("Could not clear throwaway scripts", exc_info=True)
+
+
 def _the_last_failed_attempt_at_this_sprint(state: Any) -> dict | None:
     """The sprint record's entry for the current sprint's last attempt, when it
     was not accepted; None on a first attempt or after an accepted one."""
@@ -4680,6 +4695,11 @@ def build_workflow_graph(
         milestone = state["milestone_plan"]
         test_round = state.get("test_round", 0)
         outputs = state.get("specialist_outputs", {})
+        if not state.get("pending_inner_thread_id"):
+            # Before the round, not after a pause inside it: the stages that
+            # wrote these have all finished, and the round should measure the
+            # product without them.
+            _clear_the_throwaways(state["repository"].root_path)
         changed_files = _the_files_this_milestone_changed(state, outputs)
 
         agent = create_specialist_agent(

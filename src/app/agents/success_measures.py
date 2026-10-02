@@ -61,6 +61,12 @@ def _stem(word: str) -> str:
     for suffix in ("ing", "es", "ed", "s"):
         if len(word) - len(suffix) >= 4 and word.endswith(suffix):
             return word[: -len(suffix)]
+    # A three-letter verb in the past tense. The four-letter floor above kept
+    # "added" whole, and one run's plan - "add form", "add/edit/delete" - was
+    # handed back for never delivering "added". Only "ed", and only down to
+    # three letters: "used" and "need" are left alone.
+    if word.endswith("ed") and len(word) == 5:
+        return word[:-2]
     # A silent "e" goes too, or "rename" is never named by "Renaming" nor
     # "delete" by "deleting". Only where five letters remain, so "store" is
     # not named by "story".

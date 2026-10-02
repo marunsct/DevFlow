@@ -19,7 +19,7 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.approval import (
     approve_write_decision as approve_write_decision,
@@ -66,6 +66,23 @@ class ProductManagerOutput(BaseModel):
     evidence_vs_assumptions: list[str] = Field(default_factory=list)
     success_measures: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
+
+    @field_validator(
+        "users_and_stakeholders", "problems_and_desired_outcomes", "core_workflows",
+        "mvp_candidates", "deferred_scope", "constraints", "evidence_vs_assumptions",
+        "success_measures", "open_questions",
+        mode="before",
+    )
+    @classmethod
+    def _one_item_each(cls, value: Any) -> Any:
+        """A whole bulleted list sent as one entry becomes its entries.
+
+        Every later check walks these lists one entry at a time. See
+        `app.agents.list_items`.
+        """
+        from app.agents.list_items import one_item_each
+
+        return one_item_each(value)
 
 
 def with_the_workflows_its_measures_require(output: ProductManagerOutput) -> ProductManagerOutput:

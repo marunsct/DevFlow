@@ -4961,6 +4961,24 @@ def _refuse_a_blind_overwrite_of_another_stage_s_file(
             return
     except Exception:  # noqa: BLE001 - bookkeeping must never decide a write
         return
+    shown = _the_version_there_now(relative_path, existing)
+    if shown:
+        # The refusal is the read. "Read it first" cost a call the stage often
+        # did not make: measured across one day's runs, this was the most
+        # common refusal there was, and one fix stage sent the same whole-file
+        # write of a 13-line manifest twice, tried to delete the file, and
+        # reported the change as blocked. Shown here, the other stage's work is
+        # in view and the next write is a decision.
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': it already exists, '{writer}' wrote "
+            f"the version there now ({_line_count(existing)} lines), and you had not "
+            "seen it - writing the whole file would have replaced that work unread. "
+            f"Nothing was written. This is the file as it stands:\n{shown}\n"
+            "You have now seen it. Change your part with `edit_artifact` or "
+            "`replace_lines`, keeping what the other stage wrote; or, if replacing "
+            "the whole file is what you mean, send the write again with everything "
+            "above that still has to be there."
+        )
     raise RepositoryToolError(
         f"Refusing to write '{relative_path}': it already exists, '{writer}' wrote "
         f"the version there now ({_line_count(existing)} lines), and you have not "
@@ -4968,6 +4986,31 @@ def _refuse_a_blind_overwrite_of_another_stage_s_file(
         "was written. Read it first; then change your part with `edit_artifact`, or "
         "write the whole file again if replacing it is what you mean."
     )
+
+
+#: The longest file a refusal quotes whole. Past this it is a read, and the
+#: stage is told to make one.
+MOST_LINES_A_REFUSAL_SHOWS = 60
+
+
+def _the_version_there_now(relative_path: str, existing: str) -> str:
+    """A short file, numbered, and recorded as seen by this stage; or "".
+
+    "" for a file too long to quote, or when it cannot be recorded as seen -
+    then showing it would promise a second write that is refused again.
+    """
+    lines = existing.splitlines()
+    if not lines or len(lines) > MOST_LINES_A_REFUSAL_SHOWS:
+        return ""
+    try:
+        from app.tools.seen_content import has_seen_this_version, remember
+
+        remember(relative_path, existing)
+        if not has_seen_this_version(relative_path, existing):
+            return ""
+    except Exception:  # noqa: BLE001 - then it is a read, as before
+        return ""
+    return _quote(lines, 0, len(lines), None)
 
 
 def _a_rewrite_that_drops_what_the_file_defines(

@@ -53,8 +53,39 @@ class TestRefused:
 
         message = str(caught.value)
         assert "'specialist_testing_4' wrote the version there now" in message
-        assert "Read it first" in message
         assert _page(workspace) == THEIRS
+
+    def test_a_short_file_is_shown_in_the_refusal(self, workspace):
+        """"Read it first" cost a call the stage often did not make. One fix
+        stage sent the same whole-file write of a 13-line manifest twice, tried
+        to delete the file, and reported the change as blocked."""
+        with pytest.raises(RepositoryToolError) as caught:
+            write_approved_artifact(workspace, "todo-app/index.html", MINE)
+
+        message = str(caught.value)
+        assert '<form id="task-form">' in message
+        assert "You have now seen it" in message
+        assert "Read it first" not in message
+
+    def test_having_been_shown_it_the_next_write_is_a_decision(self, workspace):
+        with pytest.raises(RepositoryToolError):
+            write_approved_artifact(workspace, "todo-app/index.html", MINE)
+
+        write_approved_artifact(workspace, "todo-app/index.html", MINE)
+
+        assert _page(workspace) == MINE
+
+    def test_a_long_file_still_has_to_be_read(self, workspace):
+        long = "<!DOCTYPE html>\n" + "".join(f"<p>{n}</p>\n" for n in range(80))
+        (workspace / "todo-app" / "index.html").write_text(long, encoding="utf-8")
+        project_memory.record(workspace, "todo-app/index.html", "specialist_testing_4")
+
+        with pytest.raises(RepositoryToolError) as caught:
+            write_approved_artifact(workspace, "todo-app/index.html", MINE)
+        assert "Read it first" in str(caught.value)
+
+        with pytest.raises(RepositoryToolError):
+            write_approved_artifact(workspace, "todo-app/index.html", MINE)
 
     def test_a_version_changed_since_it_was_read_is_not_replaced(self, workspace):
         read_text_file(workspace, "todo-app/index.html")

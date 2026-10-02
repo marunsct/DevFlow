@@ -3212,7 +3212,9 @@ def _refuses_a_broken_file(relative_path: str) -> bool:
     instead - but `node --check` is a parse, so JavaScript is refused on that
     and warned on the rest. See `_javascript_parse_error`.
     """
-    return relative_path.lower().endswith((".py", ".json"))
+    # And stylesheets, for their braces alone: an unpaired one is never meant,
+    # and a browser's recovery from it drops rules without saying so.
+    return relative_path.lower().endswith((".py", ".json", ".css", ".scss", ".less"))
 
 
 def _javascript_parse_error(target: Path, relative_path: str, content: str) -> str:

@@ -343,6 +343,56 @@ def _a_key_given_twice(content: str) -> str:
     return found[0] if found else ""
 
 
+#: Stylesheets, plain and preprocessed. All of them nest with braces and
+#: nothing else.
+_STYLESHEETS = frozenset({".css", ".scss", ".less"})
+
+_A_STYLE_COMMENT_OR_STRING = re.compile(
+    r"/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'", re.S
+)
+
+
+def _unbalanced_stylesheet(content: str) -> str | None:
+    """A stylesheet whose braces do not pair, with the line to look at.
+
+    A browser does not refuse one; it recovers, and what it recovers to is not
+    what was written. A `}` with nothing open is read as the start of the next
+    rule's selector, which makes that selector invalid and drops the whole
+    rule - silently. One run shipped a stylesheet with a stray `}` after its
+    list rule: every test passed, the review accepted it, and the rule styling
+    each task was not applied.
+
+    Braces only, with comments and quoted strings blanked first, so a `}` in a
+    `content: "}"` or a comment is not counted. Certain in the way a parse is:
+    there is no reading of CSS in which an unpaired brace is intended.
+    """
+    blanked = _A_STYLE_COMMENT_OR_STRING.sub(
+        lambda found: re.sub(r"[^\n]", " ", found.group(0)), content
+    )
+    open_at: list[int] = []
+    for number, line in enumerate(blanked.splitlines(), 1):
+        for character in line:
+            if character == "{":
+                open_at.append(number)
+            elif character == "}":
+                if not open_at:
+                    return (
+                        f"The braces in this stylesheet do not pair: the '}}' on line "
+                        f"{number} closes nothing. A browser reads it as the start of "
+                        "the next rule's selector, which makes that selector invalid "
+                        "and drops the rule that follows without any error. Remove "
+                        "it, or restore the '{' it was meant to close."
+                    )
+                open_at.pop()
+    if open_at:
+        return (
+            f"The braces in this stylesheet do not pair: the '{{' opened on line "
+            f"{open_at[-1]} is never closed, so every rule after it is read as "
+            "part of that block and none of them applies. Close it."
+        )
+    return None
+
+
 def structural_problem(relative_path: str, content: str) -> str | None:
     """What is structurally wrong with this file, or None if nothing is.
 
@@ -355,6 +405,9 @@ def structural_problem(relative_path: str, content: str) -> str | None:
 
     if suffix == ".json":
         return _broken_json(relative_path, content)
+
+    if suffix in _STYLESHEETS:
+        return _unbalanced_stylesheet(content)
 
     if suffix == ".py":
         try:

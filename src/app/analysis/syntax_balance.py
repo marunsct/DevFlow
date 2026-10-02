@@ -323,6 +323,73 @@ def _broken_json(relative_path: str, content: str) -> str | None:
     return None
 
 
+#: Comma repairs tried on one file before it is called broken.
+_MOST_COMMAS_PUT_RIGHT = 4
+
+
+def json_with_its_commas_put_right(content: str) -> tuple[str, list[str]] | None:
+    """JSON that fails only for its commas, repaired, with what was done; else None.
+
+    A line edit to a JSON file changes which member is last. Adding a line after
+    the last member leaves the old last one without its comma; adding one before
+    a closing brace leaves the new one with a comma it must not have. Nothing
+    else about the edit is wrong.
+
+    Measured on one run, by the second session reading every failed call: 13 of
+    24 were edits to `package.json`, by four stages, each adding one dependency
+    or changing the test script - "Expecting ',' delimiter" five times over.
+    It is the most expensive file in every run audited that day.
+
+    Only commas, and only where the parser itself says one is missing or one
+    too many: a comma is added at the end of the line before the one the parser
+    stopped on, or the comma before a closing bracket is removed. The result
+    must parse and give no key twice, or nothing is returned and the refusal
+    stands exactly as before.
+    """
+    try:
+        json.loads(content)
+        return None
+    except ValueError:
+        pass
+    text = content
+    done: list[str] = []
+    for _ in range(_MOST_COMMAS_PUT_RIGHT):
+        try:
+            json.loads(text)
+            break
+        except ValueError as failure:
+            message = getattr(failure, "msg", str(failure))
+            position = getattr(failure, "pos", None)
+            if position is None:
+                return None
+            before = text[:position].rstrip()
+            if message.startswith("Expecting ',' delimiter"):
+                # The value before this point ended and another member follows.
+                if not before or before[-1] in ",{[:":
+                    return None
+                line = before.count("\n") + 1
+                text = before + "," + text[len(before):]
+                done.append(f"a comma was added at the end of line {line}")
+            elif (
+                message.startswith(("Expecting property name", "Expecting value"))
+                and position < len(text) and text[position] in "}]" and before.endswith(",")
+            ):
+                line = before.count("\n") + 1
+                text = before[:-1] + text[len(before):]
+                done.append(f"the comma at the end of line {line} was removed")
+            else:
+                return None
+    else:
+        return None
+    try:
+        json.loads(text)
+    except ValueError:
+        return None
+    if not done or _a_key_given_twice(text):
+        return None
+    return text, done
+
+
 def _a_key_given_twice(content: str) -> str:
     """The first key that appears twice in one JSON object, or "".
 
@@ -468,4 +535,4 @@ def structural_problem(relative_path: str, content: str) -> str | None:
     )
 
 
-__all__ = ["Imbalance", "structural_problem"]
+__all__ = ["Imbalance", "json_with_its_commas_put_right", "structural_problem"]

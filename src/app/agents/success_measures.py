@@ -162,6 +162,43 @@ def enumerations(measure: str) -> list[tuple[bool, list[str]]]:
     return found
 
 
+#: A list that says where or for whom, after the thing itself: "responsive
+#: design FOR mobile and desktop", "works ON Chrome and Firefox".
+_SAYS_WHERE = re.compile(
+    r"((?:[A-Za-z][\w-]*\s+){1,3})(?:for|on|across|in|at)\s+(?:(?:both|all|the|latest|modern)\s+)*$",
+    re.I,
+)
+
+
+def _delivered_by_its_head(measure: str, words: list[str], text: str) -> bool:
+    """Whether a list of places is covered by the plan naming the thing itself.
+
+    "Responsive design for mobile and desktop" asks for one thing, and names
+    two places it must hold. A plan that builds a "responsive layout" delivers
+    it, and can only contain "desktop" by repeating the measure. Measured on
+    two runs in one morning: plans handed back for never delivering "desktop",
+    and "mobile" and "desktop" - a planning call each, and one of the answers
+    was worse than the plan it replaced.
+
+    Only a list that follows "for", "on", "across", "in" or "at", and only when
+    a word of five letters or more from what comes before it is named.
+    """
+    at = re.search(
+        r"\b" + re.escape(words[0]) + r"\b[\s,]+(?:[\w-]+[\s,]+)*?(?:and|or)\s+(?:(?:a|an|the)\s+)?"
+        + re.escape(words[-1]) + r"\b",
+        measure, re.I,
+    )
+    if at is None:
+        return False
+    head = _SAYS_WHERE.search(measure[: at.start()])
+    if head is None:
+        return False
+    return any(
+        len(word) >= 5 and word.lower() not in _NOT_A_CAPABILITY and named_in(word, text)
+        for word in head.group(1).split()
+    )
+
+
 def capabilities_never_named(text: str, measures: list[str]) -> dict[int, list[str]]:
     """Items of each measure's own lists that `text` never names.
 
@@ -170,6 +207,8 @@ def capabilities_never_named(text: str, measures: list[str]) -> dict[int, list[s
     missing: dict[int, list[str]] = {}
     for number, measure in enumerate(measures, start=1):
         for every_item, words in enumerations(measure):
+            if _delivered_by_its_head(str(measure), words, text):
+                continue
             absent = [w for w in words if not _item_named_in(w, text)]
             if (every_item and absent) or (not every_item and len(absent) == len(words)):
                 bucket = missing.setdefault(number, [])

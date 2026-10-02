@@ -946,6 +946,45 @@ def _refuse_an_edit_that_goes_backwards_again(relative_path: str, updated: str) 
     )
 
 
+#: What was put right in a file on its way to disk, by resolved path, for the
+#: result of the call that wrote it. Read once and cleared.
+_PUT_RIGHT_ON_THE_WAY: dict[str, str] = {}
+
+
+def _json_with_its_commas_put_right(target: Path, relative_path: str, content: str) -> str:
+    """`content` with a JSON file's commas repaired, when that is all that is wrong.
+
+    See `syntax_balance.json_with_its_commas_put_right`. The note is kept for
+    the result, because a repair nobody is told about teaches nothing and the
+    next edit makes the same mistake. Never raises.
+    """
+    if not relative_path.lower().endswith(".json"):
+        return content
+    try:
+        from app.analysis.syntax_balance import _TOLERATES_COMMENTS, json_with_its_commas_put_right
+
+        if relative_path.rsplit("/", 1)[-1] in _TOLERATES_COMMENTS:
+            return content
+        repaired = json_with_its_commas_put_right(content)
+    except Exception:  # noqa: BLE001 - a repair that cannot run changes nothing
+        return content
+    if repaired is None:
+        return content
+    text, done = repaired
+    _PUT_RIGHT_ON_THE_WAY[str(target)] = (
+        "Your change left this JSON invalid only for its commas, so it was written "
+        f"with them put right: {'; '.join(done)}. In JSON every member but the last "
+        "of an object or array ends with a comma, and the last has none - adding or "
+        "removing a line changes which one is last."
+    )
+    return text
+
+
+def _what_was_put_right(target: Path) -> str:
+    """The note `_json_with_its_commas_put_right` left for this file, once."""
+    return _PUT_RIGHT_ON_THE_WAY.pop(str(target), "")
+
+
 def _refuse_to_switch_a_suite_off(relative_path: str, before: str, after: str) -> None:
     """Refuse a change that leaves a working test file with no test that runs.
 
@@ -2723,6 +2762,7 @@ def replace_approved_lines(
         # refusals at lines 22, 59, 83 and 72 of one file, the moving line
         # number showing the model was getting closer each time. See the same
         # rule in `_write_unless_it_changes_nothing`.
+        updated = _json_with_its_commas_put_right(target, relative_path, updated)
         try:
             if _what_is_structurally_wrong(target, relative_path, original) is None:
                 # As an edit, so the refusal is in this tool's terms. Without
@@ -3127,6 +3167,7 @@ def _edited(
     if landed:
         result["context"] = landed
     notes = [
+        _what_was_put_right(target),
         _what_is_still_wrong_after_a_repair(target, relative_path, written),
         _discovery_note(relative_path, written, target),
         _import_note(root, target, written),
@@ -4457,6 +4498,7 @@ def _write_unless_it_changes_nothing(
     so a comparison of the arguments would miss a no-op arriving through any of
     them.
     """
+    updated = _json_with_its_commas_put_right(target, relative_path, updated)
     if updated != original:
         _refuse_an_edit_that_goes_backwards_again(relative_path, updated)
         # Edits are how one run's mock grew: 145 lines to 1,195, one
@@ -5641,6 +5683,8 @@ def write_approved_artifact(
     escape_note = ""
     if repaired is not None:
         content, escape_note = repaired
+    content = _json_with_its_commas_put_right(target, relative_path, content)
+    escape_note = " ".join(part for part in (escape_note, _what_was_put_right(target)) if part)
     try:
         _refuse_if_broken(relative_path, content)
     except RepositoryToolError:

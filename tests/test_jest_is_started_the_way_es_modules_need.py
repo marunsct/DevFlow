@@ -114,3 +114,17 @@ def test_the_guidance_names_what_each_unit_runner_needs(key: str) -> None:
     assert "TWO RUNNERS MUST NOT LOAD EACH OTHER'S FILES" in text
     # It no longer tells every project to use one runner whatever its stack chose.
     assert '"scripts": {"test": "node --test <your test files>"}' not in text
+
+
+def test_the_flag_given_to_jest_is_not_the_flag_given_to_node(tmp_path: Path) -> None:
+    """One run's stage wrote `jest --experimental-vm-modules`. Jest does not
+    pass it on, and a check for the bare word in the line called it done."""
+    _project(
+        tmp_path,
+        {"type": "module", "scripts": {"test": "jest --experimental-vm-modules"}},
+        {"tests/app.test.js": ESM_TEST},
+    )
+
+    (problem,) = _found(tmp_path)
+
+    assert "starts Jest as `jest --experimental-vm-modules`" in problem

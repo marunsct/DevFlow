@@ -211,3 +211,18 @@ def test_a_plan_is_not_handed_back_for_a_verb_it_uses_in_another_person() -> Non
     assert capabilities_never_named(plan, measure) == {}
     # Still asked for when the plan says nothing of the kind.
     assert capabilities_never_named("Polish the page.", measure) != {}
+
+
+def test_a_plan_is_not_handed_back_for_the_places_a_measure_names() -> None:
+    """ "Responsive design for mobile and desktop" asks for one thing and names
+    two places it must hold. Two plans in one morning were handed back for
+    never delivering "desktop"; one of the answers was worse than the plan."""
+    from app.agents.success_measures import capabilities_never_named
+
+    measure = ["Responsive design for mobile and desktop"]
+
+    assert capabilities_never_named("Add a responsive layout with a media query.", measure) == {}
+    # Still asked for when the plan names neither the thing nor the places.
+    assert capabilities_never_named("Polish the page.", measure) == {1: ["mobile", "desktop"]}
+    # A list of things to build is every item, as before.
+    assert capabilities_never_named("Add and delete tasks.", ["Users can add, edit, and delete tasks"]) == {1: ["edit"]}

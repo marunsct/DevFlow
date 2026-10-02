@@ -3933,6 +3933,16 @@ def _unit_tests_split_between_runners(files: list[Path], root: Path, stack: Any)
 #: An `import` statement at the start of a line: a file written as an ES module.
 _AN_IMPORT_STATEMENT = re.compile(r"""^\s*import\s+(?:[\w{*]|['"])""", re.M)
 
+#: The flag where Node receives it: on the `node` command, ahead of the script
+#: it runs, or in `NODE_OPTIONS`. `jest --experimental-vm-modules` gives it to
+#: Jest, which does not pass it on - one run's stage wrote exactly that, and a
+#: check for the bare word in the line called it done.
+_NODE_IS_GIVEN_THE_FLAG = re.compile(
+    r"\bnode(?:\s+--[\w-]+(?:=\S+)?)*\s+--experimental-vm-modules\b"
+    r"|\bNODE_OPTIONS\s*=\s*[\"']?[^\"'&|;]*--experimental-vm-modules"
+)
+
+
 def _jest_started_without_what_es_modules_need(files: list[Path], root: Path) -> list[str]:
     """Jest run plainly over tests written as ES modules.
 
@@ -3970,7 +3980,7 @@ def _jest_started_without_what_es_modules_need(files: list[Path], root: Path) ->
         plain = [
             str(body) for body in scripts.values()
             if _the_runner_a_script_invokes(str(body))[0] == "jest"
-            and "experimental-vm-modules" not in str(body)
+            and not _NODE_IS_GIVEN_THE_FLAG.search(str(body))
         ]
         if not plain:
             continue

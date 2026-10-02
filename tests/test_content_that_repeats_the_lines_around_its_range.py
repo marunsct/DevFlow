@@ -108,3 +108,28 @@ def test_blank_lines_alone_are_not_an_overlap(tmp_path) -> None:
     lines = ["a();\n", "\n", "\n", "b();\n"]
 
     assert _the_range_its_content_overlaps(tmp_path / "x.js", lines, 1, 1, "a(;\n\n", "x.js") is None
+
+
+MANIFEST = """\
+{
+  "name": "the-app",
+  "license": "MIT",
+  "devDependencies": {
+    "jsdom": "^24.0.0"
+  }
+}
+"""
+
+
+def test_a_repeated_closing_bracket_alone_is_not_an_overlap(tmp_path) -> None:
+    """One run's edit dropped the `"devDependencies": {` line and kept the `}`
+    that closed it. Widening over the file's own last `}` made it parse, and
+    left the packages as top-level keys of a manifest with no devDependencies."""
+    (tmp_path / "package.json").write_text(MANIFEST, encoding="utf-8")
+    content = '    "jsdom": "^24.0.0",\n    "playwright": "^1.47.0"\n  }'
+
+    with pytest.raises(RepositoryToolError) as caught:
+        replace_approved_lines(tmp_path, "package.json", 4, 6, content)
+
+    assert "not valid JSON" in str(caught.value)
+    assert (tmp_path / "package.json").read_text(encoding="utf-8") == MANIFEST

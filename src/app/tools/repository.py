@@ -2182,6 +2182,15 @@ def _the_range_its_content_overlaps(
         ours = [line.strip() for line in ours]
         return ours == [line.strip() for line in theirs] and any(ours)
 
+    def says_something(up: int, down: int) -> bool:
+        # A repeated line of brackets alone is not evidence of anything: every
+        # block ends in one. One run's edit dropped the `"devDependencies": {`
+        # line and kept the `}` that closed it; widening the range over the
+        # file's own closing `}` made it parse, and left the three packages as
+        # top-level keys of a manifest with no devDependencies at all.
+        repeated = sent[:up] + (sent[-down:] if down else [])
+        return any(re.search(r"\w", line) for line in repeated)
+
     below = [
         k for k in range(1, min(MOST_OVERLAPPING_LINES, len(sent) - 1, len(lines) - last) + 1)
         if same(sent[-k:], lines[last:last + k])
@@ -2198,7 +2207,7 @@ def _the_range_its_content_overlaps(
         + [(up, down) for up in reversed(above) for down in reversed(below)]
     )
     for up, down in candidates:
-        if up + down >= len(sent):
+        if up + down >= len(sent) or not says_something(up, down):
             continue
         new_start, new_last = start_line - up, last + down
         body = content

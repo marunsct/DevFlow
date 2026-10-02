@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import signal
 import re
 import shutil
 import subprocess
@@ -865,6 +866,130 @@ def _apply_limits() -> None:
         except (ValueError, OSError):
             # A limit this platform will not accept is not worth failing over.
             continue
+
+
+class _TreeOverBudget(Exception):
+    """A command's process tree was stopped for the memory it was using."""
+
+    def __init__(self, used: int, budget: int, stdout: str, stderr: str) -> None:
+        super().__init__("process tree over its memory budget")
+        self.used_mb = used // 1024**2
+        self.budget_mb = budget // 1024**2
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+#: How often a running command's process tree is measured.
+_TREE_POLL_SECONDS = 0.5
+
+#: The least a command's tree is ever allowed, whatever the container has free.
+_LEAST_TREE_BUDGET_BYTES = 512 * 1024**2
+
+
+def _tree_memory_bytes(group: int) -> int:
+    """Resident memory of every process in process group `group`. Never raises.
+
+    Read from `/proc`, where there is one: each `stat` carries the group id and
+    `statm` the resident pages. Zero where it cannot be read, which makes the
+    watch below a no-op rather than a failure.
+    """
+    total = 0
+    try:
+        page = os.sysconf("SC_PAGE_SIZE")
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/stat", encoding="utf-8", errors="replace") as handle:
+                    # The command name is in brackets and may hold spaces; the
+                    # fields after it are fixed. pgrp is the third of them.
+                    after = handle.read().rsplit(")", 1)[-1].split()
+                if int(after[2]) != group:
+                    continue
+                with open(f"/proc/{entry}/statm", encoding="utf-8") as handle:
+                    total += int(handle.read().split()[1]) * page
+            except (OSError, ValueError, IndexError):
+                continue
+    except (OSError, ValueError):
+        return 0
+    return total
+
+
+def _tree_budget_bytes() -> int:
+    """What one command's whole process tree may use, from what is free now."""
+    ceiling = _memory_limit_bytes()
+    try:
+        from app.tools.resources import memory_budget
+
+        return max(_LEAST_TREE_BUDGET_BYTES, memory_budget(ceiling))
+    except Exception:  # noqa: BLE001 - then the configured ceiling stands
+        return ceiling
+
+
+def _kill_the_tree(group: int) -> None:
+    try:
+        os.killpg(group, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
+
+
+def _run_and_watch_the_tree(
+    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int
+) -> "subprocess.CompletedProcess[str]":
+    """`subprocess.run`, bounding the command's whole process tree.
+
+    The rlimits in `_apply_limits` bound one process, and a command is rarely
+    one process. Measured on one run: `npm test` started a runner with a worker
+    per CPU, each within its own limit; together they took what the container
+    had, the kernel killed the Celery worker instead of any of them, killed the
+    two that replaced it, and the container restarted with the run still
+    marked running.
+
+    Two things change. The tree's resident memory is measured twice a second
+    and the whole process group is killed when it passes what the container can
+    give one command, raising `_TreeOverBudget` - a failed command with a
+    reason, where there was a dead run with none. And a timeout kills the
+    group, not only the process this module started: `subprocess.run` killed
+    the direct child and left its workers running.
+    """
+    process = subprocess.Popen(  # noqa: S603 - argv list, no shell, validated by the caller
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        preexec_fn=_apply_limits,  # noqa: PLW1509 - the point is to limit the child
+        start_new_session=False,   # _apply_limits calls setsid itself
+    )
+    budget = _tree_budget_bytes()
+    over: list[int] = []
+    finished = threading.Event()
+
+    def watch() -> None:
+        while not finished.wait(_TREE_POLL_SECONDS):
+            used = _tree_memory_bytes(process.pid)
+            if used > budget:
+                over.append(used)
+                _kill_the_tree(process.pid)
+                return
+
+    watcher = threading.Thread(target=watch, name="sandbox-tree-watch", daemon=True)
+    watcher.start()
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _kill_the_tree(process.pid)
+        stdout, stderr = process.communicate()
+        raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr) from None
+    finally:
+        finished.set()
+        watcher.join(timeout=2)
+        # Whatever the command left behind in its group goes with it.
+        _kill_the_tree(process.pid)
+    if over:
+        raise _TreeOverBudget(over[0], budget, stdout or "", stderr or "")
+    return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
 def _image_for(executable: str) -> str:
@@ -3860,16 +3985,11 @@ class SandboxExecutor:
             role_name, category, argv,
         )
         try:
-            result = subprocess.run(  # noqa: S603 - argv list, no shell, validated above
+            result = _run_and_watch_the_tree(
                 [executable, *argv[1:]],
                 cwd=run_in or workspace,
                 env=_child_environment(workspace, extra_env),
-                capture_output=True,
-                text=True,
                 timeout=timeout,
-                check=False,
-                preexec_fn=_apply_limits,  # noqa: PLW1509 - the point is to limit the child
-                start_new_session=False,   # _apply_limits calls setsid itself
             )
         except subprocess.TimeoutExpired as expired:
             return {
@@ -3877,6 +3997,21 @@ class SandboxExecutor:
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",
+            }
+        except _TreeOverBudget as over:
+            return {
+                "error": (
+                    f"Command stopped: its processes together were using {over.used_mb} MB, "
+                    f"past the {over.budget_mb} MB this container can give one command. "
+                    "Left running, the kernel would have killed this run instead of the "
+                    "command. A test runner usually reaches this by starting one worker "
+                    "per CPU, each loading the whole project, or by a test that grows a "
+                    "structure without end. Run it in one process (the runner's "
+                    "in-band or single-worker option), or one test file at a time."
+                ),
+                "stdout": _as_workspace_relative(_truncate(over.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
+                "stderr": _as_workspace_relative(_truncate(over.stderr, f"{role_name}-{argv[0]}-stderr", workspace), workspace),
+                "returncode": "137",
             }
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}

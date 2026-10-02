@@ -946,6 +946,22 @@ def _refuse_an_edit_that_goes_backwards_again(relative_path: str, updated: str) 
     )
 
 
+def _refuse_to_switch_a_suite_off(relative_path: str, before: str, after: str) -> None:
+    """Refuse a change that leaves a working test file with no test that runs.
+
+    See `test_discovery.a_suite_this_change_switches_off`. Never raises for
+    any other reason: a check that cannot run refuses nothing.
+    """
+    try:
+        from app.analysis.test_discovery import a_suite_this_change_switches_off
+
+        problem = a_suite_this_change_switches_off(relative_path, before, after)
+    except Exception:  # noqa: BLE001
+        return
+    if problem:
+        raise RepositoryToolError(problem)
+
+
 def _refuse_a_hand_built_dom_again(relative_path: str, content: str) -> None:
     """Refuse a hand-built browser API, once the note has been ignored twice.
 
@@ -4336,6 +4352,7 @@ def _write_unless_it_changes_nothing(
         # `edit_artifact` at a time. Refusing only the write would leave the
         # path that was actually used wide open.
         _refuse_a_hand_built_dom_again(relative_path, updated)
+        _refuse_to_switch_a_suite_off(relative_path, original, updated)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
             _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
@@ -5520,6 +5537,13 @@ def write_approved_artifact(
             raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
     _refuse_a_hand_built_dom_again(relative_path, content)
+    if target.is_file():
+        try:
+            _refuse_to_switch_a_suite_off(
+                relative_path, target.read_text(encoding="utf-8"), content
+            )
+        except (OSError, UnicodeDecodeError):
+            pass
     _refuse_a_blind_overwrite_of_another_stage_s_file(root, target, relative_path, content)
     # Before the write, because it compares against the file being replaced. The
     # note it returns is reported with the others once the write has landed.
@@ -5738,11 +5762,26 @@ def _another_stage_s_test(root: Path, shown: str) -> str:
 
         created_by = project_memory.who_created(root, shown)
         running = _stage_from_config("")
+        if running and _the_plan_gave_it_to(root, shown) == running:
+            # The plan's word outranks who happened to create it. One run's
+            # work order listed `tests/app.test.js`, a file an earlier stage
+            # had left as a four-line placeholder; the stage the plan gave it
+            # to was told twice that it was another stage's test.
+            return ""
     except Exception:  # noqa: BLE001 - a guard that cannot decide lets the call through
         return ""
     if not created_by or not running or created_by == running:
         return ""
     return created_by
+
+
+def _the_plan_gave_it_to(root: Path, shown: str) -> str:
+    """The stage whose work order lists this file in the current milestone, or ""."""
+    try:
+        table = json.loads((root / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(table.get(shown) or "") if isinstance(table, dict) else ""
 
 
 def _somewhere_this_rule_will_let_go_of(shown: str) -> str:

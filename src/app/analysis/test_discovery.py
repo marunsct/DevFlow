@@ -502,6 +502,91 @@ def holds_no_test(content: str) -> bool:
     )
 
 
+#: A test switched off where it stands, in the spellings runners accept:
+#: `test.skip(`, `it.todo(`, `describe.skip(`, `xit(`, a bare `skip(`, and the
+#: decorators and calls other languages use for the same thing.
+_A_CASE_SWITCHED_OFF = re.compile(
+    r"""(?<![\w.$])(?:test|it|describe|suite|context)\s*\.\s*(?:skip|todo|fixme)\s*\("""
+    r"""|(?<![\w.$])(?:xit|xtest|xdescribe|skip|todo)\s*\(\s*['"`]"""
+    r"""|^\s*@(?:pytest\.mark\.skip\w*|unittest\.skip\w*|Disabled|Ignore)\b"""
+    r"""|^\s*#\[ignore\]"""
+    r"""|(?<![\w.$])(?:pytest\.skip|t\.Skip\w*|self\.skipTest)\s*\(""",
+    re.MULTILINE,
+)
+
+#: A registered case with whatever modifier it carries: `test(`, `it.only(`,
+#: `test.skip(`.
+_A_CASE_AND_ITS_MODIFIER = re.compile(
+    r"""(?<![\w.$])(?:test|it)\s*(?:\.\s*(\w+)\s*)?\(\s*['"`]""", re.MULTILINE
+)
+
+
+def how_many_tests_run(content: str) -> int:
+    """How many tests in this file a runner would actually execute.
+
+    Registered cases, less the ones switched off where they stand. An
+    estimate, and only ever compared with itself: the same file before a
+    change and after it.
+    """
+    cases = sum(
+        1 for found in _A_CASE_AND_ITS_MODIFIER.finditer(content)
+        if (found.group(1) or "").lower() not in {"skip", "todo", "fixme"}
+    )
+    elsewhere = [
+        found for found in _A_TEST_DECLARED_ELSEWHERE.finditer(content)
+        if not re.match(r"\s*(?:describe|context|suite|@pytest)", found.group(0))
+    ]
+    switched_off = len(_A_CASE_SWITCHED_OFF.findall(content)) if elsewhere else 0
+    return cases + max(0, len(elsewhere) - switched_off)
+
+
+def a_suite_this_change_switches_off(relative_path: str, before: str, after: str) -> str | None:
+    """Why this change is refused, when it leaves a working test file running nothing.
+
+    Measured on one run. A testing stage wrote 72 lines of real assertions, ran
+    them, and was answered "Failed to import app.js: document is not defined" -
+    a true finding about the product. It then replaced all 72 lines with
+
+        skip('Unit tests are skipped due to environment constraints');
+
+    and did the same to the browser spec. Both edits were answered "edited".
+    The next `npm test` exited 0 having run nothing, a fix stage returned "All
+    good", and the ledger held a passing suite that every later gate would
+    have read as evidence the product works.
+
+    Deleting a test is refused for exactly this reason; emptying one where it
+    stands is the same act through another tool.
+
+    Only a file that had tests which ran and assertions in them, and would be
+    left with none that run. A change that drops some and keeps others is an
+    ordinary edit, and a file that never had a test is not this.
+    """
+    from app.analysis.file_kinds import is_test
+
+    if not is_test(relative_path):
+        return None
+    had = how_many_tests_run(before)
+    if not had or not _AN_ASSERTION.search(before):
+        return None
+    if how_many_tests_run(after):
+        return None
+    how = (
+        "what replaces them is switched off with `skip`"
+        if _A_CASE_SWITCHED_OFF.search(after) else "what replaces them registers no test"
+    )
+    return (
+        f"Refusing to change '{relative_path}': it holds {had} test"
+        f"{'s' if had != 1 else ''} that run, and this would leave none - {how}. "
+        "A test command that runs nothing passes whatever the product does, and "
+        "every stage after this one would read that pass as evidence the product "
+        "works. A test that fails is a finding, not an obstacle: if the product is "
+        "what is wrong - it cannot be loaded where the tests run, say - report that "
+        "in `defects` or `blockers` and leave the test failing; if the test is "
+        "wrong, correct it so it still checks what it was written to check. "
+        "Nothing was changed."
+    )
+
+
 def a_test_that_asserts_nothing(relative_path: str, content: str) -> str | None:
     """Why this test file cannot fail, or None if it can.
 

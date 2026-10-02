@@ -2804,6 +2804,23 @@ def _accepted_when_nothing_in_it_gates(review: Any, repo_root: str) -> Any:
     return review
 
 
+def _ran_no_test_that_passed(entry: Any) -> bool:
+    """Whether a test command's own totals say nothing in it passed.
+
+    Exit 0 is not a pass when every test was skipped. One run's stage replaced
+    its suite with a single `skip(...)`, and `npm test` answered "# tests 1,
+    # pass 0, # skipped 1" and exited 0; the ledger recorded a passing command
+    and a fix stage returned "All good".
+
+    Only when the run reported totals at all. A command whose output this
+    cannot count is judged by its exit code, as before.
+    """
+    try:
+        return "passed" in entry and int(entry.get("passed") or 0) == 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tuple[str, str]:
     """`(command, how)` for a stage whose last run of a test command failed, or `("", "")`.
 
@@ -2824,7 +2841,11 @@ def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tup
         argv = [str(part) for part in last.get("command") or []]
         code = last.get("returncode")
         timed_out = str(last.get("error") or "").lstrip().startswith("Command timed out")
-        if not argv or (code in (0, None) and not timed_out):
+        if not argv:
+            return "", ""
+        if code == 0 and _ran_no_test_that_passed(last):
+            return " ".join(argv), "exited 0 without a single test passing"
+        if code in (0, None) and not timed_out:
             return "", ""
         if code is not None and _ran_and_answered(argv, code):
             return "", ""
@@ -3352,7 +3373,9 @@ def _where_each_command_stands(repo_root: str) -> dict[str, bool]:
     for entry in read_execution_ledger(repo_root, limit=10_000):
         argv = [str(part) for part in entry.get("command") or []]
         if len(argv) >= 2 and entry.get("returncode") is not None:
-            latest[" ".join(argv)] = entry.get("returncode") == 0
+            latest[" ".join(argv)] = (
+                entry.get("returncode") == 0 and not _ran_no_test_that_passed(entry)
+            )
     return latest
 
 
@@ -3409,7 +3432,9 @@ def _where_each_test_command_stands(repo_root: str) -> dict[str, bool]:
         timed_out = str(entry.get("error") or "").lstrip().startswith("Command timed out")
         if entry.get("returncode") is None and not timed_out:
             continue
-        latest[" ".join(argv)] = entry.get("returncode") == 0
+        latest[" ".join(argv)] = (
+            entry.get("returncode") == 0 and not _ran_no_test_that_passed(entry)
+        )
     return latest
 
 

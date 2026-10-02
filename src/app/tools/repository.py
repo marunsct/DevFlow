@@ -2101,6 +2101,31 @@ def _written_as_a_diff(content: str, original: str) -> str:
     )
 
 
+_WHERE_JSON_STOPPED = re.compile(r"not valid JSON at line (\d+)")
+
+
+def _the_lines_json_stopped_at(refusal: str, updated: str) -> str:
+    """The lines of the edited file around where a JSON parser gave up, or "".
+
+    The JavaScript refusal quotes what the edit would have produced; the JSON
+    one named a line and a column of a file the caller has never seen, because
+    it is the file as it would be after the edit.
+    """
+    found = _WHERE_JSON_STOPPED.search(refusal)
+    if not found:
+        return ""
+    after = updated.splitlines()
+    at = int(found.group(1)) - 1
+    if not 0 <= at < len(after):
+        return ""
+    return (
+        "\n\nThis is what the file would hold around that line (> marks it). A "
+        "parser reports where it gave up, which is usually the line after the "
+        "one missing a comma or a bracket:\n"
+        + _quote(after, max(0, at - 3), min(len(after), at + 2), at)
+    )
+
+
 #: Lines outside a range that its `content` may be found to repeat, each side.
 MOST_OVERLAPPING_LINES = 6
 
@@ -2382,13 +2407,23 @@ def replace_approved_lines(
         # rule in `_write_unless_it_changes_nothing`.
         try:
             if _what_is_structurally_wrong(target, relative_path, original) is None:
-                _refuse_if_broken(relative_path, updated)
+                # As an edit, so the refusal is in this tool's terms. Without
+                # it a range that left `package.json` one comma short was
+                # answered "Refusing to write ... Send the file again as
+                # complete, valid JSON", and the stage did: three whole-file
+                # writes and a delete, for a comma.
+                _refuse_if_broken(relative_path, updated, editing=True)
             _write_unless_it_changes_nothing(target, original, updated, relative_path)
         except RepositoryToolError as exc:
             # Only a refusal about the file's syntax. A refusal that the edit
             # changes nothing, or undoes a recent one, is not about the range.
-            if "parse" not in str(exc).lower():
+            said = str(exc).lower()
+            if "parse" not in said and "not valid json" not in said:
                 raise
+            exc = RepositoryToolError(
+                str(exc).replace("Fix `replace` and send", "Fix `content` and send")
+                + _the_lines_json_stopped_at(str(exc), updated)
+            )
             wider = _the_range_its_content_overlaps(
                 target, lines, start_line, last, content, relative_path
             )

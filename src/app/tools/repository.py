@@ -2569,6 +2569,35 @@ def replace_approved_lines(
         lines = original.splitlines(keepends=True)
         total = len(lines)
 
+        if start_line == total + 1 and end_line in (total, start_line) and content.strip():
+            # The line after the last one: there is nothing there to replace, so
+            # this is "add these lines at the end", and it means nothing else.
+            # Measured on two runs: `start_line 115, end_line 114` on a 114-line
+            # file was "not a range", `start_line 115` alone was "line 115 does
+            # not exist", and the stage fell back to an `edit_artifact` whose
+            # `find` matched 44 times.
+            pinned = _the_one_line_it_pins(expect_start).strip() if expect_start else ""
+            if pinned and total and pinned != lines[-1].strip():
+                raise RepositoryToolError(
+                    f"'{relative_path}' has {total} lines, so line {start_line} is the "
+                    "line after its last and this call would add your `content` at "
+                    "the end of the file. `expect_start` does not match the last line, "
+                    f"which is:\n  {_clip(lines[-1].strip())}\n"
+                    "If the end of the file is where you mean, send the call again "
+                    "without `expect_start`. Nothing was changed."
+                )
+            joined = original if not original or original.endswith("\n") else original + "\n"
+            body = content if content.endswith("\n") else content + "\n"
+            updated = joined + body
+            _write_unless_it_changes_nothing(target, original, updated, relative_path)
+            added = len(body.splitlines())
+            return _edited(
+                target, root, relative_path, content,
+                f"Added {added} line{'s' if added != 1 else ''} after line {total}, the "
+                f"last line: there was no line {start_line} to replace. The file now "
+                f"has {len(updated.splitlines())} lines.",
+                "",
+            )
         if start_line < 1 or end_line < start_line:
             raise RepositoryToolError(
                 f"Line range {start_line}-{end_line} is not a range. Lines are "

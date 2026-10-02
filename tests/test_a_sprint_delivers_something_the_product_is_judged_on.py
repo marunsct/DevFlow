@@ -103,7 +103,9 @@ def test_the_foundation_sprint_is_folded_into_the_one_that_needs_it() -> None:
 
     assert folded == ["Establish the project foundation"]
     assert [sprint.goal for sprint in folded_plan.sprints] == [
-        "Implement core logic and persistence", "Build the UI layer", "Finalize polish",
+        # Both goals, in the order the work is done.
+        "Establish the project foundation; then Implement core logic and persistence.",
+        "Build the UI layer", "Finalize polish",
     ]
     first = folded_plan.sprints[0]
     # The setup comes first, in the sprint that needs it, and nothing it did is lost.
@@ -111,6 +113,7 @@ def test_the_foundation_sprint_is_folded_into_the_one_that_needs_it() -> None:
     assert "Establish the project foundation works" in first.acceptance_criteria
     # What the folded sprint ruled out was its neighbour's own work.
     assert first.out_of_scope == ["not in Implement core logic and persistence"]
+    assert first.user_value == "value of Implement core logic and persistence"
 
 
 def test_the_plan_s_own_references_are_renumbered() -> None:
@@ -136,7 +139,9 @@ def test_a_last_sprint_that_delivers_nothing_goes_into_the_one_before() -> None:
     folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
 
     assert folded == ["Write the documentation"]
-    assert [sprint.goal for sprint in folded_plan.sprints] == ["Build everything"]
+    assert [sprint.goal for sprint in folded_plan.sprints] == [
+        "Build everything; then Write the documentation."
+    ]
     assert folded_plan.sprints[0].in_scope == ["Build it", "Write the README"]
 
 
@@ -146,7 +151,10 @@ def test_several_are_folded_until_every_sprint_delivers() -> None:
     folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
 
     assert len(folded) == 3 and len(folded_plan.sprints) == 1
-    assert folded_plan.sprints[0].goal == "Finalize polish"
+    assert folded_plan.sprints[0].goal == (
+        "Establish the project foundation; then Implement core logic and persistence; "
+        "then Build the UI layer; then Finalize polish."
+    )
     assert folded_plan.success_measure_coverage[0] == "1: Sprint 1"
 
 

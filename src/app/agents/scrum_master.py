@@ -212,9 +212,10 @@ def with_setup_folded_into_the_sprint_that_needs_it(
     10 things" - one minute in, on a plan worse than the one it replaced.
 
     Folding needs no second answer. The sprint's work goes to the front of the
-    next sprint - the last sprint's, to the end of the one before it - which
-    keeps its own goal and user value; the scope the folded sprint ruled out is
-    dropped, since it ruled out what its neighbour builds. Coverage lines and
+    next sprint - the last sprint's, to the end of the one before it - whose
+    goal becomes both goals in order and whose user value is kept; the scope
+    the folded sprint ruled out is dropped, since it ruled out what its
+    neighbour builds. Coverage lines and
     dependencies are renumbered to match. A plan in which every sprint
     delivers is returned as it came.
     """
@@ -239,6 +240,12 @@ def with_setup_folded_into_the_sprint_that_needs_it(
                 return merged
 
             merged_sprint = target.model_copy(update={
+                # Both goals, in the order the work is done: the sprint now
+                # builds what both set out to, and a goal naming half of that
+                # is what its review would hold it to.
+                "goal": "; then ".join(
+                    part.strip().rstrip(".") for part in (first.goal, second.goal) if part.strip()
+                ) + ".",
                 "in_scope": both("in_scope"),
                 "acceptance_criteria": both("acceptance_criteria"),
                 "test_strategy": both("test_strategy"),

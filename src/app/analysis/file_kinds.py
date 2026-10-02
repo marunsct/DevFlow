@@ -76,6 +76,15 @@ _TEST = re.compile(
 _CONFIG = re.compile(
     r"(^|[./])(jest|vite|vitest|webpack|babel|rollup|esbuild|eslint|prettier"
     r"|cypress|karma|tailwind|playwright|nodemon|tsup)\.config\."
+    # A runner's setup and teardown files: loaded by the runner before the
+    # suite, never by the product. One run's testing work order was refused
+    # `jest.setup.js` seven times as "product code", while its runner's config
+    # pointed at a setup file nobody was allowed to write.
+    # Any case: `jestSetup.js` and `setupTests.ts` are as common as the dotted
+    # forms.
+    r"|(?i:(^|[./])(jest|vite|vitest|mocha|karma|cypress|playwright|ava|jasmine)"
+    r"[._-]?(global[._-]?)?(setup|teardown)[^/]*\.[cm]?[jt]sx?$)"
+    r"|(?i:(^|/)(setup[._-]?tests?|tests?[._-]?setup|global[._-]?(setup|teardown))\.[cm]?[jt]sx?$)"
     r"|(^|/)(tsconfig|jsconfig)[^/]*\.json$"
     r"|(^|/)\.[^/]*rc(\.[a-z]+)?$"
     r"|(^|/)(setup|conftest)\.py$"

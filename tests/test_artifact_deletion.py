@@ -298,7 +298,7 @@ def test_a_test_file_cannot_be_deleted(repo_root: Path) -> None:
     them as "temporary helper scripts", leaving only the suite that tested a
     copy of the code.
     """
-    (repo_root / "project/test-contract.js").write_text("// suite\n", encoding="utf-8")
+    (repo_root / "project/test-contract.js").write_text("test('adds', () => { assert.ok(add()); });\n", encoding="utf-8")
 
     with pytest.raises(RepositoryToolError, match="tests are part of what this run delivers"):
         delete_approved_artifact(repo_root, "project/test-contract.js")
@@ -308,7 +308,7 @@ def test_a_test_file_cannot_be_deleted(repo_root: Path) -> None:
 
 def test_the_refusal_says_what_to_do_instead(repo_root: Path) -> None:
     """A refusal a model cannot act on just moves the problem."""
-    (repo_root / "project/a.test.js").write_text("// suite\n", encoding="utf-8")
+    (repo_root / "project/a.test.js").write_text("test('adds', () => { assert.ok(add()); });\n", encoding="utf-8")
 
     with pytest.raises(RepositoryToolError) as caught:
         delete_approved_artifact(repo_root, "project/a.test.js")
@@ -414,7 +414,7 @@ def test_the_test_refusal_names_the_two_steps_that_work(tmp_path):
 
     (tmp_path / "todo-app").mkdir()
     (tmp_path / PROJECT_MARKER).write_text("todo-app\n", encoding="utf-8")
-    (tmp_path / "todo-app/debug.test.mjs").write_text("probe\n", encoding="utf-8")
+    (tmp_path / "todo-app/debug.test.mjs").write_text("test('adds', () => { assert.ok(add()); });\n", encoding="utf-8")
 
     with pytest.raises(Exception) as refusal:
         delete_approved_artifact(str(tmp_path), "todo-app/debug.test.mjs")
@@ -457,7 +457,7 @@ def test_a_real_test_is_still_protected(tmp_path):
 
     (tmp_path / "todo-app").mkdir()
     (tmp_path / PROJECT_MARKER).write_text("todo-app\n", encoding="utf-8")
-    (tmp_path / "todo-app/app.test.mjs").write_text("real tests\n", encoding="utf-8")
+    (tmp_path / "todo-app/app.test.mjs").write_text("test('adds', () => { assert.ok(add()); });\n", encoding="utf-8")
 
     with pytest.raises(Exception):
         delete_approved_artifact(str(tmp_path), "todo-app/app.test.mjs")

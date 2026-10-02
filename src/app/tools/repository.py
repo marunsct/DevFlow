@@ -5449,6 +5449,21 @@ def _the_plan_says_to_delete(root: Path, shown: str) -> bool:
     return False
 
 
+def _is_a_probe_with_a_test_s_name(target: Path) -> bool:
+    """Whether a file named like a test holds no test at all, so is clutter.
+
+    Reached only for a file this stage created or nobody recorded: another
+    stage's is refused before this. See `test_discovery.holds_no_test`. A file
+    that cannot be read is treated as a test - the safe side for a delete.
+    """
+    try:
+        from app.analysis.test_discovery import holds_no_test
+
+        return target.is_file() and holds_no_test(target.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - when in doubt it is a test, and stays
+        return False
+
+
 def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:
     """Whether `target` is a package manifest at the top of the pinned project.
 
@@ -5546,7 +5561,7 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
     written_by = "" if planned else _another_stage_s_test(root, shown)
     if written_by:
         raise RepositoryToolError(_ANOTHER_STAGE_S_TEST.format(shown=shown, stage=written_by))
-    if looks_like_a_test(shown) and not planned:
+    if looks_like_a_test(shown) and not planned and not _is_a_probe_with_a_test_s_name(target):
         # The refusal has to name the way out, or an agent that genuinely wrote
         # a throwaway probe has nowhere to go. One run's
         # `specialist_testing_1` wrote `todo-app/debug.test.mjs`, ran it, then

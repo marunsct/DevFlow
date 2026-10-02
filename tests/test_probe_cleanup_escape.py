@@ -52,7 +52,9 @@ def test_the_destination_is_not_protected_by_the_same_rule(original: str) -> Non
 def test_both_steps_of_the_escape_run(tmp_path: Path, original: str) -> None:
     write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
     (tmp_path / original).parent.mkdir(parents=True, exist_ok=True)
-    (tmp_path / original).write_text("// probe\n", encoding="utf-8")
+    # A probe that asserts: one that registers no test and asserts nothing is
+    # deleted outright (`test_a_probe_named_like_a_test_can_be_removed`).
+    (tmp_path / original).write_text("test('probe', () => { expect(1).toBe(1); });\n", encoding="utf-8")
 
     with pytest.raises(RepositoryToolError) as caught:
         delete_approved_artifact(tmp_path, original)
@@ -71,7 +73,7 @@ def test_both_steps_of_the_escape_run(tmp_path: Path, original: str) -> None:
 def test_a_real_suite_is_still_protected(tmp_path: Path) -> None:
     """The reason the rule exists. One run deleted three passing suites."""
     write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
-    write_approved_artifact(tmp_path, "proj/app.test.mjs", "// 27 assertions\n")
+    write_approved_artifact(tmp_path, "proj/app.test.mjs", "import assert from 'node:assert';\nassert.ok(true);\n")
 
     with pytest.raises(RepositoryToolError):
         delete_approved_artifact(tmp_path, "proj/app.test.mjs")

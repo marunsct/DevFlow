@@ -439,6 +439,7 @@ __all__ = [
     "a_test_that_needs_a_dom",
     "a_suite_that_asserts_only_constants",
     "a_suite_that_only_checks_things_exist",
+    "holds_no_test",
     "tests_nothing_of_the_project",
     "tests_the_runner_will_never_call",
     "undiscoverable_test",
@@ -469,6 +470,36 @@ _A_TEST_CASE = re.compile(
     r"""(?<![\w.$])(?:test|it)\s*(?:\.\w+\s*)?\(\s*['"`]([^'"`]{0,120})['"`]""",
     re.MULTILINE,
 )
+
+
+#: A test declared the way a runner outside JavaScript finds it.
+_A_TEST_DECLARED_ELSEWHERE = re.compile(
+    r"""^\s*(?:async\s+)?def\s+test\w*\s*\("""
+    r"""|^\s*func\s+Test\w*\s*\("""
+    r"""|^\s*#\[(?:\w+::)?test\]"""
+    r"""|^\s*@(?:Test|ParameterizedTest|pytest\.\w+)\b"""
+    r"""|(?<![\w.$])(?:describe|context|suite)\s*(?:\.\w+\s*)?\(""",
+    re.MULTILINE,
+)
+
+
+def holds_no_test(content: str) -> bool:
+    """Whether a file with a test's name registers no test and asserts nothing.
+
+    A script that imports the product and prints what it finds is a probe,
+    whatever it is called. One run's fix stage wrote `test_load.js` and
+    `test_run.js` - each a few lines ending in `console.log` - and could not
+    remove them afterwards, because the name is one a runner collects.
+
+    True only when nothing in it could be a test: no registered case in any
+    spelling this module knows, and no assertion. Anything else is evidence,
+    and stays.
+    """
+    return not (
+        _A_TEST_CASE.search(content)
+        or _A_TEST_DECLARED_ELSEWHERE.search(content)
+        or _AN_ASSERTION.search(content)
+    )
 
 
 def a_test_that_asserts_nothing(relative_path: str, content: str) -> str | None:

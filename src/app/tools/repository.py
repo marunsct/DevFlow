@@ -2062,17 +2062,35 @@ def _written_as_a_diff(content: str, original: str) -> str:
     never stop one that would have worked. It names markers only on lines whose
     marked text is in the file already, or when both `+` and `-` lines appear:
     a lone `- item` in a list is not a diff.
+
+    Or when every marker is a `+` and the lines around them are the file's own.
+    That is a patch which only adds - context lines kept, new lines marked - and
+    it was the shape neither rule above saw: one run's fix stage sent
+    `on(event, callback) {` and two more lines from the file, then
+    `+        callback({ ...this.state });`, was told "Unexpected token" three
+    times, and returned saying it could not do the task.
     """
     held = {line.strip() for line in original.splitlines() if line.strip()}
     marked = []
+    unmarked = []
     for number, line in enumerate(content.splitlines(), 1):
         found = _A_DIFF_LINE.match(line)
         if found:
             marked.append((number, found.group(1), found.group(2).strip()))
+        elif line.strip():
+            unmarked.append(line.strip())
     if not marked:
         return ""
-    both = {sign for _, sign, _ in marked} == {"+", "-"}
-    if not both and not any(text in held for _, _, text in marked):
+    signs = {sign for _, sign, _ in marked}
+    both = signs == {"+", "-"}
+    additions_among_the_file_s_own_lines = signs == {"+"} and any(
+        text in held for text in unmarked
+    )
+    if (
+        not both
+        and not additions_among_the_file_s_own_lines
+        and not any(text in held for _, _, text in marked)
+    ):
         return ""
     number, sign, _ = marked[0]
     return (

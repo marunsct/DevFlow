@@ -58,3 +58,26 @@ def test_a_decrement_is_not_a_marker() -> None:
 
 def test_both_markers_together_are_a_diff_wherever_the_text_is() -> None:
     assert "diff marker" in _written_as_a_diff("-a new line\n+another new line", STORAGE)
+
+
+def test_additions_marked_among_the_file_s_own_lines_are_a_diff() -> None:
+    """A patch that only adds: context lines kept as they are, new lines marked.
+
+    One run's fix stage sent this shape three times, was told "Unexpected
+    token" each time, and returned saying it could not do the task.
+    """
+    content = (
+        "  return parsed.map(t => ({\n"
+        "    id: String(t.id || ''),\n"
+        "+    completed: Boolean(t.completed),\n"
+        "    title: String(t.title || ''),"
+    )
+
+    note = _written_as_a_diff(content, STORAGE)
+
+    assert "Line 3 of your `content` begins with '+'" in note
+
+
+def test_a_leading_plus_among_new_lines_only_is_not_a_diff() -> None:
+    """Nothing here is the file's: there is no context to call it a patch by."""
+    assert _written_as_a_diff("const total = first\n+ second;", STORAGE) == ""

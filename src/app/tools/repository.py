@@ -5784,7 +5784,7 @@ def _the_plan_gave_it_to(root: Path, shown: str) -> str:
     return str(table.get(shown) or "") if isinstance(table, dict) else ""
 
 
-def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
+def _somewhere_this_rule_will_let_go_of(shown: str, root: Path | None = None) -> str:
     """A path for the same file that `looks_like_a_test` will not protect.
 
     The escape offered by the delete refusal has to actually work. It used to
@@ -5804,7 +5804,12 @@ def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
     climbs out of the test directory when the rename alone is not enough.
     """
     candidate = shown.replace(".test.", ".").replace(".spec.", ".")
-    if candidate == shown:
+    # Never a name something already has. Taking `.test.` out of `data.test.js`
+    # gives `data.js` - the module it tests, in the commonest layout there is -
+    # and one run's stage was told to move its test there and then delete
+    # "that". It did not; the advice was to overwrite the product and remove it.
+    taken = root is not None and (root / candidate).exists()
+    if candidate == shown or taken:
         candidate = f"{shown}.probe"
     if not looks_like_a_test(candidate):
         return candidate
@@ -5817,7 +5822,10 @@ def _somewhere_this_rule_will_let_go_of(shown: str) -> str:
         if part.lower() not in {"test", "tests", "__tests__", "e2e", "spec", "cypress"}
     ]
     name = parts[-1] if parts[-1].endswith(".probe") else f"{parts[-1]}.probe"
-    return "/".join([*kept, name])
+    climbed = "/".join([*kept, name])
+    if root is not None and (root / climbed).exists():
+        climbed = f"{climbed}.probe"
+    return climbed
 
 
 #: A sentence that asks for a file to go.
@@ -6049,7 +6057,7 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         #
         # The two steps below are verified: `move_artifact` accepts a test name
         # as its source, and `delete_artifact` accepts the renamed file.
-        suggestion = _somewhere_this_rule_will_let_go_of(shown)
+        suggestion = _somewhere_this_rule_will_let_go_of(shown, root)
         raise RepositoryToolError(
             f"'{shown}' is a test, and tests are part of what this run delivers - "
             "the reviewer reads them as the evidence the product works. Leave it. "

@@ -79,3 +79,28 @@ def test_a_real_suite_is_still_protected(tmp_path: Path) -> None:
         delete_approved_artifact(tmp_path, "proj/app.test.mjs")
 
     assert (tmp_path / "proj" / "app.test.mjs").exists()
+
+
+def test_the_destination_is_never_a_file_that_is_already_there(tmp_path: Path) -> None:
+    """A test beside the module it tests - `data.test.js` and `data.js` - is the
+    commonest layout there is, and taking `.test.` out of the first names the
+    second. One run's stage was told to move its test onto the product's own
+    module and then delete it."""
+    write_approved_artifact(tmp_path, "proj/package.json", '{"name": "proj"}')
+    write_approved_artifact(tmp_path, "proj/src/data.js", "export const tasks = [];\n")
+    write_approved_artifact(
+        tmp_path, "proj/src/data.test.js", "test('probe', () => { expect(1).toBe(1); });\n"
+    )
+
+    with pytest.raises(RepositoryToolError) as caught:
+        delete_approved_artifact(tmp_path, "proj/src/data.test.js")
+
+    destination = _somewhere_this_rule_will_let_go_of("proj/src/data.test.js", tmp_path)
+    assert destination == "proj/src/data.test.js.probe"
+    assert f"'{destination}'" in str(caught.value)
+    assert "to 'proj/src/data.js'" not in str(caught.value)
+
+    # And the escape still works, with the product untouched by it.
+    move_approved_artifact(tmp_path, "proj/src/data.test.js", destination)
+    delete_approved_artifact(tmp_path, destination)
+    assert (tmp_path / "proj" / "src" / "data.js").read_text(encoding="utf-8") == "export const tasks = [];\n"

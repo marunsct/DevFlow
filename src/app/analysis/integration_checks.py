@@ -3930,6 +3930,99 @@ def _unit_tests_split_between_runners(files: list[Path], root: Path, stack: Any)
     ]
 
 
+#: A test that drives a real browser, by what it imports.
+_IMPORTS_A_BROWSER_DRIVER = re.compile(
+    r"""(?:from|require\()\s*['"](@playwright/test|playwright|playwright-core|puppeteer"""
+    r"""|puppeteer-core|selenium-webdriver|webdriverio|cypress)['"]""",
+    re.I,
+)
+
+#: A page address built from a path on disk.
+_OPENS_A_FILE = re.compile(r"""file://|pathToFileURL\s*\(|import\.meta\.url[^\n]{0,80}\.html|\.html[^\n]{0,80}import\.meta\.url""")
+
+#: A script the page loads as a module: one with a `src`, or inline with an import.
+_A_MODULE_SCRIPT = re.compile(
+    r"""<script\b[^>]*\btype\s*=\s*["']?module["']?[^>]*>(.*?)</script\s*>""", re.I | re.S
+)
+
+#: The address a runner's configuration says the product is served at.
+_A_BASE_URL = re.compile(r"""\bbaseURL\s*:\s*['"`]([^'"`]+)['"`]""")
+
+
+def _a_browser_test_that_opens_a_module_page_from_disk(files: list[Path], root: Path) -> list[str]:
+    """A browser test that opens `file://` on a page whose code is ES modules.
+
+    A browser does not run module scripts from a page opened off the disk: a
+    module is fetched under the rules for cross-origin requests, and `file://`
+    has no origin to satisfy them. The page loads, its markup is there, and
+    none of its code runs - so nothing a test waits for ever appears, and every
+    case ends in a timeout that says only what it was waiting for.
+
+    Measured on one run. Its spec opened `'file://' + process.cwd() +
+    '/index.html'`; the page was `<script type="module">` importing three
+    components. Three test rounds reported three defects - a selector that
+    could not reach inside a custom element, a timeout "loading components
+    from local file URL", a missing input - each a guess at a symptom, and the
+    sprint was planned again with the spec unchanged. The runner's own
+    configuration already started a server and named its address; the test
+    did not use it.
+
+    Both halves are read off the files: the address the test opens, and how
+    the page loads its code. A page of plain scripts opens from disk perfectly
+    well and is left alone.
+    """
+    pages = []
+    for path in files:
+        if path.suffix.lower() not in {".html", ".htm"} or "node_modules" in path.parts:
+            continue
+        for block in _A_MODULE_SCRIPT.finditer(_read(path)):
+            opening = block.group(0)[: block.group(0).find(">") + 1]
+            if re.search(r"\bsrc\s*=", opening, re.I) or re.search(r"\bimport\b", block.group(1)):
+                pages.append(path)
+                break
+    if not pages:
+        return []
+
+    problems: list[str] = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        if "node_modules" in path.parts or not is_test(relative):
+            continue
+        text = _read(path)
+        if not _IMPORTS_A_BROWSER_DRIVER.search(text):
+            continue
+        opened = _OPENS_A_FILE.search(text)
+        if not opened:
+            continue
+        line = text.count("\n", 0, opened.start()) + 1
+        nearby = [page for page in pages if _is_within(path, page.parent) or _is_within(page, path.parent.parent)]
+        page = (nearby or pages)[0]
+        served = ""
+        for other in files:
+            if "config" not in other.name.lower() or "node_modules" in other.parts:
+                continue
+            address = _A_BASE_URL.search(_read(other))
+            if address:
+                served = (
+                    f" {other.relative_to(root)} already names where the product is served - "
+                    f"`baseURL: '{address.group(1)}'` - so open that: a path such as `'/'` "
+                    "in place of the `file://` address."
+                )
+                break
+        problems.append(
+            f"{relative} opens the page from disk (line {line}: a `file://` address), and "
+            f"{page.relative_to(root)} loads its code with `<script type=\"module\">`. A "
+            "browser does not run module scripts from a page opened off the disk, so the "
+            "page appears and none of its code runs: every element the test waits for is "
+            "missing and each case times out. Nothing is wrong with the selectors or with "
+            "the product - the test has to open the page over HTTP." + (
+                served or " Have the test runner start a static server for the project "
+                "directory in its configuration, and open that address."
+            )
+        )
+    return problems
+
+
 #: Source files a cross-file pass will parse, at most. The parse is exact and
 #: costs a process for some languages; a product larger than this has a build
 #: that would say the same thing.
@@ -5754,6 +5847,7 @@ _FLOORS: dict[str, str] = {
     "source files against the parser of the language they are written in": "BREAKS",
     "each test runner's files against what the other runners also collect": "BREAKS",
     "the runners a project's unit tests are written for": "BREAKS",
+    "the address a browser test opens against how the page loads its code": "BREAKS",
 }
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
@@ -5799,6 +5893,9 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
     ("source files against the parser of the language they are written in",
      lambda files, root, stack, brief: _a_source_file_that_does_not_parse(files, root)),
+    ("the address a browser test opens against how the page loads its code",
+     lambda files, root, stack, brief: _a_browser_test_that_opens_a_module_page_from_disk(
+         files, root)),
     ("each test runner's files against what the other runners also collect",
      lambda files, root, stack, brief: _a_test_file_a_second_runner_collects(files, root)),
     ("the runners a project's unit tests are written for",

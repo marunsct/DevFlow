@@ -75,6 +75,9 @@ def test_the_second_request_names_the_sprint_and_what_to_do_with_it() -> None:
 
     assert "Sprint 1: Set up project structure and initial render" in section
     assert "fold that work into the first sprint that needs it" in section
+    # A sprint that is not setup but builds half of what another finishes -
+    # one run's "Add the task creation form" - is told what to do as well.
+    assert "merge them" in section
     assert "fewer sprints" in section
     # And it is not also listed as an unassigned measure.
     assert "LEFT THESE UNASSIGNED" not in section

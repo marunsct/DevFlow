@@ -253,11 +253,12 @@ def _the_success_measures(measures: list[str], gaps: list[Any]) -> str:
             "\nYOUR LAST PLAN HAD SPRINTS THAT DELIVER NONE OF THE MEASURES ABOVE - your own "
             "coverage lines assign nothing to them:\n"
             f"{named}\n"
-            "A sprint like that ends with nothing a user can do and nothing the product "
-            "is judged against, and it still costs a full build, test round and review. "
-            "Setup is not a sprint: fold that work into the first sprint that needs it, "
-            "so every sprint delivers at least one measure, and return the complete plan "
-            "again with fewer sprints.\n"
+            "Every sprint costs a full build, test round and review, so every sprint must "
+            "deliver at least one measure. If such a sprint is setup - structure, tooling, "
+            "a skeleton - it is not a sprint: fold that work into the first sprint that "
+            "needs it. If it builds part of a measure another sprint finishes, the two "
+            "are one sprint: merge them. Return the complete plan again with fewer "
+            "sprints, and a coverage line for every measure.\n"
         )
     if gaps:
         lines = []

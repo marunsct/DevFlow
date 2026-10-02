@@ -2101,6 +2101,81 @@ def _written_as_a_diff(content: str, original: str) -> str:
     )
 
 
+#: Lines outside a range that its `content` may be found to repeat, each side.
+MOST_OVERLAPPING_LINES = 6
+
+
+def _the_range_its_content_overlaps(
+    target: Path, lines: list[str], start_line: int, last: int, content: str, relative_path: str
+) -> tuple[int, int, str] | None:
+    """The wider range a refused `content` was written for, and the file it gives.
+
+    A `replace_lines` whose `content` opens or closes with the lines just
+    outside its range - the function's header above it, the closing brace
+    below - writes those lines twice. Measured on one run: 24 edits refused
+    for breaking the file they changed, most of them this, each told the
+    brackets did not balance and several sent again unchanged. One sent four
+    lines ending `transform: {},` and `};` for a range that stopped one line
+    short of the `transform: {},` and `};` already there.
+
+    Asked only of an edit already refused for breaking the file, and answered
+    only when the widened edit parses, so it can never change an edit that
+    would have worked, nor apply one that leaves the file broken. Lines are
+    compared ignoring indentation, and a run of blank lines alone is not an
+    overlap. Returns `(start, last, updated)` or None.
+    """
+    sent = content.splitlines()
+    if len(sent) < 2:
+        return None
+
+    def same(ours: list[str], theirs: list[str]) -> bool:
+        ours = [line.strip() for line in ours]
+        return ours == [line.strip() for line in theirs] and any(ours)
+
+    below = [
+        k for k in range(1, min(MOST_OVERLAPPING_LINES, len(sent) - 1, len(lines) - last) + 1)
+        if same(sent[-k:], lines[last:last + k])
+    ]
+    above = [
+        k for k in range(1, min(MOST_OVERLAPPING_LINES, len(sent) - 1, start_line - 1) + 1)
+        if same(sent[:k], lines[start_line - 1 - k:start_line - 1])
+    ]
+    # The longest overlap first, one side before both: the least widening that
+    # yields a file the parser accepts.
+    candidates = (
+        [(0, k) for k in reversed(below)]
+        + [(k, 0) for k in reversed(above)]
+        + [(up, down) for up in reversed(above) for down in reversed(below)]
+    )
+    for up, down in candidates:
+        if up + down >= len(sent):
+            continue
+        new_start, new_last = start_line - up, last + down
+        body = content
+        if body and not body.endswith("\n") and "".join(lines[new_start - 1:new_last]).endswith("\n"):
+            body += "\n"
+        updated = "".join(lines[:new_start - 1]) + body + "".join(lines[new_last:])
+        try:
+            _refuse_if_broken(relative_path, updated, editing=True)
+            _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
+        except RepositoryToolError:
+            continue
+        return new_start, new_last, updated
+    return None
+
+
+def _the_overlap_in_words(above: int, below: int) -> str:
+    def count(n: int) -> str:
+        return f"{n} line{'s' if n != 1 else ''}"
+
+    parts = []
+    if above:
+        parts.append(f"opens with the {count(above)} just above that range")
+    if below:
+        parts.append(f"ends with the {count(below)} just below it")
+    return " and ".join(parts)
+
+
 def _what_the_range_held(
     lines: list[str], start: int, last: int, expect_start: str, content: str = ""
 ) -> str:
@@ -2314,6 +2389,24 @@ def replace_approved_lines(
             # changes nothing, or undoes a recent one, is not about the range.
             if "parse" not in str(exc).lower():
                 raise
+            wider = _the_range_its_content_overlaps(
+                target, lines, start_line, last, content, relative_path
+            )
+            if wider is not None:
+                new_start, new_last, updated = wider
+                _write_unless_it_changes_nothing(target, original, updated, relative_path)
+                note = (
+                    f"Replaced lines {new_start}-{new_last} of {total}, not "
+                    f"{start_line}-{last}: your `content` "
+                    + _the_overlap_in_words(start_line - new_start, new_last - last)
+                    + ", so replacing only the range you gave would have "
+                    "written those lines twice and left the file unparseable. "
+                    f"The file now has {len(updated.splitlines())} lines." + shifted_note
+                )
+                return _edited(
+                    target, root, relative_path, content, note,
+                    "".join(lines[new_start - 1:new_last]),
+                )
             raise RepositoryToolError(
                 f"{exc}{_written_as_a_diff(content, original)}"
                 f"{_what_the_range_held(lines, start_line, last, expect_start, content)}"

@@ -1359,9 +1359,12 @@ def build_settled_answer_middleware(
                 if not the_server_refused_the_request(error):
                     raise
                 logger.warning(
-                    "Stage %s: the model server refused `reasoning_effort` (%s); "
-                    "asking again with the chat-template switch alone",
-                    stage_name or "?", type(error).__name__,
+                    "Stage %s: the model server refused the request with "
+                    "`reasoning_effort` in it (%s: %s); asking again with the "
+                    "chat-template switch alone",
+                    # What the server said, because a 400 is not always about
+                    # the field: one arrived five minutes into a generation.
+                    stage_name or "?", type(error).__name__, " ".join(str(error).split())[:300],
                 )
                 return handler(refused_fallback)
 

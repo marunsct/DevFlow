@@ -436,6 +436,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # fresh one and then cleared. See `app.agents.carry_over`.
     stage_carry_over: dict[str, str]
     milestone_revision_count: int
+    # How often this sprint was planned again because its tests could not be
+    # made to pass. Counted apart from `milestone_revision_count`, which is the
+    # milestone review's: see `_replan_or_escalate`.
+    sprint_replan_count: int
     sprint_plan: SprintPlanOutput
     # Success measures a sprint plan left unassigned or only partly delivered,
     # as {"measure": n, "missing": [items]}, carried into the one re-plan that
@@ -3584,6 +3588,70 @@ def _findings_the_dependency_check_contradicts(review: Any, state: Any) -> Any:
         return review
 
 
+def _findings_about_a_server_only_the_tests_start(review: Any, repo_root: str) -> Any:
+    """`review` with each gating finding about a test runner's own server made minor.
+
+    The pipeline asks for that server: a product with a page is tested in a
+    browser, the browser needs the page served, and the test runner's
+    configuration starts something to serve it. It ships to nobody and stops
+    when the suite ends - `integration_checks._servers_started_by_a_test_runner`
+    already keeps it from being read as a product server.
+
+    Measured on one run. A fix stage wrote `serve.js` because the browser suite
+    had nothing to start; the security review found, correctly, that it joined
+    the request path to its root without checking it, and the milestone review
+    made that blocking on the last revision allowed. The brief was a static
+    page with no server at all.
+
+    Kept, with what the file is: a traversal in a file server is worth fixing.
+    It is not a reason to send back a sprint whose product has no server.
+    Only when every file the finding names is one a test runner starts.
+    """
+    try:
+        from pathlib import Path as _Path
+
+        from app.analysis.integration_checks import (
+            _servers_started_by_a_test_runner,
+            _source_files,
+            files_named_in,
+        )
+
+        root = _Path(repo_root).resolve()
+        files = _source_files(root)
+        started = {path.name for path in _servers_started_by_a_test_runner(files, root)}
+        if not started:
+            return review
+        findings = []
+        moved = 0
+        for finding in getattr(review, "findings", None) or []:
+            named = files_named_in(getattr(finding, "description", ""))
+            if (
+                _severity_gates(getattr(finding, "severity", ""))
+                and named and named <= started
+            ):
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        f"{', '.join(sorted(named))} is started by the test runner's own "
+                        "configuration to serve the page to the browser suite; it is not "
+                        "part of the product and does not ship. Worth fixing, and not a "
+                        f"reason to send the sprint back: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning(
+            "Milestone review raised %d gating finding(s) about a server only the test "
+            "runner starts; recorded as minor",
+            moved,
+        )
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
 def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     """What the brief asked for that the product still does not do, or "".
 
@@ -5151,8 +5219,17 @@ def build_workflow_graph(
         past it the run escalates to a human carrying the defect report - which
         is what it did before the feature, at the first failure instead of the
         last.
+
+        The same limit, and a count of its own. It used to add to
+        `milestone_revision_count`, the milestone review's, so a sprint whose
+        tests took one re-plan reached its review with a revision already
+        spent. Measured on one run: one re-plan, then two reviews - the first
+        blocked on a `require` in an ES module, which was fixed; the second
+        raised four findings, none of them the first's - and the run ended
+        "after 3 revisions", ten minutes in, on the first review whose findings
+        nobody had been given a chance to fix.
         """
-        revision_count = state.get("milestone_revision_count", 0) + 1
+        revision_count = state.get("sprint_replan_count", 0) + 1
         # The sprint as this round leaves it, not as it entered it. `state`
         # still holds the cycle from before the round just recorded, so a
         # summary written from it left out the round that ended the sprint and
@@ -5196,7 +5273,7 @@ def build_workflow_graph(
             milestone_plan=None,
             specialist_outputs={},
             defect_cursor=0,
-            milestone_revision_count=revision_count,
+            sprint_replan_count=revision_count,
         )
 
     def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
@@ -5425,9 +5502,12 @@ def build_workflow_graph(
             
         review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
             _findings_the_command_record_contradicts(
-                _findings_the_dependency_check_contradicts(
-                    _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
-                    state,
+                _findings_about_a_server_only_the_tests_start(
+                    _findings_the_dependency_check_contradicts(
+                        _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+                        state,
+                    ),
+                    state["repository"].root_path,
                 ),
                 state["repository"].root_path,
             ),
@@ -5750,6 +5830,7 @@ def build_workflow_graph(
             "test_round": 0,
             "revision_comments": [],
             "milestone_revision_count": 0,
+            "sprint_replan_count": 0,
         }
 
     def complete_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
@@ -6012,7 +6093,7 @@ _REWIND_COUNTER_RESETS: dict[str, dict[str, int]] = {
         "architecture_revision_count": 0,
         "specification_repair_count": 0,
     },
-    "milestone_review": {"milestone_revision_count": 0},
+    "milestone_review": {"milestone_revision_count": 0, "sprint_replan_count": 0},
 }
 """Counters to clear when rewinding, so the retry gets a full budget again.
 

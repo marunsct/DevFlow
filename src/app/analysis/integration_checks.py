@@ -5011,6 +5011,35 @@ def _the_claim(finding: str) -> str:
     return re.sub(r'"[^"]*"|\u201c[^\u201d]*\u201d', " ", first)
 
 
+#: Words that say something is not there.
+_SAYS_IT_IS_ABSENT = re.compile(
+    r"\b(?:no|not|never|none|nothing|without|missing|lacks?|lacking|absent|unsupported"
+    r"|unimplemented|cannot|can't|unable)\b|n't\b",
+    re.I,
+)
+
+
+def _what_it_says_is_missing(finding: str) -> str:
+    """The clauses of a finding that say something is absent, or "" for none.
+
+    A finding about a missing action usually names the ones that are there
+    too. One run's read "The brief explicitly states that users must be able
+    to add, edit, and delete tasks. The current implementation only supports
+    adding and deleting; there is no UI or store logic for editing a task" -
+    three actions named, one complained of. Read whole, it was a finding about
+    adding and deleting, which the sprint builds, so it stayed blocking and
+    the run ended on a sprint that had done what it was planned to do; editing
+    was the next sprint's.
+
+    Before the remediation, which is advice and names things for its own
+    reasons. Quotations are dropped as `_the_claim` drops them.
+    """
+    text = re.sub(r'"[^"]*"|\u201c[^\u201d]*\u201d', " ", str(finding or ""))
+    text = re.split(r"\s->\s", text, maxsplit=1)[0]
+    clauses = re.split(r"(?<=[.!?])\s+|;\s+", text)
+    return " ".join(clause for clause in clauses if _SAYS_IT_IS_ABSENT.search(clause))
+
+
 def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> list[str]:
     """The actions a review finding is about, when they are later sprints' work; else [].
 
@@ -5030,7 +5059,7 @@ def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> 
     """
     if not (later_sprints or "").strip():
         return []
-    claim = _the_claim(finding)
+    claim = _what_it_says_is_missing(finding) or _the_claim(finding)
     claimed = [action for action in _SAME_ACTION if _names_the_action(claim, _own_spellings(action), inflected=True)]
     if not claimed:
         return []

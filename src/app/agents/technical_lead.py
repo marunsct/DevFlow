@@ -541,6 +541,57 @@ def _the_contracts(specification: Any) -> str:
     )
 
 
+#: Open defects of a failed attempt quoted to the lead, and how much of each.
+MOST_OPEN_DEFECTS_QUOTED = 8
+_MOST_DEFECT_CHARACTERS = 600
+
+
+def _what_the_last_attempt_left(attempt: Any) -> str:
+    """Why this sprint is being planned again, and what is still open, or "".
+
+    A sprint that exhausts its fix attempts goes back to the lead to be planned
+    again, and the request for that plan was the same one as the first time:
+    the sprint plan, the contracts, the files. Nothing said the sprint had been
+    tried, or what stopped it. Measured on one run: sprint 1 failed its tests
+    on one defect - an edit that never reached the browser's storage - and each
+    of its three re-plans was "run the existing test suite", by a lead that had
+    no way to know there was anything to fix. The same defect closed the run.
+
+    `attempt` is the sprint record's own entry for that attempt: its reason and
+    its defects with their status.
+    """
+    if not isinstance(attempt, dict):
+        return ""
+    reason = str(attempt.get("reason") or "").strip()
+    still_open = [
+        defect for defect in attempt.get("defects") or []
+        if isinstance(defect, dict) and str(defect.get("status") or "open") == "open"
+        and str(defect.get("description") or "").strip()
+    ]
+    if not reason and not still_open:
+        return ""
+    lines = [
+        "--- This sprint has already been attempted and was not accepted ---",
+        f"Attempt {attempt.get('number', '?')} ended: {reason or 'not accepted'}.",
+    ]
+    if still_open:
+        lines.append("Defects it left open:")
+        for defect in still_open[:MOST_OPEN_DEFECTS_QUOTED]:
+            text = " ".join(str(defect["description"]).split())[:_MOST_DEFECT_CHARACTERS]
+            lines.append(f"- [owner: {defect.get('owner') or 'unassigned'}] {text}")
+        if len(still_open) > MOST_OPEN_DEFECTS_QUOTED:
+            lines.append(f"- ... and {len(still_open) - MOST_OPEN_DEFECTS_QUOTED} more")
+    lines.append(
+        "What that attempt built is still in the workspace. This plan finishes the "
+        "sprint; it does not start it again. Give every defect above to a work order "
+        "that fixes it - in the product if the product is wrong, in the test if the "
+        "test asks for something the product was never meant to do - and say in that "
+        "work order which it is. A plan that only runs the suite again will fail on "
+        "the same defects."
+    )
+    return "\n".join(lines) + "\n\n"
+
+
 def build_milestone_planning_request(
     sprint_plan_text: str,
     selected_sprint_goal: str,
@@ -548,8 +599,12 @@ def build_milestone_planning_request(
     specification: Any = None,
     carried_forward: Any = (),
     lessons: Any = (),
+    last_attempt: Any = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for planning one milestone from the approved sprint plan.
+
+    `last_attempt` is this same sprint's previous attempt, when there was one
+    and it was not accepted: see `_what_the_last_attempt_left`.
 
     `carried_forward` is what earlier sprints left open - review findings that
     did not block, defects accepted rather than fixed - and each must be taken by
@@ -576,6 +631,7 @@ def build_milestone_planning_request(
             + "\nWrite the work orders so these do not happen again.\n\n"
             if learned else ""
         )
+        + _what_the_last_attempt_left(last_attempt)
         + f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"

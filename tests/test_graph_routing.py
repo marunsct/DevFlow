@@ -667,6 +667,11 @@ def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     # written from the cycle as it stood before that round, so it reported one
     # round and one defect fewer, and a sprint that "exhausted remediation
     # attempts" with nothing open.
+    # And the lead planning it again is told what stopped the attempt before.
+    second = agents.requests["technical_lead"][1]
+    replan = "\n".join(str(m.get("content", "")) for m in second["messages"])
+    assert "already been attempted and was not accepted" in replan
+    assert "Booking API returns 500" in replan
     cycle = state["remediation"]
     last = state["sprint_attempts"][-1]
     assert last["status"] == "Failed"

@@ -2778,6 +2778,22 @@ def _record_sprint_summary(
     return {"sprint_attempts": attempts}
 
 
+def _the_last_failed_attempt_at_this_sprint(state: Any) -> dict | None:
+    """The sprint record's entry for the current sprint's last attempt, when it
+    was not accepted; None on a first attempt or after an accepted one."""
+    try:
+        sprint_index = state.get("current_sprint_index", 0)
+        mine = [
+            entry for entry in (state.get("sprint_attempts") or [])
+            if isinstance(entry, dict) and entry.get("sprint_index") == sprint_index
+        ]
+        if not mine or mine[-1].get("status") == "Completed":
+            return None
+        return mine[-1]
+    except Exception:  # noqa: BLE001 - a plan without it beats no plan
+        return None
+
+
 def _sprint_already_summarised(state: WorkflowGraphState) -> bool:
     """Whether the current sprint already has a completed attempt recorded.
 
@@ -4210,6 +4226,7 @@ def build_workflow_graph(
                 specification=state.get("technical_specification"),
                 carried_forward=state.get("carried_forward") or [],
                 lessons=state.get("lessons") or [],
+                last_attempt=_the_last_failed_attempt_at_this_sprint(state),
             )
         # The previous answer was not ready to hand out: say exactly why, with
         # the plan it was, so this attempt fixes it rather than starting over.

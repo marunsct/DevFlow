@@ -2852,6 +2852,14 @@ def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any
         return None
 
 
+def _the_plan_assigns_nothing(unassigned: Any, measures: Any) -> bool:
+    """Whether a sprint plan left every one of the release's deliverables unassigned."""
+    try:
+        return bool(measures) and len(set(unassigned or ())) >= len(measures)
+    except TypeError:
+        return False
+
+
 def _clear_the_throwaways(repo_root: str) -> None:
     """See `repository.clear_the_throwaways_left_behind`. Never raises."""
     try:
@@ -4332,6 +4340,22 @@ def build_workflow_graph(
                     "Sprint plan left success measures %s unassigned; asking once more", missing
                 )
                 return _handing_on(stage="scrum_master", sprint_plan_gaps=missing)
+            if _the_plan_assigns_nothing(unassigned, measures):
+                # Not let through. A plan that leaves one measure out is judged
+                # by the milestone review; a plan that assigns none has no
+                # review that will ever look at the whole brief with a sprint
+                # still to come. One run continued on such a plan - a single
+                # foundation sprint - built it, and completed with a product
+                # that could add a task and do nothing else that was asked for.
+                return _handing_on(
+                    stage="failed",
+                    error=(
+                        f"The sprint plan assigns none of the {len(measures)} things the "
+                        "release must deliver to any sprint, after being asked once "
+                        "more. Building from it would deliver a product nothing was "
+                        "planned to complete. Resume to plan the sprints again."
+                    ),
+                )
             if missing:
                 logger.warning(
                     "Sprint plan still leaves success measures %s unassigned after one "

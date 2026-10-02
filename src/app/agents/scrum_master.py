@@ -17,7 +17,7 @@ from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
@@ -25,6 +25,11 @@ from app.agents.role_agent import create_role_agent
 
 _STAGE = "sprint_planning"
 _NAME = "scrum_master"
+
+
+#: A list entry that opens with a key the way JSON writes one: `name":` with
+#: the opening quote already consumed by the string it landed in.
+_A_KEY_INSIDE_A_STRING = re.compile(r'^\s*"?[A-Za-z_][A-Za-z0-9_]*"\s*:\s*["\[{]')
 
 
 class SprintDefinition(BaseModel):
@@ -43,6 +48,38 @@ class SprintDefinition(BaseModel):
     documentation_work: list[str] = Field(default_factory=list)
     risks: list[str] = Field(default_factory=list)
     rollback_notes: str = Field(default="", description="How to recover if this sprint's work needs to be reverted.")
+
+    @field_validator(
+        "in_scope", "out_of_scope", "dependencies", "acceptance_criteria",
+        "test_strategy", "security_checks", "documentation_work", "risks",
+    )
+    @classmethod
+    def _no_entry_is_the_rest_of_the_response(cls, value: list[str]) -> list[str]:
+        """Refuse a list whose entries are the response's own structure.
+
+        Measured on one run. The plan arrived as one sprint whose `in_scope`
+        held four strings: the sprint's work, then `out_of_scope":"Any UI
+        styling ...`, `dependencies_on_sprints":[]` and
+        `acceptance_criteria":[...]} ,{` - the rest of the JSON, later sprints
+        included, closed inside a string. It was a valid plan of one sprint
+        with no criteria and no success measure assigned to it; that sprint
+        was built, reviewed and accepted, and the run completed with a product
+        that could add a task and do nothing else the brief asks for.
+
+        A list entry that opens with a quoted key and a colon is not prose.
+        The message says what to do, because a validation error is what the
+        model sees when it tries again.
+        """
+        for entry in value or []:
+            if _A_KEY_INSIDE_A_STRING.match(str(entry)):
+                raise ValueError(
+                    f"an entry begins `{str(entry)[:60]}` - that is a field of this "
+                    "response written inside a string, so everything after it, the "
+                    "later sprints included, was lost. Return every field as its own "
+                    "key and every sprint as its own object in `sprints`; a list "
+                    "entry is one short sentence of prose."
+                )
+        return value
 
 
 class SprintPlanOutput(BaseModel):

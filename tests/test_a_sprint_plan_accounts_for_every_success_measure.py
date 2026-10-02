@@ -271,13 +271,29 @@ class TestTheWorkflow:
 
     def test_a_second_omission_is_not_looped_on(self, agents: ScriptedAgents, tmp_path: Any) -> None:
         """The milestone review is still behind it; planning forever is not."""
-        _script(agents, _one_sprint([]), _one_sprint([]))
+        _script(agents, _one_sprint(COMPLETE[1:]), _one_sprint(COMPLETE[1:]))
 
         state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-twice")
 
         assert len(agents.requests["scrum_master"]) == 2
         assert state["stage"] == "complete", state.get("error")
         assert not state.get("sprint_plan_gaps")
+
+    def test_a_plan_that_twice_assigns_nothing_is_not_built_from(
+        self, agents: ScriptedAgents, tmp_path: Any
+    ) -> None:
+        """One measure left out is the milestone review's to judge. A plan that
+        assigns none has no review that will look at the whole brief with a
+        sprint still to come: one run continued on such a plan, built its one
+        foundation sprint, and completed with a product that could only add a
+        task."""
+        _script(agents, _one_sprint([]), _one_sprint([]))
+
+        state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-nothing")
+
+        assert len(agents.requests["scrum_master"]) == 2
+        assert state["stage"] == "failed"
+        assert "assigns none of the" in state["error"]
 
     def test_a_plan_that_claims_a_measure_it_only_half_delivers_is_asked_again(
         self, agents: ScriptedAgents, tmp_path: Any

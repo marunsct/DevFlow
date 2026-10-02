@@ -375,6 +375,99 @@ def _a_delegated_handler_for_an_event_that_does_not_bubble(
     return problems
 
 
+_AN_EXPORTED_NAME = re.compile(
+    r"^\s*export\s+(?:async\s+)?(?:function\*?|const|let|var|class)\s+([A-Za-z_$][\w$]*)", re.M
+)
+_AN_EXPORT_LIST = re.compile(r"^\s*export\s*\{([^}]*)\}", re.M)
+
+
+def _exported_names(text: str) -> list[str]:
+    names = list(_AN_EXPORTED_NAME.findall(text))
+    for listed in _AN_EXPORT_LIST.findall(text):
+        for item in listed.split(","):
+            name = item.strip().split(" as ")[-1].strip()
+            if re.fullmatch(r"[A-Za-z_$][\w$]*", name) and name != "default":
+                names.append(name)
+    return list(dict.fromkeys(names))
+
+
+def _a_required_action_only_unreached_code_performs(
+    files: list[Path], root: Path, brief: str = ""
+) -> list[str]:
+    """A required action whose only code is an export nothing in the product uses.
+
+    `_a_required_action_nothing_implements` asks whether the product names the
+    action anywhere, and a function nobody calls names it. Measured on one
+    completed run: the brief says users can add, edit and delete tasks and
+    filter them. `src/business.js` exported `editTask`, `deleteTask`,
+    `toggleTask` and `filterTasks`, each unit tested; `app.js`, the one script
+    the page loads, imported `addTask` and nothing else. The page had a form
+    and a list. Twelve of twelve tests passed, the cross-file checks were
+    silent, and the last review accepted a product in which a task can only be
+    added.
+
+    Reported for an action the brief or the run's documents require, when
+    every export that names it is used by no other product file and no other
+    product script names the action either. Silent when there is no page: a
+    library's exports are its product.
+    """
+    if not any(path.suffix.lower() in {".html", ".htm"} for path in files):
+        return []
+    required = {**_actions_the_brief_requires(brief), **_actions_the_documents_require(root)}
+    if not required:
+        return []
+
+    scripts: dict[str, str] = {}
+    inline: list[str] = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        if is_test(relative) or any(part in _SKIP for part in path.parts):
+            continue
+        suffix = path.suffix.lower()
+        if suffix in _CLIENT_LOGIC_SUFFIXES and is_application(relative):
+            scripts[relative] = _read(path)
+        elif suffix in {".html", ".htm"}:
+            page = _read(path)
+            inline.extend(_INLINE_SCRIPT.findall(page))
+    unused: dict[str, list[str]] = {}
+    for relative, text in scripts.items():
+        elsewhere = "\n".join([*inline, *(t for r, t in scripts.items() if r != relative)])
+        names = [
+            name for name in _exported_names(text)
+            if not re.search(rf"(?<![\w$]){re.escape(name)}(?![\w$])", elsewhere)
+        ]
+        if names:
+            unused[relative] = names
+    if not unused:
+        return []
+
+    problems: list[str] = []
+    for action in sorted(required):
+        words = _SAME_ACTION.get(action, (action,))
+        carriers = {
+            relative: [name for name in names if _names_the_action(name, words)]
+            for relative, names in unused.items()
+        }
+        carriers = {relative: names for relative, names in carriers.items() if names}
+        if not carriers:
+            continue
+        rest = "\n".join([*inline, *(t for r, t in scripts.items() if r not in carriers)])
+        if _names_the_action(rest, words):
+            continue
+        where = "; ".join(
+            f"{', '.join(f'`{name}`' for name in names)} in {relative}"
+            for relative, names in sorted(carriers.items())
+        )
+        problems.append(
+            f"A user must be able to `{action}` - \"{required[action][:140]}\" - and "
+            f"the only code for it is {where}, which nothing the page loads imports "
+            "or calls. A function no script reaches is not a feature: the page has "
+            "no control that leads to it, whatever its unit tests show. Import it "
+            "into the script the page loads and give the page a control that calls it."
+        )
+    return problems
+
+
 _LISTENS_FOR = re.compile(r"""\.addEventListener\(\s*(['"])([^'"\n]+)\1""")
 _AN_EVENT_MADE = re.compile(r"""new\s+(?:Custom)?Event\(\s*(?:(['"`])([^'"`\n]+)\1)?""")
 _SENT_BY_NAME = re.compile(r"""\.(?:emit|trigger|dispatch|fire)\(\s*(['"])([^'"\n]+)\1""")
@@ -5369,6 +5462,9 @@ _FLOORS: dict[str, str] = {
     # bucket's own heading. One run's reviewer graded the same finding
     # blocking and the run died on it.
     "delegated handlers against the events that do not bubble to them": "BREAKS",
+    # Both say a handler or a function is never reached, which is the heading.
+    "listeners for the product's own events against what dispatches them": "BREAKS",
+    "required actions against exports nothing in the product uses": "BREAKS",
 }
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
@@ -5390,6 +5486,9 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _a_required_action_nothing_implements(files, root, brief)),
     ("clickable controls against the scripts that should operate them",
      lambda files, root, stack, brief: _a_control_group_no_script_operates(files, root)),
+    ("required actions against exports nothing in the product uses",
+     lambda files, root, stack, brief: _a_required_action_only_unreached_code_performs(
+         files, root, brief)),
     ("listeners for the product's own events against what dispatches them",
      lambda files, root, stack, brief: _a_listener_for_an_event_nothing_dispatches(files, root)),
     ("delegated handlers against the events that do not bubble to them",

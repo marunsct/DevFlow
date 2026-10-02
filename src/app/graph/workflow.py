@@ -3195,6 +3195,104 @@ def _findings_a_later_sprint_builds(review: Any, state: Any) -> Any:
         return review
 
 
+_SAYS_IT_FAILS = re.compile(
+    r"\b(?:fail\w*|block\w*|broken|invalid|cannot|can't|unable|exit(?:s|ed)?|error\w*"
+    r"|non[- ]?existent|does not (?:run|work|pass)|never (?:runs?|passes))\b",
+    re.I,
+)
+_SAYS_IT_PASSES = re.compile(r"\b(?:pass\w*|succeed\w*|green|exits? 0|works)\b", re.I)
+_A_SENTENCE_END = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def _where_each_command_stands(repo_root: str) -> dict[str, bool]:
+    """Each command of two words or more in the ledger, by whether its most
+    recent run passed. One-word commands are left out: `node` or `jest` in a
+    sentence is not a claim about a command that was run."""
+    from app.tools.sandbox import read_execution_ledger
+
+    latest: dict[str, bool] = {}
+    for entry in read_execution_ledger(repo_root, limit=10_000):
+        argv = [str(part) for part in entry.get("command") or []]
+        if len(argv) >= 2 and entry.get("returncode") is not None:
+            latest[" ".join(argv)] = entry.get("returncode") == 0
+    return latest
+
+
+def _the_passing_command_it_says_fails(description: str, standing: dict[str, bool]) -> str:
+    """A command this finding says fails whose most recent run passed, or "".
+
+    Narrow on purpose, because the answer takes a finding out of the gate. The
+    command must be named in a sentence that says it fails and does not also
+    say something passes; and the finding must name no command that is still
+    failing - then it has a failure of its own to stand on.
+    """
+    def names(command: str, text: str) -> bool:
+        # The whole command, not the start of a longer one: `npm test` is not
+        # named by "npm test:e2e".
+        return re.search(rf"(?<![\w:-]){re.escape(command)}(?![\w:-])", text) is not None
+
+    named = [command for command in standing if names(command, description)]
+    if not named or any(not standing[command] for command in named):
+        return ""
+    for sentence in _A_SENTENCE_END.split(description):
+        for command in named:
+            if (
+                names(command, sentence)
+                and _SAYS_IT_FAILS.search(sentence)
+                and not _SAYS_IT_PASSES.search(sentence)
+            ):
+                return command
+    return ""
+
+
+def _findings_the_command_record_contradicts(review: Any, repo_root: str) -> Any:
+    """`review` with each gating finding the command record contradicts made minor.
+
+    Measured on one run. Its milestone reviewer found, correctly, that
+    `npm test` could not run. A fix stage repaired it and the ledger recorded
+    `npm test` passing - the request said so, under "where each distinct
+    command stands now". The reviewer was also shown its own finding from last
+    time, and returned it again word for word on the last revision allowed. The
+    run ended with nothing delivered, on a claim the record beside it disproved.
+
+    Kept, not dropped, like a finding about a later sprint's work: it stays in
+    the review and the Sprint Record with what the record shows, and stops
+    being a reason to send the sprint back.
+    """
+    try:
+        standing = _where_each_command_stands(repo_root)
+        if not standing:
+            return review
+        findings = []
+        moved = 0
+        for finding in getattr(review, "findings", None) or []:
+            command = (
+                _the_passing_command_it_says_fails(getattr(finding, "description", ""), standing)
+                if _severity_gates(getattr(finding, "severity", ""))
+                else ""
+            )
+            if command:
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        f"The most recent run of `{command}` in this workspace passed, "
+                        f"so this does not hold as written: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning(
+            "Milestone review raised %d gating finding(s) that a command fails when "
+            "its most recent run passed; recorded as minor",
+            moved,
+        )
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
 def _a_brief_requirement_the_run_never_built(state: Any) -> str:
     """What the brief asked for that the product still does not do, or "".
 
@@ -4955,7 +5053,10 @@ def build_workflow_graph(
             return update
             
         review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
-            _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+            _findings_the_command_record_contradicts(
+                _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+                state["repository"].root_path,
+            ),
             state["repository"].root_path,
             "accepted",
             "milestone_review",

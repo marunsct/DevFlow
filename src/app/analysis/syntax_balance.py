@@ -306,7 +306,41 @@ def _broken_json(relative_path: str, content: str) -> str | None:
             )
             + "Send the file again as complete, valid JSON."
         )
+    twice = _a_key_given_twice(content)
+    if twice:
+        return (
+            f"This JSON gives the key \"{twice}\" twice in one object. A parser "
+            "keeps only the last and drops the other without a word, so one of "
+            "the two blocks is not in effect - the usual result of adding a "
+            "block that was already there. Keep one, with everything it needs "
+            "in it. Send the file again as complete, valid JSON."
+        )
     return None
+
+
+def _a_key_given_twice(content: str) -> str:
+    """The first key that appears twice in one JSON object, or "".
+
+    Legal to a parser and never what was meant. One run's `package.json` held
+    two identical `"jest"` blocks after an edit added one that was already
+    there, and a stage before it had been refused by the runner for "multiple
+    configurations".
+    """
+    found: list[str] = []
+
+    def pairs(items: list[tuple[str, object]]) -> dict:
+        seen: set[str] = set()
+        for key, _value in items:
+            if key in seen and not found:
+                found.append(key)
+            seen.add(key)
+        return dict(items)
+
+    try:
+        json.loads(content, object_pairs_hook=pairs)
+    except ValueError:
+        return ""
+    return found[0] if found else ""
 
 
 def structural_problem(relative_path: str, content: str) -> str | None:

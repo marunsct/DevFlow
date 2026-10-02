@@ -285,6 +285,24 @@ def _packages_the_code_imports(project: Path) -> set[str]:
     return imported
 
 
+def _packages_the_lockfile_installs(project: Path) -> set[str]:
+    """Names `npm ci` puts at the top of `node_modules`, from the lockfile.
+
+    Declared packages and the ones they bring with them. Empty when there is
+    no lockfile or it cannot be read, so nothing is excused on a guess.
+    """
+    try:
+        locked = json.loads((project / "package-lock.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return set()
+    prefix = "node_modules/"
+    return {
+        key[len(prefix):]
+        for key in (locked.get("packages") or {})
+        if key.startswith(prefix) and prefix not in key[len(prefix):]
+    }
+
+
 def _imported_only_by_tests(project: Path, package: str) -> bool:
     """Whether `package` is imported only by files this project owns as tests.
 
@@ -424,6 +442,18 @@ def what_the_brief_forbids_that_is_there(
                 - set(dev_only)
                 - _NOT_A_DEPENDENCY
             )
+            # Not undeclared in any way that matters: a package only the tests
+            # import, which the lockfile installs because a declared package
+            # brings it. One run's suite imported `@jest/globals` under a
+            # declared `jest`, and the reviewer was told - as a fact about what
+            # is on disk - that the product broke the brief's rule on
+            # dependencies. It repeated that through the last revision allowed.
+            locked = _packages_the_lockfile_installs(manifest.parent)
+            undeclared = [
+                name
+                for name in undeclared
+                if not (name in locked and _imported_only_by_tests(manifest.parent, name))
+            ]
             if not packages and not undeclared and not test_only:
                 continue
             how = []
@@ -442,11 +472,20 @@ def what_the_brief_forbids_that_is_there(
                 # is exactly what the constraint asks for. Say so rather than
                 # falling silent, so a reviewer reading the note knows the
                 # check ran and the product itself carries no dependencies.
-                how.append(
-                    "declares no product dependencies; "
+                #
+                # And end it there. This note used to carry the violation's
+                # closing sentences too - "The brief rules that out ... a
+                # reviewer cannot accept the milestone" - straight after saying
+                # nothing was wrong.
+                found.append(
+                    f"{manifest.parent.name}/package.json declares no product "
+                    "dependencies; "
                     + ", ".join(f"`{name}`" for name in sorted(test_only)[:6])
-                    + " are devDependencies used for testing only and are not shipped"
+                    + " are devDependencies used for testing only and are not "
+                    "shipped. That is what the brief's constraint on dependencies "
+                    "asks for: nothing here breaks it, and it is not a finding."
                 )
+                continue
             found.append(
                 f"{manifest.parent.name}/package.json "
                 + " and ".join(how)

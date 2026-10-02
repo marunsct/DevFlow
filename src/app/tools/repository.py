@@ -1475,7 +1475,8 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
         return None
     if (
         stage.startswith(_A_TEST_ROUND)
-        and classify_file(shown) == "document"
+        and classify_file(shown) != "test"
+        and target.name not in PACKAGE_MANIFESTS
         and not target.exists()
         and _reads_as_a_defect_report(content)
     ):
@@ -1483,10 +1484,12 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
         # `defects_report.md` into the project - two defects with severity,
         # reproduction and owner, which is the `defects` field word for word -
         # and it shipped with the product. By its content, and only a new
-        # document: a round's own notes, and corrections to a document already
-        # there, are still its to write.
+        # file: a round's own notes, and corrections to a document already
+        # there, are still its to write. Whatever the format - another round
+        # wrote the same findings as `test_results.json`, was told that was
+        # product code, and tried again as `test_defects.json`.
         return (
-            f"'{shown}' would be a new document in the product, and this is a test "
+            f"'{shown}' would be a new file in the product, and this is a test "
             "round: what it finds is returned in `defects`, not written to a file. "
             "The workflow reads the defects from your structured response, routes "
             "each to its owner and logs it in the Sprint Record; a report file is "
@@ -2606,7 +2609,7 @@ def replace_approved_lines(
             # Only a refusal about the file's syntax. A refusal that the edit
             # changes nothing, or undoes a recent one, is not about the range.
             said = str(exc).lower()
-            if "parse" not in said and "not valid json" not in said:
+            if "parse" not in said and "not valid " not in said:
                 raise
             exc = RepositoryToolError(
                 str(exc).replace("Fix `replace` and send", "Fix `content` and send")
@@ -3227,7 +3230,9 @@ def _content_a_model_escaped_twice(relative_path: str, content: str) -> tuple[st
     return None
 
 
-def _structural_note(relative_path: str, content: str, *, editing: bool = False) -> str:
+def _structural_note(
+    relative_path: str, content: str, *, editing: bool = False, refuse: bool = True
+) -> str:
     """Warn about a file that was just written broken, or refuse it.
 
     Python is parsed with `ast` and JSON with `json.loads`, which are the real
@@ -3248,9 +3253,45 @@ def _structural_note(relative_path: str, content: str, *, editing: bool = False)
         return ""
     if not problem:
         return ""
-    if _refuses_a_broken_file(relative_path):
+    if refuse and _refuses_a_broken_file(relative_path):
         raise RepositoryToolError(_refusal_for(relative_path, problem, editing=editing))
     return problem
+
+
+#: Whole-file writes a grammar has refused, by path and content, with how often.
+_REFUSED_ON_A_GRAMMAR: dict[tuple[str, str], int] = {}
+
+#: Identical sends a grammar's refusal withstands before the write goes through.
+GRAMMAR_REFUSALS_BEFORE_IT_IS_WRITTEN = 2
+
+
+def _sent_again_past_a_grammar(relative_path: str, content: str) -> bool:
+    """Whether this exact file has now been refused on a grammar's word often enough.
+
+    Python, JSON, TOML, YAML and XML are refused by the parser that will load
+    them, and that is final. A language read through a bundled grammar is
+    refused on a measurement - no correct file was reported in a few hundred -
+    and a measurement is not a proof. If the grammar is ever wrong about a
+    file, a stage could send it forever and never be allowed to write it, so
+    the same content sent a third time is written, with the grammar's reading
+    as a note. A stage that changes anything between sends starts the count
+    again, which is the ordinary case: it read the refusal and acted on it.
+    """
+    try:
+        from app.analysis.grammar_parse import is_measured_not_proven
+
+        if not is_measured_not_proven(relative_path):
+            return False
+    except Exception:  # noqa: BLE001
+        return False
+    import hashlib
+
+    key = (relative_path, hashlib.sha1(content.encode("utf-8", "replace")).hexdigest())
+    if len(_REFUSED_ON_A_GRAMMAR) > 2000:
+        _REFUSED_ON_A_GRAMMAR.clear()
+    seen = _REFUSED_ON_A_GRAMMAR.get(key, 0)
+    _REFUSED_ON_A_GRAMMAR[key] = seen + 1
+    return seen >= GRAMMAR_REFUSALS_BEFORE_IT_IS_WRITTEN
 
 
 def _refuses_a_broken_file(relative_path: str) -> bool:
@@ -3263,7 +3304,15 @@ def _refuses_a_broken_file(relative_path: str) -> bool:
     """
     # And stylesheets, for their braces alone: an unpaired one is never meant,
     # and a browser's recovery from it drops rules without saying so.
-    return relative_path.lower().endswith((".py", ".json", ".css", ".scss", ".less"))
+    if relative_path.lower().endswith((".py", ".json", ".css", ".scss", ".less")):
+        return True
+    # And every language or format that has a parser of its own here.
+    try:
+        from app.analysis.grammar_parse import is_certain
+
+        return is_certain(relative_path)
+    except Exception:  # noqa: BLE001 - a check that cannot run refuses nothing
+        return False
 
 
 def _javascript_parse_error(target: Path, relative_path: str, content: str) -> str:
@@ -5464,7 +5513,11 @@ def write_approved_artifact(
     escape_note = ""
     if repaired is not None:
         content, escape_note = repaired
-    _refuse_if_broken(relative_path, content)
+    try:
+        _refuse_if_broken(relative_path, content)
+    except RepositoryToolError:
+        if not _sent_again_past_a_grammar(relative_path, content):
+            raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
     _refuse_a_hand_built_dom_again(relative_path, content)
     _refuse_a_blind_overwrite_of_another_stage_s_file(root, target, relative_path, content)
@@ -5614,7 +5667,8 @@ def write_approved_artifact(
         # sent. A silent repair teaches the model nothing and it escapes the
         # next file the same way.
         escape_note,
-        _structural_note(relative_path, content),
+        # A note by now: whatever is refused was refused before the write.
+        _structural_note(relative_path, content, refuse=False),
         _discovery_note(relative_path, content, target),
         _import_note(root, target, content),
         _nearly_a_workflow_document(relative_parts),
@@ -5672,7 +5726,15 @@ def _another_stage_s_test(root: Path, shown: str) -> str:
         return ""
     try:
         from app.analysis import project_memory
+        from app.analysis.file_kinds import is_scratch
         from app.observability.transcript import _stage_from_config
+
+        if is_scratch(shown):
+            # Named to be thrown away, so nobody's suite: the sweep between
+            # stages removes it without asking. One fix stage left a
+            # `tmp_test.js`; the next stage asked to delete it four times, was
+            # told each time it was another stage's test, and lost the tool.
+            return ""
 
         created_by = project_memory.who_created(root, shown)
         running = _stage_from_config("")

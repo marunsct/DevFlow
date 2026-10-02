@@ -14,6 +14,15 @@ COPY langchain-ui/ ./
 # rather than shipping a frontend that cannot compile.
 RUN npm run build
 
+# The TypeScript compiler, for the runtime image and not for this build: the
+# write tools parse every `.ts`, `.tsx` and `.jsx` an agent writes with it
+# (`app.analysis.typescript_parse`), and Node cannot. Installed globally so it
+# travels with `/usr/local/lib/node_modules` below. Pinned to the last release
+# that ships the JavaScript API the check calls - 7.x is a native binary
+# without it - and a project that installs its own TypeScript is parsed with
+# that one instead.
+RUN npm install -g typescript@6.0.3
+
 # ---------------------------------------------------------------------------
 # Stage 2: install Python dependencies into a virtualenv
 # ---------------------------------------------------------------------------

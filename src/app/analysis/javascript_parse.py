@@ -17,9 +17,11 @@ token 'try'` at line 83 and routing it back as a defect - a round trip through
 the test round, the triage and a defect-fix stage, for something the parser
 would have named at the moment of the write.
 
-Only `.js`, `.cjs` and `.mjs`. `.jsx`, `.ts` and `.tsx` are not JavaScript and
-Node will not parse them; running this on one would report a syntax error in a
-file that is perfectly correct, which is the one outcome worth avoiding.
+`node --check` for `.js`, `.cjs` and `.mjs` only. `.jsx`, `.ts` and `.tsx` are
+not JavaScript and Node will not parse them; running it on one would report a
+syntax error in a file that is perfectly correct, which is the one outcome
+worth avoiding. Those go to the TypeScript compiler's parser instead - see
+`app.analysis.typescript_parse`.
 
 The check runs on a temporary sibling of the real file, so `package.json`'s
 `type` resolves exactly as it will for the real one - `.js` is ESM or CommonJS
@@ -125,7 +127,14 @@ def parse_error(path: Path, content: str) -> str | None:
     unexpected. A write must not fail because a check could not run, and this
     is the same rule every other hint in this codebase follows.
     """
-    if path.suffix.lower() not in PARSEABLE:
+    suffix = path.suffix.lower()
+    if suffix not in PARSEABLE:
+        # TypeScript and JSX are Node's to load only once something has
+        # compiled them, so the compiler's parser is the one to ask.
+        from app.analysis import typescript_parse
+
+        if suffix in typescript_parse.PARSEABLE:
+            return typescript_parse.parse_error(path, content)
         return None
     node = _node()
     if node is None:

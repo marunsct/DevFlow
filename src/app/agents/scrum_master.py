@@ -146,6 +146,48 @@ def unaccounted_success_measures(plan: Any, measures: list[str]) -> list[int]:
     return [n for n in range(1, len(measures) + 1) if n not in accounted]
 
 
+def sprints_that_deliver_nothing(plan: Any, measures: list[str]) -> list[int]:
+    """The 1-based numbers of the sprints no success measure is assigned to.
+
+    The plan says, measure by measure, which sprint delivers it. A sprint none
+    of those lines names ends with nothing the product is judged against: it is
+    setup, and it still costs a build, a test round, two reviews and every
+    attempt those are allowed.
+
+    Measured over the low-brief runs of one day, by their own coverage lines.
+    The two that shipped a sound product assigned a measure to every sprint.
+    Three that failed did not: "Set up project structure and initial render",
+    "Establish core architecture and persistence" and "Establish the
+    foundation ... with unit tests" each opened a plan with no measure assigned
+    to it. One of them spent three hours and four attempts on that first
+    sprint - a page that rendered nothing, with a browser suite written to
+    test it - and never reached the second.
+
+    The system prompt already says setup is not a sprint. This is the same
+    rule read off the plan's own accounting instead of asked for in prose.
+
+    Nothing when the plan assigns no measure to any sprint by number: that is
+    a different fault with its own handling, and every sprint would be listed.
+    """
+    sprint_count = len(getattr(plan, "sprints", None) or [])
+    if not measures or sprint_count < 2:
+        return []
+    delivering: set[int] = set()
+    for line in getattr(plan, "success_measure_coverage", None) or []:
+        match = _COVERAGE_LINE.match(str(line))
+        if not match:
+            continue
+        number, claim = int(match.group(1)), match.group(2)
+        if not 1 <= number <= len(measures):
+            continue
+        delivering.update(
+            int(k) for k in _NAMES_A_SPRINT.findall(claim) if 1 <= int(k) <= sprint_count
+        )
+    if not delivering:
+        return []
+    return [k for k in range(1, sprint_count + 1) if k not in delivering]
+
+
 def _delivered_text(plan: Any) -> str:
     """What the plan commits to building. Deferrals and questions are not it."""
     parts: list[str] = []
@@ -198,6 +240,25 @@ def _the_success_measures(measures: list[str], gaps: list[Any]) -> str:
         "constraint every sprint keeps - and make sure the sprint you name has "
         "that work in its scope and acceptance criteria.\n"
     )
+    empty = [
+        gap for gap in gaps
+        if isinstance(gap, dict) and isinstance(gap.get("sprint"), int)
+    ]
+    gaps = [gap for gap in gaps if gap not in empty]
+    if empty:
+        named = "\n".join(
+            f"  Sprint {gap['sprint']}: {str(gap.get('goal') or '').strip()}" for gap in empty
+        )
+        section += (
+            "\nYOUR LAST PLAN HAD SPRINTS THAT DELIVER NONE OF THE MEASURES ABOVE - your own "
+            "coverage lines assign nothing to them:\n"
+            f"{named}\n"
+            "A sprint like that ends with nothing a user can do and nothing the product "
+            "is judged against, and it still costs a full build, test round and review. "
+            "Setup is not a sprint: fold that work into the first sprint that needs it, "
+            "so every sprint delivers at least one measure, and return the complete plan "
+            "again with fewer sprints.\n"
+        )
     if gaps:
         lines = []
         for gap in gaps:

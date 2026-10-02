@@ -29,6 +29,9 @@ Two checkers, by what can be known exactly:
 - **C-family** braces are counted, which is a structure check and not a parse.
   It cannot see a missing semicolon or a bad keyword, and it is deliberately
   conservative about what it does see - see `_confidently_unbalanced`.
+- **Everything with a parser of its own** - TOML, YAML, XML, the scripts
+  inside a page, and the languages whose grammar measured exact - is parsed
+  by `app.analysis.grammar_parse`, and counted only where that says nothing.
 
 Neither is a linter. The aim is the one failure that is cheap to detect,
 impossible for the model to diagnose afterwards, and fatal to a run.
@@ -42,8 +45,10 @@ import re
 from dataclasses import dataclass
 
 #: Extensions whose brackets balance the C way.
-_BRACED = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".java", ".c",
-                     ".h", ".cpp", ".cs", ".go", ".rs", ".php", ".swift", ".kt"})
+_BRACED = frozenset({".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".mts", ".cts",
+                     ".java", ".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".m", ".mm",
+                     ".cs", ".go", ".rs", ".php", ".swift", ".kt", ".kts", ".dart",
+                     ".scala", ".groovy", ".gradle", ".zig", ".sol"})
 
 _OPEN = {"(": ")", "[": "]", "{": "}"}
 _CLOSE = {")": "(", "]": "[", "}": "{"}
@@ -429,6 +434,15 @@ def structural_problem(relative_path: str, content: str) -> str | None:
             # Null bytes and similar; not a syntax question.
             return None
         return None
+
+    # A language with a parser of its own here is read by that - a grammar
+    # sees the missing comma a bracket count cannot. See `grammar_parse` for
+    # which languages those are, and why the rest stay with the count below.
+    from app.analysis.grammar_parse import parse_problem
+
+    parsed = parse_problem(relative_path, content)
+    if parsed:
+        return parsed
 
     if suffix not in _BRACED:
         return None

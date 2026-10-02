@@ -3702,6 +3702,290 @@ def _a_test_runner_the_stack_did_not_choose(files: list[Path], root: Path, stack
     return problems
 
 
+#: What each runner collects when nothing tells it otherwise, as a test on the
+#: file's path inside the project. From each runner's own documentation of its
+#: default: Jest's `testMatch`, Vitest's `include`, Node's built-in patterns,
+#: and Playwright's `testMatch` under its `testDir`.
+_COLLECTED_BY_DEFAULT: dict[str, re.Pattern[str]] = {
+    "jest": re.compile(r"(?:^|/)__tests__/.+\.[cm]?[jt]sx?$|[^/]\.(?:spec|test)\.[cm]?[jt]sx?$", re.I),
+    "vitest": re.compile(r"[^/]\.(?:spec|test)\.[cm]?[jt]sx?$", re.I),
+    "node --test": re.compile(
+        r"(?:^|/)(?:[^/]+[.\-_]test|test|test-[^/]+)\.[cm]?js$|(?:^|/)test/.+\.[cm]?js$", re.I
+    ),
+    "playwright": re.compile(r"[^/]\.(?:spec|test)\.[cm]?[jt]sx?$", re.I),
+}
+
+#: Words in a runner's own configuration that narrow what it collects. Any of
+#: them is the project keeping its suites apart, and how well is not something
+#: this can read - so their presence is taken as done.
+_NARROWS_COLLECTION = re.compile(
+    r"\b(?:exclude|include|testMatch|testRegex|testIgnore|testDir|testPathIgnorePatterns"
+    r"|roots|modulePathIgnorePatterns|projects|dir)\b"
+)
+
+#: Where each runner keeps its configuration.
+_CONFIG_NAMES: dict[str, tuple[str, ...]] = {
+    "jest": ("jest.config",),
+    "vitest": ("vitest.config", "vite.config", "vitest.workspace"),
+    "playwright": ("playwright.config",),
+    "node --test": (),
+}
+
+#: The import that says which runner a test file was written for.
+_WRITTEN_FOR = re.compile(
+    r"""(?:from|require\()\s*['"](@playwright/test|vitest|@jest/globals|node:test|cypress|mocha|ava)['"]""",
+    re.I,
+)
+
+_RUNNER_OF_AN_IMPORT = {
+    "@playwright/test": "playwright", "@jest/globals": "jest", "vitest": "vitest",
+    "node:test": "node --test",
+}
+
+
+def _the_runner_a_script_invokes(body: str) -> tuple[str, bool]:
+    """`(runner, names a path)` for one manifest script, or `("", False)`.
+
+    "Names a path" is an argument that is neither a flag nor a subcommand: the
+    script has said where to look, and the default no longer applies.
+    """
+    text = str(body or "")
+    for runner, pattern in (
+        ("playwright", r"\bplaywright\s+test\b(.*)"),
+        ("vitest", r"\bvitest\b(?:\s+(?:run|watch|related))?(.*)"),
+        ("jest", r"\bjest\b(.*)"),
+        ("node --test", r"\bnode\b(?:\s+--[\w-]+(?:=\S+)?)*\s+--test\b(.*)"),
+    ):
+        found = re.search(pattern, text)
+        if not found:
+            continue
+        rest = re.split(r"&&|\|\||;", found.group(1))[0]
+        if runner in ("jest", "vitest", "playwright") and re.search(
+            r"--(?:config|dir|root|testPathPattern|testMatch|project|rootDir|roots)\b|\s-c\s", rest
+        ):
+            return runner, True
+        named = [part for part in rest.split() if not part.startswith("-")]
+        return runner, bool(named)
+    return "", False
+
+
+def _a_test_file_a_second_runner_collects(files: list[Path], root: Path) -> list[str]:
+    """Test files written for one runner that another runner in the project also loads.
+
+    Measured on one run, which this ended. Its stack was two runners - one for
+    the logic, one that drives a browser - and both look for `*.test.js` and
+    `*.spec.js` unless told where to look. Nothing told either. So the unit
+    runner loaded all ten browser specs, each failed before a test in it could
+    run, and the suite took 220 seconds to say so. `scripts.test` was
+    `unit && e2e`, so the browser suite itself never ran once.
+
+    Three test rounds reported that as three different defects - an invalid
+    path, a wrong import, a missing attribute - and every fix added a browser
+    spec, which the unit runner then also loaded. The run re-ran the suite 76
+    times over three hours and failed its first sprint with a page that
+    rendered nothing.
+
+    Two runners in one project is what this pipeline asks of anything with a
+    page, so the collision is one the pipeline sets up. This names it: which
+    runner loads which of the other's files, and the two ways to keep them
+    apart.
+
+    Silent whenever the project has said anything about where a runner looks -
+    a path in its script, or a narrowing word in its configuration. How well it
+    said it is not something this can read, and a wrong claim about a suite
+    that runs perfectly well would be worse than none.
+    """
+    problems: list[str] = []
+    for manifest in files:
+        if manifest.name != "package.json":
+            continue
+        try:
+            data = json.loads(_read(manifest)) or {}
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        scripts = data.get("scripts") or {}
+        if not isinstance(scripts, dict):
+            continue
+        project = manifest.parent
+        mine = [path for path in files if _is_within(path, project) and "node_modules" not in path.parts]
+
+        runners: dict[str, bool] = {}
+        for body in scripts.values():
+            runner, narrowed = _the_runner_a_script_invokes(str(body))
+            if runner:
+                runners[runner] = runners.get(runner, False) or narrowed
+        if len(runners) < 2:
+            continue
+        for runner in list(runners):
+            if runners[runner]:
+                continue
+            if runner == "jest" and isinstance(data.get("jest"), dict) and _NARROWS_COLLECTION.search(
+                json.dumps(data["jest"])
+            ):
+                runners[runner] = True
+                continue
+            for path in mine:
+                if path.stem.lower().startswith(_CONFIG_NAMES[runner]) and _CONFIG_NAMES[runner]:
+                    if _NARROWS_COLLECTION.search(_read(path)):
+                        runners[runner] = True
+
+        written_for: dict[Path, str] = {}
+        for path in mine:
+            relative = str(path.relative_to(root))
+            if path.suffix.lower() not in {".js", ".mjs", ".cjs", ".ts", ".mts", ".jsx", ".tsx"}:
+                continue
+            if not is_test(relative):
+                continue
+            found = _WRITTEN_FOR.search(_read(path))
+            if found:
+                written_for[path] = _RUNNER_OF_AN_IMPORT.get(found.group(1).lower(), "")
+
+        for runner, narrowed in sorted(runners.items()):
+            if narrowed:
+                continue
+            taken = sorted(
+                str(path.relative_to(root))
+                for path, owner in written_for.items()
+                if owner and owner != runner and owner in runners
+                and _COLLECTED_BY_DEFAULT[runner].search(str(path.relative_to(project)).replace("\\", "/"))
+            )
+            if not taken:
+                continue
+            shown = ", ".join(taken[:6]) + (f" and {len(taken) - 6} more" if len(taken) > 6 else "")
+            owners = sorted({written_for[root / name] for name in taken})
+            problems.append(
+                f"{manifest.relative_to(root)} runs two test runners, and nothing tells "
+                f"`{runner}` where to look - so it also loads the files written for "
+                f"`{'`, `'.join(owners)}`: {shown}. Each of those fails as it is loaded, "
+                f"before any test in it runs, so `{runner}` fails whatever the product "
+                "does, and a test script that chains the two never reaches the second. "
+                "This is not a defect in those files and no change to them fixes it. "
+                f"Keep the suites apart: give `{runner}` its own directory in its script, "
+                "or exclude the other suite's directory in its configuration, and keep "
+                "each kind of test in its own directory."
+            )
+    return problems
+
+
+#: Runners for tests that call the product directly. The ones that drive a
+#: browser are a second suite by design and are not in this.
+_UNIT_RUNNERS = {
+    "vitest": ("vitest",), "@jest/globals": ("jest",), "mocha": ("mocha",), "ava": ("ava",),
+    "node:test": ("node", "built-in", "builtin", "native"),
+}
+
+
+def _unit_tests_split_between_runners(files: list[Path], root: Path, stack: Any) -> list[str]:
+    """One project's unit tests written for two different runners.
+
+    Measured on one run. Its stack was "Jest + jsdom for the logic"; one stage
+    wrote its tests against `@jest/globals` and the next against `node:test`,
+    and the test script was rewritten three times in ten minutes to suit
+    whichever had been written last - `npx jest`, `node --test`, then one
+    file's name. Each command ran half the suite and threw on the other half,
+    and the round's defect was "importing @jest/globals fails when executed
+    with node --test", which is true of either half under the other's command
+    and is not a defect in any of the files.
+
+    Only a split. A suite written consistently for a runner the stack did not
+    name is a deviation that runs - one sound product shipped that way - and
+    sending it back to be rewritten would cost more than it is worth.
+    """
+    by_runner: dict[str, list[str]] = {}
+    for path in files:
+        relative = str(path.relative_to(root))
+        if "node_modules" in path.parts or not is_test(relative):
+            continue
+        for module in {found.group(1).lower() for found in _WRITTEN_FOR.finditer(_read(path))}:
+            if module in _UNIT_RUNNERS:
+                by_runner.setdefault(module, []).append(relative)
+    if len(by_runner) < 2:
+        return []
+    declared = str(getattr(stack, "testing_framework", "") or "").lower()
+    chosen = [
+        module for module in by_runner
+        if any(
+            re.search(rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])", declared)
+            for alias in _UNIT_RUNNERS[module]
+        )
+    ]
+    # The one the stack named; failing that, the one most of the suite uses.
+    keep = chosen[0] if len(chosen) == 1 else max(by_runner, key=lambda m: len(by_runner[m]))
+    others = "; ".join(
+        f"`{module}`: {', '.join(sorted(where)[:5])}"
+        for module, where in sorted(by_runner.items()) if module != keep
+    )
+    why = (
+        f"this run's stack chose '{getattr(stack, 'testing_framework', '')}'"
+        if len(chosen) == 1 else "most of the suite is written for it"
+    )
+    return [
+        f"The unit tests are written for {len(by_runner)} different runners, and one test "
+        f"command runs only one of them: whichever it is, the files written for the "
+        f"other throw as they are loaded. Keep `{keep}` - {why} - and rewrite the "
+        f"rest for it ({others}). Do not change the test command to suit them: that "
+        f"strands every test written for `{keep}`."
+    ]
+
+
+#: Source files a cross-file pass will parse, at most. The parse is exact and
+#: costs a process for some languages; a product larger than this has a build
+#: that would say the same thing.
+_PARSED_AT_MOST = 80
+
+
+def _a_source_file_that_does_not_parse(files: list[Path], root: Path) -> list[str]:
+    """Files in the product that their own language's parser rejects.
+
+    The write tools refuse a file that does not parse - when the write is what
+    breaks it. A file can still arrive broken: generated by a command, repaired
+    part-way under the rule that lets an already-broken file be edited, or
+    written before its language was one this could parse. One run's
+    `playwright.config.ts` sat one comma short for three hours, through four
+    attempts at its sprint, and no stage was ever told.
+
+    Only the parsers that are exact - the ones a write is refused on.
+    """
+    from app.analysis.grammar_parse import is_certain
+    from app.analysis.javascript_parse import PARSEABLE, parse_error
+    from app.analysis.syntax_balance import structural_problem
+    from app.analysis.typescript_parse import PARSEABLE as TYPESCRIPT
+
+    problems: list[str] = []
+    parsed = 0
+    for path in files:
+        if "node_modules" in path.parts or parsed >= _PARSED_AT_MOST:
+            continue
+        relative = str(path.relative_to(root))
+        suffix = path.suffix.lower()
+        exact = suffix in {".py", ".json", ".css", ".scss", ".less"} or is_certain(relative)
+        runs_a_parser = suffix in PARSEABLE or suffix in TYPESCRIPT
+        if not exact and not runs_a_parser:
+            continue
+        if path.name == "package-lock.json":
+            continue
+        content = _read(path)
+        if not content.strip() or len(content) > 400_000:
+            continue
+        parsed += 1
+        try:
+            problem = (structural_problem(relative, content) if exact else None) or (
+                parse_error(path, content) if runs_a_parser else None
+            )
+        except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+            continue
+        if not problem:
+            continue
+        first = re.sub(r"\s*Send the file again[^.]*\.", "", problem.split("\n\n", 1)[0]).strip()
+        problems.append(
+            f"{relative} does not parse, so nothing in it runs and everything that "
+            f"loads it fails with it. {first}"
+        )
+    return problems
+
+
 def _tests_that_cannot_fail(files: list[Path], root: Path) -> list[str]:
     """Test files whose cases cannot fail, or never run at all.
 
@@ -5465,6 +5749,11 @@ _FLOORS: dict[str, str] = {
     # Both say a handler or a function is never reached, which is the heading.
     "listeners for the product's own events against what dispatches them": "BREAKS",
     "required actions against exports nothing in the product uses": "BREAKS",
+    # A file that does not parse does not run, and a suite one runner cannot
+    # load does not pass: neither is a matter of tidiness.
+    "source files against the parser of the language they are written in": "BREAKS",
+    "each test runner's files against what the other runners also collect": "BREAKS",
+    "the runners a project's unit tests are written for": "BREAKS",
 }
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
@@ -5508,6 +5797,12 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _tests_that_cannot_fail(files, root)),
     ("the installed test runner against the one the stack chose",
      lambda files, root, stack, brief: _a_test_runner_the_stack_did_not_choose(files, root, stack)),
+    ("source files against the parser of the language they are written in",
+     lambda files, root, stack, brief: _a_source_file_that_does_not_parse(files, root)),
+    ("each test runner's files against what the other runners also collect",
+     lambda files, root, stack, brief: _a_test_file_a_second_runner_collects(files, root)),
+    ("the runners a project's unit tests are written for",
+     lambda files, root, stack, brief: _unit_tests_split_between_runners(files, root, stack)),
     ("CommonJS behind a module script tag, which no browser can run",
      lambda files, root, stack, brief: _commonjs_loaded_as_a_module(files, root)),
     ("a server against a stack that says the product runs in the browser",

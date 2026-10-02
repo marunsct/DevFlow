@@ -51,6 +51,14 @@ class Defect(BaseModel):
     regression_test: str | None = Field(
         default=None, description="The regression test added for this defect, once fixed."
     )
+    caught_by: str = Field(
+        default="",
+        description=(
+            "The test command that was already failing when this defect was reported, "
+            "or ''. A defect a test already catches needs no new test: that command "
+            "passing is its proof. Set by the controller, never by a specialist."
+        ),
+    )
     status: DefectStatus = Field(default="open")
     verified_by: str = Field(
         default="",

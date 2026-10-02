@@ -109,6 +109,7 @@ from app.agents.scrum_master import (
     build_sprint_planning_request,
     capabilities_the_plan_never_names,
     create_scrum_master_agent,
+    sprints_that_deliver_nothing,
     unaccounted_success_measures,
 )
 from app.agents.sprint_summary import (
@@ -2803,14 +2804,8 @@ def _accepted_when_nothing_in_it_gates(review: Any, repo_root: str) -> Any:
     return review
 
 
-def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any | None:
-    """A defect for a test round whose own last run of the suite failed, or None.
-
-    A round with no defects sends the sprint on to its reviews. Measured on one
-    run: two rounds in a row ran `npm test`, were answered with exit 134 and a
-    heap-exhaustion trace, and returned an empty defect list. The sprint went
-    to its milestone review as passing, the review found the suite failing, and
-    the run ended on its last revision - with nobody ever asked to fix it.
+def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tuple[str, str]:
+    """`(command, how)` for a stage whose last run of a test command failed, or `("", "")`.
 
     Read from the execution ledger: the last command this stage ran in the
     `test` category. Only that one - a suite that failed and was then run again
@@ -2824,32 +2819,45 @@ def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any
             if entry.get("stage") == stage and entry.get("category") == "test"
         ]
         if not mine:
-            return None
+            return "", ""
         last = mine[-1]
         argv = [str(part) for part in last.get("command") or []]
         code = last.get("returncode")
         timed_out = str(last.get("error") or "").lstrip().startswith("Command timed out")
         if not argv or (code in (0, None) and not timed_out):
-            return None
+            return "", ""
         if code is not None and _ran_and_answered(argv, code):
-            return None
-        command = " ".join(argv)
-        how = "timed out" if timed_out else f"exited {code}"
-        return ReportedDefect(
-            description=(
-                f"The suite does not pass: `{command}` {how} on this round's last run "
-                "of it, and the round reported no defect for that."
-            ),
-            severity="major",
-            reproduction_steps=f"Run `{command}` in the project directory.",
-            expected_behavior=f"`{command}` exits 0.",
-            actual_behavior=f"`{command}` {how}.",
-            affected_files=[],
-            owner="testing",
-        )
+            return "", ""
+        return " ".join(argv), "timed out" if timed_out else f"exited {code}"
     except Exception:  # noqa: BLE001 - the round as reported stands
-        logger.debug("Could not check the round's last run of the suite", exc_info=True)
+        logger.debug("Could not check the stage's last run of the suite", exc_info=True)
+        return "", ""
+
+
+def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any | None:
+    """A defect for a test round whose own last run of the suite failed, or None.
+
+    A round with no defects sends the sprint on to its reviews. Measured on one
+    run: two rounds in a row ran `npm test`, were answered with exit 134 and a
+    heap-exhaustion trace, and returned an empty defect list. The sprint went
+    to its milestone review as passing, the review found the suite failing, and
+    the run ended on its last revision - with nobody ever asked to fix it.
+    """
+    command, how = _the_test_command_this_stage_left_failing(repo_root, stage)
+    if not command:
         return None
+    return ReportedDefect(
+        description=(
+            f"The suite does not pass: `{command}` {how} on this round's last run "
+            "of it, and the round reported no defect for that."
+        ),
+        severity="major",
+        reproduction_steps=f"Run `{command}` in the project directory.",
+        expected_behavior=f"`{command}` exits 0.",
+        actual_behavior=f"`{command}` {how}.",
+        affected_files=[],
+        owner="testing",
+    )
 
 
 def _the_plan_assigns_nothing(unassigned: Any, measures: Any) -> bool:
@@ -3148,6 +3156,23 @@ def _needs_a_regression_test(reported: Any) -> bool:
     if not getattr(reported, "regression_test_required", True):
         return False
     return not _only_tests_or_scratch(getattr(reported, "affected_files", None))
+
+
+def _needs_a_new_test(reported: Any, caught_by: str) -> bool:
+    """Whether a fix for this defect has to come with a test nobody has written yet.
+
+    Not when a test command is already failing. A regression test is one that
+    fails while the defect is there and passes once it is gone, and the round
+    that reported this one ended with exactly that in hand: the suite, red.
+    Demanding another on top is how one run's first sprint grew nine "regression"
+    files in three hours - five that could not run at all, one asserting that
+    the failure *happens* - each of which the next round then reported as the
+    defect, to be fixed with one more.
+
+    A defect found with the suite passing is the case the rule was written for:
+    nothing catches it, so the fix brings the test that will.
+    """
+    return _needs_a_regression_test(reported) and not caught_by
 
 
 #: How an MVP feature is told apart from a success measure in the planner's
@@ -3461,6 +3486,72 @@ def _findings_the_command_record_contradicts(review: Any, repo_root: str) -> Any
         logger.warning(
             "Milestone review raised %d gating finding(s) that a command fails when "
             "its most recent run passed; recorded as minor",
+            moved,
+        )
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
+#: A finding that the product's packages break the brief.
+_SAYS_A_DEPENDENCY_BREAKS_THE_BRIEF = re.compile(
+    r"\b(?:dev)?dependenc(?:y|ies)\b[^.\n]{0,160}\b(?:violat\w*|forbid\w*|not allowed|prohibit\w*"
+    r"|break\w*|against|contradict\w*|rules? out)\b"
+    r"|\b(?:violat\w*|forbid\w*|prohibit\w*|break\w*|contradict\w*)\b[^.\n]{0,160}"
+    r"\b(?:no|without) (?:external |third[- ]party )?dependenc",
+    re.I,
+)
+
+
+def _findings_the_dependency_check_contradicts(review: Any, state: Any) -> Any:
+    """`review` with each gating finding about dependencies the check on disk disproves made minor.
+
+    Whether a product breaks a brief's rule on dependencies is decided, not
+    read: `what_the_brief_forbids_that_is_there` compares the manifest with
+    what the product's own code imports, and its answer goes into the review
+    request as a fact. Measured on one run: the request said "declares no
+    product dependencies; `@playwright/test`, `jest` are devDependencies used
+    for testing only and are not shipped ... it is not a finding", and the
+    reviewer returned "[blocking] package.json declares devDependencies (jsdom,
+    jest, @playwright/test) which violate the brief ... Remove all
+    devDependencies". They were the test runners this run's own stack had
+    chosen. It was the last revision allowed, and the run ended on it.
+
+    Only when the check found no violation at all. One it did find is the
+    reviewer's to raise, and it is left exactly as written.
+    """
+    try:
+        brief = getattr(state.get("document"), "text", "") or ""
+        if not brief:
+            return review
+        from app.agents.brief_constraints import what_the_brief_forbids_that_is_there
+        from app.agents.milestone_reviewer import _is_only_a_note
+
+        checked = what_the_brief_forbids_that_is_there(brief, state["repository"].root_path)
+        if any(not _is_only_a_note(item) for item in checked):
+            return review
+        findings = []
+        moved = 0
+        for finding in getattr(review, "findings", None) or []:
+            if _severity_gates(getattr(finding, "severity", "")) and (
+                _SAYS_A_DEPENDENCY_BREAKS_THE_BRIEF.search(getattr(finding, "description", ""))
+            ):
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        "Checked against the manifest and the product's own imports: the "
+                        "product ships no dependency, and packages used only to test it "
+                        "are not what the brief's constraint is about. So this does not "
+                        f"hold as written: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning(
+            "Milestone review raised %d gating finding(s) that test-only packages break "
+            "the brief, which the check on disk disproves; recorded as minor",
             moved,
         )
         return review.model_copy(update={"findings": findings})
@@ -4330,6 +4421,13 @@ def build_workflow_graph(
                 {"measure": n, "missing": unnamed.get(n, [])}
                 for n in sorted(set(unassigned) | set(unnamed))
             ]
+            # And the sprints the plan's own accounting assigns nothing to. See
+            # `sprints_that_deliver_nothing`.
+            sprints = getattr(update["sprint_plan"], "sprints", None) or []
+            missing += [
+                {"sprint": k, "goal": str(getattr(sprints[k - 1], "goal", ""))}
+                for k in sprints_that_deliver_nothing(update["sprint_plan"], measures)
+            ]
             if missing and not gaps_already_asked_about:
                 # Once. A plan that omits a success measure is caught at the
                 # milestone review otherwise, a full build cycle later and at
@@ -4909,6 +5007,11 @@ def build_workflow_graph(
         cycle = state.get("remediation") or start_remediation(
             milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
         )
+        # The test command this round left failing, if it left one. See
+        # `_needs_a_new_test`.
+        caught_by, _ = _the_test_command_this_stage_left_failing(
+            state["repository"].root_path, f"test_round_{test_round}"
+        )
 
         # The model reports what it found; only the workflow may set lifecycle
         # state, so every incoming defect starts as "open" regardless.
@@ -4921,7 +5024,8 @@ def build_workflow_graph(
                 actual_behavior=item.actual_behavior,
                 affected_files=item.affected_files,
                 owner=item.owner,
-                regression_test_required=_needs_a_regression_test(item),
+                regression_test_required=_needs_a_new_test(item, caught_by),
+                caught_by=caught_by,
             )
             for item in reported
         ]
@@ -5114,6 +5218,7 @@ def build_workflow_graph(
             # What the failing command actually printed, alongside the prose
             # description of it. See `build_defect_fix_request`.
             _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
+            caught_by=getattr(defect, "caught_by", ""),
         )
         update = _run_gated_agent(
             state,
@@ -5295,7 +5400,10 @@ def build_workflow_graph(
             
         review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
             _findings_the_command_record_contradicts(
-                _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+                _findings_the_dependency_check_contradicts(
+                    _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+                    state,
+                ),
                 state["repository"].root_path,
             ),
             state["repository"].root_path,

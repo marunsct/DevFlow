@@ -161,3 +161,40 @@ def test_another_stage_may_write_such_a_document(project: Path, monkeypatch: pyt
     write_approved_artifact(project, "shop/KNOWN_ISSUES.md", DEFECT_REPORT)
 
     assert (project / "shop" / "KNOWN_ISSUES.md").is_file()
+
+
+DEFECTS_AS_DATA = (
+    '{"defects":[{"severity":"high","role":"backend","file":"shop/cart.py",'
+    '"reproduction_steps":["Run the suite"],"expected_behavior":"the total is the sum",'
+    '"actual_behavior":"the total is zero"}]}\n'
+)
+
+
+@pytest.mark.parametrize("name", ["test_results.json", "test_defects.json", "findings.yaml"])
+def test_the_format_it_writes_them_in_changes_nothing(
+    project: Path, monkeypatch: pytest.MonkeyPatch, name: str
+) -> None:
+    """A round wrote the same findings as data, was told the file was product
+    code, and tried again under another name."""
+    _in_stage(monkeypatch, "test_round_1")
+
+    with pytest.raises(RepositoryToolError, match="returned in `defects`, not written to a file") as refused:
+        write_approved_artifact(project, f"shop/{name}", DEFECTS_AS_DATA)
+
+    assert "is product code" not in str(refused.value)
+    assert not (project / "shop" / name).exists()
+
+
+def test_a_test_with_those_words_in_it_is_still_a_test(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _in_stage(monkeypatch, "test_round_1")
+
+    write_approved_artifact(
+        project,
+        "shop/tests/test_severity.py",
+        "def test_severity():\n"
+        "    expected = 'high'\n"
+        "    actual = 'high'  # reproduces the report\n"
+        "    assert actual == expected, 'severity'\n",
+    )
+
+    assert (project / "shop" / "tests" / "test_severity.py").is_file()

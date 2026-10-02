@@ -852,6 +852,7 @@ def build_defect_fix_request(
     repository_root: str,
     stack: Any = None,
     observed: dict[str, str] | None = None,
+    caught_by: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that routes one tracked defect to the specialist who owns it.
 
@@ -872,11 +873,16 @@ def build_defect_fix_request(
     """
     files_text = "\n".join(f"- {name}" for name in affected_files) or "- (none identified)"
     regression_clause = (
-        "You MUST also add or update a regression test that fails before your fix and "
-        "passes after it, and name that test in your `tests` field. A fix with no named "
+        # "Fails before your fix and passes after it" was read, by one run, as
+        # a request for a test that expects the failure: it wrote "import fails
+        # before fix" and asserted that the error occurred.
+        "You MUST also add or update a regression test - one that asserts the correct "
+        "behaviour this defect broke, so it would fail on the code as it was and passes "
+        "on yours - and name that test in your `tests` field. A fix with no named "
         "regression test cannot be accepted."
         if regression_test_required
         else _not_the_product_clause(affected_files)
+        or _already_caught_clause(caught_by)
         or "A regression test is not required for this defect, but name any test you did run."
     )
     brief = (
@@ -894,6 +900,19 @@ def build_defect_fix_request(
         "claiming it is resolved."
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _already_caught_clause(caught_by: str) -> str:
+    """What replaces the new-test requirement when a test command already fails, or ""."""
+    if not caught_by:
+        return ""
+    return (
+        f"`{caught_by}` already fails because of this, so the test for it exists: that "
+        "command passing is the proof of your fix. Add no new test for this defect. "
+        "Find what makes the command fail - the product, or a test that is "
+        "itself wrong - fix that, run the command again, and name it in your `tests` "
+        "field."
+    )
 
 
 def _not_the_product_clause(affected_files: list[str]) -> str:

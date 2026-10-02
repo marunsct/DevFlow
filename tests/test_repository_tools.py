@@ -1601,7 +1601,8 @@ def test_every_code_kind_is_refused_there(tmp_path, name):
     [
         ("spec.md", "x"),
         ("notes.txt", "x"),
-        ("diagram.svg", "x"),
+        # Like the .json below: an .svg is XML, and is parsed as it is written.
+        ("diagram.svg", "<svg/>"),
         # This case is about *where* a .json may go, so it needs content that
         # passes the structural check - which judges JSON everywhere.
         ("data.json", '{"x": 1}'),

@@ -160,13 +160,27 @@ def _a_package_this_command_would_add(command: Sequence[str]) -> list[str]:
     noise = _NOT_A_PACKAGE_NAME.get(manager or "", frozenset())
     named = [
         word
-        for word in words[1:]
+        for index, word in enumerate(words[1:], start=1)
         if not word.startswith("-")
         and word not in grammar["subcommands"]
         and word not in noise
         and word != manager
+        # The value of a flag that says where, not what. One run's
+        # `npm --prefix simple-to-do-list-app install` installs what the
+        # manifest declares, and was refused as adding a package named after
+        # the project's own directory.
+        and words[index - 1] not in _FLAGS_THAT_NAME_A_PLACE
     ]
     return named
+
+
+#: Flags whose next word is a directory, a file or a registry, never a package.
+_FLAGS_THAT_NAME_A_PLACE = frozenset({
+    "--prefix", "-C", "--cwd", "--dir", "--directory", "--root", "--project",
+    "--manifest-path", "--path", "--target", "--target-dir", "--workspace",
+    "--filter", "--registry", "--index-url", "--extra-index-url", "--cache",
+    "--cache-dir", "--userconfig", "--globalconfig", "--config", "--python",
+})
 
 
 #: Subcommands that fetch what a manifest already declares, beside the ones in

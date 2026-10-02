@@ -81,3 +81,18 @@ def test_additions_marked_among_the_file_s_own_lines_are_a_diff() -> None:
 def test_a_leading_plus_among_new_lines_only_is_not_a_diff() -> None:
     """Nothing here is the file's: there is no context to call it a patch by."""
     assert _written_as_a_diff("const total = first\n+ second;", STORAGE) == ""
+
+
+def test_a_patch_wrapper_line_is_named(tmp_path) -> None:
+    """One run's fix stage ended four edits in a row with `*** End Patch ***`
+    and was told "Unexpected token '**'" each time."""
+    content = "    id: String(t.id || ''),\n    title: String(t.title || ''),\n*** End Patch ***"
+
+    note = _written_as_a_diff(content, STORAGE)
+
+    assert "Line 3 of your `content` is `*** End Patch ***`" in note
+    assert "wrapper of a patch format" in note
+
+
+def test_a_comment_of_asterisks_is_not_a_wrapper() -> None:
+    assert _written_as_a_diff("/*** helpers ***/\nconst a = 1;", STORAGE) == ""

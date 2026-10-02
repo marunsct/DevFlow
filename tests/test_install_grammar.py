@@ -212,3 +212,14 @@ def test_the_manager_is_matched_on_the_basename_not_by_substring():
     """`if "npm" in words[0]` also matched any path containing those letters."""
     assert _a_package_this_command_would_add(["/usr/local/bin/npm", "install", "express"])
     assert _a_package_this_command_would_add(["./tools/npm-helper", "install", "express"]) == []
+
+
+def test_a_flag_s_directory_is_not_a_package() -> None:
+    """One run's `npm --prefix simple-to-do-list-app install` installs what the
+    manifest declares, and was refused as adding a package named after the
+    project's own directory."""
+    from app.tools.sandbox import _a_package_this_command_would_add
+
+    assert _a_package_this_command_would_add(["npm", "--prefix", "simple-to-do-list-app", "install"]) == []
+    assert _a_package_this_command_would_add(["npm", "--prefix", "the-app", "install", "express"]) == ["express"]
+    assert _a_package_this_command_would_add(["pip", "install", "--index-url", "https://example.test/simple", "requests"]) == ["requests"]

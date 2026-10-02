@@ -2049,6 +2049,12 @@ _HOW_TO_ADD_AROUND_A_LINE = (
 _A_DIFF_LINE = re.compile(r"^([+-])(?![+-])(.*\S.*)$")
 
 
+#: The lines a patch format wraps its changes in.
+_A_PATCH_ENVELOPE_LINE = re.compile(
+    r"^\s*\*{3}\s*(?:Begin Patch|End Patch|(?:Update|Add|Delete) File:|End of File)\b", re.I
+)
+
+
 def _written_as_a_diff(content: str, original: str) -> str:
     """A note when a refused `content` reads as a diff rather than new text, or "".
 
@@ -2070,6 +2076,25 @@ def _written_as_a_diff(content: str, original: str) -> str:
     `+        callback({ ...this.state });`, was told "Unexpected token" three
     times, and returned saying it could not do the task.
     """
+    envelope = next(
+        (
+            (number, line.strip())
+            for number, line in enumerate(content.splitlines(), 1)
+            if _A_PATCH_ENVELOPE_LINE.match(line)
+        ),
+        None,
+    )
+    if envelope is not None:
+        # The wrapper of a patch format, with or without marked lines inside
+        # it. One run's fix stage ended four edits in a row with
+        # `*** End Patch ***` and was told "Unexpected token '**'" each time.
+        return (
+            f"\n\nLine {envelope[0]} of your `content` is `{envelope[1]}`, which is "
+            "the wrapper of a patch format and not part of any file. `content` is "
+            "the new text of those lines exactly as the file should hold them: "
+            "leave that line out, along with any `*** Begin Patch` or "
+            "`*** Update File:` line and any leading '+' or '-'."
+        )
     held = {line.strip() for line in original.splitlines() if line.strip()}
     marked = []
     unmarked = []

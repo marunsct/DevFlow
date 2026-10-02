@@ -663,6 +663,18 @@ def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
         "the sprint is re-planned up to the revision limit and then escalated, "
         "not re-planned indefinitely"
     )
+    # The record of the failed sprint includes the round that ended it. It was
+    # written from the cycle as it stood before that round, so it reported one
+    # round and one defect fewer, and a sprint that "exhausted remediation
+    # attempts" with nothing open.
+    cycle = state["remediation"]
+    last = state["sprint_attempts"][-1]
+    assert last["status"] == "Failed"
+    assert last["rounds"] == len(cycle.test_runs)
+    assert len(last["defects"]) == len(cycle.defects)
+    assert [d["status"] for d in last["defects"]].count("open") == sum(
+        1 for d in cycle.defects if d.status == "open"
+    ) > 0
 
 
 # --------------------------------------------------------------------------

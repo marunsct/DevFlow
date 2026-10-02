@@ -4790,6 +4790,13 @@ def build_workflow_graph(
         last.
         """
         revision_count = state.get("milestone_revision_count", 0) + 1
+        # The sprint as this round leaves it, not as it entered it. `state`
+        # still holds the cycle from before the round just recorded, so a
+        # summary written from it left out the round that ended the sprint and
+        # the defect it found: one run's record read "Failed: exhausted
+        # remediation attempts" over six of six tests passed, two bugs found,
+        # two fixed, none open.
+        state = {**state, **base_update, "remediation": cycle}  # type: ignore[assignment]
         if revision_count > MAX_MILESTONE_REVISIONS:
             summary = _record_sprint_summary(
                 state, "Failed", f"{why}; revision limit reached"

@@ -2172,6 +2172,54 @@ def _the_lines_json_stopped_at(refusal: str, updated: str) -> str:
     )
 
 
+def _the_end_it_pinned(
+    target: Path,
+    lines: list[str],
+    start_line: int,
+    last: int,
+    expect_end: str,
+    content: str,
+    relative_path: str,
+) -> tuple[int, str] | None:
+    """The last line `expect_end` names, when `end_line` missed it by a little.
+
+    `expect_end` was read only when the start had moved. Measured on one run:
+    `expect_end="});"` with `end_line=24` for a block whose `});` is line 25 -
+    the pin was right and the count one short - refused twice in one stage for
+    unbalanced brackets, and the same shape a dozen times across the sprint.
+
+    Asked only of an edit already refused for breaking the file, and answered
+    only with an end the pin names, within `_MISCOUNT_TOLERANCE` lines, whose
+    edit passes the checks a write does. The nearest such line wins. Returns
+    `(last, updated)` or None.
+    """
+    if not expect_end.strip() or not 1 <= last <= len(lines):
+        return None
+    pins = _the_lines_expect_end_may_pin(expect_end)
+    if lines[last - 1].strip() in pins:
+        return None
+    nearby = sorted(
+        (
+            n for n in range(max(start_line, last - _MISCOUNT_TOLERANCE),
+                             min(len(lines), last + _MISCOUNT_TOLERANCE) + 1)
+            if n != last and lines[n - 1].strip() in pins
+        ),
+        key=lambda n: (abs(n - last), n < last),
+    )
+    for new_last in nearby:
+        body = content
+        if body and not body.endswith("\n") and lines[new_last - 1].endswith("\n"):
+            body += "\n"
+        updated = "".join(lines[:start_line - 1]) + body + "".join(lines[new_last:])
+        try:
+            _refuse_if_broken(relative_path, updated, editing=True)
+            _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
+        except RepositoryToolError:
+            continue
+        return new_last, updated
+    return None
+
+
 #: Lines outside a range that its `content` may be found to repeat, each side.
 MOST_OVERLAPPING_LINES = 6
 
@@ -2479,6 +2527,24 @@ def replace_approved_lines(
                 str(exc).replace("Fix `replace` and send", "Fix `content` and send")
                 + _the_lines_json_stopped_at(str(exc), updated)
             )
+            pinned_end = _the_end_it_pinned(
+                target, lines, start_line, last, expect_end, content, relative_path
+            )
+            if pinned_end is not None:
+                new_last, updated = pinned_end
+                _write_unless_it_changes_nothing(target, original, updated, relative_path)
+                note = (
+                    f"Replaced lines {start_line}-{new_last} of {total}, not "
+                    f"{start_line}-{last}: `expect_end` names line {new_last}, and "
+                    f"`end_line` was {abs(new_last - last)} line"
+                    f"{'s' if abs(new_last - last) != 1 else ''} off it. Replacing "
+                    "only the range you gave would have left the file unparseable. "
+                    f"The file now has {len(updated.splitlines())} lines." + shifted_note
+                )
+                return _edited(
+                    target, root, relative_path, content, note,
+                    "".join(lines[start_line - 1:new_last]),
+                )
             wider = _the_range_its_content_overlaps(
                 target, lines, start_line, last, content, relative_path
             )

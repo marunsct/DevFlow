@@ -2778,6 +2778,31 @@ def _record_sprint_summary(
     return {"sprint_attempts": attempts}
 
 
+def _accepted_when_nothing_in_it_gates(review: Any, repo_root: str) -> Any:
+    """`review` recorded as accepted, when that is how it is about to be routed.
+
+    A `changes_required` whose findings are all below the gating severities
+    goes down the accepted path, and has since one run lost six rounds to the
+    alternative. The record did not follow: the review document and the Sprint
+    Record are written from `review.status`, so a sprint the workflow accepted
+    was filed under "Status: changes_required". Measured on one run, after its
+    one gating finding was contradicted by the command record and made minor.
+
+    Only a review that has findings and none that block. One with no findings
+    at all is a different case with its own handling, and is left alone.
+    """
+    try:
+        if (
+            getattr(review, "status", "") == "changes_required"
+            and getattr(review, "findings", None)
+            and not _findings_that_block(review, repo_root)
+        ):
+            return review.model_copy(update={"status": "accepted"})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        pass
+    return review
+
+
 def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any | None:
     """A defect for a test round whose own last run of the suite failed, or None.
 
@@ -5164,6 +5189,7 @@ def build_workflow_graph(
             "accepted",
             "milestone_review",
         )
+        review = _accepted_when_nothing_in_it_gates(review, state["repository"].root_path)
         # This round's findings, in the state the sprint record below reads, so
         # a sprint that ends on this review records the review that ended it.
         from app.sprint.record import findings_of

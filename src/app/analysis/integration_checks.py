@@ -3930,6 +3930,89 @@ def _unit_tests_split_between_runners(files: list[Path], root: Path, stack: Any)
     ]
 
 
+#: An `import` statement at the start of a line: a file written as an ES module.
+_AN_IMPORT_STATEMENT = re.compile(r"""^\s*import\s+(?:[\w{*]|['"])""", re.M)
+
+def _jest_started_without_what_es_modules_need(files: list[Path], root: Path) -> list[str]:
+    """Jest run plainly over tests written as ES modules.
+
+    Jest loads a test file as CommonJS. In a project whose manifest says
+    `"type": "module"` every `import` in a test is then "Cannot use import
+    statement outside a module", before a single test runs - unless Node is
+    started with `--experimental-vm-modules`, or something transforms the
+    files first.
+
+    Measured on one run, and the same family on three before it. Its three
+    test rounds reported "Jest configuration contains unsupported option
+    'experimentalVmModules'", then "configuration does not enable ESM
+    support", then "jest runs it as CommonJS"; `jest.config.cjs` was written by
+    four stages in ten minutes and ended with the flag under `globals`, where
+    Jest ignores it. Each stage was guessing at one fact about a tool.
+
+    Verified in the worker image: the same suite fails under `jest` and passes
+    under `node --experimental-vm-modules node_modules/jest/bin/jest.js`.
+
+    Silent when a transform is configured - a Babel configuration file, or a
+    transformer named in Jest's own configuration alongside one - since a
+    project set up that way runs.
+    """
+    problems: list[str] = []
+    for manifest in files:
+        if manifest.name != "package.json" or "node_modules" in manifest.parts:
+            continue
+        try:
+            data = json.loads(_read(manifest)) or {}
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(data, dict) or data.get("type") != "module":
+            continue
+        scripts = data.get("scripts") if isinstance(data.get("scripts"), dict) else {}
+        plain = [
+            str(body) for body in scripts.values()
+            if _the_runner_a_script_invokes(str(body))[0] == "jest"
+            and "experimental-vm-modules" not in str(body)
+        ]
+        if not plain:
+            continue
+        project = manifest.parent
+        mine = [path for path in files if _is_within(path, project) and "node_modules" not in path.parts]
+        has_babel = "babel" in data or any(
+            path.name.startswith((".babelrc", "babel.config")) for path in project.iterdir()
+        )
+        configured = json.dumps(data.get("jest") or {}) + "".join(
+            _read(path) for path in mine if path.stem.lower().startswith("jest.config")
+        )
+        if has_babel or re.search(r"ts-jest|@swc/jest|esbuild-jest", configured):
+            continue
+        written_as_modules = []
+        for path in mine:
+            relative = str(path.relative_to(root))
+            if path.suffix.lower() not in {".js", ".mjs"} or not is_test(relative):
+                continue
+            text = _read(path)
+            other = _WRITTEN_FOR.search(text)
+            if other and other.group(1).lower() != "@jest/globals":
+                continue  # another runner's file; not Jest's to load
+            if _AN_IMPORT_STATEMENT.search(text):
+                written_as_modules.append(relative)
+        written_as_modules.sort()
+        if not written_as_modules:
+            continue
+        shown = ", ".join(written_as_modules[:5])
+        problems.append(
+            f"{manifest.relative_to(root)} declares `\"type\": \"module\"` and starts Jest as "
+            f"`{plain[0]}`. Jest loads test files as CommonJS, so every `import` in {shown} "
+            "is \"Cannot use import statement outside a module\" before any test runs. What "
+            "changes that is a flag of Node's, not a key in Jest's configuration - "
+            "`experimentalVmModules`, `extensionsToTreatAsEsm` and `globals` do not set it. "
+            "Make the test script `node --experimental-vm-modules "
+            "node_modules/jest/bin/jest.js`, and put `\"transform\": {}` in Jest's "
+            "configuration so nothing rewrites the modules. Nothing in the test files or "
+            "the product needs to change for this."
+        )
+    return problems
+
+
 #: A test that drives a real browser, by what it imports.
 _IMPORTS_A_BROWSER_DRIVER = re.compile(
     r"""(?:from|require\()\s*['"](@playwright/test|playwright|playwright-core|puppeteer"""
@@ -5877,6 +5960,7 @@ _FLOORS: dict[str, str] = {
     "each test runner's files against what the other runners also collect": "BREAKS",
     "the runners a project's unit tests are written for": "BREAKS",
     "the address a browser test opens against how the page loads its code": "BREAKS",
+    "how Jest is started against tests written as ES modules": "BREAKS",
 }
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
@@ -5925,6 +6009,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
     ("the address a browser test opens against how the page loads its code",
      lambda files, root, stack, brief: _a_browser_test_that_opens_a_module_page_from_disk(
          files, root)),
+    ("how Jest is started against tests written as ES modules",
+     lambda files, root, stack, brief: _jest_started_without_what_es_modules_need(files, root)),
     ("each test runner's files against what the other runners also collect",
      lambda files, root, stack, brief: _a_test_file_a_second_runner_collects(files, root)),
     ("the runners a project's unit tests are written for",

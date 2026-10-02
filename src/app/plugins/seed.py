@@ -230,13 +230,37 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   otherwise, so a test importing it gets "does not provide an export named ...".
   Ship a `package.json` containing `{"type": "module"}` beside it, or name the
   files `.mjs`. Neither installs anything, and `export` is not a dependency.
-- THE SAME `package.json` MUST SAY HOW TO RUN THE TESTS:
-  `"scripts": {"test": "node --test <your test files>"}`. Without it `npm test`
-  answers "missing script: test" and the project reads as having no tests.
-- `node --test` ships with Node: nothing to install, no dependency, no lines of
-  product code. A static page that ships to a browser is still tested with it on
-  the machine that builds it - deployment constrains what you ship, not what you
-  can run while building it.
+- THE SAME `package.json` MUST SAY HOW TO RUN THE TESTS, with the unit runner
+  this project's stack names and no other: `"scripts": {"test": "..."}`. Without
+  it `npm test` answers "missing script: test" and the project reads as having
+  no tests. One unit runner per project: a test written for a second one throws
+  under the first, and changing the script to suit it strands the rest.
+- WHAT EACH UNIT RUNNER NEEDS TO RUN ES MODULES (`import`/`export`):
+  - Node's own, `node --test <your test files>`: nothing. It ships with Node -
+    nothing to install, no dependency, no lines of product code - and runs ES
+    modules as they are. Tests import `test` from 'node:test' and `assert`
+    from 'node:assert'.
+  - Vitest, `vitest run`: nothing. It runs ES modules as they are.
+  - Jest: a flag, and it is Node's. Jest loads test files as CommonJS, so in a
+    project with `"type": "module"` every `import` in a test is "SyntaxError:
+    Cannot use import statement outside a module" until Jest is started as
+        "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    with `"transform": {}` in Jest's configuration. `experimentalVmModules`,
+    `extensionsToTreatAsEsm` and `globals` in jest.config do NOT do this, and
+    `babel-jest` is not needed. Under that flag `jest.fn()` needs
+    `import { jest } from '@jest/globals'`; `test` and `expect` are already
+    there. A DOM under Jest is a separate package, `jest-environment-jsdom`.
+- TWO RUNNERS MUST NOT LOAD EACH OTHER'S FILES. Jest, Vitest and Playwright all
+  collect `*.test.js` and `*.spec.js` unless told where to look, so a unit
+  runner left to itself loads the browser specs and fails on every one. Keep
+  the browser specs in a directory of their own (`e2e/`) and say so once: the
+  unit script names its directory (`node --test tests/`, `vitest run tests`) or
+  its configuration ignores the other (`testPathIgnorePatterns: ['/e2e/']` for
+  Jest, `exclude: ['e2e/**', 'node_modules/**']` for Vitest), and Playwright's
+  configuration sets `testDir: 'e2e'`.
+- A static page that ships to a browser is still tested on the machine that
+  builds it - deployment constrains what you ship, not what you can run while
+  building it.
 - A test-only package goes in `devDependencies` (`npm i -D ...`); it ships to
   nobody and breaks no constraint on the product's dependencies.
 - An assertion like `typeof mod.addTask === 'function'` checks that an export

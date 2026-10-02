@@ -339,6 +339,38 @@ def _mark_failed(run_id: str, message: str) -> None:
 # followed by two full tracebacks, for a cancellation that had already been
 # recorded correctly in the database. The run was fine; the log said otherwise,
 # and a concurrent run on the same worker was left looking like the suspect.
+#: Statuses that end a run. Anything else, on a task that is about to return
+#: without running, is a row nothing will ever move again.
+_TERMINAL_STATUSES = ("completed", "failed", "cancelled")
+
+
+def _record_a_cancellation_nothing_else_will(runner: Any, run_id: str, status: str) -> None:
+    """Mark a cancelled run cancelled when this task is the last thing to see it.
+
+    `cancel_run` leaves a running run to its worker: "which will see the flag
+    and record the cancellation itself". That holds while the worker is alive.
+    Measured on one run: the worker was killed mid-command, the run was
+    cancelled while nothing was executing it, the recovery sweep resumed it,
+    and the resumed task found the cancel flag and returned here - having
+    recorded nothing. The row read `running` from then on with no task behind
+    it, every later sweep saw "a live task", and the next run could not start
+    beside it.
+
+    Never raises: a task that cannot record this still must not run the graph.
+    """
+    if status in _TERMINAL_STATUSES:
+        return
+    try:
+        runner.run_store.compare_and_set_status(
+            run_id,
+            status,
+            "cancelled",
+            updated_at=datetime.now(timezone.utc).isoformat(),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Could not record the cancellation of run %s", run_id, exc_info=True)
+
+
 @celery_app.task(
     bind=True, name="execute_workflow_run", max_retries=2, ignore_result=True
 )
@@ -357,6 +389,7 @@ def execute_workflow_run(
 
     if runner.run_store.is_cancel_requested(run_id):
         logger.info("Run %s was cancelled before execution started", run_id)
+        _record_a_cancellation_nothing_else_will(runner, run_id, record.status)
         return
 
     if decision_payload:

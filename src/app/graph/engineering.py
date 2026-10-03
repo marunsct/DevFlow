@@ -114,6 +114,21 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     )
 
 
+def _later_sprints(state: Any) -> str:
+    """Each later sprint's goal and criteria, for a reviewer of this one."""
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    texts = {c.id: c.text for c in suite.criteria(_root(state))}
+    lines = []
+    for number, sprint in enumerate(sprints[index + 1:], index + 2):
+        ids = list(getattr(sprint, "criteria", None) or [])
+        lines.append(
+            f"- Sprint {number}: {getattr(sprint, 'goal', '')}"
+            + "".join(f"\n    {cid}: {texts.get(cid, '')}" for cid in ids)
+        )
+    return "\n".join(lines)
+
+
 def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """A senior engineer reads the batch's diff; what blocks becomes a defect."""
     from app.acceptance.requests import criteria_text
@@ -133,6 +148,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         f"- {_title(task)} ({task.specialist_role}): {getattr(task, 'task_description', '')[:400]}"
         for task in _tasks(state)
     )
+    later = _later_sprints(state)
     agent = create_code_reviewer_agent(
         model=ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
@@ -142,7 +158,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         state, config,
         stage_name=f"code_review_{attempt[0]}_{attempt[1]}",
         agent=agent,
-        initial_request=build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or "")),
+        initial_request=build_code_review_request(diff, orders, criteria, str(state.get("ci_report") or ""), later),
         output_key="__code_review__",
         next_stage="code_review",
     )

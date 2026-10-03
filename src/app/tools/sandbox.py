@@ -1771,7 +1771,7 @@ def validate_command(
     if root_install is not None:
         raise CommandNotAllowed(root_install)
 
-    server = _starts_a_server(argv)
+    server = _starts_a_server(argv) or _a_script_that_serves(argv, repo_root)
     if server:
         raise CommandNotAllowed(
             f"'{server}' is not permitted: it runs until it is stopped, and "
@@ -2048,6 +2048,46 @@ def _the_program_this_would_run(parts: Sequence[str]) -> str:
             continue
         return part
     return parts[0] if parts else ""
+
+
+#: Interpreters that run a script file named as their first argument.
+_RUNS_A_SCRIPT = frozenset({"node", "python", "python3", "deno", "bun", "tsx", "ts-node"})
+
+#: What starting an HTTP listener looks like inside a script, across the
+#: languages the stack packs build in.
+_SERVES = re.compile(
+    r"createServer\s*\(|\.listen\s*\(\s*(?:\d|port|PORT|process\.env)|serve_forever\s*\("
+    r"|uvicorn\.run\s*\(|HTTPServer\s*\(|Deno\.serve\s*\(|Bun\.serve\s*\(|\bapp\.run\s*\("
+)
+
+
+def _a_script_that_serves(argv: Sequence[str], repo_root: str | Path | None) -> str | None:
+    """The script this command runs, when that script starts a server; else None.
+
+    `_starts_a_server` knows server commands by name. A server can also be a
+    plain script - `node scripts/serve.mjs` - which looks like any other
+    program until it is read. One run's QA stage started a stack pack's own
+    static server this way and the call sat until its timeout; the pack's
+    acceptance configuration starts that server itself.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) not in _RUNS_A_SCRIPT or "--test" in parts:
+        return None
+    script = next((part for part in parts[1:] if not part.startswith("-")), None)
+    if not script or not repo_root:
+        return None
+    # A test may start a server and close it again; running it is not serving.
+    if re.search(r"(?:^|[._/-])(?:test|tests|spec)(?:[._/-]|$)", script, re.I):
+        return None
+    root = Path(repo_root)
+    candidates = [root / script, *(child / script for child in root.iterdir() if child.is_dir())] if root.is_dir() else []
+    for candidate in candidates:
+        try:
+            if candidate.is_file() and _SERVES.search(candidate.read_text(encoding="utf-8", errors="replace")[:200_000]):
+                return script
+        except OSError:
+            continue
+    return None
 
 
 def _starts_a_server(argv: Sequence[str]) -> str | None:

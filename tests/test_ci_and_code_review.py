@@ -171,3 +171,22 @@ def test_the_code_review_s_blocking_findings_become_owned_defects(workspace, mon
     (defect,) = update["review_defects"]
     assert defect.severity == "blocking" and defect.owner == "backend"
     assert defect.affected_files == ["notes/src/notes.js"]
+
+
+def test_the_code_review_is_told_what_later_sprints_deliver(tmp_path) -> None:
+    from app.agents.code_reviewer import build_code_review_request
+
+    suite.save_criteria(tmp_path, number(BRIEF))
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "current_sprint_index": 0,
+        "sprint_plan": SimpleNamespace(sprints=[
+            SimpleNamespace(goal="Add notes", criteria=["AC-1"]),
+            SimpleNamespace(goal="Delete notes", criteria=["AC-2"]),
+        ]),
+    }
+    later = engineering._later_sprints(state)
+    assert "Sprint 2: Delete notes" in later and "AC-2: Delete a note" in later
+    assert "AC-1" not in later
+    text = build_code_review_request("diff", "orders", "AC-1", "ci", later)["messages"][0]["content"]
+    assert "NOT missing from this batch" in text

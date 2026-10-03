@@ -64,8 +64,10 @@ what a passing test suite would not reveal:
 - data that must survive kept only in memory, or saved and never read back;
 - input a user controls reaching storage, markup or a command unchecked.
 
-Report only real problems, each tied to its work order, with the file and what
-to change. Do not ask for style changes, comments, renames or tests of things no
+Judge the batch against its own work orders and this sprint's criteria only:
+work the plan gives to a later sprint is not missing yet. Report only real
+problems, each tied to its work order by its title, with the file's full path
+and what to change. Do not ask for style changes, comments, renames or tests of things no
 criterion asks for. If the batch does what its work orders say, approve it.
 
 Read files with your tools when the diff is not enough.
@@ -78,11 +80,21 @@ def build_code_review_request(
     work_orders: str,
     criteria: str,
     ci_report: str,
+    later: str = "",
 ) -> dict[str, list[dict[str, str]]]:
+    """`later` is what the plan gives to later sprints. One run's review raised
+    a later sprint's features as missing; each finding became a defect, and the
+    fix loop would have built the next sprint inside this one."""
+    later_text = (
+        f"--- Planned for later sprints, so NOT missing from this batch ---\n{later}\n"
+        "Do not report anything listed here as missing or incomplete.\n\n"
+        if later.strip() else ""
+    )
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"--- Work orders in this batch ---\n{work_orders}\n\n"
         f"--- Acceptance criteria this sprint serves ---\n{criteria or '(none recorded)'}\n\n"
+        f"{later_text}"
         f"--- What CI measured after the batch ---\n{ci_report}\n\n"
         f"--- The diff ---\n{diff or '(no product files changed)'}\n\n"
         "Review the batch."

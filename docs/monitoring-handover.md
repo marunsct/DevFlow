@@ -9,7 +9,7 @@ kept current by whoever runs the loop; sections 1-10 are the method and history
 written on 2026-09-24 and still hold unless section 0 says otherwise.
 
 **What this document is not.** It is not a list of what to change. That lives
-in `docs/harness-hardening-plan.md` (the running findings log) and in the git
+in `docs/harness-improvement-plan.md` (the current plan) and in the git
 log of this branch, where every fix's commit message says what a run did and
 why the change answers it.
 

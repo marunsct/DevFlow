@@ -617,7 +617,7 @@ def create_runs_router(
         # active run, and deleting it would clobber that run's in-flight
         # compaction state. The files inside are small markdown summaries keyed
         # by a per-invocation session id; their slow accumulation is a known,
-        # accepted limitation (see docs/context-compaction-remediation-steps.md).
+        # accepted limitation, recorded when context compaction was remediated.
 
         runner.discard_run_threads(record)
         await event_bus.purge(run_id)

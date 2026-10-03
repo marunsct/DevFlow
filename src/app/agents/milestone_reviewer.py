@@ -131,8 +131,8 @@ class MilestoneReviewOutput(BaseModel):
 
         The prompt already says to use `changes_required` for a blocking
         finding, and this reviewer read past it - class A of
-        `docs/harness-hardening-plan.md`, where guidance loses and corrections
-        win. So this is a correction: a finding that says how to remedy itself
+        the hardening plan (`docs/harness-improvement-plan.md`), where guidance
+        loses and corrections win. So this is a correction: a finding that says how to remedy itself
         is remediable by definition, and a status meaning "nothing can be done"
         cannot be carried by a list of things to do.
 

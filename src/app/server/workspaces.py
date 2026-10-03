@@ -63,7 +63,7 @@ def allocate_workspace(
     The path is derived from the server-side run id, so two runs can never share
     a workspace and no caller can steer one at an existing directory.
 
-    Segmented by tenant - item 9 of `docs/harness-hardening-plan-part3.md`.
+    Segmented by tenant - item 9 of Part III of the hardening plan (`docs/harness-improvement-plan.md`).
     `tenant_id` is enforced consistently in the API and in `run_store` queries,
     and was not enforced here: every run landed in one flat root. Nothing reads
     another tenant's workspace today, because every path-taking tool resolves

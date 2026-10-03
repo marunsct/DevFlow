@@ -75,6 +75,18 @@ Each was re-checked against the code, not taken from the plans' own status notes
 
 ## 2. The revised plan
 
+| item | state |
+|---|---|
+| R1 what the harness owns is enforced where the plan is made | done, `88356da` |
+| R2 auto mode decides at the last two stopping points | done, `d12b138` |
+| R3 a model endpoint is treated as what it is | done, `139cf0f` |
+| R4 release files from the stack pack | done, `c9b5400` (ADR-0004) |
+| R5 dead code removed and kept out | done, `05b01a3` |
+| R6 `docs/` holds current documents only | done, with this file's commit |
+
+Each is then judged by the benchmark gate (`benchmarks/README.md`), like every
+other change: the improvement loop restarted on it.
+
 ### R1 — What the harness owns is enforced where the plan is made
 
 **Why.** Class A of the old plan, measured again: a rule stated in a prompt does not

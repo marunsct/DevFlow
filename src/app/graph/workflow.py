@@ -2031,7 +2031,7 @@ def _missing_structured_response(
 class RunCancelled(RuntimeError):
     """A cancellation was seen between supersteps and the graph stopped for it.
 
-    Item 7 of `docs/harness-hardening-plan-part3.md`. Cancelling a run did two
+    Item 7 of Part III of the hardening plan (`docs/harness-improvement-plan.md`). Cancelling a run did two
     things - set `cancel_requested`, and revoke the Celery task with SIGTERM -
     and the flag was read only between graph *invokes*. Within one invoke the
     graph runs every stage it can reach, so a cancellation arriving at the start

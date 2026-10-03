@@ -1,6 +1,6 @@
 """Every public class and function in `src/app` has a caller outside its own module.
 
-This is the test `docs/harness-hardening-plan-part3.md` item 1 asks for, and it is
+This is the test Part III of the hardening plan (`docs/harness-improvement-plan.md`) item 1 asks for, and it is
 the §1-B rule from Part I applied to build configuration instead of source code:
 a rule defined over part of the set it governs. The coverage `omit` list used to
 be written per directory (`src/app/deploy/*`, `src/app/analysis/*`, ...), which

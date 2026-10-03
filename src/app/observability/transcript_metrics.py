@@ -1,6 +1,6 @@
 """Run metrics reduced from the transcript, rather than from a second table.
 
-Item 4 of `docs/harness-hardening-plan-part3.md`. Part I's §3.5 proposes a
+Item 4 of Part III of the hardening plan (`docs/harness-improvement-plan.md`). Part I's §3.5 proposes a
 `run_metrics` table holding tool calls by kind, failure rate, repeat rate and
 latency. Every one of those numbers is already in
 `DATA_DIR/transcripts/<run_id>.jsonl`, which is written post-middleware, never

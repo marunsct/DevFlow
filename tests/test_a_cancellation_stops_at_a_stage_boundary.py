@@ -1,6 +1,6 @@
 """Cancellation reaches the graph between supersteps, not only between invokes.
 
-Item 7 of `docs/harness-hardening-plan-part3.md`. `cancel_run` does two things
+Item 7 of Part III of the hardening plan (`docs/harness-improvement-plan.md`). `cancel_run` does two things
 - sets `cancel_requested`, and revokes the Celery task with SIGTERM - and the
 flag was read only between graph *invokes*. Within one invoke the graph runs
 every stage it can reach, so a cancellation arriving at the start of a

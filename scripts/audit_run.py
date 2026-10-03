@@ -12,7 +12,7 @@ section runs the cross-file checks over the workspace and prints what blocks.
 Transcripts live at `DATA_DIR/transcripts/<run-id>.jsonl`; from a deployment,
 `docker compose exec -T worker cat /app/data/transcripts/<run-id>.jsonl > /tmp/run.jsonl`.
 
-Every number in `docs/harness-hardening-plan.md` §4b came out of this. The
+Every number in the old hardening plan's run measurements came out of this. The
 three lines that matter, and what each is for:
 
 - **refusals that prevented damage** - a broken file the harness stopped

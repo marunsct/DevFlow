@@ -19,7 +19,7 @@ exists to prevent. What carries over is only what the attempt *established*:
 which files it has already seen, which commands it has already run and how they
 exited. Facts, not reasoning.
 
-Item 9 of `docs/harness-hardening-plan.md` (B13).
+Item 9 of the hardening plan (B13, `docs/harness-improvement-plan.md`).
 """
 
 from __future__ import annotations

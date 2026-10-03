@@ -351,7 +351,7 @@ NO_SHELL_NOTE = (
 The first version of this offered "an npm/pnpm/yarn script, a Makefile target"
 - and `make`, `pnpm` and `yarn` are all three absent from the execution image,
 so three of its four suggestions were dead ends. Measured 2026-09-16 with
-`shutil.which` inside the worker; see B2 in `docs/harness-hardening-plan.md`
+`shutil.which` inside the worker; see B2 in `docs/harness-improvement-plan.md`
 for the full list. Advice has to name something that is there.
 
 Measured on one run. The technical specification called for a shell build

@@ -226,7 +226,7 @@ else left to notice the cancel flag.
 def _max_concurrent_runs() -> int:
     """How many runs may execute at once; 0 or less disables the limit.
 
-    Item 6 of `docs/harness-hardening-plan-part3.md`, and the gate on Part I's
+    Item 6 of Part III of the hardening plan (`docs/harness-improvement-plan.md`), and the gate on Part I's
     item 2. Nothing bounded this: two unattended runs against one local model
     server shared that server's queue and neither could know its latency was
     being caused by the other.

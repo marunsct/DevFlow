@@ -1,4 +1,4 @@
-"""The per-run spending ceiling: item 8 of `docs/harness-hardening-plan-part3.md`.
+"""The per-run spending ceiling: item 8 of Part III of the hardening plan (`docs/harness-improvement-plan.md`).
 
 The plan's framing is the thing to preserve here. Every other resource in this
 system is bounded - memory, CPU, PIDs, gates, supersteps, context - and token

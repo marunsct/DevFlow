@@ -2873,10 +2873,15 @@ def _proven_problems_the_round_left_out(
     page that made every browser test fail waited three rounds to be anyone's
     task, while the remediation budget ran down on the others.
 
-    A proven problem counts as reported when a reported defect names one of
-    the files it names; one that names no file, when a reported defect shares
-    its opening words. It is owned by the work order whose files it names, as
-    the plan assigns them; with none, by testing, which ran into it.
+    A proven problem counts as reported when one reported defect names at
+    least half of the files it names; one that names no file, when a reported
+    defect shares its opening words. Half, not one: a problem naming
+    `package.json`, `app.js` and three test files - CommonJS in an ES-module
+    package - was counted as reported by "ReferenceError: st is not defined in
+    app.js", a typo, because `app.js` is in nearly every defect. It went
+    unrecorded for three rounds and the run failed on it. It is owned by the
+    work order whose files it names, as the plan assigns them; with none, by
+    testing, which ran into it.
     """
     from app.analysis.integration_checks import files_named_in
 
@@ -2899,7 +2904,8 @@ def _proven_problems_the_round_left_out(
     for problem in proven:
         named = files_named_in(problem)
         if named:
-            if any(name in text for name in named for text in told):
+            needed = max(1, (len(named) + 1) // 2)
+            if any(sum(1 for name in named if name in text) >= needed for text in told):
                 continue
         else:
             opening = " ".join(problem.lower().split()[:6])

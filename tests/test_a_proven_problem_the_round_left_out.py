@@ -67,3 +67,29 @@ def test_a_problem_whose_files_nobody_owns_goes_to_testing() -> None:
     (defect,) = _proven_problems_the_round_left_out([orphan], [], SimpleNamespace(delegated_tasks=[]))
 
     assert str(getattr(defect.owner, "value", defect.owner)) == "testing"
+
+
+MODULE_TYPE = (
+    "simple-to-do-list-app/package.json declares `\"type\": \"module\"`, which makes every "
+    "`.js` file in it an ES module, but simple-to-do-list-app/app.js, "
+    "simple-to-do-list-app/tests/app.test.js, simple-to-do-list-app/tests/crud.test.js, "
+    "simple-to-do-list-app/tests/responsive.test.js still use `require` or `module.exports`."
+)
+
+
+def test_a_defect_naming_one_file_of_many_does_not_cover_it() -> None:
+    """`app.js` is in nearly every defect. A typo there is not this problem."""
+    reported = [_reported("ReferenceError: st is not defined in app.js at ensureLoaded due to a typo")]
+
+    left_out = _proven_problems_the_round_left_out([MODULE_TYPE], reported, MILESTONE)
+
+    assert [d.description for d in left_out] == [MODULE_TYPE]
+
+
+def test_a_defect_naming_most_of_its_files_covers_it() -> None:
+    reported = [_reported(
+        "app.test.js, crud.test.js and responsive.test.js use require in a module package",
+        ["simple-to-do-list-app/package.json"],
+    )]
+
+    assert _proven_problems_the_round_left_out([MODULE_TYPE], reported, MILESTONE) == []

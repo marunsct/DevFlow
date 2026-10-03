@@ -263,22 +263,56 @@ def test_a_red_suite_fails_fast_and_never_on_a_fixed_port() -> None:
             continue
         assert "actionTimeout: 3_000" in config, pack.name
         assert "timeout: 15_000" in config, pack.name
-        assert "process.env.ACCEPTANCE_PORT ||" in config and "Math.random()" in config, pack.name
+        assert "process.env.ACCEPTANCE_PORT ||=" in config and "Math.random()" in config, pack.name
 
 
-def test_every_harness_test_command_gets_a_free_port(monkeypatch, tmp_path) -> None:
+def test_every_sandboxed_command_gets_a_free_port_and_the_scaffold_adds_nothing(monkeypatch, tmp_path) -> None:
+    """One path for the harness's runs and the agents': a configuration that
+    only worked when the harness passed the port passed every smoke test and
+    failed every suite an agent ran."""
     from app.stacks import scaffold as scaffolding
+    from app.tools.sandbox import _child_environment
 
+    first = int(_child_environment(str(tmp_path), None)["ACCEPTANCE_PORT"])
+    assert first > 0
+    assert _child_environment(str(tmp_path), {"ACCEPTANCE_PORT": "1234"})["ACCEPTANCE_PORT"] == "1234"
     seen = []
     monkeypatch.setattr(
         "app.tools.sandbox.SandboxExecutor.execute",
         lambda argv, **kwargs: seen.append(kwargs.get("extra_env")) or {"returncode": "0"},
     )
-    run = scaffolding.sandbox_runner(tmp_path)
-    run(["npm", "run", "test:acceptance"], "test", "app")
-    run(["npm", "install"], "install", "app")
-    assert int(seen[0]["ACCEPTANCE_PORT"]) > 0
-    assert seen[1] is None
+    scaffolding.sandbox_runner(tmp_path)(["npm", "run", "test:acceptance"], "test", "app")
+    assert seen == [None]
+
+
+def _the_port_lines(config: str) -> str:
+    return "\n".join(line for line in config.splitlines() if line.startswith(("process.env.", "const port")))
+
+
+@pytest.mark.parametrize("pack", [p for p in ALL_PACKS if "playwright.config.js" in p.files], ids=lambda p: p.name)
+def test_the_acceptance_port_is_picked_once_for_every_process(pack, tmp_path) -> None:
+    """Playwright loads the configuration in its main process and again in
+    each worker. A pick per load started the server on one port and sent
+    every test to another: ERR_CONNECTION_REFUSED on every run an agent
+    started, and the agents went after the server and this file."""
+    import shutil
+    import subprocess
+
+    config = pack.render("demo", "Demo")["playwright.config.js"]
+    assert "Date.now()" not in config.split("webServer", 1)[1]
+    if shutil.which("node") is None:
+        pytest.skip("node is not installed here")
+    script = tmp_path / "ports.mjs"
+    script.write_text(
+        _the_port_lines(config)
+        + "\nimport { execFileSync } from 'node:child_process';\n"
+        "if (process.argv[2] === 'worker') { console.log(port); } else {\n"
+        "  const again = execFileSync(process.execPath, [process.argv[1], 'worker']).toString().trim();\n"
+        "  console.log(port === Number(again) ? 'same' : `different ${port} ${again}`);\n}\n"
+    )
+    env = {key: value for key, value in __import__("os").environ.items() if key != "ACCEPTANCE_PORT"}
+    out = subprocess.run(["node", str(script)], capture_output=True, text=True, env=env, timeout=30)
+    assert out.stdout.strip() == "same", out.stdout + out.stderr
 
 
 def test_the_contract_says_the_kept_files_are_not_the_product(tmp_path) -> None:

@@ -822,8 +822,24 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
         environment["PLAYWRIGHT_BROWSERS_PATH"] = _pw_cache
     # Before `extra_env`, so a caller can still override a specific value.
     environment.update(_concurrency_environment())
+    # A port nothing is listening on, for a suite that starts the product
+    # (the stack packs' acceptance configurations read it). Every command
+    # gets one, so a suite an agent runs takes exactly the path the harness's
+    # own runs take. Only the harness passed one before, and a defect that
+    # broke every run but the harness's - a port picked twice - stayed
+    # invisible to every check the harness made.
+    environment["ACCEPTANCE_PORT"] = str(_a_free_port())
     environment.update(extra_env or {})
     return environment
+
+
+def _a_free_port() -> int:
+    """A port nothing on this machine is listening on right now."""
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
 
 
 def _apply_limits() -> None:

@@ -77,6 +77,14 @@ acceptance/
 def playwright_config(server_command: str, ready_path: str = "/", screenshot: str = "only-on-failure") -> str:
     """A Playwright configuration that starts the product with `server_command`.
 
+    The port is chosen once per run of the suite and published in
+    `ACCEPTANCE_PORT`, because Playwright evaluates this file in its main
+    process and again in each worker: a random pick per evaluation started the
+    server on one port and pointed every test at another, so every run an agent
+    started failed with ERR_CONNECTION_REFUSED (only the harness's own runs,
+    which pass the port, worked) - and the agents, reasonably, went after the
+    server and this file, dozens of refused calls a run.
+
     The server is told its port in `PORT`, and gets a fresh `DATA_DIR` under
     `test-results/` for every run of the suite - named fresh, not emptied by a
     shell chain: one run's stages copied `rm -rf ... && node ...` out of this
@@ -88,8 +96,12 @@ def playwright_config(server_command: str, ready_path: str = "/", screenshot: st
 // The harness runs this suite; keep it as it is. Acceptance tests reach the
 // product through the server below - never from disk, and never on another port.
 // The harness passes a free port; a run started by hand picks one at random, so
-// two runs on one machine never fight over it.
-const port = Number(process.env.ACCEPTANCE_PORT || 20000 + Math.floor(Math.random() * 20000));
+// two runs on one machine never fight over it. Picked once and put in the
+// environment: Playwright loads this file again in every worker process, and
+// workers inherit the environment, so they all reach the one server started.
+process.env.ACCEPTANCE_PORT ||= String(20000 + Math.floor(Math.random() * 20000));
+process.env.ACCEPTANCE_RUN ||= String(Date.now());
+const port = Number(process.env.ACCEPTANCE_PORT);
 
 export default defineConfig({
   testDir: './acceptance',
@@ -115,7 +127,7 @@ export default defineConfig({
     command: `%(command)s`,
     url: `http://127.0.0.1:${port}%(ready)s`,
     // A fresh, empty data directory for every run of the suite.
-    env: { PORT: String(port), DATA_DIR: `test-results/acceptance-data-${port}-${Date.now()}` },
+    env: { PORT: String(port), DATA_DIR: `test-results/acceptance-data-${port}-${process.env.ACCEPTANCE_RUN}` },
     reuseExistingServer: false,
     timeout: 30_000,
   },

@@ -43,21 +43,14 @@ class ScaffoldResult:
     problem: str = ""
 
 
-def free_port() -> int:
-    """A port nothing on this machine is listening on right now."""
-    import socket
-
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return probe.getsockname()[1]
-
-
 def sandbox_runner(repo_root: str | Path) -> Runner:
     """Run commands the way every other harness command runs: contained and recorded.
 
-    A test command is given a free port of its own in `ACCEPTANCE_PORT`, which
-    the packs' acceptance configurations serve the product on: two runs on one
-    worker, or a server a cancelled run has not yet stopped, never collide.
+    Exactly as a stage's command runs, with nothing added: the sandbox gives
+    every command a free port in `ACCEPTANCE_PORT`, so the smoke test proves
+    the path the agents will take. It used to pass the port itself, and a
+    configuration that only worked when given one passed the smoke test and
+    failed every run an agent started.
     """
     from app.tools.sandbox import SandboxExecutor
 
@@ -68,7 +61,6 @@ def sandbox_runner(repo_root: str | Path) -> Runner:
             role_name="testing_specialist",
             category=category,
             working_directory=working_directory or None,
-            extra_env={"ACCEPTANCE_PORT": str(free_port())} if category == "test" else None,
         )
 
     return run

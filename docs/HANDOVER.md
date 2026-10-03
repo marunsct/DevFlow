@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `366e1ae`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `366e1ae` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-2f02a6e2-d8fa-4579-8622-8c9ca3a6d125` (see `data/loop/current_run.txt`), started 19:49 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-023876ad COMPLETED at 19:40 JST on 2026-10-03 in 8 minutes on four unit tests, NOT clean: no browser test at all (Playwright installed, no spec - the check was satisfied by the manifest line; fixed `366e1ae`) and no description control (graded a criterion not met, which does not gate - the open CRITERION decision). A second resumed session (langchain-cb) collided with the 19:48 deploy; it stood down and the stuck containers were removed. |
+| branch | `harness-hardening-session`, last code commit `a00ad12`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `366e1ae`; the last commit (a wording fix in the missing-action finding) is committed but NOT deployed |
+| current run | none. The loop is PAUSED for the harness redesign, driven from session `langchain-cb` (2026-10-03 20:03 JST, at the user's request there). run-2f02a6e2 was cancelled at 20:00 JST, 10 minutes in, for a misleading 'restatement narrows it' wording (fixed in the last commit). The redesigning session restarts the loop when the redesign is in and tested. |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

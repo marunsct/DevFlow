@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `baba502`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `baba502` (deployed 03:34 JST on 2026-10-04): the plan review R1-R6 (`docs/harness-improvement-plan.md`) and the acceptance-port fix |
-| current run | `run-a8a952c4-d888-4caf-86a9-c0b353263e7a`, `web-todo`, started 03:35 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-e6294473 was cancelled 03:28 JST, 11 minutes in: every acceptance run an agent started failed with ERR_CONNECTION_REFUSED because the kept Playwright config picked a port per process (fixed `baba502`). |
+| branch | `harness-hardening-session`, last code commit `3e4909b`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `3e4909b` (deployed 04:03 JST on 2026-10-04): the plan review R1-R6, the acceptance-port fix and the page check |
+| current run | `run-36ad4578-8e3b-469d-b6a8-999fbe533d69`, `web-todo`, started 04:04 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-a8a952c4 was cancelled 04:02 JST, 27 minutes in: its page threw while loading and no stage could see the error, only 'element not found' (page check added `3e4909b`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

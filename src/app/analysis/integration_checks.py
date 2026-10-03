@@ -5823,7 +5823,14 @@ def _a_required_action_nothing_implements(
         who, quoted = "This project's own documents require", f"\"{required[action][:160]}\""
         if action in from_the_brief:
             who, quoted = "The operator's brief requires", f"\"{from_the_brief[action][:160]}\""
-            if " ".join(required[action].split()) != " ".join(from_the_brief[action].split()):
+            ours = " ".join(required[action].split()).lower()
+            theirs = " ".join(from_the_brief[action].split()).lower()
+            # The brief's own words with a note after them are not a narrowing.
+            # One run's intake carried "- Users can add, edit, delete tasks (a
+            # success measure; no workflow above covered edit)", and the
+            # finding called that "a restatement that narrows it to something
+            # already built" - to the stage that had to build edit.
+            if theirs not in ours and ours not in theirs:
                 quoted += (
                     f" (this run's documents restate it as \"{required[action][:140]}\"; a "
                     "restatement that narrows it to something already built does not "

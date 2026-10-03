@@ -95,3 +95,20 @@ def test_without_a_brief_the_documents_are_quoted(workspace):
     problem = _problem(workspace, brief="")
 
     assert "This project's own documents require that a user can `edit`" in problem
+
+
+def test_the_brief_s_words_with_a_note_after_them_are_not_a_narrowing(tmp_path: Path) -> None:
+    """One run's intake repeated the brief's line with a note in brackets, and
+    the finding called it a restatement that narrows the requirement."""
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text(
+        "## Success measures\n"
+        "- Users can add, edit, delete tasks (a success measure; no workflow above covered edit)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "app.js").write_text(APP, encoding="utf-8")
+
+    problem = _problem(tmp_path, "## Acceptance Criteria\n- Users can add, edit, delete tasks\n")
+
+    assert '"- Users can add, edit, delete tasks"' in problem
+    assert "restate it as" not in problem

@@ -138,9 +138,8 @@ modules that do not touch it, and leave the page to the acceptance suite."""
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test` (`import { test, expect } from '@playwright/test'`). The
 configuration starts the product's own server; open the page with
-`await page.goto('/')` - never a `file://` address, a host or a port. Find
-elements the way a user does: `page.getByRole`, `page.getByLabel`,
-`page.getByPlaceholder`, `page.getByText`. Act the way a user does: `fill`,
+`await page.goto('/')` - never a `file://` address, a host or a port.
+""" + js.FIND_CONTROLS + """ Act the way a user does: `fill`,
 `click`, `press('Enter')`, `check`, `selectOption`. Every test starts in a fresh
 browser, so nothing one test stores is seen by another. To prove something
 persists, change it, `await page.reload()`, and check it is still there. To
@@ -191,6 +190,7 @@ PACK = StackPack(
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
     runtime_report=js.PAGE_LOAD_REPORT,
+    locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
 )

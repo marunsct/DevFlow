@@ -194,6 +194,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()
         )
     problems.extend(suite.tests_that_broke_themselves(root, result))
+    problems.extend(suite.locators_nobody_sees(root))
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)

@@ -522,6 +522,41 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+def locators_nobody_sees(repo_root: str | Path) -> list[str]:
+    """Where the suite finds a control by something no person sees, by the pack's patterns.
+
+    The suite is the definition of done, and it is only as strict as the way it
+    finds things. Measured on one run: QA found a field the brief called
+    "labelled" by its placeholder, the product gave it a placeholder and no
+    label, the locked suite passed - and three of the benchmark's hidden tests,
+    which find the field by its label, failed. A product a person (or a screen
+    reader) cannot use the way the brief says passed its own definition of done.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].locators_nobody_sees:
+        return []
+    patterns = [re.compile(pattern) for pattern in found[0].locators_nobody_sees]
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for pattern in patterns:
+            match = pattern.search(text)
+            if match is None:
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            snippet = text.splitlines()[line - 1].strip()[:160]
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} finds a control by something no "
+                f"person sees (`{snippet}`). Find it by the label or name the brief gives it, "
+                "exactly; where the brief gives none, by its role and the name a person reads."
+            )
+    return problems[:6]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 

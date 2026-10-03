@@ -102,6 +102,9 @@ class StackPack:
     #: reported going wrong (a page's uncaught errors), relative to the
     #: project; "" when the pack records none.
     runtime_report: str = ""
+    #: Patterns of locators that find a control by something no person sees (a
+    #: placeholder, a test id). An acceptance suite using one is sent back.
+    locators_nobody_sees: tuple[str, ...] = ()
     #: CI steps before the pack's install command (YAML list items): the
     #: language runtime. See `app.stacks.release`.
     ci_setup: tuple[str, ...] = ()

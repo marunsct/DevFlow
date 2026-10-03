@@ -250,6 +250,23 @@ UNIT_GUIDE = """Unit tests go in `tests/`, one file per module, named `<module>.
 Run them with `npm test`. Install a dependency with `npm install <name>` (add
 `--save-dev` for one only tests use). Never start a server yourself."""
 
+#: How a browser test finds a control, shared by every pack with a page.
+FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
+it: a field the brief says is labelled "Email" is
+`page.getByLabel('Email', { exact: true })`, a button named "Send" is
+`page.getByRole('button', { name: 'Send', exact: true })`, an entry of a list is
+`page.getByRole('listitem')`. A placeholder is not a label, and a test id or a CSS
+class is not something a person sees: never find a control by them - a product
+could pass such a test and still lack what the brief asked for."""
+
+#: Locators that find a control by something no person sees. A suite that
+#: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).
+#: Measured on one run: QA found a field the brief called "labelled" by its
+#: placeholder, the product gave it a placeholder and no label, the locked
+#: suite passed, and three of the benchmark's hidden tests - which find it by
+#: its label - failed.
+LOCATORS_NOBODY_SEES = (r"\bgetByPlaceholder\s*\(", r"\bgetByTestId\s*\(")
+
 NAMING = """Each test's title starts with the id of the criterion it proves, in square
 brackets: `test('[AC-3] a completed item stays completed after a reload', ...)`
 (a test that proves two: `[AC-3][AC-4] ...`). A test with no criterion id in its

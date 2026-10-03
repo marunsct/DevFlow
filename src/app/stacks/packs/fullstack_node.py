@@ -89,9 +89,8 @@ page; the page itself is covered by the acceptance suite."""
 
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test`. The configuration starts the product's own service with an
-empty `DATA_DIR`. Test what a user does through the page with the `page` fixture:
-`await page.goto('/')`, find elements the way a user does (`page.getByRole`,
-`page.getByLabel`, `page.getByPlaceholder`, `page.getByText`), act with `fill`,
+empty `DATA_DIR`. Test what a user does through the page with the `page` fixture,
+from `await page.goto('/')`. """ + js.FIND_CONTROLS + """ Act with `fill`,
 `click` and `press('Enter')`. Test the service's interface with the `request`
 fixture (`await request.post('/api/...', { data })`). To prove something
 persists, change it, `await page.reload()`, and check it is still there. Tests run
@@ -145,6 +144,7 @@ PACK = StackPack(
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
     runtime_report=js.PAGE_LOAD_REPORT,
+    locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
     release_files=api.PACK.release_files,

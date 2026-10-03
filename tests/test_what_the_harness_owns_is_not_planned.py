@@ -138,3 +138,18 @@ def test_a_restyle_needs_no_testing_work_order_and_no_test_cases(project, monkey
     behaviour = _task("ui_ux", "notes/src/app.js")
     assert any("No `testing` work order" in p for p in readiness_problems(_plan(behaviour), project))
     assert is_presentation("notes/styles.css") and not is_presentation("notes/index.html")
+
+
+def test_the_harness_s_setup_is_not_counted_against_the_product_s_size(project) -> None:
+    """A brief's line cap is the product's. Counted, the kept server and page
+    check - over a hundred lines - went against it."""
+    from app.analysis.integration_checks import _measure_sizes, _source_files
+
+    (project / "notes" / "src").mkdir(parents=True, exist_ok=True)
+    (project / "notes" / "src" / "app.js").write_text("export function add(a, b) {\n  return a + b;\n}\n")
+
+    application, tests, stray, counted = _measure_sizes(_source_files(project), project)
+
+    names = {name for _, name in application}
+    assert "notes/src/app.js" in names
+    assert not [name for name in counted if contract.owned_by_the_harness(project, name)]

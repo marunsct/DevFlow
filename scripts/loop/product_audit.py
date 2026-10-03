@@ -61,10 +61,18 @@ for path in sorted(project.rglob("*")):
         files.append(path)
         print(f"  {path.relative_to(root)}")
 
-print("\n== 2. code lines (non-blank, non-comment)")
+try:
+    from app.stacks.contract import owned_by_the_harness
+except Exception:  # noqa: BLE001 - outside the worker nothing is the harness's
+    owned_by_the_harness = lambda root, relative: ""  # noqa: E731
+
+print("\n== 2. code lines (non-blank, non-comment; the harness's own setup is not the product's)")
 total = 0
 for path in files:
     if path.suffix.lower() not in CODE_SUFFIXES or "test" in path.name.lower() or "spec" in path.name.lower():
+        continue
+    if owned_by_the_harness(root, path.relative_to(root).as_posix()):
+        print(f"      -  {path.relative_to(root)}  (the harness's)")
         continue
     try:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()

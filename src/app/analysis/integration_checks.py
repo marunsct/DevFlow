@@ -3188,9 +3188,18 @@ def _measure_sizes(
     stray: list[tuple[int, str]] = []
     counted_code: dict[str, int] = {}
     orphans = orphans or set()
+    try:
+        from app.stacks.contract import owned_by_the_harness
+    except Exception:  # noqa: BLE001 - nothing is the harness's
+        owned_by_the_harness = lambda root, relative: ""  # noqa: E731
     for path in files:
         relative = str(path.relative_to(root))
         if path.suffix.lower() not in _COUNTED_SUFFIXES or _NOT_COUNTED.search(relative):
+            continue
+        # The harness's own setup is not the team's code. Counted, its
+        # server and page check - over a hundred lines - went against a
+        # brief's cap that only the product's code answers to.
+        if owned_by_the_harness(root, relative.replace("\\", "/")):
             continue
         try:
             text = _read(path)

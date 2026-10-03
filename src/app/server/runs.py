@@ -500,6 +500,14 @@ def create_runs_router(
             "sprint-milestone": "milestone_plan",
             "milestone-review": "milestone_review",
         }
+        # Review points whose artifact is a document the workflow writes rather
+        # than a structured output: the acceptance suite in plain language, and
+        # the release evidence. See `app.graph.acceptance_nodes` and `delivery`.
+        review_documents = {
+            "acceptance-tests": "docs/acceptance_tests.md",
+            "release": "docs/reviews/release-evidence.md",
+        }
+        path = review_documents.get(path, path)
         state = record.graph_state(runner.checkpointer)
         logical_key = logical_mapping.get(path) or path.replace("-", "_")
         if state.get(logical_key) is not None:
@@ -684,6 +692,42 @@ def create_runs_router(
             subject=run_id, detail={"reason": body.reason},
         )
         return {"message": f"Approval decision '{body.action}' recorded for run {run_id}."}
+
+    @runs.get("/{run_id}/decisions")
+    async def get_decisions(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Every decision the run has taken, who took it and why (`app.decisions`)."""
+        record = _require_run(runner, run_id, user)
+        state = record.graph_state(runner.checkpointer)
+        decisions = [d for d in (state.get("decisions") or []) if isinstance(d, dict)]
+        return {"run_id": run_id, "decisions": decisions}
+
+    @runs.get("/{run_id}/evidence")
+    async def get_evidence(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """What a reviewer is shown: the acceptance suite's last measured result,
+        the screenshots it kept, and the review pages written so far."""
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            return {"run_id": run_id, "acceptance": {}, "screenshots": [], "pages": []}
+        from app.acceptance import suite
+        from app.graph.delivery import screenshots
+
+        root = Path(record.repo_root)
+        pages = sorted(
+            path.relative_to(root).as_posix()
+            for path in (root / "docs" / "reviews").glob("*.md")
+        ) if (root / "docs" / "reviews").is_dir() else []
+        return {
+            "run_id": run_id,
+            "acceptance": suite.last_result(root),
+            "deferred": suite.deferred(root),
+            "change_requests": suite.change_requests(root),
+            "screenshots": screenshots(root),
+            "pages": pages,
+        }
 
     @runs.get("/{run_id}/review")
     async def get_pending_review(

@@ -29,6 +29,7 @@ import { ReviewPanel } from '../components/ReviewPanel';
 import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
 import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
+import { DeliveryPanel } from '../components/DeliveryPanel';
 import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy, ListChecks, LayoutGrid } from 'lucide-react';
 import { describeStage, describeStatus } from '../lib/activity';
 
@@ -558,6 +559,10 @@ export const RunDashboard: React.FC = () => {
 
       {/* Sprint Milestones - shown in both views */}
       <SprintSummaryPanel runId={runId!} />
+
+      {/* Acceptance criteria, screenshots and the decision log. Refreshed as the
+          run moves between stages. */}
+      <DeliveryPanel runId={runId!} refreshKey={`${run.current_stage ?? ''}:${run.status}`} />
 
       {/* Workspace: the guided wizard or the classic dashboard. The wizard
           presents the run as phases (intake, design, sprints, summary) with a

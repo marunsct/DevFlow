@@ -320,12 +320,14 @@ PRODUCT_INTAKE_REVIEW = "product_intake"
 """Review point: the refined product intake document."""
 
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
+from app.graph.delivery import RELEASE_REVIEW  # noqa: E402 - beside its siblings
 
 _REVIEW_NODES = {
     SPECIFICATION_REVIEW: "user_review_specification",
     SPRINT_REVIEW: "user_review_sprint",
     PRODUCT_INTAKE_REVIEW: "user_review_product_intake",
     ACCEPTANCE_REVIEW: "user_review_acceptance",
+    RELEASE_REVIEW: "user_review_release",
 }
 """Maps a review point to the node that owns its gate, so the entry router can
 re-enter the right node when a paused review is resumed."""
@@ -335,6 +337,7 @@ _REVIEW_STAGES = {
     SPRINT_REVIEW: WorkflowStage.IMPLEMENTATION,
     PRODUCT_INTAKE_REVIEW: WorkflowStage.INTAKE,
     ACCEPTANCE_REVIEW: WorkflowStage.VALIDATION,
+    RELEASE_REVIEW: WorkflowStage.COMPLETE,
 }
 """Maps a review point to the `WorkflowStage` recorded on its `ReviewStatus`,
 so an auditor can tell which lifecycle stage a review decision belongs to."""
@@ -367,6 +370,9 @@ _NODE_NAMES = frozenset(
         "milestone_review",
         "user_review_sprint",
         "sprint_advance",
+        "change_request",
+        "release",
+        "user_review_release",
         "complete",
         "failed",
     }
@@ -526,6 +532,10 @@ class WorkflowGraphState(TypedDict, total=False):
     acceptance_feedback: list[str]
     acceptance_open_problems: list[str]
     acceptance_result: dict[str, Any]
+    # Where the acceptance stages go after a change request's test is locked:
+    # back to the sprint, not to the sprint plan. See `app.graph.delivery`.
+    acceptance_return_to: str | None
+    release_attempts: int
     decisions: list[dict[str, Any]]
 
 
@@ -4109,6 +4119,19 @@ def _run_review_gate(
         "pending_review": None,
         "pending_review_decision": None,
     }
+    from app.decisions import record_decision
+
+    record_decision(
+        state, update, point=review_point,
+        question=f"Does the reviewer accept the {review_point.replace('_', ' ')}?",
+        options=["approve", "request changes", "skip"],
+        decision={"approve": "approve", "skip": "skip", "request_changes": "request changes"}.get(
+            decision_type, str(decision_type)
+        ),
+        rationale="Decided by the reviewer at the review gate.",
+        decided_by="user",
+        comment=str(comment or ""),
+    )
     if decision_type == "request_changes":
         # Carry the comment forward so the role agent revising the artifact
         # sees exactly what the human asked for.
@@ -4617,6 +4640,19 @@ def build_workflow_graph(
             )
 
         if review.status == "approved" or (review.findings and not blocking):
+            from app.decisions import record_decision
+
+            record_decision(
+                state, update, point="technical_specification",
+                question="Is the specification ready to build from?",
+                options=["approve", "send it back to the architect"],
+                decision="approve",
+                rationale=(
+                    "The architecture reviewer approved it."
+                    if review.status == "approved"
+                    else f"Approved with {len(review.findings)} finding(s), none of them blocking."
+                ),
+            )
             # The mandatory gate passed. Only now may an optional human review
             # session run; it can never substitute for this gate.
             update["stage"] = (
@@ -4751,6 +4787,22 @@ def build_workflow_graph(
                 )
             update["sprint_plan_gaps"] = []
             update["current_sprint_index"] = 0
+            from app.decisions import record_decision
+
+            planned = list(getattr(update["sprint_plan"], "sprints", None) or [])
+            record_decision(
+                state, update, point="sprint_plan",
+                question="How is the work split into sprints?",
+                decision=f"{len(planned)} sprint(s): " + "; ".join(
+                    f"{number}. {getattr(sprint, 'goal', '')}" for number, sprint in enumerate(planned, 1)
+                ),
+                rationale=(
+                    "Planned by the scrum master"
+                    + (f"; still unassigned after one re-plan: {missing}" if missing else
+                       "; every success measure is assigned a sprint")
+                    + "."
+                )[:1500],
+            )
             _record_document(
                 state,
                 "docs/sprint_plan.md",
@@ -6078,14 +6130,31 @@ def build_workflow_graph(
                     milestone_review=review,
                 )
 
+        # A decision like any other, and the page the sprint's reviewer reads.
+        from app.decisions import record_decision
+        from app.graph import delivery
+
+        accepted: dict[str, Any] = {}
+        record_decision(
+            state, accepted, point="sprint",
+            question=f"Is sprint {sprint_index + 1} done?",
+            options=["accept", "send it back"],
+            decision="accept",
+            rationale=(
+                "The milestone review accepted it and every acceptance criterion due by "
+                "this sprint passes. " + _as_text(review.acceptance_evidence)
+            )[:1500],
+        )
+        delivery.write_evidence({**state, **accepted}, sprint_index + 1, milestone.selected_sprint_goal)
+
         if _review_enabled(state, SPRINT_REVIEW):
             next_stage = "user_review_sprint"
         elif has_more_sprints:
             next_stage = "sprint_advance"
         else:
-            next_stage = "complete"
+            next_stage = "release"
 
-        return _handing_on(stage=next_stage, milestone_review=review)
+        return _handing_on(**accepted, stage=next_stage, milestone_review=review)
 
     def user_review_sprint_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         sprint_index = state.get("current_sprint_index", 0)
@@ -6097,8 +6166,11 @@ def build_workflow_graph(
             config,
             review_point=SPRINT_REVIEW,
             artifact_id="sprint-milestone",
-            approved_next="sprint_advance" if has_more_sprints else "complete",
-            changes_next="technical_lead",
+            approved_next="sprint_advance" if has_more_sprints else "release",
+            # A requested change becomes a change request with its own
+            # acceptance test before the sprint is planned again. See
+            # `app.graph.delivery.change_request`.
+            changes_next="change_request",
         )
 
     def sprint_advance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
@@ -6211,6 +6283,25 @@ def build_workflow_graph(
             changes_next="acceptance_author",
         )
 
+    # Shipping: the release gate and change requests. See `app.graph.delivery`.
+    from app.graph import delivery
+
+    def change_request_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return delivery.change_request(state, config, stage_context)
+
+    def release_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return delivery.release(state, config, stage_context)
+
+    def user_review_release_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return _run_review_gate(
+            state,
+            config,
+            review_point=RELEASE_REVIEW,
+            artifact_id="release",
+            approved_next="complete",
+            changes_next="change_request",
+        )
+
     graph = StateGraph(WorkflowGraphState)
     from langgraph.types import RetryPolicy
     
@@ -6247,6 +6338,9 @@ def build_workflow_graph(
     graph.add_node("milestone_review", milestone_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_sprint", user_review_sprint_node)
     graph.add_node("sprint_advance", sprint_advance_node)
+    graph.add_node("change_request", change_request_node)
+    graph.add_node("release", release_node)
+    graph.add_node("user_review_release", user_review_release_node)
     graph.add_node("complete", complete_node)
     graph.add_node("failed", failed_node)
 
@@ -6276,6 +6370,9 @@ def build_workflow_graph(
         "milestone_review",
         "user_review_sprint",
         "sprint_advance",
+        "change_request",
+        "release",
+        "user_review_release",
     ):
         graph.add_conditional_edges(node_name, _route_from_stage, routable_targets)
 

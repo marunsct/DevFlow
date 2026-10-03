@@ -249,6 +249,21 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         ),
     )
     logger.info("Acceptance suite locked: %d test(s)", tests)
+    # A change request's tests go straight back to the sprint that asked for
+    # them, carrying what must now pass. See `app.graph.delivery`.
+    return_to = state.get("acceptance_return_to")
+    if return_to:
+        from app.graph.delivery import change_request_brief
+
+        return _handing_on(
+            **update,
+            stage=return_to,
+            acceptance_return_to=None,
+            acceptance_feedback=[],
+            acceptance_open_problems=open_problems,
+            acceptance_result=result.as_dict(),
+            revision_comments=change_request_brief(root),
+        )
     next_stage = "user_review_acceptance" if _review_enabled(state, ACCEPTANCE_REVIEW) else "scrum_master"
     return _handing_on(
         **update,

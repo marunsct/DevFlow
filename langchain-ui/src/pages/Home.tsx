@@ -11,10 +11,14 @@ export const Home: React.FC = () => {
   // so the run only comes back when it finishes or fails. Supervised keeps the
   // individual gates, which are then worth showing separately.
   const [unattended, setUnattended] = useState<boolean>(false);
-  const [autoApprove, setAutoApprove] = useState<boolean>(false);
+  // Approval mode asks at decisions, not at every file: the review gates below
+  // are where a person decides, so per-action prompts start switched off.
+  const [autoApprove, setAutoApprove] = useState<boolean>(true);
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
+  const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
   const [reviewSprint, setReviewSprint] = useState<boolean>(true);
+  const [reviewRelease, setReviewRelease] = useState<boolean>(true);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -68,11 +72,13 @@ export const Home: React.FC = () => {
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,
         review_policy: unattended
-          ? { product_intake: false, technical_specification: false, sprint: false }
+          ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false }
           : {
               product_intake: reviewIntake,
               technical_specification: reviewTechSpec,
-              sprint: reviewSprint
+              acceptance_tests: reviewAcceptance,
+              sprint: reviewSprint,
+              release: reviewRelease
             }
       };
       
@@ -291,10 +297,25 @@ export const Home: React.FC = () => {
                       label="Technical Specification Review"
                     />
                     <Checkbox
+                      id="reviewAcceptance"
+                      checked={reviewAcceptance}
+                      onChange={setReviewAcceptance}
+                      label="Acceptance Tests Review"
+                      description="The tests that decide when the product is done, before they are locked."
+                    />
+                    <Checkbox
                       id="reviewSprint"
                       checked={reviewSprint}
                       onChange={setReviewSprint}
                       label="End of Sprint Review"
+                      description="With the criteria that pass, screenshots and decisions. A requested change becomes a tracked change request."
+                    />
+                    <Checkbox
+                      id="reviewRelease"
+                      checked={reviewRelease}
+                      onChange={setReviewRelease}
+                      label="Release Review"
+                      description="The finished product, once every acceptance criterion passes."
                     />
                   </div>
                 </>

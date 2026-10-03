@@ -6502,6 +6502,25 @@ def _missing_playwright_for_ui(files: list[Path], root: Path, stack: Any) -> lis
             "is insufficient for verifying that the application works in the browser."
             + _and_the_brief_bans_dependencies(root)
         ]
+    # Installed is not used. One completed run listed `@playwright/test` in
+    # its devDependencies, wrote no spec that imports it, and shipped on four
+    # unit tests of its state module - this check was satisfied by the
+    # manifest line alone, and the review accepted a page nothing had opened.
+    drives_the_page = re.compile(r"""(?:from\s*|require\(\s*|import\(\s*)["']@?playwright(?:/test)?["']""")
+    specs = [
+        path for path in files
+        if is_test(str(path.relative_to(root)))
+        and path.suffix.lower() in _CLIENT_LOGIC_SUFFIXES
+        and drives_the_page.search(_read(path))
+    ]
+    if not specs:
+        return [
+            "The product has an HTML UI and `@playwright/test` is installed, but no test "
+            "imports it: nothing has ever opened the page. This BREAKS regression detection. "
+            "You MUST write a browser test with `@playwright/test` that opens the page and "
+            "drives each feature the brief asks for. Unit tests of the data layer say nothing "
+            "about whether the page does any of it."
+        ]
     return []
 
 

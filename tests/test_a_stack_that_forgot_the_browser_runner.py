@@ -137,7 +137,10 @@ def test_the_corrected_stack_satisfies_both_checks(tmp_path) -> None:
         encoding="utf-8",
     )
     (tmp_path / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
-    files = [tmp_path / "package.json", tmp_path / "index.html", tmp_path / "app.js"]
+    (tmp_path / "e2e").mkdir()
+    (tmp_path / "e2e" / "ui.spec.js").write_text("import { test } from '@playwright/test';\ntest('opens', async ({ page }) => { await page.goto('/'); });\n", encoding="utf-8")
+    files = [tmp_path / "package.json", tmp_path / "index.html", tmp_path / "app.js",
+             tmp_path / "e2e" / "ui.spec.js"]
 
     before = Stack(
         framework="None (vanilla HTML/CSS/JS)", testing_framework="node --test"

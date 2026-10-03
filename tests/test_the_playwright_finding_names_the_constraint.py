@@ -98,5 +98,10 @@ def test_an_installed_playwright_reports_nothing_either_way(project: Path) -> No
     (project / "docs" / "product_intake.md").write_text(
         "No external dependencies.\n", encoding="utf-8"
     )
+    # Installed and used by a spec: installed alone no longer satisfies it.
+    (project / "e2e").mkdir()
+    (project / "e2e" / "ui.spec.js").write_text("import { test } from '@playwright/test';\ntest('opens', async ({ page }) => { await page.goto('/'); });\n", encoding="utf-8")
 
-    assert _missing_playwright_for_ui(_files(project), project, None) == []
+    assert _missing_playwright_for_ui(
+        [*_files(project), project / "e2e" / "ui.spec.js"], project, None
+    ) == []

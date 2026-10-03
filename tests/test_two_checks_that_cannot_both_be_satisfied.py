@@ -76,6 +76,10 @@ def a_ui_project(tmp_path):
         }
         if with_playwright:
             manifest["devDependencies"]["@playwright/test"] = "^1.40.0"
+            # Installed and used: a spec that opens the page. Installed alone
+            # is no longer enough - see `_missing_playwright_for_ui`.
+            (project / "e2e").mkdir(exist_ok=True)
+            (project / "e2e" / "ui.spec.js").write_text("import { test } from '@playwright/test';\ntest('opens', async ({ page }) => { await page.goto('/'); });\n")
         (project / "package.json").write_text(json.dumps(manifest))
         return tmp_path, [f for f in tmp_path.rglob("*") if f.is_file()]
 

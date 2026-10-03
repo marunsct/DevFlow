@@ -13,7 +13,8 @@ held that is not a secret is in this file.
 
 The owner wants a loop that never stops on its own:
 
-1. Start a run (`scripts/loop/loop.sh start tests/brief_low.md`).
+1. Start a run (`scripts/loop/loop.sh bench <name>` from `benchmarks/`, or
+   `scripts/loop/loop.sh start <brief>` for a brief with no hidden tests).
 2. Audit it: transcripts, worker logs, the database, tool calls - especially
    failed and unnecessary ones.
 3. Fix what you find **technology-agnostically**: the harness must build any
@@ -23,10 +24,17 @@ The owner wants a loop that never stops on its own:
 5. Commit, push (`git push main harness-hardening-session` - the remote is
    named `main`), deploy (`loop.sh deploy`), start the next run.
 
-**Gate.** Two consecutive clean runs on `tests/brief_low.md`, then two on
-`tests/brief_medium.md`, then `tests/brief_high.md`. A run is clean only if
-nothing needed fixing *and* the product audit passes. Any fix resets the count.
-**Current count: 0 of 2 on brief_low.**
+**Gate (since the 2026-10-03 redesign, `docs/redesign-software-company.md`).**
+A run is clean when its product scores 100% on its benchmark's hidden tests
+(`loop.sh score`) and the run needed no harness fix; any fix resets the current
+stage's count. Stages, in order (`benchmarks/README.md`):
+1. `web-todo`: two consecutive clean runs.
+2. `notes-api`, `wordstats-cli`, `textkit-lib`: one clean run each.
+3. `fullstack-bookmarks`: two consecutive clean runs.
+4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand as before.
+Still read the product and the transcripts after every run: the score says
+whether it works, not whether the harness wasted calls getting there.
+**Current: stage 1 (web-todo), 0 of 2.**
 
 **Early stop.** A bug found in a run's first 40 minutes: cancel the run
 (`loop.sh cancel`), fix, deploy, start again - do not wait for it to finish. A
@@ -70,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `a00ad12`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `366e1ae`; the last commit (a wording fix in the missing-action finding) is committed but NOT deployed |
-| current run | none. The loop is PAUSED for the harness redesign, driven from session `langchain-cb` (2026-10-03 20:03 JST, at the user's request there). run-2f02a6e2 was cancelled at 20:00 JST, 10 minutes in, for a misleading 'restatement narrows it' wording (fixed in the last commit). The redesigning session restarts the loop when the redesign is in and tested. |
+| branch | `harness-hardening-session`, last code commit `9e219aa` (the redesign, phases 1-9), pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `9e219aa` (deployed 21:52 JST on 2026-10-03) |
+| current run | `run-fa27ea5b-8e8c-4b62-bf75-cafa698e4453`, the first benchmark run after the redesign: `web-todo`, started 21:53 JST (2026-10-03) by the loop account, auto mode, on gpt-oss-20b. No judgement model is configured (Settings), so every stage runs on gpt-oss-20b; choosing a stronger one is the owner's decision. |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

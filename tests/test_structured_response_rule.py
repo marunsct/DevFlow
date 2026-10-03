@@ -36,6 +36,7 @@ AGENTS = [
     "security_reviewer",
     "milestone_reviewer",
     "acceptance_reviewer",
+    "code_reviewer",
     "specialists",
 ]
 

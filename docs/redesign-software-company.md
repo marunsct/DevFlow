@@ -64,7 +64,7 @@ acceptance tests) or, where offered, picks an option.
 | 3 | Acceptance gates in test rounds, milestone review, release | done |
 | 4 | Per-role models | done |
 | 5 | Decision records, modes, evidence package, change requests, UI | done |
-| 6 | CI per batch with revert, code review, commits | |
+| 6 | CI per batch with revert, code review, commits | done |
 | 7 | Vertical-slice planning and the escalation ladder | |
 | 8 | Check scoping (core vs pack, blocking vs advisory), precision script | |
 | 9 | Benchmark briefs, hidden tests, scorer, loop gate | |

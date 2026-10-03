@@ -364,6 +364,8 @@ _NODE_NAMES = frozenset(
         # edge map contained it and a resume parked on it had no target.
         "specialist_worker",
         "specialist_gather",
+        "ci_gate",
+        "code_review",
         "test_and_triage",
         "defect_remediation",
         "security_review",
@@ -390,6 +392,7 @@ _ITERATED_STAGE_OWNERS = {
     "defect_fix_": "defect_remediation",
     "acceptance_author_": "acceptance_author",
     "acceptance_review_": "acceptance_review",
+    "code_review_": "code_review",
 }
 """Maps an iterated stage-name prefix to the node that owns it.
 
@@ -536,6 +539,12 @@ class WorkflowGraphState(TypedDict, total=False):
     # back to the sprint, not to the sprint plan. See `app.graph.delivery`.
     acceptance_return_to: str | None
     release_attempts: int
+    # CI and code review between a batch and its test rounds, and the guard
+    # around each fix. See `app.graph.engineering`.
+    ci_report: str
+    ci_batch_commit: str
+    review_defects: list[Any]
+    fix_base_commit: str
     decisions: list[dict[str, Any]]
 
 
@@ -5123,10 +5132,11 @@ def build_workflow_graph(
             update["specialist_task_index"] = index + 1
             return update
 
-        # Every delegated task is done, so the increment is built. Verification
-        # is its own stage (Step 5.4): the Test Engineer runs the tests and
+        # Every delegated task is done, so the increment is built. CI and a
+        # code review read it first (`app.graph.engineering`); verification is
+        # then its own stage (Step 5.4): the Test Engineer runs the tests and
         # turns failures into tracked, owned defects.
-        return _handing_on(stage="test_and_triage")
+        return _handing_on(stage="ci_gate")
 
     def specialist_worker_node(state: dict, config: RunnableConfig) -> dict[str, Any]:
         """Worker node for executing a single specialist task in parallel mode."""
@@ -5273,7 +5283,7 @@ def build_workflow_graph(
                 "pending_approval": None,
                 "queued_decisions": {},
             }
-        return _handing_on(stage="test_and_triage", specialist_pauses={}, queued_decisions={})
+        return _handing_on(stage="ci_gate", specialist_pauses={}, queued_decisions={})
 
     def test_and_triage_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "milestone_plan")
@@ -5344,7 +5354,10 @@ def build_workflow_graph(
             return update  # paused waiting for approval on a test artifact
 
         test_result: SpecialistOutput = update.pop("__test_result__")
-        reported: list[ReportedDefect] = _each_defect_once(list(test_result.defects))
+        # CI's regressions and the code review's findings for this batch, once.
+        reported: list[ReportedDefect] = _each_defect_once(
+            [*test_result.defects, *(state.get("review_defects") or [])]
+        )
         if len(reported) < len(test_result.defects):
             logger.warning(
                 "test_round_%d reported %d defect(s), %d of them repeats; keeping %d",
@@ -5476,6 +5489,7 @@ def build_workflow_graph(
             "pending_approval": None,
             "pending_inner_thread_id": None,
             "pending_decision": None,
+            "review_defects": [],
         }
 
         if cycle.escalated:
@@ -5625,6 +5639,16 @@ def build_workflow_graph(
             _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
             caught_by=getattr(defect, "caught_by", ""),
         )
+        # A fix that breaks what passed before it is reverted to exactly where
+        # it started. The commit it starts from is taken on the stage's first
+        # entry and carried across an approval pause. See `app.graph.engineering`.
+        from app.graph import engineering
+
+        fix_base = (
+            str(state.get("fix_base_commit") or "")
+            if state.get("pending_inner_thread_id")
+            else engineering.before_a_fix(state["repository"].root_path, stage_name)
+        )
         update = _run_gated_agent(
             state,
             config,
@@ -5635,9 +5659,29 @@ def build_workflow_graph(
             next_stage="defect_remediation",
         )
         if "__fix_result__" not in update:
+            update["fix_base_commit"] = fix_base
             return update  # paused waiting for approval on this fix
 
         fix_result: SpecialistOutput = update.pop("__fix_result__")
+        broke = engineering.after_a_fix(
+            state["repository"].root_path, fix_base, stage_name, defect.description
+        )
+        if broke:
+            noted = cycle.model_copy(update={"defects": [
+                item.model_copy(update={
+                    "actual_behavior": (
+                        f"{item.actual_behavior}\nA fix was tried and reverted, because it broke "
+                        f"what passed before it: {'; '.join(broke[:5])}."
+                    )
+                }) if position == defect_index else item
+                for position, item in enumerate(cycle.defects)
+            ]})
+            return _handing_on(**{
+                **update,
+                "remediation": noted,
+                "defect_cursor": defect_index + 1,
+                "fix_base_commit": "",
+            })
         outputs = dict(state.get("specialist_outputs", {}))
         outputs[stage_name] = fix_result
 
@@ -6146,6 +6190,9 @@ def build_workflow_graph(
             )[:1500],
         )
         delivery.write_evidence({**state, **accepted}, sprint_index + 1, milestone.selected_sprint_goal)
+        from app.graph import engineering
+
+        engineering.accepted_state(state["repository"].root_path)
 
         if _review_enabled(state, SPRINT_REVIEW):
             next_stage = "user_review_sprint"
@@ -6286,6 +6333,16 @@ def build_workflow_graph(
     # Shipping: the release gate and change requests. See `app.graph.delivery`.
     from app.graph import delivery
 
+    # CI and code review between a batch and its test rounds. See
+    # `app.graph.engineering`.
+    from app.graph import engineering
+
+    def ci_gate_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return engineering.ci_gate(state, config, stage_context)
+
+    def code_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return engineering.code_review(state, config, stage_context)
+
     def change_request_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         return delivery.change_request(state, config, stage_context)
 
@@ -6332,6 +6389,8 @@ def build_workflow_graph(
     # here and LangGraph runs the target once for the whole superstep,
     # which is what gives the fan-out a single writer for `stage`.
     graph.add_edge("specialist_worker", "specialist_gather")
+    graph.add_node("ci_gate", ci_gate_node)
+    graph.add_node("code_review", code_review_node, retry_policy=agent_retry_policy)
     graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
@@ -6364,6 +6423,8 @@ def build_workflow_graph(
         "technical_lead",
         "specialist_dispatch",
         "specialist_gather",
+        "ci_gate",
+        "code_review",
         "test_and_triage",
         "defect_remediation",
         "security_review",

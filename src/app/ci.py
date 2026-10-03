@@ -1,0 +1,188 @@
+"""Continuous integration for a run's workspace: what passes now, and what used to.
+
+A software company does not merge a change that breaks what already worked,
+and does not keep a fix that makes the product worse. The harness does the
+same, mechanically, with the pack's own commands:
+
+- a **snapshot** runs the unit and acceptance suites and records, per test,
+  whether it passed;
+- a **regression** is a test that passed in the last snapshot and does not now;
+- a **fix that regresses** is put back exactly as it was before the fix -
+  `git reset` to the commit taken just before it - and its defect stays open
+  with the reason.
+
+Snapshots live in `.harness/ci.json` (hidden from agents, kept out of git).
+Every function degrades rather than raises: a run with no pack has no unit
+snapshot, a run with no suite no acceptance one, and both simply compare less.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Callable, Sequence
+
+from app.acceptance import junit, suite
+from app.stacks import contract
+
+logger = logging.getLogger(__name__)
+
+CI_FILE = f"{contract.HARNESS_DIR}/ci.json"
+
+Runner = Callable[[Sequence[str], str, str], dict[str, Any]]
+
+
+@dataclass
+class Snapshot:
+    label: str
+    commit: str = ""
+    #: test name -> "passed" | "failed" | "skipped", per suite.
+    unit: dict[str, str] = field(default_factory=dict)
+    acceptance: dict[str, str] = field(default_factory=dict)
+    unit_ran: bool = False
+    acceptance_ran: bool = False
+
+    def passing(self) -> set[str]:
+        return {
+            f"{kind}: {name}"
+            for kind, tests in (("unit", self.unit), ("acceptance", self.acceptance))
+            for name, outcome in tests.items()
+            if outcome == "passed"
+        }
+
+    def as_dict(self) -> dict[str, Any]:
+        return vars(self).copy()
+
+
+def _git(root: str | Path, *args: str) -> subprocess.CompletedProcess | None:
+    from app.tools.version_control import _git as run_git
+
+    return run_git(Path(root), *args)
+
+
+def head(root: str | Path) -> str:
+    result = _git(root, "rev-parse", "HEAD")
+    return result.stdout.strip() if result is not None and result.returncode == 0 else ""
+
+
+def commit(root: str | Path, message: str) -> str:
+    """Commit everything as it stands; the commit HEAD now names (new or not)."""
+    from app.tools.version_control import commit_all
+
+    commit_all(root, message)
+    return head(root)
+
+
+def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], bool]:
+    found = contract.the_pack(root)
+    if found is None:
+        return {}, False
+    pack, record = found
+    project = str(record.get("project") or "")
+    report = Path(root) / project / pack.unit_report
+    report.unlink(missing_ok=True)
+    if runner is None:
+        from app.stacks.scaffold import sandbox_runner
+
+        runner = sandbox_runner(root)
+    runner(list(record.get("unit_test") or pack.unit_test), "test", project)
+    parsed = junit.read(report)
+    return {test.name: test.outcome for test in parsed.tests}, parsed.found
+
+
+def take(
+    root: str | Path,
+    label: str,
+    *,
+    runner: Runner | None = None,
+    acceptance: suite.AcceptanceResult | None = None,
+) -> Snapshot:
+    """Run the unit and acceptance suites now. `acceptance` reuses a run just made."""
+    unit, unit_ran = _run_unit(root, runner)
+    if acceptance is None and suite.is_locked(root):
+        acceptance = suite.run(root, runner=runner)
+    tests = {t.name: t.outcome for t in acceptance.report.tests} if acceptance is not None else {}
+    return Snapshot(
+        label=label,
+        commit=head(root),
+        unit=unit,
+        acceptance=tests,
+        unit_ran=unit_ran,
+        acceptance_ran=bool(acceptance is not None and acceptance.ran),
+    )
+
+
+def save(root: str | Path, snapshot: Snapshot, *, accepted: bool = False) -> None:
+    """Keep this snapshot as the latest, and as the last accepted state when `accepted`."""
+    path = Path(root) / CI_FILE
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    data["latest"] = snapshot.as_dict()
+    if accepted:
+        data["accepted"] = snapshot.as_dict()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+def load(root: str | Path, which: str = "latest") -> Snapshot | None:
+    try:
+        data = json.loads((Path(root) / CI_FILE).read_text(encoding="utf-8")).get(which)
+    except (OSError, ValueError, AttributeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    known = {key: data[key] for key in Snapshot.__dataclass_fields__ if key in data}
+    return Snapshot(**known)
+
+
+def regressions(before: Snapshot | None, after: Snapshot) -> list[str]:
+    """Tests that passed before and do not pass now, as "unit: name" / "acceptance: name".
+
+    A suite that did not run at all now, having run before, counts every test
+    it had passing - a broken build breaks all of them.
+    """
+    if before is None:
+        return []
+    lost: list[str] = []
+    for kind, was, now, ran in (
+        ("unit", before.unit, after.unit, after.unit_ran),
+        ("acceptance", before.acceptance, after.acceptance, after.acceptance_ran),
+    ):
+        ran_before = before.unit_ran if kind == "unit" else before.acceptance_ran
+        if not ran_before:
+            continue
+        for name, outcome in was.items():
+            if outcome != "passed":
+                continue
+            if not ran or now.get(name) != "passed":
+                lost.append(f"{kind}: {name}")
+    return lost
+
+
+def revert_to(root: str | Path, commit_id: str) -> bool:
+    """Put the workspace back exactly as it was at `commit_id`. Ignored files stay."""
+    if not commit_id:
+        return False
+    reset = _git(root, "reset", "--hard", "--quiet", commit_id)
+    if reset is None or reset.returncode != 0:
+        logger.warning("Could not reset the workspace to %s", commit_id)
+        return False
+    _git(root, "clean", "-fd", "--quiet")
+    return True
+
+
+def diff_since(root: str | Path, commit_id: str, max_chars: int = 30_000) -> str:
+    """The product's committed changes since `commit_id`, for a reviewer. The
+    workflow's own documents are left out; commit first to include new files."""
+    if not commit_id:
+        return ""
+    result = _git(root, "diff", commit_id, "HEAD", "--", ".", ":(exclude)docs")
+    text = result.stdout if result is not None and result.returncode == 0 else ""
+    if len(text) > max_chars:
+        text = text[:max_chars] + f"\n... (diff cut at {max_chars} characters; read the files for the rest)"
+    return text

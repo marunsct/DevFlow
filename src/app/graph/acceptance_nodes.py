@@ -233,6 +233,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
 
     suite.lock(root)
+    from app.graph.engineering import suite_locked
+
+    suite_locked(root)
     open_problems = [*problems, *findings]
     _record_document(state, "docs/acceptance_tests.md", _scenarios(root))
     tests = len(result.report.tests)

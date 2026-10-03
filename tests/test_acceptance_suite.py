@@ -272,3 +272,40 @@ def test_a_planned_file_is_a_hint_once_behaviour_is_measured(project) -> None:
     after = what_the_files_already_prove(str(project), planned=planned)
     assert any("storage.js" in p for p in before)
     assert not any("storage.js" in p for p in after)
+
+
+def test_a_test_that_breaks_on_its_own_code_is_sent_back(project) -> None:
+    """One run locked a suite whose helper was declared `addTask({ page }, ...)`
+    and called `addTask(page, ...)`: nine of eleven tests threw a TypeError before
+    touching the page, and no product could ever pass them."""
+    from app.acceptance.junit import Report, TestResult
+
+    report = Report(found=True, tests=[
+        TestResult(name="[AC-1] adds", outcome="failed",
+                   message="Cannot read properties of undefined (reading 'getByLabel')\nTypeError: Cannot read properties of undefined"),
+        TestResult(name="[AC-2] deletes", outcome="failed",
+                   message="locator.fill: Timeout 3000ms exceeded.\nCall log:\n  - waiting for getByLabel('Title', { exact: true })"),
+        TestResult(name="[AC-3] persists", outcome="failed",
+                   message="expect(locator).toHaveCount(expected) failed\nExpected: 1\nReceived: 0"),
+        TestResult(name="[AC-4] reads state", outcome="failed",
+                   message="page.evaluate: ReferenceError: store is not defined"),
+        TestResult(name="[AC-5] helper", outcome="failed", message="TypeError: addTask is not a function"),
+    ])
+    result = suite.AcceptanceResult(ran=True, report=report)
+
+    broken = suite.tests_that_broke_themselves(project, result)
+
+    assert [b.split("`")[1] for b in broken] == ["[AC-1] adds", "[AC-5] helper"]
+
+
+def test_python_packs_know_their_runner_s_test_bugs(tmp_path) -> None:
+    import re
+
+    from app.stacks import pack_named
+
+    patterns = [re.compile(p, re.I | re.M) for p in pack_named("python-cli").test_bugs]
+    def hit(message): return any(p.search(message) for p in patterns)
+    assert hit("NameError: name 'run_cli' is not defined")
+    assert hit("fixture 'cli' not found")
+    assert not hit("ModuleNotFoundError: No module named 'wordstats'")
+    assert not hit("AssertionError: assert 1 == 2")

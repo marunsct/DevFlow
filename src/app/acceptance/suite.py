@@ -433,6 +433,34 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
     return result
 
 
+def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Failures caused by the tests' own code, by the pack's own patterns.
+
+    Before the product is built every test fails, so "it fails" says nothing;
+    why it fails says a lot. A missing control, endpoint or function is the
+    product not existing yet. An error the test's own code throws means the
+    test can never pass, whatever is built - and a suite locked with one is a
+    definition of done no product can meet.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].test_bugs:
+        return []
+    patterns = [re.compile(pattern, re.I | re.M) for pattern in found[0].test_bugs]
+    broken = []
+    for test in result.report.tests:
+        if test.outcome != "failed":
+            continue
+        message = test.message or ""
+        if any(pattern.search(message) for pattern in patterns):
+            first = next((line.strip() for line in message.splitlines() if line.strip()), "")
+            broken.append(
+                f"`{test.name}` fails because of an error in the test's own code, not because the "
+                f"product is unbuilt: {first[:300]}. Fix the test so that it can pass once the "
+                "product works."
+            )
+    return broken
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 

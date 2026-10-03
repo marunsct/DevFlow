@@ -136,4 +136,5 @@ PACK = StackPack(
     },
     check_families=frozenset({"javascript"}),
     evidence_dir="test-results/evidence",
+    test_bugs=js.TEST_BUGS,
 )

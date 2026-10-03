@@ -85,4 +85,5 @@ PACK = StackPack(
         "testing_framework": "pytest for unit and acceptance tests",
     },
     check_families=frozenset({"python"}),
+    test_bugs=_python.TEST_BUGS,
 )

@@ -188,4 +188,5 @@ PACK = StackPack(
     },
     check_families=frozenset({"javascript", "browser"}),
     evidence_dir="test-results/evidence",
+    test_bugs=js.TEST_BUGS,
 )

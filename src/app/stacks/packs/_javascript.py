@@ -80,3 +80,16 @@ NAMING = """Each test's title starts with the id of the criterion it proves, in 
 brackets: `test('[AC-3] a completed item stays completed after a reload', ...)`
 (a test that proves two: `[AC-3][AC-4] ...`). A test with no criterion id in its
 title proves nothing the harness can count."""
+
+
+#: A Playwright failure raised by the spec's own code. Product code runs in the
+#: page, where its errors surface through `page.evaluate` or as failed
+#: expectations, so a bare TypeError or ReferenceError is the test's. One run's
+#: locked suite called `addTask(page, ...)` on a helper declared
+#: `addTask({ page }, ...)`: nine of eleven tests threw before touching the page.
+TEST_BUGS = (
+    r"^(?!.*\bevaluate\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
+    r"^(?!.*\bevaluate\b).*Cannot read propert(?:y|ies) of (?:undefined|null)",
+    r"^(?!.*\bevaluate\b).*\bis not a function\b",
+    r"^(?!.*\bevaluate\b).*\bis not defined\b",
+)

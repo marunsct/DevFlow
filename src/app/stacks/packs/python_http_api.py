@@ -183,4 +183,5 @@ PACK = StackPack(
         "testing_framework": "pytest for unit tests, pytest with httpx against the running service for acceptance tests",
     },
     check_families=frozenset({"python"}),
+    test_bugs=_python.TEST_BUGS,
 )

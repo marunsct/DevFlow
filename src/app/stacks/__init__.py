@@ -94,6 +94,10 @@ class StackPack:
     check_families: frozenset[str] = field(default_factory=frozenset)
     #: Where screenshots and other evidence the acceptance run leaves are found.
     evidence_dir: str = ""
+    #: What a failure looks like when the test's own code broke, rather than
+    #: the product being unbuilt or wrong - for this pack's runner. Before
+    #: anything is built every test fails; only these failures are the test's.
+    test_bugs: tuple[str, ...] = ()
 
     def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""

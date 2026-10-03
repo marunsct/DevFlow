@@ -151,41 +151,6 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         lambda role, *args, **kwargs: registry.agent(f"specialist_{role}"),
     )
     
-    import app.scaffolding.executor
-    monkeypatch.setattr(
-        app.scaffolding.executor,
-        "execute_scaffolding",
-        lambda repo_root, app_name, framework: (True, "Scaffolding succeeded")
-    )
-    
-    # Defensive and therefore optional. `test_every_public_symbol_has_a_caller`
-    # records why this patch exists: it stubs a class the workflow does not
-    # reach, so the stub is ready the day it does. `app.build` is not in the
-    # tree and never has been - `git log --all -- 'src/app/build*'` is empty -
-    # so the unguarded import raised `ModuleNotFoundError` inside this fixture
-    # and took every test in this file down with it: 31 errors at setup, none
-    # of them about routing, and the whole of the workflow's approval, review,
-    # defect-routing and remediation coverage silently not running.
-    #
-    # A patch that exists for a module which might one day arrive must not
-    # require that it already has.
-    try:
-        import app.build.verifier
-    except ModuleNotFoundError:
-        pass
-    else:
-        monkeypatch.setattr(
-            app.build.verifier.BuildVerifier,
-            "verify",
-            lambda self, command, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
-        )
-    
-    import app.analysis.static_analyzer
-    monkeypatch.setattr(
-        app.analysis.static_analyzer.StaticAnalyzer,
-        "analyze",
-        lambda self, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
-    )
     # The stages between the architecture and the sprint plan - scaffold, QA
     # writing the acceptance suite, its review - have tests of their own
     # (`test_acceptance_stages.py`). Here they pass straight through, so these

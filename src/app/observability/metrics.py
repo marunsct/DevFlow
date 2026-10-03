@@ -41,7 +41,7 @@ import uuid
 from pathlib import Path
 from typing import Dict, Any
 
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram
 
 logger = logging.getLogger(__name__)
 
@@ -185,10 +185,3 @@ class MetricsTracker:
     @staticmethod
     def record_run() -> None:
         RUN_TOTAL.inc()
-
-def get_metrics_payload() -> tuple[bytes, str]:
-    """
-    Returns the prometheus metrics payload and content type.
-    Suitable for serving on a /metrics HTTP endpoint.
-    """
-    return generate_latest(), CONTENT_TYPE_LATEST

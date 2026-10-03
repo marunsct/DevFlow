@@ -16,9 +16,8 @@ is to read*, which is the part that was rediscovered twenty-five times. An
 agent that knows `app.js` is 229 lines and exports `createTask`, `toggleTask`
 and `renderTasks` can go straight to the one it needs.
 
-Injected into the first model call of a stage and never written to state, on
-the same reasoning as `app.agents.response_reminder`: it is context the model
-needs once, not a message that should accumulate.
+Injected into the model request and never written to state: it is context
+the model needs on each call, not a message that should accumulate.
 """
 
 from __future__ import annotations

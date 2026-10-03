@@ -520,14 +520,6 @@ class ReviewDecisionRequest(BaseModel):
     comment: str | None = Field(default=None, description="Comment detailing the decision.")
 
 
-class EventResponse(BaseModel):
-    """Response containing events for polling clients."""
-    model_config = ConfigDict(extra="forbid")
-
-    events: list[dict] = Field(description="List of serialized events.")
-    cursor: int = Field(description="Sequence cursor for fetching subsequent events.")
-
-
 class SpinnerResponse(BaseModel):
     """Response containing spinner status."""
     model_config = ConfigDict(extra="forbid")

@@ -281,10 +281,6 @@ class Token(BaseModel):
     expires_in: Optional[int] = None
 
 
-class TokenData(BaseModel):
-    username: Optional[str] = None
-
-
 class User(BaseModel):
     username: str
     disabled: Optional[bool] = None
@@ -400,22 +396,6 @@ def require_role(*allowed: str):
 
 require_admin = require_role("admin")
 require_operator = require_role("operator", "admin")
-
-
-async def get_user_from_token(token: str) -> Optional[User]:
-    if not token:
-        return None
-    username = _decode(token, "access")
-    if username is None:
-        return None
-    try:
-        user = get_user(username)
-    except Exception:  # noqa: BLE001 - a DB blip must not look like a valid session
-        logger.error("Failed to load user while validating token", exc_info=True)
-        return None
-    if user and not user.disabled:
-        return user
-    return None
 
 
 @auth_router.post("/api/auth/token", response_model=Token, tags=["auth"])

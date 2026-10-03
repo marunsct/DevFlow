@@ -62,36 +62,11 @@ EXTERNAL_REFERENCERS = {
     "evaluation/evaluate.py",
 }
 
-# Public symbols that have no caller today, recorded so this test can be landed
-# before the backlog removes them. Each entry is a debt the plan tracks:
-#
-# - `MetricsTracker` / `get_metrics_payload` — plan-part3 §3.1. `/metrics` reports
-#   zeros because nothing constructs the tracker. Item 2 wires it.
-# - `CIGenerator`, `ComposeGenerator`, `DockerGenerator` are no longer listed.
-#   Not because item 5 wired them - it has not - but because they now have tests,
-#   and this fixture counts a mention under `tests/` as a reference by design.
-#   Their four security defects are fixed (`test_the_deploy_generators_are_safe`),
-#   which was the precondition ADR-0003 put on wiring them; the wiring itself is
-#   still open. That debt lives in the plan, not here, because this list cannot
-#   express "referenced but not reached by the product".
-# - `DependencyManager` — the scaffolding dependency resolver; `resolve_dependencies`
-#   is reached, the class that carries it is not.
-# - `TokenData`, `get_user_from_token` — auth helpers the token flow no longer
-#   reaches; `get_current_user` does the work both were written to do.
-# - `EventResponse` — a response model defined for an event route that was never
-#   registered.
-# - `TestRunner` — a test-runner abstraction the sandbox's own runner superseded.
-#
-# This list must shrink, never grow. A new entry means a new unwired symbol, which
-# is the failure this test exists to catch.
-KNOWN_UNWIRED = {
-    "observability/metrics.py: get_metrics_payload",
-    "scaffolding/dependencies.py: DependencyManager",
-    "server/auth.py: TokenData",
-    "server/auth.py: get_user_from_token",
-    "server/models.py: EventResponse",
-    "tools/testing/runner.py: TestRunner",
-}
+# Public symbols with no caller, recorded rather than fixed. Empty since the
+# review of 2026-10-04 removed the last of them (docs/harness-improvement-plan.md,
+# R5); a new entry means a new unwired symbol, which is the failure this test
+# exists to catch, so it must stay empty.
+KNOWN_UNWIRED: set[str] = set()
 
 # Decorators that make a function the target of a framework's dispatch rather than
 # of a Python call. FastAPI registers the handler under a route; the name is never

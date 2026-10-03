@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `57b1fc8`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `57b1fc8` (deployed 00:51 JST on 2026-10-04) |
-| current run | `run-56e37323-21c6-4f61-8ad7-beec16aa687c`, `web-todo`, started 00:52 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`; resumed copies `langchain-c5` and `langchain-b1` stood down read-only. run-a4ea15b5 was cancelled 00:48 JST at 2h20m, sprint 3 of 5, 7 of 9 criteria passing: test rounds were shown later sprints' failures (sprint 1 escalated over sprint 3's filter), 115 calls tried to start the pack's server, stages edited the kept acceptance config (fixed `57b1fc8`). |
+| branch | `harness-hardening-session`, last code commit `a12fa5f`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `a12fa5f` (deployed 01:28 JST on 2026-10-04) |
+| current run | `run-1264ac2e-f829-40b4-9f1a-fa306656e0d8`, `web-todo`, started 01:29 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb` (resumed copies c5 and b1 stood down). run-56e37323 was cancelled 01:23 JST, 31 minutes in: sprint 1 passed its criteria in 20 minutes, then the ledger's red-suite gate read the acceptance suite's run (red on later sprints' criteria) and sent it back until escalation (fixed `a12fa5f`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

@@ -71,7 +71,7 @@ A new session or account starts at `docs/HANDOVER.md` (written 2026-10-01): the 
 | | |
 |---|---|
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
-| clean runs toward the gate | **stage 1 (web-todo): 0 of 2.** Gate = benchmark scores since the 2026-10-03 redesign (`benchmarks/README.md`). Runs: fa27ea5b cancelled 22:05 (slow red suite; `40b48f3`); 58190cd3 cancelled 22:23 (code review scope, serving script; `e6eb039`); a4ea15b5 cancelled 00:48 at sprint 3/5, 7 of 9 criteria passing (due-only test rounds, server refusal advice, kept config; `57b1fc8`); run-56e37323 started 00:52 JST 2026-10-04. |
+| clean runs toward the gate | **stage 1 (web-todo): 0 of 2.** Gate = benchmark scores since the 2026-10-03 redesign (`benchmarks/README.md`). Runs: fa27ea5b cancelled 22:05 (slow red suite; `40b48f3`); 58190cd3 cancelled 22:23 (code review scope, serving script; `e6eb039`); a4ea15b5 cancelled 00:48 at sprint 3/5, 7 of 9 criteria passing (due-only test rounds, server refusal advice, kept config; `57b1fc8`); run-56e37323 56e37323 cancelled 01:23 (ledger red-suite gate read the acceptance run; `a12fa5f`); run-1264ac2e started 01:29 JST. |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |

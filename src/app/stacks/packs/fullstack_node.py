@@ -106,7 +106,10 @@ PACK = StackPack(
     frameworks=("express", "node", "node.js", "html", "vanilla", "javascript"),
     files={
         "package.json": api.PACKAGE_JSON,
-        "playwright.config.js": js.playwright_config("node src/index.js", "/api/health", screenshot="on"),
+        "playwright.config.js": js.playwright_config(
+            "node src/index.js", "/api/health", screenshot="on", checks_the_page=True
+        ),
+        "playwright.setup.mjs": js.page_check("/"),
         "src/app.js": APP,
         "src/index.js": api.INDEX,
         "public/index.html": PAGE,
@@ -124,7 +127,7 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.js",
-    kept_files=("playwright.config.js",),
+    kept_files=("playwright.config.js", "playwright.setup.mjs"),
     kept_scripts=api.PACK.kept_scripts,
     smoke_files={
         "tests/scaffold-smoke.test.js": SMOKE_UNIT,
@@ -141,6 +144,7 @@ PACK = StackPack(
     check_families=frozenset({"javascript", "browser"}),
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
+    runtime_report=js.PAGE_LOAD_REPORT,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
     release_files=api.PACK.release_files,

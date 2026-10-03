@@ -173,8 +173,10 @@ PACK = StackPack(
         "vite.config.ts": VITE_CONFIG,
         "tsconfig.json": TSCONFIG,
         "playwright.config.js": js.playwright_config(
-            "node_modules/.bin/vite --host 127.0.0.1 --port ${port} --strictPort", "/", screenshot="on"
+            "node_modules/.bin/vite --host 127.0.0.1 --port ${port} --strictPort", "/", screenshot="on",
+            checks_the_page=True,
         ),
+        "playwright.setup.mjs": js.page_check("/"),
         "index.html": INDEX,
         "src/main.tsx": MAIN,
         "src/App.tsx": APP,
@@ -190,7 +192,7 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.tsx",
-    kept_files=("playwright.config.js", "vite.config.ts"),
+    kept_files=("playwright.config.js", "playwright.setup.mjs", "vite.config.ts"),
     kept_scripts={"test": UNIT_SCRIPT, "test:acceptance": "playwright test"},
     smoke_files={
         "tests/scaffold-smoke.test.tsx": SMOKE_UNIT,
@@ -207,6 +209,7 @@ PACK = StackPack(
     check_families=frozenset({"javascript", "browser", "typescript"}),
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
+    runtime_report=js.PAGE_LOAD_REPORT,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
 )

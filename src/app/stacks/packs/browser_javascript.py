@@ -156,7 +156,8 @@ PACK = StackPack(
     frameworks=("vanilla", "html", "css", "dom", "browser", "es modules", "javascript"),
     files={
         "package.json": PACKAGE_JSON,
-        "playwright.config.js": js.playwright_config("node scripts/serve.mjs", "/", screenshot="on"),
+        "playwright.config.js": js.playwright_config("node scripts/serve.mjs", "/", screenshot="on", checks_the_page=True),
+        "playwright.setup.mjs": js.page_check("/"),
         "scripts/serve.mjs": SERVE,
         "index.html": INDEX,
         "src/main.js": MAIN,
@@ -172,7 +173,7 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.js",
-    kept_files=("playwright.config.js", "scripts/serve.mjs"),
+    kept_files=("playwright.config.js", "playwright.setup.mjs", "scripts/serve.mjs"),
     kept_scripts={"start": "node scripts/serve.mjs", "test": js.UNIT_SCRIPT, "test:acceptance": "playwright test"},
     smoke_files={
         "tests/scaffold-smoke.test.js": SMOKE_UNIT,
@@ -189,6 +190,7 @@ PACK = StackPack(
     check_families=frozenset({"javascript", "browser"}),
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
+    runtime_report=js.PAGE_LOAD_REPORT,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
 )

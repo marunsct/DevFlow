@@ -287,6 +287,9 @@ class AcceptanceResult:
     output: str = ""
     repairs: list[str] = field(default_factory=list)
     problem: str = ""
+    #: What the product itself reported going wrong while the suite ran - a
+    #: page's uncaught errors - from the pack's `runtime_report`.
+    runtime_problems: list[str] = field(default_factory=list)
 
     def failing(self, ids: Sequence[str] | None = None) -> list[CriterionResult]:
         wanted = set(ids) if ids is not None else None
@@ -320,7 +323,18 @@ class AcceptanceResult:
             f"Acceptance suite (`{self.command}`): {self.report.passed} passed, "
             f"{self.report.failed} failed, {self.report.skipped} skipped."
         )
-        return head + ("\n" + "\n".join(rows) if rows else "")
+        return head + self.runtime_note() + ("\n" + "\n".join(rows) if rows else "")
+
+    def runtime_note(self) -> str:
+        """What the product reported itself, before any test touched it, or ""."""
+        if not self.runtime_problems:
+            return ""
+        return (
+            "\nBefore any test touched it, the product itself reported (fix these first: code "
+            "that throws while the product loads stops everything after it, and the tests then "
+            "fail for no reason of their own):\n"
+            + "\n".join(f"  - {problem}" for problem in self.runtime_problems)
+        )
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -334,6 +348,7 @@ class AcceptanceResult:
             "change_requests": {k: vars(v) for k, v in self.change_requests.items()},
             "repairs": self.repairs,
             "problem": self.problem,
+            "runtime_problems": self.runtime_problems,
         }
 
 
@@ -378,6 +393,9 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     argv, report_path, project = command
     report_file = Path(repo_root) / project / report_path
     report_file.unlink(missing_ok=True)
+    runtime_file = _runtime_report(repo_root, project)
+    if runtime_file is not None:
+        runtime_file.unlink(missing_ok=True)
     outcome = (runner or _sandbox_runner(repo_root))(argv, "test", project)
     try:
         code = int(str(outcome.get("returncode", "1")).strip() or 1)
@@ -393,8 +411,32 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         output=output[-OUTPUT_TAIL_CHARS:],
         repairs=repairs,
         problem="" if report.found else "the runner wrote no report; its output is below",
+        runtime_problems=_read_runtime_problems(runtime_file),
     )
     return _judged(repo_root, result, save)
+
+
+#: How many of the product's own reported problems a result keeps.
+MOST_RUNTIME_PROBLEMS = 10
+
+
+def _runtime_report(repo_root: str | Path, project: str) -> Path | None:
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].runtime_report:
+        return None
+    return Path(repo_root) / project / found[0].runtime_report
+
+
+def _read_runtime_problems(path: Path | None) -> list[str]:
+    if path is None:
+        return []
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(item)[:400] for item in data if str(item).strip()][:MOST_RUNTIME_PROBLEMS]
 
 
 def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> AcceptanceResult:

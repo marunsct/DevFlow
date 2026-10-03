@@ -74,7 +74,99 @@ acceptance/
 """
 
 
-def playwright_config(server_command: str, ready_path: str = "/", screenshot: str = "only-on-failure") -> str:
+#: Where the page check writes what the page reported, relative to the project.
+PAGE_LOAD_REPORT = "test-results/page-load.json"
+
+#: The kept global setup of a pack whose product is a page. `%(page)s` is the
+#: page's path. See `page_check`.
+_PAGE_CHECK = """// Kept by the harness. Before any test runs, the page is loaded once with
+// nothing driving it, and whatever the page itself reports going wrong is
+// written down and printed: an error thrown while its scripts load stops all
+// the code after it, and every test then fails with "element not found" -
+// which says nothing about why.
+import { chromium } from '@playwright/test';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+
+const NOT_THE_PRODUCT = /favicon\\.ico/;
+
+export default async function pageCheck(config) {
+  const baseURL = config.projects?.[0]?.use?.baseURL;
+  if (!baseURL) return;
+  const problems = [];
+  const note = (text) => {
+    if (problems.length < 20 && !problems.includes(text)) problems.push(text);
+  };
+  let browser;
+  try {
+    browser = await chromium.launch();
+  } catch (error) {
+    // Not the product's problem, and the tests will say so themselves.
+    console.log(`The page check could not start a browser: ${String(error.message).split('\\n')[0]}`);
+    return;
+  }
+  try {
+    const page = await browser.newPage();
+    page.on('pageerror', (error) => note(`uncaught error: ${error.message}`));
+    page.on('console', (message) => {
+      if (message.type() === 'error' && !message.text().startsWith('Failed to load resource')) {
+        note(`console error: ${message.text()}`);
+      }
+    });
+    page.on('requestfailed', (request) => {
+      if (!NOT_THE_PRODUCT.test(request.url())) {
+        note(`request failed: ${request.url()} (${request.failure()?.errorText})`);
+      }
+    });
+    page.on('response', (response) => {
+      if (response.status() >= 400 && !NOT_THE_PRODUCT.test(response.url())) {
+        note(`HTTP ${response.status()} for ${response.url()}`);
+      }
+    });
+    await page.goto(new URL('%(page)s', baseURL).href, { waitUntil: 'load', timeout: 10_000 });
+    await page.waitForTimeout(500);
+  } catch (error) {
+    note(`the page did not load: ${String(error.message).split('\\n')[0]}`);
+  } finally {
+    await browser.close();
+  }
+  const root = config.configFile ? dirname(config.configFile) : process.cwd();
+  mkdirSync(join(root, 'test-results'), { recursive: true });
+  writeFileSync(join(root, '%(report)s'), JSON.stringify(problems, null, 2));
+  if (problems.length) {
+    console.log(
+      '\\nThe page reported these problems when it loaded, before any test touched it:\\n'
+      + problems.map((problem) => `  - ${problem}`).join('\\n')
+      + '\\nCode that throws while the page loads stops everything after it, so the tests '
+      + 'then fail with "element not found". Fix these first.\\n',
+    );
+  }
+}
+"""
+
+
+def page_check(page_path: str = "/") -> str:
+    """The kept global setup that loads the page once and records what it reports.
+
+    Measured on one run: the page threw `loadTasks(...).then is not a function`
+    while its scripts loaded, so nothing rendered, and every test failed with
+    "element not found". The stages after it edited labels and markup,
+    because nothing they could run showed the error - an engineer would have
+    seen it in the browser console at once. Playwright starts the
+    server before its global setup, so this sees the product the tests see,
+    and its output is in every run of the suite, the agents' and the
+    harness's alike.
+    """
+    return _PAGE_CHECK % {"page": page_path, "report": PAGE_LOAD_REPORT}
+
+
+def playwright_config(
+    server_command: str,
+    ready_path: str = "/",
+    screenshot: str = "only-on-failure",
+    *,
+    checks_the_page: bool = False,
+) -> str:
     """A Playwright configuration that starts the product with `server_command`.
 
     The port is chosen once per run of the suite and published in
@@ -115,7 +207,7 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [['list'], ['junit', { outputFile: 'test-results/acceptance.xml' }]],
-  outputDir: 'test-results/evidence',
+  outputDir: 'test-results/evidence',%(global_setup)s
   use: {
     baseURL: `http://127.0.0.1:${port}`,
     actionTimeout: 3_000,
@@ -132,7 +224,10 @@ export default defineConfig({
     timeout: 30_000,
   },
 });
-""" % {"command": server_command, "ready": ready_path, "screenshot": screenshot}
+""" % {
+        "command": server_command, "ready": ready_path, "screenshot": screenshot,
+        "global_setup": "\n  globalSetup: './playwright.setup.mjs'," if checks_the_page else "",
+    }
 
 
 UNIT_GUIDE = """Unit tests go in `tests/`, one file per module, named `<module>.test.js`, using

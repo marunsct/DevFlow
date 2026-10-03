@@ -98,6 +98,10 @@ class StackPack:
     #: the product being unbuilt or wrong - for this pack's runner. Before
     #: anything is built every test fails; only these failures are the test's.
     test_bugs: tuple[str, ...] = ()
+    #: Where an acceptance run leaves a JSON list of what the product itself
+    #: reported going wrong (a page's uncaught errors), relative to the
+    #: project; "" when the pack records none.
+    runtime_report: str = ""
     #: CI steps before the pack's install command (YAML list items): the
     #: language runtime. See `app.stacks.release`.
     ci_setup: tuple[str, ...] = ()

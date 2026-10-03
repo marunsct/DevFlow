@@ -160,8 +160,9 @@ def scaffold(
     finally:
         for relative in smoke:
             (project_root / relative).unlink(missing_ok=True)
-        for report in (pack.unit_report, pack.acceptance_report):
-            (project_root / report).unlink(missing_ok=True)
+        for report in (pack.unit_report, pack.acceptance_report, pack.runtime_report):
+            if report:
+                (project_root / report).unlink(missing_ok=True)
         if pack.evidence_dir:
             shutil.rmtree(project_root / pack.evidence_dir, ignore_errors=True)
 

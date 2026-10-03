@@ -392,13 +392,32 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     from app.agents.specialists import ReportedDefect
 
     mentioned: set[str] = set()
+    said = []
     for item in reported:
         text = " ".join(
             str(getattr(item, name, "") or "")
             for name in ("description", "reproduction_steps", "expected_behavior", "actual_behavior")
         )
         mentioned.update(tags_in(text))
+        said.append(text)
     defects = []
+    # First, and on its own: what the product reported itself while it loaded.
+    # It is usually the one cause behind every red criterion, and a fix aimed
+    # at any single criterion's "element not found" never finds it.
+    problems = [
+        p for p in (suite.last_result(_root(state)) or {}).get("runtime_problems") or []
+        if not any(str(p)[:80] in text for text in said)
+    ]
+    if problems:
+        defects.append(ReportedDefect(
+            description="The product reports errors by itself while it loads, before any test touches it.",
+            severity="blocking",
+            reproduction_steps=f"Run `{command}` in the project directory; its output lists them before the tests.",
+            expected_behavior="The product loads without an uncaught error, a console error or a failed request.",
+            actual_behavior="; ".join(str(p) for p in problems)[:1200],
+            affected_files=[],
+            owner=_owner_for(state),
+        ))
     for entry in failing:
         if entry.get("id") in mentioned:
             continue

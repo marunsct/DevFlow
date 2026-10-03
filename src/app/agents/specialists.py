@@ -865,7 +865,17 @@ def what_the_files_already_prove(
         # is inconsistent and no check that reads only the workspace can see it.
         # One run finished a "single-page application" with no HTML file,
         # 34 tests passing, and three test rounds reporting no defect.
-        proven = proven + files_the_plan_named_that_are_missing(planned, repository_root)
+        #
+        # Where a locked acceptance suite measures the product, it can see that
+        # case (a page with no HTML fails every criterion), and a file the plan
+        # named and nobody wrote says something about the plan, not about
+        # whether the product works. One run's first sprint passed its criteria
+        # and was still handed `src/storage.js` as a proven defect three rounds
+        # running.
+        from app.analysis.integration_checks import _behaviour_is_measured
+
+        if not _behaviour_is_measured(Path(repository_root)):
+            proven = proven + files_the_plan_named_that_are_missing(planned, repository_root)
     except Exception:  # noqa: BLE001 - same reason
         pass
     return proven

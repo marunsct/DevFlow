@@ -2775,7 +2775,7 @@ def _record_sprint_summary(
         from app.tools.sandbox import read_execution_ledger
 
         cases = count_test_cases(
-            read_execution_ledger(state["repository"].root_path, limit=1000), since=since
+            _the_ledger(state["repository"].root_path, 1000), since=since
         )
     except Exception:  # noqa: BLE001 - a summary without counts beats no summary
         logger.debug("Could not read test counts for the sprint summary", exc_info=True)
@@ -2889,7 +2889,7 @@ def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tup
         from app.tools.sandbox import _ran_and_answered, read_execution_ledger
 
         mine = [
-            entry for entry in read_execution_ledger(repo_root, limit=2000)
+            entry for entry in _the_ledger(repo_root, 2000)
             if entry.get("stage") == stage and entry.get("category") == "test"
         ]
         if not mine:
@@ -3527,7 +3527,7 @@ def _where_each_command_stands(repo_root: str) -> dict[str, bool]:
     from app.tools.sandbox import read_execution_ledger
 
     latest: dict[str, bool] = {}
-    for entry in read_execution_ledger(repo_root, limit=10_000):
+    for entry in _the_ledger(repo_root, 10_000):
         argv = [str(part) for part in entry.get("command") or []]
         if len(argv) >= 2 and entry.get("returncode") is not None:
             latest[" ".join(argv)] = (
@@ -3582,7 +3582,7 @@ def _where_each_test_command_stands(repo_root: str) -> dict[str, bool]:
     from app.tools.sandbox import read_execution_ledger
 
     latest: dict[str, bool] = {}
-    for entry in read_execution_ledger(repo_root, limit=10_000):
+    for entry in _the_ledger(repo_root, 10_000):
         argv = [str(part) for part in entry.get("command") or []]
         if entry.get("category") != "test" or not argv:
             continue
@@ -3903,6 +3903,25 @@ def _the_files_this_milestone_changed(
     return sorted(reported)
 
 
+def _the_ledger(repo_root: str, limit: int) -> list[dict[str, Any]]:
+    """The execution ledger without the locked acceptance suite's runs.
+
+    Every check that reads "the suite's last run" from the ledger measures the
+    developers' own tests. The acceptance suite holds every criterion and runs
+    red until the last sprint, so its runs belong to the acceptance gate (see
+    `app.acceptance.suite.is_an_acceptance_run`).
+    """
+    from app.tools.sandbox import read_execution_ledger
+
+    entries = read_execution_ledger(repo_root, limit=limit)
+    try:
+        from app.acceptance.suite import is_an_acceptance_run
+
+        return [entry for entry in entries if not is_an_acceptance_run(repo_root, entry)]
+    except Exception:  # noqa: BLE001 - the whole ledger is still a ledger
+        return list(entries)
+
+
 def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] | None:
     """The last test run this sprint recorded, from the execution ledger.
 
@@ -3919,7 +3938,7 @@ def _the_suite_the_ledger_measured(state: WorkflowGraphState) -> dict[str, int] 
             (str(entry.get("ended_at")) for entry in recorded if entry.get("ended_at")),
             default=None,
         )
-        entries = read_execution_ledger(state["repository"].root_path, limit=1000)
+        entries = _the_ledger(state["repository"].root_path, 1000)
         counts = count_test_cases(entries, since=since)
         if counts is None:
             return None

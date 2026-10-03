@@ -433,6 +433,34 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
     return result
 
 
+def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
+    """Whether a ledger entry is a run of the locked acceptance suite.
+
+    The suite runs red by design until the last sprint: it holds every
+    criterion, and a sprint delivers some of them. Checks that read the
+    ledger's last test run as "the sprint's suite" must leave these runs to the
+    acceptance gate, which judges them criterion by criterion. One run's first
+    sprint was sent back three times, and escalated, because the last run in
+    the ledger was the acceptance suite failing on later sprints' criteria.
+    """
+    if not is_locked(repo_root):
+        return False
+    argv = [str(part) for part in (entry.get("command") if isinstance(entry, dict) else None) or []]
+    if not argv:
+        return False
+    command = _command(repo_root)
+    if command is not None and argv == [str(part) for part in command[0]]:
+        return True
+    where = location(repo_root)
+    if where is None:
+        return False
+    acceptance_dir = where[1].strip("/")
+    return any(
+        part.rstrip("/").endswith(acceptance_dir) or f"{acceptance_dir}/" in part
+        for part in argv[1:]
+    )
+
+
 def last_result(repo_root: str | Path) -> dict[str, Any]:
     try:
         return json.loads((Path(repo_root) / RESULT_FILE).read_text(encoding="utf-8"))

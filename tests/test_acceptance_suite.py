@@ -248,3 +248,27 @@ def test_a_test_round_is_shown_only_the_criteria_that_are_due(project) -> None:
     result = suite._judged(project, suite.AcceptanceResult(ran=True, command="npm run test:acceptance", report=report), False)
     block = requests.acceptance_block(result, ["AC-1"])
     assert "AC-1 PASSED" in block and "AC-3" not in block.split("are not defects now.")[1]
+
+
+def test_the_ledger_checks_leave_the_acceptance_suite_to_its_gate(project) -> None:
+    """One run's first sprint was sent back three times, then escalated: the last
+    test run in the ledger was the acceptance suite, red on later sprints' criteria."""
+    _write(project, "notes/acceptance/notes.spec.js", SPEC)
+    assert not suite.is_an_acceptance_run(project, {"command": ["npm", "run", "test:acceptance"]})
+    suite.lock(project)
+    assert suite.is_an_acceptance_run(project, {"command": ["npm", "run", "test:acceptance"]})
+    assert suite.is_an_acceptance_run(project, {"command": ["npx", "playwright", "test", "acceptance/notes.spec.js"]})
+    assert not suite.is_an_acceptance_run(project, {"command": ["npm", "test"]})
+    assert not suite.is_an_acceptance_run(project, {"command": ["node", "--test", "tests/"]})
+
+
+def test_a_planned_file_is_a_hint_once_behaviour_is_measured(project) -> None:
+    from app.agents.specialists import what_the_files_already_prove
+
+    planned = ["Create notes/src/storage.js to keep notes"]
+    before = what_the_files_already_prove(str(project), planned=planned)
+    _write(project, "notes/acceptance/notes.spec.js", SPEC)
+    suite.lock(project)
+    after = what_the_files_already_prove(str(project), planned=planned)
+    assert any("storage.js" in p for p in before)
+    assert not any("storage.js" in p for p in after)

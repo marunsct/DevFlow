@@ -3504,6 +3504,7 @@ _BREAKS_BEHAVIOUR = (
 #: `test_a_ui_with_no_browser_test_blocks` exists to prevent.
 _MISSES_A_STATED_CRITERION = (
     "maximum this project's own documents state",
+    "a stated criterion the product does not meet",
 )
 
 
@@ -3636,6 +3637,98 @@ def _a_test_server_on_another_port(files: list[Path], root: Path) -> list[str]:
                     "about the product. Make the two numbers the same, in whichever "
                     "file is wrong."
                 )
+    return problems
+
+
+#: `function render(` or `const render = (...) =>` - the name a page redraws by.
+_A_RENDER_FUNCTION = re.compile(
+    r"\bfunction\s+(render\w*)\s*\(|\b(?:const|let|var)\s+(render\w*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[\w$]+)\s*=>"
+)
+#: Names a file imports from one of the project's own modules.
+_RELATIVE_NAMED_IMPORT = re.compile(r"""\bimport\s*\{([^}]*)\}\s*from\s*["']\.[^"']*["']""")
+#: Where an event handler's arrow function starts.
+_A_HANDLER_ARROW = re.compile(
+    r"(?:addEventListener\s*\(\s*[\w$\s'\"`.-]+,|\.on[a-z]+\s*=)\s*(?:async\s*)?(?:\([^)]*\)|[\w$]+)\s*=>\s*"
+)
+
+
+def _the_arrow_body(code: str, start: int) -> str:
+    """The body of an arrow function whose body begins at `start`."""
+    if start < len(code) and code[start] == "{":
+        body, _ = _balanced(code, start)
+        return body
+    depth = 0
+    for index in range(start, len(code)):
+        char = code[index]
+        if char in "([{":
+            depth += 1
+        elif char in ")]}":
+            if depth == 0:
+                return code[start:index]
+            depth -= 1
+        elif char in ";\n" and depth == 0:
+            return code[start:index]
+    return code[start:]
+
+
+def _a_change_the_page_never_shows(files: list[Path], root: Path) -> list[str]:
+    """Handlers that change the state and never redraw, beside ones that do.
+
+    Measured on one completed run. `ui.js` defined `render()`, and its add and
+    filter handlers called it. Its delete, edit and toggle handlers called
+    `deleteTask`, `editTask` and `toggleComplete` from the state module and
+    stopped there - nothing subscribed to the state - so a deleted task stayed
+    on screen until the next add. Eight unit tests and two browser tests
+    passed, none of which deleted a task in the browser, and the review
+    accepted.
+
+    Only within one file that both redraws after some changes and not after
+    others, and only when the file never hands `render` to anything to call
+    later - a subscription or a listener redraws on every change by itself.
+    """
+    problems: list[str] = []
+    for path in files:
+        relative = str(path.relative_to(root))
+        if path.suffix.lower() not in _CLIENT_LOGIC_SUFFIXES or is_test(relative):
+            continue
+        code = _only_the_code(_read(path))
+        found = _A_RENDER_FUNCTION.search(code)
+        if not found:
+            continue
+        render = found.group(1) or found.group(2)
+        passed_on = re.compile(rf"[(,=:]\s*{re.escape(render)}\s*[),;}}]")
+        if passed_on.search(code[: found.start()] + code[found.end():]):
+            continue
+        imported = {
+            name.split(" as ")[-1].strip()
+            for clause in _RELATIVE_NAMED_IMPORT.findall(_read(path))
+            for name in clause.split(",") if name.strip()
+        }
+        if not imported:
+            continue
+        renders, silent = 0, []
+        for handler in _A_HANDLER_ARROW.finditer(code):
+            body = _the_arrow_body(code, handler.end())
+            changes = sorted(
+                name for name in imported
+                if name != render and re.search(rf"(?<![.\w$]){re.escape(name)}\s*\(", body)
+            )
+            if not changes:
+                continue
+            if re.search(rf"(?<![.\w$]){re.escape(render)}\s*\(", body):
+                renders += 1
+            else:
+                silent.extend(name for name in changes if name not in silent)
+        if renders and silent:
+            named = ", ".join(f"`{name}`" for name in silent)
+            problems.append(
+                f"{relative}: the handlers that call {named} change the state and never call "
+                f"`{render}()`, while the file's other handlers do, and nothing calls `{render}` "
+                "when the state changes. Each of those actions takes effect and the page does "
+                "not show it - a deleted item stays on screen until something else redraws - so "
+                "to a user the feature does not work. Call "
+                f"`{render}()` after each of them, or have the state notify the page when it changes."
+            )
     return problems
 
 
@@ -4398,7 +4491,12 @@ def _a_responsive_criterion_nothing_implements(
 _INLINE_STYLE = re.compile(r"<style\b[^>]*>(.*?)</style>", re.I | re.S)
 
 
-def _responsive_css_the_page_cannot_use(files: list[Path], root: Path) -> list[str]:
+#: A brief that asks for the page to work on a phone. When it does, a page a
+#: phone lays out at desktop width misses a stated criterion, not a nicety.
+_ASKS_FOR_MOBILE = re.compile(r"\b(?:responsive|mobile|phones?|small screens?)\b", re.I)
+
+
+def _responsive_css_the_page_cannot_use(files: list[Path], root: Path, brief: str = "") -> list[str]:
     """Width media queries on a page with no viewport meta tag.
 
     A mobile browser renders a page with no `<meta name="viewport">` into a
@@ -4460,6 +4558,13 @@ def _responsive_css_the_page_cannot_use(files: list[Path], root: Path) -> list[s
             "end-to-end run cannot see this. Add "
             "`<meta name=\"viewport\" content=\"width=device-width, "
             "initial-scale=1.0\">` to the page head."
+            + (
+                # One completed run shipped this against "Responsive design for
+                # mobile and desktop", graded untidy, and accepted.
+                " The brief asks for the product to work on mobile, so this is "
+                "a stated criterion the product does not meet."
+                if _ASKS_FOR_MOBILE.search(brief or "") else ""
+            )
         )
     return problems
 
@@ -6145,6 +6250,7 @@ _FLOORS: dict[str, str] = {
     "the runners a project's unit tests are written for": "BREAKS",
     "the address a browser test opens against how the page loads its code": "BREAKS",
     "how Jest is started against tests written as ES modules": "BREAKS",
+    "handlers that change the state against the redraw the page depends on": "BREAKS",
     # No browser test can run, so the suite cannot pass for any product.
     "the port a test runner waits on against the one its server opens": "BREAKS",
     # Nothing is broken: a field the brief asked for is simply never collected.
@@ -6190,7 +6296,7 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _a_responsive_criterion_nothing_implements(
          files, root, brief)),
     ("responsive stylesheets against the viewport tag that lets them apply",
-     lambda files, root, stack, brief: _responsive_css_the_page_cannot_use(files, root)),
+     lambda files, root, stack, brief: _responsive_css_the_page_cannot_use(files, root, brief)),
     ("test files that cannot fail, never run, or throw before they can",
      lambda files, root, stack, brief: _tests_that_cannot_fail(files, root)),
     ("the installed test runner against the one the stack chose",
@@ -6202,6 +6308,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
          files, root)),
     ("the port a test runner waits on against the one its server opens",
      lambda files, root, stack, brief: _a_test_server_on_another_port(files, root)),
+    ("handlers that change the state against the redraw the page depends on",
+     lambda files, root, stack, brief: _a_change_the_page_never_shows(files, root)),
     ("how Jest is started against tests written as ES modules",
      lambda files, root, stack, brief: _jest_started_without_what_es_modules_need(files, root)),
     ("each test runner's files against what the other runners also collect",

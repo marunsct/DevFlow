@@ -279,3 +279,11 @@ def test_every_harness_test_command_gets_a_free_port(monkeypatch, tmp_path) -> N
     run(["npm", "install"], "install", "app")
     assert int(seen[0]["ACCEPTANCE_PORT"]) > 0
     assert seen[1] is None
+
+
+def test_the_contract_says_the_kept_files_are_not_the_product(tmp_path) -> None:
+    pack = pack_named("browser-javascript")
+    run, _ = _fake_runner(tmp_path, pack)
+    scaffold(tmp_path, pack, "demo-app", "Demo App", run=run)
+    text = contract.describe(tmp_path)
+    assert "test setup, not the product" in text and "test them" in text

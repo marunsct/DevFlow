@@ -164,7 +164,9 @@ def describe(repo_root: str | Path | None) -> str:
         "nothing else may change it. The harness runs it and reports which criteria pass.\n"
         f"- Kept by the harness: {kept}"
         + (f", and the manifest scripts {scripts}" if scripts else "")
-        + ". A change to them is put back, so do not spend a turn on one. Add dependencies "
-        "the normal way; everything else in the project is yours.\n"
+        + ". They are test setup, not the product: do not change them, test them, run them "
+        "yourself or build on them - one run's stage wrote a unit test that started the "
+        "harness's server and hung for five minutes. Add dependencies the normal way; "
+        "everything else in the project is yours.\n"
         f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n\n"
     )

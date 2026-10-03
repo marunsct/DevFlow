@@ -43,8 +43,22 @@ class ScaffoldResult:
     problem: str = ""
 
 
+def free_port() -> int:
+    """A port nothing on this machine is listening on right now."""
+    import socket
+
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
 def sandbox_runner(repo_root: str | Path) -> Runner:
-    """Run commands the way every other harness command runs: contained and recorded."""
+    """Run commands the way every other harness command runs: contained and recorded.
+
+    A test command is given a free port of its own in `ACCEPTANCE_PORT`, which
+    the packs' acceptance configurations serve the product on: two runs on one
+    worker, or a server a cancelled run has not yet stopped, never collide.
+    """
     from app.tools.sandbox import SandboxExecutor
 
     def run(argv: Sequence[str], category: str, working_directory: str) -> dict[str, Any]:
@@ -54,6 +68,7 @@ def sandbox_runner(repo_root: str | Path) -> Runner:
             role_name="testing_specialist",
             category=category,
             working_directory=working_directory or None,
+            extra_env={"ACCEPTANCE_PORT": str(free_port())} if category == "test" else None,
         )
 
     return run

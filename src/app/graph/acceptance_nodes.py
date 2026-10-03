@@ -123,6 +123,7 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     )
     request = acceptance_requests.build_author_request(
         root, criteria, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
+        brief=getattr(state.get("document"), "text", "") or "",
     )
     update = _run_gated_agent(
         state, config,
@@ -217,6 +218,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             result.summary(),
             already_passing,
             deferred_text,
+            brief=getattr(state.get("document"), "text", "") or "",
         )
         update = _run_gated_agent(
             state, config,

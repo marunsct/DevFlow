@@ -218,3 +218,13 @@ def test_untestable_criteria_are_read_from_blockers() -> None:
         "AC-5": "these need a person's judgement",
         "AC-6": "these need a person's judgement",
     }
+
+
+def test_qa_and_the_qa_lead_read_the_customer_s_brief(project) -> None:
+    from app.agents.acceptance_reviewer import build_acceptance_review_request
+
+    brief = "## Interface\n- A text field labelled \"Note title\" and a button named \"Keep\"."
+    author = requests.build_author_request(project, suite.criteria(project), brief=brief)["messages"][0]["content"]
+    assert 'labelled "Note title"' in author and "use exactly those words" in author
+    review = build_acceptance_review_request("- AC-1: x", "suite", "ran", [], "", brief=brief)["messages"][0]["content"]
+    assert 'labelled "Note title"' in review

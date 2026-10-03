@@ -9,6 +9,9 @@ from app.acceptance import suite
 from app.acceptance.criteria import Criterion
 from app.stacks import contract
 
+#: How much of the brief QA is handed. Briefs are short; this is a ceiling.
+BRIEF_CHARS = 12_000
+
 #: How much of the suite's text a reviewer is handed inline. It can read the
 #: files itself; this is so the common case needs no tool call.
 SUITE_TEXT_CHARS = 24_000
@@ -54,8 +57,14 @@ def build_author_request(
     stack: Any = None,
     feedback: Sequence[str] = (),
     change_requests: dict[str, str] | None = None,
+    brief: str = "",
 ) -> dict[str, list[dict[str, str]]]:
-    """The QA stage's brief: write the acceptance suite before anything is built."""
+    """The QA stage's brief: write the acceptance suite before anything is built.
+
+    `brief` is the customer's own document. It is where a product's interface
+    is stated - the labels on its controls, its endpoints, its commands - and
+    a test written against anything else tests a product nobody asked for.
+    """
     where = suite.location(repo_root) or ("<project>", "acceptance")
     project, acceptance_dir = where
     deferred = suite.deferred(repo_root)
@@ -83,11 +92,12 @@ def build_author_request(
         f"{requests_text}"
         f"{feedback_text}"
         f"--- How to write them ---\n{_how_to_write_them(repo_root, project, acceptance_dir, stack)}\n\n"
-        "--- What to build them against ---\n"
-        "Read `docs/technical_specification.md` for the product's interfaces - its pages "
-        "and the labels on their controls, its endpoints, its commands - and "
-        "`docs/acceptance_criteria.md`. Test against what the specification names, in the "
-        "words a user would see.\n\n"
+        + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:BRIEF_CHARS]}\n\n" if brief.strip() else "")
+        + "--- What to build them against ---\n"
+        "Where the brief states the interface - the labels on controls, endpoints, commands, "
+        "names - the tests use exactly those words: they are what the customer will check. "
+        "For anything it leaves open, read `docs/technical_specification.md`, which names the "
+        "rest, and test in the words a user would see.\n\n"
         "--- Rules ---\n"
         "- At least one test for every criterion; a test may prove several. A criterion "
         "is proven by checking the result a user observes, not by calling internal code.\n"

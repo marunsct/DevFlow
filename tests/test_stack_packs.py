@@ -251,3 +251,31 @@ def test_a_service_pack_says_how_to_start_it() -> None:
     for name in ("node-http-api", "fullstack-node", "python-http-api"):
         rendered = pack_named(name).render("notes", "Notes")
         assert rendered["start.sh"].startswith("#!/bin/sh"), name
+
+
+def test_a_red_suite_fails_fast_and_never_on_a_fixed_port() -> None:
+    """One run's suite, written before the product as it should be, took 249
+    seconds to fail: every missing control waited out Playwright's 30-second
+    default. Another run's leftover server held the one port the suite used."""
+    for pack in ALL_PACKS:
+        config = pack.render("demo", "Demo").get("playwright.config.js")
+        if config is None:
+            continue
+        assert "actionTimeout: 3_000" in config, pack.name
+        assert "timeout: 15_000" in config, pack.name
+        assert "process.env.ACCEPTANCE_PORT ||" in config and "Math.random()" in config, pack.name
+
+
+def test_every_harness_test_command_gets_a_free_port(monkeypatch, tmp_path) -> None:
+    from app.stacks import scaffold as scaffolding
+
+    seen = []
+    monkeypatch.setattr(
+        "app.tools.sandbox.SandboxExecutor.execute",
+        lambda argv, **kwargs: seen.append(kwargs.get("extra_env")) or {"returncode": "0"},
+    )
+    run = scaffolding.sandbox_runner(tmp_path)
+    run(["npm", "run", "test:acceptance"], "test", "app")
+    run(["npm", "install"], "install", "app")
+    assert int(seen[0]["ACCEPTANCE_PORT"]) > 0
+    assert seen[1] is None

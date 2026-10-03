@@ -33,13 +33,18 @@ def playwright_config(server_command: str, ready_path: str = "/", screenshot: st
 
 // The harness runs this suite; keep it as it is. Acceptance tests reach the
 // product through the server below - never from disk, and never on another port.
-const port = Number(process.env.ACCEPTANCE_PORT || 4173);
+// The harness passes a free port; a run started by hand picks one at random, so
+// two runs on one machine never fight over it.
+const port = Number(process.env.ACCEPTANCE_PORT || 20000 + Math.floor(Math.random() * 20000));
 
 export default defineConfig({
   testDir: './acceptance',
   testMatch: '**/*.spec.js',
-  timeout: 30_000,
-  expect: { timeout: 5_000 },
+  // Short on purpose: the suite is written before the product, and runs red
+  // many times a sprint. A control that does not exist yet must fail in
+  // seconds, not wait out a 30-second default per action.
+  timeout: 15_000,
+  expect: { timeout: 3_000 },
   fullyParallel: false,
   workers: 1,
   retries: 0,
@@ -47,6 +52,8 @@ export default defineConfig({
   outputDir: 'test-results/evidence',
   use: {
     baseURL: `http://127.0.0.1:${port}`,
+    actionTimeout: 3_000,
+    navigationTimeout: 10_000,
     screenshot: '%(screenshot)s',
     trace: 'off',
   },

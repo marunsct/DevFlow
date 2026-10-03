@@ -52,8 +52,10 @@ The suite is the product's definition of done: once locked, the product is
 finished when these tests pass, and nobody may change them. Your job is to make
 sure passing them means the criteria are really met.
 
-For each criterion, read the tests whose names carry its id and ask one
-question: if the product did not do this - the feature missing, half-built, or
+Where the brief states the interface - labels, endpoints, commands, names -
+a test must use exactly those; a test that invents its own does not check what
+the customer will. For each criterion, read the tests whose names carry its id
+and ask one question: if the product did not do this - the feature missing, half-built, or
 wrong - would one of these tests fail? A test that only checks something
 exists, checks a value the test itself set, or would pass on an empty product is
 not enough. A test that checks the result a user would see is.
@@ -74,6 +76,7 @@ def build_acceptance_review_request(
     run_summary: str,
     already_passing: list[str],
     deferred_text: str,
+    brief: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     passing = (
         "--- Tests that already pass, before anything is built ---\n"
@@ -85,7 +88,8 @@ def build_acceptance_review_request(
     )
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"--- Acceptance criteria ---\n{criteria_text}\n\n"
+        + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:12_000]}\n\n" if brief.strip() else "")
+        + f"--- Acceptance criteria ---\n{criteria_text}\n\n"
         f"{deferred_text}"
         f"--- The suite as written ---\n{suite_text}\n\n"
         f"--- What running it showed ---\n{run_summary}\n\n"

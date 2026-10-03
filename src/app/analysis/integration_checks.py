@@ -5363,6 +5363,102 @@ def _what_a_line_defers(line: str) -> list[str]:
     return parts
 
 
+#: "Add new tasks with title and description": what a creating action in the
+#: brief says a record is given. The list after "with" is the fields.
+_FIELDS_AN_ACTION_IS_GIVEN = re.compile(
+    r"\b(?:add|create|enter)\b[^.\n]{0,40}?\bwith\s+"
+    r"((?:(?:an?|the|its|their)\s+)?[a-z]{3,20}"
+    r"(?:\s*(?:,|and|&)\s*(?:(?:an?|the|its|their)\s+)?[a-z]{3,20}){0,4})",
+    re.I,
+)
+
+#: Where a page collects a value: a form control, its label, or a prompt.
+_A_FORM_CONTROL = re.compile(r"<(?:input|textarea|select)\b[^>]*>|<label\b[^>]*>.*?</label>", re.I | re.S)
+_A_PROMPT_OR_CONTROL_ATTRIBUTE = re.compile(
+    r"""(?:prompt\s*\(|(?:placeholder|name|id|ariaLabel|aria-label|htmlFor)\s*["']?\s*[=:,]\s*)"""
+    r"""\s*[`'"][^`'"\n]*""",
+    re.I,
+)
+
+
+#: A control a person types into: a textarea, or an input that is not a box,
+#: a button or hidden - markup or a script that builds it.
+_A_TEXT_CONTROL = re.compile(
+    r"""<textarea\b|<input\b(?![^>]*\btype\s*=\s*["']?(?:checkbox|radio|submit|button|hidden|reset)\b)"""
+    r"""|createElement\(\s*["'](?:textarea|input)["']\s*\)""",
+    re.I,
+)
+
+
+def _fields_the_brief_asks_to_add_with(brief: str) -> dict[str, str]:
+    """Each field a creating action in the brief is given, to the line saying so."""
+    fields: dict[str, str] = {}
+    for line in (brief or "").splitlines():
+        for match in _FIELDS_AN_ACTION_IS_GIVEN.finditer(line):
+            for word in re.split(r"\s*(?:,|\band\b|&)\s*", match.group(1)):
+                word = re.sub(r"^(?:an?|the|its|their)\s+", "", word.strip(), flags=re.I).lower()
+                if word:
+                    fields.setdefault(word, line.strip().lstrip("-* ").strip())
+    return fields
+
+
+def _a_field_the_brief_asks_for_that_nothing_collects(
+    files: list[Path], root: Path, brief: str = ""
+) -> list[str]:
+    """A field the brief says a record is created with, and no control collects.
+
+    `tests/brief_low.md` asks to "Add new tasks with title and description".
+    Two runs in a row completed with a data layer that stored a `description`
+    and a page that never asked for one: one form input, for the title. Both
+    milestone reviews accepted; the suites passed a description straight to
+    the data layer, which is exactly what made them green. The action check
+    looks for `add`, and `add` was there - it is the field that was missing.
+
+    Read from the operator's brief only, and answered from the product's own
+    markup and scripts: a form control or label naming the field, or a prompt,
+    placeholder, name, id or label in a script that does. Tests are not
+    evidence, for the reason `_a_required_action_nothing_implements` gives.
+    """
+    fields = _fields_the_brief_asks_to_add_with(brief)
+    if not fields:
+        return []
+    controls: list[str] = []
+    free_text: list[str] = []
+    for path in files:
+        if is_test(str(path.relative_to(root))):
+            continue
+        suffix = path.suffix.lower()
+        text = _read(path)
+        if suffix in {".html", ".htm"} or suffix in _CLIENT_LOGIC_SUFFIXES:
+            free_text.append(text)
+        if suffix in {".html", ".htm"}:
+            controls.extend(_A_FORM_CONTROL.findall(text))
+            text = "\n".join(_INLINE_SCRIPT.findall(text))
+        elif suffix not in _CLIENT_LOGIC_SUFFIXES:
+            continue
+        controls.extend(_A_PROMPT_OR_CONTROL_ATTRIBUTE.findall(text))
+    if not controls:
+        return []
+    evidence = "\n".join(controls).lower()
+    # The first field named is the one a lone text box stands for. One run's
+    # add form was a single `<input type="text" placeholder="New task">` - the
+    # title, unnamed - and reading it as no title at all was the one false
+    # report this check made across fourteen products.
+    first = next(iter(fields))
+    if _A_TEXT_CONTROL.search("\n".join(free_text)):
+        evidence += f"\n{first}"
+    return [
+        f"The brief asks for a record to be added with a `{field}` (\"{line}\"), and "
+        f"nothing on the page collects one: no input, textarea, select, label or "
+        f"prompt in the product names `{field}`. The data may hold a `{field}`, "
+        "but no user can ever give it one, and a suite that passes it straight to "
+        "the data layer cannot show that. Add a control for it to the form that "
+        "creates the record, and to the one that edits it."
+        for field, line in sorted(fields.items())
+        if field not in evidence
+    ]
+
+
 def _a_required_action_nothing_implements(
     files: list[Path], root: Path, brief: str = ""
 ) -> list[str]:
@@ -5977,6 +6073,8 @@ _FLOORS: dict[str, str] = {
     "the runners a project's unit tests are written for": "BREAKS",
     "the address a browser test opens against how the page loads its code": "BREAKS",
     "how Jest is started against tests written as ES modules": "BREAKS",
+    # Nothing is broken: a field the brief asked for is simply never collected.
+    "fields the brief says a record is added with against the page's controls": "CRITERION",
 }
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
@@ -5996,6 +6094,9 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
      lambda files, root, stack, brief: _required_arguments_only_the_tests_supply(files, root)),
     ("actions the run's own acceptance criteria require against what it built",
      lambda files, root, stack, brief: _a_required_action_nothing_implements(files, root, brief)),
+    ("fields the brief says a record is added with against the page's controls",
+     lambda files, root, stack, brief: _a_field_the_brief_asks_for_that_nothing_collects(
+         files, root, brief)),
     ("clickable controls against the scripts that should operate them",
      lambda files, root, stack, brief: _a_control_group_no_script_operates(files, root)),
     ("required actions against exports nothing in the product uses",

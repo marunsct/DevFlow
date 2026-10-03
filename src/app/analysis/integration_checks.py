@@ -4866,6 +4866,28 @@ def _argument_counts(
     return counts
 
 
+def _the_local_name_of(name: str, text: str) -> str | None:
+    """What `text` calls the export `name` by, or None when it calls something else that.
+
+    One run's `main.js` imported `addTask as stateAddTask` from `state.js` and
+    defined its own `addTask(event)`, `toggleTask(id)` and `deleteTask(id)`.
+    Counted as calls of the state module's functions, those one-argument calls
+    were reported as leaving a second parameter `undefined` - three findings
+    about functions the file never called by that name - and a fix stage
+    "fixed" them by giving `state.js` parameters `= undefined` defaults.
+    """
+    for clause in _RELATIVE_NAMED_IMPORT.findall(text):
+        for part in clause.split(","):
+            bits = [bit.strip() for bit in part.split(" as ")]
+            if bits[0] == name:
+                return bits[-1]
+    if re.search(
+        rf"\b(?:function\s*\*?\s+{re.escape(name)}\s*\(|(?:const|let|var)\s+{re.escape(name)}\s*=)", text
+    ):
+        return None
+    return name
+
+
 def _required_arguments_only_the_tests_supply(
     files: list[Path], root: Path
 ) -> list[str]:
@@ -4952,8 +4974,11 @@ def _required_arguments_only_the_tests_supply(
                     else [text]
                 )
                 for body in bodies:
+                    local = _the_local_name_of(name, body)
+                    if local is None:
+                        continue
                     counts = _argument_counts(
-                        _only_the_code(body), name, _namespace_bindings(body),
+                        _only_the_code(body), local, _namespace_bindings(body),
                         _without_comments(body),
                     )
                     if counts:

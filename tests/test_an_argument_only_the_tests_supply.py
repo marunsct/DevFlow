@@ -263,3 +263,43 @@ def test_a_parameter_the_page_never_passes_through_a_runtime_import(tmp_path) ->
     problems = _required_arguments_only_the_tests_supply(_source_files(tmp_path), tmp_path)
 
     assert any("editTask" in problem and "`description`" in problem for problem in problems), problems
+
+
+def test_a_file_s_own_function_of_the_same_name_is_not_the_export(tmp_path) -> None:
+    """One run's main.js imported `addTask as stateAddTask` and defined its own
+    `addTask(event)`. Its one-argument calls were read as calls of the state
+    module's `addTask(state, task)`, reported three times, and "fixed" by giving
+    state.js parameters `= undefined` defaults."""
+    app = tmp_path / "app"
+    (app / "tests").mkdir(parents=True)
+    (app / "state.js").write_text("export const addTask = (state, task) => [...state, task];\n", encoding="utf-8")
+    (app / "main.js").write_text(
+        "import { addTask as stateAddTask } from './state.js';\n"
+        "let state = [];\n"
+        "function addTask(event) { state = stateAddTask(state, { title: event.target.value }); }\n"
+        "form.addEventListener('submit', (e) => addTask(e));\n",
+        encoding="utf-8",
+    )
+    (app / "tests" / "state.test.js").write_text(
+        "import { addTask } from '../state.js';\naddTask([], { title: 'x' });\n", encoding="utf-8"
+    )
+
+    assert _required_arguments_only_the_tests_supply(_source_files(tmp_path), tmp_path) == []
+
+
+def test_the_export_called_by_its_alias_is_still_counted(tmp_path) -> None:
+    app = tmp_path / "app"
+    (app / "tests").mkdir(parents=True)
+    (app / "state.js").write_text("export const addTask = (state, task) => [...state, task];\n", encoding="utf-8")
+    (app / "main.js").write_text(
+        "import { addTask as stateAddTask } from './state.js';\n"
+        "button.addEventListener('click', () => stateAddTask(current));\n",
+        encoding="utf-8",
+    )
+    (app / "tests" / "state.test.js").write_text(
+        "import { addTask } from '../state.js';\naddTask([], { title: 'x' });\n", encoding="utf-8"
+    )
+
+    problems = _required_arguments_only_the_tests_supply(_source_files(tmp_path), tmp_path)
+
+    assert any("`task`" in problem for problem in problems), problems

@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `bcc6354`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `bcc6354` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-82f10c90-7b44-4201-ba06-4498ca4150df` (see `data/loop/current_run.txt`), started 10:35 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-582f6ab6 was cancelled at 10:30 JST on 2026-10-03, 21 minutes in: a stage was refused five times for "Duplicate export of 'FilterState'" and never shown the first export (fixed `bcc6354`). Before it, run-fb4af14e COMPLETED at 09:57 JST but not clean (diff markers shipped in model.js, no description control; fixed `dc205aa`, `5d07338`). |
+| branch | `harness-hardening-session`, last code commit `a59d512`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `a59d512` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-0e0b4ae4-87a9-42ad-a5c5-7a698eb9a5a8` (see `data/loop/current_run.txt`), started 11:11 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-82f10c90 was cancelled at 11:06 JST on 2026-10-03, 31 minutes in, on sprint 1's third attempt: Playwright waited for its test server on port 3002 while e2e/server.js listened on 3000, and no check named it (fixed `a59d512`). The diff guard, the closing-bracket repair and the append fix all fired correctly in that run. |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

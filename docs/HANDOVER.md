@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `a12fa5f`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `a12fa5f` (deployed 01:28 JST on 2026-10-04) |
-| current run | `run-1264ac2e-f829-40b4-9f1a-fa306656e0d8`, `web-todo`, started 01:29 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb` (resumed copies c5 and b1 stood down). run-56e37323 was cancelled 01:23 JST, 31 minutes in: sprint 1 passed its criteria in 20 minutes, then the ledger's red-suite gate read the acceptance suite's run (red on later sprints' criteria) and sent it back until escalation (fixed `a12fa5f`). |
+| branch | `harness-hardening-session`, last code commit `1aa4eee`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `1aa4eee` (deployed 01:55 JST on 2026-10-04) |
+| current run | `run-84832a29-bad5-4554-ac12-0595f61f9233`, `web-todo`, started 01:55 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-1264ac2e was cancelled 01:50 JST, 21 minutes in: its locked acceptance suite threw a TypeError in its own helper in 9 of 11 tests, so no product could pass it (fixed `1aa4eee`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

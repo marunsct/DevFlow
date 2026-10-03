@@ -106,9 +106,9 @@ def base_url(service) -> str:
 '''
 
 #: How a person (or anything that deploys it) starts the service: the port in
-#: PORT, its data under DATA_DIR.
+#: PORT, the interface in HOST (default 127.0.0.1), its data under DATA_DIR.
 START = """#!/bin/sh
-cd "$(dirname "$0")" && exec .venv/bin/python -m uvicorn {{package}}.main:app --host 127.0.0.1 --port "${PORT:-8000}"
+cd "$(dirname "$0")" && exec .venv/bin/python -m uvicorn {{package}}.main:app --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}"
 """
 
 SMOKE_UNIT = '''from fastapi.testclient import TestClient
@@ -184,4 +184,9 @@ PACK = StackPack(
     },
     check_families=frozenset({"python"}),
     test_bugs=_python.TEST_BUGS,
+    ci_setup=_python.CI_SETUP,
+    release_files={
+        "Dockerfile": _python.service_dockerfile("uvicorn {{package}}.main:app"),
+        ".dockerignore": _python.DOCKERIGNORE,
+    },
 )

@@ -21,6 +21,58 @@ INSTALL = (("npm", "install", "--no-audit", "--no-fund"),)
 UNIT_TEST = ("npm", "test")
 ACCEPTANCE_TEST = ("npm", "run", "test:acceptance")
 
+#: The Node.js major version the harness's own image runs, so CI tests the
+#: product on the runtime it was built and tested on.
+NODE_MAJOR = "20"
+
+CI_SETUP = (
+    "      - uses: actions/setup-node@v4\n"
+    "        with:\n"
+    f"          node-version: {NODE_MAJOR}",
+)
+
+#: Playwright's browser build, which the harness's image already has and a CI
+#: runner does not. Only for packs whose acceptance tests drive a page.
+CI_BROWSERS = ("npx playwright install --with-deps chromium",)
+
+
+def service_dockerfile(start: str, port: int = 3000) -> str:
+    """A container for a Node.js service, started the way its `start` script starts it.
+
+    Dependencies are installed before the source is copied, so a change to the
+    code does not reinstall them; it runs as the image's unprivileged `node`
+    user; and it listens on every interface (`HOST`), which inside a container
+    is the only way anything reaches it. Configuration comes from the
+    environment the service already reads - `PORT`, `DATA_DIR` - never a
+    credential written into the file.
+    """
+    argv = ", ".join(f'"{part}"' for part in start.split())
+    return (
+        "# {{title}}: build with `docker build -t {{project}} .`, run with\n"
+        f"# `docker run -p {port}:{port} -v {{{{project}}}}-data:/app/data {{{{project}}}}`.\n"
+        f"FROM node:{NODE_MAJOR}-slim\n"
+        f"ENV NODE_ENV=production HOST=0.0.0.0 PORT={port} DATA_DIR=/app/data\n"
+        "WORKDIR /app\n"
+        "COPY package.json package-lock.json* ./\n"
+        "RUN npm install --omit=dev --no-audit --no-fund\n"
+        "COPY . .\n"
+        "RUN mkdir -p /app/data && chown -R node:node /app/data\n"
+        "USER node\n"
+        f"EXPOSE {port}\n"
+        f"CMD [{argv}]\n"
+    )
+
+
+DOCKERIGNORE = """node_modules/
+test-results/
+playwright-report/
+data/
+tests/
+acceptance/
+.git/
+*.log
+"""
+
 
 def playwright_config(server_command: str, ready_path: str = "/", screenshot: str = "only-on-failure") -> str:
     """A Playwright configuration that starts the product with `server_command`.

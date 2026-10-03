@@ -141,4 +141,7 @@ PACK = StackPack(
     check_families=frozenset({"javascript", "browser"}),
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
+    ci_setup=js.CI_SETUP,
+    ci_prepare=js.CI_BROWSERS,
+    release_files=api.PACK.release_files,
 )

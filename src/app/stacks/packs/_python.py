@@ -20,6 +20,53 @@ INSTALL = (
      "-r", "requirements.txt", "-r", "requirements-dev.txt"),
 )
 
+#: The Python version the harness's own image runs, so CI tests the product on
+#: the runtime it was built and tested on.
+PYTHON_VERSION = "3.12"
+
+CI_SETUP = (
+    "      - uses: actions/setup-python@v5\n"
+    "        with:\n"
+    f'          python-version: "{PYTHON_VERSION}"',
+)
+
+DOCKERIGNORE = """.venv/
+__pycache__/
+*.pyc
+test-results/
+data/
+tests/
+acceptance/
+.git/
+"""
+
+
+def service_dockerfile(server: str, port: int = 8000) -> str:
+    """A container for a Python service; `server` is the command after `python -m`.
+
+    Requirements are installed before the source is copied, so a change to the
+    code does not reinstall them; it runs as an unprivileged user; and it
+    listens on every interface (`HOST`), which inside a container is the only
+    way anything reaches it. Configuration comes from the environment the
+    service already reads - `PORT`, `DATA_DIR` - never a credential written
+    into the file.
+    """
+    return (
+        "# {{title}}: build with `docker build -t {{project}} .`, run with\n"
+        f"# `docker run -p {port}:{port} -v {{{{project}}}}-data:/app/data {{{{project}}}}`.\n"
+        f"FROM python:{PYTHON_VERSION}-slim\n"
+        f"ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 HOST=0.0.0.0 PORT={port} DATA_DIR=/app/data\n"
+        "WORKDIR /app\n"
+        "COPY requirements.txt ./\n"
+        "RUN pip install --no-cache-dir -r requirements.txt\n"
+        "COPY . .\n"
+        "RUN useradd --create-home --uid 10001 app && mkdir -p /app/data && chown -R app:app /app/data\n"
+        "USER app\n"
+        f"EXPOSE {port}\n"
+        f'CMD ["sh", "-c", "exec python -m {server} --host \\"$HOST\\" --port \\"$PORT\\""]\n'
+    )
+
+
 UNIT_TEST = (".venv/bin/python", "-m", "pytest", "tests", "-q", "--junitxml=test-results/unit.xml")
 ACCEPTANCE_TEST = (
     ".venv/bin/python", "-m", "pytest", "acceptance", "-q", "--junitxml=test-results/acceptance.xml",

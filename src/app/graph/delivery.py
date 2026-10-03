@@ -206,6 +206,11 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         return _escalate_to_a_human(state, error=text, release_attempts=attempts)
 
     deferred = suite.deferred(root)
+    # What someone who did not write it needs to test and ship it, from the
+    # stack pack's own verified commands. See `app.stacks.release`.
+    from app.stacks import release as release_files
+
+    packaged = release_files.write(root).describe()
     record_decision(
         state, update, point="release",
         question="Is the product ready to release?",
@@ -214,7 +219,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         rationale=(
             "Every acceptance criterion passes"
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
-            + ".\n" + summary
+            + ".\n" + (f"{packaged}\n" if packaged else "") + summary
         )[:2000],
     )
     goal = str(getattr(state.get("product_intake"), "product_name", "") or "the product")

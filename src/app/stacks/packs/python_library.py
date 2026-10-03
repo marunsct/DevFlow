@@ -86,4 +86,5 @@ PACK = StackPack(
     },
     check_families=frozenset({"python"}),
     test_bugs=_python.TEST_BUGS,
+    ci_setup=_python.CI_SETUP,
 )

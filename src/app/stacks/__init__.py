@@ -98,10 +98,24 @@ class StackPack:
     #: the product being unbuilt or wrong - for this pack's runner. Before
     #: anything is built every test fails; only these failures are the test's.
     test_bugs: tuple[str, ...] = ()
+    #: CI steps before the pack's install command (YAML list items): the
+    #: language runtime. See `app.stacks.release`.
+    ci_setup: tuple[str, ...] = ()
+    #: Commands a CI runner needs after the install and before the tests, which
+    #: the harness's own image already has (a browser build).
+    ci_prepare: tuple[str, ...] = ()
+    #: Files a release adds beside the product, relative to the project
+    #: directory - for a service, how to run it in a container. Never written
+    #: over a file the product already has.
+    release_files: Mapping[str, str] = field(default_factory=dict)
 
     def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""
         return _filled(self.files, project, title, package)
+
+    def render_release_files(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
+        """The release's files with this project's names filled in."""
+        return _filled(self.release_files, project, title, package)
 
     def rendered_smoke_files(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The smoke tests with this project's names filled in."""

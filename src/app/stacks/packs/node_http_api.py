@@ -43,15 +43,20 @@ INDEX = """import { createApp } from './app.js';
 
 const port = Number(process.env.PORT || 3000);
 
-createApp().listen(port, '127.0.0.1', () => {
-  console.log(`Listening on http://127.0.0.1:${port}`);
+const host = process.env.HOST || '127.0.0.1';
+
+createApp().listen(port, host, () => {
+  console.log(`Listening on http://${host}:${port}`);
 });
 """
 
+#: How the service is started, by its `start` script and by its container.
+SERVE_COMMAND = "node src/index.js"
+
 #: How a person (or anything that deploys it) starts the service: the port in
-#: PORT, its data under DATA_DIR.
-START = """#!/bin/sh
-cd "$(dirname "$0")" && exec node src/index.js
+#: PORT, the interface in HOST (default 127.0.0.1), its data under DATA_DIR.
+START = f"""#!/bin/sh
+cd "$(dirname "$0")" && exec {SERVE_COMMAND}
 """
 
 SMOKE_UNIT = """import { test } from 'node:test';
@@ -121,7 +126,7 @@ PACK = StackPack(
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.js",
     kept_files=("playwright.config.js",),
-    kept_scripts={"start": "node src/index.js", "test": js.UNIT_SCRIPT, "test:acceptance": "playwright test"},
+    kept_scripts={"start": SERVE_COMMAND, "test": js.UNIT_SCRIPT, "test:acceptance": "playwright test"},
     smoke_files={
         "tests/scaffold-smoke.test.js": SMOKE_UNIT,
         "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,
@@ -137,4 +142,7 @@ PACK = StackPack(
     check_families=frozenset({"javascript"}),
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
+    ci_setup=js.CI_SETUP,
+    # The `request` fixture needs no browser.
+    release_files={"Dockerfile": js.service_dockerfile(SERVE_COMMAND), ".dockerignore": js.DOCKERIGNORE},
 )

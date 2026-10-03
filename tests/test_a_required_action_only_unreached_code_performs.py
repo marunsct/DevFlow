@@ -82,3 +82,44 @@ def test_an_action_another_script_performs_its_own_way_is_silent(tmp_path) -> No
     app = ONLY_ADDS + "function deleteRow(id) {}\nfunction editInline(id) {}\nlist.onclick = () => { deleteRow(1); editInline(1); };\n"
 
     assert _a_required_action_only_unreached_code_performs(_project(tmp_path, app), tmp_path, BRIEF) == []
+
+
+SELF_CONTAINED = (
+    "let tasks = [];\n"
+    "export function addTask(data) { tasks.push(data); }\n"
+    "export function editTask(id, data) { Object.assign(tasks[id], data); }\n"
+    "export function deleteTask(id) { tasks.splice(id, 1); }\n"
+    "form.addEventListener('submit', () => addTask({ title: 'x' }));\n"
+    "list.addEventListener('click', e => e.target.dataset.act === 'del' ? deleteTask(1) : editTask(1, {}));\n"
+)
+
+
+def _alone(tmp_path: Path, app: str) -> list[Path]:
+    """The page and its one script, as the run had it: nothing else to name the actions."""
+    project = tmp_path / "app"
+    project.mkdir()
+    (project / "index.html").write_text(PAGE, encoding="utf-8")
+    (project / "app.js").write_text(app, encoding="utf-8")
+    return sorted(p for p in project.rglob("*") if p.is_file())
+
+
+def test_the_page_s_own_script_calling_its_own_exports_reaches_them(tmp_path) -> None:
+    """One run's index.html loaded app.js, which defined `addTask` and called it
+    from the form's submit handler. Read as an export nothing else used, it was
+    reported unreachable every round."""
+    files = _alone(tmp_path, SELF_CONTAINED)
+
+    assert _a_required_action_only_unreached_code_performs(files, tmp_path, BRIEF) == []
+
+
+def test_an_export_the_page_s_script_defines_and_never_calls_is_still_reported(tmp_path) -> None:
+    app = SELF_CONTAINED.replace(
+        "list.addEventListener('click', e => e.target.dataset.act === 'del' ? deleteTask(1) : editTask(1, {}));\n",
+        "list.addEventListener('click', e => deleteTask(1));\n",
+    ).replace("editTask(id, data)", "renameTask(id, data)")
+    files = _alone(tmp_path, app)
+
+    problems = _a_required_action_only_unreached_code_performs(files, tmp_path, BRIEF)
+
+    # `renameTask` is exported, named for editing, and called nowhere.
+    assert any("`edit`" in problem for problem in problems), problems

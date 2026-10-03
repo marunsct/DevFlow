@@ -391,6 +391,13 @@ def _exported_names(text: str) -> list[str]:
     return list(dict.fromkeys(names))
 
 
+def _called_where_it_is_defined(name: str, code: str) -> bool:
+    """Whether `code` calls `name` somewhere other than where it defines it."""
+    calls = len(re.findall(rf"(?<![\w$.]){re.escape(name)}\s*\(", code))
+    definitions = len(re.findall(rf"\bfunction\s*\*?\s+{re.escape(name)}\s*\(", code))
+    return calls > definitions
+
+
 def _a_required_action_only_unreached_code_performs(
     files: list[Path], root: Path, brief: str = ""
 ) -> list[str]:
@@ -419,6 +426,7 @@ def _a_required_action_only_unreached_code_performs(
 
     scripts: dict[str, str] = {}
     inline: list[str] = []
+    pages: list[str] = []
     for path in files:
         relative = str(path.relative_to(root))
         if is_test(relative) or any(part in _SKIP for part in path.parts):
@@ -428,13 +436,21 @@ def _a_required_action_only_unreached_code_performs(
             scripts[relative] = _read(path)
         elif suffix in {".html", ".htm"}:
             page = _read(path)
+            pages.append(page)
             inline.extend(_INLINE_SCRIPT.findall(page))
     unused: dict[str, list[str]] = {}
     for relative, text in scripts.items():
         elsewhere = "\n".join([*inline, *(t for r, t in scripts.items() if r != relative)])
+        # The page's own script calling its own export reaches it. One run's
+        # index.html loaded app.js, which defined `addTask` and called it from
+        # the form's submit handler; read as an export nothing else used, it
+        # was reported as unreachable every round.
+        loaded = any(PurePosixPath(relative).name in page for page in pages)
+        code = _only_the_code(text)
         names = [
             name for name in _exported_names(text)
             if not re.search(rf"(?<![\w$]){re.escape(name)}(?![\w$])", elsewhere)
+            and not (loaded and _called_where_it_is_defined(name, code))
         ]
         if names:
             unused[relative] = names

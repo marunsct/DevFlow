@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `3a857c2`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `3a857c2` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-a3ab3187-209b-4607-928e-63315f9908fa` (see `data/loop/current_run.txt`), started 14:22 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-e58ff6ab was cancelled at 14:18 JST on 2026-10-03, 12 minutes in: its plan credited every measure to sprint 3, and the fold merged the other three - including 'logic and persistence' - into one sprint for the whole product (fixed `3a857c2`: a sprint whose goal names a capability is not folded). The left-out-proven-defect step recorded 4 real defects in that run. |
+| branch | `harness-hardening-session`, last code commit `df9a6b2`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `df9a6b2` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-a9fe8139-e2f4-4acc-8c7a-c27ce12b377e` (see `data/loop/current_run.txt`), started 15:44 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-a3ab3187 was cancelled at 15:39 JST on 2026-10-03, 77 minutes in, for a major harness bug: a test round returned 71 defects with 2 distinct descriptions and a fix stage was dispatched per entry - 25 on the same defect (fixed `df9a6b2`: repeats dropped before recording). The new fold rule (`3a857c2`) kept three real sprints in that run. |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

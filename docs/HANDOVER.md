@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `c5c7b22`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `c5c7b22` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-fb4af14e-b24f-4bfe-a814-3a49532fe49a` (see `data/loop/current_run.txt`), started 09:28 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-0d03c64c was cancelled at 09:23 JST on 2026-10-03, 11 minutes in: two UI stages sent app.js fifteen times, each copy cut off at a `\\"` in a regular expression, and the refusal named only the broken regex (fixed `c5c7b22`). Before it, run-3c2a7e6f COMPLETED at 09:05 JST but not clean: no task description anywhere in the UI (check fixed `c2d5b1b`). |
+| branch | `harness-hardening-session`, last code commit `5d07338`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `5d07338` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-582f6ab6-7855-4de2-b53f-245b192fa70d` (see `data/loop/current_run.txt`), started 10:09 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-fb4af14e COMPLETED at 09:57 JST on 2026-10-03 (2 sprints, 13.9% failed calls, unit and Playwright suites green, review accepted) but NOT clean: src/model.js shipped with unified-diff markers that JavaScript parsed as unary +/- (guard `dc205aa`), no task description anywhere in the UI for the second run running (check `5d07338`), filter radios with no labels, two throwaway scripts (check_add.js, run_test.js) left in the project. |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

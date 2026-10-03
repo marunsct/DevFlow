@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `e817764`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `e817764` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-dfc0fb02-9752-4c84-b736-bf88e97d6e43` (see `data/loop/current_run.txt`), started 16:08 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-a9fe8139 COMPLETED at 16:02 JST on 2026-10-03 (one sprint, 152 lines, both suites green, review accepted) but NOT clean: ui.js redraws after add and filter but not after delete, edit or toggle (a deleted task stays on screen), and index.html has no viewport tag against a mobile criterion. Both are now checks (`e817764`): handlers that change state without redrawing (BREAKS), and a missing viewport under a brief asking for mobile (stated criterion). |
+| branch | `harness-hardening-session`, last code commit `33e54c8`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `33e54c8` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-dc39fa49-7b59-420b-ae86-08529ebc77f1` (see `data/loop/current_run.txt`), started 16:27 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-dfc0fb02 was cancelled at 16:19 JST on 2026-10-03, 11 minutes in: the stranded-test check reported a probe (test_import.js, no assertion) by its name, and the left-out-proven step recorded it as a defect every round, uncloseable (fixed `33e54c8`). Before it, run-a9fe8139 COMPLETED 16:02 JST, not clean (no redraw after delete/edit/toggle; no viewport; checks `e817764`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

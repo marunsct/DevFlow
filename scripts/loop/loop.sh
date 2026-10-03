@@ -16,6 +16,9 @@
 #   scripts/loop/loop.sh deploy              rebuild + restart app and worker, verify the image
 #                                            matches the working tree, list runs orphan recovery revived
 #   scripts/loop/loop.sh suite               the full test suite, logged to data/loop/suite.log
+#   scripts/loop/loop.sh bench <name>        start a run from benchmarks/<name>/brief.md (needs LOOP_USER/LOOP_PASSWORD)
+#   scripts/loop/loop.sh score [run] [name]  score a run's product against the benchmark's hidden tests
+#                                            (scripts/bench/score.py); the result lands in data/bench/<run>.json
 #   scripts/loop/loop.sh checks [labels]     how often each cross-file check fires over the stored
 #                                            workspaces, and its precision against labels (check_precision.py)
 #
@@ -66,6 +69,29 @@ start)
   echo "$run" > "$STATE/current_run.txt"
   echo "$brief" > "$STATE/current_brief.txt"
   echo "started $run from $brief at $(jst +%H:%M) JST"
+  ;;
+
+bench)
+  name="${2:?name a benchmark under benchmarks/}"
+  [ -f "benchmarks/$name/brief.md" ] || { echo "no benchmark named $name" >&2; exit 2; }
+  "$0" start "benchmarks/$name/brief.md"
+  ;;
+
+score)
+  run="${2:-$(current)}"
+  brief=$(cat "$STATE/current_brief.txt" 2>/dev/null || true)
+  name="${3:-$(echo "$brief" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')}"
+  [ -n "$name" ] && [ -d "benchmarks/$name/hidden" ] || { echo "say which benchmark: score <run> <name>" >&2; exit 2; }
+  ws="/app/data/workspaces/default/workspace-$run"
+  project=$(docker compose exec -T worker cat "$ws/.project-directory" 2>/dev/null | tr -d '\r\n')
+  [ -n "$project" ] || { echo "$run has no project directory yet" >&2; exit 1; }
+  docker compose exec -T -u root worker sh -c "rm -rf /tmp/bench-src/$name && mkdir -p /tmp/bench-src"
+  docker cp "benchmarks/$name" "langchain-worker-1:/tmp/bench-src/$name" >/dev/null
+  docker cp scripts/bench/score.py langchain-worker-1:/tmp/bench-src/score.py >/dev/null
+  docker compose exec -T -u root worker chown -R appuser:appuser /tmp/bench-src
+  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json"
+  mkdir -p data/bench
+  docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
   ;;
 
 cancel)

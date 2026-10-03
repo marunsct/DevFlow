@@ -228,3 +228,26 @@ def test_junit_reports_from_each_runner_are_read() -> None:
 
     assert not junit.parse("not xml").found
     assert not junit.read("/nonexistent/report.xml").found
+
+
+def test_the_module_a_brief_names_is_the_package_scaffolded(tmp_path) -> None:
+    from app.stacks import stated_module
+
+    assert stated_module("Run as `python -m wordstats <file>` from the project") == "wordstats"
+    assert stated_module("A Python package named `textkit`, used as `import textkit`.") == "textkit"
+    assert stated_module("A web page with a Title field.") is None
+
+    pack = pack_named("python-cli")
+    run, _ = _fake_runner(tmp_path, pack)
+    assert scaffold(tmp_path, pack, "word-statistics-tool", "Word Statistics", run=run, package="wordstats").ok
+    project = tmp_path / "word-statistics-tool"
+    assert (project / "wordstats" / "__main__.py").is_file()
+    assert "-m\", \"wordstats\"" in (project / "acceptance" / "conftest.py").read_text()
+    assert contract.read(tmp_path)["package"] == "wordstats"
+    assert "wordstats" in contract.describe(tmp_path)
+
+
+def test_a_service_pack_says_how_to_start_it() -> None:
+    for name in ("node-http-api", "fullstack-node", "python-http-api"):
+        rendered = pack_named(name).render("notes", "Notes")
+        assert rendered["start.sh"].startswith("#!/bin/sh"), name

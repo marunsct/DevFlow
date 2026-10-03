@@ -29,15 +29,20 @@ HARNESS_DIR = ".harness"
 CONTRACT_FILE = f"{HARNESS_DIR}/stack-pack.json"
 
 
-def write(repo_root: str | Path, pack: StackPack, project: str, title: str) -> None:
+def write(
+    repo_root: str | Path, pack: StackPack, project: str, title: str, package: str | None = None
+) -> None:
     """Record the pack this run's project was scaffolded from."""
+    from app.stacks import python_package_name
+
     path = Path(repo_root) / CONTRACT_FILE
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
         "pack": pack.name,
         "project": project,
         "title": title,
-        **pack.commands(project),
+        "package": package or python_package_name(project),
+        **pack.commands(project, package),
         "unit_report": pack.unit_report,
         "acceptance_report": pack.acceptance_report,
         "unit_dir": pack.unit_dir,
@@ -86,7 +91,7 @@ def enforce(repo_root: str | Path) -> list[str]:
     root = Path(repo_root) / project
     if not root.is_dir():
         return []
-    rendered = pack.render(project, title)
+    rendered = pack.render(project, title, record.get("package"))
     repairs: list[str] = []
     for relative in pack.kept_files:
         wanted = rendered.get(relative)
@@ -161,5 +166,5 @@ def describe(repo_root: str | Path | None) -> str:
         + (f", and the manifest scripts {scripts}" if scripts else "")
         + ". A change to them is put back, so do not spend a turn on one. Add dependencies "
         "the normal way; everything else in the project is yours.\n"
-        f"{pack.filled(pack.guide, project, record.get('title') or project)}\n\n"
+        f"{pack.filled(pack.guide, project, record.get('title') or project, record.get('package'))}\n\n"
     )

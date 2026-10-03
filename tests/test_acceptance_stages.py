@@ -71,7 +71,7 @@ def _ran(passed_names=(), failed_names=()) -> suite.AcceptanceResult:
 def test_scaffold_proves_the_pack_and_records_the_decision(tmp_path, monkeypatch) -> None:
     calls = []
 
-    def fake(root, pack, project, title):
+    def fake(root, pack, project, title, package=None):
         calls.append((pack.name, project, title))
         return SimpleNamespace(ok=True, problem="")
 
@@ -89,7 +89,7 @@ def test_scaffold_proves_the_pack_and_records_the_decision(tmp_path, monkeypatch
 
 def test_a_scaffold_that_cannot_be_proven_drops_the_pack(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.stacks.scaffold.scaffold", lambda *a: SimpleNamespace(ok=False, problem="no network")
+        "app.stacks.scaffold.scaffold", lambda *a, **k: SimpleNamespace(ok=False, problem="no network")
     )
     monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
 

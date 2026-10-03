@@ -105,6 +105,12 @@ def base_url(service) -> str:
     return service.url
 '''
 
+#: How a person (or anything that deploys it) starts the service: the port in
+#: PORT, its data under DATA_DIR.
+START = """#!/bin/sh
+cd "$(dirname "$0")" && exec .venv/bin/python -m uvicorn {{package}}.main:app --host 127.0.0.1 --port "${PORT:-8000}"
+"""
+
 SMOKE_UNIT = '''from fastapi.testclient import TestClient
 
 from {{package}}.main import app
@@ -151,6 +157,7 @@ PACK = StackPack(
         "{{package}}/__init__.py": '"""{{title}}."""\n',
         "{{package}}/main.py": MAIN,
         "acceptance/conftest.py": CONFTEST,
+        "start.sh": START,
     },
     install=_python.INSTALL,
     unit_test=_python.UNIT_TEST,

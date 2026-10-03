@@ -95,21 +95,21 @@ class StackPack:
     #: Where screenshots and other evidence the acceptance run leaves are found.
     evidence_dir: str = ""
 
-    def render(self, project: str, title: str) -> dict[str, str]:
+    def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""
-        return _filled(self.files, project, title)
+        return _filled(self.files, project, title, package)
 
-    def rendered_smoke_files(self, project: str, title: str) -> dict[str, str]:
+    def rendered_smoke_files(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The smoke tests with this project's names filled in."""
-        return _filled(self.smoke_files, project, title)
+        return _filled(self.smoke_files, project, title, package)
 
-    def filled(self, text: str, project: str, title: str = "") -> str:
+    def filled(self, text: str, project: str, title: str = "", package: str | None = None) -> str:
         """`text` (a guide, say) with this project's names filled in."""
-        return _filled({"": text}, project, title)[""]
+        return _filled({"": text}, project, title, package)[""]
 
-    def commands(self, project: str) -> dict[str, Any]:
+    def commands(self, project: str, package: str | None = None) -> dict[str, Any]:
         """The commands as stored in the workspace, with the package name filled in."""
-        package = python_package_name(project)
+        package = package or python_package_name(project)
 
         def fill(argv: tuple[str, ...]) -> list[str]:
             return [part.replace("{{package}}", package) for part in argv]
@@ -121,8 +121,10 @@ class StackPack:
         }
 
 
-def _filled(files: Mapping[str, str], project: str, title: str) -> dict[str, str]:
-    values = {"project": project, "title": title or project, "package": python_package_name(project)}
+def _filled(
+    files: Mapping[str, str], project: str, title: str, package: str | None = None
+) -> dict[str, str]:
+    values = {"project": project, "title": title or project, "package": package or python_package_name(project)}
 
     def fill(text: str) -> str:
         return re.sub(r"\{\{(\w+)\}\}", lambda m: values.get(m.group(1), m.group(0)), text)
@@ -143,6 +145,29 @@ def python_package_name(project: str) -> str:
     if name[0].isdigit():
         name = f"app_{name}"
     return name
+
+
+#: How a brief names the module a user runs or imports: `python -m wordstats`,
+#: `import textkit`, "a package named `textkit`".
+_A_STATED_MODULE = (
+    re.compile(r"python3?\s+-m\s+([A-Za-z_][A-Za-z0-9_]*)"),
+    re.compile(r"`import\s+([A-Za-z_][A-Za-z0-9_]*)`"),
+    re.compile(r"(?:package|module)\s+(?:named|called)\s+`?([A-Za-z_][A-Za-z0-9_]*)`?", re.I),
+)
+
+
+def stated_module(text: str) -> str | None:
+    """The importable name the brief gives the product, when it gives one.
+
+    A brief that says users run `python -m wordstats` has fixed the package's
+    name, whatever the project directory is called; a scaffold named after the
+    directory would ship a product its own brief cannot run.
+    """
+    for pattern in _A_STATED_MODULE:
+        match = pattern.search(text or "")
+        if match and match.group(1).isidentifier():
+            return match.group(1)
+    return None
 
 
 def _language(stack: Any) -> str:

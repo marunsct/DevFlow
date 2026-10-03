@@ -31,7 +31,7 @@ def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str,
         pack, record = found
         command = " ".join(record.get("acceptance_test") or pack.acceptance_test)
         return (
-            f"{pack.filled(pack.acceptance_guide, project, record.get('title') or project)}\n"
+            f"{pack.filled(pack.acceptance_guide, project, record.get('title') or project, record.get('package'))}\n"
             f"Run the suite with `{command}` in `{project}/`."
         )
     testing = str(getattr(stack, "testing_framework", "") or "the stack's testing framework")

@@ -112,6 +112,7 @@ PACK = StackPack(
         "public/index.html": PAGE,
         "public/main.js": PAGE_MAIN,
         "public/styles.css": STYLES,
+        "start.sh": api.START,
         ".gitignore": js.GITIGNORE,
     },
     install=js.INSTALL,

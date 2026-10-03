@@ -96,8 +96,14 @@ def scaffold(
     title: str,
     *,
     run: Runner | None = None,
+    package: str | None = None,
 ) -> ScaffoldResult:
-    """Scaffold `pack` into `<repo_root>/<project>` and prove it works."""
+    """Scaffold `pack` into `<repo_root>/<project>` and prove it works.
+
+    `package` is the importable name the brief gives the product, when it
+    gives one (`app.stacks.stated_module`); otherwise it is derived from the
+    project directory's name.
+    """
     root = Path(repo_root)
     project_root = root / project
     result = ScaffoldResult(ok=False, pack=pack.name, project=project)
@@ -107,14 +113,14 @@ def scaffold(
     run = run or sandbox_runner(root)
 
     project_root.mkdir(parents=True, exist_ok=True)
-    for relative, content in pack.render(project, title).items():
+    for relative, content in pack.render(project, title, package).items():
         target = project_root / relative
         if target.exists():
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
 
-    for argv in pack.commands(project)["install"]:
+    for argv in pack.commands(project, package)["install"]:
         code = _step(result.steps, argv, run(argv, "install", project))
         if code != 0:
             # One retry: a registry hiccup is the commonest cause, and it passes.
@@ -123,13 +129,13 @@ def scaffold(
             result.problem = f"`{' '.join(argv)}` failed in {project}/."
             return result
 
-    smoke = pack.rendered_smoke_files(project, title)
+    smoke = pack.rendered_smoke_files(project, title, package)
     for relative, content in smoke.items():
         target = project_root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
     try:
-        commands = pack.commands(project)
+        commands = pack.commands(project, package)
         for label, argv, report in (
             ("unit", commands["unit_test"], pack.unit_report),
             ("acceptance", commands["acceptance_test"], pack.acceptance_report),
@@ -152,7 +158,7 @@ def scaffold(
         if pack.evidence_dir:
             shutil.rmtree(project_root / pack.evidence_dir, ignore_errors=True)
 
-    contract.write(root, pack, project, title)
+    contract.write(root, pack, project, title, package)
     try:
         from app.tools.version_control import commit_all
 

@@ -48,6 +48,12 @@ createApp().listen(port, '127.0.0.1', () => {
 });
 """
 
+#: How a person (or anything that deploys it) starts the service: the port in
+#: PORT, its data under DATA_DIR.
+START = """#!/bin/sh
+cd "$(dirname "$0")" && exec node src/index.js
+"""
+
 SMOKE_UNIT = """import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/app.js';
@@ -102,6 +108,7 @@ PACK = StackPack(
         "playwright.config.js": js.playwright_config("node src/index.js", "/health"),
         "src/app.js": APP,
         "src/index.js": INDEX,
+        "start.sh": START,
         ".gitignore": js.GITIGNORE,
     },
     install=js.INSTALL,

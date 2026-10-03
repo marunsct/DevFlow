@@ -72,7 +72,11 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
         title = str(getattr(state.get("product_intake"), "product_name", "") or "").strip()
         project = pinned_project_directory(Path(root)) or pin_the_directory_the_product_names(root, title)
         if project:
-            result = scaffold_pack(root, pack, project, title or project)
+            from app.stacks import stated_module
+
+            brief = getattr(state.get("document"), "text", "") or ""
+            package = stated_module(brief) if pack.language == "python" else None
+            result = scaffold_pack(root, pack, project, title or project, package=package)
             update["scaffold_result"] = {
                 "ok": result.ok, "pack": pack.name, "project": project, "problem": result.problem,
             }

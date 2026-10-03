@@ -35,6 +35,7 @@ AGENTS = [
     "technical_lead",
     "security_reviewer",
     "milestone_reviewer",
+    "acceptance_reviewer",
     "specialists",
 ]
 

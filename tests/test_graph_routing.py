@@ -186,6 +186,14 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         "analyze",
         lambda self, role_name: type('Result', (), {'success': True, 'stdout': '', 'stderr': '', 'errors': []})()
     )
+    # The stages between the architecture and the sprint plan - scaffold, QA
+    # writing the acceptance suite, its review - have tests of their own
+    # (`test_acceptance_stages.py`). Here they pass straight through, so these
+    # tests keep exercising what they were written for.
+    from app.graph import acceptance_nodes
+
+    monkeypatch.setattr(acceptance_nodes, "scaffold", lambda state, config, ctx: {"stage": "acceptance_author"})
+    monkeypatch.setattr(acceptance_nodes, "acceptance_author", lambda state, config, ctx: {"stage": "scrum_master"})
     return registry
 
 

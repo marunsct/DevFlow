@@ -319,10 +319,13 @@ SPRINT_REVIEW = "sprint"
 PRODUCT_INTAKE_REVIEW = "product_intake"
 """Review point: the refined product intake document."""
 
+from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
+
 _REVIEW_NODES = {
     SPECIFICATION_REVIEW: "user_review_specification",
     SPRINT_REVIEW: "user_review_sprint",
     PRODUCT_INTAKE_REVIEW: "user_review_product_intake",
+    ACCEPTANCE_REVIEW: "user_review_acceptance",
 }
 """Maps a review point to the node that owns its gate, so the entry router can
 re-enter the right node when a paused review is resumed."""
@@ -331,6 +334,7 @@ _REVIEW_STAGES = {
     SPECIFICATION_REVIEW: WorkflowStage.ARCHITECTURE,
     SPRINT_REVIEW: WorkflowStage.IMPLEMENTATION,
     PRODUCT_INTAKE_REVIEW: WorkflowStage.INTAKE,
+    ACCEPTANCE_REVIEW: WorkflowStage.VALIDATION,
 }
 """Maps a review point to the `WorkflowStage` recorded on its `ReviewStatus`,
 so an auditor can tell which lifecycle stage a review decision belongs to."""
@@ -344,6 +348,10 @@ _NODE_NAMES = frozenset(
         "principal_architect",
         "architecture_review",
         "user_review_specification",
+        "scaffold",
+        "acceptance_author",
+        "acceptance_review",
+        "user_review_acceptance",
         "scrum_master",
         "technical_lead",
         "specialist_dispatch",
@@ -374,6 +382,8 @@ _ITERATED_STAGE_OWNERS = {
     "specialist_": "specialist_dispatch",
     "test_round_": "test_and_triage",
     "defect_fix_": "defect_remediation",
+    "acceptance_author_": "acceptance_author",
+    "acceptance_review_": "acceptance_review",
 }
 """Maps an iterated stage-name prefix to the node that owns it.
 
@@ -506,6 +516,17 @@ class WorkflowGraphState(TypedDict, total=False):
     inner_thread_ids: list[str]
     pending_decision: dict[str, Any] | None
     error: str | None
+
+    # The redesign (docs/redesign-software-company.md). `stack_pack` names the
+    # pack `stack_selector` chose; `acceptance_*` carry the QA stage's rounds;
+    # `decisions` is the decision log (`app.decisions`).
+    stack_pack: str | None
+    scaffold_result: dict[str, Any]
+    acceptance_round: int
+    acceptance_feedback: list[str]
+    acceptance_open_problems: list[str]
+    acceptance_result: dict[str, Any]
+    decisions: list[dict[str, Any]]
 
 
 _CONTEXT_OVERFLOW_MARKERS = (
@@ -4117,6 +4138,45 @@ def _effective_base_environment() -> dict[str, str]:
         return dict(os.environ)
 
 
+def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
+    """The stack pack this run will be scaffolded from, and the stack aligned with it.
+
+    Chosen when the stack is, so the stack document - and every review that
+    reads it - describes what will actually be built and tested. A stack no pack
+    fits is set up by the agents, as every run was before packs existed. See
+    `app.stacks`.
+    """
+    from app.decisions import record_decision
+    from app.stacks import aligned_stack, choose_pack
+
+    chosen = update.get("stack_selection")
+    stack = getattr(chosen, "technology_stack", None)
+    if stack is None:
+        return {}
+    brief = getattr(state.get("document"), "text", "") or ""
+    pack = choose_pack(stack, f"{brief}\n{_as_text(state.get('product_intake'))}")
+    out: dict[str, Any] = {"stack_pack": pack.name if pack else None}
+    if pack is not None:
+        aligned = aligned_stack(stack, pack)
+        if aligned != stack:
+            logger.info("Stack pack %s chosen; recording its framework and test runners in the stack", pack.name)
+            out["stack_selection"] = chosen.model_copy(update={"technology_stack": aligned})
+    else:
+        logger.info("No stack pack fits this stack; the agents will set the project up")
+    final = getattr(out.get("stack_selection", chosen), "technology_stack", stack)
+    record_decision(
+        state, out, point="stack",
+        question="What is the product built with?",
+        options=[pack.title] if pack else [],
+        decision=(
+            f"{getattr(final, 'language', '')} / {getattr(final, 'framework', '')}"
+            + (f" - {pack.title}" if pack else " - no stack pack fits; the agents set the project up")
+        ),
+        rationale=str(getattr(chosen, "rationale", "") or "")[:1500],
+    )
+    return out
+
+
 def build_workflow_graph(
     model: str | BaseChatModel | None = None,
     *,
@@ -4159,6 +4219,10 @@ def build_workflow_graph(
                 
         settings = load_settings(base_env)
         model = build_default_chat_model(settings)
+
+    # The model for judgement: the architect, QA, reviewers and fixes. The
+    # default model until a judgement model is configured (see `app.models.roles`).
+    judgement_model = model
 
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
@@ -4313,6 +4377,7 @@ def build_workflow_graph(
         # never reached the stage that picked Express. See
         # `app.agents.brief_constraints`.
         from app.agents.brief_constraints import constraints_note
+        from app.stacks import supported_stacks_note
 
         document = state.get("document")
         constraints = constraints_note(getattr(document, "text", "") or "")
@@ -4322,6 +4387,7 @@ def build_workflow_graph(
                     "role": "user",
                     "content": (
                         f"{constraints}"
+                        f"{supported_stacks_note()}"
                         f"Product Intake: {state['product_intake']}\n"
                         f"Tools: {state.get('tools_models')}"
                     ),
@@ -4381,6 +4447,7 @@ def build_workflow_graph(
         # guard ended the run at stage three. The same shape had already cost
         # earlier runs their technical lead and their architecture reviewer,
         # in the one stage that had not been converted.
+        update.update(_the_stack_pack_for(state, update))
         _record_document(
             state,
             "docs/technology_stack.md",
@@ -4546,7 +4613,7 @@ def build_workflow_graph(
             # The mandatory gate passed. Only now may an optional human review
             # session run; it can never substitute for this gate.
             update["stage"] = (
-                "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scrum_master"
+                "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
             )
         else:
             revision_count = state.get("architecture_revision_count", 0) + 1
@@ -4580,7 +4647,7 @@ def build_workflow_graph(
             config,
             review_point=SPECIFICATION_REVIEW,
             artifact_id="technical-specification",
-            approved_next="scrum_master",
+            approved_next="scaffold",
             changes_next="principal_architect",
         )
 
@@ -5169,11 +5236,18 @@ def build_workflow_graph(
         milestone = state["milestone_plan"]
         test_round = state.get("test_round", 0)
         outputs = state.get("specialist_outputs", {})
+        # The harness runs the locked acceptance suite once per round, on the
+        # round's first entry (a resume after an approval pause is the same
+        # round), and hands the measured result to the test engineer.
+        from app.graph import acceptance_nodes
+
+        acceptance_text = ""
         if not state.get("pending_inner_thread_id"):
             # Before the round, not after a pause inside it: the stages that
             # wrote these have all finished, and the round should measure the
             # product without them.
             _clear_the_throwaways(state["repository"].root_path)
+            acceptance_text = acceptance_nodes.acceptance_text_for(state)
         changed_files = _the_files_this_milestone_changed(state, outputs)
 
         agent = create_specialist_agent(
@@ -5196,6 +5270,7 @@ def build_workflow_graph(
             ],
             later_sprints=_what_later_sprints_build(state),
             brief=getattr(state.get("document"), "text", "") or "",
+            acceptance=acceptance_text,
         )
         update = _run_gated_agent(
             state,
@@ -5245,6 +5320,17 @@ def build_workflow_graph(
                 test_round, len(left_out),
             )
             reported = reported + left_out
+        try:
+            unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)
+        except Exception:  # noqa: BLE001 - the round's own report stands
+            logger.debug("Could not compare the round's report with the acceptance suite", exc_info=True)
+            unreported_criteria = []
+        if unreported_criteria:
+            logger.warning(
+                "test_round_%d did not report %d failing acceptance criteria; recording them as defects",
+                test_round, len(unreported_criteria),
+            )
+            reported = reported + unreported_criteria
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}"
@@ -5615,7 +5701,16 @@ def build_workflow_graph(
             for f in sec_review.findings:
                 defect_report += f"[{f.severity}] {f.category}: {f.description}\nRemediation: {f.remediation}\n\n"
         
-        agent = create_milestone_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        # The measured suite, run on the review's first entry only: a resume
+        # after an approval pause is the same review of the same code.
+        from app.graph import acceptance_nodes
+
+        acceptance_text = (
+            acceptance_nodes.acceptance_text_for(state)
+            if not state.get("pending_inner_thread_id")
+            else ""
+        )
+        agent = create_milestone_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_milestone_review_request(
             milestone.selected_sprint_goal,
             changed_files,
@@ -5645,6 +5740,7 @@ def build_workflow_graph(
             revisions_used=state.get("milestone_revision_count", 0),
             revisions_allowed=MAX_MILESTONE_REVISIONS,
             sprint_scope=_this_sprint_s_scope_for_review(state),
+            acceptance=acceptance_text,
         )
         update = _run_gated_agent(
             state,
@@ -5864,6 +5960,36 @@ def build_workflow_graph(
                 **summary,
             )
 
+        # The acceptance suite is the definition of done: a sprint whose due
+        # criteria fail is not accepted, whatever the review read. Measured by
+        # the harness's run of the locked suite, not reported by a model.
+        not_passing = acceptance_nodes.due_criteria_failing(state)
+        if not_passing:
+            revision_count = state.get("milestone_revision_count", 0) + 1
+            if revision_count < MAX_MILESTONE_REVISIONS:
+                logger.warning("Milestone review would accept failing acceptance criteria; sending it back")
+                return _handing_on(
+                    stage="technical_lead",
+                    revision_comments=state.get("revision_comments", []) + [not_passing],
+                    milestone_revision_count=revision_count,
+                    milestone_review=review,
+                )
+            summary = _record_sprint_summary(
+                state,
+                "Failed",
+                f"acceptance criteria still failing after {MAX_MILESTONE_REVISIONS} revisions",
+            )
+            return _escalate_to_a_human(
+                state,
+                error=(
+                    f"Acceptance criteria were still failing after {MAX_MILESTONE_REVISIONS} "
+                    f"revisions.\n\n{not_passing}"
+                ),
+                milestone_revision_count=revision_count,
+                milestone_review=review,
+                **summary,
+            )
+
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state.get("sprint_plan").sprints if state.get("sprint_plan") else []
         has_more_sprints = sprint_index < len(sprints) - 1
@@ -6047,6 +6173,37 @@ def build_workflow_graph(
         logger.error("Run failed with no reason recorded; routed from %r", routed_from)
         return {"stage": "failed", "error": reason}
 
+    # The stages between an approved architecture and the sprint plan, and the
+    # QA lead's review. See `app.graph.acceptance_nodes`.
+    from app.graph import acceptance_nodes
+
+    stage_context = acceptance_nodes.Context(
+        model=model,
+        judgement_model=judgement_model,
+        checkpointer=shared_checkpointer,
+        repo_root=repo_root,
+        allow_subdirectories=allow_subdirectories,
+    )
+
+    def scaffold_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return acceptance_nodes.scaffold(state, config, stage_context)
+
+    def acceptance_author_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return acceptance_nodes.acceptance_author(state, config, stage_context)
+
+    def acceptance_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return acceptance_nodes.acceptance_review(state, config, stage_context)
+
+    def user_review_acceptance_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return _run_review_gate(
+            state,
+            config,
+            review_point=ACCEPTANCE_REVIEW,
+            artifact_id="acceptance-tests",
+            approved_next="scrum_master",
+            changes_next="acceptance_author",
+        )
+
     graph = StateGraph(WorkflowGraphState)
     from langgraph.types import RetryPolicy
     
@@ -6064,6 +6221,10 @@ def build_workflow_graph(
     graph.add_node("principal_architect", principal_architect_node, retry_policy=agent_retry_policy)
     graph.add_node("architecture_review", architecture_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_specification", user_review_specification_node)
+    graph.add_node("scaffold", scaffold_node)
+    graph.add_node("acceptance_author", acceptance_author_node, retry_policy=agent_retry_policy)
+    graph.add_node("acceptance_review", acceptance_review_node, retry_policy=agent_retry_policy)
+    graph.add_node("user_review_acceptance", user_review_acceptance_node)
     graph.add_node("scrum_master", scrum_master_node, retry_policy=agent_retry_policy)
     graph.add_node("technical_lead", technical_lead_node, retry_policy=agent_retry_policy)
     graph.add_node("specialist_dispatch", specialist_dispatch_node, retry_policy=agent_retry_policy)
@@ -6094,6 +6255,10 @@ def build_workflow_graph(
         "principal_architect",
         "architecture_review",
         "user_review_specification",
+        "scaffold",
+        "acceptance_author",
+        "acceptance_review",
+        "user_review_acceptance",
         "scrum_master",
         "technical_lead",
         "specialist_dispatch",

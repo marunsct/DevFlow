@@ -513,6 +513,21 @@ def _how_the_pieces_load(stack: Any) -> str:
     )
 
 
+def project_contract(repository_root: str) -> str:
+    """How the project was set up and which parts the harness owns, or "".
+
+    Every stage that writes code or tests is told the same thing: the commands,
+    where unit tests go, that the acceptance suite is locked. See
+    `app.stacks.contract`.
+    """
+    try:
+        from app.stacks.contract import describe
+
+        return describe(repository_root)
+    except Exception:  # noqa: BLE001 - a brief without it is the brief as it was
+        return ""
+
+
 def describe_stack(stack: Any) -> str:
     """The chosen stack, as the one specialists must build on.
 
@@ -697,6 +712,7 @@ def build_specialist_task_request(
         # agents looking for files under a root that does not exist for them.
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"{describe_stack(stack)}"
+        f"{project_contract(repository_root)}"
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
         f"{order}"
@@ -715,8 +731,13 @@ def build_test_run_request(
     planned: Sequence[str] = (),
     later_sprints: str = "",
     brief: str = "",
+    acceptance: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Testing specialist's input for one verification round (Step 5.4).
+
+    `acceptance` is the harness's own run of the locked acceptance suite, made
+    just before this round: every failing criterion that is due is a defect to
+    report, with its owner.
 
     This is the loop's step 2, "the Test Engineer runs the tests applicable to
     that increment", and it is a separate invocation from the testing task the
@@ -763,8 +784,10 @@ def build_test_run_request(
     brief = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"{describe_stack(stack)}"
+        f"{project_contract(repository_root)}"
         f"--- Milestone under test ---\n{milestone_goal}\n\n"
         f"--- Files changed in this milestone ---\n{files_text}\n\n"
+        f"{acceptance}"
         f"{proven_text}"
         "Run the unit, integration, contract, end-to-end, accessibility, and security "
         "tests that apply to this increment, using the testing approach this project "
@@ -909,6 +932,7 @@ def build_defect_fix_request(
     brief = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
         f"{describe_stack(stack)}"
+        f"{project_contract(repository_root)}"
         "A test failure has been assigned to you to fix.\n\n"
         f"--- Defect ---\n{description}\n\n"
         f"--- Reproduction steps ---\n{reproduction_steps}\n\n"

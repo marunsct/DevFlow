@@ -1498,6 +1498,62 @@ def _reads_as_a_defect_report(content: str) -> bool:
     )
 
 
+#: The stage that writes the acceptance suite, and the only one that may change it.
+_THE_ACCEPTANCE_AUTHOR = "acceptance_author"
+
+
+def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | None:
+    """The refusal for a change to the harness's records or the acceptance suite, or None.
+
+    The acceptance suite is the product's definition of done: QA wrote it from
+    the criteria before anything was built, a review approved it, and the
+    harness runs it. A stage that could edit it could make the product "done" by
+    weakening a test, which is the failure the suite exists to prevent - so only
+    the QA stage, reopened through a recorded change, may touch it. And the QA
+    stage writes nothing else: the product is not its to build.
+    """
+    try:
+        relative = target.resolve().relative_to(root.resolve()).as_posix()
+    except (OSError, ValueError):
+        return None
+    if relative == ".harness" or relative.startswith(".harness/"):
+        return (
+            f"'{relative}' is the harness's own record of what it set up and locked; "
+            "no stage may change it."
+        )
+    try:
+        from app.acceptance import suite
+
+        where = suite.relative_directory(root)
+        protected = suite.is_protected(root, relative)
+    except Exception:  # noqa: BLE001 - an unreadable lock protects nothing
+        where, protected = "", False
+    inside = bool(where) and (relative == where or relative.startswith(where + "/"))
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        stage = str(_stage_from_config("") or "")
+    except Exception:  # noqa: BLE001
+        stage = ""
+    if stage.startswith(_THE_ACCEPTANCE_AUTHOR):
+        if where and not inside:
+            return (
+                f"'{relative}' is not part of the acceptance suite. QA writes only "
+                f"`{where}/`; the product is built by the stages that own it, after "
+                "this suite is locked."
+            )
+        return None
+    if not protected:
+        return None
+    return (
+        f"'{relative}' is part of the acceptance suite, which QA wrote from the "
+        "acceptance criteria and the harness has locked: the product is done when this "
+        "suite passes, so it is never changed to make it pass. Change the product "
+        "instead. If you are certain a test there is wrong, name the test and why in "
+        "`blockers`; the review decides."
+    )
+
+
 def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") -> str | None:
     """The refusal for a testing stage changing application code, or None.
 
@@ -1757,6 +1813,9 @@ def _guard_a_targeted_change(
     cut_off = _cut_off_at_a_quote(relative_path, replacement, editing=True)
     if cut_off is not None:
         raise RepositoryToolError(cut_off)
+    locked = _the_harness_s_own_or_the_locked_suite(root, target)
+    if locked is not None:
+        raise RepositoryToolError(locked)
     installed = _installed_by_a_tool(root, target)
     if installed is not None:
         raise RepositoryToolError(installed)
@@ -5728,6 +5787,9 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
+    locked = _the_harness_s_own_or_the_locked_suite(artifact_root, target)
+    if locked is not None:
+        raise RepositoryToolError(locked)
     cut_off = _cut_off_at_a_quote(relative_path, content)
     if cut_off is not None:
         raise RepositoryToolError(cut_off)
@@ -6329,6 +6391,9 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
         raise RepositoryToolError("Give the path of the file to delete.")
 
     target = _assert_within_repo(root, root / candidate)
+    locked = _the_harness_s_own_or_the_locked_suite(root, target)
+    if locked is not None:
+        raise RepositoryToolError(locked)
     shown = target.relative_to(root).as_posix()
 
     if is_secret_path(target):
@@ -6466,6 +6531,10 @@ def move_approved_artifact(
     target = _assert_within_repo(root, root / _repo_relative_path(root, destination))
     from_shown = source.relative_to(root).as_posix()
     to_shown = target.relative_to(root).as_posix()
+    for end in (source, target):
+        locked = _the_harness_s_own_or_the_locked_suite(root, end)
+        if locked is not None:
+            raise RepositoryToolError(locked)
 
     # A move is how an agent gets round the write refusal: one run moved
     # `docs/architecture_review.md` to `docs/old_architecture_review.md`, which

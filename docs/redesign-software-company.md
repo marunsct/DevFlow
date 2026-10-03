@@ -59,9 +59,9 @@ acceptance tests) or, where offered, picks an option.
 
 | # | Phase | State |
 |---|---|---|
-| 1 | Stack packs, scaffold node, project contract | in progress |
-| 2 | Acceptance criteria, author, review, lock, runner | |
-| 3 | Acceptance gates in test rounds, milestone review, release | |
+| 1 | Stack packs, scaffold node, project contract | done (`d66a47e`, wired in the next commit) |
+| 2 | Acceptance criteria, author, review, lock, runner | done |
+| 3 | Acceptance gates in test rounds, milestone review, release | test rounds and milestone review done; release gate with phase 5 |
 | 4 | Per-role models | |
 | 5 | Decision records, modes, evidence package, change requests, UI | |
 | 6 | CI per batch with revert, code review, commits | |

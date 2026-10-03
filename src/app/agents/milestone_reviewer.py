@@ -460,8 +460,13 @@ def build_milestone_review_request(
     revisions_used: int = 0,
     revisions_allowed: int = 0,
     sprint_scope: str = "",
+    acceptance: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the milestone artifacts awaiting review.
+
+    `acceptance` is the harness's own run of the locked acceptance suite (see
+    `app.acceptance.requests.acceptance_block`): which criteria pass, measured,
+    not reported.
 
     `sprint_scope` is this sprint's goal, scope, what the plan deferred and the
     later sprints' goals. Without it the reviewer had the brief and the
@@ -483,6 +488,7 @@ def build_milestone_review_request(
         + what_the_specialists_reported(specialist_outputs)
         + what_you_said_last_time(previous_review, revisions_used, revisions_allowed)
         + scope_text
+        + acceptance
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"

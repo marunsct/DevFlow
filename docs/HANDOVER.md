@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `27e0714`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `27e0714` (deployed 06:36 JST on 2026-10-04): plan review R1-R6, acceptance-port fix, page check, presentation-only readiness, harness runs never withheld |
-| current run | `run-d3827f72-dc92-412e-944b-df1385726ef7`, `web-todo`, started 06:37 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-85fcf530 was cancelled 06:30 JST after sprint 1 was accepted: the harness's own suite run at acceptance was withheld by the agents' repeat guard, so the accepted baseline had no acceptance results (fixed `27e0714`). |
+| branch | `harness-hardening-session`, last code commit `6534294`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `6534294` (deployed 07:23 JST on 2026-10-04): plan review R1-R6, port fix, page check, harness runs never withheld, controls found by their names, size count without the harness's files |
+| current run | `run-34237d1b-b92c-4610-a7a8-5b4298d17dc2`, `web-todo`, started 07:24 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-d3827f72 COMPLETED 07:10 JST in 34 minutes (3 sprints, release with CI file) but scored 7/10 hidden tests: QA found the description field by its placeholder and the product had no label (fixed `3c41ab2`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

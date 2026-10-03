@@ -3486,6 +3486,11 @@ _BREAKS_BEHAVIOUR = (
     "Either build it or record why it was dropped",  # a dropped criterion
     # The same criterion, descoped by a decision the run wrote itself.
     "the deferral carries no authority",  # a self-authorised descope
+    # The third branch of the same check: a brief requirement the run's own
+    # documents dropped. Missing here, it was graded untidy - so once the test
+    # rounds were given the brief, the one finding that quoted it fell out of
+    # the proven list they are handed.
+    "cannot be defined away by the run that was given it",
     # A requirement no test covers. The suite is green because it was
     # written from the code, which cannot miss what the code does not do.
     "the only thing here that remembers",  # a requirement nothing tests

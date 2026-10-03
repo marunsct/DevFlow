@@ -714,6 +714,7 @@ def build_test_run_request(
     stack: Any = None,
     planned: Sequence[str] = (),
     later_sprints: str = "",
+    brief: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Testing specialist's input for one verification round (Step 5.4).
 
@@ -747,7 +748,7 @@ def build_test_run_request(
     """
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
 
-    proven = what_the_files_already_prove(repository_root, stack, planned, later_sprints)
+    proven = what_the_files_already_prove(repository_root, stack, planned, later_sprints, brief)
     proven_text = ""
     if proven:
         proven_text = (
@@ -806,7 +807,11 @@ def build_test_run_request(
 
 
 def what_the_files_already_prove(
-    repository_root: str, stack: Any = None, planned: Sequence[str] = (), later_sprints: str = ""
+    repository_root: str,
+    stack: Any = None,
+    planned: Sequence[str] = (),
+    later_sprints: str = "",
+    brief: str = "",
 ) -> list[str]:
     """The problems a test round is handed as proven, before it runs anything.
 
@@ -818,7 +823,10 @@ def what_the_files_already_prove(
     try:
         from app.analysis.integration_checks import problems_that_break_the_product
 
-        proven = problems_that_break_the_product(repository_root, stack)
+        # With the operator's brief, as the milestone review has it: the checks
+        # that compare the product against it quote its lines, not the run's
+        # restatement of them.
+        proven = problems_that_break_the_product(repository_root, stack, brief)
         # A requirement a later sprint builds is not this sprint's defect. See
         # `planned_for_a_later_sprint`.
         from app.analysis.integration_checks import planned_for_a_later_sprint

@@ -5195,6 +5195,7 @@ def build_workflow_graph(
                 ),
             ],
             later_sprints=_what_later_sprints_build(state),
+            brief=getattr(state.get("document"), "text", "") or "",
         )
         update = _run_gated_agent(
             state,
@@ -5232,6 +5233,7 @@ def build_workflow_graph(
                     ),
                 ],
                 _what_later_sprints_build(state),
+                getattr(state.get("document"), "text", "") or "",
             )
             left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone)
         except Exception:  # noqa: BLE001 - the round's own report stands

@@ -1553,6 +1553,13 @@ def _a_tester_changing_the_product(root: Path, target: Path, content: str = "") 
         )
     if target.name in PACKAGE_MANIFESTS or classify_file(shown) != "application":
         return None
+    from app.analysis.file_kinds import is_scratch
+
+    if is_scratch(shown):
+        # A probe some stage left, named as one: not the product, and the sweep
+        # between stages removes it anyway. Refusing a tester its delete as
+        # "product code" cost one stage seven calls on `temp2.js`.
+        return None
     if stage.startswith(_THE_TESTING_TASK) and _created_here(root, shown, stage):
         # Its own file, not the product's: a probe renamed out of the test
         # runner's way so it can be deleted, as the delete refusal suggests.

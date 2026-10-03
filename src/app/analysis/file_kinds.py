@@ -143,7 +143,11 @@ def is_application(relative_path: str) -> bool:
 #: A file name that says it was written to be thrown away. Matched against the
 #: name only, never the directory.
 SCRATCH_NAME = re.compile(
-    r"^(?:tmp|temp|scratch|debug)[_.-]|^test[_-]debug"
+    r"^(?:tmp|temp|scratch|debug)\d*[_.-]|^test[_-]debug"
+    # The numbered form, `temp2.js` to `temp5.mjs`: one fix stage left four,
+    # a test round reported a defect in the first, and a testing stage was
+    # refused seven times deleting it as product code. `template.js` and
+    # `tempo.js` stay out - the digits are the only thing allowed between.
     # A `debug` segment anywhere in the name: `play_debug_e2e.js`,
     # `run_debug_console.js`, `check-debug2.mjs`. One run left these beside
     # `tmp_get_tasks.js` and `temp_open_file.js`, and only the prefixed two were

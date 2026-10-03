@@ -93,7 +93,7 @@ class TestItDoesNotBreakLegitimateLoops:
 
         source = inspect.getsource(sandbox)
         line = next(
-            l for l in source.splitlines() if "settled = succeeded_this_way_before" in l
+            l for l in source.splitlines() if "settled = " in l and "succeeded_this_way_before" in l
         )
         assert "succeeded_this_way_before" in line
 

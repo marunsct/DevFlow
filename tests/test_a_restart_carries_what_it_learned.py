@@ -89,7 +89,7 @@ class TestTheCommandsItRan:
     def test_commands_and_exit_codes_carry(self, tmp_path, monkeypatch):
         monkeypatch.setattr(
             "app.tools.sandbox.read_execution_ledger",
-            lambda root, limit=200: [
+            lambda root, limit=200, **kwargs: [
                 {"command": ["npm", "install"], "returncode": 0},
                 {"command": ["node", "--test"], "returncode": 1},
             ],

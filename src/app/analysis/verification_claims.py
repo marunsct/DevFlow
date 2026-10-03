@@ -56,7 +56,7 @@ def proven_commands(repo_root: str, verification: Any) -> list[list[str]]:
     if not claims:
         return []
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - an unreadable ledger proves nothing
         return []
     passed = {

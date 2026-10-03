@@ -75,7 +75,7 @@ def _commands_already_run(repo_root: str | None) -> list[tuple[str, Any]]:
     try:
         from app.tools.sandbox import read_execution_ledger
 
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a carry-over must never fail a restart
         return []
     ran: list[tuple[str, Any]] = []

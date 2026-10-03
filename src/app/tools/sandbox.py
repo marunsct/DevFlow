@@ -25,6 +25,7 @@ pattern list:
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -684,7 +685,7 @@ def after_a_run_that_never_finished(
     """
     try:
         wanted = [str(part) for part in argv]
-        for entry in reversed(read_execution_ledger(str(repo_root), limit=400)):
+        for entry in reversed(read_execution_ledger(str(repo_root), limit=400, by_the_agents=True)):
             if entry.get("command") != wanted or not _same_invocation(
                 entry, wanted, working_directory
             ):
@@ -2896,7 +2897,7 @@ def _fewer_pass_than_last_time(
     try:
         here = _where_it_ran(working_directory)
         argv = [str(part) for part in command]
-        for entry in reversed(read_execution_ledger(repo_root)):
+        for entry in reversed(read_execution_ledger(repo_root, by_the_agents=True)):
             if entry.get("command") != argv or entry.get("working_directory") != here:
                 continue
             if "passed" not in entry or "tests" not in entry:
@@ -2968,6 +2969,7 @@ def _record_execution(
             "category": category,
             "returncode": _as_exit_code(result.get("returncode")),
             "error": result.get("error"),
+            "by": "harness" if running_for_the_harness() else "agent",
             # How long it actually took. Nothing reads this yet; it is here so
             # B3's measured timeout - p95 of a category's successful runs on
             # this stack, doubled - has evidence to derive from. A constant
@@ -2984,8 +2986,33 @@ def _record_execution(
         logger.debug("Could not append to the execution ledger", exc_info=True)
 
 
-def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
-    """Every command this run actually ran, oldest first. Never raises."""
+#: Set while the harness runs a command itself - its scaffold, its runs of
+#: the suites, its CI measurements - rather than on an agent's behalf.
+#:
+#: Every guard that steers an agent away from repeating itself was applied to
+#: the harness too. On one run the agents had run the acceptance suite three
+#: times with nothing written between, so when the harness measured the state
+#: the sprint was accepted in, the sandbox withheld the run ("Not running this
+#: again ... you already have the answer"): the accepted baseline recorded no
+#: acceptance results at all, so the next sprint's CI could not see a criterion
+#: regress, and the same refusal at the release gate would have held a finished
+#: product back as "the suite did not run". The harness measures; it is not
+#: told it already knows.
+_FOR_THE_HARNESS: contextvars.ContextVar[bool] = contextvars.ContextVar("for_the_harness", default=False)
+
+
+def running_for_the_harness() -> bool:
+    """Whether the command being run now is the harness's own."""
+    return _FOR_THE_HARNESS.get()
+
+
+def read_execution_ledger(repo_root: str, limit: int = 200, *, by_the_agents: bool = False) -> list[dict]:
+    """Every command this run actually ran, oldest first. Never raises.
+
+    `by_the_agents` leaves out the harness's own runs, for the questions that
+    are about what an agent did: whether it is repeating itself, and whether
+    it ran the command it says proves its fix.
+    """
     path = _ledger_path(repo_root)
     if path is None or not path.is_file():
         return []
@@ -2993,9 +3020,12 @@ def read_execution_ledger(repo_root: str, limit: int = 200) -> list[dict]:
     try:
         for line in path.read_text(encoding="utf-8").splitlines()[-limit:]:
             try:
-                entries.append(json.loads(line))
+                entry = json.loads(line)
             except ValueError:
                 continue
+            if by_the_agents and isinstance(entry, dict) and entry.get("by") == "harness":
+                continue
+            entries.append(entry)
     except OSError:
         return []
     return entries
@@ -3040,7 +3070,7 @@ def failed_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
@@ -3188,7 +3218,7 @@ def timed_out_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a guard must never fail the command
         return 0
     # Only a timeout under at least the limit this run would get predicts
@@ -3288,7 +3318,7 @@ def succeeded_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     entries = [e for e in entries if _same_invocation(e, argv, working_directory)]
@@ -3343,7 +3373,7 @@ def refused_this_way_before(
     """
     argv = [str(part) for part in command]
     try:
-        entries = read_execution_ledger(repo_root)
+        entries = read_execution_ledger(repo_root, by_the_agents=True)
     except Exception:  # noqa: BLE001 - a hint must never fail the command
         return 0
     return sum(
@@ -4109,8 +4139,14 @@ class SandboxExecutor:
         category: str = "default",
         extra_env: Dict[str, str] | None = None,
         working_directory: str | None = None,
+        *,
+        for_the_harness: bool = False,
     ) -> Dict[str, Any]:
         """Run one command and record that it happened.
+
+        `for_the_harness` is the harness running a command itself: the guards
+        that steer an agent away from repeating itself do not apply, and the
+        run does not count toward an agent's repeats. See `_FOR_THE_HARNESS`.
 
         A thin recording wrapper around `_run`, rather than a `_record_execution`
         call at each of the eight places that return: one entry point cannot be
@@ -4133,10 +4169,14 @@ class SandboxExecutor:
             category = "install"
         elif category == "default" and _runs_tests(command):
             category = "test"
-        with _the_lock_for(repo_root):
-            return cls._execute_serialised(
-                command, repo_root, role_name, category, extra_env, working_directory, started
-            )
+        token = _FOR_THE_HARNESS.set(bool(for_the_harness))
+        try:
+            with _the_lock_for(repo_root):
+                return cls._execute_serialised(
+                    command, repo_root, role_name, category, extra_env, working_directory, started
+                )
+        finally:
+            _FOR_THE_HARNESS.reset(token)
 
     @classmethod
     def _execute_serialised(
@@ -4178,7 +4218,8 @@ class SandboxExecutor:
         # Before running it: a command that timed out will time out again, and
         # unlike every other repeated failure this one is paid for in wall
         # clock as well as a model call. See `timed_out_this_way_before`.
-        ruled_out = _refuse_an_install_the_brief_rules_out(command, repo_root)
+        harness = running_for_the_harness()
+        ruled_out = None if harness else _refuse_an_install_the_brief_rules_out(command, repo_root)
         if ruled_out:
             outcome = {"error": ruled_out}
             _record_execution(
@@ -4190,7 +4231,7 @@ class SandboxExecutor:
         # A command that has already passed several times, with nothing written
         # between, is withheld rather than run again. See
         # `SUCCESSES_BEFORE_WITHHOLDING` for why the note alone was not enough.
-        settled = succeeded_this_way_before(repo_root, command, working_directory)
+        settled = 0 if harness else succeeded_this_way_before(repo_root, command, working_directory)
         if settled >= SUCCESSES_BEFORE_WITHHOLDING and not _ran_and_answered(
             command, 0
         ):
@@ -4213,7 +4254,7 @@ class SandboxExecutor:
             )
             return outcome
 
-        already_timed_out = timed_out_this_way_before(repo_root, command, working_directory, category)
+        already_timed_out = 0 if harness else timed_out_this_way_before(repo_root, command, working_directory, category)
         if already_timed_out:
             outcome = {
                 "error": (
@@ -4319,9 +4360,9 @@ class SandboxExecutor:
             )
             return {"error": why}
 
-        timeout = after_a_run_that_never_finished(
-            repo_root, argv, working_directory, timeout_for(category, repo_root)
-        )
+        timeout = timeout_for(category, repo_root)
+        if not running_for_the_harness():
+            timeout = after_a_run_that_never_finished(repo_root, argv, working_directory, timeout)
 
         if execution_mode() == IN_CONTAINER_MODE:
             return cls._execute_here(

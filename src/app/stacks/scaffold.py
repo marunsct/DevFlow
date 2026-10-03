@@ -44,13 +44,16 @@ class ScaffoldResult:
 
 
 def sandbox_runner(repo_root: str | Path) -> Runner:
-    """Run commands the way every other harness command runs: contained and recorded.
+    """Run the harness's own commands: contained and recorded like a stage's.
 
-    Exactly as a stage's command runs, with nothing added: the sandbox gives
-    every command a free port in `ACCEPTANCE_PORT`, so the smoke test proves
-    the path the agents will take. It used to pass the port itself, and a
-    configuration that only worked when given one passed the smoke test and
-    failed every run an agent started.
+    The environment is exactly a stage's - the sandbox gives every command a
+    free port in `ACCEPTANCE_PORT`, so the smoke test proves the path the
+    agents will take. It used to pass the port itself, and a configuration
+    that only worked when given one passed the smoke test and failed every run
+    an agent started. What differs is only that the guards steering an agent
+    away from repeating itself do not apply: the harness's measurements are
+    never withheld (see `sandbox._FOR_THE_HARNESS`), and these runs are used by
+    the scaffold, the acceptance suite and CI alike.
     """
     from app.tools.sandbox import SandboxExecutor
 
@@ -61,6 +64,7 @@ def sandbox_runner(repo_root: str | Path) -> Runner:
             role_name="testing_specialist",
             category=category,
             working_directory=working_directory or None,
+            for_the_harness=True,
         )
 
     return run

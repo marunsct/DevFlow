@@ -379,6 +379,28 @@ def _failing_due(state: Any) -> tuple[list[dict[str, Any]], str]:
     return failing, str(saved.get("command") or "")
 
 
+def criteria_only_later(state: Any, text: str) -> list[str]:
+    """The criteria `text` names when every one of them is due in a later sprint, else [].
+
+    A review finding that names only criteria a later sprint delivers is about
+    that sprint's work, however it is worded. Matching its words against the
+    later sprints' goals misses one that also mentions this sprint's work in
+    passing; the ids it cites do not.
+    """
+    from app.acceptance.junit import tags_in
+
+    named = [tag for tag in tags_in(str(text or "")) if tag.startswith("AC-")]
+    if not named:
+        return []
+    due = criteria_due(state)
+    if due is None:
+        return []
+    known = {c.id for c in suite.criteria(_root(state))}
+    if any(tag in due or tag not in known for tag in named):
+        return []
+    return named
+
+
 def sprint_already_done(state: Any) -> str:
     """Why this sprint has nothing left to build, or "".
 

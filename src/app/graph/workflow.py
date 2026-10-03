@@ -3484,10 +3484,13 @@ def _findings_a_later_sprint_builds(review: Any, state: Any) -> Any:
         now = _what_this_sprint_builds(state)
         findings = []
         moved = 0
+        from app.graph.acceptance_nodes import criteria_only_later
+
         for finding in getattr(review, "findings", None) or []:
             description = getattr(finding, "description", "")
             actions = (
-                later_sprint_work_in(description, now, later)
+                criteria_only_later(state, f"{description} {getattr(finding, 'evidence', '')}")
+                or later_sprint_work_in(description, now, later)
                 or later_sprint_files_in(description, now, later)
                 if _severity_gates(getattr(finding, "severity", ""))
                 else []

@@ -166,6 +166,14 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         return update
     review = update.pop("__code_review__")
     update.pop("stage", None)
+    from app.graph.acceptance_nodes import criteria_only_later
+
+    later = [
+        finding for finding in getattr(review, "findings", None) or []
+        if criteria_only_later(state, f"{finding.problem} {finding.fix or ''}")
+    ]
+    if later:
+        logger.info("Code review raised %d finding(s) about criteria later sprints deliver; not defects now", len(later))
     found = [
         ReportedDefect(
             description=f"Code review ({finding.work_order}): {finding.problem}",
@@ -177,7 +185,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             owner=_owner_of(state, finding.work_order),
         )
         for finding in getattr(review, "findings", None) or []
-        if finding.severity in {"blocking", "major"}
+        if finding.severity in {"blocking", "major"} and finding not in later
     ]
     if found:
         logger.info("Code review found %d problem(s) to fix", len(found))

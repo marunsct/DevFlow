@@ -190,3 +190,66 @@ def test_the_code_review_is_told_what_later_sprints_deliver(tmp_path) -> None:
     assert "AC-1" not in later
     text = build_code_review_request("diff", "orders", "AC-1", "ci", later)["messages"][0]["content"]
     assert "NOT missing from this batch" in text
+
+
+def test_a_finding_about_later_sprints_criteria_is_not_a_defect_now(workspace, monkeypatch) -> None:
+    """Named by id - in any dash a model types. One run's sprint was sent back
+    three times over 'AC‑2 ... AC‑5 fail', all four due in later sprints."""
+    from app.agents.code_reviewer import CodeReviewFinding, CodeReviewOutput
+
+    engineering.accepted_state(str(workspace.root))
+    (workspace.root / "notes" / "src" / "notes.js").write_text("export function add() { return []; }\n")
+    ci.commit(workspace.root, "batch")
+    review = CodeReviewOutput(approved=False, findings=[
+        CodeReviewFinding(work_order="Add notes", severity="blocking", problem="AC‑2 fails: delete is not wired"),
+        CodeReviewFinding(work_order="Add notes", severity="major", problem="AC-1 fails: add returns nothing"),
+    ])
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent",
+                        lambda state, config, **kwargs: {kwargs["output_key"]: review, "stage": "code_review"})
+    monkeypatch.setattr("app.agents.code_reviewer.create_code_reviewer_agent", lambda *a, **k: object())
+    state = {
+        "repository": SimpleNamespace(root_path=str(workspace.root)),
+        "milestone_plan": SimpleNamespace(delegated_tasks=[
+            SimpleNamespace(title="Add notes", task_description="Add a note", specialist_role="backend"),
+        ]),
+        "sprint_plan": SimpleNamespace(sprints=[
+            SimpleNamespace(goal="Add notes", criteria=["AC-1"]),
+            SimpleNamespace(goal="Delete notes", criteria=["AC-2"]),
+        ]),
+        "current_sprint_index": 0,
+        "review_defects": [],
+    }
+
+    update = engineering.code_review(state, CONFIG, SimpleNamespace(
+        judgement_model=None, checkpointer=None, repo_root=None, allow_subdirectories=True,
+    ))
+
+    assert [d.description for d in update["review_defects"]] == ["Code review (Add notes): AC-1 fails: add returns nothing"]
+
+
+def test_the_milestone_review_s_finding_about_later_criteria_is_made_minor(workspace) -> None:
+    from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
+    from app.graph.workflow import _findings_a_later_sprint_builds
+
+    state = {
+        "repository": SimpleNamespace(root_path=str(workspace.root)),
+        "sprint_plan": SimpleNamespace(sprints=[
+            SimpleNamespace(goal="Add and keep notes", criteria=["AC-1"], in_scope=[], out_of_scope=[]),
+            SimpleNamespace(goal="Delete notes", criteria=["AC-2"], in_scope=[], out_of_scope=[]),
+        ]),
+        "current_sprint_index": 0,
+    }
+    finding = MilestoneReviewFinding(
+        severity="major", category="testing",
+        description="Acceptance tests AC‑2 fail; also make sure saving is called after each action",
+        required_remediation="Wire the delete handler.",
+    )
+    review = MilestoneReviewOutput(
+        status="changes_required", findings=[finding], acceptance_evidence="",
+        documentation_reviewed=True, tests_reviewed=True,
+    )
+
+    moved = _findings_a_later_sprint_builds(review, state)
+
+    assert moved.findings[0].severity == "minor"
+    assert moved.findings[0].description.startswith("Planned for a later sprint (AC-2)")

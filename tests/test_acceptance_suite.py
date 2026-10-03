@@ -309,3 +309,13 @@ def test_python_packs_know_their_runner_s_test_bugs(tmp_path) -> None:
     assert hit("fixture 'cli' not found")
     assert not hit("ModuleNotFoundError: No module named 'wordstats'")
     assert not hit("AssertionError: assert 1 == 2")
+
+
+def test_a_criterion_id_is_read_whatever_dash_a_model_types() -> None:
+    """One run's review wrote every id with a non-breaking hyphen; the harness
+    saw no criterion in it and sent a sprint back three times over later work."""
+    from app.acceptance.junit import tags_in
+
+    text = "AC‑2, AC‐3, AC—4, AC−5, AC－6, AC-7, AC_8, ac9, test_ac10_x, [CR‑1]"
+    assert tags_in(text) == ("AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9", "AC-10", "CR-1")
+    assert tags_in("access pac3 AC") == ()

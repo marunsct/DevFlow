@@ -22,7 +22,14 @@ from pathlib import Path
 #: `test_ac3_...` or `test_AC_3_...`. Several may appear in one name, since a
 #: test may prove more than one criterion. Not preceded by a letter or digit, so
 #: `pac3` and `access` are not tags.
-TAG = re.compile(r"(?<![A-Za-z0-9])(AC|CR)[-_]?(\d+)(?![0-9])", re.I)
+#:
+#: Any dash a model types: on one run every id in a milestone review was
+#: written `AC\u20112` (a non-breaking hyphen), so the harness saw no criterion
+#: in it, could not tell that all four belonged to later sprints, and the
+#: sprint was sent back three times and escalated over work not yet due.
+TAG = re.compile(
+    r"(?<![A-Za-z0-9])(AC|CR)[-_\u2010-\u2015\u2212\ufe58\ufe63\uff0d]?(\d+)(?![0-9])", re.I
+)
 
 
 def tags_in(text: str) -> tuple[str, ...]:

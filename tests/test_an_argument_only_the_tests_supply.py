@@ -221,3 +221,45 @@ class TestSplitting:
     def test_an_empty_list_has_no_pieces(self):
         assert _split_at_top_level("") == []
         assert _split_at_top_level("   ") == []
+
+
+@pytest.mark.parametrize("binding", [
+    "const dl = await import('../data_layer.js');",
+    "let dl = await import(\"./data_layer.js\");",
+    "const dl = require('../data_layer.js');",
+])
+def test_a_module_bound_at_run_time_is_a_namespace(binding: str) -> None:
+    assert _namespace_bindings(binding) == {"dl"}
+
+
+def test_a_package_bound_at_run_time_is_not(tmp_path) -> None:
+    assert _namespace_bindings("const fs = require('fs');\nconst pw = await import('playwright');") == set()
+
+
+def test_a_parameter_the_page_never_passes_through_a_runtime_import(tmp_path) -> None:
+    """One run's suite loaded its module with `await import(...)` so it could
+    mock `localStorage` first, and called `dl.editTask(id, title, description)`.
+    The page called `editTask(task.id, newTitle.trim())`: no task description
+    could ever be set, the brief asked for one, and both reviews accepted."""
+    app = tmp_path / "app"
+    (app / "tests").mkdir(parents=True)
+    (app / "data_layer.js").write_text(
+        "export function editTask(id, title, description) {\n"
+        "  tasks[id] = { title, description };\n}\n",
+        encoding="utf-8",
+    )
+    (app / "main.js").write_text(
+        "import { editTask } from './data_layer.js';\n"
+        "button.addEventListener('click', () => editTask(task.id, newTitle.trim()));\n",
+        encoding="utf-8",
+    )
+    (app / "tests" / "data_layer.test.js").write_text(
+        "import { test } from 'node:test';\n"
+        "const dl = await import('../data_layer.js');\n"
+        "test('edits', () => { dl.editTask('1', 'New title', 'new desc'); });\n",
+        encoding="utf-8",
+    )
+
+    problems = _required_arguments_only_the_tests_supply(_source_files(tmp_path), tmp_path)
+
+    assert any("editTask" in problem and "`description`" in problem for problem in problems), problems

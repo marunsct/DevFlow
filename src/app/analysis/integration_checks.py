@@ -4625,13 +4625,19 @@ def _exported_signatures(text: str) -> dict[str, str]:
 #: `import * as appLogic from "./app-logic.mjs"`. The namespace is the only
 #: thing bound, so every use of the module reads `appLogic.something(...)`.
 _NAMESPACE_IMPORT = re.compile(
-    r"""import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*["']\.[^"']*["']""",
+    r"""import\s*\*\s*as\s+([A-Za-z_$][\w$]*)\s*from\s*["']\.[^"']*["']"""
+    # The same binding made at run time. One suite loaded its module with
+    # `const dl = await import('../data_layer.js')` - so its globals could be
+    # mocked first - and called `dl.editTask(id, title, description)`; the page
+    # called `editTask(id, title)`, so no task description could ever be set,
+    # and with the namespace unrecognised the suite's calls counted for nothing.
+    r"""|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:await\s+import|require)\s*\(\s*["']\.[^"']*["']\s*\)""",
 )
 
 
 def _namespace_bindings(text: str) -> set[str]:
     """Names a file binds a whole relative module to."""
-    return set(_NAMESPACE_IMPORT.findall(text))
+    return {name for pair in _NAMESPACE_IMPORT.findall(text) for name in pair if name}
 
 
 def _argument_counts(

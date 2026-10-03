@@ -323,18 +323,24 @@ def _touches_product_code(files: Sequence[str]) -> bool:
     behaviour of its own to give cases for. One run's plan was sent back for
     "work order 3 (backend: Create project package.json ...) has no
     `test_cases`" - one of three problems that cost a six-work-order plan its
-    place to a two-work-order one. A work order that names no files is still
-    held to it, as before.
+    place to a two-work-order one. Nor does one that only restyles the
+    product: one run's milestone revision changed a stylesheet, was sent back
+    twice for "No `testing` work order", invented one to "execute unit tests"
+    with no files, and was dispatched unready anyway. Styling is checked by
+    the acceptance suite, where a person meets it. A work order that names no
+    files is still held to it, as before.
     """
     if not files:
         return True
     try:
-        from app.analysis.file_kinds import classify_file
+        from app.analysis.file_kinds import classify_file, is_presentation
         from app.tools.repository import PACKAGE_MANIFESTS
     except Exception:  # noqa: BLE001 - no way to tell, so hold it to the rule
         return True
     return any(
-        PurePosixPath(path).name not in PACKAGE_MANIFESTS and classify_file(path) == "application"
+        PurePosixPath(path).name not in PACKAGE_MANIFESTS
+        and classify_file(path) == "application"
+        and not is_presentation(path)
         for path in files
     )
 
@@ -446,7 +452,11 @@ def readiness_problems(
             f"`carried_forward_decisions` records {len(decided)}. Give one line per item: "
             "the work order that takes it, or why it is declined."
         )
-    if code_tasks and not any(_role(t) == _TESTING for t in tasks):
+    behaviour = [
+        t for t in code_tasks
+        if _touches_product_code([str(f) for f in getattr(t, "files", None) or [] if str(f).strip()])
+    ]
+    if behaviour and not any(_role(t) == _TESTING for t in tasks):
         problems.append(
             "No `testing` work order. A milestone that changes code needs one, which "
             "writes automated tests from the other work orders' `test_cases` and "

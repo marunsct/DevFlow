@@ -120,3 +120,21 @@ def test_the_digest_marks_them_and_says_what_to_do(project) -> None:
     assert contract.LOCKED_SUITE in spec and "never change it" in spec
     app = next(line for line in digest.splitlines() if "notes/src/app.js" in line)
     assert "harness" not in app
+
+
+def test_a_restyle_needs_no_testing_work_order_and_no_test_cases(project, monkeypatch) -> None:
+    """One run's milestone revision changed only a stylesheet; the rule sent it
+    back twice for "No `testing` work order", and the lead invented one to
+    "execute unit tests" that named no files. Styling has no behaviour a unit
+    test can exercise - the acceptance suite checks it where a person meets it."""
+    from app.analysis.file_kinds import is_presentation
+
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    restyle = SpecialistTask(
+        specialist_role="ui_ux", title="Responsive layout", task_description="Stack the form on narrow screens.",
+        files=["notes/styles.css", "notes/assets/icon.svg"],
+    )
+    assert readiness_problems(_plan(restyle), project) == []
+    behaviour = _task("ui_ux", "notes/src/app.js")
+    assert any("No `testing` work order" in p for p in readiness_problems(_plan(behaviour), project))
+    assert is_presentation("notes/styles.css") and not is_presentation("notes/index.html")

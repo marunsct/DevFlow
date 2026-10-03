@@ -126,6 +126,21 @@ def classify_file(relative_path: str) -> FileKind:
     return "application"
 
 
+#: Styling and static assets: part of the product, with no behaviour a unit
+#: test can exercise. What they do is checked where a person meets it, by the
+#: acceptance suite. Markup is not here: a page wires its scripts and forms.
+_PRESENTATION = re.compile(
+    r"\.(css|scss|sass|less|styl|svg|png|jpe?g|gif|webp|avif|ico|bmp"
+    r"|woff2?|ttf|otf|eot|mp3|wav|ogg|mp4|webm)$",
+    re.IGNORECASE,
+)
+
+
+def is_presentation(relative_path: str) -> bool:
+    """Whether this file is styling or a static asset rather than behaviour."""
+    return bool(_PRESENTATION.search(str(relative_path or "")))
+
+
 def is_test(relative_path: str) -> bool:
     """Whether this file is a test the project owns."""
     return classify_file(relative_path) == "test"

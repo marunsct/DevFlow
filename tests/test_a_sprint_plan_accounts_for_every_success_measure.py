@@ -295,6 +295,27 @@ class TestTheWorkflow:
         assert state["stage"] == "failed"
         assert "assigns none of the" in state["error"]
 
+    def test_a_plan_that_assigns_nothing_is_completed_when_there_are_criteria(
+        self, agents: ScriptedAgents, tmp_path: Any, monkeypatch: Any
+    ) -> None:
+        """With acceptance criteria the harness gives every one to a sprint
+        itself, and a sprint is done only when its criteria pass - so the
+        product that stop protected against can no longer complete, and
+        stopping threw away a plan the harness was about to complete."""
+        from app.acceptance import suite
+        from app.acceptance.criteria import Criterion
+
+        criteria = [Criterion(id="AC-1", text="Users can add, edit, and delete tasks", source="brief")]
+        monkeypatch.setattr(suite, "criteria", lambda root: list(criteria))
+        monkeypatch.setattr(suite, "deferred", lambda root: {})
+        _script(agents, _one_sprint([]), _one_sprint([]))
+
+        state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-nothing-but-criteria")
+
+        assert len(agents.requests["scrum_master"]) == 2
+        assert "assigns none of the" not in str(state.get("error") or "")
+        assert state["sprint_plan"].sprints[0].criteria == ["AC-1"]
+
     def test_a_plan_that_claims_a_measure_it_only_half_delivers_is_asked_again(
         self, agents: ScriptedAgents, tmp_path: Any
     ) -> None:

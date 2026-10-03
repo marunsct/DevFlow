@@ -4714,24 +4714,22 @@ def build_workflow_graph(
             revision_count = state.get("architecture_revision_count", 0) + 1
             update["architecture_revision_count"] = revision_count
             if revision_count >= MAX_ARCHITECTURE_REVISIONS:
-                # Name what is still wrong. The bare "reached the limit" message
-                # told a reader that the run died but not what to do about it,
-                # even though the reviewer had just written the answer down.
+                # Decided, not stopped: see `app.graph.escalation`. The run used
+                # to fail here - one stored run after six revisions - although
+                # the acceptance suite, written from the brief, is what decides
+                # whether the product works. Open design points are a risk to
+                # record, or a question for the person who asked to be asked.
                 outstanding = [_format_finding(f) for f in blocking]
-                detail = (
-                    "\n\nStill unresolved:\n" + "\n".join(f"- {line}" for line in outstanding)
-                    if outstanding
-                    else ""
-                )
-                update["stage"] = "failed"
-                update["error"] = (
-                    f"The architecture reviewer still rejected the specification after "
-                    f"{MAX_ARCHITECTURE_REVISIONS} revisions, so the run stopped rather than "
-                    f"revising indefinitely. The specification written so far is kept in "
-                    f"docs/. Fix these points and resume, or raise "
-                    f"MAX_ARCHITECTURE_REVISIONS if the reviewer is simply being strict."
-                    f"{detail}"
-                )
+                update["stage"] = "escalation"
+                update["error"] = None
+                update["escalation"] = {
+                    "kind": "design",
+                    "findings": outstanding,
+                    "error": (
+                        f"The architecture reviewer still asked for changes to the specification "
+                        f"after {MAX_ARCHITECTURE_REVISIONS} revisions."
+                    ),
+                }
             else:
                 update["stage"] = "principal_architect"
         return update
@@ -4825,13 +4823,23 @@ def build_workflow_graph(
                     sprint_plan_gaps=missing,
                     sprint_plan=update["sprint_plan"],
                 )
-            if _the_plan_assigns_nothing(unassigned, measures):
+            criteria_to_assign = [
+                c for c in acceptance_suite.criteria(root_path)
+                if c.id not in acceptance_suite.deferred(root_path)
+            ]
+            if _the_plan_assigns_nothing(unassigned, measures) and not criteria_to_assign:
                 # Not let through. A plan that leaves one measure out is judged
                 # by the milestone review; a plan that assigns none has no
                 # review that will ever look at the whole brief with a sprint
                 # still to come. One run continued on such a plan - a single
                 # foundation sprint - built it, and completed with a product
                 # that could add a task and do nothing else that was asked for.
+                #
+                # Only when there are no acceptance criteria. With them, every
+                # criterion is given to a sprint just below, whatever the plan
+                # said, and each sprint is done only when its criteria pass -
+                # so that product could no longer complete. Stopping here
+                # threw away a plan the harness was about to complete itself.
                 return _handing_on(
                     stage="failed",
                     error=(
@@ -4851,7 +4859,7 @@ def build_workflow_graph(
             # Every criterion of the locked suite belongs to exactly one sprint.
             from app.agents.scrum_master import with_every_criterion_assigned
 
-            numbered = [c for c in acceptance_suite.criteria(root_path) if c.id not in acceptance_suite.deferred(root_path)]
+            numbered = criteria_to_assign
             update["sprint_plan"], assignment_notes = with_every_criterion_assigned(
                 update["sprint_plan"], [c.id for c in numbered], {c.id: c.text for c in numbered}
             )

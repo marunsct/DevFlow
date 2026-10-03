@@ -1,4 +1,4 @@
-"""What happens when a sprint cannot be finished: the last rung of the ladder.
+"""What happens when work cannot converge: the last rung of the ladder.
 
     fix -> fix again -> re-plan the sprint -> re-plan it on the judgement model
         -> escalation: a decision, recorded
@@ -9,6 +9,13 @@ in auto mode the harness decides the way a software company would - it ships
 what works and records, with reasons, what it could not make work - as long as
 what works is most of the product. A run that cannot make most of its criteria
 pass is stopped rather than shipped.
+
+Two kinds of stuck point reach it. A sprint that cannot be finished (the
+default kind). And a design the architecture review is still not satisfied
+with after its revisions (`kind: "design"`): the acceptance suite, written
+from the brief, is what decides whether the product works, so open design
+points are recorded as known risks and building goes on - or, when the person
+asked to be asked, they decide.
 
 Before this, every one of these points ended the run, whatever was left
 undone and however much already worked.
@@ -87,16 +94,91 @@ def _page(state: Any, error: str, failing: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+#: The kind of a stuck design, in `state["escalation"]["kind"]`.
+DESIGN = "design"
+
+
+def _kind(state: Any) -> str:
+    return str((state.get("escalation") or {}).get("kind") or "sprint")
+
+
+def _design_findings(state: Any) -> list[str]:
+    return [str(f) for f in (state.get("escalation") or {}).get("findings") or [] if str(f).strip()]
+
+
+def _design_page(error: str, findings: list[str]) -> str:
+    lines = [
+        "# The specification review did not converge",
+        "",
+        error.strip() or "The architecture reviewer still asks for changes.",
+        "",
+    ]
+    if findings:
+        lines += ["## What the reviewer still asks for", ""]
+        lines += [f"- {finding}" for finding in findings]
+        lines.append("")
+    lines += [
+        "## Your options",
+        "",
+        "- **Approve**: build from the latest specification; these points are recorded as "
+        "known risks. The acceptance suite, written from the brief, still decides whether "
+        "the product works.",
+        "- **Request changes**: say what to do; the architect revises the specification with "
+        "your guidance and it is reviewed again.",
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _after_the_specification(state: Any) -> str:
+    """Where an accepted specification goes next: the person's own review of it, if asked for."""
+    from app.graph.workflow import SPECIFICATION_REVIEW, _review_enabled
+
+    return "user_review_specification" if _review_enabled(state, SPECIFICATION_REVIEW) else "scaffold"
+
+
+def _build_from_the_latest_specification(
+    state: Any, update: dict[str, Any], error: str, *, decided_by: str, next_stage: str
+) -> dict[str, Any]:
+    from app.decisions import record_decision
+    from app.graph.workflow import _handing_on
+
+    findings = _design_findings(state)
+    record_decision(
+        state, update, point="technical_specification",
+        question="The architecture review still asks for changes: how does the run go on?",
+        options=["build from the latest specification, recording the open points as known risks",
+                 "revise the specification again"],
+        decision="build from the latest specification, recording the open points as known risks",
+        rationale=(
+            f"{error.strip()} The acceptance suite, written from the brief, decides whether the "
+            "product works; the open design points are risks for the code review and the release "
+            "to weigh, not a reason to stop."
+            + ("" if not findings else " Open: " + "; ".join(findings))
+        )[:1500],
+        decided_by=decided_by,
+    )
+    known = [*(state.get("known_issues") or []), *(f"Design review left open: {f}"[:600] for f in findings)]
+    return _handing_on(**update, stage=next_stage, escalation=None, known_issues=known)
+
+
 def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
-    """Decide how a stuck sprint goes on, or ask the person who decides."""
+    """Decide how stuck work goes on, or ask the person who decides."""
     from app.decisions import record_decision
     from app.graph.workflow import _handing_on, _record_document
 
     error = str((state.get("escalation") or {}).get("error") or "")
     count = int(state.get("escalation_count") or 0) + 1
     root = _root(state)
-    failing = _failing(state)
     update: dict[str, Any] = {"escalation_count": count}
+
+    if count <= MAX_ESCALATIONS and _kind(state) == DESIGN:
+        if asks_a_person(state):
+            _record_document(state, "docs/reviews/escalation.md", _design_page(error, _design_findings(state)))
+            return _handing_on(**update, stage="user_review_escalation")
+        return _build_from_the_latest_specification(
+            state, update, error, decided_by="auto", next_stage=_after_the_specification(state)
+        )
 
     if count > MAX_ESCALATIONS:
         record_decision(
@@ -106,6 +188,8 @@ def escalation(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             rationale=f"{count - 1} escalations already; the run is not converging.",
         )
         return _handing_on(**update, stage="failed", error=error)
+
+    failing = _failing(state)
 
     if asks_a_person(state):
         _record_document(state, "docs/reviews/escalation.md", _page(state, error, failing))
@@ -175,21 +259,36 @@ def _defer_and_continue(
 
 
 def accept(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
-    """The person approved going on: defer what fails and continue."""
+    """The person approved going on: defer what fails, or build from the design, and continue."""
     error = str((state.get("escalation") or {}).get("error") or "")
+    if _kind(state) == DESIGN:
+        # They have just read the specification's open points; asking them to
+        # review the same specification again would be the same question twice.
+        return _build_from_the_latest_specification(state, {}, error, decided_by="user", next_stage="scaffold")
     return _defer_and_continue(state, {}, _failing(state), error, decided_by="user")
 
 
 def retry(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
-    """The person asked for another way: plan the sprint again with their guidance."""
+    """The person asked for another way: revise the design, or plan the sprint again, with their guidance."""
     from app.graph.workflow import _handing_on
 
+    guidance = [c for c in state.get("revision_comments") or [] if str(c).strip()]
+    if _kind(state) == DESIGN:
+        # A fresh round of reviews: the architect revises with the guidance
+        # (its request carries `revision_comments`), and a review that still
+        # does not converge comes back here, bounded by MAX_ESCALATIONS.
+        return _handing_on(
+            stage="principal_architect",
+            escalation=None,
+            revision_comments=guidance,
+            architecture_revision_count=0,
+        )
     return _handing_on(
         stage="technical_lead",
         escalation=None,
         # The milestone plan stays, so the lead revises it with the guidance
         # rather than planning from nothing without it.
-        revision_comments=[c for c in state.get("revision_comments") or [] if str(c).strip()],
+        revision_comments=guidance,
         specialist_outputs={},
         remediation=None,
         test_round=0,

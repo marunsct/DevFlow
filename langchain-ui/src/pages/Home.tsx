@@ -323,8 +323,8 @@ export const Home: React.FC = () => {
                       id="reviewEscalation"
                       checked={reviewEscalation}
                       onChange={setReviewEscalation}
-                      label="Ask Me When a Sprint Is Stuck"
-                      description="After fixes and re-planning fail, you decide: defer what fails and go on, or try again with your guidance. Off, the run decides and records why."
+                      label="Ask Me When Work Is Stuck"
+                      description="A sprint that fixes and re-planning cannot finish, or a specification its review never approves: you decide to go on (deferring what fails, or building from the latest design) or try again with your guidance. Off, the run decides and records why."
                     />
                   </div>
                 </>

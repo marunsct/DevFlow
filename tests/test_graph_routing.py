@@ -529,25 +529,78 @@ def test_rejected_architecture_returns_to_the_architect_with_the_findings(
     assert "first draft" in revision_request, "the rejected specification should come back for revision"
 
 
-def test_repeated_rejection_fails_the_run_instead_of_looping(agents: ScriptedAgents, tmp_path: Any) -> None:
+def _script_rejections(agents: ScriptedAgents) -> None:
     agents.script("product_manager", [responds_with(_intake())])
     agents.script("tools_models", [responds_with(_tools())])
     agents.script("stack_selector", [responds_with(_stack_selector())])
     agents.script("principal_architect", [responds_with(_spec())] * MAX_ARCHITECTURE_REVISIONS)
     agents.script("architecture_review", [responds_with(_rejected_review())] * MAX_ARCHITECTURE_REVISIONS)
 
+
+def test_repeated_rejection_is_decided_instead_of_looping(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """Auto mode builds from the latest specification and records what is open.
+
+    The run used to fail here. The acceptance suite, written from the brief,
+    decides whether the product works, so open design points are a risk to
+    record rather than a reason to stop - and the reviewer's words must survive
+    into that record, not just "reached the limit".
+    """
+    _script_rejections(agents)
+    _script_through_sprint(agents)
+
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-loop")
 
-    assert state["stage"] == "failed"
+    assert state["stage"] == "complete", state.get("error")
     assert state["architecture_revision_count"] == MAX_ARCHITECTURE_REVISIONS
+    decision = next(d for d in state["decisions"] if d["point"] == "technical_specification"
+                    and "known risks" in d["decision"])
+    assert decision["decided_by"] == "auto"
+    assert "No authentication described" in decision["rationale"]
+    assert any("No authentication described" in issue for issue in state["known_issues"])
 
-    # The message has to say what is still wrong, not just that the run stopped.
-    # The reviewer has already written the answer down; a run that dies with
-    # "reached the limit" makes the reader open the checkpoint to find out why.
-    error = state["error"]
-    assert str(MAX_ARCHITECTURE_REVISIONS) in error
-    assert "No authentication described" in error
-    assert "Describe the authentication and session model." in error
+
+def test_repeated_rejection_asks_the_person_who_asked_to_be_asked(agents: ScriptedAgents, tmp_path: Any) -> None:
+    from app.graph.escalation import ESCALATION_REVIEW
+
+    graph = _graph()
+    _script_rejections(agents)
+    _script_through_sprint(agents)
+
+    state = start_workflow(
+        graph, _document(), _repository(tmp_path), "run-loop-ask", review_policy={ESCALATION_REVIEW: True},
+    )
+
+    assert state["stage"] == "awaiting_user_review:escalation"
+    page = (tmp_path / "docs" / "reviews" / "escalation.md").read_text()
+    assert "did not converge" in page and "No authentication described" in page
+
+    state = resume_pending_review(graph, "run-loop-ask", approve_decision("Build it"))
+
+    assert state["stage"] == "complete", state.get("error")
+    decision = next(d for d in state["decisions"] if "known risks" in str(d.get("decision")))
+    assert decision["decided_by"] == "user"
+
+
+def test_the_person_s_guidance_goes_back_to_the_architect(agents: ScriptedAgents, tmp_path: Any) -> None:
+    from app.graph.escalation import ESCALATION_REVIEW
+
+    graph = _graph()
+    agents.script("product_manager", [responds_with(_intake())])
+    agents.script("tools_models", [responds_with(_tools())])
+    agents.script("stack_selector", [responds_with(_stack_selector())])
+    agents.script("principal_architect", [responds_with(_spec())] * (MAX_ARCHITECTURE_REVISIONS + 1))
+    agents.script(
+        "architecture_review",
+        [responds_with(_rejected_review())] * MAX_ARCHITECTURE_REVISIONS + [responds_with(_approved_review())],
+    )
+    _script_through_sprint(agents)
+    start_workflow(graph, _document(), _repository(tmp_path), "run-guided", review_policy={ESCALATION_REVIEW: True})
+
+    state = resume_pending_review(graph, "run-guided", request_changes_decision("Use signed session cookies."))
+
+    assert "Use signed session cookies." in agents.last_request_text("principal_architect")
+    assert state["stage"] == "complete", state.get("error")
+    assert state["architecture_revision_count"] == 0
 
 
 def test_the_architecture_revision_budget_is_bounded_and_configurable(monkeypatch) -> None:

@@ -74,6 +74,9 @@ SETTABLE_SECRETS: dict[str, str] = {
     "openai_api_key": "OPENAI_API_KEY",
     "anthropic_api_key": "ANTHROPIC_API_KEY",
     "google_api_key": "GOOGLE_API_KEY",
+    # The judgement model's own key, when it is served somewhere the default
+    # model is not. See `app.models.roles`.
+    "judgement_api_key": "JUDGEMENT_API_KEY",
 }
 
 # Settings an administrator may change at runtime, mapped to the environment
@@ -108,6 +111,13 @@ SETTABLE_KEYS: dict[str, str] = {
     # the toggle could not be turned on and fourteen settings tests that post
     # a whole payload failed with it.
     "execution_mode": "EXECUTION_MODE",
+    # A second model for the stages that judge rather than produce: the
+    # architect, QA, the reviews, the test rounds and the fixes. Empty means
+    # every stage uses the model above. See `app.models.roles`.
+    "judgement_provider": "JUDGEMENT_PROVIDER",
+    "judgement_base_url": "JUDGEMENT_BASE_URL",
+    "judgement_model_name": "JUDGEMENT_MODEL",
+    "judgement_context_window": "JUDGEMENT_CONTEXT_WINDOW",
 }
 
 CACHE_TTL_SECONDS = float(os.environ.get("SETTINGS_CACHE_TTL", "5"))

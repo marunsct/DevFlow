@@ -22,9 +22,14 @@ interface ProviderForm {
   openai_api_key?: string;
   anthropic_api_key?: string;
   google_api_key?: string;
+  judgement_provider: string;
+  judgement_base_url: string;
+  judgement_model_name: string;
+  judgement_context_window: number;
+  judgement_api_key?: string;
 }
 
-type CredentialField = 'openai_api_key' | 'anthropic_api_key' | 'google_api_key';
+type CredentialField = 'openai_api_key' | 'anthropic_api_key' | 'google_api_key' | 'judgement_api_key';
 
 /** What each derived budget is, in words a reader can check against their model. */
 const DERIVED_LABELS: Array<[string, string, string]> = [
@@ -53,6 +58,7 @@ export const Settings: React.FC = () => {
     openai_api_key: '',
     anthropic_api_key: '',
     google_api_key: '',
+    judgement_api_key: '',
   });
 
   useEffect(() => {
@@ -161,6 +167,10 @@ export const Settings: React.FC = () => {
         thinking_mode: settings.thinking_mode ?? 'default',
         thinking_effort: settings.thinking_effort ?? 'medium',
         execution_mode: settings.execution_mode ?? 'linear',
+        judgement_provider: settings.judgement_provider ?? '',
+        judgement_base_url: settings.judgement_base_url ?? '',
+        judgement_model_name: settings.judgement_model_name ?? '',
+        judgement_context_window: settings.judgement_context_window ?? 0,
       };
       // Only send a credential the operator actually typed into. An untouched
       // box must not clear a key that is already working.
@@ -170,7 +180,7 @@ export const Settings: React.FC = () => {
 
       const res = await api.put('/settings', form);
       setSettings(res.data);
-      setCredentials({ openai_api_key: '', anthropic_api_key: '', google_api_key: '' });
+      setCredentials({ openai_api_key: '', anthropic_api_key: '', google_api_key: '', judgement_api_key: '' });
       setMessage('Settings saved. This model is now in Saved models.');
       setChosenProfile('');
       loadProfiles();
@@ -517,6 +527,72 @@ export const Settings: React.FC = () => {
                   stored key; type a single space to remove it and fall back to the
                   deployment&rsquo;s own configuration.
                 </p>
+              </div>
+
+              {/* The judgement model. Empty name: every stage uses the model above. */}
+              <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+                <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">Judgement model</p>
+                <p className="text-xs text-text-muted mb-3 leading-relaxed">
+                  The stages that judge rather than produce - the architect, QA, the reviews,
+                  the test rounds and the fixes - run on this model. Leave the name empty to
+                  run every stage on the model above. Empty fields below use the model above&rsquo;s.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-text-secondary mb-1">Model name</label>
+                    <input
+                      type="text"
+                      value={settings.judgement_model_name ?? ''}
+                      onChange={(e) => setSettings({ ...settings, judgement_model_name: e.target.value })}
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      placeholder="empty: use the model above"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-secondary mb-1">Provider</label>
+                    <select
+                      value={settings.judgement_provider ?? ''}
+                      onChange={(e) => setSettings({ ...settings, judgement_provider: e.target.value })}
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                    >
+                      <option value="">Same as above</option>
+                      <option value="local">Local (LM Studio / Ollama)</option>
+                      <option value="openai">OpenAI</option>
+                      <option value="anthropic">Anthropic</option>
+                      <option value="gemini">Google Gemini</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-secondary mb-1">Base URL</label>
+                    <input
+                      type="text"
+                      value={settings.judgement_base_url ?? ''}
+                      onChange={(e) => setSettings({ ...settings, judgement_base_url: e.target.value })}
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      placeholder="empty: same as above"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-secondary mb-1">Context window (tokens)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={settings.judgement_context_window ?? 0}
+                      onChange={(e) => setSettings({ ...settings, judgement_context_window: Number(e.target.value) || 0 })}
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+                <div className="mt-3">
+                  <CredentialField
+                    label="Judgement model key"
+                    field="judgement_api_key"
+                    configured={settings.judgement_api_key_configured ?? false}
+                    hint={settings.judgement_api_key_hint ?? null}
+                    placeholder="empty: the key above for its provider"
+                  />
+                </div>
               </div>
 
               <div className="pt-2 flex items-center justify-between">

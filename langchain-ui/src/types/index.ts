@@ -209,6 +209,15 @@ export interface SettingsView {
   google_api_key_configured: boolean;
   /** 'linear' runs stages serially; 'parallel' fans out specialist tasks concurrently. */
   execution_mode: 'linear' | 'parallel';
+  /** The model the judging stages run on (architect, QA, reviews, test rounds,
+   *  fixes). An empty name means every stage runs on the model above; empty
+   *  provider, address and window are the default model's. */
+  judgement_provider?: string;
+  judgement_base_url?: string;
+  judgement_model_name?: string;
+  judgement_context_window?: number;
+  judgement_api_key_hint?: string | null;
+  judgement_api_key_configured?: boolean;
 }
 
 /** A model configuration saved when it was applied, so it can be picked again.

@@ -4220,9 +4220,16 @@ def build_workflow_graph(
         settings = load_settings(base_env)
         model = build_default_chat_model(settings)
 
-    # The model for judgement: the architect, QA, reviewers and fixes. The
-    # default model until a judgement model is configured (see `app.models.roles`).
-    judgement_model = model
+    # The model for judgement: the architect, QA, the reviews, the test rounds
+    # and the fixes. The default model unless one is configured - see
+    # `app.models.roles`. Built when the run supplies no model (the stages
+    # then build the default one themselves) or a real one; a test's model
+    # name or fake comes back unchanged.
+    from app.models.roles import build_judgement_model
+
+    judgement_model = (
+        build_judgement_model(model) if model is None or isinstance(model, BaseChatModel) else model
+    )
 
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
@@ -4459,7 +4466,7 @@ def build_workflow_graph(
         missing = _missing_upstream(state, "product_intake", "tools_models")
         if missing is not None:
             return missing
-        agent = create_principal_architect_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_principal_architect_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
 
         # A rejected specification must come back with the reasons attached,
         # otherwise the architect reproduces the version that was rejected.
@@ -4555,7 +4562,7 @@ def build_workflow_graph(
         missing = _missing_upstream(state, "technical_specification")
         if missing is not None:
             return missing
-        agent = create_architecture_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_architecture_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
         previous_review = state.get("architecture_review")
         request = build_architecture_review_request(
@@ -5251,7 +5258,7 @@ def build_workflow_graph(
         changed_files = _the_files_this_milestone_changed(state, outputs)
 
         agent = create_specialist_agent(
-            "testing", model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            "testing", model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         request = build_test_run_request(
             milestone.selected_sprint_goal,
@@ -5550,7 +5557,7 @@ def build_workflow_graph(
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
 
         agent = create_specialist_agent(
-            defect.owner, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         request = build_defect_fix_request(
             defect.description,
@@ -5625,7 +5632,7 @@ def build_workflow_graph(
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
         changed_files = _the_files_this_milestone_changed(state, outputs)
-        agent = create_security_reviewer_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_security_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_security_review_request(
             changed_files,
             "Permissions: All tools have read/write access to the repository scope. Validation tools are restricted to a safe list of commands.",

@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Literal
+from typing import Any, Literal
 
 from app.agents.thinking import thinking_budget_tokens
 
@@ -79,6 +79,14 @@ class SettingsView(BaseModel):
     anthropic_api_key_configured: bool = False
     google_api_key_configured: bool = False
     execution_mode: str = "linear"
+    #: The judgement model (`app.models.roles`). An empty name means every
+    #: stage runs on the model above.
+    judgement_provider: str = ""
+    judgement_base_url: str = ""
+    judgement_model_name: str = ""
+    judgement_context_window: int = 0
+    judgement_api_key_hint: str | None = None
+    judgement_api_key_configured: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -154,7 +162,16 @@ class SettingsUpdate(BaseModel):
         ),
     )
 
-    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key")
+    # The judgement model: the architect, QA, the reviews, the test rounds and
+    # the fixes run on it (see `app.models.roles`). Empty fields are the default
+    # model's; an empty name turns it off.
+    judgement_provider: str = Field(default="", max_length=40)
+    judgement_base_url: str = Field(default="", max_length=500)
+    judgement_model_name: str = Field(default="", max_length=200)
+    judgement_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_api_key: str | None = Field(default=None, max_length=512, repr=False)
+
+    @field_validator("openai_api_key", "anthropic_api_key", "google_api_key", "judgement_api_key")
     @classmethod
     def _clean_credential(cls, value: str | None) -> str | None:
         if value is None:
@@ -176,6 +193,19 @@ class SettingsUpdate(BaseModel):
         if normalised not in ALLOWED_PROVIDERS:
             raise ValueError(f"Unknown provider '{value}'. Choose one of: {', '.join(sorted(ALLOWED_PROVIDERS))}.")
         return normalised
+
+    @field_validator("judgement_provider")
+    @classmethod
+    def _known_judgement_provider(cls, value: str) -> str:
+        normalised = value.strip().lower()
+        if normalised and normalised not in ALLOWED_PROVIDERS:
+            raise ValueError(f"Unknown provider '{value}'. Choose one of: {', '.join(sorted(ALLOWED_PROVIDERS))}.")
+        return normalised
+
+    @field_validator("judgement_base_url")
+    @classmethod
+    def _safe_judgement_base_url(cls, value: str) -> str:
+        return cls._safe_base_url(value) if value.strip() else ""
 
     @field_validator("openai_base_url")
     @classmethod
@@ -236,7 +266,25 @@ def _current_view() -> SettingsView:
         anthropic_api_key_configured=bool(s.anthropic_api_key),
         google_api_key_configured=bool(s.google_api_key),
         execution_mode=getattr(s, "execution_mode", "linear") or "linear",
+        **_judgement_view(),
     )
+
+
+def _judgement_view() -> dict[str, Any]:
+    environment = runtime_settings.effective_environment()
+    try:
+        window = int(str(environment.get("JUDGEMENT_CONTEXT_WINDOW") or "0").strip() or 0)
+    except ValueError:
+        window = 0
+    key = str(environment.get("JUDGEMENT_API_KEY") or "")
+    return {
+        "judgement_provider": str(environment.get("JUDGEMENT_PROVIDER") or ""),
+        "judgement_base_url": str(environment.get("JUDGEMENT_BASE_URL") or ""),
+        "judgement_model_name": str(environment.get("JUDGEMENT_MODEL") or ""),
+        "judgement_context_window": window,
+        "judgement_api_key_hint": _mask(key),
+        "judgement_api_key_configured": bool(key),
+    }
 
 
 @settings_router.get("", response_model=SettingsView)
@@ -320,6 +368,14 @@ async def update_settings(
             "thinking_mode": payload.thinking_mode,
             "thinking_effort": payload.thinking_effort,
             "execution_mode": payload.execution_mode,
+            # Empty clears each override, which with an empty name turns the
+            # judgement model off.
+            "judgement_provider": payload.judgement_provider,
+            "judgement_base_url": payload.judgement_base_url,
+            "judgement_model_name": payload.judgement_model_name.strip(),
+            "judgement_context_window": (
+                str(payload.judgement_context_window) if payload.judgement_context_window else ""
+            ),
         },
         actor=user.username,
     )
@@ -338,6 +394,7 @@ async def update_settings(
         "openai_api_key": payload.openai_api_key,
         "anthropic_api_key": payload.anthropic_api_key,
         "google_api_key": payload.google_api_key,
+        "judgement_api_key": payload.judgement_api_key,
     }
     # None means "leave alone"; "" means "delete". Only the keys the form
     # actually touched are written.
@@ -354,6 +411,7 @@ async def update_settings(
             "llm_provider": payload.llm_provider,
             "openai_base_url": payload.openai_base_url,
             "model_name": payload.model_name,
+            "judgement_model_name": payload.judgement_model_name.strip(),
             # Which credentials changed, never their values. This row is
             # long-lived and is read by people investigating incidents.
             "credentials_changed": sorted(changed_credentials),

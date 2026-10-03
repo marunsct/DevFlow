@@ -2348,6 +2348,47 @@ def _written_as_a_diff(content: str, original: str) -> str:
     )
 
 
+def _a_diff_that_parses(relative_path: str, content: str, original: str, *, editing: bool) -> str | None:
+    """The refusal for `content` that is a diff of the file, or None.
+
+    `_written_as_a_diff` explains an edit already refused for breaking the
+    file. A diff can also parse. Measured on one run: a fix stage sent
+    `this.tasks.push(task);`, `-      this._emitUpdate();`,
+    `+      storage.saveTasks(this.tasks);`, `+      this._emitUpdate();` as a
+    `replace_lines` content. JavaScript reads `-x()` and `+x()` as unary minus
+    and plus, so `node --check` passed, the edit was written, and the product
+    shipped with the diff in it - the removed call made twice instead of once.
+
+    Code only, and only both signs with a `-` line the file already holds:
+    the removal marker on a line that is there is what makes it a diff and not
+    a list or an expression.
+    """
+    from app.analysis.file_kinds import classify_file
+
+    if classify_file(relative_path) == "document":
+        return None
+    held = {line.strip() for line in original.splitlines() if line.strip()}
+    marked = [
+        (number, found.group(1), found.group(2).strip())
+        for number, line in enumerate(content.splitlines(), 1)
+        if (found := _A_DIFF_LINE.match(line))
+    ]
+    removed = [(number, text) for number, sign, text in marked if sign == "-" and text in held]
+    if not removed or not any(sign == "+" for _, sign, _ in marked):
+        return None
+    number, text = removed[0]
+    verb = "change" if editing else "write"
+    return (
+        f"Refusing to {verb} '{relative_path}': line {number} of what you sent is "
+        f"`-{text}` - a line this file already holds, marked for removal - and there "
+        "are '+' lines beside it, so this is a diff, not the file's text. The parser "
+        "would have accepted it (`-x()` and `+x()` are expressions), which is how one "
+        "reached a product before. Nothing was written. Send the lines exactly as "
+        "the file should hold them: leave out every '-' line and drop the leading "
+        "'+' from every line you add."
+    )
+
+
 _WHERE_JSON_STOPPED = re.compile(r"not valid JSON at line (\d+)")
 
 
@@ -2813,6 +2854,10 @@ def replace_approved_lines(
             body += "\n"
         updated = "".join(lines[:start_line - 1]) + body + "".join(lines[last:])
 
+        a_diff = _a_diff_that_parses(relative_path, content, original, editing=True)
+        if a_diff is not None:
+            raise RepositoryToolError(a_diff)
+
         # Only when the edit is what breaks it. A file that arrived broken is
         # being repaired, and refusing every step that has not yet finished
         # the repair is the trap measured on one run - four consecutive
@@ -2951,6 +2996,10 @@ def edit_approved_artifact(
     with _MUTATION_LOCK:
         original = target.read_text(encoding="utf-8")
         occurrences = original.count(find)
+
+        a_diff = _a_diff_that_parses(relative_path, replace, original, editing=True)
+        if a_diff is not None:
+            raise RepositoryToolError(a_diff)
 
         wrapped = _where_the_replacement_already_wraps_every_match(original, find, replace)
         if wrapped:
@@ -5787,6 +5836,14 @@ def write_approved_artifact(
     # delimiters is not a document with a formatting problem, it is a
     # transcript that escaped.
     _refuse_control_tokens(relative_path, content)
+    if target.is_file():
+        try:
+            existing = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            existing = ""
+        a_diff = _a_diff_that_parses(relative_path, content, existing, editing=False)
+        if a_diff is not None:
+            raise RepositoryToolError(a_diff)
     # Before refusing the shape: content that is broken only because its
     # escapes were written twice is a transcription fault, and the repairs for
     # it already exist on the edit path. See

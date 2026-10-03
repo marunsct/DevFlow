@@ -39,8 +39,10 @@ def test_the_refusal_says_content_is_not_a_patch(tmp_path) -> None:
         replace_approved_lines(tmp_path, "storage.js", 5, 6, patch)
 
     message = str(caught.value)
-    assert "Line 2 of your `content` begins with '-'" in message
-    assert "not a patch" in message
+    # Refused before the parser is asked, by `_a_diff_that_parses`: a diff that
+    # happens to parse would otherwise have been written.
+    assert "line 2 of what you sent is `-}));`" in message
+    assert "this is a diff, not the file's text" in message
     assert (tmp_path / "storage.js").read_text(encoding="utf-8") == STORAGE
 
 

@@ -228,3 +228,23 @@ def test_qa_and_the_qa_lead_read_the_customer_s_brief(project) -> None:
     assert 'labelled "Note title"' in author and "use exactly those words" in author
     review = build_acceptance_review_request("- AC-1: x", "suite", "ran", [], "", brief=brief)["messages"][0]["content"]
     assert 'labelled "Note title"' in review
+
+
+def test_the_harness_kept_configuration_cannot_be_written(project, monkeypatch) -> None:
+    monkeypatch.setattr("app.observability.transcript._stage_from_config", lambda fallback: "defect_fix_1_0")
+    with pytest.raises(RepositoryToolError, match="test configuration the harness set up and keeps"):
+        write_approved_artifact(project, "notes/playwright.config.js", "export default {};\n")
+    # The manifest is not refused: stages add dependencies to it.
+    write_approved_artifact(project, "notes/package.json", (project / "notes" / "package.json").read_text())
+
+
+def test_a_test_round_is_shown_only_the_criteria_that_are_due(project) -> None:
+    from app.acceptance.junit import Report, TestResult
+
+    report = Report(found=True, tests=[
+        TestResult(name="[AC-1] adds", outcome="passed"),
+        TestResult(name="[AC-3] persists", outcome="failed", message="later work"),
+    ])
+    result = suite._judged(project, suite.AcceptanceResult(ran=True, command="npm run test:acceptance", report=report), False)
+    block = requests.acceptance_block(result, ["AC-1"])
+    assert "AC-1 PASSED" in block and "AC-3" not in block.split("are not defects now.")[1]

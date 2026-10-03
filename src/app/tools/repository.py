@@ -1502,6 +1502,36 @@ def _reads_as_a_defect_report(content: str) -> bool:
 _THE_ACCEPTANCE_AUTHOR = "acceptance_author"
 
 
+def _a_file_the_harness_keeps(root: Path, relative: str) -> str | None:
+    """The refusal for changing runner configuration a stack pack set up, or None.
+
+    `app.stacks.contract.enforce` puts these files back before the harness
+    runs anything, which keeps the harness's own runs honest but came too late
+    for the stage that changed one: its own runs of the suite used the broken
+    copy. One run's stages edited the acceptance configuration in a work order
+    and two fixes, then reported the suite unable to reach the product.
+    """
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(root)
+    except Exception:  # noqa: BLE001 - no contract, nothing kept
+        return None
+    if found is None:
+        return None
+    pack, record = found
+    project = str(record.get("project") or "")
+    kept = {f"{project}/{name}" for name in pack.kept_files}
+    if relative not in kept:
+        return None
+    command = " ".join(str(part) for part in record.get("acceptance_test") or [])
+    return (
+        f"'{relative}' is test configuration the harness set up and keeps: it starts the "
+        f"product for the acceptance suite and already works. It cannot be changed. Run "
+        f"`{command}` in `{project}/` as it is; if it fails, the cause is in the product."
+    )
+
+
 def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | None:
     """The refusal for a change to the harness's records or the acceptance suite, or None.
 
@@ -1521,6 +1551,9 @@ def _the_harness_s_own_or_the_locked_suite(root: Path, target: Path) -> str | No
             f"'{relative}' is the harness's own record of what it set up and locked; "
             "no stage may change it."
         )
+    kept = _a_file_the_harness_keeps(root, relative)
+    if kept is not None:
+        return kept
     try:
         from app.acceptance import suite
 

@@ -154,14 +154,18 @@ def acceptance_block(result: suite.AcceptanceResult | None, due: Sequence[str] |
         return ""
     due_note = ""
     if due is not None:
+        # Only what is due. One run's first sprint was shown every criterion's
+        # failure, reported a later sprint's filter as a defect, and spent its
+        # whole fix budget on work its plan gave to sprint 3.
         due_note = (
             "Criteria this sprint must deliver (with every earlier sprint's): "
             + (", ".join(due) or "none")
-            + ".\n"
+            + ". Criteria later sprints build are left out: they are expected to fail "
+            "until then and are not defects now.\n"
         )
     return (
         "--- The acceptance suite, run by the harness just now ---\n"
-        f"{due_note}{result.summary()}\n"
+        f"{due_note}{result.summary(due)}\n"
         "This is the record of what passes; it is not open to interpretation. A failing "
         "criterion that is due is a defect in the product, never in the locked suite.\n\n"
     )

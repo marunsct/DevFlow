@@ -4901,6 +4901,18 @@ def build_workflow_graph(
         due_brief = acceptance_nodes.criteria_brief(state)
         if due_brief:
             request["messages"][-1]["content"] += due_brief
+        # What the harness set up and owns. Without it one run's lead wrote a
+        # work order to edit the acceptance configuration, which the harness
+        # put back - the whole work order wasted.
+        from app.agents.specialists import project_contract
+
+        owned = project_contract(state["repository"].root_path)
+        if owned:
+            request["messages"][-1]["content"] += (
+                "\n\n" + owned
+                + "No work order may target a file the harness keeps or the locked acceptance "
+                "suite; a change to either is put back."
+            )
         unready = [str(p) for p in state.get("work_order_problems") or [] if str(p).strip()]
         if unready:
             from app.analysis.work_orders import readiness_feedback

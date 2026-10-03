@@ -39,3 +39,22 @@ def test_other_scripts_and_tests_run(project) -> None:
 def test_the_command_is_refused_before_it_can_hang(project) -> None:
     with pytest.raises(CommandNotAllowed, match="runs until it is stopped"):
         validate_command(["node", "scripts/serve.mjs"], "testing_specialist", project)
+
+
+def test_a_scaffolded_project_is_told_its_own_command(tmp_path) -> None:
+    """One run's stages tried to start the pack's server 101 times: the refusal
+    told them to write a webServer configuration the harness already keeps."""
+    import json
+
+    from app.tools.sandbox import _how_to_serve_the_page_instead
+
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "stack-pack.json").write_text(json.dumps({
+        "pack": "browser-javascript", "project": "notes",
+        "acceptance_test": ["npm", "run", "test:acceptance"], "evidence_dir": "test-results/evidence",
+    }))
+    advice = _how_to_serve_the_page_instead(str(tmp_path))
+    assert "`npm run test:acceptance` in `notes/`" in advice
+    assert '-g \\"AC-3\\"' in advice or '-g "AC-3"' in advice
+    assert "notes/test-results/evidence/" in advice
+    assert "webServer" not in advice

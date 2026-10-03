@@ -26,7 +26,9 @@ def playwright_config(server_command: str, ready_path: str = "/", screenshot: st
     """A Playwright configuration that starts the product with `server_command`.
 
     The server is told its port in `PORT`, and gets a fresh `DATA_DIR` under
-    `test-results/` for every run of the suite. A product with a page keeps a
+    `test-results/` for every run of the suite - named fresh, not emptied by a
+    shell chain: one run's stages copied `rm -rf ... && node ...` out of this
+    file and tried to run it themselves, fourteen times. A product with a page keeps a
     screenshot of every test (`screenshot="on"`) as evidence for its reviews.
     """
     return """import { defineConfig } from '@playwright/test';
@@ -58,9 +60,10 @@ export default defineConfig({
     trace: 'off',
   },
   webServer: {
-    command: `rm -rf test-results/acceptance-data && %(command)s`,
+    command: `%(command)s`,
     url: `http://127.0.0.1:${port}%(ready)s`,
-    env: { PORT: String(port), DATA_DIR: 'test-results/acceptance-data' },
+    // A fresh, empty data directory for every run of the suite.
+    env: { PORT: String(port), DATA_DIR: `test-results/acceptance-data-${port}-${Date.now()}` },
     reuseExistingServer: false,
     timeout: 30_000,
   },

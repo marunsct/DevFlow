@@ -2002,7 +2002,29 @@ def _how_to_serve_the_page_instead(repo_root: str) -> str:
     them from a test" describes the hand-built DOM that `a_dom_built_by_hand`
     notes and `_refuse_a_hand_built_dom_again` refuses - one part of the
     harness telling a stage to do what another part stops it doing.
+
+    A project a stack pack scaffolded has that configuration already, kept by
+    the harness: telling a stage to write one sent one run's stages back to the
+    refused command 101 times. There, the answer is the pack's own command.
     """
+    try:
+        from app.stacks.contract import read as the_contract
+
+        record = the_contract(repo_root)
+    except Exception:  # noqa: BLE001 - no contract, no pack-specific answer
+        record = None
+    if record:
+        command = " ".join(str(part) for part in record.get("acceptance_test") or [])
+        project = record.get("project") or "the project directory"
+        evidence = record.get("evidence_dir") or ""
+        return (
+            f" This project's acceptance configuration already starts the product: "
+            f"`{command}` in `{project}/` serves it, runs the tests against it and stops "
+            f"it again. To look at one criterion, run it alone - "
+            f"`{command} -- -g \"AC-3\"` - and read what it prints"
+            + (f"; a screenshot of every test is kept under `{project}/{evidence}/`" if evidence else "")
+            + ". Starting the server yourself is refused every time, so do not try again."
+        )
     if _any_manifest_declares_a_browser_runner(repo_root):
         return (
             " A browser runner is installed here and browsers do run: start "

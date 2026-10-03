@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `c2d5b1b`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `c2d5b1b` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-0d03c64c-0f2e-4264-8796-8113eb5445e3` (see `data/loop/current_run.txt`), started 09:12 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-3c2a7e6f COMPLETED at 09:05 JST on 2026-10-03 (4 sprints, 11.7% failed calls, unit and Playwright suites green, review accepted) but is NOT clean: the brief's "add new tasks with title and description" is not met - the form has no description field, app.js calls editTask(id, title) while the suite passes a description, and the cross-file check missed it because the suite bound its module with `await import` (fixed `c2d5b1b`). Also untidy: index.html inlines a copy of styles.css and never links it; a console.log left in render(). |
+| branch | `harness-hardening-session`, last code commit `c5c7b22`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `c5c7b22` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-fb4af14e-b24f-4bfe-a814-3a49532fe49a` (see `data/loop/current_run.txt`), started 09:28 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-0d03c64c was cancelled at 09:23 JST on 2026-10-03, 11 minutes in: two UI stages sent app.js fifteen times, each copy cut off at a `\\"` in a regular expression, and the refusal named only the broken regex (fixed `c5c7b22`). Before it, run-3c2a7e6f COMPLETED at 09:05 JST but not clean: no task description anywhere in the UI (check fixed `c2d5b1b`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

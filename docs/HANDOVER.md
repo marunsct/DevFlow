@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `40b48f3`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `40b48f3` (deployed 22:12 JST on 2026-10-03) |
-| current run | `run-58190cd3-2e73-44d6-8c6f-a46623111b46`, `web-todo`, started 22:12 JST (2026-10-03), auto mode, gpt-oss-20b, no judgement model configured. run-fa27ea5b (the first after the redesign) was cancelled 22:05 JST, 11 minutes in: a red acceptance run took 249 s (Playwright's 30 s default per missing control), the pack's fixed port collided with the cancelled run's server, and QA was not given the brief's interface section (fixed `40b48f3`). |
+| branch | `harness-hardening-session`, last code commit `e6eb039`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `e6eb039` (deployed 22:28 JST on 2026-10-03) |
+| current run | `run-a4ea15b5-03a9-435d-a00b-378cafc6664a`, `web-todo`, started 22:28 JST (2026-10-03), auto mode, gpt-oss-20b, no judgement model configured. run-58190cd3 was cancelled 22:23 JST, 11 minutes in: the code review reported the next sprint's features as missing (it was not told the plan), and QA hung a call starting the pack's server by hand (fixed `e6eb039`). Before it, run-fa27ea5b was cancelled 22:05 JST (slow red suite, fixed port, QA without the brief; fixed `40b48f3`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

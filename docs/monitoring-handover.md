@@ -71,7 +71,7 @@ A new session or account starts at `docs/HANDOVER.md` (written 2026-10-01): the 
 | | |
 |---|---|
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
-| clean runs toward the gate | **stage 1 (web-todo): 0 of 2.** The gate moved to benchmark scores on 2026-10-03 with the redesign (`docs/redesign-software-company.md`, commits `d66a47e`..`9e219aa`): a run is clean when its product scores 100% on the hidden tests (`loop.sh score`) and needed no fix. Before it: 0 of 2 on brief_low, loop paused 20:03 JST. First benchmark run run-fa27ea5b started 21:53 JST. |
+| clean runs toward the gate | **stage 1 (web-todo): 0 of 2.** The gate moved to benchmark scores on 2026-10-03 with the redesign (`docs/redesign-software-company.md`, commits `d66a47e`..`9e219aa`): a run is clean when its product scores 100% on the hidden tests (`loop.sh score`) and needed no fix. Before it: 0 of 2 on brief_low, loop paused 20:03 JST. run-fa27ea5b cancelled 22:05 JST (slow red suite, fixed port, QA without the brief; fixed `40b48f3`); run-58190cd3 started 22:12 JST. |
 | current run | `data/loop/current_run.txt` (git-ignored; `loop.sh status`) |
 | database | Postgres data lives in the repo at `./data/postgres` (bind mount, git-ignored), database `langchain`, table `runs` keyed by `run_id` |
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |

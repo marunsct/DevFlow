@@ -2861,6 +2861,32 @@ def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tup
         return "", ""
 
 
+def _each_defect_once(reported: list[Any]) -> list[Any]:
+    """`reported` with repeats removed, first occurrence kept, in order.
+
+    Measured on one run: a test round returned 71 defects with two distinct
+    descriptions - one line repeated as the model's output ran on - and the
+    workflow dispatched a fix stage per entry. Twenty-five fix stages in a row,
+    over 35 minutes, were each handed the same defect before the run was
+    stopped; the round would have taken 71. A defect is the same one when its
+    description, owner and affected files are, ignoring case and spacing.
+    """
+    seen: set[tuple[str, str, tuple[str, ...]]] = set()
+    kept: list[Any] = []
+    for defect in reported:
+        owner = getattr(defect, "owner", "")
+        key = (
+            " ".join(str(getattr(defect, "description", "") or "").lower().split()),
+            str(getattr(owner, "value", owner) or ""),
+            tuple(sorted(str(f) for f in (getattr(defect, "affected_files", None) or ()))),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        kept.append(defect)
+    return kept
+
+
 def _proven_problems_the_round_left_out(
     proven: list[str], reported: list[Any], milestone: Any
 ) -> list[Any]:
@@ -5183,7 +5209,13 @@ def build_workflow_graph(
             return update  # paused waiting for approval on a test artifact
 
         test_result: SpecialistOutput = update.pop("__test_result__")
-        reported: list[ReportedDefect] = list(test_result.defects)
+        reported: list[ReportedDefect] = _each_defect_once(list(test_result.defects))
+        if len(reported) < len(test_result.defects):
+            logger.warning(
+                "test_round_%d reported %d defect(s), %d of them repeats; keeping %d",
+                test_round, len(test_result.defects),
+                len(test_result.defects) - len(reported), len(reported),
+            )
         # Read after the round, so a problem it fixed - a test config is its to
         # change - is not reported back to it as still there.
         try:

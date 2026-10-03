@@ -37,6 +37,7 @@ AUTHOR_EMAIL = "workflow@localhost"
 #: product.
 _IGNORED = """\
 .agent-home/
+.harness/
 node_modules/
 __pycache__/
 *.pyc
@@ -188,6 +189,27 @@ def commit_milestone(
     if commit:
         logger.info("Committed sprint %s as %s", sprint, commit)
     return commit
+
+
+def commit_all(repo_root: str | Path, message: str) -> str | None:
+    """Commit everything in the workspace with `message`; the short hash, or None.
+
+    None when there was nothing to commit or git could not run - neither is a
+    reason to disturb the run.
+    """
+    root = Path(repo_root)
+    if not is_repository(root) and not initialise_repository(root):
+        return None
+    if _git(root, "add", "-A") is None:
+        return None
+    subject, _, body = message.strip().partition("\n")
+    if len(subject) > 72:
+        subject = subject[:69].rstrip() + "..."
+    result = _git(root, "commit", "--quiet", "-m", f"{subject}\n{body}".rstrip())
+    if result is None or result.returncode != 0:
+        return None
+    revision = _git(root, "rev-parse", "--short", "HEAD")
+    return revision.stdout.strip() if revision and revision.returncode == 0 else None
 
 
 def last_good_commit(repo_root: str | Path) -> str | None:

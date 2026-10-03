@@ -244,7 +244,10 @@ WORK_ORDER_FILES = ".work-order-files.json"
 #:
 #: Same reasoning as `HARNESS_FILES`, one level up. Written, served to the UI,
 #: and invisible to the agents.
-HARNESS_DIRECTORIES = frozenset({"docs/stage_summaries"})
+#: `.harness/` holds the project contract and the acceptance lock
+#: (`app.stacks.contract`, `app.acceptance.lock`): the harness's record of what
+#: it set up and froze, which no stage may read as the product or change.
+HARNESS_DIRECTORIES = frozenset({"docs/stage_summaries", ".harness"})
 
 
 def _is_harness_directory(repo_root: Path, directory: Path) -> bool:

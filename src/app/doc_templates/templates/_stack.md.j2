@@ -5,3 +5,4 @@
 - **Database:** {{ stack.database | text }}
 - **Testing framework:** {{ stack.testing_framework | text }}
 - **Additional tools:** {{ stack.additional_tools | join(", ") | text("none") }}
+- **Kind of product:** {{ stack.product_kind | replace("_", " ") | text("not stated") }}

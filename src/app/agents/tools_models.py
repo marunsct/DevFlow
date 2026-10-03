@@ -55,6 +55,18 @@ class TechnologyStack(BaseModel):
     database: str = Field(..., description="Database technology (e.g., PostgreSQL, MongoDB).")
     testing_framework: str = Field(..., description="Testing framework (e.g., Jest, Pytest).")
     additional_tools: list[str] = Field(default_factory=list, description="Other notable tools to scaffold.")
+    # Optional for the same reason as `frontend_framework`. It picks the stack
+    # pack the project is scaffolded from (`app.stacks.choose_pack`); left
+    # empty, the frameworks and the brief decide.
+    product_kind: str = Field(
+        default="",
+        description=(
+            "What kind of product this is: browser_app (a user interface in a web "
+            "browser), http_api (a service called over HTTP), fullstack (a browser "
+            "interface backed by its own HTTP service), cli (a program run from a "
+            "terminal) or library (code other programs import)."
+        ),
+    )
 
     @field_validator("testing_framework")
     @classmethod

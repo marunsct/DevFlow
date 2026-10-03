@@ -1,0 +1,72 @@
+"""What every JavaScript pack shares: node:test units and Playwright acceptance runs."""
+
+from __future__ import annotations
+
+#: The Playwright release whose browser build the image installs. A different
+#: version looks for a browser build that is not there.
+PLAYWRIGHT = "1.63.0"
+
+UNIT_SCRIPT = (
+    "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout "
+    "--test-reporter=junit --test-reporter-destination=test-results/unit.xml tests/"
+)
+
+GITIGNORE = """node_modules/
+test-results/
+playwright-report/
+data/
+"""
+
+INSTALL = (("npm", "install", "--no-audit", "--no-fund"),)
+UNIT_TEST = ("npm", "test")
+ACCEPTANCE_TEST = ("npm", "run", "test:acceptance")
+
+
+def playwright_config(server_command: str, ready_path: str = "/", screenshot: str = "only-on-failure") -> str:
+    """A Playwright configuration that starts the product with `server_command`.
+
+    The server is told its port in `PORT`, and gets a fresh `DATA_DIR` under
+    `test-results/` for every run of the suite. A product with a page keeps a
+    screenshot of every test (`screenshot="on"`) as evidence for its reviews.
+    """
+    return """import { defineConfig } from '@playwright/test';
+
+// The harness runs this suite; keep it as it is. Acceptance tests reach the
+// product through the server below - never from disk, and never on another port.
+const port = Number(process.env.ACCEPTANCE_PORT || 4173);
+
+export default defineConfig({
+  testDir: './acceptance',
+  testMatch: '**/*.spec.js',
+  timeout: 30_000,
+  expect: { timeout: 5_000 },
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  reporter: [['list'], ['junit', { outputFile: 'test-results/acceptance.xml' }]],
+  outputDir: 'test-results/evidence',
+  use: {
+    baseURL: `http://127.0.0.1:${port}`,
+    screenshot: '%(screenshot)s',
+    trace: 'off',
+  },
+  webServer: {
+    command: `rm -rf test-results/acceptance-data && %(command)s`,
+    url: `http://127.0.0.1:${port}%(ready)s`,
+    env: { PORT: String(port), DATA_DIR: 'test-results/acceptance-data' },
+    reuseExistingServer: false,
+    timeout: 30_000,
+  },
+});
+""" % {"command": server_command, "ready": ready_path, "screenshot": screenshot}
+
+
+UNIT_GUIDE = """Unit tests go in `tests/`, one file per module, named `<module>.test.js`, using
+`node:test` and `node:assert/strict`, and import the product's modules directly.
+Run them with `npm test`. Install a dependency with `npm install <name>` (add
+`--save-dev` for one only tests use). Never start a server yourself."""
+
+NAMING = """Each test's title starts with the id of the criterion it proves, in square
+brackets: `test('[AC-3] a completed item stays completed after a reload', ...)`
+(a test that proves two: `[AC-3][AC-4] ...`). A test with no criterion id in its
+title proves nothing the harness can count."""

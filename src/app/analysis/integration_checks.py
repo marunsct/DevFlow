@@ -6320,6 +6320,61 @@ _FLOORS: dict[str, str] = {
 
 BREAKS_WHATEVER_IT_SAYS = "BREAKS"
 
+#: Checks whose findings are mechanical facts about the files - a file that does
+#: not parse, a reference to a file that does not exist, a module loaded in a
+#: way nothing can run, a test no runner collects. Every other check infers
+#: behaviour from patterns in the code ("this control does nothing", "this
+#: export is never reached"), and on 2026-10-03 three of those showed false
+#: positives in one evening, each recorded as a defect nothing could fix.
+#:
+#: A run with a locked acceptance suite measures behaviour directly (see
+#: `app.acceptance`), so there an inference is a hint for the reviewers, never
+#: a finding: only these checks can block. A run without one keeps every check
+#: as it was.
+_MECHANICAL = frozenset({
+    "names a page calls against the import clause that should bind them",
+    "suites a test file registers more than once",
+    "the chosen stack against what is on disk",
+    "the installed test runner against the one the stack chose",
+    "source files against the parser of the language they are written in",
+    "the address a browser test opens against how the page loads its code",
+    "the port a test runner waits on against the one its server opens",
+    "how Jest is started against tests written as ES modules",
+    "each test runner's files against what the other runners also collect",
+    "the runners a project's unit tests are written for",
+    "CommonJS behind a module script tag, which no browser can run",
+    "manifests against the project they describe",
+    "test files against the project's own test command",
+    "node:test suites against a manifest that never invokes node --test",
+    "module syntax against the script tag that loads it",
+    "paths in package.json scripts against where npm runs them",
+    "HTML script and stylesheet references against the files they name",
+    "debugging scripts left behind in the product",
+    "suite functions called without the import that defines them",
+    "files that contradict the module type their manifest declares",
+    "module syntax against a test runner that cannot parse it",
+    "the size of the product against the budget its own documents state",
+    "presence of Playwright for UI testing",
+})
+
+
+def _behaviour_is_measured(root: Path) -> bool:
+    """Whether this workspace has a locked acceptance suite to measure behaviour."""
+    try:
+        from app.acceptance.suite import is_locked
+
+        return is_locked(root)
+    except Exception:  # noqa: BLE001 - no suite readable means no suite
+        return False
+
+
+def _grade(entry: tuple, problem: str, measured: bool) -> str:
+    """BREAKS, CRITERION, untidy - or "hint" for an inference where behaviour is measured."""
+    grade = _floor_of(entry) or _severity_of(problem)
+    if measured and entry[0] not in _MECHANICAL and grade in {"BREAKS", "CRITERION"}:
+        return "hint"
+    return grade
+
 
 def _floor_of(entry: tuple) -> str:
     """The severity a registry entry declares, or "" to grade it by its message."""
@@ -6609,11 +6664,11 @@ def summarise_integration(
         # Each problem is kept with the floor its own check declares, so the
         # bucketing below cannot put a declared-breaking finding under "untidy
         # rather than broken" because of how its sentence happens to read.
+        measured = _behaviour_is_measured(root)
         graded_problems: list[tuple[str, str]] = []
         for entry in _CHECKS:
-            floor = _floor_of(entry)
             for problem in entry[1](files, root, stack, brief):
-                graded_problems.append((problem, floor or _severity_of(problem)))
+                graded_problems.append((problem, _grade(entry, problem, measured)))
         problems = [problem for problem, _ in graded_problems]
     except Exception:  # noqa: BLE001
         return "The cross-file checks could not complete on this workspace."
@@ -6636,6 +6691,7 @@ def summarise_integration(
     breaking = [p for p, g in graded_problems if g == "BREAKS"]
     criterion = [p for p, g in graded_problems if g == "CRITERION"]
     untidy = [p for p, g in graded_problems if g == "untidy"]
+    hints = [p for p, g in graded_problems if g == "hint"]
     sections = []
     if breaking:
         sections.append(
@@ -6661,6 +6717,15 @@ def summarise_integration(
             "than broken - dead rules, unused files. Worth a minor finding, not "
             "a blocking one:\n"
             + "\n".join(f"- {problem}" for problem in untidy)
+        )
+    if hints:
+        sections.append(
+            f"{len(hints)} {'is a hint' if len(hints) == 1 else 'are hints'} from reading "
+            "code patterns. This product's behaviour is measured by its locked acceptance "
+            "suite, which is the authority: a hint the suite contradicts is wrong, and one it "
+            "confirms is already a failing criterion. Use them to find where a failing "
+            "criterion's cause lies, not as findings of their own:\n"
+            + "\n".join(f"- {problem}" for problem in hints)
         )
     return (
         checked
@@ -6699,14 +6764,16 @@ def problems_that_break_the_product(
         files = _source_files(root)
         if not files:
             return []
+        # Where a locked acceptance suite measures behaviour, only the
+        # mechanical checks can break the product (see `_MECHANICAL`). The
+        # floor still comes first: a check that declares itself breaking is
+        # breaking however its message is worded.
+        measured = _behaviour_is_measured(root)
         breaking: list[str] = []
         for entry in _CHECKS:
             found = entry[1](files, root, stack, brief)
-            # The floor first. A check that declares itself breaking is breaking
-            # however its message is worded, which is the point of declaring it.
-            floor = _floor_of(entry)
             for problem in found:
-                if floor == "BREAKS" or _severity_of(problem) == "BREAKS":
+                if _grade(entry, problem, measured) == "BREAKS":
                     breaking.append(problem)
     except Exception:  # noqa: BLE001 - proof that cannot be gathered is not proof
         return []

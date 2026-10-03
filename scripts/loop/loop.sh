@@ -16,6 +16,8 @@
 #   scripts/loop/loop.sh deploy              rebuild + restart app and worker, verify the image
 #                                            matches the working tree, list runs orphan recovery revived
 #   scripts/loop/loop.sh suite               the full test suite, logged to data/loop/suite.log
+#   scripts/loop/loop.sh checks [labels]     how often each cross-file check fires over the stored
+#                                            workspaces, and its precision against labels (check_precision.py)
 #
 # Credentials: `start` logs in with LOOP_USER / LOOP_PASSWORD from the environment.
 # They are never stored in this repository. The loop's operator account is created with
@@ -107,6 +109,7 @@ audit)  in_worker audit_live.py "${2:-$(current)}" ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
+checks) in_worker check_precision.py "${2:-}" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }
   in_worker stage_trace.py "$(current)" "$2" "${3:-}"

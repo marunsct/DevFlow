@@ -19,6 +19,7 @@ export const Home: React.FC = () => {
   const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
   const [reviewSprint, setReviewSprint] = useState<boolean>(true);
   const [reviewRelease, setReviewRelease] = useState<boolean>(true);
+  const [reviewEscalation, setReviewEscalation] = useState<boolean>(true);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -72,13 +73,14 @@ export const Home: React.FC = () => {
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,
         review_policy: unattended
-          ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false }
+          ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false, escalation: false }
           : {
               product_intake: reviewIntake,
               technical_specification: reviewTechSpec,
               acceptance_tests: reviewAcceptance,
               sprint: reviewSprint,
-              release: reviewRelease
+              release: reviewRelease,
+              escalation: reviewEscalation
             }
       };
       
@@ -316,6 +318,13 @@ export const Home: React.FC = () => {
                       onChange={setReviewRelease}
                       label="Release Review"
                       description="The finished product, once every acceptance criterion passes."
+                    />
+                    <Checkbox
+                      id="reviewEscalation"
+                      checked={reviewEscalation}
+                      onChange={setReviewEscalation}
+                      label="Ask Me When a Sprint Is Stuck"
+                      description="After fixes and re-planning fail, you decide: defer what fails and go on, or try again with your guidance. Off, the run decides and records why."
                     />
                   </div>
                 </>

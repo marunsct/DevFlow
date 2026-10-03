@@ -306,6 +306,39 @@ def criteria_due(state: Any) -> list[str] | None:
     return due + list(suite.change_requests(root))
 
 
+def criteria_brief(state: Any) -> str:
+    """What the technical lead must plan this milestone to make pass, or ""."""
+    root = _root(state)
+    if not suite.criteria(root) or not suite.is_locked(root):
+        return ""
+    due = criteria_due(state) or []
+    if not due:
+        return ""
+    texts = {c.id: c.text for c in suite.criteria(root)}
+    texts.update(suite.change_requests(root))
+    covered = suite.coverage(root)
+    saved = suite.last_result(root)
+    status = {
+        **{k: v.get("status") for k, v in (saved.get("criteria") or {}).items()},
+        **{k: v.get("status") for k, v in (saved.get("change_requests") or {}).items()},
+    }
+    lines = []
+    for item in due:
+        tests = covered.get(item, [])
+        lines.append(
+            f"- {item}: {texts.get(item, '')}"
+            + (f" - currently {str(status[item]).upper()}" if status.get(item) else "")
+            + (f"\n    tests: {'; '.join(tests[:4])}" if tests else "")
+        )
+    return (
+        "\n\n--- Acceptance criteria this milestone must leave passing ---\n"
+        + "\n".join(lines)
+        + f"\nThe tests are in `{suite.relative_directory(root)}/` and are locked: read them to "
+        "see exactly what each checks - the labels, routes, commands or names it uses - and "
+        "plan work orders that make them pass. The milestone is not accepted until they do."
+    )
+
+
 def run_for_sprint(state: Any) -> tuple[suite.AcceptanceResult | None, list[str]]:
     """The harness's own run of the suite, and the ids due now. (None, []) when there is no suite."""
     root = _root(state)

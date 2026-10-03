@@ -65,7 +65,7 @@ acceptance tests) or, where offered, picks an option.
 | 4 | Per-role models | done |
 | 5 | Decision records, modes, evidence package, change requests, UI | done |
 | 6 | CI per batch with revert, code review, commits | done |
-| 7 | Vertical-slice planning and the escalation ladder | |
+| 7 | Vertical-slice planning and the escalation ladder | done |
 | 8 | Check scoping (core vs pack, blocking vs advisory), precision script | |
 | 9 | Benchmark briefs, hidden tests, scorer, loop gate | |
 | 10 | Deploy, benchmark runs, restart the improvement loop | |

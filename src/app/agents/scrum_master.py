@@ -43,6 +43,12 @@ class SprintDefinition(BaseModel):
     out_of_scope: list[str] = Field(default_factory=list, description="Work explicitly deferred to a later sprint.")
     dependencies: list[str] = Field(default_factory=list, description="Other sprints or external work this depends on.")
     acceptance_criteria: list[str] = Field(default_factory=list)
+    # The numbered criteria of the locked acceptance suite this sprint makes
+    # pass. A sprint is done when these, and every earlier sprint's, pass.
+    criteria: list[str] = Field(
+        default_factory=list,
+        description="The ids of the numbered acceptance criteria this sprint makes pass, e.g. [\"AC-1\", \"AC-3\"].",
+    )
     test_strategy: list[str] = Field(default_factory=list, description="How this sprint's work will be verified.")
     security_checks: list[str] = Field(default_factory=list)
     documentation_work: list[str] = Field(default_factory=list)
@@ -396,8 +402,14 @@ def build_sprint_planning_request(
     repository_root: str,
     success_measures: list[str] | None = None,
     gaps: list[Any] | None = None,
+    acceptance_criteria: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved technical specification.
+
+    `acceptance_criteria` is the numbered list the locked acceptance suite
+    proves (`app.acceptance`). The plan is made of vertical slices against it:
+    each sprint names the criteria it makes pass. See
+    `with_every_criterion_assigned`.
 
     Budgeted for the same reason as the architecture review request: this is a
     first message, so compaction cannot save it if the specification alone
@@ -418,9 +430,67 @@ def build_sprint_planning_request(
         WORKSPACE_ROOT_NOTE
         + f"--- Approved technical specification (/docs/technical_specification.md) ---\n{specification}\n\n"
         + _the_success_measures(list(success_measures or []), list(gaps or []))
+        + _the_acceptance_criteria(acceptance_criteria)
         + f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _the_acceptance_criteria(criteria: str) -> str:
+    if not criteria.strip():
+        return ""
+    return (
+        "--- Acceptance criteria, each proven by a locked acceptance test ---\n"
+        f"{criteria}\n\n"
+        "Plan in vertical slices against these. Sprint 1 is a walking skeleton: the "
+        "product starts and at least one criterion works end to end through the "
+        "product's real interface. Every later sprint makes more criteria pass. In each "
+        "sprint's `criteria`, list the ids it makes pass; every id belongs to exactly one "
+        "sprint. A sprint is done only when its criteria and every earlier sprint's pass, "
+        "measured by the suite, so order sprints so that what a criterion needs is built "
+        "no later than the sprint that claims it.\n\n"
+    )
+
+
+def with_every_criterion_assigned(plan: Any, criteria_ids: list[str]) -> tuple[Any, list[str]]:
+    """The plan with every criterion assigned to exactly one sprint, and what was changed.
+
+    Unknown ids are dropped, an id claimed twice stays with the first sprint, and
+    an id no sprint claims goes to the last sprint - which answers for every
+    criterion anyway. A walking skeleton with nothing to show is given the first
+    criterion a later sprint holds, when there is more than one sprint.
+    """
+    sprints = list(getattr(plan, "sprints", None) or [])
+    if not sprints or not criteria_ids:
+        return plan, []
+    known = list(dict.fromkeys(criteria_ids))
+    notes: list[str] = []
+    seen: set[str] = set()
+    cleaned: list[list[str]] = []
+    for number, sprint in enumerate(sprints, 1):
+        mine: list[str] = []
+        for item in getattr(sprint, "criteria", None) or []:
+            item = str(item).strip().upper().replace("_", "-")
+            if item not in known:
+                notes.append(f"sprint {number} named {item}, which is not a criterion")
+            elif item in seen:
+                notes.append(f"{item} was claimed by an earlier sprint than {number}")
+            else:
+                mine.append(item)
+                seen.add(item)
+        cleaned.append(mine)
+    unassigned = [item for item in known if item not in seen]
+    if unassigned:
+        cleaned[-1].extend(unassigned)
+        notes.append(f"{', '.join(unassigned)} assigned to the last sprint, which no sprint claimed")
+    if len(cleaned) > 1 and not cleaned[0]:
+        for later in cleaned[1:]:
+            if later:
+                cleaned[0].append(later.pop(0))
+                notes.append(f"{cleaned[0][0]} moved to sprint 1, which had nothing to show")
+                break
+    updated = [sprint.model_copy(update={"criteria": ids}) for sprint, ids in zip(sprints, cleaned)]
+    return plan.model_copy(update={"sprints": updated}), notes
 
 
 _SYSTEM_PROMPT = f"""You are the Scrum Master for this workflow.
@@ -454,6 +524,9 @@ Responsibilities:
   dependencies on other sprints, acceptance criteria, test strategy, security
   checks, documentation work, risks, and rollback or recovery notes.
 - Sequence sprints so each one is verifiable before the next begins.
+- When numbered acceptance criteria are given, every sprint lists in
+  `criteria` the ids it makes pass, and every id belongs to exactly one
+  sprint. The first sprint already delivers at least one of them end to end.
 - List open questions instead of guessing when the specification is silent.
 
 {SCOPE_DISCIPLINE}

@@ -79,7 +79,7 @@ def test_a_failing_criterion_holds_the_release_then_escalates(tmp_path, monkeypa
     escalated = delivery.release(
         _state(tmp_path, release_attempts=delivery.MAX_RELEASE_ATTEMPTS), CONFIG, None
     )
-    assert escalated["stage"] == "failed" and "AC-2" in escalated["error"]
+    assert escalated["stage"] == "escalation" and "AC-2" in escalated["escalation"]["error"]
 
 
 def test_a_run_without_a_suite_releases_on_its_reviews(tmp_path) -> None:

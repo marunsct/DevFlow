@@ -506,6 +506,7 @@ def create_runs_router(
         review_documents = {
             "acceptance-tests": "docs/acceptance_tests.md",
             "release": "docs/reviews/release-evidence.md",
+            "escalation": "docs/reviews/escalation.md",
         }
         path = review_documents.get(path, path)
         state = record.graph_state(runner.checkpointer)

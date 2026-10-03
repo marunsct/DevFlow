@@ -321,6 +321,7 @@ PRODUCT_INTAKE_REVIEW = "product_intake"
 
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.delivery import RELEASE_REVIEW  # noqa: E402 - beside its siblings
+from app.graph.escalation import ESCALATION_REVIEW  # noqa: E402 - beside its siblings
 
 _REVIEW_NODES = {
     SPECIFICATION_REVIEW: "user_review_specification",
@@ -328,6 +329,7 @@ _REVIEW_NODES = {
     PRODUCT_INTAKE_REVIEW: "user_review_product_intake",
     ACCEPTANCE_REVIEW: "user_review_acceptance",
     RELEASE_REVIEW: "user_review_release",
+    ESCALATION_REVIEW: "user_review_escalation",
 }
 """Maps a review point to the node that owns its gate, so the entry router can
 re-enter the right node when a paused review is resumed."""
@@ -338,6 +340,7 @@ _REVIEW_STAGES = {
     PRODUCT_INTAKE_REVIEW: WorkflowStage.INTAKE,
     ACCEPTANCE_REVIEW: WorkflowStage.VALIDATION,
     RELEASE_REVIEW: WorkflowStage.COMPLETE,
+    ESCALATION_REVIEW: WorkflowStage.IMPLEMENTATION,
 }
 """Maps a review point to the `WorkflowStage` recorded on its `ReviewStatus`,
 so an auditor can tell which lifecycle stage a review decision belongs to."""
@@ -375,6 +378,10 @@ _NODE_NAMES = frozenset(
         "change_request",
         "release",
         "user_review_release",
+        "escalation",
+        "user_review_escalation",
+        "escalation_accept",
+        "escalation_retry",
         "complete",
         "failed",
     }
@@ -539,6 +546,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # back to the sprint, not to the sprint plan. See `app.graph.delivery`.
     acceptance_return_to: str | None
     release_attempts: int
+    # The last rung: a stuck sprint's decision. See `app.graph.escalation`.
+    escalation: dict[str, Any] | None
+    escalation_count: int
+    known_issues: list[str]
     # CI and code review between a batch and its test rounds, and the guard
     # around each fix. See `app.graph.engineering`.
     ci_report: str
@@ -4017,9 +4028,10 @@ def _escalate_to_a_human(
     message that says what is unresolved, which is what an unattended run needs
     and what it already produces everywhere else.
     """
-    if _review_enabled(state, SPRINT_REVIEW):
-        return _handing_on(stage="user_review_sprint", **fields)
-    return _handing_on(stage="failed", error=error, **fields)
+    # The last rung of the ladder decides rather than simply stopping: see
+    # `app.graph.escalation`. It still stops a run that cannot ship most of
+    # its criteria, or has nothing to measure them with.
+    return _handing_on(stage="escalation", escalation={"error": error}, error=None, **fields)
 
 
 def _run_review_gate(
@@ -4262,6 +4274,18 @@ def build_workflow_graph(
     judgement_model = (
         build_judgement_model(model) if model is None or isinstance(model, BaseChatModel) else model
     )
+
+    def _the_model_for_this_attempt(state: Any) -> Any:
+        """A rung of the escalation ladder: a sprint being tried again after a
+        re-plan, a sent-back review, a held release or an escalation is built on
+        the judgement model, not the default one."""
+        retried = (
+            int(state.get("sprint_replan_count") or 0) >= 1
+            or int(state.get("milestone_revision_count") or 0) >= 2
+            or int(state.get("release_attempts") or 0) >= 1
+            or int(state.get("escalation_count") or 0) >= 1
+        )
+        return judgement_model if retried else model
 
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
@@ -4711,11 +4735,20 @@ def build_workflow_graph(
         spec_text = _as_text(state.get("technical_specification"))
         measures = _what_the_sprints_must_deliver(state.get("product_intake"))
         gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
+        from app.acceptance import suite as acceptance_suite
+        from app.acceptance.requests import criteria_text as numbered_criteria
+
+        root_path = state["repository"].root_path
         request = build_sprint_planning_request(
             spec_text,
-            state["repository"].root_path,
+            root_path,
             success_measures=measures,
             gaps=gaps_already_asked_about,
+            acceptance_criteria=(
+                numbered_criteria(acceptance_suite.criteria(root_path), acceptance_suite.deferred(root_path))
+                if acceptance_suite.is_locked(root_path)
+                else ""
+            ),
         )
         update = _run_gated_agent(
             state,
@@ -4796,6 +4829,13 @@ def build_workflow_graph(
                 )
             update["sprint_plan_gaps"] = []
             update["current_sprint_index"] = 0
+            # Every criterion of the locked suite belongs to exactly one sprint.
+            from app.agents.scrum_master import with_every_criterion_assigned
+
+            ids = [c.id for c in acceptance_suite.criteria(root_path) if c.id not in acceptance_suite.deferred(root_path)]
+            update["sprint_plan"], assignment_notes = with_every_criterion_assigned(update["sprint_plan"], ids)
+            if assignment_notes:
+                logger.info("Sprint plan's criteria adjusted: %s", "; ".join(assignment_notes))
             from app.decisions import record_decision
 
             planned = list(getattr(update["sprint_plan"], "sprints", None) or [])
@@ -4803,7 +4843,9 @@ def build_workflow_graph(
                 state, update, point="sprint_plan",
                 question="How is the work split into sprints?",
                 decision=f"{len(planned)} sprint(s): " + "; ".join(
-                    f"{number}. {getattr(sprint, 'goal', '')}" for number, sprint in enumerate(planned, 1)
+                    f"{number}. {getattr(sprint, 'goal', '')}"
+                    + (f" ({', '.join(sprint.criteria)})" if getattr(sprint, "criteria", None) else "")
+                    for number, sprint in enumerate(planned, 1)
                 ),
                 rationale=(
                     "Planned by the scrum master"
@@ -4854,6 +4896,11 @@ def build_workflow_graph(
             )
         # The previous answer was not ready to hand out: say exactly why, with
         # the plan it was, so this attempt fixes it rather than starting over.
+        from app.graph import acceptance_nodes
+
+        due_brief = acceptance_nodes.criteria_brief(state)
+        if due_brief:
+            request["messages"][-1]["content"] += due_brief
         unready = [str(p) for p in state.get("work_order_problems") or [] if str(p).strip()]
         if unready:
             from app.analysis.work_orders import readiness_feedback
@@ -5101,7 +5148,7 @@ def build_workflow_graph(
             task = tasks[index]
             stage_name = f"specialist_{task.specialist_role}_{index}"
             agent = create_specialist_agent(
-                task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+                task.specialist_role, model=_the_model_for_this_attempt(state), checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
             )
             selection = state.get("stack_selection")
             request = build_specialist_task_request(
@@ -5151,7 +5198,7 @@ def build_workflow_graph(
         temp_state: Any = dict(state)
         
         agent = create_specialist_agent(
-            task.specialist_role, model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            task.specialist_role, model=_the_model_for_this_attempt(state), checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         selection = state.get("stack_selection")
         request = build_specialist_task_request(
@@ -5569,14 +5616,14 @@ def build_workflow_graph(
             # test that says so. The cycle stays on the state either way: it is
             # the evidence for whoever reads the failure. Only the re-plan below
             # clears it, because the next attempt needs a fresh one.
-            return _handing_on(
-                **{**base_update, **summary},
-                stage="failed",
+            return _escalate_to_a_human(
+                state,
                 error=(
                     f"Sprint '{getattr(cycle, 'sprint_goal', '?')}' was re-planned "
                     f"{MAX_MILESTONE_REVISIONS} times and still could not be "
                     f"accepted: {why}.\n\n{build_defect_report(cycle)}"
                 ),
+                **{**base_update, **summary},
             )
         summary = _record_sprint_summary(state, "Failed", why)
         # Merged, not passed twice. `base_update` already carries
@@ -6343,6 +6390,28 @@ def build_workflow_graph(
     def code_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         return engineering.code_review(state, config, stage_context)
 
+    # The last rung of the ladder. See `app.graph.escalation`.
+    from app.graph import escalation as stuck
+
+    def escalation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return stuck.escalation(state, config, stage_context)
+
+    def escalation_accept_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return stuck.accept(state, config, stage_context)
+
+    def escalation_retry_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return stuck.retry(state, config, stage_context)
+
+    def user_review_escalation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        return _run_review_gate(
+            state,
+            config,
+            review_point=ESCALATION_REVIEW,
+            artifact_id="escalation",
+            approved_next="escalation_accept",
+            changes_next="escalation_retry",
+        )
+
     def change_request_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         return delivery.change_request(state, config, stage_context)
 
@@ -6398,6 +6467,10 @@ def build_workflow_graph(
     graph.add_node("user_review_sprint", user_review_sprint_node)
     graph.add_node("sprint_advance", sprint_advance_node)
     graph.add_node("change_request", change_request_node)
+    graph.add_node("escalation", escalation_node)
+    graph.add_node("user_review_escalation", user_review_escalation_node)
+    graph.add_node("escalation_accept", escalation_accept_node)
+    graph.add_node("escalation_retry", escalation_retry_node)
     graph.add_node("release", release_node)
     graph.add_node("user_review_release", user_review_release_node)
     graph.add_node("complete", complete_node)
@@ -6434,6 +6507,10 @@ def build_workflow_graph(
         "change_request",
         "release",
         "user_review_release",
+        "escalation",
+        "user_review_escalation",
+        "escalation_accept",
+        "escalation_retry",
     ):
         graph.add_conditional_edges(node_name, _route_from_stage, routable_targets)
 

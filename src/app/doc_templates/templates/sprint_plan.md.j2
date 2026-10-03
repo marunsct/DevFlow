@@ -9,6 +9,8 @@
 
 **User value:** {{ s.user_value | text }}
 
+**Makes these acceptance criteria pass:** {{ s.criteria | join(", ") | text("none assigned") }}
+
 **In scope:**
 {{ s.in_scope | bullets }}
 

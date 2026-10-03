@@ -186,7 +186,36 @@ def sprints_that_deliver_nothing(plan: Any, measures: list[str]) -> list[int]:
         )
     if not delivering:
         return []
-    return [k for k in range(1, sprint_count + 1) if k not in delivering]
+    sprints = list(getattr(plan, "sprints", None) or [])
+    return [
+        k for k in range(1, sprint_count + 1)
+        if k not in delivering and not _its_goal_names_a_capability(sprints[k - 1])
+    ]
+
+
+#: What a user does to the product, or a quality the product has. A sprint goal
+#: naming one of these builds something, whatever its coverage lines say.
+_A_CAPABILITY = re.compile(
+    r"\b(?:add|create|edit|update|modify|delete|remove|toggle|complete|mark|filter|"
+    r"search|sort|persist\w*|sav(?:e|es|ing)|stor(?:e|es|ing|age)|responsive\w*|"
+    r"render\w*|display\w*)\b",
+    re.I,
+)
+
+
+def _its_goal_names_a_capability(sprint: Any) -> bool:
+    """Whether a sprint's goal names something the product does for its user.
+
+    The coverage lines are the model's accounting, and it can leave a sprint
+    out of them that plainly builds something. One run's plan put all six of
+    its measures against sprint 3 and none against "Implement full task-list
+    logic and persistence"; folded by its coverage alone, that sprint, a setup
+    sprint and an end-to-end test sprint went into one, and the run was asked to
+    build the whole product in a single sprint. "Set up project structure and
+    core logic module" and "Implement Playwright end-to-end tests" still fold.
+    """
+    goal = str(getattr(sprint, "goal", "") or "")
+    return bool(_A_CAPABILITY.search(goal))
 
 
 def _renumbered(text: str, removed: int) -> str:

@@ -150,12 +150,15 @@ def test_several_are_folded_until_every_sprint_delivers() -> None:
 
     folded_plan, folded = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
 
-    assert len(folded) == 3 and len(folded_plan.sprints) == 1
-    assert folded_plan.sprints[0].goal == (
-        "Establish the project foundation; then Implement core logic and persistence; "
-        "then Build the UI layer; then Finalize polish."
-    )
-    assert folded_plan.success_measure_coverage[0] == "1: Sprint 1"
+    # "Implement core logic and persistence" builds something whatever the
+    # coverage lines say, so it is not folded away and the plan keeps two
+    # sprints rather than collapsing into one.
+    assert len(folded) == 2 and len(folded_plan.sprints) == 2
+    assert [sprint.goal for sprint in folded_plan.sprints] == [
+        "Establish the project foundation; then Implement core logic and persistence.",
+        "Build the UI layer; then Finalize polish.",
+    ]
+    assert folded_plan.success_measure_coverage[0] == "1: Sprint 2"
 
 
 def test_a_plan_whose_sprints_all_deliver_is_returned_as_it_came() -> None:
@@ -226,3 +229,22 @@ def test_a_plan_is_not_handed_back_for_the_places_a_measure_names() -> None:
     assert capabilities_never_named("Polish the page.", measure) == {1: ["mobile", "desktop"]}
     # A list of things to build is every item, as before.
     assert capabilities_never_named("Add and delete tasks.", ["Users can add, edit, and delete tasks"]) == {1: ["edit"]}
+
+
+def test_a_sprint_whose_goal_builds_something_is_not_folded_for_missing_coverage() -> None:
+    """One run's plan put every measure against sprint 3. Folded by coverage
+    alone, a setup sprint, "Implement full task-list logic and persistence" and
+    an end-to-end test sprint all went into one, and the whole product was one
+    sprint. The persistence sprint builds something; the other two fold."""
+    goals = [
+        "Set up project structure and core logic module",
+        "Implement full task-list logic and persistence",
+        "Create single-page UI, inline all assets, and satisfy acceptance criteria",
+        "Implement Playwright end-to-end tests for full user flow",
+    ]
+    plan = SimpleNamespace(
+        sprints=[SimpleNamespace(goal=goal) for goal in goals],
+        success_measure_coverage=["1: Sprint 3", "2: Sprint 3", "3: Sprint 3", "4: Sprint 3"],
+    )
+
+    assert sprints_that_deliver_nothing(plan, MEASURES) == [1, 4]

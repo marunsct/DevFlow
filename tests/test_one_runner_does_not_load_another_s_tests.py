@@ -191,3 +191,45 @@ def test_a_project_whose_files_all_parse_reports_nothing(tmp_path: Path) -> None
     _project(tmp_path, TWO_RUNNERS, AS_THE_RUN_HAD_IT)
 
     assert _unparsed(tmp_path) == []
+
+
+@pytest.mark.parametrize("unit_script", [
+    "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "NODE_OPTIONS=--experimental-vm-modules npx jest",
+    "node node_modules/vitest/vitest.mjs run",
+])
+def test_a_runner_started_through_its_entry_point_is_not_told_where_to_look(
+    tmp_path: Path, unit_script: str
+) -> None:
+    """`node_modules/jest/bin/jest.js` is how `seed.py` says an ES-module
+    project starts Jest, and the directory on the way to it was read as a path
+    the script narrows collection to. One run failed its sprint on the
+    collision that hid: Jest loading `e2e/index.spec.js`, three rounds in a row."""
+    runner = "vitest" if "vitest" in unit_script else "jest"
+    unit_file = VITEST_TEST if runner == "vitest" else JEST_TEST
+    _project(tmp_path, {
+        "test:unit": unit_script,
+        "test": "npm run test:unit && npx playwright test",
+    }, {
+        "playwright.config.cjs": "module.exports = { testDir: './e2e' };\n",
+        "e2e/index.spec.js": PLAYWRIGHT_SPEC,
+        "__tests__/state.test.js": unit_file,
+        "state.js": "export const a = 1;\n",
+    })
+
+    (problem,) = _collisions(tmp_path)
+
+    assert f"nothing tells `{runner}` where to look" in problem
+    assert "app/e2e/index.spec.js" in problem
+
+
+@pytest.mark.parametrize("body, expected", [
+    ("node --experimental-vm-modules node_modules/jest/bin/jest.js", ("jest", False)),
+    ("node --experimental-vm-modules node_modules/jest/bin/jest.js __tests__", ("jest", True)),
+    ("npx jest", ("jest", False)),
+    ("jest --testPathPattern=unit", ("jest", True)),
+    ("vitest run src", ("vitest", True)),
+    ("echo jestful", ("", False)),
+])
+def test_what_a_script_says_about_where_its_runner_looks(body: str, expected) -> None:
+    assert checks._the_runner_a_script_invokes(body) == expected

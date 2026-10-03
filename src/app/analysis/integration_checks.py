@@ -3814,10 +3814,18 @@ def _the_runner_a_script_invokes(body: str) -> tuple[str, bool]:
     script has said where to look, and the default no longer applies.
     """
     text = str(body or "")
+    # A runner is the command word, or the file a path to its entry point ends
+    # in - never a directory on the way there. `\bjest\b` matched the
+    # `node_modules/jest/` of `node --experimental-vm-modules
+    # node_modules/jest/bin/jest.js`, read `/bin/jest.js` as a path the script
+    # narrows collection to, and so declared Jest told where to look in every
+    # project that started it the way `seed.py` says an ES-module project must.
+    # One run failed its sprint on the collision that hid: Jest loading the
+    # Playwright spec, three rounds in a row.
     for runner, pattern in (
         ("playwright", r"\bplaywright\s+test\b(.*)"),
-        ("vitest", r"\bvitest\b(?:\s+(?:run|watch|related))?(.*)"),
-        ("jest", r"\bjest\b(.*)"),
+        ("vitest", r"(?:^|\s)(?:\S*/)?vitest(?:\.m?js)?(?:\s+(?:run|watch|related))?(?=\s|$)(.*)"),
+        ("jest", r"(?:^|\s)(?:\S*/)?jest(?:\.c?js)?(?=\s|$)(.*)"),
         ("node --test", r"\bnode\b(?:\s+--[\w-]+(?:=\S+)?)*\s+--test\b(.*)"),
     ):
         found = re.search(pattern, text)

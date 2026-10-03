@@ -50,6 +50,15 @@ from test_graph_routing import (  # noqa: F401 - `agents` is a fixture
 )
 
 
+@pytest.fixture(autouse=True)
+def nothing_is_proven(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These scripts are about which thread a pause resumes on. Their fake
+    workspaces name planned files they never write, and a round that leaves a
+    proven problem out now has it recorded for it - a different test's subject,
+    and one more remediation round than these scripts provide for."""
+    monkeypatch.setattr("app.agents.specialists.what_the_files_already_prove", lambda *a, **k: [])
+
+
 @pytest.fixture
 def parallel(monkeypatch: pytest.MonkeyPatch) -> None:
     from app import config

@@ -49,6 +49,7 @@ import uuid
 import operator
 import time
 from datetime import datetime, timezone
+from pathlib import PurePosixPath
 from typing import Any, Mapping, TypedDict, Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -2860,6 +2861,74 @@ def _the_test_command_this_stage_left_failing(repo_root: str, stage: str) -> tup
         return "", ""
 
 
+def _proven_problems_the_round_left_out(
+    proven: list[str], reported: list[Any], milestone: Any
+) -> list[Any]:
+    """A defect for each proven problem no reported defect names, or [].
+
+    The round is handed these as "already proven by reading the files ...
+    Report every one as a defect". Measured on one run: every round was told
+    the page `index.html` its plan named was missing, and rounds 0, 1 and 2
+    each reported one defect - the first proven item - and left the rest. The
+    page that made every browser test fail waited three rounds to be anyone's
+    task, while the remediation budget ran down on the others.
+
+    A proven problem counts as reported when a reported defect names one of
+    the files it names; one that names no file, when a reported defect shares
+    its opening words. It is owned by the work order whose files it names, as
+    the plan assigns them; with none, by testing, which ran into it.
+    """
+    from app.analysis.integration_checks import files_named_in
+
+    def said(defect: Any) -> str:
+        parts = [
+            getattr(defect, "description", ""),
+            getattr(defect, "actual_behavior", ""),
+            " ".join(getattr(defect, "affected_files", None) or ()),
+        ]
+        return " ".join(str(part or "") for part in parts)
+
+    told = [said(defect) for defect in reported]
+    owners: dict[str, str] = {}
+    for task in getattr(milestone, "delegated_tasks", None) or ():
+        role = str(getattr(getattr(task, "specialist_role", ""), "value", None) or getattr(task, "specialist_role", ""))
+        for name in getattr(task, "files", None) or ():
+            owners.setdefault(PurePosixPath(str(name)).name, role)
+
+    left_out: list[Any] = []
+    for problem in proven:
+        named = files_named_in(problem)
+        if named:
+            if any(name in text for name in named for text in told):
+                continue
+        else:
+            opening = " ".join(problem.lower().split()[:6])
+            if any(opening and opening in text.lower() for text in told):
+                continue
+        owner = next((owners[name] for name in sorted(named) if name in owners), "testing")
+        try:
+            left_out.append(ReportedDefect(
+                description=problem,
+                severity="major",
+                reproduction_steps="Read the files it names; this was decided by comparing them.",
+                expected_behavior="The two files agree.",
+                actual_behavior=problem,
+                affected_files=[],
+                owner=owner,
+            ))
+        except Exception:  # noqa: BLE001 - an owner the model type refuses
+            left_out.append(ReportedDefect(
+                description=problem,
+                severity="major",
+                reproduction_steps="Read the files it names; this was decided by comparing them.",
+                expected_behavior="The two files agree.",
+                actual_behavior=problem,
+                affected_files=[],
+                owner="testing",
+            ))
+    return left_out
+
+
 def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any | None:
     """A defect for a test round whose own last run of the suite failed, or None.
 
@@ -5109,6 +5178,33 @@ def build_workflow_graph(
 
         test_result: SpecialistOutput = update.pop("__test_result__")
         reported: list[ReportedDefect] = list(test_result.defects)
+        # Read after the round, so a problem it fixed - a test config is its to
+        # change - is not reported back to it as still there.
+        try:
+            from app.agents.specialists import what_the_files_already_prove
+
+            still_proven = what_the_files_already_prove(
+                state["repository"].root_path,
+                getattr(state.get("stack_selection"), "technology_stack", None),
+                [
+                    *(getattr(milestone, "milestone_scope", None) or ()),
+                    *(
+                        getattr(task, "task_description", "")
+                        for task in (getattr(milestone, "delegated_tasks", None) or ())
+                    ),
+                ],
+                _what_later_sprints_build(state),
+            )
+            left_out = _proven_problems_the_round_left_out(still_proven, reported, milestone)
+        except Exception:  # noqa: BLE001 - the round's own report stands
+            logger.debug("Could not compare the round's report with what is proven", exc_info=True)
+            left_out = []
+        if left_out:
+            logger.warning(
+                "test_round_%d left out %d problem(s) it was handed as proven; recording them as defects",
+                test_round, len(left_out),
+            )
+            reported = reported + left_out
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}"

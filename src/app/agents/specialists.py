@@ -747,29 +747,7 @@ def build_test_run_request(
     """
     files_text = "\n".join(f"- {name}" for name in changed_files) or "- (none reported)"
 
-    proven = []
-    try:
-        from app.analysis.integration_checks import problems_that_break_the_product
-
-        proven = problems_that_break_the_product(repository_root, stack)
-        # A requirement a later sprint builds is not this sprint's defect. See
-        # `planned_for_a_later_sprint`.
-        from app.analysis.integration_checks import planned_for_a_later_sprint
-
-        proven = [p for p in proven if not planned_for_a_later_sprint(p, later_sprints)]
-    except Exception:  # noqa: BLE001 - a brief is better without them than absent
-        proven = []
-    try:
-        from app.analysis.planned_files import files_the_plan_named_that_are_missing
-
-        # The one comparison the workspace cannot make against itself. A file
-        # planned and never written is referenced by nothing, so nothing on disk
-        # is inconsistent and no check that reads only the workspace can see it.
-        # One run finished a "single-page application" with no HTML file,
-        # 34 tests passing, and three test rounds reporting no defect.
-        proven = proven + files_the_plan_named_that_are_missing(planned, repository_root)
-    except Exception:  # noqa: BLE001 - same reason
-        pass
+    proven = what_the_files_already_prove(repository_root, stack, planned, later_sprints)
     proven_text = ""
     if proven:
         proven_text = (
@@ -825,6 +803,41 @@ def build_test_run_request(
         "that lets through what another refuses is a defect."
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def what_the_files_already_prove(
+    repository_root: str, stack: Any = None, planned: Sequence[str] = (), later_sprints: str = ""
+) -> list[str]:
+    """The problems a test round is handed as proven, before it runs anything.
+
+    One list for the brief and for the workflow that reads the round's answer,
+    so a problem the round leaves out can be told from one it was never shown.
+    Never raises.
+    """
+    proven = []
+    try:
+        from app.analysis.integration_checks import problems_that_break_the_product
+
+        proven = problems_that_break_the_product(repository_root, stack)
+        # A requirement a later sprint builds is not this sprint's defect. See
+        # `planned_for_a_later_sprint`.
+        from app.analysis.integration_checks import planned_for_a_later_sprint
+
+        proven = [p for p in proven if not planned_for_a_later_sprint(p, later_sprints)]
+    except Exception:  # noqa: BLE001 - a brief is better without them than absent
+        proven = []
+    try:
+        from app.analysis.planned_files import files_the_plan_named_that_are_missing
+
+        # The one comparison the workspace cannot make against itself. A file
+        # planned and never written is referenced by nothing, so nothing on disk
+        # is inconsistent and no check that reads only the workspace can see it.
+        # One run finished a "single-page application" with no HTML file,
+        # 34 tests passing, and three test rounds reporting no defect.
+        proven = proven + files_the_plan_named_that_are_missing(planned, repository_root)
+    except Exception:  # noqa: BLE001 - same reason
+        pass
+    return proven
 
 
 def _observed_output(observed: dict[str, str] | None) -> str:

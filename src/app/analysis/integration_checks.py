@@ -3575,6 +3575,70 @@ def _servers_started_by_a_test_runner(files: list[Path], root: Path) -> set[Path
     return started
 
 
+#: The port a runner's config waits on: `port: 3002`, or the one in `url:`.
+_A_WAITED_ON_PORT = re.compile(
+    r"""\b(?:port\s*:\s*(\d{2,5})\b|url\s*:\s*["'`]https?://(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5}))"""
+)
+#: Ports a server source binds without asking the environment: `listen(3000`,
+#: `const port = 3000`, `PORT = 3000`. `process.env.PORT || 3000` is not
+#: literal - the runner may set it - so a file that reads the environment for
+#: its port is never reported.
+_A_LITERAL_PORT = re.compile(
+    r"""(?:\.listen\s*\(\s*(\d{2,5})\b|\b(?:const|let|var)\s+port\s*=\s*(\d{2,5})\b|\bPORT\s*=\s*(\d{2,5})\b)""",
+    re.I,
+)
+_PORT_FROM_THE_ENVIRONMENT = re.compile(r"process\.env\b|Deno\.env\b|os\.environ|getenv\s*\(", re.I)
+
+
+def _a_test_server_on_another_port(files: list[Path], root: Path) -> list[str]:
+    """A runner that waits on a port its own server never listens on.
+
+    Measured on one run. `playwright.config.js` declared
+    `webServer: { command: 'node e2e/server.js', port: 3002 }` and
+    `baseURL: 'http://localhost:3002'`; `e2e/server.js` had `const port = 3000`
+    and `server.listen(port, ...)`. Playwright started the server, waited for
+    3002, and timed out before a single test ran. The rounds reported "server
+    cannot start on requested port" and a fix stage edited the config's port -
+    the half that was not wrong to begin with.
+
+    Read from the files only: the config the runner reads, the file its
+    command starts, and the literal ports in each. A server that reads its port
+    from the environment is never reported - the runner may be setting it.
+    """
+    by_name: dict[str, list[Path]] = {}
+    for path in files:
+        by_name.setdefault(path.name, []).append(path)
+    problems: list[str] = []
+    for config in files:
+        if not _A_TEST_RUNNER_CONFIG.match(config.name):
+            continue
+        literal = _without_comments(_read(config))
+        waited = {
+            int(a or b) for a, b in _A_WAITED_ON_PORT.findall(literal)
+        }
+        if not waited:
+            continue
+        for name in sorted(_files_a_command_launches(literal)):
+            for server in by_name.get(name, ()):
+                source = _without_comments(_read(server))
+                if _PORT_FROM_THE_ENVIRONMENT.search(source):
+                    continue
+                bound = {int(next(n for n in found if n)) for found in _A_LITERAL_PORT.findall(source)}
+                if not bound or bound & waited:
+                    continue
+                problems.append(
+                    f"{config.relative_to(root)} starts {server.relative_to(root)} and "
+                    f"waits for it on port {', '.join(map(str, sorted(waited)))}, but "
+                    f"{server.relative_to(root)} listens on "
+                    f"{', '.join(map(str, sorted(bound)))}. The runner starts the server, "
+                    "waits for a port nothing opens, and times out before a single test "
+                    "runs - so every browser test fails, and none of those failures is "
+                    "about the product. Make the two numbers the same, in whichever "
+                    "file is wrong."
+                )
+    return problems
+
+
 def _a_server_in_a_browser_only_product(files: list[Path], root: Path, stack: Any) -> list[str]:
     """A server in a product whose own stack says there is none.
 
@@ -6073,6 +6137,8 @@ _FLOORS: dict[str, str] = {
     "the runners a project's unit tests are written for": "BREAKS",
     "the address a browser test opens against how the page loads its code": "BREAKS",
     "how Jest is started against tests written as ES modules": "BREAKS",
+    # No browser test can run, so the suite cannot pass for any product.
+    "the port a test runner waits on against the one its server opens": "BREAKS",
     # Nothing is broken: a field the brief asked for is simply never collected.
     "fields the brief says a record is added with against the page's controls": "CRITERION",
 }
@@ -6126,6 +6192,8 @@ _CHECKS: tuple[tuple[str, Any], ...] = (
     ("the address a browser test opens against how the page loads its code",
      lambda files, root, stack, brief: _a_browser_test_that_opens_a_module_page_from_disk(
          files, root)),
+    ("the port a test runner waits on against the one its server opens",
+     lambda files, root, stack, brief: _a_test_server_on_another_port(files, root)),
     ("how Jest is started against tests written as ES modules",
      lambda files, root, stack, brief: _jest_started_without_what_es_modules_need(files, root)),
     ("each test runner's files against what the other runners also collect",

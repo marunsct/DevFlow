@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `1a2074b`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `1a2074b` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-0b81710f-44b2-49e0-b6d5-a68cb34d0288` (see `data/loop/current_run.txt`), started 11:42 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-0e0b4ae4 FAILED at 11:36 JST on 2026-10-03: sprint 1 passed, sprint 2 used its three re-plans on Jest loading the Playwright spec. The runner-collision check that names this was blind to it, reading `node_modules/jest/bin/jest.js` (the start command seed.py recommends) as a narrowed path (fixed `1a2074b`). |
+| branch | `harness-hardening-session`, last code commit `8aea6dc`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `8aea6dc` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-de592ee9-eb29-4f71-ade1-422ebf401a6c` (see `data/loop/current_run.txt`), started 12:22 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-0b81710f was cancelled at 12:14 JST on 2026-10-03, 31 minutes in, after committing sprint 3: a fix stage left temp2.js-temp5.mjs probes the sweep did not recognise, a round reported a defect in one, and a tester was refused seven deletes as product code (fixed `8aea6dc`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

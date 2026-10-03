@@ -231,6 +231,24 @@ def _declarations_of(name: str, content: str) -> list[int]:
     return [content.count("\n", 0, m.start()) + 1 for m in pattern.finditer(content)]
 
 
+#: `SyntaxError: Duplicate export of 'FilterState'`
+_DUPLICATE_EXPORT = re.compile(r"Duplicate export of '([^']+)'")
+
+
+def _exports_of(name: str, content: str) -> list[int]:
+    """The lines that export `name`: a declaration, or a list `export { ... }`."""
+    declared = re.compile(
+        rf"^\s*export\s+(?:async\s+)?(?:const|let|var|function\*?|class)\s+{re.escape(name)}\b", re.M
+    )
+    listed = re.compile(r"\bexport\s*\{([^}]*)\}", re.S)
+    lines = [content.count("\n", 0, m.start()) + 1 for m in declared.finditer(content)]
+    for m in listed.finditer(content):
+        names = [part.split(" as ")[-1].strip() for part in m.group(1).split(",")]
+        if name in names:
+            lines.append(content.count("\n", 0, m.start()) + 1)
+    return sorted(set(lines))
+
+
 def _a_comment_that_ended_early(content: str) -> tuple[int, int] | None:
     """(where a block comment opened, where a `*/` inside it closed it), or None.
 
@@ -302,6 +320,20 @@ def _the_other_half(
             return (
                 f" `{duplicate.group(1)}` is declared on lines {listed}; remove "
                 "or rename one of them."
+            )
+        return ""
+    exported = _DUPLICATE_EXPORT.search(detail)
+    if exported:
+        # One run's `specialist_backend_1` was told "Duplicate export of
+        # 'FilterState'" at the `export { FilterState, applyFilter }` closing the
+        # file, five times. The other export was `export const FilterState` near
+        # the top, which the refusal never showed.
+        lines = _exports_of(exported.group(1), content)
+        if len(lines) > 1:
+            listed = " and ".join(str(number) for number in lines[:4])
+            return (
+                f" `{exported.group(1)}` is exported on lines {listed}; a name may be "
+                "exported once - drop it from one of them."
             )
         return ""
     if "Unexpected token" in detail or "Unexpected end of input" in detail:

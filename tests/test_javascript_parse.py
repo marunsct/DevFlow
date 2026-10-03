@@ -166,3 +166,34 @@ def test_a_shadowed_name_in_an_inner_scope_is_not_a_duplicate(tmp_path: Path) ->
     )
 
     assert parse_error(tmp_path / "d.mjs", body) is None
+
+
+@needs_node
+def test_a_name_exported_twice_names_both_exports(tmp_path: Path) -> None:
+    """One run's stage was told "Duplicate export of 'FilterState'" at the
+    `export { ... }` closing the file, five times, and never shown the
+    `export const FilterState` near the top."""
+    body = (
+        "export const FilterState = { ALL: 'all' };\n"
+        "function applyFilter(tasks) {\n  return tasks;\n}\n"
+        "export { FilterState, applyFilter };\n"
+    )
+
+    problem = parse_error(tmp_path / "app.mjs", body)
+
+    assert problem is not None
+    assert "`FilterState` is exported on lines 1 and 5" in problem
+
+
+@needs_node
+def test_a_renamed_export_is_counted_by_its_exported_name(tmp_path: Path) -> None:
+    body = (
+        "export function run() {}\n"
+        "function go() {}\n"
+        "export { go as run };\n"
+    )
+
+    problem = parse_error(tmp_path / "app.mjs", body)
+
+    assert problem is not None
+    assert "`run` is exported on lines 1 and 3" in problem

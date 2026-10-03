@@ -120,6 +120,12 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
     # that tracks line counts had two numbers for one unchanged file.
     count = len(text.splitlines())
     head = f"  {name} ({count} lines)"
+    owner = _owned_by_the_harness(root, name)
+    if owner:
+        # Marked where a stage looks on every call. Listed as an ordinary file,
+        # the harness's server read as product: one run's lead planned work
+        # orders to change it and its stages tried to run it 19 times.
+        return [f"{head} - {owner}: {_what_to_do_with(owner)}"]
     try:
         changed_by = project_memory.who_changed(root, name)
         if changed_by:
@@ -148,6 +154,25 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
         if found:
             out[0] += ": " + ", ".join(found)
     return out
+
+
+def _owned_by_the_harness(root: Path, name: str) -> str:
+    try:
+        from app.stacks.contract import owned_by_the_harness
+
+        return owned_by_the_harness(root, name)
+    except Exception:  # noqa: BLE001 - the digest must survive a bad contract
+        return ""
+
+
+def _what_to_do_with(owner: str) -> str:
+    """What a stage may do with a file the harness owns."""
+    from app.stacks import contract
+
+    return {
+        contract.KEPT_SETUP: "the acceptance command runs it; do not change, run or test it",
+        contract.LOCKED_SUITE: "read it for what the product must do; never change it",
+    }.get(owner, "not yours to change")
 
 
 #: A language the suffix list does not name. `_CODE_SUFFIXES` is JS and

@@ -1514,16 +1514,12 @@ def _a_file_the_harness_keeps(root: Path, relative: str) -> str | None:
     try:
         from app.stacks import contract
 
-        found = contract.the_pack(root)
+        if contract.owned_by_the_harness(root, relative) != contract.KEPT_SETUP:
+            return None
+        record = contract.read(root) or {}
     except Exception:  # noqa: BLE001 - no contract, nothing kept
         return None
-    if found is None:
-        return None
-    pack, record = found
     project = str(record.get("project") or "")
-    kept = {f"{project}/{name}" for name in pack.kept_files}
-    if relative not in kept:
-        return None
     command = " ".join(str(part) for part in record.get("acceptance_test") or [])
     return (
         f"'{relative}' is test configuration the harness set up and keeps: it starts the "

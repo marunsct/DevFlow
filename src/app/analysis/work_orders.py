@@ -203,6 +203,51 @@ def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) 
         return milestone
 
 
+def _owned_by_the_harness(repo_root: str | Path | None, path: str) -> str:
+    """`app.stacks.contract.owned_by_the_harness`, or "" when it cannot tell."""
+    try:
+        from app.stacks.contract import owned_by_the_harness
+
+        return owned_by_the_harness(repo_root, path)
+    except Exception:  # noqa: BLE001 - no contract: nothing is the harness's
+        return ""
+
+
+def with_the_harness_s_files_left_out(milestone: Any, repo_root: str | Path | None) -> Any:
+    """The plan without the files the harness owns on any work order.
+
+    For a plan dispatched although the definition of ready found such a file:
+    a specialist handed `files: [<the harness's server>]` spends its stage on
+    a change the harness puts back. Measured on one run: two work orders and
+    a sprint goal aimed at the kept acceptance setup, then 35 refused calls
+    across the stages that followed them. Never raises.
+    """
+    try:
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        changed = False
+        kept_out = []
+        for task in tasks:
+            files = [str(f) for f in getattr(task, "files", None) or []]
+            owned = [f for f in files if _owned_by_the_harness(repo_root, f)]
+            if owned:
+                changed = True
+                note = (
+                    f"\n\n(Taken off this work order: {', '.join(f'`{f}`' for f in owned)} - "
+                    "the harness owns it and puts back any change. Where the product fails a "
+                    "test because of how it starts or what it serves, the fix is in the product.)"
+                )
+                task = task.model_copy(update={
+                    "files": [f for f in files if f not in owned],
+                    "task_description": str(getattr(task, "task_description", "") or "") + note,
+                })
+            kept_out.append(task)
+        if not changed:
+            return milestone
+        return milestone.model_copy(update={"delegated_tasks": kept_out})
+    except Exception:  # noqa: BLE001 - the write guards still refuse the change
+        return milestone
+
+
 def _inside_the_project(path: str, project_dir: str, root: Path) -> str:
     clean = str(PurePosixPath(path.strip().lstrip("/"))) if path.strip() else ""
     if not clean or clean == ".":
@@ -354,6 +399,14 @@ def readiness_problems(
             why = _outside_the_project(path, project_dir)
             if why:
                 problems.append(f"{label}: file '{path}' {why}.")
+                continue
+            owner = _owned_by_the_harness(repo_root, path)
+            if owner:
+                problems.append(
+                    f"{label}: file '{path}' is {owner}. No work order changes it, and a "
+                    "change is put back. If the product fails a test because of how it "
+                    "starts or what it serves, the fix is in a product file: name that one."
+                )
         if (
             role not in _NOT_CODE
             and role != _TESTING

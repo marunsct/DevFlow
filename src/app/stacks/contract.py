@@ -76,6 +76,49 @@ def the_pack(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] |
     return pack, record
 
 
+def kept_paths(repo_root: str | Path | None) -> frozenset[str]:
+    """Workspace-relative paths of the files the harness keeps as set up."""
+    found = the_pack(repo_root)
+    if found is None:
+        return frozenset()
+    pack, record = found
+    project = str(record.get("project") or "")
+    return frozenset(f"{project}/{name}" if project else name for name in pack.kept_files)
+
+
+#: What `owned_by_the_harness` answers, one phrase per owner.
+HARNESS_RECORDS = "the harness's own records"
+KEPT_SETUP = "test setup the harness keeps"
+LOCKED_SUITE = "the locked acceptance suite"
+
+
+def owned_by_the_harness(repo_root: str | Path | None, relative_path: str) -> str:
+    """Who owns this workspace-relative path when the team does not, or "".
+
+    The one answer to the question, for every place that asks it: the write
+    guards that refuse a change, the definition of ready that refuses a work
+    order, and the digest that tells a stage what is there. Three copies of
+    this set would drift the way every duplicated rule in this harness has.
+    """
+    path = str(relative_path or "").strip().lstrip("/").replace("\\", "/")
+    while path.startswith("./"):
+        path = path[2:]
+    if not path or not repo_root:
+        return ""
+    if path == HARNESS_DIR or path.startswith(HARNESS_DIR + "/"):
+        return HARNESS_RECORDS
+    if path in kept_paths(repo_root):
+        return KEPT_SETUP
+    try:
+        from app.acceptance import suite
+
+        if suite.is_protected(repo_root, path):
+            return LOCKED_SUITE
+    except Exception:  # noqa: BLE001 - an unreadable lock protects nothing
+        logger.debug("Could not read the acceptance lock", exc_info=True)
+    return ""
+
+
 def enforce(repo_root: str | Path) -> list[str]:
     """Put back any runner configuration or manifest script a stage changed.
 

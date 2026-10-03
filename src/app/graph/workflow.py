@@ -5027,6 +5027,11 @@ def build_workflow_graph(
                     f"Not ready when dispatched: {problem}" for problem in problems
                 ]
             })
+        from app.analysis.work_orders import with_the_harness_s_files_left_out
+
+        update["milestone_plan"] = with_the_harness_s_files_left_out(
+            update["milestone_plan"], state["repository"].root_path
+        )
         update["work_order_problems"] = []
         update["unready_plan"] = ""
         update["best_unready_plan"] = ""

@@ -155,3 +155,30 @@ def test_a_retried_sprint_is_built_on_the_judgement_model() -> None:
     helper = source[source.index("def _the_model_for_this_attempt"):]
     for counter in ("sprint_replan_count", "milestone_revision_count", "release_attempts", "escalation_count"):
         assert counter in helper[:900]
+
+
+def test_unclaimed_criteria_go_to_the_sprint_that_names_them() -> None:
+    """One run's planner filled no `criteria`: with every id on the last sprint,
+    four of six sprints had nothing the suite could measure."""
+    plan = SprintPlanOutput(sprints=[SprintDefinition(goal=g, user_value="v") for g in [
+        "Walking skeleton: get the product running and create a record end to end.",
+        "Enable record editing, deletion and completion toggling.",
+        "Implement filtering by status.",
+        "Make the layout responsive for mobile and desktop.",
+        "Polish and hardening.",
+    ]])
+    texts = {
+        "AC-1": "Create new records with a name",
+        "AC-2": "Mark records as complete or incomplete",
+        "AC-3": "Edit a record's name",
+        "AC-4": "Delete records",
+        "AC-5": "Filter records by status",
+        "AC-6": "Responsive design for mobile and desktop",
+        "AC-7": "Exports a monthly report",
+    }
+    new, notes = with_every_criterion_assigned(plan, list(texts), texts)
+    assert [s.criteria for s in new.sprints] == [
+        ["AC-1"], ["AC-2", "AC-3", "AC-4"], ["AC-5"], ["AC-6"], ["AC-7"],
+    ]
+    assert any("by what each sprint says it builds" in n for n in notes)
+    assert any("AC-7 assigned to the last sprint" in n for n in notes)

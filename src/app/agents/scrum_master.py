@@ -452,13 +452,54 @@ def _the_acceptance_criteria(criteria: str) -> str:
     )
 
 
-def with_every_criterion_assigned(plan: Any, criteria_ids: list[str]) -> tuple[Any, list[str]]:
+_NOT_A_TOPIC = frozenset({
+    "the", "and", "with", "for", "from", "that", "this", "their", "them", "they", "into",
+    "users", "user", "can", "should", "must", "will", "able", "allow", "allows", "each",
+    "every", "work", "works", "working", "correctly", "properly", "functionality", "feature",
+    "features", "support", "supports", "between", "when", "after", "before", "have", "has",
+})
+
+
+def _topics(text: str) -> set[str]:
+    """The significant words of a text, cut to a short stem so forms of a word meet."""
+    words = re.findall(r"[a-z][a-z0-9]+", str(text).lower())
+    return {
+        (word[:-1] if word.endswith("s") and len(word) > 4 else word)[:4]
+        for word in words
+        if len(word) >= 4 and word not in _NOT_A_TOPIC
+    }
+
+
+def _the_sprint_that_builds_it(sprints: list[Any], criterion: str) -> int | None:
+    """The earliest sprint whose own words share the most topics with a criterion."""
+    wanted = _topics(criterion)
+    if not wanted:
+        return None
+    best, best_score = None, 0
+    for index, sprint in enumerate(sprints):
+        said = " ".join(
+            [str(getattr(sprint, "goal", "") or ""), str(getattr(sprint, "user_value", "") or "")]
+            + [str(item) for item in getattr(sprint, "in_scope", None) or []]
+            + [str(item) for item in getattr(sprint, "acceptance_criteria", None) or []]
+        )
+        score = len(wanted & _topics(said))
+        if score > best_score:
+            best, best_score = index, score
+    return best
+
+
+def with_every_criterion_assigned(
+    plan: Any, criteria_ids: list[str], texts: dict[str, str] | None = None
+) -> tuple[Any, list[str]]:
     """The plan with every criterion assigned to exactly one sprint, and what was changed.
 
-    Unknown ids are dropped, an id claimed twice stays with the first sprint, and
-    an id no sprint claims goes to the last sprint - which answers for every
-    criterion anyway. A walking skeleton with nothing to show is given the first
-    criterion a later sprint holds, when there is more than one sprint.
+    Unknown ids are dropped and an id claimed twice stays with the first
+    sprint. An id no sprint claims goes to the sprint whose goal and scope name
+    it best (`texts` holds each criterion's words) - one run's planner filled
+    no `criteria` at all, and with every id on the last sprint, four of six
+    sprints had nothing the suite could measure. Failing that, the last sprint,
+    which answers for every criterion anyway. A walking skeleton with nothing to
+    show is given the first criterion a later sprint holds.
     """
     sprints = list(getattr(plan, "sprints", None) or [])
     if not sprints or not criteria_ids:
@@ -480,6 +521,15 @@ def with_every_criterion_assigned(plan: Any, criteria_ids: list[str]) -> tuple[A
                 seen.add(item)
         cleaned.append(mine)
     unassigned = [item for item in known if item not in seen]
+    matched: list[str] = []
+    for item in list(unassigned):
+        index = _the_sprint_that_builds_it(sprints, (texts or {}).get(item, ""))
+        if index is not None:
+            cleaned[index].append(item)
+            unassigned.remove(item)
+            matched.append(f"{item} to sprint {index + 1}")
+    if matched:
+        notes.append("by what each sprint says it builds: " + ", ".join(matched))
     if unassigned:
         cleaned[-1].extend(unassigned)
         notes.append(f"{', '.join(unassigned)} assigned to the last sprint, which no sprint claimed")

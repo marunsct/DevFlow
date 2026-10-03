@@ -4851,8 +4851,10 @@ def build_workflow_graph(
             # Every criterion of the locked suite belongs to exactly one sprint.
             from app.agents.scrum_master import with_every_criterion_assigned
 
-            ids = [c.id for c in acceptance_suite.criteria(root_path) if c.id not in acceptance_suite.deferred(root_path)]
-            update["sprint_plan"], assignment_notes = with_every_criterion_assigned(update["sprint_plan"], ids)
+            numbered = [c for c in acceptance_suite.criteria(root_path) if c.id not in acceptance_suite.deferred(root_path)]
+            update["sprint_plan"], assignment_notes = with_every_criterion_assigned(
+                update["sprint_plan"], [c.id for c in numbered], {c.id: c.text for c in numbered}
+            )
             if assignment_notes:
                 logger.info("Sprint plan's criteria adjusted: %s", "; ".join(assignment_notes))
             from app.decisions import record_decision

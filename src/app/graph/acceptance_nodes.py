@@ -379,6 +379,51 @@ def _failing_due(state: Any) -> tuple[list[dict[str, Any]], str]:
     return failing, str(saved.get("command") or "")
 
 
+def sprint_already_done(state: Any) -> str:
+    """Why this sprint has nothing left to build, or "".
+
+    When every criterion due by a sprint already passes - an earlier sprint
+    built more than its share - a team closes the sprint rather than invent
+    work for it. Measured on one run with seven sprints: all nine criteria
+    passed by the third, and each later sprint's lead was sent back for
+    planning no work orders until it invented one ("noop_backend"), which was
+    then built, reviewed, tested and accepted - four times over.
+
+    Only for a sprint that was given criteria of its own (or the last, which
+    answers for all of them), with no change asked of it, and only on a run of
+    the suite made now, not on a remembered one.
+    """
+    root = _root(state)
+    if not suite.is_locked(root):
+        return ""
+    if [c for c in state.get("revision_comments") or [] if str(c).strip()]:
+        return ""
+    if state.get("escalation") or state.get("work_order_problems"):
+        return ""
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    if not sprints or index >= len(sprints):
+        return ""
+    own = list(getattr(sprints[index], "criteria", None) or [])
+    if not own and index < len(sprints) - 1:
+        return ""
+    excused = suite.deferred(root)
+    due = [c for c in (criteria_due(state) or []) if c not in excused]
+    if not due:
+        return ""
+    result = suite.run(root)
+    if not result.ran or result.runtime_problems:
+        return ""
+    passing = result.passing_ids()
+    if any(criterion not in passing for criterion in due):
+        return ""
+    return (
+        f"Every criterion due by sprint {index + 1} already passes ({', '.join(due)}), on a run of "
+        "the acceptance suite made at the start of the sprint, so there is nothing left to build "
+        "for it.\n" + result.summary(due)
+    )
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 

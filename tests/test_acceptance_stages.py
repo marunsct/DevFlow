@@ -226,3 +226,59 @@ def test_nothing_is_gated_without_a_locked_suite(tmp_path) -> None:
     assert nodes.due_criteria_failing(state) == ""
     assert nodes.failing_due_defects(state, []) == []
     assert nodes.acceptance_text_for(state) == ""
+
+
+def _all_passing(tmp_path, monkeypatch, failing=()):
+    _authored(tmp_path, ALL_THREE)
+    suite.lock(tmp_path)
+    names = {"AC-1": "[AC-1] adds", "AC-2": "[AC-2] deletes", "AC-3": "[AC-3] persists"}
+    monkeypatch.setattr(suite, "run", lambda root, **k: suite._judged(root, _ran(
+        passed_names=[n for c, n in names.items() if c not in failing],
+        failed_names=[n for c, n in names.items() if c in failing],
+    ), True))
+
+
+def test_a_sprint_whose_criteria_already_pass_has_nothing_left_to_build(tmp_path, monkeypatch) -> None:
+    """One run's last four of seven sprints invented a "noop" work order each,
+    because every criterion had passed since the third."""
+    _all_passing(tmp_path, monkeypatch)
+    state = _state(tmp_path, sprint_plan=_plan(["AC-1"], ["AC-2"], ["AC-3"]), current_sprint_index=1)
+
+    why = nodes.sprint_already_done(state)
+
+    assert "AC-1, AC-2" in why and "nothing left to build" in why
+
+
+def test_it_is_built_when_a_due_criterion_fails_or_a_change_was_asked(tmp_path, monkeypatch) -> None:
+    _all_passing(tmp_path, monkeypatch, failing=("AC-2",))
+    state = _state(tmp_path, sprint_plan=_plan(["AC-1"], ["AC-2"], ["AC-3"]), current_sprint_index=1)
+    assert nodes.sprint_already_done(state) == ""
+
+    _all_passing(tmp_path, monkeypatch)
+    asked = _state(tmp_path, sprint_plan=_plan(["AC-1"], ["AC-2"], ["AC-3"]), current_sprint_index=1,
+                   revision_comments=["Make the delete button red"])
+    assert nodes.sprint_already_done(asked) == ""
+    # A sprint given no criteria of its own builds its goal, unless it is the last.
+    no_own = _state(tmp_path, sprint_plan=_plan(["AC-1", "AC-2", "AC-3"], [], []), current_sprint_index=1)
+    assert nodes.sprint_already_done(no_own) == ""
+    no_own["current_sprint_index"] = 2
+    assert nodes.sprint_already_done(no_own) != ""
+
+
+def test_such_a_sprint_is_closed_like_an_accepted_one(tmp_path, monkeypatch) -> None:
+    from app.graph import delivery, engineering
+    from app.graph.workflow import _close_a_sprint_with_nothing_to_build
+
+    monkeypatch.setattr(delivery, "write_evidence", lambda *a, **k: None)
+    measured = []
+    monkeypatch.setattr(engineering, "accepted_state", lambda root: measured.append(root))
+    plan = SimpleNamespace(sprints=[SimpleNamespace(goal="One", criteria=["AC-1"]), SimpleNamespace(goal="Two", criteria=["AC-2"])])
+    state = _state(tmp_path, sprint_plan=plan, current_sprint_index=0, decisions=[])
+
+    update = _close_a_sprint_with_nothing_to_build(state, "Every criterion due by sprint 1 already passes")
+
+    assert update["stage"] == "sprint_advance" and measured == [str(tmp_path)]
+    (decision,) = update["decisions"]
+    assert decision["point"] == "sprint" and decision["decision"] == "accept without new work"
+    state["current_sprint_index"] = 1
+    assert _close_a_sprint_with_nothing_to_build(state, "x")["stage"] == "release"

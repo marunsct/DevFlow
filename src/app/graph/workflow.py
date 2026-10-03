@@ -4026,6 +4026,40 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     )
 
 
+def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -> dict[str, Any]:
+    """Accept a sprint whose criteria already pass, the way an accepted sprint is closed.
+
+    See `acceptance_nodes.sprint_already_done`. The same decision record,
+    evidence and accepted baseline as a sprint the milestone review accepted,
+    and the same route on: the person's own sprint review if they asked for
+    it, the next sprint, or the release.
+    """
+    from app.decisions import record_decision
+    from app.graph import delivery, engineering
+
+    sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+    index = int(state.get("current_sprint_index") or 0)
+    goal = str(getattr(sprints[index], "goal", "") or "") if index < len(sprints) else ""
+    accepted: dict[str, Any] = {}
+    record_decision(
+        state, accepted, point="sprint",
+        question=f"Is sprint {index + 1} done?",
+        options=["accept without new work", "plan work for it"],
+        decision="accept without new work",
+        rationale=why[:1500],
+    )
+    logger.info("Sprint %d needs no new work: its criteria already pass", index + 1)
+    delivery.write_evidence({**state, **accepted}, index + 1, goal)
+    engineering.accepted_state(state["repository"].root_path)
+    if _review_enabled(state, SPRINT_REVIEW):
+        next_stage = "user_review_sprint"
+    elif index < len(sprints) - 1:
+        next_stage = "sprint_advance"
+    else:
+        next_stage = "release"
+    return _handing_on(**accepted, stage=next_stage)
+
+
 def _escalate_to_a_human(
     state: WorkflowGraphState, error: str, **fields: Any
 ) -> dict[str, Any]:
@@ -4911,6 +4945,12 @@ def build_workflow_graph(
         ]
         previous_milestone = state.get("milestone_plan")
         revising = bool(revision_comments) and previous_milestone is not None
+        if not revising:
+            from app.graph import acceptance_nodes as nothing_left
+
+            why = nothing_left.sprint_already_done(state)
+            if why:
+                return _close_a_sprint_with_nothing_to_build(state, why)
         if revising:
             request = build_milestone_revision_request(
                 previous_milestone.model_dump_json(indent=2), revision_comments

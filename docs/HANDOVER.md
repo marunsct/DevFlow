@@ -70,9 +70,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `a59d512`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `a59d512` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
-| current run | `run-0e0b4ae4-87a9-42ad-a5c5-7a698eb9a5a8` (see `data/loop/current_run.txt`), started 11:11 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-82f10c90 was cancelled at 11:06 JST on 2026-10-03, 31 minutes in, on sprint 1's third attempt: Playwright waited for its test server on port 3002 while e2e/server.js listened on 3000, and no check named it (fixed `a59d512`). The diff guard, the closing-bracket repair and the append fix all fired correctly in that run. |
+| branch | `harness-hardening-session`, last code commit `1a2074b`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `1a2074b` (it carries the TypeScript compiler 6.0.3 and the tree-sitter grammar pack) |
+| current run | `run-0b81710f-44b2-49e0-b6d5-a68cb34d0288` (see `data/loop/current_run.txt`), started 11:42 JST (2026-10-03) by the loop account, `brief_low.md`, auto-approve on, on gpt-oss-20b at LM Studio. run-0e0b4ae4 FAILED at 11:36 JST on 2026-10-03: sprint 1 passed, sprint 2 used its three re-plans on Jest loading the Playwright spec. The runner-collision check that names this was blind to it, reading `node_modules/jest/bin/jest.js` (the start command seed.py recommends) as a narrowed path (fixed `1a2074b`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

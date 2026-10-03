@@ -535,7 +535,8 @@ export const Settings: React.FC = () => {
                 <p className="text-xs text-text-muted mb-3 leading-relaxed">
                   The stages that judge rather than produce - the architect, QA, the reviews,
                   the test rounds and the fixes - run on this model. Leave the name empty to
-                  run every stage on the model above. Empty fields below use the model above&rsquo;s.
+                  run every stage on the model above. Empty fields below use the model above&rsquo;s,
+                  except the address: on another provider an empty address means that provider&rsquo;s own.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -569,7 +570,7 @@ export const Settings: React.FC = () => {
                       value={settings.judgement_base_url ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_base_url: e.target.value })}
                       className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                      placeholder="empty: same as above"
+                      placeholder="empty: same server, or the provider's own"
                     />
                   </div>
                   <div>

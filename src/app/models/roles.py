@@ -35,8 +35,14 @@ def judgement_environment(environment: Mapping[str, str]) -> dict[str, str] | No
     built = dict(environment)
     built["OPENAI_MODEL"] = name
     provider = str(environment.get("JUDGEMENT_PROVIDER") or "").strip().lower()
+    default_provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
     if provider:
         built["LLM_PROVIDER"] = provider
+        if provider != default_provider:
+            # Another provider is somewhere else. Inheriting the default
+            # model's address sent a hosted judgement model's requests to the
+            # local server; without one, the provider's own address applies.
+            built.pop("OPENAI_BASE_URL", None)
     base_url = str(environment.get("JUDGEMENT_BASE_URL") or "").strip()
     if base_url:
         built["OPENAI_BASE_URL"] = base_url

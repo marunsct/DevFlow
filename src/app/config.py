@@ -89,11 +89,16 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         model_name = "default-model"
 
     llm_provider = _read_str(values, "LLM_PROVIDER", "local").lower()
+    # Imported here: `app.models` imports this module.
+    from app.models.endpoints import default_address
 
     # Construct Settings only after validation, so callers receive a trusted configuration object.
     return Settings(
         llm_provider=llm_provider,
-        openai_base_url=_read_str(values, "OPENAI_BASE_URL", "http://localhost:1234/v1"),
+        # The provider's own address when none is given: `localhost:1234` was
+        # the default for every provider, so `openai` without an address
+        # called a local server. See `app.models.endpoints`.
+        openai_base_url=_read_str(values, "OPENAI_BASE_URL", default_address(llm_provider)),
         openai_api_key=_openai_api_key(values, llm_provider),
         anthropic_api_key=values.get("ANTHROPIC_API_KEY") or None,
         # GEMINI_API_KEY is accepted as an alias: docker-compose and

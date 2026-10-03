@@ -196,9 +196,13 @@ def answering_without_reasoning(model: object) -> dict:
     always has room left to answer. Every other client gets nothing, rather
     than a field it may reject.
     """
-    if not getattr(model, "openai_api_base", None):
+    base = getattr(model, "openai_api_base", None)
+    if not base:
         return {}
-    extra = _without_the_template_switch(model)
+    from app.models.endpoints import is_self_hosted
+
+    # The template switch is a self-hosted server's; a hosted API may reject it.
+    extra = _without_the_template_switch(model) if is_self_hosted(base) else dict(getattr(model, "extra_body", None) or {})
     effort = least_reasoning_effort(model)
     if effort:
         extra[_EFFORT_FIELD] = effort

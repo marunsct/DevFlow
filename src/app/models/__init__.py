@@ -543,10 +543,14 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
         effort=getattr(resolved_settings, "thinking_effort", None),
         max_output_tokens=_max_output_tokens(),
     )
-    # `local` is the llama.cpp chat-template switch: an OpenAI-compatible
-    # server reached through a base URL. A hosted OpenAI endpoint neither needs
-    # it nor accepts it.
-    speaks_llama_cpp = bool(resolved_settings.openai_base_url)
+    # `local` is the llama.cpp chat-template switch, which only a self-hosted
+    # server reads; a hosted API neither needs it nor reliably accepts it. It
+    # was `bool(openai_base_url)` - every address a llama.cpp server - which
+    # sent the switch to a hosted judgement model on every call and left it no
+    # retry for a rate limit. See `app.models.endpoints`.
+    from app.models.endpoints import is_self_hosted
+
+    speaks_llama_cpp = is_self_hosted(resolved_settings.openai_base_url)
 
     primary = None
     fallback = None

@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `e6eb039`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `e6eb039` (deployed 22:28 JST on 2026-10-03) |
-| current run | `run-a4ea15b5-03a9-435d-a00b-378cafc6664a`, `web-todo`, started 22:28 JST (2026-10-03), auto mode, gpt-oss-20b, no judgement model configured. run-58190cd3 was cancelled 22:23 JST, 11 minutes in: the code review reported the next sprint's features as missing (it was not told the plan), and QA hung a call starting the pack's server by hand (fixed `e6eb039`). Before it, run-fa27ea5b was cancelled 22:05 JST (slow red suite, fixed port, QA without the brief; fixed `40b48f3`). |
+| branch | `harness-hardening-session`, last code commit `57b1fc8`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `57b1fc8` (deployed 00:51 JST on 2026-10-04) |
+| current run | `run-56e37323-21c6-4f61-8ad7-beec16aa687c`, `web-todo`, started 00:52 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`; resumed copies `langchain-c5` and `langchain-b1` stood down read-only. run-a4ea15b5 was cancelled 00:48 JST at 2h20m, sprint 3 of 5, 7 of 9 criteria passing: test rounds were shown later sprints' failures (sprint 1 escalated over sprint 3's filter), 115 calls tried to start the pack's server, stages edited the kept acceptance config (fixed `57b1fc8`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `3e4909b`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `3e4909b` (deployed 04:03 JST on 2026-10-04): the plan review R1-R6, the acceptance-port fix and the page check |
-| current run | `run-36ad4578-8e3b-469d-b6a8-999fbe533d69`, `web-todo`, started 04:04 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-a8a952c4 was cancelled 04:02 JST, 27 minutes in: its page threw while loading and no stage could see the error, only 'element not found' (page check added `3e4909b`). |
+| branch | `harness-hardening-session`, last code commit `4216193`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `4216193` (deployed 05:53 JST on 2026-10-04): plan review R1-R6, acceptance-port fix, page check with what the page shows |
+| current run | `run-85fcf530-ae94-4a36-86e1-67cfb49dc0d6`, `web-todo`, started 05:54 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-36ad4578 was cancelled 05:52 JST at 7 of 8 tests passing: its audit found the agents blind to what the page renders (an init() nothing called; fixed `4216193`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

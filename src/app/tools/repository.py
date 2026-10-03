@@ -1744,6 +1744,9 @@ def _guard_a_targeted_change(
         raise RepositoryToolError(
             f"Refusing to edit '{relative_path}': the path matches a credential file pattern."
         )
+    cut_off = _cut_off_at_a_quote(relative_path, replacement, editing=True)
+    if cut_off is not None:
+        raise RepositoryToolError(cut_off)
     installed = _installed_by_a_tool(root, target)
     if installed is not None:
         raise RepositoryToolError(installed)
@@ -3610,6 +3613,37 @@ def _what_is_structurally_wrong(
         return _javascript_parse_error(target, relative_path, content) or None
     except Exception:  # noqa: BLE001 - a probe must never fail its caller
         return None
+
+
+def _cut_off_at_a_quote(relative_path: str, content: str, *, editing: bool = False) -> str | None:
+    """The refusal for text that stops on a backslash, or None.
+
+    What the call's JSON does to a double quote written as `\\\\"`: the pair is
+    a backslash and then the quote that ends the string, so nothing after it
+    reaches the tool. Measured on one run: two stages sent `app.js` fifteen
+    times, every copy ending `return String(input).replace(/[&<>\\` on line
+    18 - the model's `/[&<>"']/g` cut at its quote. Each was refused as
+    "Invalid regular expression: missing /", which is true of the seventeen
+    lines that arrived and says nothing about the hundred that did not, so the
+    same call came back unchanged and the page was never written.
+
+    Only text that ends on the backslash itself: no complete file or edit does,
+    while a line continuation is followed by its newline.
+    """
+    if not content or not content.endswith("\\"):
+        return None
+    lines = content.split("\n")
+    verb = "change" if editing else "write"
+    return (
+        f"Refusing to {verb} '{relative_path}': what arrived ends with a backslash, "
+        f"partway through line {len(lines)}:\n    {lines[-1].strip()}\n"
+        "Nothing after that reached the tool. A double quote in the code sent as "
+        "`\\\\\"` does this: in the call's JSON that is a backslash and then the quote "
+        "that ends the string, so everything you wrote after it was cut off. "
+        "Nothing was written. Send it again with that quote as `\\\"`, or write that "
+        "part of the code with no backslash before a double quote - inside a "
+        "regular expression's [...] or a template string the quote needs none."
+    )
 
 
 def _refusal_for(relative_path: str, problem: str, *, editing: bool = False) -> str:
@@ -5635,6 +5669,9 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
+    cut_off = _cut_off_at_a_quote(relative_path, content)
+    if cut_off is not None:
+        raise RepositoryToolError(cut_off)
     installed = _installed_by_a_tool(artifact_root, target)
     if installed is not None:
         raise RepositoryToolError(installed)

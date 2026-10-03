@@ -290,6 +290,9 @@ class AcceptanceResult:
     #: What the product itself reported going wrong while the suite ran - a
     #: page's uncaught errors - from the pack's `runtime_report`.
     runtime_problems: list[str] = field(default_factory=list)
+    #: What the product shows a person before any test touches it (a page's
+    #: accessibility tree), from the same report; "" when not recorded.
+    shows: str = ""
 
     def failing(self, ids: Sequence[str] | None = None) -> list[CriterionResult]:
         wanted = set(ids) if ids is not None else None
@@ -326,15 +329,22 @@ class AcceptanceResult:
         return head + self.runtime_note() + ("\n" + "\n".join(rows) if rows else "")
 
     def runtime_note(self) -> str:
-        """What the product reported itself, before any test touched it, or ""."""
-        if not self.runtime_problems:
-            return ""
-        return (
-            "\nBefore any test touched it, the product itself reported (fix these first: code "
-            "that throws while the product loads stops everything after it, and the tests then "
-            "fail for no reason of their own):\n"
-            + "\n".join(f"  - {problem}" for problem in self.runtime_problems)
-        )
+        """What the product reported and showed by itself, before any test touched it, or ""."""
+        note = ""
+        if self.runtime_problems:
+            note += (
+                "\nBefore any test touched it, the product itself reported (fix these first: code "
+                "that throws while the product loads stops everything after it, and the tests then "
+                "fail for no reason of their own):\n"
+                + "\n".join(f"  - {problem}" for problem in self.runtime_problems)
+            )
+        if self.shows and self.report.failed:
+            note += (
+                "\nWhat the product shows when it loads, before any test touches it - the tree the "
+                "tests' locators search, so a control a test cannot find is absent here or named "
+                "differently here:\n" + self.shows
+            )
+        return note
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -349,6 +359,7 @@ class AcceptanceResult:
             "repairs": self.repairs,
             "problem": self.problem,
             "runtime_problems": self.runtime_problems,
+            "shows": self.shows,
         }
 
 
@@ -411,8 +422,8 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         output=output[-OUTPUT_TAIL_CHARS:],
         repairs=repairs,
         problem="" if report.found else "the runner wrote no report; its output is below",
-        runtime_problems=_read_runtime_problems(runtime_file),
     )
+    result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
     return _judged(repo_root, result, save)
 
 
@@ -427,16 +438,24 @@ def _runtime_report(repo_root: str | Path, project: str) -> Path | None:
     return Path(repo_root) / project / found[0].runtime_report
 
 
-def _read_runtime_problems(path: Path | None) -> list[str]:
+#: How much of what the product shows a result keeps.
+MOST_SHOWN_CHARS = 1_500
+
+
+def _read_runtime_report(path: Path | None) -> tuple[list[str], str]:
+    """(problems, what it shows) from the pack's runtime report; a bare list is problems only."""
     if path is None:
-        return []
+        return [], ""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
-    if not isinstance(data, list):
-        return []
-    return [str(item)[:400] for item in data if str(item).strip()][:MOST_RUNTIME_PROBLEMS]
+        return [], ""
+    if isinstance(data, list):
+        data = {"problems": data}
+    if not isinstance(data, dict):
+        return [], ""
+    problems = [str(item)[:400] for item in data.get("problems") or [] if str(item).strip()]
+    return problems[:MOST_RUNTIME_PROBLEMS], str(data.get("shows") or "")[:MOST_SHOWN_CHARS]
 
 
 def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> AcceptanceResult:

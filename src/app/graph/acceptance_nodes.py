@@ -404,10 +404,15 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # First, and on its own: what the product reported itself while it loaded.
     # It is usually the one cause behind every red criterion, and a fix aimed
     # at any single criterion's "element not found" never finds it.
+    saved = suite.last_result(_root(state)) or {}
     problems = [
-        p for p in (suite.last_result(_root(state)) or {}).get("runtime_problems") or []
+        p for p in saved.get("runtime_problems") or []
         if not any(str(p)[:80] in text for text in said)
     ]
+    # Each fix is handed one defect, so each carries what the product shows:
+    # "element not found" cannot tell an absent control from a misnamed one.
+    shown = str(saved.get("shows") or "")
+    seen = f" What the product shows when it loads, before any test touches it:\n{shown[:600]}" if shown else ""
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",
@@ -432,7 +437,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             severity="major",
             reproduction_steps=f"Run `{command}` in the project directory and read the {entry.get('id')} tests.",
             expected_behavior=str(entry.get("text") or ""),
-            actual_behavior=detail,
+            actual_behavior=detail + seen,
             affected_files=[],
             owner=_owner_for(state),
         ))

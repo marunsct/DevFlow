@@ -80,10 +80,10 @@ PAGE_LOAD_REPORT = "test-results/page-load.json"
 #: The kept global setup of a pack whose product is a page. `%(page)s` is the
 #: page's path. See `page_check`.
 _PAGE_CHECK = """// Kept by the harness. Before any test runs, the page is loaded once with
-// nothing driving it, and whatever the page itself reports going wrong is
+// nothing driving it, and what it reports going wrong and what it shows are
 // written down and printed: an error thrown while its scripts load stops all
-// the code after it, and every test then fails with "element not found" -
-// which says nothing about why.
+// the code after it, and a control nothing renders is never there - either way
+// every test fails with "element not found", which says nothing about why.
 import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -94,6 +94,7 @@ export default async function pageCheck(config) {
   const baseURL = config.projects?.[0]?.use?.baseURL;
   if (!baseURL) return;
   const problems = [];
+  let shows = '';
   const note = (text) => {
     if (problems.length < 20 && !problems.includes(text)) problems.push(text);
   };
@@ -125,6 +126,10 @@ export default async function pageCheck(config) {
     });
     await page.goto(new URL('%(page)s', baseURL).href, { waitUntil: 'load', timeout: 10_000 });
     await page.waitForTimeout(500);
+    // What a person opening the page sees, as the accessibility tree the
+    // tests' locators search: a control a test cannot find is either absent
+    // here or named differently here.
+    shows = (await page.locator('body').ariaSnapshot({ timeout: 3_000 })).slice(0, 1_500);
   } catch (error) {
     note(`the page did not load: ${String(error.message).split('\\n')[0]}`);
   } finally {
@@ -132,7 +137,7 @@ export default async function pageCheck(config) {
   }
   const root = config.configFile ? dirname(config.configFile) : process.cwd();
   mkdirSync(join(root, 'test-results'), { recursive: true });
-  writeFileSync(join(root, '%(report)s'), JSON.stringify(problems, null, 2));
+  writeFileSync(join(root, '%(report)s'), JSON.stringify({ problems, shows }, null, 2));
   if (problems.length) {
     console.log(
       '\\nThe page reported these problems when it loaded, before any test touched it:\\n'
@@ -140,6 +145,9 @@ export default async function pageCheck(config) {
       + '\\nCode that throws while the page loads stops everything after it, so the tests '
       + 'then fail with "element not found". Fix these first.\\n',
     );
+  }
+  if (shows) {
+    console.log(`\\nThe page, loaded with nothing driving it, shows:\\n${shows}\\n`);
   }
 }
 """
@@ -156,6 +164,13 @@ def page_check(page_path: str = "/") -> str:
     server before its global setup, so this sees the product the tests see,
     and its output is in every run of the suite, the agents' and the
     harness's alike.
+
+    It also records what the page shows - its accessibility tree, which is
+    what the tests' locators search. On another run the page loaded cleanly
+    and every test still waited for a field labelled "Title": the form was
+    built by an `init()` nothing called. Six fix stages worked on unit-test
+    setup instead, because "element not found" cannot tell an absent control
+    from a misnamed one, and the page's own tree tells both at a glance.
     """
     return _PAGE_CHECK % {"page": page_path, "report": PAGE_LOAD_REPORT}
 

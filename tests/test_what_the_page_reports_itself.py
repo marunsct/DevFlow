@@ -42,6 +42,7 @@ def test_every_pack_with_a_page_checks_it_before_the_tests() -> None:
             assert "globalSetup: './playwright.setup.mjs'" in files["playwright.config.js"], pack.name
             setup = files["playwright.setup.mjs"]
             assert "pageerror" in setup and "console" in setup and "requestfailed" in setup
+            assert "ariaSnapshot" in setup, "what the page shows tells an absent control from a misnamed one"
             assert pack.runtime_report in setup
             assert "playwright.setup.mjs" in pack.kept_files, "agents must not be able to silence it"
         else:
@@ -127,3 +128,45 @@ def test_they_become_one_blocking_defect_ahead_of_the_criteria(tmp_path) -> None
 def test_a_page_that_loads_cleanly_adds_nothing(tmp_path) -> None:
     result = suite.AcceptanceResult(ran=True, command="npm run test:acceptance", report=junit.Report(found=True))
     assert result.runtime_note() == ""
+
+
+SHOWN = '- main:\n  - heading "Notes" [level=1]'
+
+
+def _reporting(tmp_path: Path, pack, report: dict):
+    def run(argv, category, working_directory):
+        project = tmp_path / working_directory
+        (project / pack.acceptance_report).write_text(
+            "<testsuites><testcase name='[AC-1] adds'><failure message=\"getByLabel('Title') not found\"/></testcase>"
+            "<testcase name='[AC-2] deletes'/></testsuites>"
+        )
+        (project / pack.runtime_report).write_text(json.dumps(report))
+        return {"returncode": "1"}
+
+    return run
+
+
+def test_what_the_page_shows_reaches_the_summary_and_every_criterion_s_defect(tmp_path) -> None:
+    """Measured on one run: the page loaded cleanly and every test waited for a
+    field labelled "Title" - the form was built by an `init()` nothing called.
+    Six fix stages worked on unit-test setup instead."""
+    pack = _locked(tmp_path)
+    result = suite.run(tmp_path, runner=_reporting(tmp_path, pack, {"problems": [], "shows": SHOWN}))
+
+    assert result.shows == SHOWN and result.runtime_problems == []
+    assert SHOWN in result.summary()
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "sprint_plan": SimpleNamespace(sprints=[SimpleNamespace(criteria=["AC-1"])]),
+        "current_sprint_index": 0,
+    }
+    (defect,) = nodes.failing_due_defects(state, [])
+    assert defect.description.startswith("[AC-1") and SHOWN in defect.actual_behavior
+
+
+def test_a_passing_suite_is_not_told_what_the_page_shows(tmp_path) -> None:
+    result = suite.AcceptanceResult(
+        ran=True, command="npm run test:acceptance",
+        report=junit.Report(found=True, tests=[junit.TestResult(name="[AC-1] adds")]), shows=SHOWN,
+    )
+    assert SHOWN not in result.summary()

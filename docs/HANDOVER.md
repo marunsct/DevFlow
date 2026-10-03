@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `aa8c02c` (not yet deployed: readiness asks for a testing work order only when behaviour changes; deploy when run-85fcf530 ends), pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `4216193` (deployed 05:53 JST on 2026-10-04): plan review R1-R6, acceptance-port fix, page check with what the page shows |
-| current run | `run-85fcf530-ae94-4a36-86e1-67cfb49dc0d6`, `web-todo`, started 05:54 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-36ad4578 was cancelled 05:52 JST at 7 of 8 tests passing: its audit found the agents blind to what the page renders (an init() nothing called; fixed `4216193`). |
+| branch | `harness-hardening-session`, last code commit `27e0714`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `27e0714` (deployed 06:36 JST on 2026-10-04): plan review R1-R6, acceptance-port fix, page check, presentation-only readiness, harness runs never withheld |
+| current run | `run-d3827f72-dc92-412e-944b-df1385726ef7`, `web-todo`, started 06:37 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-85fcf530 was cancelled 06:30 JST after sprint 1 was accepted: the harness's own suite run at acceptance was withheld by the agents' repeat guard, so the accepted baseline had no acceptance results (fixed `27e0714`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

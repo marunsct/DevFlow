@@ -1024,12 +1024,20 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         # as never executed - four wrong findings out of ten, for tests that
         # run on every `npm test`.
         imported = _what_those_files_import(listed_files, project)
+        from app.analysis.test_discovery import holds_no_test
+
         tests = [
             path
             for path in files
             if path.suffix.lower() in {".js", ".mjs", ".cjs"}
             and is_test(str(path.relative_to(root)))
             and _is_within(path, project)
+            # Named like a test and holding none: a probe. One run's
+            # `test_import.js` imported `app.js` and printed its state - no
+            # assertion, no test registered - and was reported stranded every
+            # round; recorded as a defect each time, it could never be cleared,
+            # because running it would prove nothing.
+            and not holds_no_test(_read(path))
         ]
         # A spec another runner owns is not stranded by `scripts.test`; it is
         # simply not that runner's file. Reported separately below, because the

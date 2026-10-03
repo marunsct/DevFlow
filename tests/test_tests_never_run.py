@@ -36,7 +36,11 @@ def _project(tmp_path: Path, test_script: str, names: list[str]) -> list[str]:
     )
     (project / "app.js").write_text("export const a = 1;\n", encoding="utf-8")
     for name in names:
-        (project / name).write_text("import assert from 'node:assert';\n", encoding="utf-8")
+        # An assertion, as the measured suites had: a file named like a test
+        # that asserts nothing is a probe, and not reported as stranded.
+        (project / name).write_text(
+            "import assert from 'node:assert';\nassert.equal(1, 1);\n", encoding="utf-8"
+        )
     return _tests_the_project_never_runs(_source_files(tmp_path), tmp_path)
 
 

@@ -1004,7 +1004,19 @@ def _refuse_to_switch_a_suite_off(relative_path: str, before: str, after: str) -
         raise RepositoryToolError(problem)
 
 
-def _refuse_a_hand_built_dom_again(relative_path: str, content: str) -> None:
+def _the_dom_unit_tests_get(target: Path | None) -> str:
+    """Where the unit tests' browser globals come from in the project `target`
+    is in, or "" when its pack gives them none (or no pack set it up)."""
+    try:
+        from app.stacks.contract import the_pack_above
+
+        found = the_pack_above(target)
+    except Exception:  # noqa: BLE001 - a note is not worth failing a write
+        return ""
+    return found[0].unit_dom if found else ""
+
+
+def _refuse_a_hand_built_dom_again(relative_path: str, content: str, target: Path | None = None) -> None:
     """Refuse a hand-built browser API, once the note has been ignored twice.
 
     `a_dom_built_by_hand` says so and lets the write through, on the reasoning
@@ -1032,11 +1044,22 @@ def _refuse_a_hand_built_dom_again(relative_path: str, content: str) -> None:
 
         if times_warned_about_a_mock_dom(relative_path) < MOCK_DOM_WARNINGS_BEFORE_REFUSING:
             return
-        if not a_dom_built_by_hand(relative_path, content):
+        given = _the_dom_unit_tests_get(target)
+        if not a_dom_built_by_hand(relative_path, content, given):
             return
     except Exception:  # noqa: BLE001 - a bookkeeping miss must not refuse a write
         logger.debug("Could not check the DOM history of %s", relative_path, exc_info=True)
         return
+    if given:
+        raise RepositoryToolError(
+            f"Refusing to write '{relative_path}': it sets up a page of its own, and "
+            "you have been told twice already in this stage what that costs. Nothing "
+            f"was changed. Unit tests here already run with a browser's globals, from "
+            f"{given}, which the harness keeps; a second page swaps them out halfway "
+            "and the code under test fails on elements and events that are not its "
+            "own. Delete the setup, use `document` and `window` as they are, and put "
+            "the markup a test needs into `document.body.innerHTML` in `beforeEach`."
+        )
     raise RepositoryToolError(
         f"Refusing to write '{relative_path}': it assigns `global.document` or "
         "`global.window`, and you have been told twice already in this stage "
@@ -4373,7 +4396,7 @@ def _the_test_command_will_not_run_this(target: Path | None) -> str:
         return ""
 
 
-def _a_dom_built_by_hand_and_remember(relative_path: str, content: str) -> str:
+def _a_dom_built_by_hand_and_remember(relative_path: str, content: str, dom_given: str = "") -> str:
     """The hand-built-DOM note, counted so the third one can be a refusal.
 
     Counted here rather than at the refusal, because the refusal has to know
@@ -4382,7 +4405,7 @@ def _a_dom_built_by_hand_and_remember(relative_path: str, content: str) -> str:
     """
     from app.analysis.test_discovery import a_dom_built_by_hand
 
-    note = a_dom_built_by_hand(relative_path, content)
+    note = a_dom_built_by_hand(relative_path, content, dom_given)
     if note:
         try:
             from app.tools.seen_content import record_mock_dom_warning
@@ -4415,6 +4438,7 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
         undiscoverable_test,
     )
 
+    given = _the_dom_unit_tests_get(target)
     try:
         notes = [
             undiscoverable_test(relative_path, content),
@@ -4424,8 +4448,8 @@ def _discovery_note(relative_path: str, content: str, target: Path | None = None
             tests_the_runner_will_never_call(relative_path, content),
             a_suite_that_only_checks_things_exist(relative_path, content),
             a_suite_that_asserts_only_constants(relative_path, content),
-            _a_dom_built_by_hand_and_remember(relative_path, content),
-            a_test_that_needs_a_dom(relative_path, content, target.parent if target else None),
+            _a_dom_built_by_hand_and_remember(relative_path, content, given),
+            a_test_that_needs_a_dom(relative_path, content, target.parent if target else None, given),
             a_call_the_signature_does_not_accept(
                 relative_path, content, target.parent if target else None
             ),
@@ -4771,7 +4795,7 @@ def _write_unless_it_changes_nothing(
         # Edits are how one run's mock grew: 145 lines to 1,195, one
         # `edit_artifact` at a time. Refusing only the write would leave the
         # path that was actually used wide open.
-        _refuse_a_hand_built_dom_again(relative_path, updated)
+        _refuse_a_hand_built_dom_again(relative_path, updated, target)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
@@ -5972,7 +5996,7 @@ def write_approved_artifact(
         if not _sent_again_past_a_grammar(relative_path, content):
             raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
-    _refuse_a_hand_built_dom_again(relative_path, content)
+    _refuse_a_hand_built_dom_again(relative_path, content, target)
     if target.is_file():
         try:
             _refuse_to_switch_a_suite_off(

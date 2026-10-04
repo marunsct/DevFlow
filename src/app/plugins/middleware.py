@@ -37,6 +37,7 @@ from pathlib import Path
 from typing import Any, Callable, List
 
 from app.plugins.registry import get_plugin_instructions
+from app.plugins.seed import SETUP
 
 logger = logging.getLogger(__name__)
 
@@ -383,7 +384,9 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
             logger.info("No frameworks could be read from the stack document")
 
         store = PluginStore.shared()
-        known = set(store.get_all_framework_names())
+        # A setup row is the second half of another name's notes, never a
+        # framework of its own.
+        known = {name for name in store.get_all_framework_names() if not name.endswith(SETUP)}
         detected = list(dict.fromkeys(_the_known_name_for(name, known) for name in detected))
         detected += [
             name for name in _named_in_the_selected_stack(content, known) if name not in detected
@@ -489,6 +492,20 @@ def _extract_stack_keywords(repo_root: str) -> List[str]:
     return keywords
 
 
+def _with_the_setup_notes(keywords: List[str], repo_root: str) -> List[str]:
+    """`keywords`, each followed by its notes on setting test runners up -
+    unless a stack pack scaffolded the project, which set them up and keeps
+    them. See `app.plugins.seed.SETUP`."""
+    try:
+        from app.stacks.contract import read as the_contract
+
+        if the_contract(repo_root) is not None:
+            return list(keywords)
+    except Exception:  # noqa: BLE001 - without a contract the notes are the help there is
+        logger.debug("Could not read the stack contract", exc_info=True)
+    return [name for keyword in keywords for name in (keyword, keyword + SETUP)]
+
+
 def build_plugin_instructions_middleware(repo_root: str) -> Any:
     """Append the stack's framework instructions to every call's system prompt."""
     from langchain.agents.middleware import AgentMiddleware
@@ -503,7 +520,7 @@ def build_plugin_instructions_middleware(repo_root: str) -> Any:
             if not keywords:
                 return handler(request)
 
-            instructions = get_plugin_instructions(keywords)
+            instructions = get_plugin_instructions(_with_the_setup_notes(keywords, repo_root))
             if not instructions:
                 return handler(request)
 

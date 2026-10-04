@@ -168,6 +168,14 @@ SEED_INSTRUCTIONS: dict[str, str] = {
 }
 
 
+#: Where a project's notes on setting its test runners up are kept: under the
+#: same key with this on the end. A project a stack pack scaffolded has its
+#: runners, configuration and scripts set up and kept by the harness, so
+#: `app.plugins.middleware` leaves these rows out there - they told one run's
+#: agents to install Playwright, declare a `webServer` and never use jsdom,
+#: beside a pack that had done the first two and provided the third.
+SETUP = ":setup"
+
 #: How a page that runs in a browser is tested. Attached to every key that means
 #: "this product renders a page". Moved here from `TESTABILITY_RULE` and
 #: `TESTING_DEPENDENCY_RULE`, where it was appended to every run whatever its
@@ -184,14 +192,31 @@ _BROWSER_PAGE_TESTING = """Testing a page that runs in a browser:
   tag in your HTML is unreachable: no runner can import it, so the only way to
   test it is to copy it, and a copy passes whatever your code does. One `app.js`
   beside `index.html` is still a single-page application with no build step.
-- Verify DOM interactions end-to-end with Playwright (`@playwright/test`) - a real
-  headless browser is installed for it. Do NOT use jsdom or Node-based DOM mocks:
-  they pass while the real page is broken. A brief forbidding dependencies does
-  not make a DOM stub adequate. Install with `npm i -D @playwright/test` and
-  `npx playwright install chromium`, run with `npx playwright test`, and use a
+- Prove what a user does on the page end-to-end with Playwright
+  (`@playwright/test`) - a real headless browser runs here. A DOM inside Node,
+  such as jsdom, serves unit tests of one module at a time: it lays nothing out
+  and no user drives it, so passing there does not show the page works.
+- Do NOT run a static server as a command of its own - it never exits, it is
+  refused, and nothing connects to it.
+- EVERY PLAYWRIGHT TEST ALREADY STARTS WITH EMPTY STORAGE: each gets a fresh
+  browser context. Do not clear `localStorage` yourself, and never in
+  `page.addInitScript` - that script runs before EVERY navigation, reloads
+  included, so a test that reloads to check persistence wipes the data it is
+  checking and fails however the app behaves.
+- `toBeVisible()` fails on an element with no size, such as an empty placeholder
+  `<div>`. For an element that may be empty, assert `toBeAttached()` or
+  `toHaveCount(1)` instead."""
+
+#: How a project's browser tests are set up, where the harness did not.
+_BROWSER_PAGE_SETUP = """Setting up a page's tests:
+- Install Playwright with `npm i -D @playwright/test` and
+  `npx playwright install chromium`, run it with `npx playwright test`, and use a
   BUILT-IN reporter - `--reporter=line` or `--reporter=list`. Do NOT pass
   `--reporter=tap`: Playwright resolves that to an npm package called `tap`,
   which is not installed, and the suite dies with "Cannot find module 'tap'".
+- A unit test that needs a DOM gets a real one from its runner - jsdom installed
+  with `-D` and set up once for every test file - never a `global.document`
+  written by hand.
 - A PLAYWRIGHT TEST CANNOT OPEN THE PAGE WITH `file://`. Chromium blocks an ES
   module script loaded from a `file://` URL on CORS grounds, so the page loads,
   the script never runs, and the test times out. Load it over
@@ -207,17 +232,7 @@ _BROWSER_PAGE_TESTING = """Testing a page that runs in a browser:
   ran the command. With the config inside the project directory, leave `cwd`
   out: `cwd: '<project-dir>'` points at a folder inside itself that does not
   exist, and Node reports that as `spawn /bin/sh ENOENT` - naming the shell,
-  which is present - so the suite looks unrunnable when one line is wrong.
-- Do NOT run a static server as a command of its own - it never exits, it is
-  refused, and nothing connects to it.
-- EVERY PLAYWRIGHT TEST ALREADY STARTS WITH EMPTY STORAGE: each gets a fresh
-  browser context. Do not clear `localStorage` yourself, and never in
-  `page.addInitScript` - that script runs before EVERY navigation, reloads
-  included, so a test that reloads to check persistence wipes the data it is
-  checking and fails however the app behaves.
-- `toBeVisible()` fails on an element with no size, such as an empty placeholder
-  `<div>`. For an element that may be empty, assert `toBeAttached()` or
-  `toHaveCount(1)` instead."""
+  which is present - so the suite looks unrunnable when one line is wrong."""
 
 #: How JavaScript and TypeScript modules are tested, and where their test-only
 #: packages go. Moved here from `TESTABILITY_RULE` and `TESTING_DEPENDENCY_RULE`.
@@ -257,14 +272,17 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   unit script names its directory (`node --test tests/`, `vitest run tests`) or
   its configuration ignores the other (`testPathIgnorePatterns: ['/e2e/']` for
   Jest, `exclude: ['e2e/**', 'node_modules/**']` for Vitest), and Playwright's
-  configuration sets `testDir: 'e2e'`.
+  configuration sets `testDir: 'e2e'`."""
+
+#: How JavaScript tests are written, whoever set the runner up.
+_JAVASCRIPT_TEST_WRITING = """Writing JavaScript tests:
 - A static page that ships to a browser is still tested on the machine that
   builds it - deployment constrains what you ship, not what you can run while
   building it.
 - A test-only package goes in `devDependencies` (`npm i -D ...`); it ships to
   nobody and breaks no constraint on the product's dependencies.
-- An assertion like `typeof mod.addTask === 'function'` checks that an export
-  exists, not what it does; and `assert.doesNotThrow(() => saveTasks(x))` passes
+- An assertion like `typeof mod.parse === 'function'` checks that an export
+  exists, not what it does; and `assert.doesNotThrow(() => save(x))` passes
   whether the function saved anything or not. Assert on what it returned."""
 
 #: The test runner each language ships with or conventionally uses, and where a
@@ -292,9 +310,9 @@ _TESTING_BY_LANGUAGE = {
 
 SEED_INSTRUCTIONS["javascript"] = (
     "You are working in a JavaScript environment.\n"
-    "- Modules: prefer ES modules (`import`/`export`) and declare them, as below.\n"
+    "- Modules: prefer ES modules (`import`/`export`).\n"
     "- Dependency Management: respect a lockfile if one is present.\n\n"
-    + _JAVASCRIPT_TESTING
+    + _JAVASCRIPT_TEST_WRITING
 )
 SEED_INSTRUCTIONS["html"] = (
     "You are building a page that runs in a browser.\n"
@@ -302,11 +320,15 @@ SEED_INSTRUCTIONS["html"] = (
     + _BROWSER_PAGE_TESTING
 )
 for _key in ("typescript", "node"):
-    SEED_INSTRUCTIONS[_key] += "\n\n" + _JAVASCRIPT_TESTING
+    SEED_INSTRUCTIONS[_key] += "\n\n" + _JAVASCRIPT_TEST_WRITING
+for _key in ("javascript", "typescript", "node"):
+    SEED_INSTRUCTIONS[_key + SETUP] = _JAVASCRIPT_TESTING
+SEED_INSTRUCTIONS["html" + SETUP] = _BROWSER_PAGE_SETUP
 for _key in ("react", "vue", "angular", "nextjs"):
     SEED_INSTRUCTIONS[_key] += "\n\n" + _BROWSER_PAGE_TESTING
+    SEED_INSTRUCTIONS[_key + SETUP] = _JAVASCRIPT_TESTING + "\n\n" + _BROWSER_PAGE_SETUP
 for _key, _line in _TESTING_BY_LANGUAGE.items():
     SEED_INSTRUCTIONS[_key] += "\n" + _line
 
 
-__all__ = ["SEED_INSTRUCTIONS"]
+__all__ = ["SEED_INSTRUCTIONS", "SETUP"]

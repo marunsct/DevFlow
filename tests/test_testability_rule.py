@@ -27,7 +27,7 @@ def _flat(text: str) -> str:
 
 
 PAGE = _flat(SEED_INSTRUCTIONS["html"])
-JAVASCRIPT = _flat(SEED_INSTRUCTIONS["javascript"])
+JAVASCRIPT = _flat(SEED_INSTRUCTIONS["javascript"] + "\n" + SEED_INSTRUCTIONS["javascript:setup"])
 RULE = _flat(TESTABILITY_RULE)
 
 
@@ -113,8 +113,9 @@ class TestTheBrowserSpecificsLiveWithThePageStack:
 
     def test_the_browser_runner_and_its_traps(self) -> None:
         assert "Playwright" in PAGE
-        assert "--reporter=tap" in PAGE
-        assert "file://" in PAGE and "webServer" in PAGE
+        setup = _flat(SEED_INSTRUCTIONS["html:setup"])
+        assert "--reporter=tap" in setup
+        assert "file://" in setup and "webServer" in setup
 
     def test_storage_is_not_cleared_where_a_reload_reruns_it(self) -> None:
         """One run's `test_round_1` spent its whole call budget on ten failing
@@ -155,4 +156,4 @@ class TestTheJavaScriptSpecificsLiveWithTheLanguage:
 
     @pytest.mark.parametrize("language", ["typescript", "node"])
     def test_its_relatives_carry_it(self, language: str) -> None:
-        assert "IF YOU USE `export`, DECLARE IT" in SEED_INSTRUCTIONS[language]
+        assert "IF YOU USE `export`, DECLARE IT" in SEED_INSTRUCTIONS[language + ":setup"]

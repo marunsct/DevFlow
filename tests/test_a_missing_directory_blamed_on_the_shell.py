@@ -54,7 +54,7 @@ def test_the_command_runner_attaches_it() -> None:
 
 
 def test_the_page_stack_says_where_webserver_cwd_is_resolved() -> None:
-    page = " ".join(SEED_INSTRUCTIONS["html"].split())
+    page = " ".join(SEED_INSTRUCTIONS["html:setup"].split())
 
     assert "Its `cwd`, if you give one, is relative to the config file" in page
     assert "spawn /bin/sh ENOENT" in page

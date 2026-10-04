@@ -189,7 +189,13 @@ _HAS_A_REAL_DOM = re.compile(
 )
 
 
-def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
+#: A test putting a page of its own in place of the one its runner gives it.
+_A_SECOND_DOM = re.compile(
+    r"""\bglobal(?:This)?\.(?:document|window|navigator)\s*=|\bnew\s+JSDOM\s*\("""
+)
+
+
+def a_dom_built_by_hand(relative_path: str, content: str, dom_given: str = "") -> str | None:
     """Why this test's hand-built browser API will not hold, or None.
 
     Three runs have lost remediation rounds to the same thing. A browser
@@ -217,9 +223,29 @@ def a_dom_built_by_hand(relative_path: str, content: str) -> str | None:
 
     A note, not a refusal. A tiny stub for one function is a reasonable thing
     to write, and this cannot tell that from a mock that is about to collapse.
+
+    `dom_given` names where the unit tests' own browser globals come from, when
+    the project's stack pack provides them. There any page a test builds -
+    jsdom included - is a second one, swapped in halfway: its elements and
+    events are not the ones the rest of the globals belong to, and jsdom
+    rejects them ("parameter 1 is not of type 'Event'"). Four runs spent their
+    first sprint on hand-made DOM setups before the pack gave them one.
     """
     if not _DECLARES_TESTS.search(content or ""):
         return None
+    if dom_given:
+        if not _A_SECOND_DOM.search(content):
+            return None
+        return (
+            f"This test sets up a page of its own. Unit tests here already run "
+            f"with a browser's globals - `document`, `window`, `localStorage`, "
+            f"`Event` and the rest - from {dom_given}, which the harness keeps. A "
+            "second page replaces them halfway: its elements and events belong to "
+            "a different window, so the code under test fails on objects that are "
+            "not its own. Delete the setup and use `document` and `window` as they "
+            "are; put the markup a test needs into `document.body.innerHTML` in "
+            "`beforeEach`."
+        )
     if not _HAND_ROLLED_DOM.search(content):
         return None
     if _HAS_A_REAL_DOM.search(content):
@@ -362,7 +388,9 @@ def _reaches_the_dom(module: str, names: set[str]) -> bool | None:
     return False
 
 
-def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | None" = None) -> str | None:
+def a_test_that_needs_a_dom(
+    relative_path: str, content: str, project: "Path | None" = None, dom_given: str = ""
+) -> str | None:
     """Why this test will throw `document is not defined`, or None.
 
     Four runs have ended a stage on it - four runs, whose `addTask.test.mjs` imported `addTask`
@@ -383,9 +411,15 @@ def a_test_that_needs_a_dom(relative_path: str, content: str, project: "Path | N
     be said without guessing is that the module reaches for `document`, the
     test provides none, and this is the error that follows if the path taken
     touches it.
+
+    Never where the project's pack gives its unit tests a page (`dom_given`):
+    there `document` is defined, and the note would send a working test to
+    another runner.
     """
     from pathlib import Path
 
+    if dom_given:
+        return None
     if not _DECLARES_TESTS.search(content or "") and not _is_test_name(relative_path):
         return None
     if _PROVIDES_A_DOM.search(content or ""):

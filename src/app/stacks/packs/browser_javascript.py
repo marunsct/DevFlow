@@ -5,6 +5,48 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 
+#: The DOM the unit tests run in. 26 is the last release that supports the
+#: Node the image and the CI file run (20); 27 and later need 22.
+JSDOM = "26.1.0"
+
+#: The unit runner, with a browser's globals installed in every test process
+#: first (`test-setup.mjs`, which the harness keeps).
+UNIT_SCRIPT = js.UNIT_SCRIPT.replace("node --test", "node --import ./test-setup.mjs --test")
+
+#: A browser's globals for unit tests. Without it a test of anything that
+#: touches the page had to build its own DOM, and four runs in a row spent
+#: their first sprint on exactly that - a hand-written `setup.js` that left
+#: `beforeEach` undefined, `HTMLButtonElement is not defined`, tests that
+#: could not find the form - while every acceptance test passed. The React
+#: pack's runner has always provided one; this gives the plain pack the same.
+DOM_SETUP = """// Kept by the harness: a browser's globals - window, document, localStorage,
+// HTMLElement, Event and the rest - installed before every unit test file, so a
+// test can import a module that touches the page and call it. Each test file
+// runs in its own process and gets a fresh, empty page; reset
+// document.body.innerHTML in beforeEach to start each test clean.
+import { JSDOM } from 'jsdom';
+
+const dom = new JSDOM('<!DOCTYPE html><html><head></head><body></body></html>', {
+  url: 'http://localhost/',
+  pretendToBeVisual: true,
+});
+// Node has its own versions of these; a test hands them back to the page
+// (dispatchEvent(new Event(...)), new FormData(form), { signal }), and the page
+// accepts only its own. Node keeps the rest it has: timers, URL, crypto, console.
+const thePageS = ['Event', 'EventTarget', 'CustomEvent', 'MessageEvent', 'DOMException',
+  'AbortController', 'AbortSignal', 'Blob', 'File', 'FormData'];
+
+globalThis.window = dom.window;
+for (const name of Object.getOwnPropertyNames(dom.window)) {
+  if (name in globalThis && !thePageS.includes(name)) continue;
+  try {
+    globalThis[name] = dom.window[name];
+  } catch {
+    // A property the window does not let go of; nothing needs it.
+  }
+}
+"""
+
 PACKAGE_JSON = """{
   "name": "{{project}}",
   "version": "0.1.0",
@@ -16,10 +58,11 @@ PACKAGE_JSON = """{
     "test:acceptance": "playwright test"
   },
   "devDependencies": {
-    "@playwright/test": "%(playwright)s"
+    "@playwright/test": "%(playwright)s",
+    "jsdom": "%(jsdom)s"
   }
 }
-""" % {"unit": js.UNIT_SCRIPT, "playwright": js.PLAYWRIGHT}
+""" % {"unit": UNIT_SCRIPT, "playwright": js.PLAYWRIGHT, "jsdom": JSDOM}
 
 SERVE = """// Serves this project's files: for the acceptance tests, and for a person
 // trying the product (`npm start`, then open the address it prints).
@@ -116,6 +159,11 @@ test('the page loads its entry module', async () => {
   const page = await readFile(new URL('../index.html', import.meta.url), 'utf8');
   assert.match(page, /src="src\\/main\\.js"/);
 });
+
+test('a module that touches the page can be tested', async () => {
+  await import('../src/main.js');
+  assert.equal(document.documentElement.dataset.ready, 'true');
+});
 """
 
 SMOKE_ACCEPTANCE = """import { test, expect } from '@playwright/test';
@@ -131,9 +179,12 @@ test('the page opens and runs its script', async ({ page }) => {
 
 GUIDE = js.UNIT_GUIDE + """
 `index.html` loads `src/main.js` as a module; import the product's modules there.
-A unit test cannot load a module that touches `document`, `window` or
-`localStorage` at import time, so keep logic that does not need the page in
-modules that do not touch it, and leave the page to the acceptance suite."""
+Unit tests already run with a browser's globals - `document`, `window`,
+`localStorage`, `HTMLElement`, `Event` - set up by `test-setup.mjs`, which the
+harness keeps: a test may import a module that touches the page and call it.
+Do not build a DOM of your own or install another; put the markup a test needs
+into `document.body.innerHTML` in `beforeEach`. What a user does across the
+whole page is the acceptance suite's to prove."""
 
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test` (`import { test, expect } from '@playwright/test'`). The
@@ -157,6 +208,7 @@ PACK = StackPack(
         "package.json": PACKAGE_JSON,
         "playwright.config.js": js.playwright_config("node scripts/serve.mjs", "/", screenshot="on", checks_the_page=True),
         "playwright.setup.mjs": js.page_check("/"),
+        "test-setup.mjs": DOM_SETUP,
         "scripts/serve.mjs": SERVE,
         "index.html": INDEX,
         "src/main.js": MAIN,
@@ -172,8 +224,9 @@ PACK = StackPack(
     acceptance_dir="acceptance",
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.js",
-    kept_files=("playwright.config.js", "playwright.setup.mjs", "scripts/serve.mjs"),
-    kept_scripts={"start": "node scripts/serve.mjs", "test": js.UNIT_SCRIPT, "test:acceptance": "playwright test"},
+    kept_files=("playwright.config.js", "playwright.setup.mjs", "test-setup.mjs", "scripts/serve.mjs"),
+    unit_dom="`test-setup.mjs`",
+    kept_scripts={"start": "node scripts/serve.mjs", "test": UNIT_SCRIPT, "test:acceptance": "playwright test"},
     smoke_files={
         "tests/scaffold-smoke.test.js": SMOKE_UNIT,
         "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,

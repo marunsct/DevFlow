@@ -126,7 +126,7 @@ def test_the_mandate_a_stage_reads_really_does_require_the_runner() -> None:
     )
     # ...and a page's own guidance names the runner and how to install it.
     assert "with Playwright" in SEED_INSTRUCTIONS["html"]
-    assert "npm i -D @playwright/test" in SEED_INSTRUCTIONS["html"]
+    assert "npm i -D @playwright/test" in SEED_INSTRUCTIONS["html:setup"]
 
 
 def test_the_specialist_prompt_carries_the_mandate() -> None:

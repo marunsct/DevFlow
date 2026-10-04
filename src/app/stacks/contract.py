@@ -76,6 +76,16 @@ def the_pack(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] |
     return pack, record
 
 
+def the_pack_above(path: str | Path | None) -> tuple[StackPack, dict[str, Any]] | None:
+    """The pack that scaffolded the workspace `path` sits in, or None."""
+    if not path:
+        return None
+    for folder in Path(path).resolve().parents:
+        if (folder / CONTRACT_FILE).is_file():
+            return the_pack(folder)
+    return None
+
+
 def kept_paths(repo_root: str | Path | None) -> frozenset[str]:
     """Workspace-relative paths of the files the harness keeps as set up."""
     found = the_pack(repo_root)

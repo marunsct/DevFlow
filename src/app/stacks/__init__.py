@@ -116,6 +116,10 @@ class StackPack:
     #: decides the globals the language service lets it use. See
     #: `app.analysis.language_service`.
     code_runs_in: str = "both"
+    #: Where the unit tests' browser globals come from - a file or setting the
+    #: harness keeps - or "" when unit tests run without a page. Where there is
+    #: one, a test that builds its own DOM replaces it halfway and is told so.
+    unit_dom: str = ""
     #: CI steps before the pack's install command (YAML list items): the
     #: language runtime. See `app.stacks.release`.
     ci_setup: tuple[str, ...] = ()

@@ -107,4 +107,4 @@ def test_the_two_prompts_no_longer_disagree():
     for text in (page, environment):
         assert "Playwright" in text, "both must name the browser runner"
     assert "built-in runner" in environment
-    assert "node --test" in SEED_INSTRUCTIONS["javascript"]
+    assert "node --test" in SEED_INSTRUCTIONS["javascript:setup"]

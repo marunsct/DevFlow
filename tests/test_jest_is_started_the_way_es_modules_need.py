@@ -106,7 +106,7 @@ def test_another_runner_is_not_jest(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("key", ["javascript", "typescript", "node"])
 def test_the_guidance_names_what_each_unit_runner_needs(key: str) -> None:
-    text = SEED_INSTRUCTIONS[key]
+    text = SEED_INSTRUCTIONS[key + ":setup"]
 
     assert "node --experimental-vm-modules node_modules/jest/bin/jest.js" in text
     assert "`experimentalVmModules`" in text and "do NOT do this" in text

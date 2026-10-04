@@ -81,6 +81,7 @@ def test_a_probe_named_like_a_test_that_no_suite_runs_is_cleared(project) -> Non
     assert (project / "notes/tests/app.test.js").exists()
     assert (project / "notes/acceptance/app.spec.js").exists()
     assert (project / "notes/playwright.setup.mjs").exists()
+    assert (project / "notes/test-setup.mjs").exists()
 
 
 def test_one_something_still_runs_is_kept(project) -> None:

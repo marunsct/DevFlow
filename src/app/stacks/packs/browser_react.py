@@ -192,6 +192,7 @@ PACK = StackPack(
     acceptance_pattern="*.spec.js",
     unit_pattern="*.test.tsx",
     kept_files=("playwright.config.js", "playwright.setup.mjs", "vite.config.ts"),
+    unit_dom="Vitest's `jsdom` environment in `vite.config.ts`",
     kept_scripts={"test": UNIT_SCRIPT, "test:acceptance": "playwright test"},
     smoke_files={
         "tests/scaffold-smoke.test.tsx": SMOKE_UNIT,

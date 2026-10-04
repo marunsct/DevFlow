@@ -3,10 +3,13 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-09-29, branch `harness-hardening-session`, pushed to the git
+**As of:** 2026-10-04, branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
-kept current by whoever runs the loop; sections 1-10 are the method and history
-written on 2026-09-24 and still hold unless section 0 says otherwise.
+kept current by whoever runs the loop - **in the same commit as any change to
+how runs are tested** (the gate, the cadence, the scripts, how a product's
+tests are set up and run, what the healthy numbers are; owner, 2026-10-04).
+Sections 1-10 are the method and history written on 2026-09-24 and still hold
+unless section 0 says otherwise.
 
 **What this document is not.** It is not a list of what to change. That lives
 in `docs/harness-improvement-plan.md` (the current plan) and in the git
@@ -23,8 +26,9 @@ Run a continuous audit / fix / deploy loop on this harness, and do not stop:
 
 1. start a run of a brief;
 2. audit its transcript, logs, database and tool calls closely - especially
-   failed and unnecessary calls - every **15-20 minutes** (not more often; it
-   costs tokens);
+   failed and unnecessary calls - every **~10 minutes in a run's first 40
+   minutes** (so the early stop below can bite), then every **~18 minutes**
+   (not more often; it costs tokens);
 3. fix what the harness did wrong, **technology-agnostically**: the harness
    builds full-stack apps in any language or framework, so a fix must not
    assume JavaScript, npm or a browser. Language/framework guidance belongs in
@@ -46,12 +50,16 @@ wait for it to finish. A major harness bug or gap found at any point: cancel
 immediately, fix, restart. So during the first 40 minutes check every ~10
 minutes (`loop.sh wait 10`), not every 18.
 
-**The gate.** A run is *clean* when it completes and the audit finds no bug
-and no improvement worth making. Two consecutive clean runs of
-`tests/brief_low.md` move the loop to `tests/brief_medium.md`; two clean runs
-of that move it to `tests/brief_high.md`; then the same there. A run in which
-anything was fixed resets the count to zero, including a fix deployed while it
-ran.
+**The gate (since the 2026-10-03 redesign; `benchmarks/README.md`).** A run is
+*clean* when its product scores 100% on the benchmark's hidden tests
+(`loop.sh score`), the run needed no harness fix, and the product audit (0.4.1)
+passes. Stage 1: `web-todo`, 2 consecutive clean runs. Stage 2: `notes-api`,
+`wordstats-cli`, `textkit-lib`, 1 clean run each. Stage 3:
+`fullstack-bookmarks`, 2 consecutive. Then `tests/brief_medium.md` and
+`tests/brief_high.md`, audited by hand. A run in which anything was fixed
+resets the count to zero, including a fix deployed while it ran. (Before the
+redesign the gate was two clean hand-audited runs each of `tests/brief_low.md`,
+`brief_medium.md` and `brief_high.md`.)
 
 **Keep, and fix only where wrong:** dynamic agent instruction injection (the
 `plugin_instructions` table, the seed and its middleware), the parallel/linear
@@ -77,9 +85,11 @@ A new session or account starts at `docs/HANDOVER.md` (written 2026-10-01): the 
 | transcripts | `/app/data/transcripts/<run-id>*.jsonl` inside the worker (`appdata` volume) |
 | workspaces | `runs.repo_root`, e.g. `/app/data/workspaces/default/workspace-<run-id>` |
 
-Healthy numbers on recent brief_low runs: 1.7-6% of tool calls failed (most of
-those guards working), 0 duplicate executions, 8-19% redundant reads, three or
-fewer architecture reviews.
+Healthy numbers on recent `web-todo` runs (2026-10-04): 11-19% of tool calls
+failed - most of them guards working as designed (work-order ownership, parse
+refusals, `node -e` refused) - 0 duplicate executions, 0-15% redundant reads,
+sprint 1 reaching 9/9 acceptance criteria within ~20 minutes. On brief_low
+before the redesign: 1.7-6% failed, 8-19% redundant reads.
 
 ### 0.3 The scripts
 
@@ -89,7 +99,7 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 
 | script | what it is for |
 |---|---|
-| `loop.sh` | the one entry point: `status`, `start [brief]`, `wait [minutes]`, `cancel [run-id]`, `audit`, `stage <name> [HH:MM]`, `reads`, `product [run-id]`, `deploy`, `suite`. Run with no argument for help. |
+| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]`, `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment. |
 | `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0), redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
 | `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
 | `product_audit.py` | the product half of the audit (`loop.sh product [run-id]`): the product files, code lines per file (counted as the brief's line cap is), the intake's acceptance criteria, what the harness claimed (sprint summary counts, milestone acceptance evidence), and the product's own test command run once. Prints evidence; the reading is the checklist in 0.4.1. |
@@ -110,9 +120,15 @@ docker exec langchain-app-1 python -m app.server.manage create-user <name> \
 
 ```sh
 export LOOP_USER=harness-test LOOP_PASSWORD=...        # the operator account
-scripts/loop/loop.sh start                             # prints the run id and JST start time
-scripts/loop/loop.sh wait 18                           # prints "next report by HH:MM JST", then the audit
+scripts/loop/loop.sh bench web-todo                    # the benchmark the gate is on; prints the run id and JST start
+scripts/loop/loop.sh wait 10                           # first 40 minutes; then `wait 18`
+scripts/loop/loop.sh score                             # when it ends: the hidden tests
+scripts/loop/loop.sh product                           # then the product audit (0.4.1)
 ```
+
+Before `bench`, check the served model matches the settings (`docs/HANDOVER.md`
+§5). After `deploy`, the worker's `/tmp` is empty: anything copied there for
+auditing has to be copied again.
 
 Then, for every failure signature and every stage that looks wrong:
 
@@ -132,9 +148,13 @@ Then, for every failure signature and every stage that looks wrong:
 5. `loop.sh deploy`. A run that already has a finding may be resumed on the
    new code (orphan recovery does it); a run that could still be clean should
    be left to finish first.
-6. When the run ends, **audit the generated product before counting the run**
-   (0.4.1). Then: if nothing was found in the run or the product, count it
-   toward the gate; otherwise the count is 0. `loop.sh start` the next one.
+6. When the run ends, `loop.sh score`, then **audit the generated product
+   before counting the run** (0.4.1). Then: if it scored 100% and nothing was
+   found in the run or the product, count it toward the gate; otherwise the
+   count is 0. `loop.sh bench` the next one.
+7. Record the run in the gate row of 0.2 and the status table of
+   `docs/HANDOVER.md`, and anything that changed how runs are tested in this
+   section; commit and push.
 
 ### 0.4.1 Audit the generated product - every run, at the end (and mid-run when needed)
 
@@ -187,9 +207,10 @@ working (the tool-approval check can fail transiently), schedule a retry about
   server: cancel it with `POST /api/runs/{id}/cancel`.
 - Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
 - Containers log UTC; the host is JST (+9). Transcript times are UTC.
-- The full suite takes about 2.5 minutes here: roughly 7,330 pass, 16 skip,
-  and three `tests/test_codebase_seeding_api.py` tests fail for want of S3
-  credentials. Any other failure is real - unless `src/` was edited while the
+- The full suite (`loop.sh suite`) takes about 3.3 minutes here: roughly
+  8,820 pass, 17 skip, and three `tests/test_codebase_seeding_api.py` tests
+  fail for want of S3 credentials. Tests that need the TypeScript compiler or
+  Pyright skip on the host; run those inside the worker after a deploy. Any other failure is real - unless `src/` was edited while the
   suite ran (tests that read source with `inspect` then see shifted lines).
 - A tool call id run twice, or a stage that restarts, is always worth a trace.
 - A run that fails on `psycopg.OperationalError: ... server closed the
@@ -362,6 +383,51 @@ an A/B with thinking mode on / effort low needs no code), one sprint for a
 small brief (sprints and the Sprint Record are the product's design).
 
 ---
+
+### 0.10 How a product is tested now (2026-10-04)
+
+`docs/PRODUCT.md` describes the whole product; this is what a monitor needs to
+know about its testing, and what changed most recently.
+
+- **A stack pack scaffolds every project and keeps its test setup**
+  (`src/app/stacks/packs/`). For `browser-javascript`: `playwright.config.js`,
+  `playwright.setup.mjs` (the page check), `test-setup.mjs` (a jsdom page for
+  unit tests), `scripts/serve.mjs`, and the manifest scripts `start`, `test`,
+  `test:acceptance`. Agents are refused writes to them and the workspace digest
+  labels them "the project's test commands run it". The scaffold proves itself
+  with two smoke tests before any agent writes.
+- **Acceptance suite.** Written by QA from the criteria, then locked
+  (`acceptance/`); the harness runs it every round. A failing test carries what
+  the page showed when it failed. The page check records uncaught errors,
+  console errors, failed requests and HTTP errors on load
+  (`test-results/page-load.json`).
+- **Unit tests** use the pack's runner. In `browser-javascript`, `npm test` is
+  `node --import ./test-setup.mjs --test ... tests/`, so every test file has
+  `document`, `window`, `localStorage` and the page's own `Event`/`FormData`
+  classes (jsdom 26.1.0 - the last release for the image's Node 20). One file:
+  `node --import ./test-setup.mjs --test tests/<module>.test.js`; a bare
+  `node --test` skips the page. A test that builds a page of its own is told to
+  use the one it has, and refused on the third time in a stage. `browser-react`
+  gets the same from Vitest's jsdom environment.
+- **Instructions follow the pack.** Seed rows `<key>:setup` (how to install and
+  configure runners) are left out where a pack set the project up, and so are
+  the stack block's rules for projects that set themselves up (one command
+  running both suites, the module-system choice).
+- **IDE-grade checks.** The TypeScript language service (JavaScript/TypeScript)
+  and Pyright (Python) report names nothing defines, missing exports and
+  imports, and use before declaration: a note on every write, a defect at the
+  CI gate once the batch is done.
+- **CI gate.** Regressions are measured against both the last accepted state
+  and the last measurement; a fix that breaks a passing test is reverted; code
+  review runs on each batch.
+
+**Watch on the next runs:** unit-test churn on page code (five web-todo runs in
+a row before `80e97e7`; should now be gone); probe files left in the product
+that are not named like tests (`src/import-ui.mjs` in run-5cfba2c8 - the
+release clears only test-named probes nothing runs); agents adding their own
+scripts to the manifest; a fullstack run churning on unit tests of its page
+code (`fullstack-node` has no unit DOM yet; see
+`docs/harness-improvement-plan.md` §3).
 
 ## 1. The loop, in the order it must happen
 

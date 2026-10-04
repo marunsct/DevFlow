@@ -5769,6 +5769,9 @@ def build_workflow_graph(
         agent = create_specialist_agent(
             defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
+        from app.acceptance.junit import tags_in
+        from app.graph import acceptance_nodes
+
         request = build_defect_fix_request(
             defect.description,
             defect.reproduction_steps,
@@ -5782,6 +5785,12 @@ def build_workflow_graph(
             # description of it. See `build_defect_fix_request`.
             _what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
             caught_by=getattr(defect, "caught_by", ""),
+            # Only for a defect that is not itself a failing criterion.
+            done_already=(
+                []
+                if [t for t in tags_in(str(defect.description or "")) if t.startswith(("AC-", "CR-"))]
+                else acceptance_nodes.done_by_the_definition(state)
+            ),
         )
         # A fix that breaks what passed before it is reverted to exactly where
         # it started. The commit it starts from is taken on the stage's first

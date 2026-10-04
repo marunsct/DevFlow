@@ -907,6 +907,7 @@ def build_defect_fix_request(
     stack: Any = None,
     observed: dict[str, str] | None = None,
     caught_by: str = "",
+    done_already: list[str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that routes one tracked defect to the specialist who owns it.
 
@@ -950,11 +951,35 @@ def build_defect_fix_request(
         f"--- Actual behavior ---\n{actual_behavior}\n\n"
         f"--- Affected files ---\n{files_text}\n\n"
         f"{_observed_output(observed)}"
+        f"{_where_the_product_stands(done_already)}"
         f"{regression_clause}\n\n"
         "Fix only this defect. If you cannot fix it, say why in `blockers` rather than "
         "claiming it is resolved."
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _where_the_product_stands(done_already: list[str] | None) -> str:
+    """For a defect outside the acceptance criteria while every due criterion passes, or "".
+
+    Measured over three runs: with every acceptance criterion passing, a sprint
+    went round its fix loop for an hour on the team's own unit tests - one
+    expecting the description in a `<p>`, the code rendering it otherwise - and
+    the fix guard reverted fix after fix that made one pass by breaking
+    another. Nothing told the fixer that what a user meets already works, so
+    each fix bent the product towards the test.
+    """
+    if not done_already:
+        return ""
+    return (
+        "--- Where the product stands ---\n"
+        f"The acceptance suite - the brief's definition of done - passes for every criterion "
+        f"due by this sprint ({', '.join(done_already)}): what a user meets works. So this "
+        "defect is the team's own code and its own tests disagreeing about an internal "
+        "detail, not about what the brief asks for. Make them agree in whichever direction "
+        "leaves what a user meets unchanged - the code may be right and the test's "
+        "expectation wrong. A fix that makes any passing test fail is reverted.\n\n"
+    )
 
 
 def _already_caught_clause(caught_by: str) -> str:

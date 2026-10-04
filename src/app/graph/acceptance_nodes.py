@@ -385,6 +385,27 @@ def _failing_due(state: Any) -> tuple[list[dict[str, Any]], str]:
     return failing, str(saved.get("command") or "")
 
 
+def done_by_the_definition(state: Any) -> list[str]:
+    """The criteria due now when every one of them passes in the harness's last run, else [].
+
+    For a fix stage working on something other than a criterion: the brief's
+    definition of done holds, so what it is fixing is the team's own code and
+    unit tests disagreeing, not what a user meets.
+    """
+    root = _root(state)
+    if not suite.is_locked(root):
+        return []
+    saved = suite.last_result(root) or {}
+    if not saved.get("ran"):
+        return []
+    excused = suite.deferred(root)
+    due = [c for c in (criteria_due(state) or []) if c not in excused]
+    entries = {**(saved.get("criteria") or {}), **(saved.get("change_requests") or {})}
+    if not due or any((entries.get(c) or {}).get("status") != "passed" for c in due):
+        return []
+    return due
+
+
 def criteria_only_later(state: Any, text: str) -> list[str]:
     """The criteria `text` names when every one of them is due in a later sprint, else [].
 

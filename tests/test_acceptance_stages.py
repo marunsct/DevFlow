@@ -334,3 +334,27 @@ def test_a_plan_s_criteria_written_as_bare_numbers_are_read_as_ids() -> None:
     cleaned, notes = with_every_criterion_assigned(plan, ["AC-1", "AC-2", "AC-3", "AC-4"])
     assert [list(s.criteria) for s in cleaned.sprints] == [["AC-1", "AC-2"], ["AC-3", "AC-4"]]
     assert notes == ["sprint 2 named 9, which is not a criterion"]
+
+
+def test_a_fixer_is_told_when_the_definition_of_done_already_holds(tmp_path, monkeypatch) -> None:
+    """Three runs' first sprints went round their fix loops for an hour on the
+    team's own unit tests while every criterion passed; each fix bent the
+    product towards a test about an internal detail."""
+    from app.agents.specialists import build_defect_fix_request
+
+    _all_passing(tmp_path, monkeypatch)
+    suite.run(tmp_path)
+    state = _state(tmp_path, sprint_plan=_plan(["AC-1"], ["AC-2"], ["AC-3"]), current_sprint_index=0)
+    assert nodes.done_by_the_definition(state) == ["AC-1"]
+
+    text = build_defect_fix_request(
+        "Unit test expects a <p> for the description", "npm test", "passes", "fails", ["tests/ui.test.js"],
+        False, str(tmp_path), done_already=["AC-1"],
+    )["messages"][0]["content"]
+    assert "Where the product stands" in text and "AC-1" in text and "unchanged" in text
+    plain = build_defect_fix_request("x", "y", "z", "w", [], False, str(tmp_path))["messages"][0]["content"]
+    assert "Where the product stands" not in plain
+
+    _all_passing(tmp_path, monkeypatch, failing=("AC-1",))
+    suite.run(tmp_path)
+    assert nodes.done_by_the_definition(state) == []

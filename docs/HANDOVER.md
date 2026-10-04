@@ -78,7 +78,7 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `467872b`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| branch | `harness-hardening-session`, last code commit `25f4d24` (not yet deployed: language-service refinements; deploy when run-7106082c ends), pushed to `https://github.com/marunsct/DevFlow.git`. `docs/PRODUCT.md` describes the whole product. |
 | deployed | yes - the running image matches `467872b` (deployed 11:27 JST on 2026-10-04, image rebuilt with Pyright): plan review R1-R7 and the loop fixes since (latest: code checked the way an IDE checks it) |
 | current run | `run-7106082c-1249-4729-b6dc-ddfb29376bff`; `web-todo`, started about 11:28 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-4e3e12c2 was cancelled 11:26 JST at 3 of 9 in sprint 1 to deploy R7 (IDE-grade checks; the owner's request). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |

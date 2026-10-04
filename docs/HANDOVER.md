@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `f895d4a`, pushed to `https://github.com/marunsct/DevFlow.git`. `docs/PRODUCT.md` describes the whole product. |
-| deployed | yes - the running image matches `f895d4a` (deployed 13:17 JST on 2026-10-04): plan review R1-R7 and the loop fixes since (latest: Sprint Record counts from the harness's measurement; unrun test-named probes cleared at release; use-before-declaration underlined) |
-| current run | `run-b88ce47a-c834-4fad-a4b0-a4df15a63aa4`, `web-todo`, started 13:18 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-9676bcd5 COMPLETED 13:09 JST in 35 minutes and scored 10/10, but its product audit found Sprint Records reading 'Passed: 0' and three unrun probes shipped (fixed `f895d4a`), so it is not counted clean. |
+| branch | `harness-hardening-session`, last code commit `80e97e7`, pushed to `https://github.com/marunsct/DevFlow.git`. `docs/PRODUCT.md` describes the whole product. |
+| deployed | yes - the running image matches `80e97e7` (deployed 14:06 JST on 2026-10-04): plan review R1-R7 and the loop fixes since (latest: browser unit tests get a kept jsdom page, `test-setup.mjs`; the seed's runner-setup notes are left out where a pack set the project up; DOM notes follow the pack) |
+| current run | `run-1cbcdad2-675b-4d4e-a98c-f0d409970c83`, `web-todo`, started 14:07 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-b88ce47a was cancelled 14:05 in fix round 4 of sprint 2, acceptance 7/7 passing, churning on hand-built jsdom unit tests for the fifth run running (fixed `80e97e7`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

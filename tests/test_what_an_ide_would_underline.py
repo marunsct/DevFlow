@@ -204,3 +204,21 @@ def test_python_is_answered_only_for_the_file_as_written(tmp_path) -> None:
     target = tmp_path / "a.py"
     target.write_text("x = 1\n")
     assert service.python_underlined(tmp_path, target, "x = 2\n") is None
+
+
+@needs_the_compiler
+def test_a_name_used_before_its_declaration_runs_is_underlined(tmp_path) -> None:
+    """One run's page died on load with "Cannot access 'state' before
+    initialization": `state.lastId = ...` three lines above `const state = {...}`.
+    A use inside a function body that runs later is legal and is left alone."""
+    project = _project(tmp_path, {"src/state.js": ""})
+    content = (
+        "state.lastId = 0;\n"
+        "const state = { lastId: 1 };\n"
+        "export function next() { return later + state.lastId; }\n"
+        "const later = 1;\n"
+    )
+
+    found = service.underlined(tmp_path, project / "src" / "state.js", content, project)
+
+    assert [(f["line"], f["code"]) for f in found.here] == [(1, 2448)]

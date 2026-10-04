@@ -21,6 +21,9 @@ not show it for a `.js` file either. These codes are kept because each means
 the code fails when it runs:
 
     2304, 2552  a name nothing defines          -> ReferenceError
+    2448-2450   a const/let, class or enum used before its declaration runs
+                                                -> ReferenceError ("Cannot access
+                                                   'x' before initialization")
     2305, 2614  an import of a missing export   -> SyntaxError at load
     1192        a default import of none        -> SyntaxError at load
     2306        an import from a file that is not a module
@@ -112,7 +115,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
     return get(f, lang, onError, fresh);
   };
   const program = ts.createProgram(roots, options, host);
-  const NAMES = new Set([2304, 2552]);
+  const NAMES = new Set([2304, 2552, 2448, 2449, 2450]);
   const IMPORTS = new Set([2305, 2614, 1192, 2306, 2307]);
   function comments(sf) {
     const ranges = [];

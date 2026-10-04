@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `2226632`, pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `2226632` (deployed 09:23 JST on 2026-10-04): plan review R1-R6 and the loop fixes since (latest: each failing acceptance test carries the page it failed on) |
-| current run | `run-6f8bed24-d773-4358-b7a2-3b00634ddfd1`, `web-todo`, started 09:24 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-2466fb53 was cancelled 09:22 JST stuck in sprint 1: fixes could not see that the Edit button did nothing (fixed `2226632`). |
+| branch | `harness-hardening-session`, last code commit `61bac8a`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `61bac8a` (deployed 09:49 JST on 2026-10-04): plan review R1-R6 and the loop fixes since (latest: a sprint is closed without work only at its first planning) |
+| current run | `run-dded3a26-3fcc-4cbb-b5bf-0de2f2b8bb8c`, `web-todo`, started 09:50 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-6f8bed24 was cancelled 09:45 JST: a re-planned sprint 1 was closed without work, skipping its reviews (fixed `61bac8a`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

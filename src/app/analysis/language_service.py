@@ -97,6 +97,10 @@ process.stdin.on('data', d => content += d).on('end', () => {
     moduleResolution: ts.ModuleResolutionKind.Bundler, jsx: ts.JsxEmit.Preserve,
     lib: ['lib.esnext.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'], types: [], skipLibCheck: true,
     maxNodeModuleJsDepth: 0, allowImportingTsExtensions: true,
+    // A browser loads modules as ES modules and nothing else: a default import
+    // from a module with no default export fails as the page loads. Node may
+    // be importing CommonJS, where it would not, so there it is left alone.
+    allowSyntheticDefaultImports: runtime !== 'browser', esModuleInterop: runtime !== 'browser',
   };
   const host = ts.createCompilerHost(options);
   const read = host.readFile.bind(host), exists = host.fileExists.bind(host), get = host.getSourceFile.bind(host);
@@ -136,7 +140,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
   function describe(d, sf) {
     const at = sf.getLineAndCharacterOfPosition(d.start);
     return { line: at.line + 1, code: d.code,
-             message: ts.flattenDiagnosticMessageText(d.messageText, ' ').replace(/'\/[^']*\//g, "'"),
+             message: ts.flattenDiagnosticMessageText(d.messageText, ' ').split(path.resolve(project) + path.sep).join(''),
              text: sf.text.split('\n')[at.line].trim().slice(0, 160) };
   }
   const here = [], elsewhere = [];

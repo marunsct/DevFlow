@@ -210,6 +210,11 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # stack pack's own verified commands. See `app.stacks.release`.
     from app.stacks import release as release_files
 
+    # What a stage left behind that no suite runs and nothing uses is not part
+    # of what is handed over. See `repository.clear_the_throwaways_left_behind`.
+    from app.graph.workflow import _clear_the_throwaways
+
+    _clear_the_throwaways(root)
     packaged = release_files.write(root).describe()
     record_decision(
         state, update, point="release",

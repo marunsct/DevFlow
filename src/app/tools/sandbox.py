@@ -2781,9 +2781,13 @@ def _where_it_ran(working_directory: str | None) -> str:
 
 #: TAP's own summary lines, as `node --test` and anything TAP-compatible
 #: print them. Not anchored: the output reaches here inside a JSON string.
-_TAP_PASS = re.compile(r"#\s*pass\s+(\d+)")
-_TAP_FAIL = re.compile(r"#\s*fail\s+(\d+)")
-_TAP_TESTS = re.compile(r"#\s*tests\s+(\d+)")
+# Node's TAP reporter writes "# pass 12"; its spec reporter, which the stack
+# packs' unit scripts use, writes "ℹ pass 12". Reading only the first left
+# every unit run of every pack-built project without counts - one run's Sprint
+# Records said "Passed: 0, Failed: 0" for a suite of twelve passing tests.
+_TAP_PASS = re.compile(r"^\s*[#ℹ]\s*pass\s+(\d+)", re.M)
+_TAP_FAIL = re.compile(r"^\s*[#ℹ]\s*fail\s+(\d+)", re.M)
+_TAP_TESTS = re.compile(r"^\s*[#ℹ]\s*tests\s+(\d+)", re.M)
 
 #: How each test runner reports its totals.
 #:

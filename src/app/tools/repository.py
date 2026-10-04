@@ -6357,7 +6357,8 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
                 for part in path.relative_to(project).parts[:-1]
             )
         ]
-        candidates = [path for path in everything if is_scratch(path.name)]
+        unrun = set(_tests_no_suite_runs(root, project, everything))
+        candidates = [path for path in everything if is_scratch(path.name) or path in unrun]
         if not candidates:
             return removed
         kept_text: list[str] = []
@@ -6383,6 +6384,37 @@ def clear_the_throwaways_left_behind(repo_root: str | Path) -> list[str]:
     except Exception:  # noqa: BLE001 - tidying must never fail the stage after it
         return removed
     return removed
+
+
+def _tests_no_suite_runs(root: Path, project: Path, files: list[Path]) -> list[Path]:
+    """Test-named files outside every directory the project's suites run, in a pack-built project.
+
+    A stack pack says where its suites look - `tests/` for the unit runner,
+    `acceptance/` for the acceptance runner - so a `run_test.js` or
+    `test_import.js` at the top of the project is run by neither: a probe
+    named like a test. One run delivered three of them with the product.
+    Without a pack nothing says where tests run, and nothing is listed.
+    """
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.stacks import contract
+
+        found = contract.the_pack(root)
+    except Exception:  # noqa: BLE001
+        return []
+    if found is None:
+        return []
+    pack = found[0]
+    homes = tuple(f"{d.strip('/')}/" for d in (pack.unit_dir, pack.acceptance_dir) if d)
+    unrun = []
+    for path in files:
+        relative = path.relative_to(project).as_posix()
+        if classify_file(relative) != "test" or relative.startswith(homes):
+            continue
+        if contract.owned_by_the_harness(root, path.relative_to(root).as_posix()):
+            continue
+        unrun.append(path)
+    return unrun
 
 
 def _is_the_project_s_own_manifest(root: Path, target: Path) -> bool:

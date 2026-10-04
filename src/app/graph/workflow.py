@@ -2701,6 +2701,24 @@ def _record_document(state: WorkflowGraphState, relative_path: str, content: str
         logger.warning("Could not write %s", relative_path, exc_info=True)
 
 
+def _the_accepted_counts(root: str) -> dict[str, int] | None:
+    """Tests, passed and failed in the state the last sprint was accepted in, or None."""
+    try:
+        from app import ci
+
+        snapshot = ci.load(root, "accepted")
+    except Exception:  # noqa: BLE001
+        return None
+    if snapshot is None:
+        return None
+    outcomes = [*snapshot.unit.values(), *snapshot.acceptance.values()]
+    if not outcomes:
+        return None
+    passed = sum(1 for outcome in outcomes if outcome == "passed")
+    failed = sum(1 for outcome in outcomes if outcome == "failed")
+    return {"tests": len(outcomes), "passed": passed, "failed": failed}
+
+
 def _record_sprint_summary(
     state: WorkflowGraphState, status: str, failure_reason: str | None = None
 ) -> dict[str, Any]:
@@ -2782,6 +2800,14 @@ def _record_sprint_summary(
         )
     except Exception:  # noqa: BLE001 - a summary without counts beats no summary
         logger.debug("Could not read test counts for the sprint summary", exc_info=True)
+    if status == "Completed":
+        # The harness's own measurement of the state the sprint was accepted
+        # in - every unit and acceptance test, from their JUnit reports - over
+        # whatever a stage's last command printed. A sprint closed without new
+        # work runs no stage's tests at all, and one run's records read
+        # "Passed: 0, Failed: 0" for twelve passing unit tests and nine
+        # passing acceptance tests.
+        cases = _the_accepted_counts(state["repository"].root_path) or cases
 
     # The Sprint Record's own sections, from what the workflow and the harness
     # recorded rather than from any agent's account. See `app.sprint.record`.

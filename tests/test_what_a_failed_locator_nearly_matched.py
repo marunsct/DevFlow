@@ -20,7 +20,10 @@ PAGE = """- main [ref=e2]:
     - text: "Title:"
     - textbox "Title:" [ref=e5]
     - button "Save note" [ref=e7]
-  - list"""
+  - list [ref=e8]:
+    - listitem [ref=e9]:
+      - paragraph [ref=e10]: Buy milk
+  - textbox "Search": Oat milk"""
 
 
 def _waiting_for(locator: str) -> str:
@@ -36,6 +39,7 @@ def test_an_exact_label_one_colon_away_is_named() -> None:
     ("getByRole('button', { name: 'Save Note', exact: true })", 'button "Save note"'),
     ("getByRole('link', { name: 'Save note' })", 'button "Save note"'),
     ("locator('li').getByRole('button', { name: 'save-note', exact: true })", 'button "Save note"'),
+    ("getByText('Buy Milk', { exact: true })", 'text "Buy milk"'),
 ])
 def test_a_name_in_another_case_or_role_is_named(locator, shown) -> None:
     assert shown in near_misses(_waiting_for(locator), PAGE)
@@ -47,6 +51,8 @@ def test_a_name_in_another_case_or_role_is_named(locator, shown) -> None:
     "getByRole('button', { name: 'Save' })",                 # matches: the miss is about something else
     "getByRole('checkbox', { name: 'Done' })",               # nothing close: nothing to say
     "getByTestId('x')",                                      # no name to compare
+    "getByText('Buy milk')",                                 # an element's own text: it matches
+    "getByText('oat milk', { exact: true })",                # an input's value is not text: nothing near
 ])
 def test_it_is_silent_when_the_miss_is_not_a_near_one(locator) -> None:
     assert near_misses(_waiting_for(locator), PAGE) == ""

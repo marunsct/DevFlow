@@ -295,8 +295,15 @@ _EXACT_OPTION = re.compile(r"exact:\s*true")
 
 #: A node in Playwright's page snapshot: `- textbox "Title:" [ref=e5]`, and
 #: text on its own: `- text: "Title:"`.
-_SNAPSHOT_NODE = re.compile(r'^\s*-\s*([a-z]+)\s+"((?:[^"\\]|\\.)*)"', re.M)
-_SNAPSHOT_TEXT = re.compile(r'^\s*-\s*text:\s*"?(.*?)"?\s*$', re.M)
+_SNAPSHOT_NODE = re.compile(r'^[ \t]*-[ \t]*([a-z]+)[ \t]+"((?:[^"\\]|\\.)*)"', re.M)
+_SNAPSHOT_TEXT = re.compile(r'^[ \t]*-[ \t]*text:[ \t]*"?(.*?)"?[ \t]*$', re.M)
+#: An element's own text after its role: `- paragraph: Buy milk`,
+#: `- listitem [ref=e9]: Read`. An input's value is shown the same way
+#: (`- textbox "Title": milk`) and is not text a locator finds, so not those.
+_SNAPSHOT_CONTENT = re.compile(
+    r'^[ \t]*-[ \t]*(?!text:)([a-z]+)(?:[ \t]+"(?:[^"\\]|\\.)*")?(?:[ \t]+\[[^\]]*\])*:[ \t]+"?(.+?)"?[ \t]*$', re.M
+)
+_HOLDS_A_VALUE = frozenset({"textbox", "searchbox", "combobox", "spinbutton", "slider"})
 
 
 def _loose(name: str) -> str:
@@ -346,7 +353,10 @@ def near_misses(message: str, page: str) -> str:
         else:
             return ""
         nodes = [(role, name) for role, name in _SNAPSHOT_NODE.findall(page) if role != "text"]
-        texts = [("text", text) for text in _SNAPSHOT_TEXT.findall(page) if text]
+        texts = [("text", text) for text in _SNAPSHOT_TEXT.findall(page) if text] + [
+            ("text", text) for role, text in _SNAPSHOT_CONTENT.findall(page)
+            if role not in _HOLDS_A_VALUE
+        ]
         if kind == "role":
             candidates = [(r, n) for r, n in nodes if r == wanted_role]
         elif kind == "label":

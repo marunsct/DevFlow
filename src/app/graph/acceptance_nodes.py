@@ -411,9 +411,13 @@ def sprint_already_done(state: Any) -> str:
     planning no work orders until it invented one ("noop_backend"), which was
     then built, reviewed, tested and accepted - four times over.
 
-    Only for a sprint that was given criteria of its own (or the last, which
-    answers for all of them), with no change asked of it, and only on a run of
-    the suite made now, not on a remembered one.
+    Only at a sprint's first planning - never on a re-plan, a revision or a
+    release retry, which each come back here with a reason to build - for a
+    sprint that was given criteria of its own (or the last, which answers for
+    all of them), with no change asked of it, and only on a run of the suite
+    made now, not on a remembered one. The first version checked only for
+    requested changes: one run's sprint 1, re-planned because its unit tests
+    failed, came back with none and was accepted without its reviews.
     """
     root = _root(state)
     if not suite.is_locked(root):
@@ -422,8 +426,15 @@ def sprint_already_done(state: Any) -> str:
         return ""
     if state.get("escalation") or state.get("work_order_problems"):
         return ""
+    if any(int(state.get(key) or 0) for key in ("sprint_replan_count", "milestone_revision_count", "release_attempts")):
+        return ""
     sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
     index = int(state.get("current_sprint_index") or 0)
+    if any(
+        isinstance(entry, dict) and entry.get("sprint_index") == index
+        for entry in state.get("sprint_attempts") or []
+    ):
+        return ""
     if not sprints or index >= len(sprints):
         return ""
     own = list(getattr(sprints[index], "criteria", None) or [])

@@ -282,3 +282,19 @@ def test_such_a_sprint_is_closed_like_an_accepted_one(tmp_path, monkeypatch) -> 
     assert decision["point"] == "sprint" and decision["decision"] == "accept without new work"
     state["current_sprint_index"] = 1
     assert _close_a_sprint_with_nothing_to_build(state, "x")["stage"] == "release"
+
+
+def test_a_re_planned_or_revised_sprint_is_never_closed_without_work(tmp_path, monkeypatch) -> None:
+    """One run's sprint 1 was re-planned because its unit tests failed; it came
+    back with no requested changes and, its one criterion passing, was accepted
+    without its security and milestone reviews."""
+    _all_passing(tmp_path, monkeypatch)
+    plan = _plan(["AC-1"], ["AC-2"], ["AC-3"])
+    for marker in ({"sprint_replan_count": 1}, {"milestone_revision_count": 1}, {"release_attempts": 1},
+                   {"sprint_attempts": [{"sprint_index": 0, "status": "Failed"}]}):
+        state = _state(tmp_path, sprint_plan=plan, current_sprint_index=0, **marker)
+        assert nodes.sprint_already_done(state) == "", marker
+    # An earlier sprint's record does not count against this one.
+    fresh = _state(tmp_path, sprint_plan=plan, current_sprint_index=1,
+                   sprint_attempts=[{"sprint_index": 0, "status": "Completed"}])
+    assert nodes.sprint_already_done(fresh) != ""

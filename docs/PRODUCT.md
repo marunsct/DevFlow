@@ -86,7 +86,7 @@ instructions**, never in the core.
 | Delivery | `src/app/graph/delivery.py`, `src/app/stacks/release.py` | Release gate, evidence, change requests, CI/container files |
 | Decisions | `src/app/decisions.py` | Decision records (DR-n) in state and `docs/decision_log.md` |
 | Models | `src/app/models/` | Client construction, router/fallback, judgement model, endpoint kind, probes |
-| Plugins | `src/app/plugins/` | Framework instructions injected per selected stack (seed + store) |
+| Plugins | `src/app/plugins/` | Framework instructions injected per selected stack (seed + store); a key's runner-setup notes (`<key>:setup`) are left out where a stack pack set the project up |
 | Observability | `src/app/observability/` | Transcripts (every model/tool call), metrics, cost tracking |
 | Benchmarks | `benchmarks/`, `scripts/bench/score.py` | Briefs with hidden tests; scoring |
 | Improvement loop | `scripts/loop/loop.sh`, `docs/HANDOVER.md`, `docs/monitoring-handover.md` | Operating the harness on benchmarks, auditing, deploying |
@@ -177,7 +177,7 @@ deliver most of its criteria is stopped rather than shipped.
 | **Project directory** | The product's folder inside the workspace (pinned in `.project-directory`) |
 | **Stack pack** | A product kind × language bundle: scaffold files, install/unit/acceptance commands, JUnit report paths, kept files, guides, check families, runtime (`browser`/`node`/`both`), release files. Packs: `browser-javascript`, `browser-react`, `node-http-api`, `fullstack-node`, `python-http-api`, `python-cli`, `python-library` |
 | **Project contract** | `.harness/stack-pack.json`: which pack, commands, paths; the harness puts back kept files/scripts a stage changed |
-| **Kept files** | Test setup the harness owns (e.g. `playwright.config.js`, `playwright.setup.mjs`, `scripts/serve.mjs`, `pytest.ini`, `acceptance/conftest.py`); refused to agents, marked in the digest |
+| **Kept files** | Test setup the harness owns (e.g. `playwright.config.js`, `playwright.setup.mjs`, `test-setup.mjs` - a jsdom page for browser unit tests - `scripts/serve.mjs`, `pytest.ini`, `acceptance/conftest.py`); refused to agents, marked in the digest |
 | **Acceptance criteria** | `AC-1..n`, numbered from the brief (features + acceptance criteria) or the intake |
 | **Acceptance suite** | QA's tests for the criteria, **locked** (checksums + snapshot in `.harness/`) after review: the definition of done. Only QA, via a recorded reopen, may change it |
 | **Due criteria** | The criteria a sprint must leave passing: its own plus every earlier sprint's (the last sprint answers for all) |

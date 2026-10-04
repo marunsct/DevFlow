@@ -104,7 +104,7 @@ def test_every_stage_in_the_loop_is_told(builder: str) -> None:
 
     source = inspect.getsource(getattr(specialists, builder))
 
-    assert "describe_stack(stack)" in source, (
+    assert "describe_stack(stack" in source, (
         f"{builder} no longer includes the stack note, so it would not receive "
         "the reconciliation either"
     )
@@ -143,4 +143,4 @@ def test_the_specialist_prompt_carries_the_mandate() -> None:
     module = inspect.getsource(specialists)
 
     assert "{TESTABILITY_RULE}" in module
-    assert "describe_stack(stack)" in module
+    assert "describe_stack(stack" in module

@@ -145,3 +145,38 @@ def test_a_scaffolded_project_is_not_told_how_to_set_up_what_it_has(scaffolded, 
     assert _with_the_setup_notes(["html", "javascript"], str(scaffolded)) == ["html", "javascript"]
     bare = tmp_path_factory.mktemp("bare")
     assert _with_the_setup_notes(["html"], str(bare)) == ["html", "html" + SETUP]
+
+
+def test_the_guide_says_how_to_run_one_file_with_the_page() -> None:
+    """A bare `node --test tests/x.test.js` skips the setup and reads as "this
+    test needs a DOM built"; one fixer added a script to the product's manifest
+    to get round it."""
+    from app.tools.sandbox import validate_command
+
+    guide = " ".join(BROWSER.guide.split())
+    command = "node --import ./test-setup.mjs --test tests/<module>.test.js"
+    assert command in guide
+    assert validate_command(command.replace("<module>", "a").split(), "testing_specialist")
+
+
+def test_a_kept_setup_is_described_as_what_runs_it() -> None:
+    from app.agents.workspace_digest import _what_to_do_with
+
+    assert "acceptance command" not in _what_to_do_with(contract.KEPT_SETUP)
+    assert "test commands run it" in _what_to_do_with(contract.KEPT_SETUP)
+
+
+def test_a_scaffolded_project_s_brief_does_not_ask_one_command_to_run_both_suites(scaffolded) -> None:
+    from types import SimpleNamespace
+
+    from app.agents.specialists import describe_stack
+
+    stack = SimpleNamespace(
+        language="JavaScript", framework="", frontend_framework="", database="",
+        testing_framework="node:test", additional_tools=[],
+    )
+    assert "must run both suites" in describe_stack(stack)
+    scaffolded_brief = describe_stack(stack, str(scaffolded))
+    assert "must run both suites" not in scaffolded_brief
+    assert "How the pieces load" not in scaffolded_brief
+    assert "Build on exactly this" in scaffolded_brief

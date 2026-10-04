@@ -169,7 +169,8 @@ def _what_to_do_with(owner: str) -> str:
     from app.stacks import contract
 
     return {
-        contract.KEPT_SETUP: "the acceptance command runs it; do not change, run or test it",
+        # "the acceptance command runs it" was untrue of a unit test setup.
+        contract.KEPT_SETUP: "the project's test commands run it; do not change, run or test it",
         contract.LOCKED_SUITE: "read it for what the product must do; never change it",
     }.get(owner, "not yours to change")
 

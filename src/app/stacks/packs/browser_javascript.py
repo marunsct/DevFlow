@@ -183,8 +183,11 @@ Unit tests already run with a browser's globals - `document`, `window`,
 `localStorage`, `HTMLElement`, `Event` - set up by `test-setup.mjs`, which the
 harness keeps: a test may import a module that touches the page and call it.
 Do not build a DOM of your own or install another; put the markup a test needs
-into `document.body.innerHTML` in `beforeEach`. What a user does across the
-whole page is the acceptance suite's to prove."""
+into `document.body.innerHTML` in `beforeEach`. To run one file, run
+`node --import ./test-setup.mjs --test tests/<module>.test.js` in the project
+directory: a bare `node --test` skips the setup, and every test that touches the
+page fails with `document is not defined`. What a user does across the whole
+page is the acceptance suite's to prove."""
 
 ACCEPTANCE_GUIDE = """Acceptance tests go in `acceptance/`, named `<feature>.spec.js`, using
 `@playwright/test` (`import { test, expect } from '@playwright/test'`). The

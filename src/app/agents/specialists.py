@@ -528,7 +528,7 @@ def project_contract(repository_root: str) -> str:
         return ""
 
 
-def describe_stack(stack: Any) -> str:
+def describe_stack(stack: Any, repository_root: str | None = None) -> str:
     """The chosen stack, as the one specialists must build on.
 
     A specialist used to be given its task, its acceptance criteria and nothing
@@ -545,6 +545,12 @@ def describe_stack(stack: Any) -> str:
 
     Returns an empty string when no stack was recorded, so an older run or a
     test fixture without one is unaffected.
+
+    Where a stack pack scaffolded the project (`repository_root` holds its
+    contract), the rules for a project that sets up its own runners and module
+    system are left out: the pack set both and keeps them, and one of those
+    rules - "the manifest's test command must run both suites" - contradicted
+    the pack's separate `test` and `test:acceptance` in every brief.
     """
     if stack is None:
         return ""
@@ -574,12 +580,20 @@ def describe_stack(stack: Any) -> str:
         "the stack above, and a second one in the same directory means neither "
         "works. If your task cannot be done on this stack, say so as a blocker "
         "rather than switching.\n"
-        + _THE_UNIT_RUNNER_IS_NOT_THE_ONLY_ONE
-        + _how_the_pieces_load(stack)
+        + ("" if _set_up_by_a_pack(repository_root) else _THE_UNIT_RUNNER_IS_NOT_THE_ONLY_ONE + _how_the_pieces_load(stack))
         + NO_SHELL_NOTE
         + _no_code_on_the_command_line(stack)
         + "\n"
     )
+
+
+def _set_up_by_a_pack(repository_root: str | None) -> bool:
+    try:
+        from app.stacks.contract import read
+
+        return read(repository_root) is not None
+    except Exception:  # noqa: BLE001 - without a contract, say what a project needs
+        return False
 
 
 def _task_names_a_workflow_document(task_description: str, criteria: list[str]) -> str:
@@ -711,7 +725,7 @@ def build_specialist_task_request(
         # workspace is rooted at "/", and quoting the host path here sends
         # agents looking for files under a root that does not exist for them.
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"{describe_stack(stack)}"
+        f"{describe_stack(stack, repository_root)}"
         f"{project_contract(repository_root)}"
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
@@ -783,7 +797,7 @@ def build_test_run_request(
         )
     brief = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"{describe_stack(stack)}"
+        f"{describe_stack(stack, repository_root)}"
         f"{project_contract(repository_root)}"
         f"--- Milestone under test ---\n{milestone_goal}\n\n"
         f"--- Files changed in this milestone ---\n{files_text}\n\n"
@@ -942,7 +956,7 @@ def build_defect_fix_request(
     )
     brief = (
         f"The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        f"{describe_stack(stack)}"
+        f"{describe_stack(stack, repository_root)}"
         f"{project_contract(repository_root)}"
         "A test failure has been assigned to you to fix.\n\n"
         f"--- Defect ---\n{description}\n\n"

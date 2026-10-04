@@ -212,6 +212,7 @@ PACK = StackPack(
     locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     failure_pages=js.failure_pages,
     assertion_names=js.playwright_assertions,
+    code_runs_in="browser",
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
 )

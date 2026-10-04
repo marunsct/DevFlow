@@ -77,9 +77,11 @@ def test_indentation_errors_are_caught_in_python_where_braces_would_miss_them() 
 
 def test_files_with_no_grammar_here_are_not_judged() -> None:
     """`.json` is no longer in this list: it has a real grammar, so it moved to
-    the checked side with Python."""
-    for name in ("notes.md", "styles.css", "page.html", "config.yaml"):
+    the checked side with Python. So did `.css`, read by its grammar since
+    the brace count was found blind to a missing colon."""
+    for name in ("notes.md", "page.html", "config.yaml"):
         assert structural_problem(name, "see ) here { and } there") is None
+    assert structural_problem("styles.css", "see ) here { and } there") is not None
 
 
 def test_an_empty_file_is_not_a_problem() -> None:

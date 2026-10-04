@@ -479,6 +479,14 @@ def structural_problem(relative_path: str, content: str) -> str | None:
         return _broken_json(relative_path, content)
 
     if suffix in _STYLESHEETS:
+        # The grammar where there is one measured exact, the count where not.
+        from app.analysis.grammar_parse import reads_stylesheet, stylesheet_problem
+
+        if reads_stylesheet(relative_path):
+            parsed = stylesheet_problem(relative_path, content)
+            # The grammar decides whether it is broken; where the fault is a
+            # brace, the count says which one in plainer words.
+            return None if parsed is None else (_unbalanced_stylesheet(content) or parsed)
         return _unbalanced_stylesheet(content)
 
     if suffix == ".py":

@@ -192,6 +192,10 @@ def test_only_what_a_build_needs_is_passed(workspace):
         # again per run with HOME inside the workspace. Pointing it at a shared
         # cache is deliberate, and it carries no credential - it is a path.
         "PLAYWRIGHT_BROWSERS_PATH",
+        # A free port for a suite that starts the product, given to every
+        # command so an agent's run of the suite and the harness's are alike.
+        # A number, not a credential.
+        "ACCEPTANCE_PORT",
     }
 
     assert set(_child_env(workspace)) <= passed_through | set_deliberately

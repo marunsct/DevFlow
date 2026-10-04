@@ -86,5 +86,7 @@ def test_the_first_file_is_unaffected(project: Path) -> None:
 
 @pytest.mark.parametrize("name", ["notes.md", "style.css", "data.json"])
 def test_other_kinds_of_file_are_not_judged_this_way(project: Path, name: str) -> None:
-    body = '{"a": 1}' if name.endswith(".json") else "content\n"
+    # Each a valid file of its kind: a stylesheet is read by its grammar now,
+    # and "content" alone is not CSS.
+    body = {"data.json": '{"a": 1}', "style.css": "body { margin: 0; }\n"}.get(name, "content\n")
     assert write_approved_artifact(project, f"proj/{name}", body)["status"]

@@ -4129,6 +4129,16 @@ def _import_note(root: Path, target: Path, content: str) -> str:
         pinned = pinned_project_directory(root)
         if pinned:
             project = root / pinned
+        # What an IDE would underline, from the TypeScript language service,
+        # where it can read the file: exact, and it covers the imports this
+        # module's regular expressions approximate in both directions, and the
+        # names nothing defines that they cannot see at all. See
+        # `app.analysis.language_service`.
+        from app.analysis.language_service import underlined_any
+
+        service = underlined_any(root, target, content, project)
+        if service is not None:
+            return service.note()
         problems = import_problems(target, content, project)
         # And the other direction: what breaks in the files that import this
         # one. Removing an export is otherwise silent until a test round.

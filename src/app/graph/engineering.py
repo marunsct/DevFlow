@@ -19,6 +19,7 @@ knows.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -83,6 +84,58 @@ def regression_defects(state: Any, lost: list[str]) -> list[Any]:
     return defects
 
 
+#: How many of the batch's files the language service reads at the gate, and
+#: how many of its findings become defects. Each file costs about a second.
+MOST_FILES_UNDERLINED = 12
+MOST_UNDERLINED_DEFECTS = 6
+
+
+def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
+    """Defects for what an IDE still underlines in the batch's files, once every work order is done.
+
+    At the write these are notes, because a name may be defined by a file
+    another work order has not written yet. At the gate every work order has
+    finished, so a name nothing defines is a ReferenceError waiting in the
+    product, and an import of a missing export fails as the module loads -
+    certain, and named by file and line. See `app.analysis.language_service`.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.analysis.language_service import ALL_SUFFIXES, underlined_any
+
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        pinned = pinned_project_directory(Path(root))
+    except Exception:  # noqa: BLE001
+        pinned = None
+    project = Path(root) / pinned if pinned else None
+    files = [p for p in ci.changed_since(root, since) if p.lower().endswith(ALL_SUFFIXES)][:MOST_FILES_UNDERLINED]
+    defects = []
+    for relative in files:
+        target = Path(root) / relative
+        try:
+            found = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
+        except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+            found = None
+        if found is None:
+            continue
+        grouped: dict[str, list[dict]] = {}
+        for finding in found.here:
+            grouped.setdefault(finding["message"], []).append(finding)
+        for message, where in grouped.items():
+            lines = ", ".join(str(f["line"]) for f in where[:6])
+            defects.append(ReportedDefect(
+                description=f"{relative} line {lines}: {message} - this fails when the code runs.",
+                severity="major",
+                reproduction_steps=f"Read {relative} at line {lines}: `{where[0]['text']}`.",
+                expected_behavior="Every name the code uses is defined or imported, and every import names something its module exports.",
+                actual_behavior=f"{message} (the TypeScript language service, as an IDE would underline it)",
+                affected_files=[relative],
+                owner=_owner_of(state, ""),
+            ))
+    return defects[:MOST_UNDERLINED_DEFECTS]
+
+
 def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """Commit the batch, run CI, and record what it broke."""
     from app.graph.workflow import APP_RUN_ID_KEY, _handing_on, _stop_if_cancelled
@@ -104,6 +157,7 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     after = ci.take(root, "after the work orders")
     lost = list(dict.fromkeys([*ci.regressions(accepted, after), *ci.regressions(before, after)]))
     ci.save(root, after)
+    underlined = underlined_in_the_batch(state, root, (before.commit if before else "") or (accepted.commit if accepted else ""))
     if lost:
         logger.warning("CI: %d test(s) regressed since the last accepted sprint or the last measurement", len(lost))
     report = (
@@ -113,12 +167,14 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         f"{len(after.acceptance)} pass."
         + (("\nRegressed - passed when the last sprint was accepted or before this batch, fails now:\n"
             + "\n".join(f"- {n}" for n in lost)) if lost else "")
+        + (("\nWhat an IDE underlines in the batch's files - each fails when the code runs:\n"
+            + "\n".join(f"- {d.description}" for d in underlined)) if underlined else "")
     )
     return _handing_on(
         stage="code_review",
         ci_report=report,
         ci_batch_commit=batch,
-        review_defects=regression_defects(state, lost),
+        review_defects=[*regression_defects(state, lost), *underlined],
     )
 
 

@@ -67,3 +67,19 @@ def test_an_edit_that_unpairs_them_is_refused(tmp_path) -> None:
         edit_approved_artifact(tmp_path, "app/style.css", "  padding: 0;\n}", "  padding: 0;\n}\n}")
 
     assert (tmp_path / "app" / "style.css").read_text(encoding="utf-8") == SOUND
+
+
+def test_a_missing_colon_the_count_cannot_see_is_found_by_the_grammar() -> None:
+    """Measured over the 122 stored stylesheets: the CSS grammar flagged two,
+    both real - one this test's brace, and `backgroundrgba(...)`, which a
+    browser drops without a word and no brace count can see."""
+    from app.analysis.syntax_balance import structural_problem
+
+    problem = structural_problem("styles.css", ".modal { display: flex; backgroundrgba(0,0,0,.5); }\n")
+    assert problem is not None and "does not parse as CSS" in problem and "line 1" in problem
+    modern = (
+        "@media (max-width: 600px) { .a { display: none } }\n"
+        ".b::before { content: \"}\" }\n:root { --gap: 4px }\n"
+        "@container (min-width: 400px) { .c { color: red } }\n.d { &:hover { color: red } }\n"
+    )
+    assert structural_problem("styles.css", modern) is None

@@ -176,6 +176,16 @@ def revert_to(root: str | Path, commit_id: str) -> bool:
     return True
 
 
+def changed_since(root: str | Path, commit_id: str) -> list[str]:
+    """Workspace-relative paths changed between `commit_id` and HEAD that still exist."""
+    if not commit_id:
+        return []
+    result = _git(root, "diff", "--name-only", commit_id, "HEAD", "--", ".", ":(exclude)docs")
+    if result is None or result.returncode != 0:
+        return []
+    return [line.strip() for line in result.stdout.splitlines() if line.strip() and (Path(root) / line.strip()).is_file()]
+
+
 def diff_since(root: str | Path, commit_id: str, max_chars: int = 30_000) -> str:
     """The product's committed changes since `commit_id`, for a reviewer. The
     workflow's own documents are left out; commit first to include new files."""

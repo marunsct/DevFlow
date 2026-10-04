@@ -68,6 +68,14 @@ _WITHOUT_THE_COMPILER: dict[str, tuple[str, ...]] = {
     ".tsx": ("tsx",), ".jsx": ("javascript",),
 }
 
+#: Stylesheets read by their grammar rather than a brace count. Measured over
+#: the 122 stored stylesheets: the CSS grammar flagged two and both were real -
+#: one an unpaired brace the count also found, one `backgroundrgba(...)`, a
+#: missing colon the count cannot see, which a browser answers by dropping the
+#: declaration without a word. SCSS and LESS stay with the count: no stored
+#: file measured the one grammar, and the other is not bundled.
+_STYLESHEETS: dict[str, str] = {".css": "css"}
+
 #: Pages, for the scripts written inside them.
 _PAGES = frozenset({".html", ".htm"})
 
@@ -331,6 +339,35 @@ def _data_problem(kind: str, content: str) -> str | None:
     )
 
 
+def reads_stylesheet(relative_path: str) -> bool:
+    """Whether this stylesheet is read by its grammar here (else a brace count stands in)."""
+    language = _STYLESHEETS.get(_suffix(relative_path))
+    return language is not None and _parser(language) is not None
+
+
+def stylesheet_problem(relative_path: str, content: str) -> str | None:
+    """What the stylesheet's grammar rejects, or None. Never raises."""
+    language = _STYLESHEETS.get(_suffix(relative_path))
+    if language is None or not content.strip():
+        return None
+    try:
+        found = _fault_in(language, content.encode("utf-8", "replace"))
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        return None
+    if found is None:
+        return None
+    from app.analysis.javascript_parse import _around_the_failure
+
+    line, detail = found
+    return (
+        f"This stylesheet does not parse as CSS: {detail}. A browser does not refuse it - "
+        "it drops the declaration or the whole rule it cannot read, without any error, so "
+        "the style is silently missing. Common causes: a missing `:` or `;`, or a brace "
+        "that closes nothing."
+        + _around_the_failure(str(line), content)
+    )
+
+
 def parse_problem(relative_path: str, content: str) -> str | None:
     """What stops this file parsing in its own language, or None. Never raises.
 
@@ -352,4 +389,4 @@ def parse_problem(relative_path: str, content: str) -> str | None:
         return None
 
 
-__all__ = ["is_certain", "is_measured_not_proven", "languages_for", "parse_problem"]
+__all__ = ["is_certain", "is_measured_not_proven", "languages_for", "parse_problem", "reads_stylesheet", "stylesheet_problem"]

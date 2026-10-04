@@ -23,6 +23,13 @@ RUN npm run build
 # that one instead.
 RUN npm install -g typescript@6.0.3
 
+# Pyright - the engine of VS Code's Python language support - for the same
+# reason on the Python side: what an IDE would underline in a Python file (a
+# name nothing defines, an import of something its module does not have), at
+# the moment it is written (`app.analysis.language_service`). It runs on the
+# Node already here.
+RUN npm install -g pyright@1.1.414
+
 # ---------------------------------------------------------------------------
 # Stage 2: install Python dependencies into a virtualenv
 # ---------------------------------------------------------------------------

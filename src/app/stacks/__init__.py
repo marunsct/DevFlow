@@ -112,6 +112,10 @@ class StackPack:
     #: project root -> every assertion name the installed test runner defines;
     #: an acceptance test calling any other can never pass.
     assertion_names: Callable[[Path], frozenset[str]] | None = None
+    #: Where the product's own code runs - "browser", "node" or "both" - which
+    #: decides the globals the language service lets it use. See
+    #: `app.analysis.language_service`.
+    code_runs_in: str = "both"
     #: CI steps before the pack's install command (YAML list items): the
     #: language runtime. See `app.stacks.release`.
     ci_setup: tuple[str, ...] = ()

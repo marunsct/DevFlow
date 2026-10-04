@@ -143,6 +143,7 @@ PACK = StackPack(
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
     assertion_names=js.playwright_assertions,
+    code_runs_in="node",
     ci_setup=js.CI_SETUP,
     # The `request` fixture needs no browser.
     release_files={"Dockerfile": js.service_dockerfile(SERVE_COMMAND), ".dockerignore": js.DOCKERIGNORE},

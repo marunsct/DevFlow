@@ -83,6 +83,7 @@ Each was re-checked against the code, not taken from the plans' own status notes
 | R4 release files from the stack pack | done, `c9b5400` (ADR-0004) |
 | R5 dead code removed and kept out | done, `05b01a3` |
 | R6 `docs/` holds current documents only | done, with this file's commit |
+| R7 code is checked the way an IDE checks it | done 2026-10-04, at the owner's request |
 
 Each is then judged by the benchmark gate (`benchmarks/README.md`), like every
 other change: the improvement loop restarted on it.
@@ -203,6 +204,40 @@ the handovers, the redesign, the architecture decisions and this plan.
 
 ---
 
+### R7 — Code is checked the way an IDE checks it
+
+**Why.** Asked by the owner on 2026-10-04: check generated code with what an IDE
+uses, not hand-written patterns. Syntax already went through each language's own
+parser - Python's `ast`, `json`, the stdlib's TOML/YAML/XML, `node --check`, the
+TypeScript compiler's parser, tree-sitter grammars measured exact for Java, Go,
+Rust, Ruby, PHP and Lua. Three things did not:
+
+- stylesheets were judged by a brace count, blind to a missing `:` (measured: of
+  122 stored stylesheets the CSS grammar flagged two, both real - one of them
+  `backgroundrgba(...)`, which the count passed and a browser silently drops);
+- relative imports were checked by regular expressions (`local_imports`);
+- nothing did what an IDE's language service does beyond syntax, and the runs'
+  late failures were exactly that: `init is not defined`, `render is not
+  defined`, a test importing a name its module never exported.
+
+**Change.**
+- `.css` is parsed by its grammar (`grammar_parse.stylesheet_problem`); the
+  count stays only for SCSS (unmeasured) and LESS (no grammar), and still words
+  a brace fault.
+- `app.analysis.language_service`: the TypeScript language service for
+  JavaScript and TypeScript, Pyright (VS Code's Python engine, now in the image)
+  for Python, reporting only what fails when the code runs - a name nothing
+  defines, an import of a missing export or module. Measured over the 138 stored
+  JavaScript products: type checking on plain JavaScript is mostly noise (which
+  is why an IDE shows none for a `.js` file), and the kept set left 80 reports in
+  15 products, every one sampled real; Pyright is silent on the three Python
+  benchmark references. Comments, `typeof` operands and package imports are
+  never reported, and a file's globals are those of where it runs (the pack's
+  `code_runs_in`).
+- Delivered as an IDE does: a note on every write and edit (it replaces the
+  regular-expression import checks wherever the service can run), and at the CI
+  gate, once every work order is done, each finding still there is a defect.
+
 ## 3. Not done, and what would bring each back
 
 | item | why not now | what would justify it |
@@ -215,7 +250,7 @@ the handovers, the redesign, the architecture decisions and this plan.
 | Phase 3 notice registry | a refactor with no measured change in outcome | a notice found missing from one tool of a set |
 | Phase 4 cross-run learning store | agent-written memory shared across runs is a prompt-injection and drift risk; stack packs hold what was learned, deterministically, and this loop is the learning loop | — (dropped) |
 | Part II 19–25 dependency probes, live documentation, LSP | needs network egress and credentials in the sandbox; packs pin versions the model knows | repeated failures from calling an API that does not exist in the installed version |
-| Part II 28–30 diagnostics gate | the CI gate runs the tests after every batch, and the parse gate refuses broken writes | a type error that reaches a test round on a typed stack |
+| Part II 28–30 diagnostics gate, full type checking | R7 reports what an IDE underlines that fails at run time; full type checking on plain JavaScript was measured as mostly noise | a type error that reaches a test round on a typed (TypeScript) stack |
 | Task list middleware | built and switched off (old §4au); no measurement favours it | a measured win in five paired runs |
 
 ## 4. Method to keep

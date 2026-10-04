@@ -97,7 +97,7 @@ def test_the_ci_gate_turns_regressions_into_defects(workspace) -> None:
     assert update["stage"] == "code_review"
     (defect,) = update["review_defects"]
     assert "unit: adds" in defect.description and defect.owner == "ui_ux"
-    assert "Regressed since the last accepted sprint" in update["ci_report"]
+    assert "Regressed - passed when the last sprint was accepted or before this batch" in update["ci_report"]
 
 
 def test_no_scaffold_and_no_suite_means_no_ci(tmp_path) -> None:
@@ -253,3 +253,24 @@ def test_the_milestone_review_s_finding_about_later_criteria_is_made_minor(works
 
     assert moved.findings[0].severity == "minor"
     assert moved.findings[0].description.startswith("Planned for a later sprint (AC-2)")
+
+
+def test_a_batch_that_breaks_what_passed_before_any_sprint_was_accepted_is_a_regression(workspace) -> None:
+    """One run's re-planned first sprint broke all seven acceptance tests that
+    had passed; the only accepted state was the suite as locked, where nothing
+    passes, so CI reported nothing."""
+    engineering.suite_locked(str(workspace.root))
+    workspace.runner.acceptance = {"[AC-1] adds": "passed", "[AC-2] deletes": "passed"}
+    ci.save(workspace.root, ci.take(workspace.root, "after a fix"))
+    workspace.runner.acceptance = {"[AC-1] adds": "failed", "[AC-2] deletes": "passed"}
+    state = {
+        "repository": SimpleNamespace(root_path=str(workspace.root)),
+        "milestone_plan": SimpleNamespace(delegated_tasks=[
+            SimpleNamespace(title="Render the list", task_description="", specialist_role="ui_ux"),
+        ]),
+    }
+
+    update = engineering.ci_gate(state, CONFIG, None)
+
+    (defect,) = update["review_defects"]
+    assert "acceptance: [AC-1] adds" in defect.description and "before this batch" in defect.description

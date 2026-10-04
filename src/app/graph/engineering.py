@@ -68,7 +68,7 @@ def regression_defects(state: Any, lost: list[str]) -> list[Any]:
     owner = _owner_of(state, "")
     defects = [
         ReportedDefect(
-            description=f"Regression: `{name}` passed when the last sprint was accepted and fails now.",
+            description=f"Regression: `{name}` passed before this batch of work orders and fails now.",
             severity="major",
             reproduction_steps=f"Run the {name.split(':', 1)[0]} tests in the project directory.",
             expected_behavior="It passes, as it did before this sprint's work orders.",
@@ -94,17 +94,25 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     titles = "; ".join(_title(task) for task in _tasks(state)) or "work orders"
     batch = ci.commit(root, f"Work orders: {titles}")
     accepted = ci.load(root, "accepted")
+    # The last measurement before this batch, as well as the last accepted
+    # sprint. Against the accepted state alone, CI was blind for the whole of
+    # the first sprint - its baseline is the suite as locked, where nothing
+    # passes - and on every re-plan: one run's re-planned batch broke all
+    # seven acceptance tests that had passed, the page rendering nothing
+    # but its heading, and CI reported no regression.
+    before = ci.load(root, "latest")
     after = ci.take(root, "after the work orders")
-    lost = ci.regressions(accepted, after)
+    lost = list(dict.fromkeys([*ci.regressions(accepted, after), *ci.regressions(before, after)]))
     ci.save(root, after)
     if lost:
-        logger.warning("CI: %d test(s) regressed since the last accepted sprint", len(lost))
+        logger.warning("CI: %d test(s) regressed since the last accepted sprint or the last measurement", len(lost))
     report = (
         f"Unit tests: {sum(o == 'passed' for o in after.unit.values())} of {len(after.unit)} pass"
         + ("" if after.unit_ran else " (no unit report)")
         + f"; acceptance tests: {sum(o == 'passed' for o in after.acceptance.values())} of "
         f"{len(after.acceptance)} pass."
-        + (("\nRegressed since the last accepted sprint:\n" + "\n".join(f"- {n}" for n in lost)) if lost else "")
+        + (("\nRegressed - passed when the last sprint was accepted or before this batch, fails now:\n"
+            + "\n".join(f"- {n}" for n in lost)) if lost else "")
     )
     return _handing_on(
         stage="code_review",

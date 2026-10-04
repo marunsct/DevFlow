@@ -545,6 +545,9 @@ class WorkflowGraphState(TypedDict, total=False):
     # Where the acceptance stages go after a change request's test is locked:
     # back to the sprint, not to the sprint plan. See `app.graph.delivery`.
     acceptance_return_to: str | None
+    # How often this run has reopened its locked suite to repair tests that
+    # cannot pass. See `acceptance_nodes.reopen_the_suite_for`.
+    suite_repairs: int
     release_attempts: int
     # The last rung: a stuck sprint's decision. See `app.graph.escalation`.
     escalation: dict[str, Any] | None
@@ -5452,7 +5455,12 @@ def build_workflow_graph(
             # wrote these have all finished, and the round should measure the
             # product without them.
             _clear_the_throwaways(state["repository"].root_path)
-            acceptance_text = acceptance_nodes.acceptance_text_for(state)
+            acceptance_text, cannot_pass = acceptance_nodes.acceptance_for_round(state)
+            # A locked test that cannot pass whatever is built is not a
+            # product defect: no fix can close it. Repaired by QA first.
+            reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass)
+            if reopened is not None:
+                return reopened
         changed_files = _the_files_this_milestone_changed(state, outputs)
 
         agent = create_specialist_agent(

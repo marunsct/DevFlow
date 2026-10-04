@@ -298,3 +298,26 @@ def test_a_re_planned_or_revised_sprint_is_never_closed_without_work(tmp_path, m
     fresh = _state(tmp_path, sprint_plan=plan, current_sprint_index=1,
                    sprint_attempts=[{"sprint_index": 0, "status": "Completed"}])
     assert nodes.sprint_already_done(fresh) != ""
+
+
+def test_a_locked_test_that_cannot_pass_sends_the_suite_back_to_qa_once_built(tmp_path, monkeypatch) -> None:
+    """One run's locked tests called a matcher that does not exist; before the
+    product existed they failed earlier, and once it did they could never pass."""
+    _authored(tmp_path, ALL_THREE)
+    suite.lock(tmp_path)
+    broken = ["`[AC-2] deletes` fails because of an error in the test's own code"]
+    monkeypatch.setattr(nodes, "run_for_sprint", lambda state: (_ran(failed_names=["[AC-2] deletes"]), ["AC-2"]))
+    monkeypatch.setattr(suite, "tests_that_broke_themselves", lambda root, result: list(broken))
+    monkeypatch.setattr(suite, "assertions_that_do_not_exist", lambda root: [])
+    state = _state(tmp_path, sprint_plan=_plan(["AC-1", "AC-2"]), current_sprint_index=0, decisions=[])
+
+    text, cannot_pass = nodes.acceptance_for_round(state)
+    update = nodes.reopen_the_suite_for(state, cannot_pass)
+
+    assert cannot_pass == broken and "AC-2" in text
+    assert update["stage"] == "acceptance_author" and update["acceptance_return_to"] == "test_and_triage"
+    assert update["acceptance_feedback"][-1] == nodes.REPAIR_RULE and update["suite_repairs"] == 1
+    assert update["decisions"][0]["affects"] == ["AC-2"]
+    spent = _state(tmp_path, suite_repairs=nodes.MAX_SUITE_REPAIRS)
+    assert nodes.reopen_the_suite_for(spent, cannot_pass) is None
+    assert nodes.reopen_the_suite_for(state, []) is None

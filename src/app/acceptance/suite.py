@@ -578,6 +578,45 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+#: An assertion call in a test: `.toBeVisible(`, `.not.toHaveText(`.
+_ASSERTION_CALL = re.compile(r"\.(to[A-Z][A-Za-z]*)\s*\(")
+
+
+def assertions_that_do_not_exist(repo_root: str | Path) -> list[str]:
+    """Where the suite calls an assertion its runner does not define, by the pack's reader.
+
+    Such a test cannot pass whatever is built, and until the product exists it
+    fails before reaching the call - so the run that locks the suite never
+    sees it. Measured on one run: two locked tests called
+    `expect(...).toBeUnchecked()`; once the product was built they failed with
+    "toBeUnchecked is not a function", for ever.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].assertion_names is None:
+        return []
+    pack, record = found
+    known = pack.assertion_names(Path(repo_root) / str(record.get("project") or ""))
+    if not known:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for match in _ASSERTION_CALL.finditer(text):
+            if match.group(1) in known:
+                continue
+            line = text.count("\n", 0, match.start()) + 1
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} calls `{match.group(1)}`, which the "
+                "installed test runner does not define, so the test can never pass whatever is built. "
+                "Use one it defines (for the opposite of a check, `not.` before it)."
+            )
+    return problems[:6]
+
+
 def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     """Where the suite finds a control by something no person sees, by the pack's patterns.
 

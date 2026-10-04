@@ -105,3 +105,29 @@ def test_the_acceptance_review_sends_it_back_to_qa(tmp_path, monkeypatch) -> Non
     assert update["stage"] == "acceptance_author"
     assert any("no person sees" in problem for problem in update["acceptance_feedback"])
     assert not suite.is_locked(tmp_path)
+
+
+def test_an_assertion_the_runner_does_not_define_is_named(tmp_path) -> None:
+    acceptance = _scaffolded(tmp_path)
+    types = tmp_path / "notes" / "node_modules" / "playwright" / "types"
+    types.mkdir(parents=True)
+    (types / "test.d.ts").write_text("interface Matchers {\n  toBeChecked(options?: {}): Promise<void>;\n  toHaveText<T>(x: T): void;\n}\n")
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "notes.spec.js").write_text(
+        "test('[AC-1] adds', async ({ page }) => {\n"
+        "  await expect(page.getByLabel('Done', { exact: true })).toBeChecked();\n"
+        "  await expect(page.getByLabel('Done', { exact: true })).toBeUnchecked();\n"
+        "  await expect(page.getByRole('listitem')).not.toHaveText('x');\n"
+        "});\n"
+    )
+
+    problems = suite.assertions_that_do_not_exist(tmp_path)
+
+    assert len(problems) == 1 and "line 3" in problems[0] and "toBeUnchecked" in problems[0]
+
+
+def test_without_the_runner_s_definitions_nothing_is_guessed(tmp_path) -> None:
+    acceptance = _scaffolded(tmp_path)
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "notes.spec.js").write_text("test('[AC-1] adds', async () => { expect(1).toBeAnything(); });\n")
+    assert suite.assertions_that_do_not_exist(tmp_path) == []

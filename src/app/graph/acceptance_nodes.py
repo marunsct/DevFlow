@@ -195,6 +195,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         )
     problems.extend(suite.tests_that_broke_themselves(root, result))
     problems.extend(suite.locators_nobody_sees(root))
+    problems.extend(suite.assertions_that_do_not_exist(root))
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
@@ -273,7 +274,12 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             acceptance_feedback=[],
             acceptance_open_problems=open_problems,
             acceptance_result=result.as_dict(),
-            revision_comments=change_request_brief(root),
+            # Only a change request is planned again; a repaired suite goes
+            # back to the round it was found in with that round's state.
+            revision_comments=(
+                change_request_brief(root) if return_to == "technical_lead"
+                else list(state.get("revision_comments") or [])
+            ),
         )
     next_stage = "user_review_acceptance" if _review_enabled(state, ACCEPTANCE_REVIEW) else "scrum_master"
     return _handing_on(
@@ -549,10 +555,64 @@ def due_criteria_failing(state: Any) -> str:
 
 def acceptance_text_for(state: Any) -> str:
     """Run the suite now and describe it for a test round or a review; "" without a suite."""
+    return acceptance_for_round(state)[0]
+
+
+#: How often one run may reopen its locked suite to repair tests that can
+#: never pass. Each is a recorded decision; more means the suite, not a test,
+#: is the problem, and the escalation ladder decides.
+MAX_SUITE_REPAIRS = 2
+
+#: What QA is held to when it repairs a locked suite.
+REPAIR_RULE = (
+    "Change only the tests named above, and only as far as their own code is wrong. "
+    "Every other test, and what each test checks, stays exactly as it is: the suite is "
+    "being repaired, not rewritten."
+)
+
+
+def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
+    """Run the suite now: its description for a test round, and the tests that cannot pass.
+
+    "Cannot pass" is decided the way the review that locked the suite decides
+    it - an error the test's own code throws, or an assertion its runner does
+    not define - but on a product that now exists, which reaches lines the
+    run before anything was built never did.
+    """
     result, due = run_for_sprint(state)
     if result is None:
-        return ""
-    return acceptance_requests.acceptance_block(result, due)
+        return "", []
+    root = _root(state)
+    broken = [*suite.tests_that_broke_themselves(root, result), *suite.assertions_that_do_not_exist(root)]
+    return acceptance_requests.acceptance_block(result, due), broken
+
+
+def reopen_the_suite_for(state: Any, broken: list[str]) -> dict[str, Any] | None:
+    """Send tests that can never pass back to QA, then back to this round; None when spent."""
+    from app.acceptance.junit import tags_in
+    from app.graph.workflow import _handing_on
+
+    repairs = int(state.get("suite_repairs") or 0)
+    if not broken or repairs >= MAX_SUITE_REPAIRS:
+        return None
+    update: dict[str, Any] = {}
+    _decide(
+        state, update, point="acceptance_tests",
+        question="The locked suite has tests that cannot pass whatever is built: how does the run go on?",
+        options=["QA repairs those tests and the suite is reviewed and locked again", "build against it as it is"],
+        decision="QA repairs those tests and the suite is reviewed and locked again",
+        rationale="; ".join(broken)[:1500],
+        affects=sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")}),
+    )
+    logger.warning("Reopening the locked suite: %d test(s) cannot pass", len(broken))
+    return _handing_on(
+        **update,
+        stage="acceptance_author",
+        acceptance_return_to="test_and_triage",
+        acceptance_round=0,
+        acceptance_feedback=[*broken, REPAIR_RULE],
+        suite_repairs=repairs + 1,
+    )
 
 
 # --- decision records ------------------------------------------------------------

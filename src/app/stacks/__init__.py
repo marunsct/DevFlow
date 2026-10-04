@@ -109,6 +109,9 @@ class StackPack:
     #: (project root, evidence dir) -> test name -> what the product showed
     #: when that test failed, read from the runner's own failure context.
     failure_pages: Callable[[Path, str], Mapping[str, str]] | None = None
+    #: project root -> every assertion name the installed test runner defines;
+    #: an acceptance test calling any other can never pass.
+    assertion_names: Callable[[Path], frozenset[str]] | None = None
     #: CI steps before the pack's install command (YAML list items): the
     #: language runtime. See `app.stacks.release`.
     ci_setup: tuple[str, ...] = ()

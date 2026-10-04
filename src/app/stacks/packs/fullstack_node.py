@@ -146,6 +146,7 @@ PACK = StackPack(
     runtime_report=js.PAGE_LOAD_REPORT,
     locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     failure_pages=js.failure_pages,
+    assertion_names=js.playwright_assertions,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
     release_files=api.PACK.release_files,

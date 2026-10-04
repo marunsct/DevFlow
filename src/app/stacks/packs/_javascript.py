@@ -285,6 +285,28 @@ def failure_pages(project_root: Path, evidence_dir: str) -> dict[str, str]:
     return found
 
 
+#: A matcher's declaration in the runner's own type definitions.
+_DECLARED_MATCHER = re.compile(r"^\s+(to[A-Z][A-Za-z]*)\s*[(<]", re.M)
+
+
+def playwright_assertions(project_root: Path) -> frozenset[str]:
+    """Every `expect(...).toX` matcher the installed Playwright declares, or empty when unreadable.
+
+    Read from the project's own `node_modules`, so it is the version the suite
+    will run on. Measured on one run: a locked suite called
+    `expect(...).toBeUnchecked()`, which does not exist, in two tests that
+    failed before reaching it until the product was built - and then could
+    never pass.
+    """
+    names: set[str] = set()
+    for relative in ("node_modules/playwright/types/test.d.ts", "node_modules/@playwright/test/types/test.d.ts"):
+        try:
+            names.update(_DECLARED_MATCHER.findall((project_root / relative).read_text(encoding="utf-8", errors="replace")))
+        except OSError:
+            continue
+    return frozenset(names)
+
+
 #: How a browser test finds a control, shared by every pack with a page.
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is

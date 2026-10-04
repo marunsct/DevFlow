@@ -252,6 +252,7 @@ Rust, Ruby, PHP and Lua. Three things did not:
 | Part II 19–25 dependency probes, live documentation, LSP | needs network egress and credentials in the sandbox; packs pin versions the model knows | repeated failures from calling an API that does not exist in the installed version |
 | Part II 28–30 diagnostics gate, full type checking | R7 reports what an IDE underlines that fails at run time; full type checking on plain JavaScript was measured as mostly noise | a type error that reaches a test round on a typed (TypeScript) stack |
 | Task list middleware | built and switched off (old §4au); no measurement favours it | a measured win in five paired runs |
+| A page for fullstack-node's unit tests | browser-javascript keeps a jsdom setup (`test-setup.mjs`, `80e97e7`) and browser-react has Vitest's; fullstack-node's unit runner also runs its server's tests, where browser globals would make `typeof window` checks lie | a fullstack run churning on unit tests of its page code, as five web-todo runs did |
 
 ## 4. Method to keep
 

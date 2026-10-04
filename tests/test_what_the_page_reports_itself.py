@@ -170,3 +170,54 @@ def test_a_passing_suite_is_not_told_what_the_page_shows(tmp_path) -> None:
         report=junit.Report(found=True, tests=[junit.TestResult(name="[AC-1] adds")]), shows=SHOWN,
     )
     assert SHOWN not in result.summary()
+
+
+CONTEXT = """# Test info
+
+- Name: notes.spec.js >> [AC-1] adds
+- Location: acceptance/notes.spec.js:4:1
+
+# Error details
+
+```
+Error: expect(locator).toBeVisible() failed
+```
+
+```yaml
+- main:
+  - list:
+    - listitem:
+      - checkbox [checked]
+      - button "Edit"
+```
+"""
+
+
+def test_a_failing_test_carries_the_page_it_failed_on(tmp_path) -> None:
+    """Measured on one run: after clicking Edit, no field appeared - the page at
+    that moment showed the Edit button and nothing else - while the failure said
+    only "element not found". Sixteen fix stages did not find it."""
+    pack = _locked(tmp_path)
+    evidence = tmp_path / "notes" / pack.evidence_dir / "notes-AC-1-adds"
+
+    def run(argv, category, working_directory):
+        project = tmp_path / working_directory
+        (project / pack.acceptance_report).write_text(
+            "<testsuites><testcase name='[AC-1] adds'><failure message=\"element(s) not found\"/></testcase>"
+            "<testcase name='[AC-2] deletes'/></testsuites>"
+        )
+        evidence.mkdir(parents=True, exist_ok=True)
+        (evidence / "error-context.md").write_text(CONTEXT)
+        return {"returncode": "1"}
+
+    result = suite.run(tmp_path, runner=run)
+
+    summary = result.summary()
+    assert "the page when it failed:" in summary and 'button "Edit"' in summary
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "sprint_plan": SimpleNamespace(sprints=[SimpleNamespace(criteria=["AC-1"])]),
+        "current_sprint_index": 0,
+    }
+    (defect,) = nodes.failing_due_defects(state, [])
+    assert "The page when it failed:" in defect.actual_behavior and "checkbox [checked]" in defect.actual_behavior

@@ -191,6 +191,7 @@ PACK = StackPack(
     test_bugs=js.TEST_BUGS,
     runtime_report=js.PAGE_LOAD_REPORT,
     locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
+    failure_pages=js.failure_pages,
     ci_setup=js.CI_SETUP,
     ci_prepare=js.CI_BROWSERS,
 )

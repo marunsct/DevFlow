@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 #: The Playwright release whose browser build the image installs. A different
 #: version looks for a browser build that is not there.
 PLAYWRIGHT = "1.63.0"
@@ -249,6 +252,38 @@ UNIT_GUIDE = """Unit tests go in `tests/`, one file per module, named `<module>.
 `node:test` and `node:assert/strict`, and import the product's modules directly.
 Run them with `npm test`. Install a dependency with `npm install <name>` (add
 `--save-dev` for one only tests use). Never start a server yourself."""
+
+#: Playwright's per-failure context: the test's name, then the page's
+#: accessibility tree at the moment it failed, in a fenced yaml block.
+_CONTEXT_NAME = re.compile(r"^- Name: .*? >> (.+)$", re.M)
+_CONTEXT_PAGE = re.compile(r"```yaml\n(.*?)\n```", re.S)
+
+
+def failure_pages(project_root: Path, evidence_dir: str) -> dict[str, str]:
+    """Test title -> the page's accessibility tree when that test failed.
+
+    Playwright writes `error-context.md` beside each failure's screenshot. Its
+    page snapshot says what was there when the assertion gave up - on one run
+    a list item whose Edit button changed nothing when clicked and whose
+    checkbox had no label - where the failure message says only "element not
+    found". Never raises.
+    """
+    found: dict[str, str] = {}
+    try:
+        for path in sorted((project_root / evidence_dir).glob("*/error-context.md")):
+            text = path.read_text(encoding="utf-8", errors="replace")
+            name, page = _CONTEXT_NAME.search(text), _CONTEXT_PAGE.search(text)
+            if name and page:
+                title = name.group(1).strip()
+                # Nested in `describe` blocks the name is "outer >> title"
+                # here and "outer › title" in the JUnit report: keep both
+                # the whole name and the title alone.
+                for key in (title, title.split(" >> ")[-1].strip()):
+                    found.setdefault(key, page.group(1).strip())
+    except OSError:
+        pass
+    return found
+
 
 #: How a browser test finds a control, shared by every pack with a page.
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives

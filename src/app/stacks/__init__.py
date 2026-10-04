@@ -28,7 +28,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from pathlib import Path
+from typing import Any, Callable, Mapping
 
 #: The kinds of product a pack can be for.
 KINDS = ("browser_app", "http_api", "fullstack", "cli", "library")
@@ -105,6 +106,9 @@ class StackPack:
     #: Patterns of locators that find a control by something no person sees (a
     #: placeholder, a test id). An acceptance suite using one is sent back.
     locators_nobody_sees: tuple[str, ...] = ()
+    #: (project root, evidence dir) -> test name -> what the product showed
+    #: when that test failed, read from the runner's own failure context.
+    failure_pages: Callable[[Path, str], Mapping[str, str]] | None = None
     #: CI steps before the pack's install command (YAML list items): the
     #: language runtime. See `app.stacks.release`.
     ci_setup: tuple[str, ...] = ()

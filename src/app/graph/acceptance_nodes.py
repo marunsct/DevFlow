@@ -500,6 +500,11 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             f"{t.get('name')}: " + (((t.get("message") or "").strip().splitlines() or ["failed"])[0][:300])
             for t in failed[:3]
         ) or "no test carrying this id ran"
+        # What the page showed when the first of them failed: whether the
+        # control is absent, misnamed, or never appeared after the action.
+        met = next((suite.page_it_failed_on(t.get("message", "")) for t in failed if suite.page_it_failed_on(t.get("message", ""))), "")
+        if met:
+            detail += f"\nThe page when it failed:\n{met}"
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",

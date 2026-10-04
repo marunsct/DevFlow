@@ -18,7 +18,7 @@ import json
 import logging
 import re
 import shutil
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -321,6 +321,11 @@ class AcceptanceResult:
                 if test.get("outcome") == "failed":
                     message = test.get("message", "").strip().splitlines()
                     line += f"\n    failed: {test.get('name')} - {(message[0] if message else '')[:300]}"
+                    page = page_it_failed_on(test.get("message", ""))
+                    if page:
+                        line += "\n    the page when it failed:\n" + "\n".join(
+                            f"      {row}" for row in page.splitlines()
+                        )
             rows.append(line)
         head = (
             f"Acceptance suite (`{self.command}`): {self.report.passed} passed, "
@@ -424,7 +429,58 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         problem="" if report.found else "the runner wrote no report; its output is below",
     )
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
+    _with_the_pages_they_failed_on(repo_root, project, result)
     return _judged(repo_root, result, save)
+
+
+#: How much of the page a failing test met is kept with it, and for how many
+#: failing tests: enough to see what was there, bounded so a red suite's
+#: summary stays readable.
+FAILURE_PAGE_CHARS = 900
+MOST_FAILURE_PAGES = 8
+
+
+#: Where a failing test's message carries the page it failed on.
+_PAGE_MARK = "\nWhat the page showed when this failed:\n"
+
+
+def page_it_failed_on(message: str) -> str:
+    """The page a failing test met, from its message, or ""."""
+    text = str(message or "")
+    return text.split(_PAGE_MARK, 1)[1].strip() if _PAGE_MARK in text else ""
+
+
+def _with_the_pages_they_failed_on(repo_root: str | Path, project: str, result: AcceptanceResult) -> None:
+    """Add to each failing test what the product showed when it failed, where the pack can tell.
+
+    "Element not found" cannot say whether a control is absent, misnamed, or
+    never appeared after the action before it; the page at that moment does.
+    Never raises.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].failure_pages is None:
+        return
+    pack = found[0]
+    try:
+        pages = pack.failure_pages(Path(repo_root) / project, pack.evidence_dir or "test-results")
+    except Exception:  # noqa: BLE001 - the failures stand without their pages
+        return
+    if not pages:
+        return
+    tests = []
+    added = 0
+    for test in result.report.tests:
+        page = (
+            pages.get(test.name) or pages.get(test.name.split(" › ")[-1].strip())
+            if test.outcome == "failed" and added < MOST_FAILURE_PAGES else None
+        )
+        if page:
+            added += 1
+            test = replace(test, message=(
+                f"{test.message}{_PAGE_MARK}{page[:FAILURE_PAGE_CHARS]}"
+            ))
+        tests.append(test)
+    result.report = replace(result.report, tests=tests)
 
 
 #: How many of the product's own reported problems a result keeps.

@@ -78,9 +78,9 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `48025ea` (not yet deployed: a plan's criteria written as bare numbers; deploy when run-e5048126 ends), pushed to `https://github.com/marunsct/DevFlow.git` |
-| deployed | yes - the running image matches `eede7fa` (deployed 10:16 JST on 2026-10-04): plan review R1-R6 and the loop fixes since (latest: assertions the runner does not define are refused before the lock, and tests that cannot pass are repaired after it) |
-| current run | `run-e5048126-8478-4292-9ec6-5b7d47102210`, `web-todo`, started 10:17 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-dded3a26 was cancelled 10:11 JST: its locked suite called a matcher that does not exist (fixed `eede7fa`). |
+| branch | `harness-hardening-session`, last code commit `1bb78d9`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| deployed | yes - the running image matches `1bb78d9` (deployed 10:57 JST on 2026-10-04): plan review R1-R6 and the loop fixes since (latest: CI counts a batch's regressions against the last measurement too; bare-number criteria) |
+| current run | `run-4e3e12c2-3734-4778-9c6c-6ad03fc87f1d`, `web-todo`, started 10:58 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-e5048126 was cancelled 10:52 JST: a re-planned first sprint's batch broke all 7 passing tests and CI did not see it (fixed `1bb78d9`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |
 | gate | 0 of 2 on brief_low |
 

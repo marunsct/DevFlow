@@ -488,6 +488,25 @@ def _the_sprint_that_builds_it(sprints: list[Any], criterion: str) -> int | None
     return best
 
 
+def _as_a_criterion_id(item: Any, known: list[str]) -> str:
+    """`item` as a criterion id: `ac_3`, `AC\u20113` and a bare `3` all read as `AC-3` when it exists.
+
+    Measured on one run: the plan named its criteria `1` to `8`; every one was
+    dropped as "not a criterion" and the sprints were re-assigned from their
+    goals' words, which can differ from what the plan meant.
+    """
+    from app.acceptance.junit import tags_in
+
+    text = str(item).strip()
+    tagged = tags_in(text)
+    if len(tagged) == 1:
+        return tagged[0]
+    bare = text.lstrip("#").rstrip(".").strip()
+    if bare.isdigit() and f"AC-{int(bare)}" in known:
+        return f"AC-{int(bare)}"
+    return text.upper().replace("_", "-")
+
+
 def with_every_criterion_assigned(
     plan: Any, criteria_ids: list[str], texts: dict[str, str] | None = None
 ) -> tuple[Any, list[str]]:
@@ -511,7 +530,7 @@ def with_every_criterion_assigned(
     for number, sprint in enumerate(sprints, 1):
         mine: list[str] = []
         for item in getattr(sprint, "criteria", None) or []:
-            item = str(item).strip().upper().replace("_", "-")
+            item = _as_a_criterion_id(item, known)
             if item not in known:
                 notes.append(f"sprint {number} named {item}, which is not a criterion")
             elif item in seen:

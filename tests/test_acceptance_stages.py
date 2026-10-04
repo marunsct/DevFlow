@@ -321,3 +321,16 @@ def test_a_locked_test_that_cannot_pass_sends_the_suite_back_to_qa_once_built(tm
     spent = _state(tmp_path, suite_repairs=nodes.MAX_SUITE_REPAIRS)
     assert nodes.reopen_the_suite_for(spent, cannot_pass) is None
     assert nodes.reopen_the_suite_for(state, []) is None
+
+
+def test_a_plan_s_criteria_written_as_bare_numbers_are_read_as_ids() -> None:
+    """One run's plan named its criteria 1 to 8; all were dropped as unknown."""
+    from app.agents.scrum_master import SprintDefinition, SprintPlanOutput, with_every_criterion_assigned
+
+    plan = SprintPlanOutput.model_construct(sprints=[
+        SprintDefinition.model_construct(goal="Add", criteria=["1", "#2"]),
+        SprintDefinition.model_construct(goal="Keep", criteria=["ac_3", "AC‑4", "9"]),
+    ])
+    cleaned, notes = with_every_criterion_assigned(plan, ["AC-1", "AC-2", "AC-3", "AC-4"])
+    assert [list(s.criteria) for s in cleaned.sprints] == [["AC-1", "AC-2"], ["AC-3", "AC-4"]]
+    assert notes == ["sprint 2 named 9, which is not a criterion"]

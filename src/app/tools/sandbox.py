@@ -1699,9 +1699,17 @@ def _what_to_do_with_that_argument(
             f"it changes how `{executable}` itself runs rather than doing "
             "anything in the workspace. Send the plain command without it."
         )
+    # Named as a throwaway, because what is named so is swept before the next
+    # test round and at release (`file_kinds.is_scratch`). "Remove it" was
+    # followed for a few: one run left twelve `tmp-*` probes and one
+    # `src/import-ui.mjs`, and only the last - named like the product - would
+    # have shipped.
     return (
         "it can execute arbitrary code. Put the code in a file inside the "
-        "project folder, run the file, then remove it with `delete_artifact`."
+        "project folder named `tmp-<what it checks>` with the language's own "
+        "extension, and run the file. A file named so is a throwaway the "
+        "harness removes before the next test round and at release, so it "
+        "never ships; any other name is taken for part of the product."
         + _what_that_snippet_was_reading(argv, repo_root)
     )
 

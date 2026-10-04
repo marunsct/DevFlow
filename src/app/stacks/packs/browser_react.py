@@ -212,6 +212,7 @@ PACK = StackPack(
     runtime_report=js.PAGE_LOAD_REPORT,
     locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     failure_pages=js.failure_pages,
+    near_misses=js.near_misses,
     assertion_names=js.playwright_assertions,
     code_runs_in="browser",
     ci_setup=js.CI_SETUP,

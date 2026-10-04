@@ -422,7 +422,8 @@ def _no_code_on_the_command_line(stack: Any) -> str:
         "every time, for what it is, and no edit to any file changes that: "
         + ", ".join(spellings)
         + ". To execute something once, write it to a file in the project "
-        "folder, run the file, then remove it with `delete_artifact`. If what "
+        "folder named `tmp-<what it checks>`, and run the file: a file named "
+        "so is removed by the harness before it could ship. If what "
         "you actually need is what is already in a file, `read_file` and `grep` "
         "answer that in one call without running anything.\n"
     )

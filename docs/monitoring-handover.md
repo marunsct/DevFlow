@@ -208,7 +208,7 @@ working (the tool-approval check can fail transiently), schedule a retry about
 - Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
 - Containers log UTC; the host is JST (+9). Transcript times are UTC.
 - The full suite (`loop.sh suite`) takes about 3.3 minutes here: roughly
-  8,820 pass, 17 skip, and three `tests/test_codebase_seeding_api.py` tests
+  8,840 pass, 17 skip, and three `tests/test_codebase_seeding_api.py` tests
   fail for want of S3 credentials. Tests that need the TypeScript compiler or
   Pyright skip on the host; run those inside the worker after a deploy. Any other failure is real - unless `src/` was edited while the
   suite ran (tests that read source with `inspect` then see shifted lines).
@@ -398,9 +398,16 @@ know about its testing, and what changed most recently.
   with two smoke tests before any agent writes.
 - **Acceptance suite.** Written by QA from the criteria, then locked
   (`acceptance/`); the harness runs it every round. A failing test carries what
-  the page showed when it failed. The page check records uncaught errors,
-  console errors, failed requests and HTTP errors on load
-  (`test-results/page-load.json`).
+  the page showed when it failed, and - when nothing on the page matches its
+  locator but something differs only in case, punctuation or role - a
+  "Nearly there" line naming it (`near_misses` in the JavaScript packs). The
+  page check records uncaught errors, console errors, failed requests and HTTP
+  errors on load (`test-results/page-load.json`).
+- **One-off scripts.** Code on the command line (`node -e`, `python -c`) is
+  refused; the refusal says to put it in a file named `tmp-<what it checks>`.
+  Files named as throwaways (`file_kinds.is_scratch`) that a stage created and
+  nothing references are swept before every test round and at release; any
+  other name is taken for the product and ships.
 - **Unit tests** use the pack's runner. In `browser-javascript`, `npm test` is
   `node --import ./test-setup.mjs --test ... tests/`, so every test file has
   `document`, `window`, `localStorage` and the page's own `Event`/`FormData`
@@ -422,10 +429,12 @@ know about its testing, and what changed most recently.
   review runs on each batch.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
-a row before `80e97e7`; should now be gone); probe files left in the product
-that are not named like tests (`src/import-ui.mjs` in run-5cfba2c8 - the
-release clears only test-named probes nothing runs); agents adding their own
-scripts to the manifest; a fullstack run churning on unit tests of its page
+a row before `80e97e7`; should now be gone); probes named like the product
+(`src/import-ui.mjs` in run-5cfba2c8, beside twelve `tmp-*` ones the sweep
+handles) - the refusal now names the throwaway form; fix rounds that circle a
+locked test whose locator nearly matches the page (six stages in run-5cfba2c8;
+the "Nearly there" line should end it); agents adding their own scripts to
+the manifest; a fullstack run churning on unit tests of its page
 code (`fullstack-node` has no unit DOM yet; see
 `docs/harness-improvement-plan.md` §3).
 

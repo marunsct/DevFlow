@@ -234,7 +234,7 @@ def test_the_brief_names_the_refusal_before_a_stage_trips_it(tmp_path: Path) -> 
         "a JavaScript specialist is not told that `node -e` is refused until it "
         "has already spent a call on one"
     )
-    assert "delete_artifact" in described
+    assert "`tmp-<what it checks>`" in described
 
 
 def test_the_brief_only_names_programs_this_image_has() -> None:

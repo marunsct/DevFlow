@@ -476,11 +476,21 @@ def _with_the_pages_they_failed_on(repo_root: str | Path, project: str, result: 
         )
         if page:
             added += 1
+            near = _a_near_miss(pack, test.message, page)
             test = replace(test, message=(
-                f"{test.message}{_PAGE_MARK}{page[:FAILURE_PAGE_CHARS]}"
+                f"{test.message}{_PAGE_MARK}{page[:FAILURE_PAGE_CHARS]}{near}"
             ))
         tests.append(test)
     result.report = replace(result.report, tests=tests)
+
+
+def _a_near_miss(pack: Any, message: str, page: str) -> str:
+    if pack.near_misses is None:
+        return ""
+    try:
+        return pack.near_misses(message, page) or ""
+    except Exception:  # noqa: BLE001 - the failure stands without the hint
+        return ""
 
 
 #: How many of the product's own reported problems a result keeps.

@@ -285,6 +285,95 @@ def failure_pages(project_root: Path, evidence_dir: str) -> dict[str, str]:
     return found
 
 
+#: The locator a Playwright action was waiting for, from its call log: the
+#: last `getByRole`, `getByLabel` or `getByText` with a string argument.
+_WAITED_FOR = re.compile(r"waiting for (.*)")
+_BY_ROLE = re.compile(r"""getByRole\((['"])(\w+)\1\s*(?:,\s*\{([^}]*)\})?\)""")
+_BY_NAME = re.compile(r"""getBy(Label|Text)\((['"])((?:(?!\2).)*)\2\s*(?:,\s*\{([^}]*)\})?\)""")
+_NAME_OPTION = re.compile(r"""name:\s*(['"])((?:(?!\1).)*)\1""")
+_EXACT_OPTION = re.compile(r"exact:\s*true")
+
+#: A node in Playwright's page snapshot: `- textbox "Title:" [ref=e5]`, and
+#: text on its own: `- text: "Title:"`.
+_SNAPSHOT_NODE = re.compile(r'^\s*-\s*([a-z]+)\s+"((?:[^"\\]|\\.)*)"', re.M)
+_SNAPSHOT_TEXT = re.compile(r'^\s*-\s*text:\s*"?(.*?)"?\s*$', re.M)
+
+
+def _loose(name: str) -> str:
+    return re.sub(r"[\W_]+", "", name).lower()
+
+
+def _same_as(wanted: str, name: str, exact: bool) -> bool:
+    """Whether Playwright would take `name` for `wanted`: exact is the whole
+    string, case and all; otherwise a case-insensitive substring. Both with
+    whitespace normalised, as Playwright does."""
+    wanted, name = " ".join(wanted.split()), " ".join(name.split())
+    return name == wanted if exact else wanted.lower() in name.lower()
+
+
+def near_misses(message: str, page: str) -> str:
+    """What on the page a failed locator nearly matched, or "".
+
+    One run spent six fix stages on a locked test waiting for
+    `getByLabel('Title', { exact: true })` while the page it failed on showed
+    `textbox "Title:"`. Both were in front of every stage - the call log and
+    the page - and none connected them. Said only when nothing on the page
+    matches the locator under Playwright's own rules and something differs
+    from it only in case, punctuation or role; otherwise the miss is about
+    something else (timing, visibility, the action before it) and this is
+    silent. Never raises.
+    """
+    try:
+        waits = _WAITED_FOR.findall(message or "")
+        if not waits or not page:
+            return ""
+        wanted_role = ""
+        by_role = list(_BY_ROLE.finditer(waits[-1]))
+        by_name = list(_BY_NAME.finditer(waits[-1]))
+        last_role = by_role[-1] if by_role else None
+        last_name = by_name[-1] if by_name else None
+        if last_role and (not last_name or last_role.start() > last_name.start()):
+            options = last_role.group(3) or ""
+            named = _NAME_OPTION.search(options)
+            if not named:
+                return ""
+            wanted_role, wanted = last_role.group(2), named.group(2)
+            exact, locator = bool(_EXACT_OPTION.search(options)), last_role.group(0)
+            kind = "role"
+        elif last_name:
+            kind, wanted = last_name.group(1).lower(), last_name.group(3)
+            exact, locator = bool(_EXACT_OPTION.search(last_name.group(4) or "")), last_name.group(0)
+        else:
+            return ""
+        nodes = [(role, name) for role, name in _SNAPSHOT_NODE.findall(page) if role != "text"]
+        texts = [("text", text) for text in _SNAPSHOT_TEXT.findall(page) if text]
+        if kind == "role":
+            candidates = [(r, n) for r, n in nodes if r == wanted_role]
+        elif kind == "label":
+            candidates = nodes
+        else:
+            candidates = nodes + texts
+        if any(_same_as(wanted, name, exact) for _, name in candidates):
+            return ""
+        near = []
+        for role, name in nodes + (texts if kind == "text" else []):
+            close = _loose(name) == _loose(wanted) or (
+                kind == "role" and role != wanted_role and _same_as(wanted, name, exact)
+            )
+            shown = f'{role} "{name}"' if role != "text" else f'text "{name}"'
+            if close and shown not in near:
+                near.append(shown)
+        if not near:
+            return ""
+        return (
+            f"\nNearly there: the test waits for {locator}, and nothing on the page "
+            f"matches it; the page has {', '.join(near[:3])}. A locked test is the "
+            "requirement, so the page is what changes to match it."
+        )
+    except Exception:  # noqa: BLE001 - a hint is never worth a failure
+        return ""
+
+
 #: A matcher's declaration in the runner's own type definitions.
 _DECLARED_MATCHER = re.compile(r"^\s+(to[A-Z][A-Za-z]*)\s*[(<]", re.M)
 

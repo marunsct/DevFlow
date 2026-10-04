@@ -172,7 +172,10 @@ def test_a_deletion_cannot_be_edited_into_a_different_file() -> None:
 
 def test_the_refusal_of_an_inline_script_no_longer_asks_for_litter() -> None:
     """`node -e` is refused, and the refusal is where the loop started: it told
-    the agent to put the code in a file and said nothing about removing it."""
+    the agent to put the code in a file and said nothing about removing it.
+    Then it said "remove it with `delete_artifact`", which a few stages did;
+    now it names the file the way the harness's sweep recognises, so nothing
+    is left whether the stage remembers or not."""
     import pytest as _pytest
 
     from app.tools.sandbox import CommandNotAllowed, validate_command
@@ -181,7 +184,7 @@ def test_the_refusal_of_an_inline_script_no_longer_asks_for_litter() -> None:
         validate_command(["node", "-e", "console.log(1)"], role_name="ui_ux_specialist")
 
     message = " ".join(str(caught.value).split())
-    assert "delete_artifact" in message
+    assert "`tmp-<what it checks>`" in message and "harness removes" in message
 
 
 def test_the_project_pin_cannot_be_tidied_away(repo_root: Path) -> None:

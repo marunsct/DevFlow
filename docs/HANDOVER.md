@@ -78,7 +78,7 @@ step that fails must never stop the testing.
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `eede7fa`, pushed to `https://github.com/marunsct/DevFlow.git` |
+| branch | `harness-hardening-session`, last code commit `48025ea` (not yet deployed: a plan's criteria written as bare numbers; deploy when run-e5048126 ends), pushed to `https://github.com/marunsct/DevFlow.git` |
 | deployed | yes - the running image matches `eede7fa` (deployed 10:16 JST on 2026-10-04): plan review R1-R6 and the loop fixes since (latest: assertions the runner does not define are refused before the lock, and tests that cannot pass are repaired after it) |
 | current run | `run-e5048126-8478-4292-9ec6-5b7d47102210`, `web-todo`, started 10:17 JST (2026-10-04), auto mode, gpt-oss-20b, no judgement model. Driven from session `langchain-cb`. run-dded3a26 was cancelled 10:11 JST: its locked suite called a matcher that does not exist (fixed `eede7fa`). |
 | model | changed by the owner at 07:41 JST on 2026-10-02: `zai-org/glm-4.7-flash` on LM Studio, `http://host.docker.internal:1234/v1`, `thinking_effort` medium, execution mode **parallel**, context 176,000, max output 20,000. Before it: `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on the unsloth server (:8888, key required, a proxy that cuts a reply off at 20 minutes), gpt-oss-20b and qwen on :9090. To check that the configured model is served at the configured address with the harness's own key, run the snippet in section 5 inside the worker |

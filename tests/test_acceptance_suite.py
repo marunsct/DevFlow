@@ -436,3 +436,29 @@ def test_the_shape_rule_names_no_product_and_no_control(project, word: str) -> N
     start = _SYSTEM_PROMPT.index("Where the brief's interface says what kind of thing")
     rule = _SYSTEM_PROMPT[start:start + 400]
     assert not re.search(rf"\b{re.escape(word)}\b", rule, re.I)
+
+
+def test_a_record_that_changes_state_inside_a_view_is_tested(project) -> None:
+    """One run's locked suite checked each status view only as it was first
+    chosen. The product left a record in view after its state changed, its suite
+    passed 19 of 19, and the hidden test of exactly that failed (9 of 10)."""
+    from app.agents.acceptance_reviewer import _SYSTEM_PROMPT
+
+    author = requests.build_author_request(project, suite.criteria(project), brief="## Interface\n- x")["messages"][0]["content"]
+    for text in (" ".join(author.split()), " ".join(_SYSTEM_PROMPT.split())):
+        assert "while that view is shown" in text and "at once" in text
+
+
+@pytest.mark.parametrize("word", ["task", "tasks", "to-do", "todo", "button", "click", "checkbox", "filter", "active", "completed"])
+def test_the_state_change_rule_names_no_product_and_no_control(project, word: str) -> None:
+    import re
+
+    from app.agents.acceptance_reviewer import _SYSTEM_PROMPT
+
+    author = requests.build_author_request(project, suite.criteria(project), brief="## Interface\n- x")["messages"][0]["content"]
+    rules = [
+        author[author.index("- Where a view shows only the records"):][:400],
+        _SYSTEM_PROMPT[_SYSTEM_PROMPT.index("Where the brief has a view that shows only"):][:400],
+    ]
+    for rule in rules:
+        assert not re.search(rf"\b{re.escape(word)}\b", rule, re.I), word

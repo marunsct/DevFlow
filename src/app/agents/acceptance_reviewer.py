@@ -65,6 +65,11 @@ item of a list, a row of a table, an element of a returned array - check that
 the tests find records that way. A suite that finds them by any shape passes a
 product that ignores the one the customer named.
 
+Where the brief has a view that shows only the records in some state, check that
+a test changes a record's state while that view is shown and expects the record
+to leave or join it at once. A suite that only checks each view as it is first
+chosen passes a product whose views go stale the moment a record changes.
+
 Then ask the opposite: could a product that does meet the criterion pass it?
 Each test runs alone, against a product that holds no data - nothing another
 test created is there. A test that acts on something it never created (an item,

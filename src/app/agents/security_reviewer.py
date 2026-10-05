@@ -98,9 +98,41 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
     handed test evidence, the execution ledger and the cross-file checks; the
     architecture reviewer is handed the specification. This one was handed
     filenames.
+
+    Bounded by `SOURCE_BUDGET`, so a large product's files may not all fit. A
+    file that does not fit is named, every one of them - this used to stop at
+    the first and drop the rest without a word - and the reviewer is told to
+    open those itself. The workflow records the same list in the review
+    document (`source_coverage`), so a pass over part of the source says so.
     """
+    shown, not_shown = _select(changed_files, repository_root)
+    if not shown and not not_shown:
+        return (
+            "None of the changed files could be read for this request. Open "
+            "them with your read tools before deciding anything.\n"
+        )
+    parts = [f"\n--- {name} ---\n{body}" for name, body in shown]
+    parts += [f"\n--- {name} (not shown: the budget for this request is full) ---" for name in not_shown]
+    request = (
+        "--- The source under review, in full ---"
+        + "".join(parts)
+        + "\n\nThis is the code itself, not a summary. Judge it on what is "
+        "here; use your read tools only for something this does not show.\n"
+    )
+    if not_shown:
+        request += (
+            f"\n{len(not_shown)} file(s) above are not shown. Open each of them with your "
+            "read tools before deciding: a review that passes code it never read is "
+            "recorded as covering only what it read.\n"
+        )
+    return request
+
+
+def _select(changed_files: list[str], repository_root: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """The reviewable changed files that fit the budget, with their text, and those that do not."""
     root = Path(repository_root)
-    shown: list[str] = []
+    shown: list[tuple[str, str]] = []
+    not_shown: list[str] = []
     used = 0
     for name in changed_files:
         path = (root / name).resolve()
@@ -113,21 +145,17 @@ def _the_source_under_review(changed_files: list[str], repository_root: str) -> 
         except OSError:
             continue
         if used + len(body) > SOURCE_BUDGET:
-            shown.append(f"\n--- {name} (not shown: the budget for this request is full) ---")
-            break
+            not_shown.append(name)
+            continue
         used += len(body)
-        shown.append(f"\n--- {name} ---\n{body}")
-    if not shown:
-        return (
-            "None of the changed files could be read for this request. Open "
-            "them with your read tools before deciding anything.\n"
-        )
-    return (
-        "--- The source under review, in full ---"
-        + "".join(shown)
-        + "\n\nThis is the code itself, not a summary. Judge it on what is "
-        "here; use your read tools only for something this does not show.\n"
-    )
+        shown.append((name, body))
+    return shown, not_shown
+
+
+def source_coverage(changed_files: list[str], repository_root: str) -> tuple[list[str], list[str]]:
+    """(files shown to the reviewer in full, reviewable files the budget left out)."""
+    shown, not_shown = _select(changed_files, repository_root)
+    return [name for name, _ in shown], not_shown
 
 
 def _how_text_reaches_the_page(repository_root: str) -> str:
@@ -221,4 +249,5 @@ __all__ = [
     "SecurityReviewOutput",
     "build_security_review_request",
     "create_security_reviewer_agent",
+    "source_coverage",
 ]

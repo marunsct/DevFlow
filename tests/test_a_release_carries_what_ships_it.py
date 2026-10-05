@@ -109,6 +109,22 @@ def test_the_release_writes_them_once_and_never_over_the_product_s_own(tmp_path:
     assert again.written == [] and again.kept == ["shop/Dockerfile"]
 
 
-def test_a_project_no_pack_scaffolded_gets_nothing(tmp_path: Path) -> None:
+def test_a_project_no_pack_scaffolded_gets_nothing_and_the_release_says_so(tmp_path: Path) -> None:
     added = release.write(tmp_path)
-    assert added.written == [] and added.describe() == ""
+    assert added.written == []
+    assert "No stack pack covers this product" in added.describe()
+
+
+def test_packaging_that_fails_is_reported_not_swallowed(tmp_path: Path, monkeypatch) -> None:
+    pack = pack_named("node-http-api")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    assert scaffold(tmp_path, pack, "shop", "Shop", run=_runner(tmp_path, pack)).ok
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(release, "files_for", broken)
+    added = release.write(tmp_path)
+
+    assert "failed (OSError: disk full)" in added.describe()
+    assert "lacks the CI pipeline" in added.describe()

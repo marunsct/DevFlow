@@ -5932,10 +5932,13 @@ def build_workflow_graph(
         # no document of its own to render - the same latent shape that ended
         # one run at stage three when the stack selector finally used it.
         # It had never misbehaved; neither had the stack selector, until it did.
+        from app.agents.security_reviewer import source_coverage
+
+        shown, not_shown = source_coverage(changed_files, state["repository"].root_path)
         _record_document(
             state,
             "docs/security_review.md",
-            render_security_review(review),
+            render_security_review(review, shown, not_shown),
         )
         from app.sprint.record import findings_of
 

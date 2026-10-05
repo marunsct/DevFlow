@@ -103,11 +103,21 @@ def render_architecture_review(review: Any) -> str:
     return render_document("architecture_review", o=review, findings=_most_severe_first(review))
 
 
-def render_security_review(review: Any) -> str:
-    """`docs/security_review.md`, from `templates/security_review.md.j2`."""
+def render_security_review(
+    review: Any, shown: list[str] | None = None, not_shown: list[str] | None = None
+) -> str:
+    """`docs/security_review.md`, from `templates/security_review.md.j2`.
+
+    `shown` and `not_shown` are the files the request carried in full and those
+    its budget left out (`security_reviewer.source_coverage`); with any left
+    out, a pass is recorded as a pass over part of the source.
+    """
     from app.doc_templates import render_document
 
-    return render_document("security_review", o=review, findings=_most_severe_first(review))
+    return render_document(
+        "security_review", o=review, findings=_most_severe_first(review),
+        shown=shown, not_shown=not_shown or [],
+    )
 
 
 __all__ = ["render_architecture_review", "render_milestone_review", "render_security_review"]

@@ -14,6 +14,7 @@ empty is the default model's.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from typing import Any, Mapping
 
@@ -62,8 +63,21 @@ def judgement_model_name(environment: Mapping[str, str]) -> str:
     return str(environment.get("JUDGEMENT_MODEL") or "").strip()
 
 
+#: Why the configured judgement model was replaced by the default on the graph
+#: built last in this context, or None. A configured judgement model is a
+#: promise of a stronger review; when it cannot be built the run says so in its
+#: own history (`WorkflowRunner`), not only in a worker log nobody reads.
+_DOWNGRADE: contextvars.ContextVar[str | None] = contextvars.ContextVar("judgement_downgrade", default=None)
+
+
+def judgement_downgrade() -> str | None:
+    """Why the configured judgement model is not in use, or None when it is (or none is configured)."""
+    return _DOWNGRADE.get()
+
+
 def build_judgement_model(default_model: Any, environment: Mapping[str, str] | None = None) -> Any:
     """The judgement model, or `default_model` when none is configured or it cannot be built."""
+    _DOWNGRADE.set(None)
     if environment is None:
         try:
             from app.server.runtime_settings import effective_environment
@@ -81,10 +95,16 @@ def build_judgement_model(default_model: Any, environment: Mapping[str, str] | N
         from app.models import build_default_chat_model
 
         model = build_default_chat_model(load_settings(built))
-    except Exception:  # noqa: BLE001 - a broken second model must not stop the run
+    except Exception as error:  # noqa: BLE001 - a broken second model must not stop the run
         logger.warning(
             "The judgement model %r could not be built; every stage uses the default model",
             built.get("OPENAI_MODEL"), exc_info=True,
+        )
+        _DOWNGRADE.set(
+            f"The judgement model {built.get('OPENAI_MODEL')!r} could not be built "
+            f"({type(error).__name__}), so the architect, QA, reviews, test rounds and fixes "
+            "run on the default model: they are not independent reviews on this run. Fix "
+            "the judgement model's settings, or clear it to make this the intended setup."
         )
         return default_model
     logger.info("Judgement stages run on %s", built.get("OPENAI_MODEL"))

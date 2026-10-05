@@ -80,8 +80,14 @@ def files_for(pack: StackPack, project: str, title: str, package: str | None = N
 class ReleaseFiles:
     written: list[str] = field(default_factory=list)
     kept: list[str] = field(default_factory=list)
+    #: Why the handoff has no release files, when it has none it should. Said
+    #: in the release record: a release that silently lacks its CI pipeline
+    #: reads exactly like one that has it.
+    missing: str = ""
 
     def describe(self) -> str:
+        if self.missing:
+            return self.missing
         if not self.written and not self.kept:
             return ""
         parts = []
@@ -102,6 +108,11 @@ def write(repo_root: str | Path) -> ReleaseFiles:
     try:
         found = contract.the_pack(repo_root)
         if found is None:
+            outcome.missing = (
+                "No stack pack covers this product, so the release adds no CI pipeline or "
+                "container definition: the handoff carries only what the agents wrote, and "
+                "how to install, test and deploy it is not packaged."
+            )
             return outcome
         pack, record = found
         project = str(record.get("project") or "")
@@ -122,8 +133,13 @@ def write(repo_root: str | Path) -> ReleaseFiles:
             from app.tools.version_control import commit_all
 
             commit_all(root, f"Release: CI and deployment files from the {pack.title} pack")
-    except Exception:  # noqa: BLE001 - a release is not held back by its packaging
+    except Exception as error:  # noqa: BLE001 - a release is not held back by its packaging
         logger.warning("Could not add the release files", exc_info=True)
+        outcome.missing = (
+            f"Adding the release files failed ({type(error).__name__}: {str(error)[:200]}), so "
+            + (f"only {', '.join(outcome.written)} were added and " if outcome.written else "")
+            + "the handoff lacks the CI pipeline or container definition its stack pack provides."
+        )
     return outcome
 
 

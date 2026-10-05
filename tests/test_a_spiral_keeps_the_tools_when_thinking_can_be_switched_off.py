@@ -125,3 +125,16 @@ def test_thinking_stays_off_for_the_rest_of_the_visit() -> None:
 
 def test_a_visit_that_lost_nothing_keeps_its_thinking() -> None:
     assert not _thinking_is_off(_sent(list(_ASKED)))
+
+
+def test_the_notice_and_the_log_say_how_long_thinking_stays_off(caplog) -> None:
+    """Thinking stays off for the rest of the visit; both used to say "for this
+    call", which is what an auditor reading the log took to be the behaviour."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger=settled_answer.logger.name):
+        sent = _sent([*_ASKED, _spiral()])
+    told = str(sent.messages[-1]["content"])
+    assert "rest of this stage" in told and "for this call" not in told
+    assert any("rest of this visit" in r.getMessage() for r in caplog.records)
+    assert not any("for one call" in r.getMessage() for r in caplog.records)

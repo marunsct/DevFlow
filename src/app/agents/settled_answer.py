@@ -882,8 +882,9 @@ _REASONED_PAST_THE_BUDGET_NOTICE = (
 _REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE = (
     "Your previous reply was cut off at its output limit while you were still "
     "reasoning, so nothing of it survived - no text, no tool call. Thinking is "
-    "switched off for this call, so this reply goes straight to action: take your "
-    "next step now - the tool call your work needs next, or your structured "
+    "switched off for the rest of this stage, so each reply goes straight to "
+    "action: take your next step now - the tool call your work needs next, or "
+    "your structured "
     "response if the work is done. Do not plan all of it again; do the next "
     "part of it."
 )
@@ -1290,8 +1291,9 @@ def build_settled_answer_middleware(
                 # answer now - and a stage can be in both states at once.
                 spiralled = _the_last_reply_was_all_reasoning(messages)
                 # Thinking off with the tools kept, on a stage's first lost
-                # reply where thinking can be switched off for one call; the
-                # tools withheld otherwise. See the notice for why.
+                # reply where thinking can be switched off - and off for the
+                # rest of the visit, by `_without_reasoning_where_it_keeps_running_out`;
+                # the tools withheld otherwise. See the notice for why.
                 spiral_quiet: dict = {}
                 spiral_plainer = None
                 if spiralled:
@@ -1309,7 +1311,8 @@ def build_settled_answer_middleware(
                     if spiral_quiet:
                         logger.warning(
                             "Stage %s spent a whole reply's output budget on "
-                            "reasoning; thinking switched off for one call, tools kept",
+                            "reasoning; thinking switched off for the rest of this "
+                            "visit, tools kept",
                             stage_name or "?",
                         )
                     else:

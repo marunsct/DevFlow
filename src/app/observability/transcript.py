@@ -183,14 +183,22 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
     the defect moving.
 
     The machine's own words were on disk the whole time - the transcript
-    records every `run_terminal_command` result verbatim. This hands them back.
-    The prose stays: it carries the specialist's judgement about *which*
-    failure matters, which the raw output does not.
+    records every command a stage runs, with its result, verbatim. This hands
+    them back. The prose stays: it carries the specialist's judgement about
+    *which* failure matters, which the raw output does not.
+
+    Every tool whose result carries an exit code counts, not one tool by name,
+    and a failure the same command has passed since is no failure any more.
+    Measured on one run: a fixer was briefed with a unit-suite failure of 47
+    tests, one failing, as "the machine's own output" to believe over the
+    report. The suite had since grown to 61 and passed three times - through
+    the validation tool, which this did not read - and the fixer spent twelve
+    minutes looking for a failure that was gone.
     """
     if not run_id:
         return None
     calls: dict[str, dict] = {}
-    found: dict[str, str] | None = None
+    latest: dict[str, dict[str, str] | None] = {}
     for entry in read_transcript(run_id, {"tool_call", "tool_result"}):
         call_id = str(entry.get("call_id") or "")
         if not call_id:
@@ -199,38 +207,56 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
             calls[call_id] = entry
             continue
         call = calls.get(call_id)
-        if call is None or call.get("tool") != "run_terminal_command":
-            continue
         content = str(entry.get("content") or "")
-        if not _reports_a_failure(content):
+        outcome = _exit_code(content)
+        if call is None or outcome is None:
             continue
-        argv = (call.get("args") or {}).get("command")
-        found = {
-            "command": (
-                " ".join(str(part) for part in argv)
-                if isinstance(argv, list)
-                else str(argv or "")
-            ),
+        command = _the_command(call)
+        if not command:
+            continue
+        # Re-inserted so the dict's order is the order of each command's
+        # latest result.
+        latest.pop(_same_command(command), None)
+        latest[_same_command(command)] = None if outcome == "0" else {
+            "command": command,
             "output": _last_lines(content, OBSERVED_OUTPUT_LINES),
             "at": str(entry.get("at") or ""),
             "stage": str(call.get("stage") or entry.get("stage") or ""),
         }
-    return found
+    failing = [found for found in latest.values() if found]
+    return failing[-1] if failing else None
 
 
-def _reports_a_failure(content: str) -> bool:
-    """Whether this `run_terminal_command` result is a failure.
+def _the_command(call: dict) -> str:
+    """The command a tool call ran, as one line, or ""."""
+    argv = (call.get("args") or {}).get("command")
+    if isinstance(argv, list):
+        return " ".join(str(part) for part in argv)
+    return str(argv or "").strip()
 
-    The tool returns a JSON object carrying `returncode`. A refused command has
-    an `error` and no exit code; that is the harness declining, not the project
-    failing, and briefing a fixer with it would send it after the wrong thing.
+
+#: A leading `cd <dir> &&` (or `;`) - the same command, spelled from elsewhere.
+_CD_FIRST = re.compile(r"^\s*cd\s+\S+\s*(?:&&|;)\s*")
+
+
+def _same_command(command: str) -> str:
+    """`command` with what does not change which command it is taken out."""
+    return " ".join(_CD_FIRST.sub("", command).split())
+
+
+def _exit_code(content: str) -> str | None:
+    """A command result's exit code as text, or None for no command result.
+
+    A refused command has an `error` and no exit code; that is the harness
+    declining, not the project failing, and briefing a fixer with it would send
+    it after the wrong thing.
 
     The quotes around the number are optional because the tool really does send
     it both ways - `{"returncode": "0"}` in the transcripts on disk. Matching
     the bare-integer form alone found nothing at all, silently.
     """
     match = re.search(r'"returncode"\s*:\s*"?(-?\d+)"?', content)
-    return bool(match) and match.group(1) != "0"
+    return match.group(1) if match else None
 
 
 def _last_lines(content: str, limit: int) -> str:

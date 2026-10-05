@@ -20,8 +20,10 @@ Output columns: time, then one of
   CALL <tool> <arguments, truncated>
   RES  <result, truncated>
 A RESP with out= near the stage's output budget and no CALL after it is a
-reply spent entirely on reasoning; the harness withholds tools for one call
-and logs "thinking switched off" when that happens.
+reply spent entirely on reasoning. The harness then switches thinking off for
+the rest of that visit and keeps the tools, logging "thinking switched off";
+where thinking cannot be switched off, or on a second such reply in the visit,
+it withholds the tools for one call instead.
 """
 import glob
 import json

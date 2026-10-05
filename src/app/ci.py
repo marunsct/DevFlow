@@ -76,6 +76,52 @@ def commit(root: str | Path, message: str) -> str:
     return head(root)
 
 
+#: Between where a test lives and its name in a snapshot's key.
+WHERE = " \u203a "
+
+#: Which of two outcomes for one key is kept: the worse.
+_RANK = {"passed": 0, "skipped": 1, "failed": 2}
+
+
+def outcomes_of(tests: Sequence[Any]) -> dict[str, str]:
+    """Each test's outcome, keyed by where it lives and its name.
+
+    By name alone, two tests of the same name - "does not mutate the original
+    array", written once per function - were one entry, and the second's
+    outcome overwrote the first's. One run's 37 unit tests were recorded as 29,
+    its sprint summaries counted 42 tests where there were 50, and a failing
+    test could hide behind a passing one of the same name, which is the one
+    thing a regression check must never allow. Where two still share a key the
+    worse outcome is kept.
+    """
+    found: dict[str, str] = {}
+    for test in tests or ():
+        where = (getattr(test, "file", "") or getattr(test, "suite", "") or "").strip()
+        key = f"{where}{WHERE}{test.name}" if where else test.name
+        outcome = str(getattr(test, "outcome", "") or "failed")
+        kept = found.get(key)
+        if kept is None or _RANK.get(outcome, 2) > _RANK.get(kept, 2):
+            found[key] = outcome
+    return found
+
+
+def _bare(key: str) -> str:
+    return key.split(WHERE, 1)[-1] if WHERE in key else key
+
+
+def _outcome_now(now: dict[str, str], key: str) -> str | None:
+    """The outcome `key` has in `now`, by its full key or - for a snapshot taken
+    before keys carried where a test lives - by name, passing only if every test
+    of that name passes."""
+    if key in now:
+        return now[key]
+    name = _bare(key)
+    same = [outcome for other, outcome in now.items() if _bare(other) == name]
+    if not same:
+        return None
+    return "passed" if all(outcome == "passed" for outcome in same) else "failed"
+
+
 def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], bool]:
     found = contract.the_pack(root)
     if found is None:
@@ -90,7 +136,7 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
         runner = sandbox_runner(root)
     runner(list(record.get("unit_test") or pack.unit_test), "test", project)
     parsed = junit.read(report)
-    return {test.name: test.outcome for test in parsed.tests}, parsed.found
+    return outcomes_of(parsed.tests), parsed.found
 
 
 def take(
@@ -104,7 +150,7 @@ def take(
     unit, unit_ran = _run_unit(root, runner)
     if acceptance is None and suite.is_locked(root):
         acceptance = suite.run(root, runner=runner)
-    tests = {t.name: t.outcome for t in acceptance.report.tests} if acceptance is not None else {}
+    tests = outcomes_of(acceptance.report.tests) if acceptance is not None else {}
     return Snapshot(
         label=label,
         commit=head(root),
@@ -159,7 +205,7 @@ def regressions(before: Snapshot | None, after: Snapshot) -> list[str]:
         for name, outcome in was.items():
             if outcome != "passed":
                 continue
-            if not ran or now.get(name) != "passed":
+            if not ran or _outcome_now(now, name) != "passed":
                 lost.append(f"{kind}: {name}")
     return lost
 

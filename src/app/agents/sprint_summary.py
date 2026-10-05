@@ -230,6 +230,14 @@ def render_sprint_summary(
         )
     else:
         attempts_line = "1 (no re-run)"
+    # Revised after a milestone review is not re-run, and not nothing either:
+    # one run's sprint was sent back once and its summary read "no re-run" alone.
+    revisions = int(latest.get("revisions") or 0)
+    if revisions:
+        attempts_line = (
+            f"{attempts_line[:-1]}; revised {revisions} time{'s' if revisions != 1 else ''} "
+            "after the milestone review)"
+        )
 
     history: list[str] = []
     if attempt_count > 1:

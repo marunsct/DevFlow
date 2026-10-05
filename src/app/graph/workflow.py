@@ -482,6 +482,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # re-run left no record, and the extra milestone it cost looked like an
     # extra sprint. Appended to, never rewritten.
     sprint_attempts: list[dict[str, Any]]
+    # The work orders and defects of each plan a milestone review sent back in
+    # the current attempt at a sprint - replaced by the revision, and kept so
+    # the sprint's summary describes all of it. See `_record_sprint_summary`.
+    sprint_earlier_plans: list[dict[str, Any]]
     # A milestone plan that failed the definition of ready, and why - sent back
     # to the lead once. See `app.analysis.work_orders`.
     work_order_problems: list[str]
@@ -2741,6 +2745,24 @@ def _the_accepted_counts(root: str) -> dict[str, int] | None:
     return {"tests": len(outcomes), "passed": passed, "failed": failed}
 
 
+def _what_a_plan_did(plan: Any, cycle: Any) -> dict[str, Any]:
+    """A plan's work orders, as feature lines, and its cycle's defects, as the summary keeps them."""
+    return {
+        "features": [
+            (getattr(task, "title", "") or "").strip() or getattr(task, "task_description", str(task))
+            for task in (getattr(plan, "delegated_tasks", None) or [])
+        ],
+        "defects": [
+            {
+                "status": getattr(defect, "status", "open"),
+                "description": getattr(defect, "description", ""),
+                "owner": getattr(defect, "owner", "unassigned"),
+            }
+            for defect in (getattr(cycle, "defects", None) or [])
+        ],
+    }
+
+
 def _record_sprint_summary(
     state: WorkflowGraphState, status: str, failure_reason: str | None = None
 ) -> dict[str, Any]:
@@ -2793,18 +2815,17 @@ def _record_sprint_summary(
     # A task's title where the lead gave one - "Delete an item" rather than the
     # first line of an instruction to a specialist, which on one run read
     # "Review existing unit tests ..." under "Features Implemented".
-    features = [
-        (getattr(task, "title", "") or "").strip() or getattr(task, "task_description", str(task))
-        for task in (getattr(plan, "delegated_tasks", None) or [])
-    ]
-    defects = [
-        {
-            "status": getattr(defect, "status", "open"),
-            "description": getattr(defect, "description", ""),
-            "owner": getattr(defect, "owner", "unassigned"),
-        }
-        for defect in (getattr(cycle, "defects", None) or [])
-    ]
+    #
+    # Every plan of this attempt, not only the last. A milestone review that
+    # sends a sprint back replaces its plan and starts a new defect cycle, and
+    # the summary used to read only those: one run's sprint 1 built the whole
+    # page, was sent back over one XSS finding, and its summary listed only the
+    # XSS fix under "Features Implemented" with "Total Bugs Found: 0" - for a
+    # sprint whose fix rounds had found and fixed four defects.
+    earlier = list(state.get("sprint_earlier_plans") or [])
+    now = _what_a_plan_did(plan, cycle)
+    features = [feature for done in earlier for feature in done.get("features") or []] + now["features"]
+    defects = [defect for done in earlier for defect in done.get("defects") or []] + now["defects"]
 
     recorded = [dict(entry) for entry in (state.get("sprint_attempts") or [])]
     already = [entry for entry in recorded if entry.get("sprint_index") == sprint_index]
@@ -2861,6 +2882,7 @@ def _record_sprint_summary(
         "reason": failure_reason or "",
         "cases": cases,
         "rounds": state.get("test_round", 0),
+        "revisions": len(earlier),
         "features": features,
         "defects": defects,
         **record,
@@ -2884,7 +2906,8 @@ def _record_sprint_summary(
         )
     except Exception:  # noqa: BLE001 - as above
         logger.warning("Could not render the sprint summary", exc_info=True)
-    return {"sprint_attempts": attempts}
+    # The attempt is recorded; the next one starts with no earlier plans.
+    return {"sprint_attempts": attempts, "sprint_earlier_plans": []}
 
 
 def _accepted_when_nothing_in_it_gates(review: Any, repo_root: str) -> Any:
@@ -5288,6 +5311,11 @@ def build_workflow_graph(
             for key, count in (update.get("structured_retries", state.get("structured_retries")) or {}).items()
             if key != _ASSIGNMENT_RETRIES
         }
+        if revising and previous_milestone is not None:
+            update["sprint_earlier_plans"] = [
+                *(state.get("sprint_earlier_plans") or []),
+                _what_a_plan_did(previous_milestone, state.get("remediation")),
+            ]
         update["remediation"] = start_remediation(milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS)
         update["specialist_task_index"] = 0
         # The parallel twin of the line above, and for the same reason: a plan

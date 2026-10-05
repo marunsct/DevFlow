@@ -469,14 +469,19 @@ def playwright_assertions(project_root: Path) -> frozenset[str]:
     return frozenset(names)
 
 
-#: How a browser test finds a control, shared by every pack with a page.
+#: How a browser test finds a control, shared by every pack with a page. The
+#: last sentence because two runs' QA wrote `toBeUnchecked()`, which Playwright
+#: does not define; the check caught it each time
+#: (`assertions_that_do_not_exist`), and each time cost the suite a send-back.
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is
 `page.getByLabel('Email', { exact: true })`, a button named "Send" is
 `page.getByRole('button', { name: 'Send', exact: true })`, an entry of a list is
 `page.getByRole('listitem')`. A placeholder is not a label, and a test id or a CSS
 class is not something a person sees: never find a control by them - a product
-could pass such a test and still lack what the brief asked for."""
+could pass such a test and still lack what the brief asked for. Assert only with
+matchers Playwright defines: a checked box is `toBeChecked()`, an unchecked one
+`not.toBeChecked()` - there is no `toBeUnchecked`."""
 
 #: Locators that find a control by something no person sees. A suite that
 #: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).

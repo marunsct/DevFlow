@@ -347,3 +347,10 @@ def test_a_playwright_guide_shows_the_callback_a_test_must_take(name) -> None:
     `...`; Playwright refused every test before running one."""
     guide = pack_named(name).acceptance_guide
     assert "async ({ page }) =>" in guide and "never `async (page) => ...`" in guide
+
+
+@pytest.mark.parametrize("name", ["browser-javascript", "browser-react", "fullstack-node"])
+def test_a_browser_guide_names_the_matcher_for_an_unchecked_box(name) -> None:
+    """Two runs' QA wrote `toBeUnchecked()`, which Playwright does not define."""
+    guide = pack_named(name).acceptance_guide
+    assert "not.toBeChecked()" in guide and "there is no `toBeUnchecked`" in guide

@@ -14,6 +14,7 @@ import json
 import logging
 import threading
 import time
+from collections import deque
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -240,6 +241,62 @@ SMALLEST_REPLY_CAP = 2_000
 #: Status codes a proxy answers with when the server behind it took too long.
 _PROXY_GAVE_UP = frozenset({502, 504, 524})
 
+#: How many of a server's recent replies its pace is judged from.
+PACE_SAMPLES = 8
+
+#: A reply shorter than this measures the prompt more than the generation.
+PACE_MIN_TOKENS = 1_000
+
+#: How many times longer than its slowest recent pace a call may take.
+PACE_MARGIN = 2.0
+
+#: Recent generation rates, tokens per second, per (server, model).
+_PACE: dict[tuple[str, str], deque[float]] = {}
+_PACE_LOCK = threading.Lock()
+
+
+def record_pace(server: tuple[str, str], tokens: int, seconds: float) -> None:
+    """Remember how fast a server produced a reply long enough to measure it."""
+    if tokens < PACE_MIN_TOKENS or seconds <= 0:
+        return
+    with _PACE_LOCK:
+        _PACE.setdefault(server, deque(maxlen=PACE_SAMPLES)).append(tokens / seconds)
+
+
+def paced_timeout(server: tuple[str, str], reply_tokens: int | None, configured: Any) -> float | None:
+    """Seconds a call may take given how fast this server has been, or None to keep the configured limit.
+
+    The configured limit has to allow for any model this deployment might run,
+    so on a fast server it lets a wedged call stall a run for many times what
+    any real reply needs. Measured on one run: every reply came at 54-188
+    tokens a second, so the 25,000-token cap needed about five minutes, and
+    one call sat open for sixteen with the configured limit at thirty.
+
+    Once the server has been measured, a call may take twice what its own
+    token cap needs at the slowest recent pace - never below the floor for
+    real work, never above the configured limit. A reply cut off this way is
+    asked for again at half the length, as any cut-off reply is.
+    """
+    if not isinstance(configured, (int, float)) or not reply_tokens:
+        return None
+    with _PACE_LOCK:
+        rates = list(_PACE.get(server) or ())
+    if len(rates) < 2:
+        return None
+    needed = PACE_MARGIN * reply_tokens / min(rates)
+    return min(float(configured), max(MIN_REQUEST_TIMEOUT_SECONDS, needed))
+
+
+def _reply_tokens(result: Any) -> int:
+    """How many tokens a chat result's reply took, reasoning included, or 0."""
+    usage = (getattr(result, "llm_output", None) or {}).get("token_usage") or {}
+    tokens = usage.get("completion_tokens") if isinstance(usage, dict) else None
+    if not isinstance(tokens, int):
+        generations = getattr(result, "generations", None) or []
+        metadata = getattr(getattr(generations[0], "message", None), "usage_metadata", None) if generations else None
+        tokens = (metadata or {}).get("output_tokens")
+    return tokens if isinstance(tokens, int) else 0
+
 
 def after_a_failed_call(
     error: Exception, elapsed: float, reply_tokens: int | None, quick_failures: int
@@ -368,6 +425,9 @@ class CompatibleChatOpenAI(ChatOpenAI):
             for key in ("max_tokens", "max_completion_tokens"):
                 if isinstance(payload.get(key), int):
                     payload[key] = min(payload[key], cap)
+        deadline = getattr(_REPLY_CAP, "deadline", None)
+        if deadline:
+            payload["timeout"] = deadline
         return payload
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]
@@ -387,13 +447,17 @@ class CompatibleChatOpenAI(ChatOpenAI):
         if self.max_retries:
             return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
         ceiling = self.max_tokens if isinstance(self.max_tokens, int) else None
+        server = (str(self.openai_api_base or ""), str(self.model_name or ""))
         cap = None
         quick_failures = 0
         while True:
             started = time.monotonic()
             _REPLY_CAP.tokens = cap
+            _REPLY_CAP.deadline = paced_timeout(server, cap or ceiling, self.request_timeout)
             try:
-                return super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                result = super()._generate(messages, stop=stop, run_manager=run_manager, **kwargs)
+                record_pace(server, _reply_tokens(result), time.monotonic() - started)
+                return result
             except Exception as error:  # noqa: BLE001 - re-raised unless a retry can help
                 elapsed = time.monotonic() - started
                 step = after_a_failed_call(error, elapsed, cap or ceiling, quick_failures)
@@ -409,6 +473,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
                 time.sleep(wait)
             finally:
                 _REPLY_CAP.tokens = None
+                _REPLY_CAP.deadline = None
 
     def _create_chat_result(self, response, generation_info=None):  # type: ignore[override]
         """The result, with the reasoning the server returned kept on each message.

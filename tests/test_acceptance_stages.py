@@ -379,3 +379,14 @@ def test_a_criterion_the_suite_tests_is_not_deferred_as_not_automatable(tmp_path
     nodes.acceptance_author(state, CONFIG, CTX)
 
     assert suite.deferred(tmp_path) == {"AC-3": "needs a person to judge it"}
+
+
+def test_an_id_that_is_no_criterion_is_never_deferred(tmp_path, gated) -> None:
+    """One run's QA deferred "AC-14" in a product with nine criteria."""
+    gated.answers["acceptance_author"] = [SimpleNamespace(blockers=[
+        "AC-14: the size limit needs a person to count", "AC-3: needs a person to judge it",
+    ])]
+
+    nodes.acceptance_author(_state(tmp_path), CONFIG, CTX)
+
+    assert suite.deferred(tmp_path) == {"AC-3": "needs a person to judge it"}

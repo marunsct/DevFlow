@@ -150,7 +150,15 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             "QA named %s as not automatable, but the suite tests %s; not deferred",
             ", ".join(refused), "them" if len(refused) > 1 else "it",
         )
-    reasons = {criterion: why for criterion, why in reasons.items() if criterion not in tested}
+    # And only a criterion of this product: one run's QA deferred "AC-14", with
+    # nine criteria, and the release would have recorded it as set aside.
+    known = {criterion.id for criterion in suite.criteria(root)}
+    unknown = sorted(criterion for criterion in reasons if criterion not in known)
+    if unknown:
+        logger.warning("QA named %s as not automatable, which are not criteria here; ignored", ", ".join(unknown))
+    reasons = {
+        criterion: why for criterion, why in reasons.items() if criterion not in tested and criterion in known
+    }
     if reasons:
         suite.defer(root, reasons)
         logger.info("QA marked %s as not automatable", ", ".join(sorted(reasons)))

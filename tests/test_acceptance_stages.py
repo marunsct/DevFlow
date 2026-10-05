@@ -358,3 +358,24 @@ def test_a_fixer_is_told_when_the_definition_of_done_already_holds(tmp_path, mon
     _all_passing(tmp_path, monkeypatch, failing=("AC-1",))
     suite.run(tmp_path)
     assert nodes.done_by_the_definition(state) == []
+
+
+def test_a_criterion_the_suite_tests_is_not_deferred_as_not_automatable(tmp_path, gated) -> None:
+    """One run's QA, repairing a reopened suite, listed the product's bugs as
+    blockers - "AC-5: product bug, the filter buttons never fire" - and four
+    criteria with failing tests in the suite left the release gate."""
+    state = _state(tmp_path)
+    _authored(tmp_path, (
+        "import { test } from '@playwright/test';\n"
+        "test('[AC-1] adds a note', async ({ page }) => {});\n"
+        "test('[AC-2] deletes a note', async ({ page }) => {});\n"
+    ))
+    assert suite.coverage(tmp_path).get("AC-2")
+    gated.answers["acceptance_author"] = [SimpleNamespace(blockers=[
+        "AC-2: product bug - the delete control never fires",
+        "AC-3: needs a person to judge it",
+    ])]
+
+    nodes.acceptance_author(state, CONFIG, CTX)
+
+    assert suite.deferred(tmp_path) == {"AC-3": "needs a person to judge it"}

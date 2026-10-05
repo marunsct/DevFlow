@@ -137,6 +137,20 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         return update
     output = update.pop("__acceptance_author__")
     reasons = acceptance_requests.not_automatable(getattr(output, "blockers", None) or [])
+    # A criterion the suite has a test for is automatable: that test is how.
+    # Deferring it takes it out of the release gate. One run's QA, repairing a
+    # reopened suite and unable to fix the product, listed the product's bugs as
+    # blockers - "AC-5: product bug, the filter buttons never fire" - and edit,
+    # both filter criteria and persistence were deferred, each with tests in the
+    # suite that were failing for exactly those bugs.
+    tested = {criterion for criterion, names in suite.coverage(root).items() if names}
+    refused = sorted(criterion for criterion in reasons if criterion in tested)
+    if refused:
+        logger.warning(
+            "QA named %s as not automatable, but the suite tests %s; not deferred",
+            ", ".join(refused), "them" if len(refused) > 1 else "it",
+        )
+    reasons = {criterion: why for criterion, why in reasons.items() if criterion not in tested}
     if reasons:
         suite.defer(root, reasons)
         logger.info("QA marked %s as not automatable", ", ".join(sorted(reasons)))

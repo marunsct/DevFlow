@@ -350,6 +350,29 @@ def choose_pack(stack: Any, text: str = "") -> StackPack | None:
     return None
 
 
+#: What a run on a stack can promise, by whether a pack fits it. Stated in the
+#: run's stack decision so the handoff is read for what it is: a pack's
+#: scaffold, commands and release files are known and tested; a stack no pack
+#: fits is set up and tested by the agents' own commands, with nothing packaged.
+PACK_SUPPORTED = "pack-supported"
+CUSTOM_STACK = "custom stack"
+
+
+def support_tier(pack: StackPack | None) -> str:
+    """The support tier, with what it means, for a run on `pack` (None: no pack fits)."""
+    if pack is not None:
+        return (
+            f"Support tier: {PACK_SUPPORTED} - the {pack.name} pack's scaffold, install and "
+            "test commands, and release files (CI pipeline, and a container definition for "
+            "a service)."
+        )
+    return (
+        f"Support tier: {CUSTOM_STACK} - no pack fits, so there is no scaffold: the agents "
+        "choose the setup and the test commands, the locked suite runs on those, and the "
+        "release carries no packaged CI or container files."
+    )
+
+
 def pack_named(name: str | None) -> StackPack | None:
     from app.stacks.packs import ALL_PACKS
 

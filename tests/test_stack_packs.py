@@ -321,3 +321,21 @@ def test_the_contract_says_the_kept_files_are_not_the_product(tmp_path) -> None:
     scaffold(tmp_path, pack, "demo-app", "Demo App", run=run)
     text = contract.describe(tmp_path)
     assert "test setup, not the product" in text and "test them" in text
+
+
+@pytest.mark.parametrize(
+    "stack, tier",
+    [
+        (_stack(language="JavaScript", framework="None", frontend_framework="Vanilla JS"), "pack-supported"),
+        (_stack(language="Go", framework="Gin"), "custom stack"),
+    ],
+)
+def test_the_stack_decision_states_the_support_tier(stack, tier) -> None:
+    from app.graph.workflow import _the_stack_pack_for
+
+    chosen = SimpleNamespace(technology_stack=stack, rationale="why", model_copy=lambda update: chosen)
+    state = {"document": SimpleNamespace(text="A single-page web app"), "decisions": []}
+    out = _the_stack_pack_for(state, {"stack_selection": chosen})
+
+    rationale = out["decisions"][-1]["rationale"]
+    assert rationale.startswith(f"Support tier: {tier} - ") and rationale.endswith("why")

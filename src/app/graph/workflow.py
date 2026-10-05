@@ -4276,7 +4276,7 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
     `app.stacks`.
     """
     from app.decisions import record_decision
-    from app.stacks import aligned_stack, choose_pack
+    from app.stacks import aligned_stack, choose_pack, support_tier
 
     chosen = update.get("stack_selection")
     stack = getattr(chosen, "technology_stack", None)
@@ -4301,7 +4301,7 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
             f"{getattr(final, 'language', '')} / {getattr(final, 'framework', '')}"
             + (f" - {pack.title}" if pack else " - no stack pack fits; the agents set the project up")
         ),
-        rationale=str(getattr(chosen, "rationale", "") or "")[:1500],
+        rationale=(support_tier(pack) + "\n" + str(getattr(chosen, "rationale", "") or ""))[:1700],
     )
     return out
 

@@ -295,7 +295,11 @@ def _budget_exceeded(run_id: str) -> tuple[bool, RunCost]:
     unknown rather than zero. That is the safe direction for a *pause*: a
     ceiling that fires on a number it invented would stop good work for a reason
     that is not true. `unpriced_requests` on the summary is how an operator sees
-    that the total is partial.
+    that the total is partial, and the dashboard shows it beside the spend.
+
+    So the ceiling is a hard cap only over priced models: a run is refused at
+    start when a configured model has no price (`_require_a_ceiling_that_can_hold`).
+    A reply that comes back without usage is still unpriced and still uncounted.
     """
     ceiling = _max_run_cost_usd()
     total = run_cost(run_id)
@@ -794,6 +798,28 @@ class WorkflowRunner:
         for thread_id in [*state.get("inner_thread_ids", []), record.thread_id]:
             discard_thread(thread_id, checkpointer=self.checkpointer)
 
+    async def _say_if_the_judgement_model_was_replaced(self, record: RunRecord) -> None:
+        """Put a configured judgement model that could not be built into the run's history."""
+        from app.models.roles import judgement_downgrade
+
+        note = judgement_downgrade()
+        if not note:
+            return
+        try:
+            await self.event_bus.publish(
+                record.run_id,
+                RunEvent(
+                    run_id=record.run_id,
+                    sequence=await self.event_bus.next_sequence(record.run_id),
+                    stage=record.current_stage or "",
+                    event_type="log",
+                    message=note,
+                    metadata={"kind": "judgement_model_replaced"},
+                ),
+            )
+        except Exception:  # noqa: BLE001 - the note never stops the run
+            logger.warning("Could not record that the judgement model was replaced", exc_info=True)
+
     async def _require_command_execution(self) -> None:
         """Refuse to start when the workers reported that they cannot run commands.
 
@@ -812,6 +838,41 @@ class WorkflowRunner:
         reason = why_commands_cannot_run(stored)
         if reason:
             raise RunConflict(reason)
+
+    def _require_a_ceiling_that_can_hold(self) -> None:
+        """Refuse to start under a spending ceiling that could not stop this run.
+
+        `_budget_exceeded` counts only calls it could price, so a ceiling over a
+        hosted model with no known rate reads as a hard cap and is none: every
+        call goes unpriced and the total stays at zero. A local model is priced
+        at nothing, which is a measurement, so it never trips this.
+        """
+        if _max_run_cost_usd() <= 0:
+            return
+        from app.models.roles import judgement_environment
+        from app.observability.cost_tracker import price_for
+        from app.server.runtime_settings import effective_environment
+
+        try:
+            environment = dict(effective_environment())
+        except Exception:  # noqa: BLE001 - never block on reading settings
+            logger.warning("Could not read settings to check the spending ceiling", exc_info=True)
+            return
+        unpriced = []
+        for settings in (environment, judgement_environment(environment)):
+            if not settings:
+                continue
+            provider = str(settings.get("LLM_PROVIDER") or "local").strip().lower()
+            model = str(settings.get("OPENAI_MODEL") or "").strip()
+            if model and price_for(provider, model) is None:
+                unpriced.append(model)
+        if unpriced:
+            raise RunConflict(
+                f"MAX_RUN_COST_USD is set to ${_max_run_cost_usd():.2f}, but "
+                f"{', '.join(sorted(set(unpriced)))} has no known price, so its calls would "
+                "not count toward the ceiling and nothing would stop the run. Add its rates "
+                "to MODEL_PRICES_JSON, or unset MAX_RUN_COST_USD to run without a ceiling."
+            )
 
     def _require_a_reachable_model(self) -> None:
         """Refuse to start when nothing is serving the configured endpoint.
@@ -884,6 +945,7 @@ class WorkflowRunner:
             raise ValueError(f"Run {run_id} is not registered")
 
         await self._require_command_execution()
+        self._require_a_ceiling_that_can_hold()
         self._require_a_reachable_model()
 
         record.repo_root = str(repository.root_path)
@@ -932,6 +994,7 @@ class WorkflowRunner:
             )
 
         await self._require_command_execution()
+        self._require_a_ceiling_that_can_hold()
         self._require_a_reachable_model()
 
         now = datetime.now(timezone.utc).isoformat()
@@ -1104,6 +1167,7 @@ class WorkflowRunner:
                 model_overrides=overrides or None,
                 checkpointer=self.checkpointer,
             )
+            await self._say_if_the_judgement_model_was_replaced(record)
 
             trace_meta = (
                 trace_metadata(

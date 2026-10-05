@@ -510,6 +510,28 @@ export const RunDashboard: React.FC = () => {
                 {run.artifacts?.length ?? 0} produced
               </dd>
             </div>
+            {/* A partial total must not read as the whole spend: the
+                MAX_RUN_COST_USD ceiling counts only the calls it could price. */}
+            {run.cost && (
+              <div>
+                <dt className="text-[11px] text-text-muted uppercase tracking-wider">Spend</dt>
+                <dd
+                  className="mt-1 text-[13px] text-text-primary tabular-nums"
+                  title={
+                    run.cost.fully_priced
+                      ? undefined
+                      : `Partial: ${run.cost.unpriced_requests} call(s) had no known price ` +
+                        `(${run.cost.unpriced_models.join(', ') || 'no usage reported'}). ` +
+                        'The spending ceiling does not count them.'
+                  }
+                >
+                  ${run.cost.estimated_cost_usd.toFixed(2)}
+                  {!run.cost.fully_priced && (
+                    <span className="text-warning"> + {run.cost.unpriced_requests} unpriced</span>
+                  )}
+                </dd>
+              </div>
+            )}
           </dl>
         </div>
 

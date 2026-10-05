@@ -89,9 +89,23 @@ score)
   docker cp "benchmarks/$name" "langchain-worker-1:/tmp/bench-src/$name" >/dev/null
   docker cp scripts/bench/score.py langchain-worker-1:/tmp/bench-src/score.py >/dev/null
   docker compose exec -T -u root worker chown -R appuser:appuser /tmp/bench-src
-  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json"
+  status=$("${DB[@]}" "select status from runs where run_id='$run'" | tr -d '[:space:]')
+  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status"
   mkdir -p data/bench
   docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  ;;
+
+mutate)
+  # How strong is the run's own locked suite? See scripts/bench/mutate.py.
+  run="${2:-$(current)}"; count="${3:-12}"
+  docker cp scripts/bench/mutate.py langchain-worker-1:/tmp/mutate.py >/dev/null
+  docker compose exec -T worker python /tmp/mutate.py "/app/data/workspaces/default/workspace-$run" "/tmp/mutate-$run.json" "$count"
+  mkdir -p data/bench/mutation
+  docker cp "langchain-worker-1:/tmp/mutate-$run.json" "data/bench/mutation/$run.json" >/dev/null && echo "result: data/bench/mutation/$run.json"
+  ;;
+
+bench-report)
+  "$PY" scripts/bench/report.py data/bench
   ;;
 
 cancel)

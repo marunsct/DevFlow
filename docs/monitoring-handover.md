@@ -99,7 +99,7 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 
 | script | what it is for |
 |---|---|
-| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]`, `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment. |
+| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]` (also records the harness's own verdict and flags a false acceptance), `mutate [run] [n]` (n small changes to the product; how many the run's locked suite catches), `bench-report` (false acceptances per benchmark across `data/bench/`), `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment. |
 | `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0), redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
 | `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
 | `product_audit.py` | the product half of the audit (`loop.sh product [run-id]`): the product files, code lines per file (counted as the brief's line cap is), the intake's acceptance criteria, what the harness claimed (sprint summary counts, milestone acceptance evidence), and the product's own test command run once. Prints evidence; the reading is the checklist in 0.4.1. |
@@ -124,7 +124,16 @@ scripts/loop/loop.sh bench web-todo                    # the benchmark the gate 
 scripts/loop/loop.sh wait 10                           # first 40 minutes; then `wait 18`
 scripts/loop/loop.sh score                             # when it ends: the hidden tests
 scripts/loop/loop.sh product                           # then the product audit (0.4.1)
+scripts/loop/loop.sh mutate                            # a finished run: how strong its locked suite is (~1 min a change)
+scripts/loop/loop.sh bench-report                      # false acceptances across every scored run
 ```
+
+`score` prints `FALSE ACCEPTANCE` when the harness finished a run whose product
+fails hidden tests: that is a harness finding even when no transcript shows a
+fault. `mutate` says how well the locked tests check what they check; it cannot
+see a requirement no test checks (run-eb409cbe's suite caught 5 of 6 changes yet
+the product scored 2/10). Do not edit `loop.sh` while a `wait` runs: bash reads
+the script as it goes, and the wait dies with a syntax error.
 
 Before `bench`, check the served model matches the settings (`docs/HANDOVER.md`
 §5). After `deploy`, the worker's `/tmp` is empty: anything copied there for

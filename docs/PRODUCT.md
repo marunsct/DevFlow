@@ -282,7 +282,23 @@ cooperative cancellation at every node, gate and recursion limits.
 | CI regressions | each batch, each fix | snapshot vs last accepted and last measurement; regressions become defects; a regressing fix is reverted |
 | Reviews | per batch / sprint | code review, security review, milestone review (findings about later sprints' criteria made minor) |
 | Release gate | end | every non-deferred criterion passes |
-| Benchmarks | per loop run | hidden tests the harness never sees; score = share passed |
+| Benchmarks | per loop run | hidden tests the harness never sees; score = share passed; a finished run that fails hidden tests is a **false acceptance** (`scripts/bench/report.py`); `scripts/bench/mutate.py` measures the locked suite by breaking the product |
+
+### Support tiers (what a run can promise)
+
+"Technology-agnostic" is the design, not a measured claim. Each run's stack
+decision states its tier (`app.stacks.support_tier`):
+
+| Tier | Meaning | Stacks | Measured by a benchmark |
+|---|---|---|---|
+| **Pack-supported** | the pack's scaffold, install and test commands, and release files (CI; a container definition for a service) | `browser-javascript`, `python-http-api`, `python-cli`, `python-library`, `fullstack-node` | yes: `web-todo`, `notes-api`, `wordstats-cli`, `textkit-lib`, `fullstack-bookmarks`. None has yet passed the loop's gate |
+| | | `browser-react`, `node-http-api` | no |
+| **Custom stack** | no pack fits: the agents choose the setup and test commands, the locked suite runs on those, and the release has no packaged CI or container files (the release decision says so) | anything else | no |
+
+A custom-stack run still reaches release only when its locked acceptance suite
+passes, so a product that was never tested is never handed over as finished. How
+well that suite tests the brief is unmeasured outside the benchmarks. Support
+grows by adding and measuring packs, not by widening generic checks.
 
 ---
 

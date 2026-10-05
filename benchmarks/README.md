@@ -40,6 +40,20 @@ brief says (a static server for a page, `start.sh` for a service, `python -m`
 for a program, an import for a library), runs the hidden tests against it and
 writes `data/bench/<run>.json`.
 
+`score` also records what the harness itself concluded - the run's status and
+its locked acceptance suite's last result - and marks a **false acceptance**: a
+run the harness finished whose product fails hidden tests. `loop.sh
+bench-report` (`scripts/bench/report.py`) totals them per benchmark; the
+false-acceptance rate, not the mean score, says whether a finished run can be
+handed over unread.
+
+`loop.sh mutate [run] [n]` (`scripts/bench/mutate.py`) measures the run's own
+locked suite: it makes n small changes to the product's source (a comparison
+turned round, a condition flipped), runs the suite the way the harness does,
+and counts how many it catches. That is a floor on how well the tests check
+what they check; a requirement no test checks shows up only as a false
+acceptance.
+
 To check a benchmark itself, score its reference:
 
 ```

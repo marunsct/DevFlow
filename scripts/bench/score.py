@@ -16,7 +16,12 @@ so any implementation of the brief can pass them.
      "runner": "playwright" | "pytest",
      "module": "<python module, for cli and library>"}
 
-The result is JSON: totals, the score (passed / total), and every test.
+The result is JSON: totals, the score (passed / total), and every test - and
+beside them what the harness itself concluded (`harness`): the run's status,
+passed to this script by `loop.sh score`, and its locked acceptance suite's
+last result. A run the harness finished while its product fails hidden tests
+is a *false acceptance* (`false_acceptance`), the number that says how far the
+harness's own "done" can be trusted. `report.py` totals them across runs.
 """
 
 from __future__ import annotations
@@ -103,7 +108,25 @@ def _junit(path: Path) -> list[dict]:
     return tests
 
 
-def score(product: Path, bench: Path, out: Path) -> dict:
+def harness_verdict(product: Path, status: str = "") -> dict:
+    """What the harness concluded about this product: its run status and locked suite result."""
+    verdict: dict = {"status": status or "unknown"}
+    try:
+        locked = json.loads((product.parent / ".harness" / "acceptance-result.json").read_text())
+    except (OSError, ValueError):
+        return verdict
+    criteria = locked.get("criteria") or {}
+    verdict.update({
+        "locked_passed": int(locked.get("passed") or 0),
+        "locked_failed": int(locked.get("failed") or 0),
+        "criteria_passed": sum(1 for c in criteria.values() if c.get("status") == "passed"),
+        "criteria_deferred": sum(1 for c in criteria.values() if c.get("status") == "deferred"),
+        "criteria": len(criteria),
+    })
+    return verdict
+
+
+def score(product: Path, bench: Path, out: Path, status: str = "") -> dict:
     spec = json.loads((bench / "bench.json").read_text())
     kind, runner = spec["kind"], spec["runner"]
     notes: list[str] = []
@@ -165,14 +188,22 @@ def score(product: Path, bench: Path, out: Path) -> dict:
         "tests": tests,
         "notes": notes,
     }
+    result["harness"] = harness_verdict(product, status)
+    result["false_acceptance"] = result["harness"]["status"] == "completed" and result["score"] < 1.0
     out.write_text(json.dumps(result, indent=2))
     return result
 
 
 if __name__ == "__main__":
     product, bench, out = (Path(a) for a in sys.argv[1:4])
-    result = score(product, bench, out)
+    result = score(product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "")
     print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
+    harness = result["harness"]
+    print(
+        f"  harness: run {harness['status']}, locked suite {harness.get('locked_passed', '?')} passed / "
+        f"{harness.get('locked_failed', '?')} failed"
+        + ("  <- FALSE ACCEPTANCE: the harness finished a product that fails hidden tests" if result["false_acceptance"] else "")
+    )
     for test in result["tests"]:
         if test["outcome"] != "passed":
             print(f"  FAIL {test['name']}: {test['message'][:200]}")

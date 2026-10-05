@@ -291,8 +291,7 @@ decision states its tier (`app.stacks.support_tier`):
 
 | Tier | Meaning | Stacks | Measured by a benchmark |
 |---|---|---|---|
-| **Pack-supported** | the pack's scaffold, install and test commands, and release files (CI; a container definition for a service) | `browser-javascript`, `python-http-api`, `python-cli`, `python-library`, `fullstack-node` | yes: `web-todo`, `notes-api`, `wordstats-cli`, `textkit-lib`, `fullstack-bookmarks`. None has yet passed the loop's gate |
-| | | `browser-react`, `node-http-api` | no |
+| **Pack-supported** | the pack's scaffold, install and test commands, and release files (CI; a container definition for a service) | every pack: `browser-javascript`, `browser-react`, `python-http-api`, `node-http-api`, `python-cli`, `python-library`, `fullstack-node` | yes: `web-todo`, `web-todo-react`, `notes-api`, `notes-api-js`, `wordstats-cli`, `textkit-lib`, `fullstack-bookmarks` (each reference scores 100%). No pack has yet passed the loop's gate |
 | **Custom stack** | no pack fits: the agents choose the setup and test commands, the locked suite runs on those, and the release has no packaged CI or container files (the release decision says so) | anything else | no |
 
 A custom-stack run still reaches release only when its locked acceptance suite

@@ -13,6 +13,13 @@ measured. See `docs/redesign-software-company.md`.
 | `wordstats-cli` | command-line program | Python | 8 | pytest (as a process) |
 | `textkit-lib` | library | Python | 8 | pytest (by import) |
 | `fullstack-bookmarks` | page + its own service | JavaScript | 8 | Playwright (page and API) |
+| `web-todo-react` | browser app | TypeScript, React | 10 (`web-todo`'s) | Playwright |
+| `notes-api-js` | HTTP service | JavaScript | 9 (`notes-api`'s) | pytest + httpx |
+
+The last two hold the `browser-react` and `node-http-api` stack packs to the
+same hidden tests as their siblings: the briefs differ only in the stack they
+ask for, and the tests reach the product only through the brief's interface.
+They are coverage, not part of the gate below.
 
 ## How a benchmark is laid out
 

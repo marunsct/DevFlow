@@ -494,6 +494,9 @@ IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL = 4
 #: some of them prepend - an anchored match without it stopped counting a call
 #: exactly when it started repeating, which is how the audit script came to
 #: report 15 failures on a run that had 29.
+#: An edit's result saying the change is already in the file.
+_ALREADY_APPLIED = re.compile(r'"status":\s*"already_applied"')
+
 _REFUSED = re.compile(
     r'^\s*(?:\[[^\]]*\]\s*)?(?:\{"error"|Error:|Refusing|Not running|Not looking|No journalled)',
 )
@@ -1060,6 +1063,12 @@ def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None
     Counted like the refusals - each result paired with its call through
     `tool_call_id`, identical `(name, arguments)` tallied - on the marker
     `repeated_queries` writes, not on this module's reading of the listing.
+
+    An edit answered `already_applied` is the same loop: it changes nothing and
+    says so. One run's backend specialist wrote its module, then sent the one
+    edit already in it eight times running, each answered "This edit is
+    already in ...", until its call budget was gone and its tools were taken -
+    with nothing above to stop it, because none of those calls failed.
     """
     from app.agents.repeated_queries import SAME_ANSWER_MARKER
 
@@ -1076,7 +1085,8 @@ def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None
         if getattr(message, "type", None) != "tool":
             continue
         pair = asked.get(str(getattr(message, "tool_call_id", "") or ""))
-        if pair is None or SAME_ANSWER_MARKER not in str(getattr(message, "content", "") or ""):
+        content = str(getattr(message, "content", "") or "")
+        if pair is None or not (SAME_ANSWER_MARKER in content or _ALREADY_APPLIED.search(content)):
             continue
         repeats[pair] = repeats.get(pair, 0) + 1
     if not repeats:

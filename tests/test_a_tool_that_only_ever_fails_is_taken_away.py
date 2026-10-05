@@ -384,3 +384,40 @@ class TestAQueryThatKeepsAnsweringTheSame:
 
         assert [tool.name for tool in sent[0].tools] == ["read_file", "glob"]
         assert "`ls` has been withheld" in str(sent[0].messages[-1]["content"])
+
+
+class TestAnEditAlreadyInTheFileKeptBeingSent:
+    """One run's backend specialist sent one edit already in its module eight
+    times running, each answered "already_applied", until its call budget was
+    gone - nothing escalated, because none of those calls failed."""
+
+    APPLIED = (
+        '{"path": "app/src/app.js", "status": "already_applied", "summary": "const form = ...", '
+        '"lines": 319, "detail": "This edit is already in \'app/src/app.js\'"}'
+    )
+
+    def test_it_is_named_at_the_threshold(self) -> None:
+        from app.agents.settled_answer import (
+            IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL,
+            _a_query_answered_identically,
+        )
+
+        args = {"relative_path": "app/src/app.js", "find": "a", "replace": "b"}
+        messages = _conversation(
+            IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL, tool="edit_artifact", args=args, result=self.APPLIED
+        )
+        assert _a_query_answered_identically(messages) == (
+            "edit_artifact", IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL
+        )
+
+    def test_different_edits_each_already_applied_are_not_a_loop(self) -> None:
+        from app.agents.settled_answer import _a_query_answered_identically
+
+        messages = _conversation(8, tool="edit_artifact", result=self.APPLIED, vary=True)
+        assert _a_query_answered_identically(messages) is None
+
+    def test_an_edit_that_was_made_is_not_counted(self) -> None:
+        from app.agents.settled_answer import _a_query_answered_identically
+
+        made = '{"path": "app/src/app.js", "status": "edited", "summary": "x"}'
+        assert _a_query_answered_identically(_conversation(8, tool="edit_artifact", result=made)) is None

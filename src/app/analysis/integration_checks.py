@@ -810,12 +810,27 @@ _NODE_COLLECTS = re.compile(r"^(?:.+[.\-_]test|test|test-.+)\.[cm]?js$", re.IGNO
 _RUNNERS_WITH_THEIR_OWN_CONFIG = ("jest", "vitest", "mocha", "ava", "tap", "playwright")
 
 
+#: `node`, any of Node's own flags - with a value after "=" or a space - and
+#: then `--test`. Not the text "node --test": the browser pack's own scaffold
+#: writes `node --import ./test-setup.mjs --test ... tests/`, and one run's
+#: test round was handed "package.json has no script that runs" the suites
+#: that very script ran - a proven problem the round rightly called false.
+_NODE_TEST = re.compile(
+    r"\bnode\b(?:\s+--?[\w-]+(?:=\S+|\s+(?![-&|;])\S+)?)*?\s+--test(?![\w-])", re.I
+)
+
+
+def _invokes_node_test(command: str) -> bool:
+    """Whether a script runs Node's own test runner, whatever flags come first."""
+    return _NODE_TEST.search(str(command or "")) is not None
+
+
 def _looks_like_a_test_command(body: str) -> bool:
     """Whether an npm script runs tests, by what it invokes."""
     text = (body or "").lower()
-    return any(
+    return _invokes_node_test(text) or any(
         runner in text
-        for runner in ("playwright", "jest", "vitest", "mocha", "node --test", "cypress", "ava")
+        for runner in ("playwright", "jest", "vitest", "mocha", "cypress", "ava")
     )
 
 
@@ -891,7 +906,7 @@ def _node_suites_nothing_runs(files: list[Path], root: Path) -> list[str]:
             scripts = (json.loads(_read(manifest)) or {}).get("scripts") or {}
         except Exception:  # noqa: BLE001 - a broken manifest is reported elsewhere
             continue
-        if any("node --test" in str(body) for body in scripts.values()):
+        if any(_invokes_node_test(str(body)) for body in scripts.values()):
             continue
         command = str(scripts.get("test") or "")
         if not command:
@@ -1027,7 +1042,7 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         except Exception:  # noqa: BLE001 - a broken manifest is reported elsewhere
             continue
         command = str(scripts.get("test") or "")
-        if "node --test" not in command:
+        if not _invokes_node_test(command):
             continue
         if any(runner in command for runner in _RUNNERS_WITH_THEIR_OWN_CONFIG):
             continue
@@ -3957,7 +3972,7 @@ def _the_runner_a_script_invokes(body: str) -> tuple[str, bool]:
         ("playwright", r"\bplaywright\s+test\b(.*)"),
         ("vitest", r"(?:^|\s)(?:\S*/)?vitest(?:\.m?js)?(?:\s+(?:run|watch|related))?(?=\s|$)(.*)"),
         ("jest", r"(?:^|\s)(?:\S*/)?jest(?:\.c?js)?(?=\s|$)(.*)"),
-        ("node --test", r"\bnode\b(?:\s+--[\w-]+(?:=\S+)?)*\s+--test\b(.*)"),
+        ("node --test", _NODE_TEST.pattern + r"(.*)"),
     ):
         found = re.search(pattern, text)
         if not found:

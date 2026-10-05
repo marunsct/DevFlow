@@ -6193,6 +6193,28 @@ _ANOTHER_STAGE_S_TEST = (
 )
 
 
+def _this_stage_created(root: Path, shown: str) -> bool:
+    """Whether the stage running now created this file, so may delete it outright.
+
+    A test is delivered evidence once another stage can rely on it; a file
+    this stage wrote and is replacing is its own work in progress. One run's
+    fix stage wrote `tests/main.test.js`, rewrote the suite in another file,
+    and asked eleven times to delete the first: refused as a delivered test,
+    it moved it to `main.test.js.bak` - still a test's name - and was refused
+    again until the repeat guard took the tool. False when either stage is
+    unknown, so outside a run nothing changes.
+    """
+    try:
+        from app.analysis import project_memory
+        from app.observability.transcript import _stage_from_config
+
+        created_by = project_memory.who_created(root, shown)
+        running = _stage_from_config("")
+    except Exception:  # noqa: BLE001 - unknown is not this stage
+        return False
+    return bool(created_by and running and created_by == running)
+
+
 def _another_stage_s_test(root: Path, shown: str) -> str:
     """The stage that created this test, when it is not the stage running now.
 
@@ -6541,7 +6563,12 @@ def delete_approved_artifact(repo_root: str | Path, relative_path: str) -> dict[
     written_by = "" if planned else _another_stage_s_test(root, shown)
     if written_by:
         raise RepositoryToolError(_ANOTHER_STAGE_S_TEST.format(shown=shown, stage=written_by))
-    if looks_like_a_test(shown) and not planned and not _is_a_probe_with_a_test_s_name(target):
+    if (
+        looks_like_a_test(shown)
+        and not planned
+        and not _is_a_probe_with_a_test_s_name(target)
+        and not _this_stage_created(root, shown)
+    ):
         # The refusal has to name the way out, or an agent that genuinely wrote
         # a throwaway probe has nowhere to go. One run's
         # `specialist_testing_1` wrote `todo-app/debug.test.mjs`, ran it, then

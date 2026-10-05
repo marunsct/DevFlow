@@ -77,18 +77,15 @@ def test_moving_it_to_another_test_name_is_allowed(tmp_path: Path) -> None:
     assert (tmp_path / "app/tests/app.e2e.spec.js").is_file()
 
 
-def test_a_probe_the_stage_wrote_itself_keeps_its_way_out(tmp_path: Path) -> None:
+def test_a_probe_the_stage_wrote_itself_is_deleted_outright(tmp_path: Path) -> None:
+    """It used to need a rename first; models fumbled that (see below)."""
     probe = "app/debug.test.mjs"
     _written_by(tmp_path, "specialist_testing_2", probe)
 
     with _as("specialist_testing_2"):
-        with pytest.raises(RepositoryToolError) as refused:
-            delete_approved_artifact(tmp_path, probe)
-        assert "move_artifact" in str(refused.value)
-        move_approved_artifact(tmp_path, probe, "app/debug.mjs")
-        delete_approved_artifact(tmp_path, "app/debug.mjs")
+        delete_approved_artifact(tmp_path, probe)
 
-    assert not (tmp_path / "app/debug.mjs").exists()
+    assert not (tmp_path / probe).exists()
 
 
 def test_outside_a_run_nothing_changes(tmp_path: Path) -> None:
@@ -96,3 +93,25 @@ def test_outside_a_run_nothing_changes(tmp_path: Path) -> None:
 
     with _as(""):
         move_approved_artifact(tmp_path, SUITE, "app/test/app.e2e.js.probe")
+
+
+def test_a_stage_may_delete_a_test_it_created_itself(tmp_path: Path) -> None:
+    """One run's fix stage wrote a test file, replaced it with another, and asked
+    eleven times to delete the first, refused each time as a delivered test."""
+    _written_by(tmp_path, "defect_fix_1_1")
+
+    with _as("defect_fix_1_1"):
+        delete_approved_artifact(tmp_path, SUITE)
+
+    assert not (tmp_path / SUITE).exists()
+
+
+def test_a_test_whose_creator_is_unknown_is_still_kept(tmp_path: Path) -> None:
+    target = tmp_path / SUITE
+    target.parent.mkdir(parents=True)
+    target.write_text("import { test } from 'x';\ntest('adds', () => {});\n")
+
+    with _as("defect_fix_1_1"), pytest.raises(RepositoryToolError):
+        delete_approved_artifact(tmp_path, SUITE)
+
+    assert target.is_file()

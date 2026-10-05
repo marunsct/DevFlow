@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 #: The kinds of product a pack can be for.
 KINDS = ("browser_app", "http_api", "fullstack", "cli", "library")
@@ -112,6 +112,12 @@ class StackPack:
     #: (failure message, the page it failed on) -> what on the page the failed
     #: locator nearly matched, or "".
     near_misses: Callable[[str, str], str] | None = None
+    #: ([(test name, failure message, page it failed on)], the page as it first
+    #: loads) -> test name -> why that locked test waits for something only data
+    #: brings, having created none.
+    needs_what_it_never_made: (
+        Callable[[Sequence[tuple[str, str, str]], str], Mapping[str, str]] | None
+    ) = None
     #: project root -> every assertion name the installed test runner defines;
     #: an acceptance test calling any other can never pass.
     assertion_names: Callable[[Path], frozenset[str]] | None = None

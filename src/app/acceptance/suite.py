@@ -588,6 +588,36 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+def tests_that_need_what_they_never_made(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Locked tests that can pass only on a product that ships with data, by the pack's reader.
+
+    Every test starts from an empty product. One that acts on something it
+    never created fails on every product that meets its criterion, and each
+    fix round spends itself on it. Judged on evidence the run has: the page
+    the test failed on, the page as it first loads, and the pages the other
+    tests failed on. See the JavaScript packs' `needs_what_it_never_made`.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].needs_what_it_never_made is None or not result.shows:
+        return []
+    failures = []
+    for test in result.report.tests:
+        message = test.message or ""
+        if test.outcome == "failed" and _PAGE_MARK in message:
+            before, _, page = message.partition(_PAGE_MARK)
+            failures.append((test.name, before, page))
+    try:
+        reasons = found[0].needs_what_it_never_made(failures, result.shows)
+    except Exception:  # noqa: BLE001 - the failures stand as they are
+        return []
+    return [
+        f"`{name}` can pass only on a product that already holds data: {why}. Every test "
+        "starts from an empty product, so a test must first create, through the product as "
+        "a user would, whatever it then acts on."
+        for name, why in reasons.items()
+    ]
+
+
 #: An assertion call in a test: `.toBeVisible(`, `.not.toHaveText(`.
 _ASSERTION_CALL = re.compile(r"\.(to[A-Z][A-Za-z]*)\s*\(")
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 #: The Playwright release whose browser build the image installs. A different
@@ -318,6 +319,95 @@ def _same_as(wanted: str, name: str, exact: bool) -> bool:
     return name == wanted if exact else wanted.lower() in name.lower()
 
 
+def _what_it_waited_for(message: str) -> tuple[str, str, str, bool, str] | None:
+    """(kind, role, name, exact, locator text) of the last named locator a
+    failed action waited for, or None."""
+    waits = _WAITED_FOR.findall(message or "")
+    if not waits:
+        return None
+    by_role = list(_BY_ROLE.finditer(waits[-1]))
+    by_name = list(_BY_NAME.finditer(waits[-1]))
+    last_role = by_role[-1] if by_role else None
+    last_name = by_name[-1] if by_name else None
+    if last_role and (not last_name or last_role.start() > last_name.start()):
+        options = last_role.group(3) or ""
+        named = _NAME_OPTION.search(options)
+        if not named:
+            return None
+        return ("role", last_role.group(2), named.group(2),
+                bool(_EXACT_OPTION.search(options)), last_role.group(0))
+    if last_name:
+        return (last_name.group(1).lower(), "", last_name.group(3),
+                bool(_EXACT_OPTION.search(last_name.group(4) or "")), last_name.group(0))
+    return None
+
+
+def _nodes_and_texts(page: str) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
+    nodes = [(role, name) for role, name in _SNAPSHOT_NODE.findall(page) if role != "text"]
+    texts = [("text", text) for text in _SNAPSHOT_TEXT.findall(page) if text] + [
+        ("text", text) for role, text in _SNAPSHOT_CONTENT.findall(page)
+        if role not in _HOLDS_A_VALUE
+    ]
+    return nodes, texts
+
+
+def _found(sought: tuple[str, str, str, bool, str], page: str) -> bool:
+    """Whether anything on `page` is what `sought` looks for, by Playwright's rules."""
+    kind, role, wanted, exact, _ = sought
+    nodes, texts = _nodes_and_texts(page)
+    if kind == "role":
+        candidates = [(r, n) for r, n in nodes if r == role]
+    elif kind == "label":
+        candidates = nodes
+    else:
+        candidates = nodes + texts
+    return any(_same_as(wanted, name, exact) for _, name in candidates)
+
+
+#: What a page snapshot marks that is not the page: element refs, focus, cursor.
+_SNAPSHOT_MARKS = re.compile(r"\s*\[(?:ref=\w+|active|cursor=\w+)\]")
+
+
+def _as_shown(page: str) -> str:
+    return "\n".join(_SNAPSHOT_MARKS.sub("", line).rstrip() for line in (page or "").strip().splitlines())
+
+
+def needs_what_it_never_made(failures: Sequence[tuple[str, str, str]], fresh: str) -> dict[str, str]:
+    """Locked tests that wait for something only data brings, having made none.
+
+    `failures` is (test name, failure message, page it failed on); `fresh` is
+    the page as it first loads. One run locked three tests that opened the
+    page and at once waited for an item's own controls - `checkbox "Done"`,
+    `button "Edit"`, `button "Delete"` - while every test starts from an empty
+    product. Each failed on the page exactly as it first loads, so it had
+    created nothing; and the product showed `checkbox "Done"` on the page
+    another test failed on, after that test had added something. Only both
+    together say so: a control missing from a fresh page that no other page
+    shows either is the product's to build. Test name -> why. Never raises.
+    """
+    found: dict[str, str] = {}
+    fresh_page = _as_shown(fresh)
+    if not fresh_page:
+        return found
+    for name, message, page in failures:
+        if _as_shown(page) != fresh_page:
+            continue
+        sought = _what_it_waited_for(message)
+        if sought is None or _found(sought, fresh_page):
+            continue
+        for other, _, elsewhere in failures:
+            if other == name or _as_shown(elsewhere) == fresh_page or not _found(sought, elsewhere):
+                continue
+            found[name] = (
+                f"it waits for {sought[4]} on the page exactly as it first loads - it has "
+                f"created nothing yet - and the product shows that only once something "
+                f"exists: it is on the page `{other}` failed on, after that test made "
+                "something"
+            )
+            break
+    return found
+
+
 def near_misses(message: str, page: str) -> str:
     """What on the page a failed locator nearly matched, or "".
 
@@ -331,39 +421,12 @@ def near_misses(message: str, page: str) -> str:
     silent. Never raises.
     """
     try:
-        waits = _WAITED_FOR.findall(message or "")
-        if not waits or not page:
+        sought = _what_it_waited_for(message)
+        if sought is None or not page:
             return ""
-        wanted_role = ""
-        by_role = list(_BY_ROLE.finditer(waits[-1]))
-        by_name = list(_BY_NAME.finditer(waits[-1]))
-        last_role = by_role[-1] if by_role else None
-        last_name = by_name[-1] if by_name else None
-        if last_role and (not last_name or last_role.start() > last_name.start()):
-            options = last_role.group(3) or ""
-            named = _NAME_OPTION.search(options)
-            if not named:
-                return ""
-            wanted_role, wanted = last_role.group(2), named.group(2)
-            exact, locator = bool(_EXACT_OPTION.search(options)), last_role.group(0)
-            kind = "role"
-        elif last_name:
-            kind, wanted = last_name.group(1).lower(), last_name.group(3)
-            exact, locator = bool(_EXACT_OPTION.search(last_name.group(4) or "")), last_name.group(0)
-        else:
-            return ""
-        nodes = [(role, name) for role, name in _SNAPSHOT_NODE.findall(page) if role != "text"]
-        texts = [("text", text) for text in _SNAPSHOT_TEXT.findall(page) if text] + [
-            ("text", text) for role, text in _SNAPSHOT_CONTENT.findall(page)
-            if role not in _HOLDS_A_VALUE
-        ]
-        if kind == "role":
-            candidates = [(r, n) for r, n in nodes if r == wanted_role]
-        elif kind == "label":
-            candidates = nodes
-        else:
-            candidates = nodes + texts
-        if any(_same_as(wanted, name, exact) for _, name in candidates):
+        kind, wanted_role, wanted, exact, locator = sought
+        nodes, texts = _nodes_and_texts(page)
+        if _found(sought, page):
             return ""
         near = []
         for role, name in nodes + (texts if kind == "text" else []):

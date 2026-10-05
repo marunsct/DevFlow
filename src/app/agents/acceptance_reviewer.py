@@ -60,6 +60,12 @@ wrong - would one of these tests fail? A test that only checks something
 exists, checks a value the test itself set, or would pass on an empty product is
 not enough. A test that checks the result a user would see is.
 
+Then ask the opposite: could a product that does meet the criterion pass it?
+Each test runs alone, against a product that holds no data - nothing another
+test created is there. A test that acts on something it never created (an item,
+a record, an entry) can pass only on a product that ships with that data, which
+no correct product does: it must create what it acts on first.
+
 Do not ask for style changes, more comments, or tests of things no criterion
 asks for. Do not judge the product: it has not been built yet, and the tests
 are expected to fail now.

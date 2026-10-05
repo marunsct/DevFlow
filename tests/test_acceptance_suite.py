@@ -205,6 +205,7 @@ def test_the_author_is_told_the_criteria_the_pack_and_the_rules(project) -> None
     assert "AC-1: Add a note with a title" in text
     assert "notes/acceptance/" in text and "page.goto('/')" in text
     assert "RUN and FAIL now" in text
+    assert "Each test runs alone, against a product that holds no data" in text
 
 
 def test_untestable_criteria_are_read_from_blockers() -> None:
@@ -228,6 +229,11 @@ def test_qa_and_the_qa_lead_read_the_customer_s_brief(project) -> None:
     assert 'labelled "Note title"' in author and "use exactly those words" in author
     review = build_acceptance_review_request("- AC-1: x", "suite", "ran", [], "", brief=brief)["messages"][0]["content"]
     assert 'labelled "Note title"' in review
+    # The rule for tests that act on data they never made is the reviewer's
+    # standing instruction, in its system prompt, not in each request.
+    from app.agents.acceptance_reviewer import _SYSTEM_PROMPT
+
+    assert "A test that acts on something it never created" in " ".join(_SYSTEM_PROMPT.split())
 
 
 def test_the_harness_kept_configuration_cannot_be_written(project, monkeypatch) -> None:
@@ -296,6 +302,94 @@ def test_a_test_that_breaks_on_its_own_code_is_sent_back(project) -> None:
     broken = suite.tests_that_broke_themselves(project, result)
 
     assert [b.split("`")[1] for b in broken] == ["[AC-1] adds", "[AC-5] helper"]
+
+
+FRESH_PAGE = """- main:
+  - heading "Notes" [level=1]
+  - textbox "Title"
+  - button "Add note"
+"""
+
+PAGE_WITH_NOTE = FRESH_PAGE + """  - list:
+    - listitem:
+      - checkbox "Done"
+      - button "Edit"
+      - button "Delete"
+"""
+
+
+def _acceptance_result_waiting_for(locator: str, failed_page: str, other_page: str) -> suite.AcceptanceResult:
+    from app.acceptance.junit import Report, TestResult
+
+    return suite.AcceptanceResult(
+        ran=True,
+        report=Report(found=True, tests=[
+            TestResult(
+                name="[AC-2] acts on a note",
+                outcome="failed",
+                message=f"Timeout\nCall log:\n - waiting for {locator}\n"
+                        f"{suite._PAGE_MARK}{failed_page}",
+            ),
+            TestResult(
+                name="[AC-1] adds a note",
+                outcome="failed",
+                message=f"Timeout\n{suite._PAGE_MARK}{other_page}",
+            ),
+        ]),
+        shows=FRESH_PAGE,
+    )
+
+
+def test_a_locked_test_waiting_for_data_qa_never_created_goes_back_to_qa(project) -> None:
+    result = _acceptance_result_waiting_for(
+        "getByRole('checkbox', { name: 'Done', exact: true })",
+        FRESH_PAGE,
+        PAGE_WITH_NOTE,
+    )
+
+    findings = suite.tests_that_need_what_they_never_made(project, result)
+
+    assert len(findings) == 1
+    assert "`[AC-2] acts on a note`" in findings[0]
+    assert "starts from an empty product" in findings[0]
+
+
+def test_a_missing_product_feature_is_not_mistaken_for_bad_test_data(project) -> None:
+    result = _acceptance_result_waiting_for(
+        "getByRole('button', { name: 'Export', exact: true })",
+        FRESH_PAGE,
+        PAGE_WITH_NOTE,
+    )
+
+    assert suite.tests_that_need_what_they_never_made(project, result) == []
+
+
+def test_a_locator_present_on_the_fresh_page_is_not_a_missing_data_finding(project) -> None:
+    fresh_with_control = FRESH_PAGE + '  - checkbox "Done"\n'
+    result = _acceptance_result_waiting_for(
+        "getByRole('checkbox', { name: 'Done', exact: true })",
+        fresh_with_control,
+        PAGE_WITH_NOTE,
+    )
+    result.shows = fresh_with_control
+
+    assert suite.tests_that_need_what_they_never_made(project, result) == []
+
+
+def test_a_test_that_creates_its_own_data_is_not_reopened(project) -> None:
+    result = _acceptance_result_waiting_for(
+        "getByRole('checkbox', { name: 'Done', exact: true })",
+        PAGE_WITH_NOTE,
+        PAGE_WITH_NOTE,
+    )
+
+    assert suite.tests_that_need_what_they_never_made(project, result) == []
+
+
+def test_only_browser_packs_use_the_page_data_detector() -> None:
+    for name in ("browser-javascript", "browser-react", "fullstack-node"):
+        assert pack_named(name).needs_what_it_never_made is not None
+    assert pack_named("python-cli").needs_what_it_never_made is None
 
 
 def test_python_packs_know_their_runner_s_test_bugs(tmp_path) -> None:

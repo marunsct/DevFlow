@@ -598,13 +598,18 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
     "Cannot pass" is decided the way the review that locked the suite decides
     it - an error the test's own code throws, or an assertion its runner does
     not define - but on a product that now exists, which reaches lines the
-    run before anything was built never did.
+    run before anything was built never did; and, once the product shows it,
+    a test waiting for something only data brings, having created none.
     """
     result, due = run_for_sprint(state)
     if result is None:
         return "", []
     root = _root(state)
-    broken = [*suite.tests_that_broke_themselves(root, result), *suite.assertions_that_do_not_exist(root)]
+    broken = [
+        *suite.tests_that_broke_themselves(root, result),
+        *suite.assertions_that_do_not_exist(root),
+        *suite.tests_that_need_what_they_never_made(root, result),
+    ]
     return acceptance_requests.acceptance_block(result, due), broken
 
 

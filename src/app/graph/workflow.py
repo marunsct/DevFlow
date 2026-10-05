@@ -5127,10 +5127,14 @@ def build_workflow_graph(
             readiness_problems,
             with_paths_inside_the_project,
             with_test_cases_from_its_criteria,
+            with_the_project_directory_cd_dropped,
         )
 
         update["milestone_plan"] = with_test_cases_from_its_criteria(
-            with_paths_inside_the_project(update["milestone_plan"], state["repository"].root_path)
+            with_the_project_directory_cd_dropped(
+                with_paths_inside_the_project(update["milestone_plan"], state["repository"].root_path),
+                state["repository"].root_path,
+            )
         )
         problems = readiness_problems(
             update["milestone_plan"],

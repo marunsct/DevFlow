@@ -28,6 +28,8 @@ Nothing here names a language, a framework or a kind of product.
 """
 from __future__ import annotations
 
+import re
+
 from difflib import SequenceMatcher
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
@@ -195,6 +197,52 @@ def with_paths_inside_the_project(milestone: Any, repo_root: str | Path | None) 
             if inside != files:
                 changed = True
                 task = task.model_copy(update={"files": inside})
+            rewritten.append(task)
+        if not changed:
+            return milestone
+        return milestone.model_copy(update={"delegated_tasks": rewritten})
+    except Exception:  # noqa: BLE001 - the readiness check still reports it
+        return milestone
+
+
+#: `cd <dir> && <command>` or `cd <dir>; <command>`, the whole line.
+_CD_THEN = re.compile(r"^\s*cd\s+(['\"]?)([^\s'\"&;]+)\1\s*(?:&&|;)\s*(\S.*)$")
+
+
+def with_the_project_directory_cd_dropped(milestone: Any, repo_root: str | Path | None) -> Any:
+    """The plan with `cd <the project directory> && <command>` written as `<command>`.
+
+    A work order's command already runs in the project directory, and there is
+    no shell to read `&&`. Measured on two runs in a row: the lead wrote every
+    verification as `cd /simple-to-do-list-app && npm test` (or `&& npx
+    playwright test --grep 'AC-1'`), the readiness check rightly refused each as
+    "will not run as written", and each cost the whole plan a re-plan.
+
+    Only a `cd` into the project directory itself, at the start of the line, is
+    dropped: what follows is exactly the command the line meant. Any other
+    shell use is left for the readiness check to report. Never raises.
+    """
+    project_dir = _pinned_project_directory(repo_root)
+    if not project_dir:
+        return milestone
+    root = str(Path(repo_root or "")).rstrip("/")
+    here = {project_dir, f"/{project_dir}", f"./{project_dir}", f"{root}/{project_dir}"}
+    try:
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        changed = False
+        rewritten = []
+        for task in tasks:
+            commands = [str(c) for c in getattr(task, "verification", None) or []]
+            kept = []
+            for command in commands:
+                found = _CD_THEN.match(command.strip().strip("`"))
+                if found and found.group(2).rstrip("/") in here:
+                    kept.append(found.group(3).strip())
+                else:
+                    kept.append(command)
+            if kept != commands:
+                changed = True
+                task = task.model_copy(update={"verification": kept})
             rewritten.append(task)
         if not changed:
             return milestone

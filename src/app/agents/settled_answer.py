@@ -1171,11 +1171,17 @@ def _note_a_reply_that_was_all_reasoning(stage_name: str) -> None:
 
 def _without_reasoning_where_it_keeps_running_out(request: Any, stage_name: str) -> Any:
     """`request` with thinking switched off, for a stage that keeps losing whole
-    replies to it in this run; otherwise `request` unchanged.
+    replies to it in this run, or that lost one earlier in this visit;
+    otherwise `request` unchanged.
 
     The tools stay: this is the stage's ordinary work, done without the
-    reasoning that has produced nothing on its earlier visits. See
+    reasoning that has produced nothing. See
     `app.agents.thinking.note_a_reply_that_was_all_reasoning`.
+
+    Within a visit, from the first lost reply on - not for one call. One run's
+    defect-fix stage lost a reply, was asked once without thinking and made a
+    tool call in seven seconds, then had thinking back on the call after,
+    lost a second reply, and the run failed on it.
     """
     try:
         from app.agents.thinking import (
@@ -1183,7 +1189,8 @@ def _without_reasoning_where_it_keeps_running_out(request: Any, stage_name: str)
             reasoning_keeps_running_out_for,
         )
 
-        if not reasoning_keeps_running_out_for(stage_name):
+        lost_one_here = _replies_that_were_all_reasoning(list(getattr(request, "messages", None) or []))
+        if not reasoning_keeps_running_out_for(stage_name) and not lost_one_here:
             return request
         quiet = answering_without_reasoning(getattr(request, "model", None))
         if not quiet:

@@ -109,3 +109,19 @@ def test_the_notice_names_no_product_and_no_control() -> None:
     text = settled_answer._REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE.lower()
     for word in ("task", "to-do", "todo", "button", "click", "checkbox", "page", "test"):
         assert not re.search(rf"\b{word}\b", text), word
+
+
+def test_thinking_stays_off_for_the_rest_of_the_visit() -> None:
+    """One run's defect fix made a tool call on the switched-off call, had
+    thinking back on the next, lost a second reply, and the run failed."""
+    from langchain_core.messages import ToolMessage
+
+    worked = AIMessage(content="", tool_calls=[{"name": "read_file", "args": {"file_path": "a"}, "id": "c1"}])
+    later = _sent([*_ASKED, _spiral(), worked, ToolMessage(content="text", tool_call_id="c1")])
+
+    assert _thinking_is_off(later)
+    assert [tool.name for tool in later.tools] == ["write_artifact"]
+
+
+def test_a_visit_that_lost_nothing_keeps_its_thinking() -> None:
+    assert not _thinking_is_off(_sent(list(_ASKED)))

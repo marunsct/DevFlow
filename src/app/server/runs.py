@@ -584,9 +584,10 @@ def create_runs_router(
         """Delete a terminal run and everything it owns.
 
         Deletion cascades: uploads, workspace, checkpoints and event history all
-        go. Previously only the metadata row was removed, so documents and
-        checkpoints accumulated forever - which is also a data-retention problem,
-        not just a disk one.
+        go, and so do the transcript, ledger, journal and stored copies - see
+        `app.server.run_retention` for the full contract. Previously only the
+        metadata row was removed, so documents and checkpoints accumulated
+        forever - which is also a data-retention problem, not just a disk one.
         """
         record = _require_run(runner, run_id, user)
         if record.status not in ("completed", "failed", "cancelled"):
@@ -597,12 +598,18 @@ def create_runs_router(
 
         # Uploads may be shared with a clone, so only remove files no other run
         # still references.
+        unshared = []
         for path in record.document_paths:
             if not runner.run_store.document_in_use(path, exclude_run_id=run_id):
+                unshared.append(path)
                 try:
                     Path(path).unlink(missing_ok=True)
                 except OSError:
                     logger.warning("Could not remove upload %s", path, exc_info=True)
+
+        from app.server.run_retention import purge_run_records
+
+        purge_run_records(run_id, record.repo_root, unshared)
 
         if record.repo_root:
             try:

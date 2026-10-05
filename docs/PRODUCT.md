@@ -296,6 +296,14 @@ cooperative cancellation at every node, gate and recursion limits.
   - `docs/` — rendered documents (`product_intake`, `tools_and_models`, `technology_stack`, `technical_specification`, `architecture_review`, `sprint_plan`, `milestone_plan`, `security_review`, `milestone_review`, `sprint_N_summary`), `acceptance_criteria.md`, `decision_log.md`, `reviews/*.md` (review pages, `sprint-N-evidence.md`, `release-evidence.md`);
   - `.harness/` (hidden from agents, git-ignored) — `stack-pack.json`, `acceptance.json` (criteria, lock, deferrals, change requests), `acceptance-snapshot/`, `acceptance-result.json`, `ci.json`;
   - `.github/workflows/<project>.yml` and, for services, `<project>/Dockerfile` + `.dockerignore` — added at release.
+- **Deleting a run** (`DELETE /api/runs/{id}`, terminal runs only) removes its row,
+  workspace, checkpoints, events, uploads no other run shares, transcript, ledger,
+  journal entries, and the object store's copies (`runs/<id>/`, `uploads/<name>`).
+  Kept: the audit-log line naming who deleted it, and the per-agent compaction
+  context (ages out). `RUN_DELETE_KEEPS_RECORDS=true` holds the transcript, ledger
+  and journal for an audit trail (`app/server/run_retention.py`). Runs that are never
+  deleted are kept indefinitely; the journal alone ages out
+  (`CTX_JOURNAL_RETENTION_HOURS`).
 
 ---
 

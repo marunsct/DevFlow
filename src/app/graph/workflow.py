@@ -3515,6 +3515,53 @@ def _this_sprint_s_scope_for_review(state: Any) -> str:
         return ""
 
 
+def _defects_a_later_sprint_builds(reported: list[Any], state: Any) -> tuple[list[Any], list[Any]]:
+    """(the reported defects this sprint fixes, those about work a later sprint builds).
+
+    A test round runs the whole acceptance suite, and every criterion a later
+    sprint delivers fails in it. Showing the round only the criteria due
+    (`acceptance_for_round`) was not enough: one run's sprint 1, which owned
+    AC-1 and passed it, had its round report ten defects - "Missing Done
+    checkbox", "Missing Edit button", "Missing filter buttons" - each a later
+    sprint's work, five of them blocking, and its fix stages set about building
+    sprints 2 to 4 inside sprint 1.
+
+    The same test the milestone review applies to its findings
+    (`_findings_a_later_sprint_builds`): the criteria a defect cites are all due
+    later, or the actions or files it names are only later sprints'. Nothing
+    due is lost by it - `acceptance_nodes.failing_due_defects` still adds a
+    defect for every due criterion that fails and no kept defect names.
+    """
+    try:
+        from app.analysis.integration_checks import later_sprint_files_in, later_sprint_work_in
+        from app.graph.acceptance_nodes import criteria_only_later
+
+        later = _what_later_sprints_build(state)
+        if not later:
+            return reported, []
+        now = _what_this_sprint_builds(state)
+        kept: list[Any] = []
+        moved: list[Any] = []
+        for item in reported:
+            description = str(getattr(item, "description", "") or "")
+            text = " ".join(
+                str(getattr(item, name, "") or "")
+                for name in ("description", "reproduction_steps", "expected_behavior", "actual_behavior")
+            )
+            if (
+                criteria_only_later(state, text)
+                or later_sprint_work_in(description, now, later)
+                or later_sprint_files_in(description, now, later)
+            ):
+                moved.append(item)
+            else:
+                kept.append(item)
+        return kept, moved
+    except Exception:  # noqa: BLE001 - the round's report as written stands
+        logger.debug("Could not compare the round's defects with the sprint plan", exc_info=True)
+        return reported, []
+
+
 def _findings_a_later_sprint_builds(review: Any, state: Any) -> Any:
     """`review` with each gating finding about later sprints' work made minor.
 
@@ -5589,6 +5636,14 @@ def build_workflow_graph(
                 test_round, len(left_out),
             )
             reported = reported + left_out
+        reported, later_work = _defects_a_later_sprint_builds(reported, state)
+        if later_work:
+            logger.warning(
+                "test_round_%d reported %d defect(s) about work a later sprint builds; "
+                "left for that sprint, not fixed in this one: %s",
+                test_round, len(later_work),
+                "; ".join(str(getattr(item, "description", ""))[:60] for item in later_work[:4]),
+            )
         try:
             unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)
         except Exception:  # noqa: BLE001 - the round's own report stands

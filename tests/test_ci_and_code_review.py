@@ -274,3 +274,65 @@ def test_a_batch_that_breaks_what_passed_before_any_sprint_was_accepted_is_a_reg
 
     (defect,) = update["review_defects"]
     assert "acceptance: [AC-1] adds" in defect.description and "before this batch" in defect.description
+
+
+def test_a_test_round_s_defects_about_a_later_sprint_are_not_fixed_in_this_one(workspace) -> None:
+    """One run's sprint 1 owned AC-1 and passed it; its round reported ten
+    defects, each a later sprint's work, and its fix stages began building them."""
+    from app.agents.specialists import ReportedDefect
+    from app.graph.workflow import _defects_a_later_sprint_builds
+
+    state = {
+        "repository": SimpleNamespace(root_path=str(workspace.root)),
+        "sprint_plan": SimpleNamespace(sprints=[
+            SimpleNamespace(goal="Add and keep notes", criteria=["AC-1"], in_scope=[], out_of_scope=[]),
+            SimpleNamespace(goal="Delete notes", criteria=["AC-2"], in_scope=[], out_of_scope=[]),
+        ]),
+        "current_sprint_index": 0,
+    }
+
+    def defect(description: str, steps: str = "") -> ReportedDefect:
+        return ReportedDefect(
+            description=description, severity="blocking", reproduction_steps=steps,
+            expected_behavior="", actual_behavior="", affected_files=[], owner="ui_ux",
+        )
+
+    later_by_id = defect("Missing control", "Run the suite; [AC-2] removes a note fails")
+    later_by_action = defect("Missing a way to delete notes")
+    due = defect("A note added is not shown", "Run the suite; [AC-1] adds a note fails")
+    unrelated = defect("The page throws on load")
+
+    kept, moved = _defects_a_later_sprint_builds([later_by_id, later_by_action, due, unrelated], state)
+
+    assert moved == [later_by_id, later_by_action]
+    assert kept == [due, unrelated]
+
+
+def test_without_later_sprints_every_defect_is_kept(workspace) -> None:
+    from app.agents.specialists import ReportedDefect
+    from app.graph.workflow import _defects_a_later_sprint_builds
+
+    state = {
+        "repository": SimpleNamespace(root_path=str(workspace.root)),
+        "sprint_plan": SimpleNamespace(sprints=[
+            SimpleNamespace(goal="Add and delete notes", criteria=["AC-1", "AC-2"], in_scope=[], out_of_scope=[]),
+        ]),
+        "current_sprint_index": 0,
+    }
+    item = ReportedDefect(
+        description="Missing a way to delete notes", severity="blocking", reproduction_steps="[AC-2]",
+        expected_behavior="", actual_behavior="", affected_files=[], owner="ui_ux",
+    )
+
+    assert _defects_a_later_sprint_builds([item], state) == ([item], [])
+
+
+def test_the_round_filters_before_the_due_criteria_backstop() -> None:
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    assert source.index("_defects_a_later_sprint_builds(reported, state)") < source.index(
+        "acceptance_nodes.failing_due_defects(state, reported)"
+    )

@@ -50,6 +50,10 @@ class TestResult:
     name: str
     suite: str = ""
     file: str = ""
+    #: The `<testsuite>` names around it, outermost first, joined by " › ":
+    #: where Node's reporter writes a test's `describe` block, its `classname`
+    #: being "test" for every test.
+    within: str = ""
     outcome: str = "passed"  # passed | failed | skipped
     message: str = ""
     seconds: float = 0.0
@@ -94,6 +98,17 @@ def parse(text: str) -> Report:
     except ET.ParseError:
         return Report()
     report = Report(found=True)
+    parent_of = {child: parent for parent in root.iter() for child in parent}
+
+    def suites_around(case: ET.Element) -> str:
+        names: list[str] = []
+        node = parent_of.get(case)
+        while node is not None:
+            if node.tag.lower() == "testsuite" and (node.get("name") or "").strip():
+                names.append(node.get("name").strip())
+            node = parent_of.get(node)
+        return " \u203a ".join(reversed(names))
+
     for case in root.iter("testcase"):
         outcome = "passed"
         message = ""
@@ -115,6 +130,7 @@ def parse(text: str) -> Report:
                 name=(case.get("name") or "").strip(),
                 suite=(case.get("classname") or "").strip(),
                 file=(case.get("file") or "").strip(),
+                within=suites_around(case),
                 outcome=outcome,
                 message=message,
                 seconds=seconds,

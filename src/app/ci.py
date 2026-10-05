@@ -86,6 +86,10 @@ _RANK = {"passed": 0, "skipped": 1, "failed": 2}
 def outcomes_of(tests: Sequence[Any]) -> dict[str, str]:
     """Each test's outcome, keyed by where it lives and its name.
 
+    Where a test lives is its file, or else the suites around it and its
+    class: Node's reporter writes no file and the class "test" for every
+    test, and only the `describe` block it sits in tells two apart.
+
     By name alone, two tests of the same name - "does not mutate the original
     array", written once per function - were one entry, and the second's
     outcome overwrote the first's. One run's 37 unit tests were recorded as 29,
@@ -96,7 +100,11 @@ def outcomes_of(tests: Sequence[Any]) -> dict[str, str]:
     """
     found: dict[str, str] = {}
     for test in tests or ():
-        where = (getattr(test, "file", "") or getattr(test, "suite", "") or "").strip()
+        where = (getattr(test, "file", "") or "").strip() or WHERE.join(
+            part for part in (
+                (getattr(test, "within", "") or "").strip(), (getattr(test, "suite", "") or "").strip()
+            ) if part
+        )
         key = f"{where}{WHERE}{test.name}" if where else test.name
         outcome = str(getattr(test, "outcome", "") or "failed")
         kept = found.get(key)
@@ -106,7 +114,8 @@ def outcomes_of(tests: Sequence[Any]) -> dict[str, str]:
 
 
 def _bare(key: str) -> str:
-    return key.split(WHERE, 1)[-1] if WHERE in key else key
+    """The test's own name: the last part of a key, whatever came before it."""
+    return key.rsplit(WHERE, 1)[-1] if WHERE in key else key
 
 
 def _outcome_now(now: dict[str, str], key: str) -> str | None:

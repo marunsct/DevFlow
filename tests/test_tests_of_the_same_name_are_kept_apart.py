@@ -52,3 +52,32 @@ def test_a_snapshot_keyed_by_name_alone_is_compared_by_name() -> None:
     ]), unit_ran=True)
 
     assert ci.regressions(before, after) == ["unit: adds"]
+
+
+NODE_REPORT = """<testsuites>
+<testsuite name="addTask"><testsuite name="keeps its input">
+<testcase name="does not mutate the original array" classname="test"/></testsuite></testsuite>
+<testsuite name="deleteTask">
+<testcase name="does not mutate the original array" classname="test"><failure message="x"/></testcase>
+</testsuite></testsuites>"""
+
+
+def test_node_s_describe_blocks_tell_same_named_tests_apart() -> None:
+    """Node's reporter writes no file and the class "test" for every test; only
+    the suite around a test says which function it is about."""
+    from app.acceptance import junit
+
+    report = junit.parse(NODE_REPORT)
+    found = ci.outcomes_of(report.tests)
+
+    assert report.tests[0].within == f"addTask{ci.WHERE}keeps its input"
+    assert found == {
+        f"addTask{ci.WHERE}keeps its input{ci.WHERE}test{ci.WHERE}does not mutate the original array": "passed",
+        f"deleteTask{ci.WHERE}test{ci.WHERE}does not mutate the original array": "failed",
+    }
+
+
+def test_a_snapshot_keyed_before_the_suites_were_read_is_still_compared_by_name() -> None:
+    before = ci.Snapshot(label="old", unit={f"test{ci.WHERE}adds": "passed"}, unit_ran=True)
+    after = ci.Snapshot(label="new", unit={f"addTask{ci.WHERE}test{ci.WHERE}adds": "passed"}, unit_ran=True)
+    assert ci.regressions(before, after) == []

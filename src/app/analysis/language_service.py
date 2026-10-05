@@ -28,6 +28,16 @@ the code fails when it runs:
     1192        a default import of none        -> SyntaxError at load
     2306        an import from a file that is not a module
     2307        a relative import of a file that does not exist
+    2339, 2551  a call of a method no built-in type has, on a value of a
+                built-in type (an element, a string, an array)
+                                                -> TypeError ("... is not a
+                                                   function"). One run's page
+                                                   called `list.removeChildren()`
+                                                   and every test failed on load.
+                                                   Only a name no built-in type
+                                                   declares, so an element typed
+                                                   too loosely (`select()` on an
+                                                   `HTMLElement`) is never flagged.
 
 and only where they mean that: never inside a comment (a JSDoc type is not
 code), never on a name read only through `typeof` (which cannot throw), never
@@ -117,6 +127,54 @@ process.stdin.on('data', d => content += d).on('end', () => {
   const program = ts.createProgram(roots, options, host);
   const NAMES = new Set([2304, 2552, 2448, 2449, 2450]);
   const IMPORTS = new Set([2305, 2614, 1192, 2306, 2307]);
+  // A call of a method on a built-in type that no built-in type has at all.
+  const MISSING_MEMBER = new Set([2339, 2551]);
+  const checker = program.getTypeChecker();
+  let libMembers = null;
+  function builtInMembers() {
+    if (libMembers) return libMembers;
+    libMembers = new Set();
+    for (const lib of program.getSourceFiles()) {
+      if (!program.isSourceFileDefaultLibrary(lib)) continue;
+      (function visit(n) {
+        if ((ts.isInterfaceDeclaration(n) || ts.isClassDeclaration(n) || ts.isTypeLiteralNode(n)) && n.members) {
+          for (const m of n.members) {
+            if (m.name && (ts.isIdentifier(m.name) || ts.isStringLiteral(m.name))) libMembers.add(m.name.text);
+          }
+        }
+        ts.forEachChild(n, visit);
+      })(lib);
+    }
+    return libMembers;
+  }
+  function nodeAt(sf, pos) {
+    let found;
+    (function visit(n) {
+      if (pos < n.getStart(sf) || pos >= n.getEnd()) return;
+      found = n;
+      ts.forEachChild(n, visit);
+    })(sf);
+    return found;
+  }
+  function builtIn(type) {
+    const parts = type.isUnion() ? type.types : [type];
+    return parts.length > 0 && parts.every(t => {
+      const s = t.getSymbol() || t.aliasSymbol;
+      const decls = (s && s.getDeclarations()) || [];
+      return decls.length > 0 && decls.every(d => program.isSourceFileDefaultLibrary(d.getSourceFile()));
+    });
+  }
+  function aMethodNoBuiltInHas(d, sf) {
+    if (!MISSING_MEMBER.has(d.code) || d.start == null) return false;
+    const name = nodeAt(sf, d.start);
+    if (!name || !ts.isIdentifier(name)) return false;
+    const access = name.parent;
+    if (!access || !ts.isPropertyAccessExpression(access) || access.name !== name) return false;
+    const call = access.parent;
+    if (!call || !ts.isCallExpression(call) || call.expression !== access) return false;
+    if (builtInMembers().has(name.text)) return false;
+    return builtIn(checker.getTypeAtLocation(access.expression));
+  }
   function comments(sf) {
     const ranges = [];
     const scanner = ts.createScanner(ts.ScriptTarget.ESNext, false, ts.LanguageVariant.Standard, sf.text);
@@ -130,7 +188,8 @@ process.stdin.on('data', d => content += d).on('end', () => {
   }
   function keep(d, sf, names) {
     if (d.start == null) return false;
-    if (!(IMPORTS.has(d.code) || (names && NAMES.has(d.code)))) return false;
+    const member = names && aMethodNoBuiltInHas(d, sf);
+    if (!(IMPORTS.has(d.code) || (names && NAMES.has(d.code)) || member)) return false;
     if (comments(sf).some(([a, b]) => d.start >= a && d.start < b)) return false;
     const before = sf.text.slice(Math.max(0, d.start - 12), d.start);
     if (NAMES.has(d.code) && /typeof\s*\(?\s*$/.test(before)) return false;
@@ -190,8 +249,8 @@ class Underlined:
             parts.append(
                 "An IDE would underline these in this file - the TypeScript language service, "
                 "reporting only what fails when the code runs (a name nothing defines throws "
-                "ReferenceError; an import of something that is not exported fails as the module "
-                f"loads):\n{lines}"
+                "ReferenceError; a method no built-in type has throws TypeError; an import of "
+                f"something that is not exported fails as the module loads):\n{lines}"
             )
         if self.elsewhere:
             lines = "\n".join(

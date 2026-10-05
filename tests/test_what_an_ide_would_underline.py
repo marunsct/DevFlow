@@ -222,3 +222,44 @@ def test_a_name_used_before_its_declaration_runs_is_underlined(tmp_path) -> None
     found = service.underlined(tmp_path, project / "src" / "state.js", content, project)
 
     assert [(f["line"], f["code"]) for f in found.here] == [(1, 2448)]
+
+
+@needs_the_compiler
+def test_a_method_no_built_in_type_has_is_underlined(tmp_path) -> None:
+    """One run's page called `list.removeChildren()` (it is `replaceChildren`),
+    threw as it loaded, and every acceptance test failed."""
+    project = _project(tmp_path, {"src/app.js": ""})
+    content = (
+        "const list = document.getElementById('list');\n"
+        "export function render(items) {\n"
+        "  list.removeChildren();\n"
+        "  for (const item of items) list.append(item.trimAll());\n"
+        "}\n"
+    )
+
+    found = service.underlined(tmp_path, project / "src" / "app.js", content, project)
+
+    assert found is not None
+    assert [f["line"] for f in found.here] == [3]
+    assert "removeChildren" in found.here[0]["message"] and "TypeError" in found.note()
+
+
+@needs_the_compiler
+def test_a_loosely_typed_element_or_the_product_s_own_object_is_not(tmp_path) -> None:
+    """`select()` is a method of an input, called on what `getElementById` types
+    as any element; and the product's own objects are never judged."""
+    project = _project(tmp_path, {"src/app.js": ""})
+    content = (
+        "const title = document.getElementById('title');\n"
+        "title.select();\n"
+        "title.focus();\n"
+        "const store = {};\n"
+        "store.save = () => {};\n"
+        "store.save();\n"
+        "export const api = { load() { return []; } };\n"
+        "api.load();\n"
+    )
+
+    found = service.underlined(tmp_path, project / "src" / "app.js", content, project)
+
+    assert found is not None and found.here == []

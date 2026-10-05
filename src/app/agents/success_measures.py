@@ -56,8 +56,29 @@ _NOT_A_CAPABILITY = {
 }
 
 
+#: Words ending in "ly" that are not adverbs, so may name a capability.
+_NOT_AN_ADVERB = {"apply", "reply", "supply", "multiply", "assembly", "family", "rely", "fly", "early"}
+
+
+def _an_adverb(word: str) -> bool:
+    """Whether a "listed" word only says how - "newly", "quickly" - and names nothing.
+
+    One run's measure read "empty list, all-completed list, and newly added
+    tasks while a filter is active"; the list was read as "list" and "newly",
+    and the plan - which said "added while a filter is active" - was handed
+    back for never delivering "newly".
+    """
+    word = word.lower()
+    return len(word) >= 5 and word.endswith("ly") and word not in _NOT_AN_ADVERB
+
+
 def _stem(word: str) -> str:
     word = word.lower()
+    # A plural in "-ies" stands for a singular in "-y": one run's plan said
+    # "dependency-free" and was handed back for never delivering
+    # "dependencies", whose stem was "dependenci".
+    if word.endswith("ies") and len(word) - 3 >= 4:
+        return word[:-3]
     for suffix in ("ing", "es", "ed", "s"):
         if len(word) - len(suffix) >= 4 and word.endswith(suffix):
             return word[: -len(suffix)]
@@ -148,7 +169,7 @@ def enumerations(measure: str) -> list[tuple[bool, list[str]]]:
         words = [match.group(1)]
         words += [w.strip() for w in match.group(2).split(",") if w.strip()]
         words.append(match.group(4))
-        words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY]
+        words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY and not _an_adverb(w)]
         if len(words) >= 2 and not _a_clause_joined_to_a_noun(words):
             found.append((match.group(3).lower() == "and", words))
     for match in _UNJOINED_LIST.finditer(str(measure)):
@@ -156,7 +177,7 @@ def enumerations(measure: str) -> list[tuple[bool, list[str]]]:
         if any(start < j_end and j_start < end for j_start, j_end in joined):
             continue
         words = [match.group(1)] + [w.strip() for w in match.group(2).split(",") if w.strip()]
-        words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY]
+        words = [w for w in words if w.lower() not in _NOT_A_CAPABILITY and not _an_adverb(w)]
         if len(words) >= 2:
             found.append((True, words))
     return found
@@ -168,6 +189,24 @@ _SAYS_WHERE = re.compile(
     r"((?:[A-Za-z][\w-]*\s+){1,3})(?:for|on|across|in|at)\s+(?:(?:both|all|the|latest|modern)\s+)*$",
     re.I,
 )
+
+
+#: The same, after a verb that says the thing fits somewhere: "the layout
+#: ADAPTS TO mobile and desktop", "scales to phones and tablets". One run's plan
+#: built a responsive layout tested at 375px and 1280px and was handed back
+#: for never delivering "mobile".
+_FITS_TO = re.compile(
+    r"((?:[A-Za-z][\w-]*\s+){0,2}[A-Za-z]{3,}s)\s+to\s+(?:(?:both|all|the)\s+)*$",
+    re.I,
+)
+
+#: Verbs before "to" that hand someone the capabilities that follow: "allows
+#: users to add and delete" lists capabilities, never places.
+_ASKS_SOMEONE = {
+    "allows", "lets", "enables", "permits", "helps", "needs", "wants", "expects",
+    "requires", "tries", "asks", "tells", "gets", "has", "uses", "chooses", "wishes",
+    "is", "was", "goes", "continues", "starts", "begins", "learns", "remembers",
+}
 
 
 def _delivered_by_its_head(measure: str, words: list[str], text: str) -> bool:
@@ -192,7 +231,13 @@ def _delivered_by_its_head(measure: str, words: list[str], text: str) -> bool:
         return False
     head = _SAYS_WHERE.search(measure[: at.start()])
     if head is None:
-        return False
+        head = _FITS_TO.search(measure[: at.start()])
+        # "allows users to add and delete": capabilities handed to someone.
+        words_before = head.group(1).split() if head is not None else []
+        if not words_before or words_before[-1].lower() in _NOT_A_CAPABILITY or any(
+            w.lower() in _ASKS_SOMEONE for w in words_before
+        ):
+            return False
     return any(
         len(word) >= 5 and word.lower() not in _NOT_A_CAPABILITY and named_in(word, text)
         for word in head.group(1).split()

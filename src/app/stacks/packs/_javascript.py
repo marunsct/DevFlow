@@ -479,7 +479,9 @@ it: a field the brief says is labelled "Email" is
 `page.getByRole('button', { name: 'Send', exact: true })`, an entry of a list is
 `page.getByRole('listitem')`. A placeholder is not a label, and a test id or a CSS
 class is not something a person sees: never find a control by them - a product
-could pass such a test and still lack what the brief asked for. Assert only with
+could pass such a test and still lack what the brief asked for. Nor by a CSS
+selector on its role: `locator('[role="listitem"]')` matches only an element
+carrying that attribute, never an `<li>` whose role is its own. Assert only with
 matchers Playwright defines: a checked box is `toBeChecked()`, an unchecked one
 `not.toBeChecked()` - there is no `toBeUnchecked`."""
 
@@ -489,7 +491,17 @@ matchers Playwright defines: a checked box is `toBeChecked()`, an unchecked one
 #: placeholder, the product gave it a placeholder and no label, the locked
 #: suite passed, and three of the benchmark's hidden tests - which find it by
 #: its label - failed.
-LOCATORS_NOBODY_SEES = (r"\bgetByPlaceholder\s*\(", r"\bgetByTestId\s*\(")
+#:
+#: A CSS selector on `role` too: `[role="listitem"]` matches only an element
+#: that carries the attribute, never one whose role is its own - an `<li>` in a
+#: list, a `<button>`. One run's locked suite found every task that way, so a
+#: product rendering a plain list would have failed it while doing exactly what
+#: the brief asked.
+LOCATORS_NOBODY_SEES = (
+    r"\bgetByPlaceholder\s*\(",
+    r"\bgetByTestId\s*\(",
+    r"""\blocator\s*\(\s*['"`][^'"`]*\[\s*role\s*[~|^$*]?=""",
+)
 
 #: The whole shape of a test, callback included. The example once ended in
 #: `...`; one run's QA wrote `async (page) => ...`, Playwright refused every

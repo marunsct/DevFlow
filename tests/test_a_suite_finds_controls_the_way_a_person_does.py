@@ -131,3 +131,27 @@ def test_without_the_runner_s_definitions_nothing_is_guessed(tmp_path) -> None:
     acceptance.mkdir(parents=True, exist_ok=True)
     (acceptance / "notes.spec.js").write_text("test('[AC-1] adds', async () => { expect(1).toBeAnything(); });\n")
     assert suite.assertions_that_do_not_exist(tmp_path) == []
+
+
+def test_a_css_selector_on_role_is_named(tmp_path) -> None:
+    """One run's locked suite found every entry by `locator('[role="listitem"]')`,
+    which matches only an explicit attribute - never a plain `<li>`."""
+    acceptance = _scaffolded(tmp_path)
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "notes.spec.js").write_text(
+        "test('[AC-1] adds', async ({ page }) => {\n"
+        "  await page.getByLabel('Name', { exact: true }).fill('x');\n"
+        "  await expect(page.locator('[role=\"listitem\"]')).toHaveCount(1);\n"
+        "  await expect(page.getByRole('listitem')).toHaveCount(1);\n"
+        "});\n"
+    )
+
+    problems = suite.locators_nobody_sees(tmp_path)
+
+    assert len(problems) == 1 and "line 3" in problems[0]
+
+
+def test_the_guide_warns_against_a_role_selector() -> None:
+    for pack in ALL_PACKS:
+        if pack.name in PAGES:
+            assert "matches only an element" in pack.acceptance_guide, pack.name

@@ -827,11 +827,19 @@ def _the_one_entry_it_meant(reference: str, entries: list[str]) -> str:
 
     Only a suffix long enough to carry the random tail, and only when exactly one
     of this run's entries has it, so this never picks between two logs.
+
+    The `.log` ending may be dropped too: one run's QA asked twice for
+    `<timestamp>-run-<id>-...-<random>` - the whole name but its extension - and
+    was refused both times.
     """
     wanted = str(reference or "").strip()
     if len(wanted) < 12:
         return ""
-    found = [name for name in entries or () if name != wanted and name.endswith(wanted)]
+    found = [
+        name
+        for name in entries or ()
+        if name != wanted and (name.endswith(wanted) or name.removesuffix(".log").endswith(wanted))
+    ]
     return found[0] if len(found) == 1 else ""
 
 

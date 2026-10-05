@@ -63,3 +63,20 @@ def test_a_short_fragment_is_not_resolved(a_run):
     result = _tool(a_run).invoke({"reference": ".log"})
 
     assert isinstance(result, dict) and "error" in result
+
+
+def test_a_reference_missing_its_extension_is_read(a_run):
+    """One run's QA asked twice for the whole name but its `.log`, and was refused."""
+    real = journal.write_entry("testing_specialist-npm-stdout", "Error: boom\n", scope="run-aaaaaaa1")
+
+    result = _tool(a_run).invoke({"reference": real.removesuffix(".log")})
+
+    assert "Error: boom" in result
+
+
+def test_a_reference_missing_both_prefix_and_extension_is_read(a_run):
+    real = journal.write_entry("testing_specialist-npm-stdout", "Error: boom\n", scope="run-aaaaaaa1")
+
+    result = _tool(a_run).invoke({"reference": _without_prefix(real).removesuffix(".log")})
+
+    assert "Error: boom" in result

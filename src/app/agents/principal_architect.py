@@ -67,9 +67,20 @@ _NEEDS_A_PERSON = re.compile(
     r"|console\.assert|\bconsole\s+assert",
     re.I,
 )
+#: The entry rules such checks out - before naming them ("no manual steps") or
+#: after ("manual testing is refused", "manual and visual checks are excluded").
+#: Only the first was recognised once: on one run an entry reading "Manual
+#: testing alone is refused - no human runs tests here" was sent back as a
+#: plan for manual testing, twice, and the third answer came back with two
+#: required sections empty.
 _NEGATED = re.compile(
     r"\b(?:no|not|never|without|instead of|rather than|replac\w*|avoid\w*|eliminat\w*)\b"
-    r"[^.;]{0,20}\b(?:manual|visual|by hand|console)",
+    r"[^.;]{0,20}\b(?:manual|visual|by hand|console)"
+    r"|\b(?:manual|visual|by hand|console)\w*\b[^.;]{0,60}?\b(?:is|are|be|been|get|gets)\s+"
+    r"(?:\w+\s+)?(?:refus\w*|exclud\w*|forbid\w*|prohibit\w*|disallow\w*|reject\w*|ruled out|"
+    r"banned|not\s+(?:used|allowed|permitted|valid|possible|planned|relied))"
+    r"|\b(?:manual|visual|by hand|console)\w*\b[^.;]{0,60}?\b(?:never|not)\s+"
+    r"(?:used|allowed|permitted|valid|possible|planned|relied|happen\w*|run)\b",
     re.I,
 )
 

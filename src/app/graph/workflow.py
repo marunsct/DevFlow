@@ -2463,6 +2463,28 @@ _REQUIRED_SPECIFICATION_SECTIONS = (
 )
 
 
+def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
+    """A repaired specification, with any section it left empty taken from the one before.
+
+    A repair asks for one section to be corrected and nothing else changed, and
+    a model answering it can return only what it corrected. Measured on one
+    run: asked to correct `testing`, the architect returned `testing` - two
+    entries where there had been nine - and left `deployment` and
+    `acceptance_criteria` empty, which the previous answer had filled. A
+    section the repair left empty was not a section it was asked to remove.
+    """
+    if revised is None or previous is None or not hasattr(revised, "model_copy"):
+        return revised
+    kept = {
+        section: getattr(previous, section)
+        for section in _REQUIRED_SPECIFICATION_SECTIONS
+        if not getattr(revised, section, None) and getattr(previous, section, None)
+    }
+    if kept:
+        logger.info("The repaired specification left %s empty; kept them from the previous answer", ", ".join(kept))
+    return revised.model_copy(update=kept) if kept else revised
+
+
 def _incomplete_specification_sections(specification: Any) -> list[str]:
     """Return the required sections this specification left empty.
 
@@ -4645,6 +4667,11 @@ def build_workflow_graph(
             # Consumed: the revision request above already delivered them, so
             # a later rerun must not re-apply stale comments.
             update["revision_comments"] = []
+
+            if state.get("specification_repair_count", 0) and previous_specification is not None:
+                update["technical_specification"] = _with_the_sections_it_dropped(
+                    update.get("technical_specification"), previous_specification
+                )
 
             # Rendered from the decision the pipeline routes on, so the
             # document and the structured answer cannot disagree. See

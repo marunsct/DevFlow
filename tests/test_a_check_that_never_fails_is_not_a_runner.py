@@ -79,6 +79,32 @@ class TestTheSpecificationsTesting:
             "Headless end-to-end tests assert on console errors",
         )) == []
 
+    @pytest.mark.parametrize("entry", [
+        # One run's architect, twice: each was sent back as a plan for manual
+        # testing, and the third answer dropped two required sections.
+        "STRATEGY: two dev-only runners. Manual testing alone is refused - a page "
+        "needs a real browser, and no human runs tests here.",
+        "Manual and visual checks are excluded by design - no person watches the "
+        "workspace, so the only valid checks are runner-backed tests.",
+        "Manual verification is not used; every check is an automated test.",
+        "Visual inspection is never relied on: layout is asserted by the runner.",
+        "Checks by hand are ruled out.",
+    ])
+    def test_ruling_them_out_after_naming_them_is_not_planning_them(self, entry):
+        from app.agents.principal_architect import testing_nobody_can_run
+
+        assert testing_nobody_can_run(self._spec(entry)) == []
+
+    @pytest.mark.parametrize("entry", [
+        "Manual verification of the layout is required before release",
+        "Visually check the page at 320px; manual testing is planned for edge cases",
+        "Manual testing covers the export, which is not automated yet",
+    ])
+    def test_a_plan_that_names_them_without_refusing_them_is_still_named(self, entry):
+        from app.agents.principal_architect import testing_nobody_can_run
+
+        assert testing_nobody_can_run(self._spec(entry)) == [entry]
+
 
 @pytest.mark.parametrize("approach", [
     "None (not required for MVP)",

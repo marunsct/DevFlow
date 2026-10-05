@@ -5140,7 +5140,12 @@ def build_workflow_graph(
             update["milestone_plan"],
             state["repository"].root_path,
             carried_forward=[] if revising else (state.get("carried_forward") or []),
-            sprint_scope=_what_this_sprint_builds(state),
+            # A revision answers the review's findings; the sprint's first plan
+            # was the one held to the files its scope names, and those were
+            # built - under the names that plan chose. One run's revision was
+            # sent back twice for `pure-functions.mjs`, a name from the scope
+            # the first plan had built as `app.mjs`.
+            sprint_scope="" if revising else _what_this_sprint_builds(state),
         )
         if problems:
             retries = dict(state.get("structured_retries") or {})

@@ -339,3 +339,11 @@ def test_the_stack_decision_states_the_support_tier(stack, tier) -> None:
 
     rationale = out["decisions"][-1]["rationale"]
     assert rationale.startswith(f"Support tier: {tier} - ") and rationale.endswith("why")
+
+
+@pytest.mark.parametrize("name", ["browser-javascript", "browser-react", "fullstack-node", "node-http-api"])
+def test_a_playwright_guide_shows_the_callback_a_test_must_take(name) -> None:
+    """One run's QA wrote `async (page) => ...` from an example that ended in
+    `...`; Playwright refused every test before running one."""
+    guide = pack_named(name).acceptance_guide
+    assert "async ({ page }) =>" in guide and "never `async (page) => ...`" in guide

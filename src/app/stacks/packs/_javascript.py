@@ -486,10 +486,18 @@ could pass such a test and still lack what the brief asked for."""
 #: its label - failed.
 LOCATORS_NOBODY_SEES = (r"\bgetByPlaceholder\s*\(", r"\bgetByTestId\s*\(")
 
+#: The whole shape of a test, callback included. The example once ended in
+#: `...`; one run's QA wrote `async (page) => ...`, Playwright refused every
+#: test before running any ("First argument must use the object destructuring
+#: pattern"), and QA spent ten minutes reading Playwright's own source to learn
+#: that a test receives its fixtures as one object.
 NAMING = """Each test's title starts with the id of the criterion it proves, in square
-brackets: `test('[AC-3] a completed item stays completed after a reload', ...)`
-(a test that proves two: `[AC-3][AC-4] ...`). A test with no criterion id in its
-title proves nothing the harness can count."""
+brackets, and its callback takes the fixtures it uses as one destructured object:
+`test('[AC-3] a completed item stays completed after a reload', async ({ page }) => { ... })`
+(`async ({ request }) => ...` for a service; never `async (page) => ...`, which
+Playwright refuses before running any test). A test that proves two:
+`[AC-3][AC-4] ...`. A test with no criterion id in its title proves nothing the
+harness can count."""
 
 
 #: A Playwright failure raised by the spec's own code. Product code runs in the

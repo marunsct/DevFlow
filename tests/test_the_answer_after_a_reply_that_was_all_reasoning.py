@@ -134,10 +134,12 @@ class TestTheCallAfterASpiral:
 
         assert sent.model_settings["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
 
-    def test_its_tools_are_still_withheld(self) -> None:
+    def test_its_tools_are_kept_now_that_thinking_is_off(self) -> None:
+        """Withholding them forced an answer before the work was done; see
+        `test_a_spiral_keeps_the_tools_when_thinking_can_be_switched_off`."""
         sent = _sent([HumanMessage(content="Run the tests."), _spiral()], _local_model())
 
-        assert sent.tools == []
+        assert sent.tools != []
 
     def test_other_model_settings_survive(self) -> None:
         sent = _sent(
@@ -227,7 +229,7 @@ class TestAServerThatReadsOnlyTheEffortField:
         assert len(sent) == 2
         retry = sent[1].model_settings["extra_body"]
         assert "reasoning_effort" not in retry and retry["chat_template_kwargs"]["enable_thinking"] is False
-        assert sent[1].tools == []
+        assert sent[1].tools == sent[0].tools != []
 
     def test_any_other_failure_is_not_retried(self) -> None:
         import pytest

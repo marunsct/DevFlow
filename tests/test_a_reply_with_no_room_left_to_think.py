@@ -121,6 +121,8 @@ def test_the_spiral_withholds_tools_through_the_same_path() -> None:
     source = inspect.getsource(settled_answer.build_settled_answer_middleware)
 
     assert "spiralled = _the_last_reply_was_all_reasoning(messages)" in source
-    assert "answer_only = spiralled or _nothing_left_but_the_answer(" in source
+    # Withheld when thinking cannot be switched off, or on a second spiral in
+    # one visit; see `test_a_spiral_keeps_the_tools_when_thinking_can_be_switched_off`.
+    assert "answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(" in source
     # `answer_only` is what sets `overrides["tools"] = []`.
     assert 'if answer_only:\n                    # Empty here' in source

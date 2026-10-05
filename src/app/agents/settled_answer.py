@@ -868,6 +868,44 @@ _REASONED_PAST_THE_BUDGET_NOTICE = (
 )
 
 
+#: Sent instead when thinking can be switched off for the next call and this is
+#: the stage's first lost reply. The tools stay: a stage whose work is writing
+#: files cannot do it by answering. Measured on one run: QA reasoned through its
+#: whole 25,000-token reply before writing a test, the tools were withheld, and
+#: the only answer left to it was an empty suite marking two criteria "not
+#: automatable" - one of them adding a task - which cost the stage a second
+#: visit. Switching thinking off is what stops the spiral; the tools were the
+#: remedy from before it could be switched off.
+_REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE = (
+    "Your previous reply was cut off at its output limit while you were still "
+    "reasoning, so nothing of it survived - no text, no tool call. Thinking is "
+    "switched off for this call, so this reply goes straight to action: take your "
+    "next step now - the tool call your work needs next, or your structured "
+    "response if the work is done. Do not plan all of it again; do the next "
+    "part of it."
+)
+
+
+def _replies_that_were_all_reasoning(messages: list[Any]) -> int:
+    """How many replies in this visit spent their whole output budget on reasoning."""
+    count = 0
+    for message in messages:
+        if getattr(message, "type", None) != "ai":
+            continue
+        truncated = any(
+            isinstance(holder, dict) and str(holder.get("finish_reason") or "") == "length"
+            for holder in (
+                getattr(message, "response_metadata", None),
+                getattr(message, "additional_kwargs", None),
+            )
+        )
+        if truncated and not str(getattr(message, "content", "") or "").strip() and not (
+            getattr(message, "tool_calls", None) or ()
+        ):
+            count += 1
+    return count
+
+
 #: Sent on the calls where the tools are withheld. It says what was done rather
 #: than asking again, because asking is what the previous 263 calls did.
 TOOLS_WITHHELD_NOTICE = (
@@ -1234,23 +1272,40 @@ def build_settled_answer_middleware(
                 # `answer_only` path, because the remedy is identical - no tools,
                 # answer now - and a stage can be in both states at once.
                 spiralled = _the_last_reply_was_all_reasoning(messages)
+                # Thinking off with the tools kept, on a stage's first lost
+                # reply where thinking can be switched off for one call; the
+                # tools withheld otherwise. See the notice for why.
+                spiral_quiet: dict = {}
+                spiral_plainer = None
                 if spiralled:
                     _note_a_reply_that_was_all_reasoning(stage_name)
-                    correction = (
-                        f"{correction}\n\n{_REASONED_PAST_THE_BUDGET_NOTICE}"
-                        if correction
+                    if _replies_that_were_all_reasoning(messages) == 1:
+                        from app.agents.thinking import answering_without_reasoning
+
+                        spiral_quiet = answering_without_reasoning(getattr(request, "model", None)) or {}
+                    notice = (
+                        _REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE
+                        if spiral_quiet
                         else _REASONED_PAST_THE_BUDGET_NOTICE
                     )
-                    logger.warning(
-                        "Stage %s spent a whole reply's output budget on "
-                        "reasoning; withholding its tools for one call so it can "
-                        "answer from what it has",
-                        stage_name or "?",
-                    )
-                answer_only = spiralled or _nothing_left_but_the_answer(
+                    correction = f"{correction}\n\n{notice}" if correction else notice
+                    if spiral_quiet:
+                        logger.warning(
+                            "Stage %s spent a whole reply's output budget on "
+                            "reasoning; thinking switched off for one call, tools kept",
+                            stage_name or "?",
+                        )
+                    else:
+                        logger.warning(
+                            "Stage %s spent a whole reply's output budget on "
+                            "reasoning; withholding its tools for one call so it can "
+                            "answer from what it has",
+                            stage_name or "?",
+                        )
+                answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, step_limit, schema
                 )
-                if answer_only and not spiralled:
+                if answer_only and not (spiralled and not spiral_quiet):
                     correction = (
                         f"{correction}\n\n{TOOLS_WITHHELD_NOTICE}"
                         if correction
@@ -1286,6 +1341,14 @@ def build_settled_answer_middleware(
                 if not correction:
                     return handler(request)
                 overrides: dict[str, Any] = {}
+                if spiral_quiet:
+                    from app.agents.thinking import without_the_effort_field
+
+                    overrides["model_settings"] = {
+                        **(getattr(request, "model_settings", None) or {}),
+                        **spiral_quiet,
+                    }
+                    spiral_plainer = without_the_effort_field(overrides["model_settings"])
                 if answer_only:
                     # Empty here, not empty at the model. `_get_bound_model`
                     # appends the structured-output tools to whatever this
@@ -1343,6 +1406,10 @@ def build_settled_answer_middleware(
                         # Nothing was removed, so a notice would describe a tool
                         # the model can still see and call.
                         return handler(request)
+                if spiral_quiet and spiral_plainer is not None:
+                    # Built last, so it carries whatever tool narrowing the
+                    # call above settled on.
+                    refused_fallback = {**overrides, "model_settings": spiral_plainer}
                 corrected = [*messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)

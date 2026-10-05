@@ -106,6 +106,10 @@ def pytest_configure(config):
         "markers",
         "real_endpoint_probe: keep the runner's model-server reachability gate in this test",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_execution_readiness: keep the runner's command-execution gate in this test",
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -126,6 +130,25 @@ def no_model_server_needed(request, monkeypatch):
         from app.server.runner import WorkflowRunner
 
         monkeypatch.setattr(WorkflowRunner, "_require_a_reachable_model", lambda self: None)
+    yield
+
+
+@pytest.fixture(autouse=True)
+def workers_can_run_commands(request, monkeypatch):
+    """Tests that start a run must not depend on what a live worker recorded.
+
+    `WorkflowRunner` refuses a run when the workers reported that commands
+    cannot run (`app.server.execution_readiness`); that record lives in the
+    deployment's Redis, not in the test. A test of the refusal marks itself
+    `real_execution_readiness`.
+    """
+    if request.node.get_closest_marker("real_execution_readiness") is None:
+        from app.server.runner import WorkflowRunner
+
+        async def ready(self) -> None:
+            return None
+
+        monkeypatch.setattr(WorkflowRunner, "_require_command_execution", ready)
     yield
 
 

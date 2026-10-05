@@ -82,6 +82,18 @@ _RECOVERY_LOCK_SECONDS = 120
 
 
 @worker_ready.connect
+def _record_whether_commands_can_run(**_kwargs) -> None:
+    """Tell the API whether this worker can run commands. See `app.server.execution_readiness`."""
+    try:
+        from app.server.execution_readiness import record_this_workers_readiness
+        from app.server.redis_client import get_redis_client
+
+        record_this_workers_readiness(get_redis_client())
+    except Exception:  # noqa: BLE001 - a worker that cannot report still takes tasks
+        logger.warning("Could not report whether commands can run", exc_info=True)
+
+
+@worker_ready.connect
 def _recover_runs_their_worker_abandoned(**_kwargs) -> None:
     """Unstick runs whose worker died, once, when a worker comes up.
 

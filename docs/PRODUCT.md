@@ -247,8 +247,13 @@ of every language the stack names); interpreter escapes (`python -c`, `node -e`,
 `npm exec`, …) refused; servers refused with advice (the acceptance config starts
 the product); resource limits (memory, CPU, processes, file size), minimal
 environment, a free `ACCEPTANCE_PORT` per command; timeouts scaled per toolchain.
-Modes: `container` (separate container per command) or `in-container` (inside the
-worker with rlimits — the deployed default). Fails closed.
+Modes: `container` (separate container per command; needs a runtime socket, which
+is root-equivalent on the host) or `in-container` (inside the worker with rlimits).
+Execution is opt-in: Compose defaults to `ALLOW_COMMAND_EXECUTION=false` and
+`SANDBOX_EXECUTION_MODE=container`; this deployment's `.env` sets `true` and
+`in-container`. Fails closed. **Run readiness:** each worker records at startup
+whether it can run commands (`app/server/execution_readiness.py`), and a run is
+refused before its first model call when it cannot, naming the setting to change.
 
 **Repository write guards** (`app/tools/repository.py`): paths stay inside the
 workspace and project; `docs/` holds only workflow-rendered documents; the locked
@@ -328,7 +333,7 @@ Runtime settings (editable in the UI, stored in Postgres, override env):
 | Core libraries | LangGraph (+ Postgres checkpointer), LangChain core/OpenAI/Anthropic/Google, deepagents, FastAPI, Celery, Redis, psycopg 3, Pydantic 2, Jinja2, tree-sitter-language-pack |
 | Image tools | TypeScript 6.0.3 and Pyright 1.1.414 (global, for parsing and language services), Playwright 1.63.0 + Chromium (cached in the image) |
 | Frontend | React 19, Vite 8, Tailwind 4, TypeScript |
-| Default model (current deployment) | `openai/gpt-oss-20b` on LM Studio (`host.docker.internal:1234`), no judgement model set |
+| Default model (current deployment) | set by the owner in Settings and changed often; as of 2026-10-05 `AtomicChat/Ornith-1.5-35B-A3B-GGUF` on `host.docker.internal:8888`, no judgement model set |
 | Size | ~72k lines in `src/app`; ~490 test files, ~8,800 tests |
 | Limits | architecture revisions 6; acceptance rounds 3; milestone revisions 3; remediation attempts 3; structured retries 2; release holds 2; suite repairs 2; escalations 3 |
 | Workflow graph | 33 nodes; state is a `TypedDict` of about 64 keys (`WorkflowGraphState`) |

@@ -794,6 +794,25 @@ class WorkflowRunner:
         for thread_id in [*state.get("inner_thread_ids", []), record.thread_id]:
             discard_thread(thread_id, checkpointer=self.checkpointer)
 
+    async def _require_command_execution(self) -> None:
+        """Refuse to start when the workers reported that they cannot run commands.
+
+        See `app.server.execution_readiness`. A record that cannot be read
+        refuses nothing: this stops a run that was certain to fail, never one
+        that might work.
+        """
+        from app.server.execution_readiness import READINESS_KEY, why_commands_cannot_run
+        from app.server.redis_client import get_async_redis_client
+
+        try:
+            stored = await get_async_redis_client().get(READINESS_KEY)
+        except Exception:  # noqa: BLE001 - never block on the store being down
+            logger.warning("Could not read whether the workers can run commands", exc_info=True)
+            return
+        reason = why_commands_cannot_run(stored)
+        if reason:
+            raise RunConflict(reason)
+
     def _require_a_reachable_model(self) -> None:
         """Refuse to start when nothing is serving the configured endpoint.
 
@@ -864,6 +883,7 @@ class WorkflowRunner:
         if record is None:
             raise ValueError(f"Run {run_id} is not registered")
 
+        await self._require_command_execution()
         self._require_a_reachable_model()
 
         record.repo_root = str(repository.root_path)
@@ -911,6 +931,7 @@ class WorkflowRunner:
                 "produced. Clone it to repeat the attempt from the beginning."
             )
 
+        await self._require_command_execution()
         self._require_a_reachable_model()
 
         now = datetime.now(timezone.utc).isoformat()

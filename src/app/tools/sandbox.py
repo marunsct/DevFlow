@@ -2665,6 +2665,44 @@ def execution_enabled() -> bool:
     return os.environ.get("ALLOW_COMMAND_EXECUTION", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def execution_readiness() -> tuple[bool, str]:
+    """Whether a command can run from this process, and in a sentence why or why not.
+
+    A run that cannot run commands can still write a product, but never
+    install, build or test it, so every check that needs a command fails and
+    the run spends its model calls on a result nobody can verify. That is
+    worth knowing before the first call, not after the last.
+    """
+    if not execution_enabled():
+        return False, (
+            "Command execution is turned off (ALLOW_COMMAND_EXECUTION is not true), so a "
+            "run could write a product but never install, build or test it. Set "
+            "ALLOW_COMMAND_EXECUTION=true for the worker, with SANDBOX_EXECUTION_MODE "
+            "chosen for the isolation this deployment needs."
+        )
+    if execution_mode() == IN_CONTAINER_MODE:
+        return True, "Commands run in the worker's own container."
+    try:
+        binary = _docker_binary()
+    except SandboxUnavailable as error:
+        return False, str(error)
+    try:
+        probe = subprocess.run(
+            [binary, "version", "--format", "{{.Server.Version}}"],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        return False, f"The container runtime '{binary}' could not be asked for its version: {error}"
+    if probe.returncode != 0:
+        reason = (probe.stderr or probe.stdout or "").strip().splitlines()
+        return False, (
+            f"Commands are to run in their own containers, but '{binary}' cannot reach its "
+            f"daemon ({reason[0] if reason else f'exit {probe.returncode}'}). Mount a working "
+            "runtime socket into the worker, or set SANDBOX_EXECUTION_MODE=in-container."
+        )
+    return True, "Commands run in their own containers."
+
+
 def _as_workspace_relative(text: str, workspace: str) -> str:
     """Rewrite the host's workspace path out of command output.
 

@@ -78,15 +78,29 @@ def build_author_request(
         )
     feedback_text = ""
     if feedback:
+        # Only what is wrong with the tests is QA's. One run's suite repair was
+        # handed three findings about the product - a class the page did not
+        # use, a save that did nothing - under "Fix each of these first", and
+        # QA spent five calls trying to edit the page, refused each time.
         feedback_text = (
             "--- What the last review of this suite found ---\n"
             + "\n".join(f"- {item}" for item in feedback)
-            + "\nFix each of these first.\n\n"
+            + "\nFix each of these that is about the tests first. One about the product - "
+            "something it lacks or does wrong - is not yours to fix: the product's own stages "
+            "fix it, and your tests stay as the criteria require.\n\n"
         )
+    # A suite reopened for repair is repaired against a product that exists.
+    built = bool((suite.last_result(repo_root) or {}).get("passed"))
+    state_of_the_product = (
+        "The product is partly built and the suite is being repaired: change only what the "
+        "review names. "
+        if built
+        else "Nothing of the product's features is built yet. Write its acceptance suite now: "
+        "the tests that decide whether it is done. "
+    )
     content = (
         "The workspace is rooted at '/'; all paths you use are relative to it.\n\n"
-        "You are the QA engineer. Nothing of the product's features is built yet. Write "
-        "its acceptance suite now: the tests that decide whether it is done. Once "
+        "You are the QA engineer. " + state_of_the_product + "Once "
         "reviewed, the suite is locked, and the product is finished when it passes.\n\n"
         f"--- Acceptance criteria ---\n{criteria_text(criteria, deferred)}\n\n"
         f"{requests_text}"

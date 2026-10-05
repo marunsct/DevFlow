@@ -462,3 +462,34 @@ def test_the_state_change_rule_names_no_product_and_no_control(project, word: st
     ]
     for rule in rules:
         assert not re.search(rf"\b{re.escape(word)}\b", rule, re.I), word
+
+
+def test_a_review_finding_about_the_product_is_not_qa_s_to_fix(project) -> None:
+    """One run's repair handed QA three product findings under "Fix each of these
+    first", and QA spent five calls trying to edit the page."""
+    request = requests.build_author_request(
+        project, suite.criteria(project), feedback=["The save does nothing on an empty title"]
+    )["messages"][0]["content"]
+    text = " ".join(request.split())
+    assert "Fix each of these that is about the tests first" in text
+    assert "One about the product" in text and "is not yours to fix" in text
+
+
+def test_a_repair_after_the_product_exists_does_not_say_nothing_is_built(project, monkeypatch) -> None:
+    monkeypatch.setattr(suite, "last_result", lambda root: {"passed": 17, "failed": 5})
+    text = requests.build_author_request(project, suite.criteria(project))["messages"][0]["content"]
+    assert "Nothing of the product's features is built yet" not in text
+    assert "partly built and the suite is being repaired" in text
+
+    monkeypatch.setattr(suite, "last_result", lambda root: {})
+    fresh = requests.build_author_request(project, suite.criteria(project))["messages"][0]["content"]
+    assert "Nothing of the product's features is built yet" in fresh
+
+
+@pytest.mark.parametrize("word", ["task", "tasks", "to-do", "todo", "button", "click", "checkbox", "page"])
+def test_the_product_finding_rule_names_no_product_and_no_control(project, word: str) -> None:
+    import re
+
+    request = requests.build_author_request(project, suite.criteria(project), feedback=["x"])["messages"][0]["content"]
+    rule = request[request.index("Fix each of these that is about"):][:300]
+    assert not re.search(rf"\b{re.escape(word)}\b", rule, re.I), word

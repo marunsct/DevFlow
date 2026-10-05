@@ -413,3 +413,26 @@ def test_a_criterion_id_is_read_whatever_dash_a_model_types() -> None:
     text = "AC‑2, AC‐3, AC—4, AC−5, AC－6, AC-7, AC_8, ac9, test_ac10_x, [CR‑1]"
     assert tags_in(text) == ("AC-2", "AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8", "AC-9", "AC-10", "CR-1")
     assert tags_in("access pac3 AC") == ()
+
+
+def test_the_suite_is_held_to_the_shape_the_interface_names(project) -> None:
+    """One run's locked suite found tasks by their text alone. The brief said each
+    is "an item of a list"; the product rendered them as plain blocks, its own
+    suite passed 8 of 9, and the hidden tests - which find each record as a list
+    item - passed 2 of 10."""
+    from app.agents.acceptance_reviewer import _SYSTEM_PROMPT
+
+    author = requests.build_author_request(project, suite.criteria(project), brief="## Interface\n- x")["messages"][0]["content"]
+    for text in (" ".join(author.split()), " ".join(_SYSTEM_PROMPT.split())):
+        assert "an item of a list, a row of a table, an element of a returned array" in text
+
+
+@pytest.mark.parametrize("word", ["task", "to-do", "todo", "button", "click", "checkbox"])
+def test_the_shape_rule_names_no_product_and_no_control(project, word: str) -> None:
+    import re
+
+    from app.agents.acceptance_reviewer import _SYSTEM_PROMPT
+
+    start = _SYSTEM_PROMPT.index("Where the brief's interface says what kind of thing")
+    rule = _SYSTEM_PROMPT[start:start + 400]
+    assert not re.search(rf"\b{re.escape(word)}\b", rule, re.I)

@@ -60,6 +60,11 @@ wrong - would one of these tests fail? A test that only checks something
 exists, checks a value the test itself set, or would pass on an empty product is
 not enough. A test that checks the result a user would see is.
 
+Where the brief's interface says what kind of thing a record is shown as - an
+item of a list, a row of a table, an element of a returned array - check that
+the tests find records that way. A suite that finds them by any shape passes a
+product that ignores the one the customer named.
+
 Then ask the opposite: could a product that does meet the criterion pass it?
 Each test runs alone, against a product that holds no data - nothing another
 test created is there. A test that acts on something it never created (an item,

@@ -181,3 +181,25 @@ def test_a_control_that_leaves_the_page_is_clicked_not_checked() -> None:
     from app.stacks.packs._javascript import FIND_CONTROLS
 
     assert "is a `click()`, not `check()` or `uncheck()`" in FIND_CONTROLS
+
+
+def test_a_method_of_an_ordinary_value_is_not_an_assertion(tmp_path) -> None:
+    """One run's suite built unique titles with `Math.random().toString(36)`; it
+    was sent back three times for calling `toString`, which no runner defines."""
+    acceptance = _scaffolded(tmp_path)
+    types = tmp_path / "notes" / "node_modules" / "playwright" / "types"
+    types.mkdir(parents=True)
+    (types / "test.d.ts").write_text("interface Matchers {\n  toBeChecked(options?: {}): Promise<void>;\n}\n")
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "notes.spec.js").write_text(
+        "const name = () => `n-${Math.random().toString(36).slice(2)}`;\n"
+        "test('[AC-1] adds', async ({ page }) => {\n"
+        "  const when = new Date().toISOString();\n"
+        "  await expect(page.getByLabel('Done', { exact: true })).toBeChecked();\n"
+        "  await expect(\n    page.getByLabel('Done', { exact: true })\n  ).toBeUnchecked();\n"
+        "});\n"
+    )
+
+    problems = suite.assertions_that_do_not_exist(tmp_path)
+
+    assert len(problems) == 1 and "line 7" in problems[0] and "toBeUnchecked" in problems[0]

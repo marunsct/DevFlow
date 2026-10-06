@@ -723,6 +723,35 @@ def tests_that_need_what_they_never_made(repo_root: str | Path, result: Acceptan
 _ASSERTION_CALL = re.compile(r"\.(to[A-Z][A-Za-z]*)\s*\(")
 
 
+def _ends_an_expectation(text: str, at: int) -> bool:
+    """Whether the `.toX(` at `at` is called on an `expect(...)`, not on an ordinary value.
+
+    `toString`, `toUpperCase` and `toISOString` are the language's own; one
+    run's suite built unique titles with `Math.random().toString(36)` in a
+    helper, and was sent back three times and locked with "calls `toString`,
+    which the installed test runner does not define" against four files.
+    """
+    start = text.rfind("expect", max(0, at - 2000), at)
+    if start == -1:
+        return False
+    opening = text.find("(", start, at)
+    if opening == -1:
+        return False
+    depth = 0
+    for index in range(opening, at):
+        if text[index] == "(":
+            depth += 1
+        elif text[index] == ")":
+            depth -= 1
+            if depth == 0:
+                return bool(_ONLY_MODIFIERS.fullmatch(text[index + 1:at]))
+    return False
+
+
+#: What may stand between `expect(...)` and its matcher.
+_ONLY_MODIFIERS = re.compile(r"\s*(?:\.\s*(?:not|resolves|rejects)\s*)*")
+
+
 def assertions_that_do_not_exist(repo_root: str | Path) -> list[str]:
     """Where the suite calls an assertion its runner does not define, by the pack's reader.
 
@@ -747,7 +776,7 @@ def assertions_that_do_not_exist(repo_root: str | Path) -> list[str]:
         except OSError:
             continue
         for match in _ASSERTION_CALL.finditer(text):
-            if match.group(1) in known:
+            if match.group(1) in known or not _ends_an_expectation(text, match.start()):
                 continue
             line = text.count("\n", 0, match.start()) + 1
             problems.append(

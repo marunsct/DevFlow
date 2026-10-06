@@ -220,6 +220,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(suite.tests_the_runner_never_ran(root, result))
     problems.extend(suite.locators_nobody_sees(root))
     problems.extend(suite.locators_that_pick_one(root))
+    problems.extend(suite.locators_that_contradict_their_assertions(root))
     problems.extend(
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
     )
@@ -653,8 +654,31 @@ def interface_defects(state: Any) -> list[Any]:
             owner="ui_ux",
             regression_test_required=False,
         ))
-    overflow = int(saved.get("phone_overflow") or 0)
     brief = str(getattr(state.get("document"), "text", "") or "")
+    disabled = interface_checks.named_controls_disabled_on_load(brief, str(saved.get("shows") or ""))
+    if disabled:
+        named = ", ".join(f'"{name}"' for name in disabled)
+        defects.append(ReportedDefect(
+            description=(
+                f"A control the brief names is disabled when the page loads: {named}. A person "
+                "cannot use it and is not told why."
+            ),
+            severity="major",
+            reproduction_steps=(
+                "Load the page and read what it shows: the harness's page check records each "
+                "control with its state before any test touches it."
+            ),
+            expected_behavior=(
+                "Every control the brief names can be used. An action that cannot go ahead - a "
+                "required field left empty - is refused when it is tried, with a message saying "
+                "what is missing."
+            ),
+            actual_behavior=f"{named} disabled on load, as the page shows it.",
+            affected_files=[],
+            owner="ui_ux",
+            regression_test_required=False,
+        ))
+    overflow = int(saved.get("phone_overflow") or 0)
     if overflow > 0 and interface_checks.asks_for_small_screens(brief):
         defects.append(ReportedDefect(
             description=(

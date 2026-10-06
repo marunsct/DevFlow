@@ -117,4 +117,26 @@ def nobody_styled_it(repo_root: str | Path | None) -> str:
         return ""
 
 
-__all__ = ["asks_for_small_screens", "controls_the_brief_names", "nobody_styled_it"]
+def named_controls_disabled_on_load(brief_text: str, shows: str) -> list[str]:
+    """The controls the brief names that the page, as it loads, shows disabled.
+
+    `shows` is the page's accessibility tree as the page check records it
+    (`- button "Name" [disabled]`). Measured on one run: the interface design
+    disabled the brief's "add" control until its required field held text; the
+    product refused nothing, because nothing could be tried, and the customer's
+    check that an empty entry is refused timed out waiting for the control.
+    """
+    disabled = []
+    for name in controls_the_brief_names(brief_text):
+        quoted = f'"{name}"'
+        if any(quoted in line and "[disabled" in line for line in (shows or "").splitlines()):
+            disabled.append(name)
+    return disabled
+
+
+__all__ = [
+    "asks_for_small_screens",
+    "controls_the_brief_names",
+    "named_controls_disabled_on_load",
+    "nobody_styled_it",
+]

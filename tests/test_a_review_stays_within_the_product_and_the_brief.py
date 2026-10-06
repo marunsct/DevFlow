@@ -125,3 +125,105 @@ class TestSecurityIsGradedByItsOwnReview:
         review = self._milestone(("major", "security", "x"))
 
         assert workflow._security_graded_by_its_own_review(review, None) is review
+
+
+class TestTheBriefSControlsStayUsable:
+    """One run's interface design disabled the brief's "Add task" until its
+    title held text; the customer's check that an empty entry is refused timed
+    out waiting for the control."""
+
+    BRIEF = 'A text field labelled "Title" and a button named "Add task".'
+
+    def test_one_disabled_on_load_is_named(self) -> None:
+        from app.analysis.interface_checks import named_controls_disabled_on_load
+
+        shows = '- main:\n  - textbox "Title"\n  - button "Add task" [disabled]\n  - button "Other" [disabled]'
+
+        assert named_controls_disabled_on_load(self.BRIEF, shows) == ["Add task"]
+        assert named_controls_disabled_on_load(self.BRIEF, '- button "Add task"') == []
+
+    def test_it_is_a_ui_ux_defect_that_names_no_product(self, tmp_path) -> None:
+        import json
+        from types import SimpleNamespace
+
+        from app.acceptance import suite
+        from app.graph import acceptance_nodes
+
+        path = tmp_path / suite.RESULT_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran": True, "shows": '- button "Add task" [disabled]'}))
+
+        defects = acceptance_nodes.interface_defects(
+            {"repository": SimpleNamespace(root_path=str(tmp_path)), "document": SimpleNamespace(text=self.BRIEF)}
+        )
+
+        [defect] = [d for d in defects if "disabled" in d.description]
+        assert defect.owner == "ui_ux" and '"Add task"' in defect.description
+        rule = f"{defect.expected_behavior} {defect.reproduction_steps}".lower()
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", rule), word
+
+    def test_advice_never_disables_one(self) -> None:
+        from app.agents.specialist_advice import _SYSTEM_PROMPT as ADVISOR
+
+        assert "never by disabling the control" in ADVISOR
+
+
+class TestALocatorThatContradictsItsAssertion:
+    EDIT = (
+        "test('[AC-3] edit', async ({ page }) => {\n"
+        "  const item = page.getByRole('listitem').filter({ hasText: /Original/ });\n"
+        "  await item.getByRole('button', { name: 'Edit' }).click();\n"
+        "  await page.getByLabel('Edit title').fill('Updated');\n"
+        "  await expect(item.locator('h3')).not.toContainText('Original');\n"
+        "});\n"
+    )
+
+    def test_is_named_with_its_line(self) -> None:
+        from app.stacks.packs._javascript import asserted_without_the_text_it_is_found_by
+
+        assert asserted_without_the_text_it_is_found_by(self.EDIT) == [(5, "item", "Original")]
+
+    def test_a_test_that_finds_it_again_by_its_new_text_is_not(self) -> None:
+        from app.stacks.packs._javascript import asserted_without_the_text_it_is_found_by
+
+        fixed = self.EDIT.replace(
+            "await expect(item.locator('h3')).not.toContainText('Original');",
+            "await expect(page.getByRole('listitem').filter({ hasText: 'Original' })).toHaveCount(0);",
+        )
+
+        assert asserted_without_the_text_it_is_found_by(fixed) == []
+
+    def test_the_review_sends_it_back(self, tmp_path) -> None:
+        from app.acceptance import suite
+        from app.stacks.scaffold import scaffold
+
+        pack = pack_named("browser-javascript")
+
+        def smoke(argv, category, wd):
+            report = tmp_path / wd / pack.acceptance_report
+            report.parent.mkdir(parents=True, exist_ok=True)
+            report.write_text("<testsuites><testcase name='smoke'/></testsuites>")
+            unit = tmp_path / wd / pack.unit_report
+            unit.parent.mkdir(parents=True, exist_ok=True)
+            unit.write_text("<testsuites><testcase name='smoke'/></testsuites>")
+            return {"returncode": "0"}
+
+        assert scaffold(tmp_path, pack, "notes", "Notes", run=smoke).ok
+        (tmp_path / "notes" / "acceptance").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "notes" / "acceptance" / "edit.spec.js").write_text(self.EDIT)
+
+        [problem] = suite.locators_that_contradict_their_assertions(tmp_path)
+
+        assert "line 5" in problem and "keeps the old text hidden" in problem
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", problem.split("(`")[0].lower()), word
+
+
+def test_a_lead_is_told_untested_is_no_reason_to_decline() -> None:
+    from app.agents.technical_lead import NOT_A_REASON_TO_DECLINE
+
+    assert "is not a reason to decline it" in NOT_A_REASON_TO_DECLINE
+    assert "no test checks an item is not a reason" in workflow._only_what_was_carried("x")
+    for word in BANNED:
+        assert not re.search(rf"\b{word}\b", NOT_A_REASON_TO_DECLINE.lower()), word

@@ -461,6 +461,38 @@ def another_sprints_plan(milestone: Any, sprint_goals: Sequence[str], sprint_ind
     )
 
 
+#: A decision that declines, defers or skips what was carried.
+_DECLINES = re.compile(r"\bdeclin|\bdefer|\bskip|\bignor|\bnot needed\b|\bnot required\b", re.I)
+#: ...because no test asks for it.
+_BECAUSE_UNTESTED = re.compile(
+    r"\btests?\b|\btest suite\b|\bcriteri|\bacceptance\b|\bnot required\b|\bpass(?:es|ing)?\b", re.I
+)
+
+
+def declined_because_untested(decisions: Sequence[str]) -> list[str]:
+    """The carried-forward decisions that decline an item because no test requires it.
+
+    Measured on one run: a sprint whose criteria already passed was carried
+    fifteen adopted interface and data items its specialists found missing, and
+    its lead declined every one "not required by current sprint tests" - after
+    being told that was no reason. The sprint closed with nothing built.
+    """
+    return [d for d in decisions if _DECLINES.search(d) and _BECAUSE_UNTESTED.search(d)]
+
+
+def untested_is_no_reason(declined: Sequence[str]) -> str:
+    """The send-back for decisions that decline carried work because no test requires it."""
+    shown = "; ".join(" ".join(str(d).split())[:120] for d in list(declined)[:4])
+    more = f" and {len(declined) - 4} more" if len(declined) > 4 else ""
+    return (
+        f"{len(declined)} decision(s) decline carried work because no test requires it ({shown}{more}). "
+        "That is not a reason: what the specification adopted is for the person who uses the "
+        "product. Take each item that still holds into a work order for the role that owns it, "
+        "or decline it with a reason it no longer holds - built already (say where), or ruled out "
+        "by the brief (say which line)."
+    )
+
+
 def readiness_problems(
     milestone: Any,
     repo_root: str | Path | None,
@@ -562,6 +594,9 @@ def readiness_problems(
             f"`carried_forward_decisions` records {len(decided)}. Give one line per item: "
             "the work order that takes it, or why it is declined."
         )
+    untested = declined_because_untested(decided) if carried else []
+    if untested:
+        problems.append(untested_is_no_reason(untested))
     behaviour = [
         t for t in code_tasks
         if _touches_product_code([str(f) for f in getattr(t, "files", None) or [] if str(f).strip()])

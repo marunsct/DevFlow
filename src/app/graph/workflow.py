@@ -4426,6 +4426,11 @@ def _carried_to_this_plan(state: Any) -> list[str]:
     return _carried_here(state)
 
 
+#: The `structured_retries` key, with the sprint's index after it, for a lead
+#: asked again about carried work it declined only because no test requires it.
+_UNTESTED_DECLINES = "technical_lead:untested_declines"
+
+
 def _carried_here(state: Any) -> list[str]:
     """What earlier sprints carried to this one's lead to take or decline."""
     return [str(item) for item in state.get("carried_forward") or [] if str(item).strip()]
@@ -5506,6 +5511,26 @@ def build_workflow_graph(
                 str(line) for line in getattr(update["milestone_plan"], "carried_forward_decisions", None) or []
                 if str(line).strip()
             ]
+            # Once: a lead that declines only because no test asks for the
+            # item is asked again with that reason ruled out.
+            from app.analysis.work_orders import declined_because_untested, untested_is_no_reason
+
+            untested = declined_because_untested(decisions)
+            retries = dict(state.get("structured_retries") or {})
+            asked = f"{_UNTESTED_DECLINES}:{state.get('current_sprint_index', 0)}"
+            if untested and not retries.get(asked):
+                retries[asked] = 1
+                logger.warning(
+                    "The lead declined %d carried item(s) because no test requires them; asking again",
+                    len(untested),
+                )
+                return _handing_on(
+                    stage="technical_lead",
+                    structured_retries=retries,
+                    nothing_left_but_carried=nothing_else,
+                    work_order_problems=[untested_is_no_reason(untested)],
+                    unready_plan=update["milestone_plan"].model_dump_json(indent=2),
+                )
             # The lead's decisions first: the record keeps the rationale's
             # first 1500 characters, and the suite's summary after them is long.
             return _close_a_sprint_with_nothing_to_build(

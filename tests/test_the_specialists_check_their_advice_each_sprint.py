@@ -237,3 +237,65 @@ class TestWhatTheyFindIsCarriedForward:
 
         assert state["stage"] == "complete"
         assert len(agents.requests["technical_lead"]) == 1
+
+
+class TestUntestedIsNoReasonToDecline:
+    """One run's lead declined fifteen carried items "not required by current
+    sprint tests" after being told that was no reason, and the sprint closed."""
+
+    def test_such_decisions_are_named(self) -> None:
+        from app.analysis.work_orders import declined_because_untested
+
+        decisions = [
+            "UX-3 declined: not required by current sprint tests",
+            "DB-2 deferred - no impact on passing criteria",
+            "UX-1: declined - the stylesheet already stacks the form below 600px",
+            "UX-4 -> work order 2",
+        ]
+
+        assert declined_because_untested(decisions) == decisions[:2]
+
+    def test_a_plan_that_declines_so_is_not_ready(self, monkeypatch) -> None:
+        from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
+        from app.analysis.work_orders import readiness_problems
+
+        monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+        plan = MilestonePlanOutput(
+            selected_sprint_goal="g",
+            delegated_tasks=[SpecialistTask(specialist_role="testing", task_description="Write the unit tests for storage.js", acceptance_criteria=["they run"])],
+            carried_forward_decisions=["UX-3 declined: not required by current sprint tests"],
+        )
+
+        problems = readiness_problems(plan, "/nonexistent", carried_forward=["[UI/UX specialist] 1 adopted item(s) ..."])
+
+        assert any("because no test requires it" in p for p in problems)
+
+    def test_the_lead_is_asked_again_once_before_the_sprint_closes(self, agents, monkeypatch, tmp_path) -> None:
+        from app.agents.technical_lead import MilestonePlanOutput
+
+        declined = MilestonePlanOutput(
+            selected_sprint_goal="Sprint 2: more",
+            carried_forward_decisions=["UX-1 declined: not required by current sprint tests"],
+        )
+        TestWhatTheyFindIsCarriedForward._two_sprints(agents, monkeypatch, declined)
+        from test_graph_routing import _milestone
+
+        agents.script("technical_lead", [
+            responds_with(_milestone("testing")), responds_with(declined),
+            responds_with(declined.model_copy(update={
+                "carried_forward_decisions": ["UX-1: declined - styles.css already has the rule at 600px"],
+            })),
+        ])
+
+        state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-untested-decline")
+
+        assert len(agents.requests["technical_lead"]) == 3
+        assert "because no test requires it" in agents.last_request_text("technical_lead")
+        assert state["stage"] == "complete"
+
+    def test_the_send_back_names_no_product(self) -> None:
+        from app.analysis.work_orders import untested_is_no_reason
+
+        text = untested_is_no_reason(["X-1 declined: not required by tests"]).lower()
+        for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+            assert not re.search(rf"\b{word}\b", text), word

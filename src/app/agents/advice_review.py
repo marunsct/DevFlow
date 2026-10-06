@@ -140,7 +140,7 @@ def findings_from(role: str, answer: Any) -> list[str]:
 
 
 def as_sprint_findings(lines: Sequence[str], round_number: int) -> list[dict[str, Any]]:
-    """One specialist's findings as records of the Sprint Record: minor, never gating.
+    """One specialist's findings as one record of the Sprint Record: minor, never gating.
 
     Kept with the sprint's other findings so they are not lost when the
     milestone reviewer passes over them. Measured on one run: the UI/UX and
@@ -150,19 +150,30 @@ def as_sprint_findings(lines: Sequence[str], round_number: int) -> list[dict[str
     list's message and the desktop layout the specification adopted were never
     built. A finding that does not gate is carried to the next sprint's lead,
     who takes or declines it (`app.sprint.record.carried_from`).
+
+    One record per specialist, not per item: the lead records a decision per
+    carried record, and one run's lead, carried fifteen, was sent back twice
+    a plan for recording six, then ten, then fourteen.
     """
-    return [
-        {
-            "round": round_number,
-            "source": "advice",
-            "severity": "minor",
-            "description": " ".join(str(line).split()),
-            "remediation": "build it as the specification adopted it, or decline it with the reason it no longer holds",
-            "gating": False,
-        }
-        for line in lines
-        if str(line).strip()
-    ]
+    kept = [" ".join(str(line).split()) for line in lines if str(line).strip()]
+    if not kept:
+        return []
+    title = kept[0][1:].split("]", 1)[0] if kept[0].startswith("[") else "specialist"
+    items = []
+    for line in kept:
+        said = line.split("] ", 1)[1] if line.startswith("[") and "] " in line else line
+        items.append(said[len("not built: "):] if said.startswith("not built: ") else said)
+    return [{
+        "round": round_number,
+        "source": "advice",
+        "severity": "minor",
+        "description": f"[{title}] {len(items)} adopted item(s) the code does not follow: " + "; ".join(items),
+        "remediation": (
+            "take each item that still holds into a work order for its role and decline the "
+            "rest with the reason - one decision line for the whole list"
+        ),
+        "gating": False,
+    }]
 
 
 def findings_block(findings: dict[str, list[str]] | None) -> str:

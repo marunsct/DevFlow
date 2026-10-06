@@ -4304,6 +4304,21 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     )
 
 
+def _carried_to_this_plan(state: Any) -> list[str]:
+    """What this plan must take or decline: the carried items, on a sprint's first plan only.
+
+    A plan that finishes a sprint after a failed attempt answers that attempt's
+    open defects; the sprint's first plan already took or declined what was
+    carried to it, and what it took is in the workspace. Measured on one run:
+    each re-plan of a failing last sprint was sent back twice for not
+    recording a decision on each of fifteen carried items, and dispatched with
+    the problem noted - three lead calls a plan, spent on items decided before.
+    """
+    if _the_last_failed_attempt_at_this_sprint(state) is not None:
+        return []
+    return _carried_here(state)
+
+
 def _carried_here(state: Any) -> list[str]:
     """What earlier sprints carried to this one's lead to take or decline."""
     return [str(item) for item in state.get("carried_forward") or [] if str(item).strip()]
@@ -5335,7 +5350,7 @@ def build_workflow_graph(
             request = build_milestone_planning_request(
                 plan_text, current_goal, state["repository"].root_path,
                 specification=state.get("technical_specification"),
-                carried_forward=state.get("carried_forward") or [],
+                carried_forward=_carried_to_this_plan(state),
                 lessons=state.get("lessons") or [],
                 last_attempt=_the_last_failed_attempt_at_this_sprint(state),
             )
@@ -5424,7 +5439,7 @@ def build_workflow_graph(
         problems = readiness_problems(
             update["milestone_plan"],
             state["repository"].root_path,
-            carried_forward=[] if revising else (state.get("carried_forward") or []),
+            carried_forward=[] if revising else _carried_to_this_plan(state),
             # A revision answers the review's findings; the sprint's first plan
             # was the one held to the files its scope names, and those were
             # built - under the names that plan chose. One run's revision was

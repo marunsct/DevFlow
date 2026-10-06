@@ -126,18 +126,37 @@ class TestWhatTheyFindIsCarriedForward:
     word about any, and the next two sprints closed with nothing to build - so
     none of it was built, taken or declined."""
 
-    def test_a_finding_is_a_minor_one_of_the_sprint_s_own(self) -> None:
+    def test_a_specialist_s_findings_are_one_minor_finding_of_the_sprint_s_own(self) -> None:
+        """One per specialist: one run's lead, carried fifteen items, was sent back
+        twice a plan for recording a decision on six, then ten, then fourteen."""
         from app.agents.advice_review import as_sprint_findings
         from app.sprint.record import carried_from, with_dispositions
 
-        findings = as_sprint_findings(["[UI/UX specialist] not built: UX-4: no feedback after a change"], 1)
+        findings = as_sprint_findings([
+            "[UI/UX specialist] not built: UX-4: no feedback after a change",
+            "[UI/UX specialist] design: the phone screenshot shows the list beside the form",
+        ], 1)
 
-        assert findings[0]["source"] == "advice" and findings[0]["gating"] is False
+        [finding] = findings
+        assert finding["source"] == "advice" and finding["gating"] is False
         assert with_dispositions(findings, completed=True, more_sprints=True)[0]["disposition"] == (
             "carried to the next sprint"
         )
         [carried] = carried_from(findings, 1)
-        assert carried.startswith("[UI/UX specialist] not built: UX-4: no feedback after a change (sprint 1 advice review")
+        assert carried.startswith(
+            "[UI/UX specialist] 2 adopted item(s) the code does not follow: UX-4: no feedback after a "
+            "change; design: the phone screenshot shows the list beside the form (sprint 1 advice review"
+        )
+        assert as_sprint_findings([], 1) == []
+
+    def test_a_plan_that_finishes_a_failed_sprint_is_not_carried_them_again(self) -> None:
+        carried = ["[UI/UX specialist] 1 adopted item(s) the code does not follow: UX-1: x"]
+        first = {"current_sprint_index": 1, "carried_forward": carried,
+                 "sprint_attempts": [{"sprint_index": 0, "status": "Completed"}]}
+        again = {**first, "sprint_attempts": [*first["sprint_attempts"], {"sprint_index": 1, "status": "Failed"}]}
+
+        assert workflow_module._carried_to_this_plan(first) == carried
+        assert workflow_module._carried_to_this_plan(again) == []
 
     def test_the_brief_for_a_sprint_with_only_carried_work_names_no_product(self) -> None:
         text = workflow_module._only_what_was_carried("Every criterion due by sprint 2 already passes (AC-1).\nmore").lower()
@@ -199,7 +218,7 @@ class TestWhatTheyFindIsCarriedForward:
         state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-advice-carried")
 
         asked = agents.last_request_text("technical_lead")
-        assert "[UI/UX specialist] not built: UX-1: no rule below 600px in styles.css" in asked
+        assert "[UI/UX specialist] 1 adopted item(s) the code does not follow: UX-1: no rule below 600px in styles.css" in asked
         assert "Every criterion due by this sprint already passes" in asked
         assert state["stage"] == "complete"
         closed = [d for d in state["decisions"] if d.get("decision") == "accept without new work"]

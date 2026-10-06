@@ -162,6 +162,12 @@ export default async function pageCheck(config) {
             help: rule.help,
             count: rule.nodes.length,
             where: rule.nodes.slice(0, 3).map((node) => node.target.join(' ')),
+            // What axe measured, element by element: for contrast, the two
+            // colours, the ratio and the ratio needed. Without it one run's
+            // fixers changed colours blind for three rounds.
+            why: rule.nodes.slice(0, 3).map((node) => String(
+              (node.any && node.any[0] && node.any[0].message) || node.failureSummary || '',
+            ).replace(/\\s+/g, ' ').slice(0, 240)),
           }));
       });
     } catch (error) {
@@ -200,7 +206,8 @@ export default async function pageCheck(config) {
     console.log(
       '\\nAn accessibility check of the page as it loads finds these serious or critical problems:\\n'
       + layout.accessibility
-        .map((rule) => `  - ${rule.id} (${rule.impact}): ${rule.help} - ${rule.count} element(s), e.g. ${rule.where.join(', ')}`)
+        .map((rule) => `  - ${rule.id} (${rule.impact}): ${rule.help} - ${rule.count} element(s), e.g. ${rule.where.join(', ')}`
+          + (rule.why || []).filter(Boolean).map((why, i) => `\\n      ${rule.where[i] || ''}: ${why}`).join(''))
         .join('\\n')
       + '\\n',
     );

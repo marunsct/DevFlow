@@ -184,12 +184,12 @@ class TestAnAccessibilityEngineChecksThePage:
         report = tmp_path / "page-load.json"
         report.write_text(json.dumps({"layout": {"accessibility": [
             {"id": "label", "impact": "critical", "help": "Form elements must have labels",
-             "count": 1, "where": ["#title-input"]},
+             "count": 1, "where": ["#title-input"], "why": ["Form element does not have an implicit label"]},
         ]}}))
 
         assert suite._read_accessibility(report) == [{
             "id": "label", "impact": "critical", "help": "Form elements must have labels",
-            "count": 1, "where": ["#title-input"],
+            "count": 1, "where": ["#title-input"], "why": ["Form element does not have an implicit label"],
         }]
         assert suite._read_accessibility(None) == []
 
@@ -209,3 +209,27 @@ class TestAnAccessibilityEngineChecksThePage:
 
         assert defect.owner == "ui_ux" and "color-contrast" in defect.description
         assert "3 element(s), e.g. p.hint" in defect.actual_behavior
+
+
+def test_a_contrast_finding_says_what_was_measured(tmp_path) -> None:
+    """One run's fixers changed colours blind for three rounds: the defect named
+    the rule and the elements, not the colours, the ratio or the ratio needed."""
+    from app.stacks.packs._javascript import page_check
+
+    assert "why: rule.nodes.slice(0, 3)" in page_check("/")
+    project = _scaffolded(tmp_path)
+    (project / "styles.css").write_text("main { gap: 1rem; }\n")
+    path = tmp_path / suite.RESULT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    measured = ("Element has insufficient color contrast of 2.55 (foreground color: #ffffff, "
+                "background color: #ffbf00). Expected contrast ratio of 4.5:1")
+    path.write_text(json.dumps({"ran": True, "shows": "- main", "accessibility": [
+        {"id": "color-contrast", "impact": "serious", "help": "Elements must meet minimum color contrast ratio thresholds",
+         "count": 1, "where": ["#add"], "why": [measured]},
+    ]}))
+
+    [defect] = acceptance_nodes.interface_defects(
+        {"repository": SimpleNamespace(root_path=str(tmp_path)), "document": SimpleNamespace(text="")}
+    )
+
+    assert f"#add: {measured}" in defect.actual_behavior

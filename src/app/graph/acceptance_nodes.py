@@ -633,6 +633,11 @@ def interface_defects(state: Any) -> list[Any]:
         listed = "; ".join(
             f"{rule.get('id')} ({rule.get('impact')}): {rule.get('help')} - {rule.get('count')} element(s)"
             + (f", e.g. {', '.join(rule.get('where') or [])}" if rule.get("where") else "")
+            + "".join(
+                f". {where}: {why}"
+                for where, why in zip(rule.get("where") or [], rule.get("why") or [])
+                if why
+            )
             for rule in broken
         )
         defects.append(ReportedDefect(

@@ -563,6 +563,7 @@ def _read_accessibility(path: Path | None) -> list[dict[str, Any]]:
                 "help": str(rule.get("help") or "")[:200],
                 "count": int(rule.get("count") or 0) if str(rule.get("count") or "0").isdigit() else 0,
                 "where": [str(item)[:120] for item in (rule.get("where") or [])[:3]],
+                "why": [str(item)[:240] for item in (rule.get("why") or [])[:3]],
             })
     return kept[:10]
 

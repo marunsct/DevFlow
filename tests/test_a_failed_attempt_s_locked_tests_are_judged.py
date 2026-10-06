@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import re
+
+import pytest
 from types import SimpleNamespace
 
 from app.acceptance import suite
@@ -61,6 +63,10 @@ class TestWhatTheQaLeadSays:
 
 
 class TestWhenADisputeIsDue:
+    @pytest.fixture(autouse=True)
+    def _all_due(self, monkeypatch):
+        monkeypatch.setattr(acceptance_nodes, "criteria_due", lambda state: ["AC-1", "AC-5"])
+
     @staticmethod
     def _state(root, **extra):
         return {
@@ -128,3 +134,19 @@ def test_a_test_named_by_its_title_and_file_is_named() -> None:
         "[AC-5] filter tasks by status", "[AC-12] filtering tasks by status shows correct items",
     ]
     assert named[0].endswith("cannot create second task via checkbox toggle. Fix the test so that it checks what the criterion says.")
+
+
+def test_a_bare_name_with_no_reason_is_not_counted() -> None:
+    """One run's QA lead listed nine names bare - eight of them a later sprint's
+    unbuilt work - and QA rewrote nine valid tests."""
+    assert named_by(SuiteDispute(cannot_pass=["[AC-5] filter tasks by status"]), ["[AC-5] filter tasks by status"]) == []
+
+
+def test_only_the_tests_of_criteria_due_by_this_sprint_are_judged(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(suite, "is_locked", lambda root: True)
+    monkeypatch.setattr(acceptance_nodes, "criteria_due", lambda state: ["AC-1"])
+    _measured(tmp_path, **{"AC-1": "failed", "AC-5": "failed"})
+
+    failing = workflow._the_locked_tests_still_failing(TestWhenADisputeIsDue._state(tmp_path))
+
+    assert [name for name, _, _ in failing] == ["[AC-1] does it"]

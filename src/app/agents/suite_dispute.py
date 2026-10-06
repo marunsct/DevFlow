@@ -47,7 +47,8 @@ class SuiteDispute(BaseModel):
             "One line per locked test that no product doing what its criterion says could "
             "pass as written, starting with the test's name exactly as given, then why - what "
             "it asserts that its own steps never set up, or what it asks that the criterion "
-            "does not. Empty when every failure is the product's."
+            "does not. A line with no reason is not counted. Empty when every failure is the "
+            "product's."
         ),
     )
 
@@ -134,7 +135,9 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     named = []
     for name in failing_names:
         why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip()))
-        if why is not None:
+        # A name with no reason is not a judgement: one run's QA lead listed
+        # nine names bare, eight of them a later sprint's unbuilt work.
+        if why and len(why.split()) >= 3:
             named.append(
                 f"`{name}` cannot pass for any product that does what its criterion says"
                 + (f": {why}" if why else "")

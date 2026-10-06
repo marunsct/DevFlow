@@ -4447,9 +4447,16 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     except Exception:  # noqa: BLE001 - nothing readable, nothing to judge
         return []
     deferred = set(acceptance_suite.deferred(root) or {})
+    # Only what this sprint answers for. A later sprint's test fails because
+    # nothing is built yet, not because it is wrong: one run's first dispute
+    # was shown every failing test, and the QA lead named eight of the next
+    # sprint's as unpassable - QA then rewrote nine valid tests.
+    from app.graph.acceptance_nodes import criteria_due
+
+    due = set(criteria_due(state) or [])
     failing: list[tuple[str, str, str]] = []
     for cid, criterion in (saved.get("criteria") or {}).items():
-        if not isinstance(criterion, dict) or cid in deferred:
+        if not isinstance(criterion, dict) or cid in deferred or cid not in due:
             continue
         for test in criterion.get("tests") or []:
             if isinstance(test, dict) and test.get("outcome") == "failed":

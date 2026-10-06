@@ -222,7 +222,9 @@ class TestWhatTheyFindIsCarriedForward:
         assert "Every criterion due by this sprint already passes" in asked
         assert state["stage"] == "complete"
         closed = [d for d in state["decisions"] if d.get("decision") == "accept without new work"]
-        assert closed and "UX-1: declined - the stylesheet has the rule at 600px" in closed[-1]["rationale"]
+        assert closed and closed[-1]["rationale"].startswith(
+            "The lead took none of what earlier sprints carried here: UX-1: declined - the stylesheet has the rule at 600px"
+        )
         assert not state.get("nothing_left_but_carried")
 
     def test_a_sprint_with_nothing_carried_still_closes_without_its_lead(self, agents, monkeypatch, tmp_path) -> None:

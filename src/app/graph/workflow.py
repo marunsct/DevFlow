@@ -5506,11 +5506,13 @@ def build_workflow_graph(
                 str(line) for line in getattr(update["milestone_plan"], "carried_forward_decisions", None) or []
                 if str(line).strip()
             ]
+            # The lead's decisions first: the record keeps the rationale's
+            # first 1500 characters, and the suite's summary after them is long.
             return _close_a_sprint_with_nothing_to_build(
                 state,
-                nothing_else
-                + "\nThe lead took none of what earlier sprints carried here"
-                + (": " + "; ".join(decisions) if decisions else "."),
+                "The lead took none of what earlier sprints carried here"
+                + (": " + "; ".join(decisions) if decisions else ".")
+                + "\n" + nothing_else,
             )
         # Only a readiness retry carries it on; a dispatched plan is a sprint's own.
         update["nothing_left_but_carried"] = None

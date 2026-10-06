@@ -1781,6 +1781,10 @@ def validate_command(
             "read the result."
         )
 
+    code_to_check = _code_given_to_node_check(argv)
+    if code_to_check is not None:
+        raise CommandNotAllowed(code_to_check)
+
     unparseable = _checks_a_file_node_cannot_parse(argv)
     if unparseable is not None:
         raise CommandNotAllowed(
@@ -1973,6 +1977,44 @@ def _uses_a_shell_operator(argv: Sequence[str]) -> str | None:
         if str(part).strip() in _SHELL_OPERATORS:
             return str(part).strip()
     return None
+
+
+#: Characters a command-line code snippet has and a file path does not.
+_CODE_NOT_A_PATH = re.compile(r"""[()'"`;{}]""")
+_A_SCRIPT_IT_NAMES = re.compile(r"""['"`]((?:\.{1,2}/)?[\w./-]+\.(?:m|c)?js)['"`]""")
+
+
+def _code_given_to_node_check(argv: Sequence[str]) -> str | None:
+    """Why `node --check <code>` cannot work, or None when it names files.
+
+    `--check` parses the file it is given. Measured on one run: a fix stage ran
+    `node -c "require('./src/main.js')"`, and the refusal for a file node
+    cannot parse answered - the "extension" of that snippet being `.js')` -
+    that there is no syntax checker for this kind of file here. There is one,
+    for the very file the snippet names.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) != "node":
+        return None
+    if not any(p in {"--check", "-c"} for p in parts[1:]):
+        return None
+    code = next(
+        (part for part in parts[1:] if not part.startswith("-") and _CODE_NOT_A_PATH.search(part)),
+        None,
+    )
+    if code is None:
+        return None
+    named = _A_SCRIPT_IT_NAMES.search(code)
+    instead = (
+        f" To check '{named.group(1)}', send ['node', '--check', "
+        f"'{os.path.normpath(named.group(1))}'] from the directory it is in."
+        if named
+        else " Send the path of the file to check."
+    )
+    return (
+        f"`node --check` parses a file, and '{code}' is code, not a file's path: "
+        f"node would look for a file of that name.{instead}"
+    )
 
 
 def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:

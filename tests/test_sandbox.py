@@ -1207,6 +1207,29 @@ def test_node_cannot_syntax_check_a_stylesheet() -> None:
     assert "read_file" in message
 
 
+def test_code_given_to_node_check_is_named_as_code() -> None:
+    """`--check` parses a file. One run sent `node -c "require('./src/main.js')"`;
+    the snippet's "extension" was `.js')`, and the refusal for a stylesheet said
+    there was no syntax checker for this kind of file - for a JavaScript file."""
+    import pytest
+
+    from app.tools.sandbox import CommandNotAllowed, validate_command
+
+    with pytest.raises(CommandNotAllowed) as caught:
+        validate_command(["node", "-c", "require('./src/main.js')"], "backend_specialist")
+
+    message = str(caught.value)
+    assert "is code, not a file's path" in message
+    assert "['node', '--check', 'src/main.js']" in message
+    assert "no syntax checker" not in message
+
+
+def test_a_path_with_a_space_is_still_a_path() -> None:
+    from app.tools.sandbox import validate_command
+
+    assert validate_command(["node", "--check", "my app.js"], "backend_specialist")
+
+
 def test_node_can_still_check_javascript() -> None:
     from app.tools.sandbox import validate_command
 

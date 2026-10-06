@@ -106,3 +106,22 @@ def test_a_suite_repaired_for_a_dispute_goes_back_to_the_sprint_s_planning(tmp_p
 
     assert reopened["stage"] == "acceptance_author"
     assert reopened["acceptance_return_to"] == acceptance_nodes.SPRINT_REPLAN
+
+
+def test_a_test_named_by_its_title_and_file_is_named() -> None:
+    """The QA lead's own words on one run, right about all three, none reopened."""
+    answer = SuiteDispute(cannot_pass=[
+        "ac-ac5.spec.js: filter tasks by status cannot create second task via checkbox toggle",
+        "ac-ac12.spec.js: filtering tasks by status shows correct items relies on two tasks but only one exists",
+    ])
+
+    named = named_by(answer, [
+        "[AC-5] filter tasks by status",
+        "[AC-12] filtering tasks by status shows correct items",
+        "[AC-2] can toggle",
+    ])
+
+    assert [line.split("`")[1] for line in named] == [
+        "[AC-5] filter tasks by status", "[AC-12] filtering tasks by status shows correct items",
+    ]
+    assert named[0].endswith("cannot create second task via checkbox toggle. Fix the test so that it checks what the criterion says.")

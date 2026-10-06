@@ -19,6 +19,8 @@ product is wrong is not named, and stays the product's to fix.
 
 from __future__ import annotations
 
+import re
+
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -104,14 +106,35 @@ def create_suite_dispute_agent(
     )
 
 
+#: A test title's criterion tags: `[AC-5][AC-12] `.
+_TAGS = re.compile(r"^(?:\s*\[[^\]]+\])+\s*")
+
+
+def _what_a_line_says_of(lines: Sequence[str], spellings: Sequence[str]) -> str | None:
+    """What the first line naming a test by any of its spellings says after the name; None if none does."""
+    for line in lines:
+        lowered = line.lower()
+        for spelling in spellings:
+            if spelling and spelling.lower() in lowered:
+                at = lowered.index(spelling.lower())
+                return line[at + len(spelling):].lstrip(" `:-–—").strip()
+    return None
+
+
 def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
-    """The suite's repair feedback for each failing test the answer names, by its exact name."""
+    """The suite's repair feedback for each failing test the answer names.
+
+    By its name, or by its title without the criterion tags, in any case: one
+    run's QA lead named all three tests that could not pass as
+    "ac-ac5.spec.js: filter tasks by status cannot ..." - right about each,
+    and none of them reopened while only the exact name counted. Only tests
+    that are failing can be named, so a loose match names nothing else.
+    """
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
     for name in failing_names:
-        said = next((line for line in lines if name in line), "")
-        if said:
-            why = said.split(name, 1)[1].lstrip(" `:-–—").strip()
+        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip()))
+        if why is not None:
             named.append(
                 f"`{name}` cannot pass for any product that does what its criterion says"
                 + (f": {why}" if why else "")

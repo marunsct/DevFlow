@@ -1043,6 +1043,53 @@ def _the_dom_unit_tests_get(target: Path | None) -> str:
     return found[0].unit_dom if found else ""
 
 
+#: Product code replacing a method every browser already defines. A polyfill
+#: is never needed for these, so a rewrite is the product bent around something
+#: else - in the run that prompted this, a unit test asking `querySelector`
+#: for a selector the DOM does not define.
+_REWRITES_THE_PLATFORM = re.compile(
+    r"(?<![\w$.])(?:document|window|globalThis|self"
+    r"|(?:Element|HTMLElement|Node|Document|EventTarget|DocumentFragment)\s*\.\s*prototype)"
+    r"\s*\.\s*(querySelector(?:All)?|getElementById|getElementsBy(?:TagName|ClassName|Name)"
+    r"|createElement|(?:add|remove)EventListener|dispatchEvent|matches|closest|contains"
+    r"|appendChild|insertBefore|removeChild|replaceChild|append|prepend|setAttribute|getAttribute)"
+    r"\s*=(?!=)"
+)
+_SCRIPT_SUFFIXES = (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")
+
+
+def _refuse_rewriting_the_platform(relative_path: str, content: str, original: str = "") -> None:
+    """Refuse product code that replaces a method the browser already defines.
+
+    Measured on one run. A unit test asked `querySelector` for
+    `button:text("Edit")`, which the DOM does not define, and threw. The stage
+    fixing it did not change the test: it replaced `document.querySelector`
+    and `Element.prototype.querySelector` in the product's entry module with a
+    version that understood the test's selector. The test passed, and the
+    product shipped with every query on its page going through the rewrite.
+
+    Only product files: a test may stub what it likes. An edit to a file that
+    already rewrites one is let through unless it adds another, so the rewrite
+    can be taken out a piece at a time.
+    """
+    from app.analysis.file_kinds import is_test
+
+    name = PurePosixPath(relative_path).name
+    if not name.endswith(_SCRIPT_SUFFIXES) or is_test(relative_path) or name.startswith(("tmp-", "tmp_")):
+        return
+    found = _REWRITES_THE_PLATFORM.findall(content)
+    if len(found) <= len(_REWRITES_THE_PLATFORM.findall(original or "")):
+        return
+    raise RepositoryToolError(
+        f"Refusing to write '{relative_path}': it replaces `{found[0]}`, which every "
+        "browser already defines. Nothing was changed. Product code that works only on a "
+        "rewritten platform changes every query on the page to suit one caller. If a test "
+        "needs the rewrite, the test is asking for something the platform does not "
+        "define: change the test to find what it needs with what the platform does "
+        "define, or through what a person reads on the page."
+    )
+
+
 def _refuse_a_hand_built_dom_again(relative_path: str, content: str, target: Path | None = None) -> None:
     """Refuse a hand-built browser API, once the note has been ignored twice.
 
@@ -3654,6 +3701,18 @@ def _content_a_model_escaped_twice(relative_path: str, content: str) -> tuple[st
     """
     from app.analysis.syntax_balance import structural_problem
 
+    # A page parses whatever it holds, so for markup the evidence is the
+    # escape itself, against a tag. See `_markup_with_its_escapes_resolved`.
+    if escapes_between_tags(relative_path, content):
+        for candidate, _ in _transcription_repairs(content):
+            if candidate.strip() and not escapes_between_tags(relative_path, candidate):
+                return candidate, (
+                    f"Your content for '{relative_path}' was escaped twice over - it carried "
+                    "the two characters backslash-n where the page needs a real newline, and "
+                    "a browser shows those as text. It has been written with the escapes "
+                    "decoded, which is what you meant. The tool call is already JSON: put the "
+                    "literal text in `content`, not an escaped copy of it."
+                )
     if structural_problem(relative_path, content) is None:
         return None
     for candidate, _ in _transcription_repairs(content):
@@ -4793,6 +4852,42 @@ def _with_escaped_newlines_resolved(original: str, updated: str) -> str | None:
     return updated[:prefix] + resolved + updated[len(updated) - suffix :]
 
 
+#: Markup a person reads, as against code and preformatted text inside it.
+_MARKUP_SUFFIXES = (".html", ".htm")
+_NOT_MARKUP = re.compile(r"<(script|style|pre|textarea)\b.*?</\1\s*>", re.I | re.S)
+#: The two characters backslash-n (or -t) against a tag: an escape that was
+#: meant as a line break and lands on the page as text.
+_ESCAPE_AT_A_TAG = re.compile(r">[ \t]*\\[nt]|\\[nt][ \t]*<")
+
+
+def escapes_between_tags(relative_path: str, text: str) -> bool:
+    """Whether a page's markup holds a backslash-n beside a tag, outside its scripts and styles."""
+    if not relative_path.lower().endswith(_MARKUP_SUFFIXES):
+        return False
+    return bool(_ESCAPE_AT_A_TAG.search(_NOT_MARKUP.sub("", text or "")))
+
+
+def _markup_with_its_escapes_resolved(relative_path: str, original: str, updated: str) -> str:
+    """An edit to a page with the newlines it escaped twice turned back into newlines.
+
+    Measured on one run. `specialist_ui_ux_0` replaced a line of `index.html`
+    with `<meta charset="UTF-8">\\n  <!-- ... -->\\n  <meta name="viewport" ...>`:
+    newlines sent as the two characters backslash-n. Nothing parses a page
+    strictly, so nothing refused it - and the browser, finding text in the
+    head, closed it there and showed "\\n" at the top of the page. The repair
+    for the same slip in code applies only when a parser rejects the file.
+
+    Only the span the edit changed, only when the escapes sit against a tag
+    outside any script or style, and only when resolving them clears that.
+    """
+    if not escapes_between_tags(relative_path, updated) or escapes_between_tags(relative_path, original):
+        return updated
+    rescued = _with_escaped_newlines_resolved(original, updated)
+    if rescued is None or escapes_between_tags(relative_path, rescued):
+        return updated
+    return rescued
+
+
 def _write_unless_it_changes_nothing(
     target: Path, original: str, updated: str, relative_path: str
 ) -> None:
@@ -4817,12 +4912,14 @@ def _write_unless_it_changes_nothing(
     them.
     """
     updated = _json_with_its_commas_put_right(target, relative_path, updated)
+    updated = _markup_with_its_escapes_resolved(relative_path, original, updated)
     if updated != original:
         _refuse_an_edit_that_goes_backwards_again(relative_path, updated)
         # Edits are how one run's mock grew: 145 lines to 1,195, one
         # `edit_artifact` at a time. Refusing only the write would leave the
         # path that was actually used wide open.
         _refuse_a_hand_built_dom_again(relative_path, updated, target)
+        _refuse_rewriting_the_platform(relative_path, updated, original)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
@@ -6083,6 +6180,9 @@ def write_approved_artifact(
             raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
     _refuse_a_hand_built_dom_again(relative_path, content, target)
+    _refuse_rewriting_the_platform(
+        relative_path, content, target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""
+    )
     if target.is_file():
         try:
             _refuse_to_switch_a_suite_off(

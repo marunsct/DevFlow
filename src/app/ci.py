@@ -148,6 +148,14 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
     return outcomes_of(parsed.tests), parsed.found
 
 
+def unit_failures(root: str | Path, runner: Runner | None = None) -> list[str]:
+    """The project's own unit tests that do not pass now, by name; [] when all pass or none ran."""
+    unit, ran = _run_unit(root, runner)
+    if not ran:
+        return []
+    return sorted(name for name, outcome in unit.items() if outcome != "passed")
+
+
 def take(
     root: str | Path,
     label: str,

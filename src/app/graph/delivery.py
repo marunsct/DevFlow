@@ -154,6 +154,17 @@ def write_evidence(state: Any, sprint_number: int, goal: str, heading: str = "")
 
 # --- the release gate --------------------------------------------------------
 
+def _unit_tests_failing(root: str) -> list[str]:
+    """The project's unit tests failing now, or [] - never raises."""
+    try:
+        from app import ci
+
+        return ci.unit_failures(root)
+    except Exception:  # noqa: BLE001 - a run that cannot be made holds nothing back
+        logger.debug("Could not run the unit tests before release", exc_info=True)
+        return []
+
+
 def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     """Every criterion that is not deferred must pass before the run completes."""
     from app.decisions import record_decision
@@ -176,11 +187,28 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         summary = result.summary()
         if not result.ran:
             failing = failing or ["the suite did not run"]
+    # The project's own unit tests too: they ship with the product and the CI
+    # pipeline written below runs them first. Measured on one run: released
+    # with every criterion passing or deferred while `npm test` failed on a
+    # test a fix stage had written for a deferred criterion.
+    unit_failing = [] if failing else _unit_tests_failing(root)
+    if unit_failing:
+        failing = unit_failing
+        summary = (
+            "The project's own unit tests do not all pass: "
+            + "; ".join(unit_failing[:6])
+            + (f" and {len(unit_failing) - 6} more" if len(unit_failing) > 6 else "")
+            + ". They ship with the product and its CI pipeline runs them first. Fix the "
+            "product where it is wrong, or the test where it asks for what the product was "
+            "never meant to do."
+        )
     if failing:
         attempts = int(state.get("release_attempts") or 0) + 1
         text = (
             "The product is not ready to release - the acceptance suite says:\n"
             + summary
+            if not unit_failing else
+            "The product is not ready to release. " + summary
         )
         if attempts <= MAX_RELEASE_ATTEMPTS:
             logger.warning("Release held back: acceptance criteria failing; the last sprint goes again")

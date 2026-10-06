@@ -82,6 +82,23 @@ def test_a_failing_criterion_holds_the_release_then_escalates(tmp_path, monkeypa
     assert escalated["stage"] == "escalation" and "AC-2" in escalated["escalation"]["error"]
 
 
+def test_a_failing_unit_test_holds_the_release_too(tmp_path, monkeypatch) -> None:
+    """One run released with every criterion passing or deferred while its own
+    `npm test` failed, on a test a fix stage wrote for a deferred criterion."""
+    from app import ci
+
+    _locked_suite(tmp_path)
+    monkeypatch.setattr(suite, "run", lambda root: _result(tmp_path))
+    monkeypatch.setattr(ci, "unit_failures", lambda root, runner=None: ["tests/filters.test.js"])
+
+    held = delivery.release(_state(tmp_path), CONFIG, None)
+
+    assert held["stage"] == "technical_lead" and held["release_attempts"] == 1
+    assert "unit tests do not all pass: tests/filters.test.js" in held["revision_comments"][-1]
+    monkeypatch.setattr(ci, "unit_failures", lambda root, runner=None: [])
+    assert delivery.release(_state(tmp_path), CONFIG, None)["stage"] == "complete"
+
+
 def test_a_run_without_a_suite_releases_on_its_reviews(tmp_path) -> None:
     update = delivery.release(_state(tmp_path), CONFIG, None)
     assert update["stage"] == "complete"

@@ -197,7 +197,11 @@ _SYSTEM_PROMPT = (
     "and no files. Keep within the brief: the names it gives controls, fields and "
     "messages are fixed, its required behaviour is fixed, and its constraints - "
     "what may be depended on, how large the product may be - hold. Advice that "
-    "would break any of them is wrong. Each recommendation is one concrete sentence "
+    "would break any of them is wrong. Nor may advice add a rule the brief does not "
+    "state that refuses or limits what a person may do - one value unique among "
+    "records, a longest or shortest length, a field the brief leaves optional made "
+    "required: such a rule makes a different product, and the customer's own checks "
+    "fail on it. Each recommendation is one concrete sentence "
     "the architect can adopt or decline and a reviewer can check against the "
     "product: name what, where and how - never a general aim such as 'make it "
     "intuitive' or 'follow best practices'. Give the few that matter most, at most "
@@ -279,8 +283,9 @@ def advice_block(advice: dict[str, list[str]] | None) -> str:
             lines.extend(f"- {ident}: {text}" for ident, text in mine)
     lines.append(
         "Decide on each item: adopt it into the section it belongs to, or decline it "
-        "with the reason - the brief or the stack rules it out, or it costs more than it "
-        "gives. Record one line per item in `specialist_advice_decisions`, starting with "
+        "with the reason - the brief or the stack rules it out, it adds a rule the brief "
+        "does not state that refuses or limits what a person may do, or it costs more than "
+        "it gives. Record one line per item in `specialist_advice_decisions`, starting with "
         "its id: \"UX-1: adopted - interface_design\", or \"DB-2: declined - <why>\"."
     )
     if advice and advice.get("ui_ux"):

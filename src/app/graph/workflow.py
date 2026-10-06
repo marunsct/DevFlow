@@ -4304,6 +4304,48 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     )
 
 
+def _about_the_harness_s_files_only(finding: Any, repo_root: str) -> bool:
+    """Whether every file a finding names is one the harness keeps, and it names one."""
+    from pathlib import PurePosixPath
+
+    from app.analysis.integration_checks import files_named_in
+    from app.stacks.contract import kept_paths
+
+    kept = {PurePosixPath(path).name for path in kept_paths(repo_root)}
+    if not kept:
+        return False
+    named = {PurePosixPath(str(path)).name for path in getattr(finding, "affected_files", None) or []}
+    named |= files_named_in(
+        f"{getattr(finding, 'description', '')} {getattr(finding, 'remediation', '')}"
+    )
+    return bool(named) and named <= kept
+
+
+def _without_findings_about_the_harness_s_files(review: Any, repo_root: str) -> Any:
+    """The security review without findings about the harness's own test setup. Never raises.
+
+    No work order may change those files, and a change is put back. Measured
+    on one run: the security review found that the harness's own test server
+    serves any file under the project, the milestone review copied it as a
+    major finding with the file's name dropped, and the last sprint was sent
+    back for it - work nobody was allowed to do.
+    """
+    try:
+        findings = list(getattr(review, "findings", None) or [])
+        kept = [f for f in findings if not _about_the_harness_s_files_only(f, repo_root)]
+        if len(kept) == len(findings):
+            return review
+        logger.info(
+            "Left %d security finding(s) about the harness's own files out of the review",
+            len(findings) - len(kept),
+        )
+        return review.model_copy(
+            update={"findings": kept, **({} if kept else {"status": "passed"})}
+        )
+    except Exception:  # noqa: BLE001 - a filter must never lose the review
+        return review
+
+
 def _carried_to_this_plan(state: Any) -> list[str]:
     """What this plan must take or decline: the carried items, on a sprint's first plan only.
 
@@ -6348,6 +6390,7 @@ def build_workflow_graph(
             return update
             
         review: SecurityReviewOutput = update.pop("__security_review__")
+        review = _without_findings_about_the_harness_s_files(review, state["repository"].root_path)
 
         # Rendered from the decision, like the architecture and milestone
         # reviews. This was the last reviewer still holding a write tool with

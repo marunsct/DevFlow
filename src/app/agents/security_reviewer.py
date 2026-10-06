@@ -197,6 +197,19 @@ def build_security_review_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+#: Measured on one run: a browser-only product with no accounts kept its
+#: records in the browser's own storage; this review rated "stored without
+#: encryption, readable via devtools or extensions" medium, the milestone
+#: review made it major, and the last sprint spent two attempts base64-encoding
+#: the records - which protects nothing - instead of finishing its work.
+BROWSER_KEPT_DATA = """Data a product keeps in its own user's browser belongs to that user. Reading
+it with the browser's own tools is not a leak, and encrypting it with a key the
+same page holds protects nothing - neither is a finding. What is one: such data
+sent somewhere the user did not ask, or read back in a way that runs it as code.
+And the harness's own test setup - the files the project contract names as
+kept - is not the product: a finding about one of them is not this review's."""
+
+
 _SYSTEM_PROMPT = f"""You are the Security Reviewer for this workflow.
 
 Your role is to independently review changed files and tool permissions for
@@ -210,6 +223,8 @@ Responsibilities:
 - Document any valid exceptions for local-only features in `local_only_exceptions`.
 
 {SCOPE_DISCIPLINE}
+
+{BROWSER_KEPT_DATA}
 
 Constraints:
 - Do not modify application source code; you only review and record findings.

@@ -90,3 +90,33 @@ def test_one_something_still_runs_is_kept(project) -> None:
 
     assert clear_the_throwaways_left_behind(project) == []
     assert (project / "notes/test_helpers.js").exists()
+
+
+def test_a_failed_sprint_counts_the_harness_s_latest_measurement(tmp_path, monkeypatch) -> None:
+    """Not the last command a stage ran. One run's sprint 2 failed on an
+    acceptance criterion and its record read "17 tests, 16 passed, 0 failed" -
+    a unit run, with the acceptance suite left out."""
+    from types import SimpleNamespace
+
+    from app.graph import workflow
+
+    written = {}
+    monkeypatch.setattr(workflow, "_record_document", lambda state, path, text: written.update({path: text}))
+    ci.save(tmp_path, ci.Snapshot(
+        label="after defect_fix_2_1", commit="abc",
+        unit={f"unit {n}": "passed" for n in range(17)},
+        acceptance={"[AC-1] adds": "passed", "[AC-2] marks it done": "failed"},
+    ))
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "current_sprint_index": 1,
+        "sprint_plan": SimpleNamespace(sprints=[SimpleNamespace(goal="one"), SimpleNamespace(goal="two")]),
+        "milestone_plan": SimpleNamespace(delegated_tasks=[], selected_sprint_goal="two"),
+        "remediation": SimpleNamespace(defects=[]),
+    }
+
+    workflow._record_sprint_summary(state, "Failed", "exhausted remediation attempts")
+
+    page = written["docs/sprint_2_summary.md"]
+    assert "**Test Cases:** 19" in page
+    assert "**Passed:** 18" in page and "**Failed:** 1" in page

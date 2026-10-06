@@ -2744,12 +2744,15 @@ def _deferred_in_this_attempt(state: Any, since: str | None) -> list[str]:
     return deferred
 
 
-def _the_accepted_counts(root: str) -> dict[str, int] | None:
-    """Tests, passed and failed in the state the last sprint was accepted in, or None."""
+def _the_accepted_counts(root: str, which: str = "accepted") -> dict[str, int] | None:
+    """Tests, passed and failed in the state the last sprint was accepted in, or None.
+
+    `which="latest"` for the harness's most recent measurement instead.
+    """
     try:
         from app import ci
 
-        snapshot = ci.load(root, "accepted")
+        snapshot = ci.load(root, which)
     except Exception:  # noqa: BLE001
         return None
     if snapshot is None:
@@ -2868,6 +2871,11 @@ def _record_sprint_summary(
         # "Passed: 0, Failed: 0" for twelve passing unit tests and nine
         # passing acceptance tests.
         cases = _the_accepted_counts(state["repository"].root_path) or cases
+    else:
+        # Not the last command a stage happened to run. One run's sprint 2
+        # failed on an acceptance criterion and its record read "17 tests, 16
+        # passed, 0 failed" - a unit run, the acceptance suite not counted.
+        cases = _the_accepted_counts(state["repository"].root_path, "latest") or cases
 
     # The Sprint Record's own sections, from what the workflow and the harness
     # recorded rather than from any agent's account. See `app.sprint.record`.

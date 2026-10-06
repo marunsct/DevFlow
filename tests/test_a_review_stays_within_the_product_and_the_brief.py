@@ -307,3 +307,31 @@ class TestASpecificationThatDisablesAControl:
         from app.agents.specialist_advice import controls_disabled_until_something
 
         assert controls_disabled_until_something(self._spec(interface_design=[line])) == []
+
+
+class TestAdviceThatDisablesAControlIsLeftOut:
+    """Given anyway on two runs, adopted, and in the second carried forward as
+    owed work by the sprint's advice check."""
+
+    @pytest.mark.parametrize("item", [
+        "The 'Add task' button is disabled (aria-disabled=true) until the Title input has at least one non-space character.",
+        "Enable the primary control only when the first field holds text.",
+        "The save control becomes active once the field is edited.",
+    ])
+    def test_is_dropped(self, item) -> None:
+        from types import SimpleNamespace
+
+        from app.agents.specialist_advice import advice_from
+
+        kept = advice_from(SimpleNamespace(recommendations=[item, "Stack the form above the list below 600px."]))
+
+        assert kept == ["Stack the form above the list below 600px."]
+
+    def test_a_disabled_style_is_kept(self) -> None:
+        from types import SimpleNamespace
+
+        from app.agents.specialist_advice import advice_from
+
+        item = "Give controls hover, focus and disabled styles from one palette."
+
+        assert advice_from(SimpleNamespace(recommendations=[item])) == [item]

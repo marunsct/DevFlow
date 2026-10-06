@@ -21,6 +21,7 @@ carry from there.
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.agents.role_agent import create_role_agent
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
+
+logger = logging.getLogger(__name__)
 
 #: The roles consulted, in the order they are asked.
 ADVICE_ROLES = ("ui_ux", "database", "backend", "security_reliability", "testing")
@@ -254,12 +257,23 @@ def create_specialist_advice_agent(
 
 
 def advice_from(answer: Any) -> list[str]:
-    """The recommendations an answer gave, cleaned of blanks and repeats."""
+    """The recommendations an answer gave, cleaned of blanks and repeats.
+
+    Without one that disables a control until something is done, which the
+    advisor is told never to give. Measured on two runs: the advice was given
+    anyway and adopted, the page check then demanded the opposite, and in the
+    second - the specification's own text clean - the sprint's advice check
+    carried "not disabled until the title holds text" forward as owed work.
+    """
     kept: list[str] = []
     for item in getattr(answer, "recommendations", None) or []:
         text = " ".join(str(item).split())
-        if text and text not in kept:
-            kept.append(text)
+        if not text or text in kept:
+            continue
+        if _DISABLED_UNTIL.search(text):
+            logger.info("Advice left out, it disables a control until something is done: %s", text[:160])
+            continue
+        kept.append(text)
     return kept[:MOST_RECOMMENDATIONS]
 
 
@@ -335,7 +349,9 @@ def adopted(advice: dict[str, list[str]] | None, specification: Any, role: str) 
 #: A control disabled on a condition: "disabled until the title holds text".
 _DISABLED_UNTIL = re.compile(
     r"\bdisabled?\b[^.;\n]{0,80}?\b(?:until|unless|while|whenever|when(?:ever)? (?:the|it|no|empty)|if (?:the|no|empty))\b"
-    r"|\baria-disabled\b",
+    r"|\baria-disabled\b"
+    r"|\benabled?\b[^.;\n]{0,60}?\bonly (?:when|once|if|after)\b"
+    r"|\b(?:becomes|is|are|stays?) (?:only )?(?:enabled|active|clickable) (?:only )?(?:when|once|after|if)\b",
     re.I,
 )
 

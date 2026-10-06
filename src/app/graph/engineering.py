@@ -63,6 +63,24 @@ def _owner_of(state: Any, work_order: str) -> str:
     return "backend"
 
 
+#: What a team's own test that regressed may be instead of a broken product.
+#: Not said of the locked acceptance suite, which no fix may change.
+#:
+#: Measured on one run: sprint 1 wrote unit tests pinning a placeholder filter -
+#: "returns all tasks regardless of mode - stub behaviour" - and sprint 4 was the
+#: sprint that built filtering. Both tests were reported as regressions,
+#: expected to "pass, as they did before"; the one fix tried put the placeholder
+#: back, broke four acceptance criteria and was reverted, and the sprint failed
+#: on exhausted attempts with 72 of 73 tests passing.
+_OR_THE_TEST_IS_OUT_OF_DATE = (
+    " Unless what it asserts is behaviour this sprint was meant to change - a "
+    "placeholder, or an earlier rule, that this sprint's goal replaces. Then the "
+    "test is out of date, not the product: change what it asserts to the behaviour "
+    "this sprint delivers, keep the test's name (a test that disappears is counted "
+    "as broken), and say in your answer that the test was out of date."
+)
+
+
 def regression_defects(state: Any, lost: list[str]) -> list[Any]:
     from app.agents.specialists import ReportedDefect
 
@@ -72,7 +90,10 @@ def regression_defects(state: Any, lost: list[str]) -> list[Any]:
             description=f"Regression: `{name}` passed before this batch of work orders and fails now.",
             severity="major",
             reproduction_steps=f"Run the {name.split(':', 1)[0]} tests in the project directory.",
-            expected_behavior="It passes, as it did before this sprint's work orders.",
+            expected_behavior=(
+                "It passes, as it did before this sprint's work orders."
+                + (_OR_THE_TEST_IS_OUT_OF_DATE if name.startswith("unit:") else "")
+            ),
             actual_behavior="It fails after them.",
             affected_files=[],
             owner=owner,

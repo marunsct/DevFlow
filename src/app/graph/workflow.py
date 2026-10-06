@@ -5262,6 +5262,11 @@ def build_workflow_graph(
             # sent back twice for `pure-functions.mjs`, a name from the scope
             # the first plan had built as `app.mjs`.
             sprint_scope="" if revising else _what_this_sprint_builds(state),
+            sprint_goals=[
+                str(getattr(sprint, "goal", "") or "")
+                for sprint in (getattr(state.get("sprint_plan"), "sprints", None) or [])
+            ],
+            sprint_index=state.get("current_sprint_index", 0),
         )
         if problems:
             retries = dict(state.get("structured_retries") or {})

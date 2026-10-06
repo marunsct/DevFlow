@@ -406,19 +406,81 @@ def readiness_enforced() -> bool:
     }
 
 
+#: Words that say nothing about which sprint a goal is.
+_GOAL_NOISE = frozenset({
+    "the", "and", "can", "with", "for", "their", "them", "each", "all", "via",
+    "from", "into", "that", "this", "are", "has", "have", "user", "users",
+})
+
+
+def _goal_words(goal: str) -> frozenset[str]:
+    return frozenset(
+        word for word in re.findall(r"[a-z0-9]+", str(goal or "").lower())
+        if len(word) > 2 and word not in _GOAL_NOISE
+    )
+
+
+def _alike(one: frozenset[str], other: frozenset[str]) -> float:
+    return len(one & other) / len(one | other) if one and other else 0.0
+
+
+def another_sprints_plan(milestone: Any, sprint_goals: Sequence[str], sprint_index: int) -> str:
+    """Why this plan is for a different sprint than the one being planned, or "".
+
+    The lead is told which sprint it is planning, by its goal. Measured on one
+    run: sent back to finish sprint 2 of 5, it returned a plan whose goal was
+    sprint 4's, word for word - filtering - and its work orders built that,
+    skipping sprint 3, while sprint 2's record still said it was being finished.
+
+    A goal may be restated, so it is compared by its words with every sprint's
+    goal, and named as another sprint's only when it is plainly closer to that
+    one: half its words at least, and more than to the sprint being planned.
+    Never raises.
+    """
+    try:
+        goals = [str(goal or "") for goal in sprint_goals]
+        if not 0 <= sprint_index < len(goals):
+            return ""
+        chosen = _goal_words(getattr(milestone, "selected_sprint_goal", "") or "")
+        here = _alike(chosen, _goal_words(goals[sprint_index]))
+        best, closest = max(
+            ((_alike(chosen, _goal_words(goal)), number) for number, goal in enumerate(goals)
+             if number != sprint_index),
+            default=(0.0, -1),
+        )
+        if closest < 0 or best < 0.5 or best <= here:
+            return ""
+    except Exception:  # noqa: BLE001
+        return ""
+    return (
+        f"The plan's `selected_sprint_goal` is sprint {closest + 1}'s goal, "
+        f"'{goals[closest]}', and its work orders build that sprint. The sprint being "
+        f"planned is sprint {sprint_index + 1}: '{goals[sprint_index]}'. Plan the "
+        f"milestone for sprint {sprint_index + 1}, with its goal; sprint {closest + 1}'s "
+        "work is that sprint's to plan, when it comes."
+    )
+
+
 def readiness_problems(
     milestone: Any,
     repo_root: str | Path | None,
     carried_forward: Sequence[str] = (),
     sprint_scope: str = "",
+    sprint_goals: Sequence[str] = (),
+    sprint_index: int = 0,
 ) -> list[str]:
     """What stops this plan being handed out as it stands. Never raises.
 
     `carried_forward` is what earlier sprints left for this one; each item needs
     a line in the plan's `carried_forward_decisions`, taking or declining it.
+    `sprint_goals` are the sprint plan's goals in order, and `sprint_index` the
+    one being planned. See `another_sprints_plan`.
     """
     if not readiness_enforced():
         return []
+    elsewhere = another_sprints_plan(milestone, sprint_goals, sprint_index)
+    if elsewhere:
+        return [elsewhere]
     try:
         tasks = list(getattr(milestone, "delegated_tasks", None) or [])
     except Exception:  # noqa: BLE001

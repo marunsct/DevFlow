@@ -269,9 +269,26 @@ def _is_harness_directory(repo_root: Path, directory: Path) -> bool:
     return relative in HARNESS_DIRECTORIES
 
 
+#: The harness's momentary files in a workspace: the parse probe written beside
+#: a file so its imports resolve (`app.3f9c2a1b.tmp.js`, see
+#: `app.analysis.javascript_parse`), and the staging copy of an atomic write of
+#: one of `HARNESS_FILES` (`..project-memory.json.k3j2x9.tmp`). Each lives for
+#: a moment; in parallel mode another stage's listing can catch it. One run's
+#: workspace digest listed `src/main.d7cebffc.tmp.js (2 lines)`, and a stage
+#: spent a call trying to read it.
+_A_PARSE_PROBE = re.compile(r"^.+\.[0-9a-f]{8}\.tmp\.[A-Za-z0-9]+$")
+
+
+def is_harness_momentary(name: str) -> bool:
+    """Whether a file name is one of the harness's momentary files."""
+    return bool(_A_PARSE_PROBE.match(name)) or (
+        name.endswith(".tmp") and any(f"{kept}." in name for kept in HARNESS_FILES)
+    )
+
+
 def is_harness_bookkeeping(path: Path) -> bool:
     """Whether this file is the harness's own, not the product's."""
-    return path.name in HARNESS_FILES
+    return path.name in HARNESS_FILES or is_harness_momentary(path.name)
 
 
 def _iter_repo_files(repo_root: Path, allow_subdirectories: bool = True) -> list[Path]:

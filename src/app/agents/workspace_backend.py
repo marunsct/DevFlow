@@ -36,7 +36,7 @@ from app.analysis.walk import directories_under, files_under
 from app.agents.workspace_paths import the_same_place
 
 logger = logging.getLogger(__name__)
-from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE, is_harness_momentary
 
 
 
@@ -1059,7 +1059,11 @@ def _is_hidden(entry: Any, under: str | None = "") -> bool:
     if base and (path == base or path.startswith(base + "/")):
         path = path[len(base):]
     parts = [part for part in path.split("/") if part]
-    return any(part in IGNORED_DIRECTORIES for part in parts)
+    # And the harness's momentary files, which exist only while it checks or
+    # writes something. See `repository.is_harness_momentary`.
+    return any(part in IGNORED_DIRECTORIES for part in parts) or bool(
+        parts and is_harness_momentary(parts[-1])
+    )
 
 
 #: The note the read in progress on this thread held back, for

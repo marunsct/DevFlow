@@ -99,6 +99,9 @@ instructions**, never in the core.
  product_manager ─▶ [user_review_product_intake] ─▶ tools_models ─▶ stack_selector
         │
         ▼
+ specialist_consultation (UI/UX if it has an interface, database if it keeps data, backend if it serves requests)
+        │
+        ▼
  principal_architect ◀──▶ architecture_review ─(converges)─▶ [user_review_specification]
         │  (never converges ─▶ escalation[design]: auto builds from latest spec, risks recorded)
         ▼
@@ -140,7 +143,8 @@ any other (escalation, failure, change request).
 | `product_manager` | Product Manager | default | `product_intake` (requirements, success measures, constraints) → `docs/product_intake.md` |
 | `tools_models` | Tools & Models Architect | default | technology comparison → `docs/tools_and_models.md` |
 | `stack_selector` | Stack Selector | default | `technology_stack` (language, frameworks, testing, product kind) → picks a **stack pack** |
-| `principal_architect` | Principal Architect | judgement | technical specification → `docs/technical_specification.md` |
+| `specialist_consultation` | the specialists the product needs | judgement | one structured answer each, before the specification: UI/UX when the product has an interface (a terminal program's commands and messages included), database when its stack keeps data of its own, backend when it serves requests; items numbered `UX-n`, `DB-n`, `BE-n` (`app/agents/specialist_advice.py`) |
+| `principal_architect` | Principal Architect | judgement | technical specification → `docs/technical_specification.md`; adopts or declines every advice item in `specialist_advice_decisions`, and writes `interface_design` for a product with an interface (sent straight back if either is missing). The lead copies the interface design into work orders and a UI/UX work order's brief carries it |
 | `architecture_review` | Senior Architect Reviewer | judgement | approve / changes; ≤ 6 revisions, then escalation (design) |
 | `scaffold` | harness | — | writes the pack's files, installs, runs its unit + acceptance smoke tests, writes `.harness/stack-pack.json` |
 | `acceptance_author` | QA engineer (testing specialist) | judgement | acceptance tests, ≥1 per criterion, test names carry `[AC-n]` |
@@ -278,7 +282,8 @@ cooperative cancellation at every node, gate and recursion limits.
 | IDE diagnostics | every write/edit (note); CI gate (defect) | TypeScript language service (JS/TS) and Pyright (Python): only run-time failures — undefined names, imports of missing exports/modules (`app/analysis/language_service.py`) |
 | Unit tests | work orders, test rounds, CI | the pack's unit command (e.g. `node --test`, pytest) with JUnit reports |
 | Acceptance suite | locked before building; run by the harness every round, at CI, at acceptance, at release | the pack's acceptance command (Playwright, pytest+httpx, …); per-criterion results; page check records the page's uncaught errors and accessibility tree; each failing test carries the page it failed on |
-| Suite integrity | before lock and after | tests broken by their own code, locators nobody sees, assertions the runner does not define → back to QA; after lock, repaired via recorded reopen (≤ 2) |
+| Suite integrity | before lock and after | tests broken by their own code (Playwright's refusals of the spec's shape included), tests the suite declares that the runner never ran, locators nobody sees, assertions the runner does not define → back to QA; after lock, repaired via recorded reopen (≤ 2) |
+| Interface | every test round (page products) | the page probe measures overflow at a phone's width (375px) and keeps desktop and phone screenshots; a page whose only styling is the scaffold's reset, or one wider than a phone when the brief asks for phones, is a UI/UX defect (`app/analysis/interface_checks.py`); a milestone reviewer whose model reads images is shown both screenshots with the interface design (`app/agents/page_screenshots.py`, `MODEL_READS_IMAGES`) |
 | CI regressions | each batch, each fix | snapshot vs last accepted and last measurement; regressions become defects; a regressing fix is reverted |
 | Reviews | per batch / sprint | code review, security review, milestone review (findings about later sprints' criteria made minor) |
 | Release gate | end | every non-deferred criterion passes |
@@ -337,7 +342,9 @@ grows by adding and measuring packs, not by widening generic checks.
 Runtime settings (editable in the UI, stored in Postgres, override env):
 `llm_provider` (`local`/`openai`/`anthropic`/`gemini`), `openai_base_url`,
 `model_name`, `model_context_window`, `model_max_output_tokens`, `thinking_mode`,
-`thinking_effort`, `execution_mode`, `judgement_provider`, `judgement_base_url`,
+`thinking_effort`, `execution_mode`, `model_reads_images` (`yes`/`no`/`auto`: whether
+the reviewing model is shown page screenshots; auto decides by provider and model name,
+and says no for a model it cannot place), `judgement_provider`, `judgement_base_url`,
 `judgement_model_name`, `judgement_context_window`, and API keys
 (`openai`/`anthropic`/`google`/`judgement`). Notable environment variables:
 `DATA_DIR`, `CHECKPOINTER_TYPE` (postgres), `SANDBOX_EXECUTION_MODE`,

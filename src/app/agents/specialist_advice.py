@@ -342,6 +342,10 @@ def adopted(advice: dict[str, list[str]] | None, specification: Any, role: str) 
         ]
         if any(re.search(r"\bdeclin", line, re.I) for line in said):
             continue
+        # Advice the harness rules out is never owed, even where it was
+        # adopted before `advice_from` left it out. See `advice_from`.
+        if _DISABLED_UNTIL.search(text):
+            continue
         kept.append(f"{ident}: {text}")
     return kept
 

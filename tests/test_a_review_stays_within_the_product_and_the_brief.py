@@ -335,3 +335,14 @@ class TestAdviceThatDisablesAControlIsLeftOut:
         item = "Give controls hover, focus and disabled styles from one palette."
 
         assert advice_from(SimpleNamespace(recommendations=[item])) == [item]
+
+
+def test_disabling_advice_adopted_earlier_is_never_owed() -> None:
+    from types import SimpleNamespace
+
+    from app.agents.specialist_advice import adopted
+
+    advice = {"ui_ux": ["Stack the form above the list.", "The add control is disabled until the title holds text."]}
+    spec = SimpleNamespace(specialist_advice_decisions=["UX-1: adopted", "UX-2: adopted"])
+
+    assert adopted(advice, spec, "ui_ux") == ["UX-1: Stack the form above the list."]

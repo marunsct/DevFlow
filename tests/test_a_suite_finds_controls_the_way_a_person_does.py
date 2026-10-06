@@ -155,3 +155,13 @@ def test_the_guide_warns_against_a_role_selector() -> None:
     for pack in ALL_PACKS:
         if pack.name in PAGES:
             assert "matches only an element" in pack.acceptance_guide, pack.name
+
+
+def test_a_control_that_leaves_the_page_is_clicked_not_checked() -> None:
+    """`check()` confirms the new state afterwards. One run's locked suite
+    checked the last record in a view of unfinished ones; the product rightly
+    removed it, `check()` timed out, and two criteria were deferred on a product
+    the hidden tests passed 10 of 10."""
+    from app.stacks.packs._javascript import FIND_CONTROLS
+
+    assert "is a `click()`, not `check()` or `uncheck()`" in FIND_CONTROLS

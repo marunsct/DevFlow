@@ -470,9 +470,16 @@ def playwright_assertions(project_root: Path) -> frozenset[str]:
 
 
 #: How a browser test finds a control, shared by every pack with a page. The
-#: last sentence because two runs' QA wrote `toBeUnchecked()`, which Playwright
-#: does not define; the check caught it each time
+#: matcher sentence because two runs' QA wrote `toBeUnchecked()`, which
+#: Playwright does not define; the check caught it each time
 #: (`assertions_that_do_not_exist`), and each time cost the suite a send-back.
+#:
+#: The last because `check()` confirms the new state on the control after
+#: clicking it. One run's locked suite checked the last record shown in a
+#: view of unfinished records; the product rightly took it out of that view at
+#: once, `check()` timed out on a control that was gone, and two criteria were
+#: deferred as undeliverable on a product the benchmark's hidden tests passed
+#: 10 of 10.
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is
 `page.getByLabel('Email', { exact: true })`, a button named "Send" is
@@ -483,7 +490,12 @@ could pass such a test and still lack what the brief asked for. Nor by a CSS
 selector on its role: `locator('[role="listitem"]')` matches only an element
 carrying that attribute, never an `<li>` whose role is its own. Assert only with
 matchers Playwright defines: a checked box is `toBeChecked()`, an unchecked one
-`not.toBeChecked()` - there is no `toBeUnchecked`."""
+`not.toBeChecked()` - there is no `toBeUnchecked`. An action that takes its own
+control off the page - a record that no longer belongs in the view shown once it
+changes - is a `click()`, not `check()` or `uncheck()`: those confirm the new
+state on the control afterwards, a control that has gone cannot be confirmed,
+and the test times out on a product that did the right thing. Assert the change
+on what the page shows after it."""
 
 #: Locators that find a control by something no person sees. A suite that
 #: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).

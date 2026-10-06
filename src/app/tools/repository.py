@@ -250,6 +250,16 @@ WORK_ORDER_FILES = ".work-order-files.json"
 HARNESS_DIRECTORIES = frozenset({"docs/stage_summaries", ".harness"})
 
 
+#: What a search for a file by name, made for a stage, skips: every directory
+#: never descended into, and the harness's own records. The listings already
+#: hid `.harness/`; the searches that suggest or resolve a path by its name did
+#: not. Measured on one run: the technical lead asked for the locked acceptance
+#: spec under an invented `/home/user/` prefix, which resolves when one file
+#: carries the name - and two did, the spec and the harness's private copy of
+#: it under `.harness/`. Four reads were refused, each offering the copy.
+NOT_SEARCHED_FOR_A_STAGE = IGNORED_DIRECTORIES | {".harness"}
+
+
 def _is_harness_directory(repo_root: Path, directory: Path) -> bool:
     """Whether this directory holds the harness's records rather than the product's."""
     try:
@@ -413,9 +423,9 @@ def _where_that_name_actually_is(root: Path, wanted: str) -> str:
     try:
         found = [
             candidate.relative_to(root).as_posix()
-            for candidate in files_under(root, IGNORED_DIRECTORIES, name)
+            for candidate in files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
             if candidate.is_file()
-            and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+            and not any(part in NOT_SEARCHED_FOR_A_STAGE for part in candidate.parts)
         ]
     except Exception:  # noqa: BLE001 - a hint must never replace the error
         return ""

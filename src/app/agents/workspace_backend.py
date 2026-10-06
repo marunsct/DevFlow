@@ -36,7 +36,7 @@ from app.analysis.walk import directories_under, files_under
 from app.agents.workspace_paths import the_same_place
 
 logger = logging.getLogger(__name__)
-from app.tools.repository import IGNORED_DIRECTORIES
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
 
 
 
@@ -142,12 +142,12 @@ class _Suggesting:
             found = [
                 str(candidate.relative_to(root))
                 for candidate in (
-                    files_under(root, IGNORED_DIRECTORIES, name)
+                    files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
                     if want_file
-                    else directories_under(root, IGNORED_DIRECTORIES, name)
+                    else directories_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
                 )
                 if (candidate.is_file() if want_file else candidate.is_dir())
-                and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+                and not any(part in NOT_SEARCHED_FOR_A_STAGE for part in candidate.parts)
             ]
         except Exception:  # noqa: BLE001 - a hint must never fail the call
             return ""
@@ -201,9 +201,9 @@ class _Suggesting:
         try:
             found = [
                 str(candidate.relative_to(root))
-                for candidate in files_under(root, IGNORED_DIRECTORIES, name)
+                for candidate in files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
                 if candidate.is_file()
-                and not any(part in IGNORED_DIRECTORIES for part in candidate.parts)
+                and not any(part in NOT_SEARCHED_FOR_A_STAGE for part in candidate.parts)
             ]
         except Exception:  # noqa: BLE001 - a convenience must never fail the call
             return ""
@@ -608,7 +608,7 @@ class _NoticingRepeats:
         if not root or not name:
             return ""
         try:
-            if next(iter(files_under(Path(root), IGNORED_DIRECTORIES, name)), None) is not None:
+            if next(iter(files_under(Path(root), NOT_SEARCHED_FOR_A_STAGE, name)), None) is not None:
                 return ""
         except Exception:  # noqa: BLE001 - a hint must never fail the call
             return ""

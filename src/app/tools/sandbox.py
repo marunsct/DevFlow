@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.analysis.walk import files_under
-from app.tools.repository import IGNORED_DIRECTORIES
+from app.tools.repository import IGNORED_DIRECTORIES, NOT_SEARCHED_FOR_A_STAGE
 from typing import Any, Dict, Iterable, Sequence
 
 logger = logging.getLogger(__name__)
@@ -2420,7 +2420,7 @@ def _a_relative_path_missing_from_where_it_ran(
             try:
                 found = [
                     candidate.relative_to(root).as_posix()
-                    for candidate in files_under(root, IGNORED_DIRECTORIES, name)
+                    for candidate in files_under(root, NOT_SEARCHED_FOR_A_STAGE, name)
                     if candidate.is_file()
                     and candidate.relative_to(root).as_posix().endswith(wanted)
                 ]

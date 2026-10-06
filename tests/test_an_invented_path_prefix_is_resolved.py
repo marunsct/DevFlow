@@ -119,3 +119,41 @@ class TestItIsWiredIntoRead:
         correction = source.index("_the_one_path_it_meant")
         hint = source.index("_where_it_actually_is")
         assert correction < hint, "the file should be read before explaining where it is"
+
+
+class TestTheHarnessesOwnRecordsAreNotCandidates:
+    """`.harness/` is the harness's, invisible to the stages, and the name
+    searches did not skip it. One run's technical lead asked for the locked
+    acceptance spec under `/home/user/`; the harness keeps a private copy of
+    that spec under `.harness/`, so two files carried the name, the request was
+    refused as ambiguous four times, and each refusal offered the copy."""
+
+    @pytest.fixture
+    def with_a_private_copy(self, workspace):
+        spec = workspace / "task-manager" / "acceptance" / "flow.spec.js"
+        spec.parent.mkdir()
+        spec.write_text("test('[AC-1] adds', async () => {});\n")
+        copy = workspace / ".harness" / "acceptance-snapshot" / "task-manager" / "acceptance" / "flow.spec.js"
+        copy.parent.mkdir(parents=True)
+        copy.write_text(spec.read_text())
+        return workspace
+
+    def test_the_invented_prefix_still_resolves_to_the_spec(self, with_a_private_copy):
+        assert _Probe(with_a_private_copy)._the_one_path_it_meant(
+            "/home/user/task-manager/acceptance/flow.spec.js"
+        ) == "/task-manager/acceptance/flow.spec.js"
+
+    def test_a_miss_never_offers_the_copy(self, with_a_private_copy):
+        hint = _Probe(with_a_private_copy)._where_it_actually_is("/elsewhere/flow.spec.js")
+
+        assert "/task-manager/acceptance/flow.spec.js" in hint
+        assert ".harness" not in hint
+
+    def test_the_other_read_tool_never_offers_it_either(self, with_a_private_copy):
+        from app.tools.repository import RepositoryToolError, read_text_file
+
+        with pytest.raises(RepositoryToolError) as refused:
+            read_text_file(str(with_a_private_copy), "elsewhere/flow.spec.js")
+
+        assert "task-manager/acceptance/flow.spec.js" in str(refused.value)
+        assert ".harness" not in str(refused.value)

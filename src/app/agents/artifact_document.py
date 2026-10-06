@@ -27,8 +27,11 @@ of these schemas is a flat set of sections, some holding nested records, and
 from __future__ import annotations
 
 import json
-
+import re
 from typing import Any
+
+#: A bullet a list item already carries: "- ", "* " or "• ".
+_A_BULLET = re.compile(r"^[-*\u2022]\s+")
 
 #: Headings that a mechanical title-case of the field name gets wrong.
 _SECTION_TITLES: dict[str, str] = {
@@ -159,7 +162,9 @@ def _value_lines(value: Any, depth: int = 0) -> list[str]:
             if _is_record(item):
                 lines.extend(_record_lines(item, depth))
             elif str(item).strip():
-                lines.append(f"- {str(item).strip()}")
+                # An item a model wrote as a bullet of its own. One run's
+                # specification rendered every interface-design item as "- - ".
+                lines.append(f"- {_A_BULLET.sub('', str(item).strip(), count=1)}")
         return lines
     return [str(value)]
 

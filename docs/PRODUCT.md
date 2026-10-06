@@ -185,7 +185,7 @@ deliver most of its criteria is stopped rather than shipped.
 | **Stack pack** | A product kind × language bundle: scaffold files, install/unit/acceptance commands, JUnit report paths, kept files, guides, check families, runtime (`browser`/`node`/`both`), release files. Packs: `browser-javascript`, `browser-react`, `node-http-api`, `fullstack-node`, `python-http-api`, `python-cli`, `python-library` |
 | **Project contract** | `.harness/stack-pack.json`: which pack, commands, paths; the harness puts back kept files/scripts a stage changed |
 | **Kept files** | Test setup the harness owns (e.g. `playwright.config.js`, `playwright.setup.mjs`, `test-setup.mjs` - a jsdom page for browser unit tests - `scripts/serve.mjs`, `pytest.ini`, `acceptance/conftest.py`); refused to agents, marked in the digest |
-| **Acceptance criteria** | `AC-1..n`, numbered from the brief (features + acceptance criteria) or the intake |
+| **Acceptance criteria** | `AC-1..n`, numbered from the brief (features, its interface section line by line, and acceptance criteria) or the intake |
 | **Acceptance suite** | QA's tests for the criteria, **locked** (checksums + snapshot in `.harness/`) after review: the definition of done. Only QA, via a recorded reopen, may change it |
 | **Due criteria** | The criteria a sprint must leave passing: its own plus every earlier sprint's (the last sprint answers for all) |
 | **Work order** | One delegated task: role, title, description, files, interfaces, steps, edge cases, test cases, verification |

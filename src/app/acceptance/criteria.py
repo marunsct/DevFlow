@@ -7,6 +7,12 @@ product manager's restatement and include measures no test can check ("user
 feedback indicates ease of use"), so they are not mixed in when the brief speaks
 for itself.
 
+An interface section is criteria too, line by line: what the product shows,
+what each control is called, what it refuses. It is what the customer checks, and
+it was not numbered: one run's brief said "A task cannot be added without a
+title" there, QA's test of it was refused as naming no criterion, the product
+disabled its add control instead, and the customer's check timed out on it.
+
 Constraints - the stack, the storage, a line budget, "no authentication" - are not
 criteria: they are checked by the cross-file checks and the reviews, not by a test
 that drives the product.
@@ -21,7 +27,8 @@ from typing import Any, Iterable
 #: Headings whose bullets are things the product must do.
 _CRITERIA_HEADING = re.compile(
     r"acceptance criteria|definition of done|features?|functional requirements|"
-    r"user stories|capabilities|must[- ]haves?|requirements|scope|what it (?:must )?do",
+    r"user stories|capabilities|must[- ]haves?|requirements|scope|what it (?:must )?do|"
+    r"interface",
     re.I,
 )
 #: Headings whose bullets are not, even when the words above also appear.
@@ -34,7 +41,9 @@ _NOT_CRITERIA_HEADING = re.compile(
 #: criteria only when its label says so; "**Data Storage**: local storage" is a
 #: constraint, "**Features**:" a list of things to do.
 _A_FEATURE_LABEL = re.compile(r"feature|function|capabilit|user stor|behaviou?r|workflow|must", re.I)
-_STRONG_HEADING = re.compile(r"acceptance criteria|definition of done|features?|user stories|capabilities", re.I)
+_STRONG_HEADING = re.compile(
+    r"acceptance criteria|definition of done|features?|user stories|capabilities|interface", re.I
+)
 
 _HEADING = re.compile(r"^(#{1,6})\s+(.*\S)\s*$")
 _BULLET = re.compile(r"^(\s*)(?:[-*+]|\d+[.)])\s+(.*\S)\s*$")
@@ -86,8 +95,9 @@ def from_brief(brief: str) -> list[str]:
             continue
         group = None
         if _STRONG_HEADING.search(heading) and not _NOT_CRITERIA_HEADING.search(heading):
-            if label and not label.group(2):
-                # "**Features**:" under "Features" - a group header.
+            if (label and not label.group(2)) or body.rstrip().endswith(":"):
+                # "**Features**:" under "Features", or "The service's JSON
+                # interface:" over its endpoints - a group header.
                 group = (indent, True)
                 continue
             found.append(_plain(body))

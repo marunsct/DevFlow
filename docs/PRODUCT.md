@@ -159,7 +159,7 @@ any other (escalation, failure, change request).
 | `test_and_triage` | test engineer + harness | judgement | harness runs the locked suite; round reports defects; ≤ 3 remediation attempts |
 | `defect_remediation` | owning specialist | judgement | one fix per defect; reverted if it breaks what passed |
 | `security_review` | Security Reviewer | judgement | findings |
-| `advice_review` | each consulted specialist with adopted advice (not testing) | judgement | which adopted items this sprint should have built and did not, read from the code; the UI/UX specialist also judges the page's screenshots when its model reads images; findings go to the milestone reviewer to weigh (`app/agents/advice_review.py`) |
+| `advice_review` | each consulted specialist with adopted advice (not testing) | judgement | which adopted items this sprint should have built and did not, read from the code; the UI/UX specialist also judges the page's screenshots when its model reads images; findings go to the milestone reviewer to weigh and join the sprint's own findings as minor ones, so an accepted sprint carries them to the next sprint's lead to take or decline - also when that sprint's criteria already pass, which otherwise closes it with nothing to build; a lead that takes none closes it (`app/agents/advice_review.py`) |
 | `milestone_review` | Milestone Reviewer | judgement | accept / revise (≤ 3) / block; gate refuses red due criteria |
 | `sprint_advance` | harness | — | Sprint Record, carried-forward items, next sprint |
 | `change_request` | harness | — | a reviewer's change → `CR-n` with its own acceptance test, then re-plan |

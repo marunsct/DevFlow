@@ -513,6 +513,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # what the last sprint left for this one's lead to take or decline; and what
     # the harness saw fail repeatedly. See `app.sprint.record`.
     sprint_findings: list[dict[str, Any]]
+    nothing_left_but_carried: str | None
     carried_forward: list[str]
     lessons: list[str]
     milestone_plan: MilestonePlanOutput
@@ -4303,6 +4304,33 @@ def _a_red_suite_the_review_called_green(state: WorkflowGraphState) -> str:
     )
 
 
+def _carried_here(state: Any) -> list[str]:
+    """What earlier sprints carried to this one's lead to take or decline."""
+    return [str(item) for item in state.get("carried_forward") or [] if str(item).strip()]
+
+
+def _only_what_was_carried(why: str) -> str:
+    """The lead's brief for a sprint whose criteria pass but that was carried work.
+
+    A sprint closed with nothing to build was closed before its lead saw what
+    the sprint before carried to it, so a finding that did not gate - a
+    review's minor one, an adopted item a specialist found not built - was
+    dropped rather than taken or declined. Measured on one run: thirteen
+    adopted UI/UX and database items reported not built after sprint 1, and
+    sprints 2 and 3 closed with nothing to build without anyone reading them.
+    """
+    first = next((line for line in why.splitlines() if line.strip()), why)
+    return (
+        "\n\n--- Every criterion due by this sprint already passes ---\n"
+        f"{first}\n"
+        "So this sprint's only work is what earlier sprints carried to it, listed above. Take "
+        "each item that still holds as a work order to the role that owns it, and decline the "
+        "rest in `carried_forward_decisions` with the reason. Keep every name the brief gives "
+        "and every test passing. If you take none, hand out no work orders: the sprint then "
+        "closes with nothing to build."
+    )
+
+
 def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -> dict[str, Any]:
     """Accept a sprint whose criteria already pass, the way an accepted sprint is closed.
 
@@ -4334,7 +4362,7 @@ def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -
         next_stage = "sprint_advance"
     else:
         next_stage = "release"
-    return _handing_on(**accepted, stage=next_stage)
+    return _handing_on(**accepted, stage=next_stage, nothing_left_but_carried=None)
 
 
 def _escalate_to_a_human(
@@ -5287,12 +5315,18 @@ def build_workflow_graph(
         ]
         previous_milestone = state.get("milestone_plan")
         revising = bool(revision_comments) and previous_milestone is not None
-        if not revising:
+        # Every criterion due already passes, but an earlier sprint carried work
+        # here: the lead takes or declines each item, and a plan that takes none
+        # closes the sprint. See `_only_what_was_carried`.
+        nothing_else = "" if revising else str(state.get("nothing_left_but_carried") or "")
+        if not revising and not nothing_else:
             from app.graph import acceptance_nodes as nothing_left
 
             why = nothing_left.sprint_already_done(state)
             if why:
-                return _close_a_sprint_with_nothing_to_build(state, why)
+                if not _carried_here(state):
+                    return _close_a_sprint_with_nothing_to_build(state, why)
+                nothing_else = why
         if revising:
             request = build_milestone_revision_request(
                 previous_milestone.model_dump_json(indent=2), revision_comments
@@ -5312,6 +5346,8 @@ def build_workflow_graph(
         due_brief = acceptance_nodes.criteria_brief(state)
         if due_brief:
             request["messages"][-1]["content"] += due_brief
+        if nothing_else:
+            request["messages"][-1]["content"] += _only_what_was_carried(nothing_else)
         # What the harness set up and owns. Without it one run's lead wrote a
         # work order to edit the acceptance configuration, which the harness
         # put back - the whole work order wasted.
@@ -5343,6 +5379,19 @@ def build_workflow_graph(
         )
         if _hand_back(update, "milestone_plan"):
             return update
+        if nothing_else and not list(getattr(update["milestone_plan"], "delegated_tasks", None) or []):
+            decisions = [
+                str(line) for line in getattr(update["milestone_plan"], "carried_forward_decisions", None) or []
+                if str(line).strip()
+            ]
+            return _close_a_sprint_with_nothing_to_build(
+                state,
+                nothing_else
+                + "\nThe lead took none of what earlier sprints carried here"
+                + (": " + "; ".join(decisions) if decisions else "."),
+            )
+        # Only a readiness retry carries it on; a dispatched plan is a sprint's own.
+        update["nothing_left_but_carried"] = None
 
         # Pinned before the readiness check, which checks each work order's files
         # against it. In parallel mode the specialists all start before a file
@@ -5408,6 +5457,7 @@ def build_workflow_graph(
                     stage="technical_lead",
                     structured_retries=retries,
                     revision_comments=revision_comments,
+                    nothing_left_but_carried=nothing_else or None,
                     work_order_problems=problems,
                     unready_plan=update["milestone_plan"].model_dump_json(indent=2),
                     best_unready_plan=best_plan.model_dump_json(),
@@ -6358,10 +6408,14 @@ def build_workflow_graph(
         found[role] = findings_from(role, update.pop("__advice_review__"))
         if found[role]:
             logger.info("The %s specialist found %d adopted item(s) not built", role, len(found[role]))
+        from app.agents.advice_review import as_sprint_findings
+
         return _handing_on(**{
             **update,
             "advice_findings": found,
             "advice_review_cycle": cycle,
+            "sprint_findings": list(state.get("sprint_findings") or [])
+            + as_sprint_findings(found[role], state.get("milestone_revision_count", 0) + 1),
             "stage": "advice_review" if len(pending) > 1 else "milestone_review",
         })
 
@@ -6841,6 +6895,7 @@ def build_workflow_graph(
             "carried_forward": list(latest.get("carried_forward") or []),
             "lessons": list(latest.get("lessons") or []),
             "sprint_findings": [],
+            "nothing_left_but_carried": None,
             "stage": "technical_lead",
             "current_sprint_index": state.get("current_sprint_index", 0) + 1,
             # clear previous sprint's milestone state so it doesn't pollute the next sprint

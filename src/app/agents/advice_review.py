@@ -139,6 +139,32 @@ def findings_from(role: str, answer: Any) -> list[str]:
     return [line for line in lines if line.split(": ", 1)[-1].strip()][:MOST_FINDINGS]
 
 
+def as_sprint_findings(lines: Sequence[str], round_number: int) -> list[dict[str, Any]]:
+    """One specialist's findings as records of the Sprint Record: minor, never gating.
+
+    Kept with the sprint's other findings so they are not lost when the
+    milestone reviewer passes over them. Measured on one run: the UI/UX and
+    database specialists reported thirteen adopted items not built, the review
+    accepted the sprint without a word about any, and the next two sprints
+    closed with nothing to build - so the feedback after each action, the empty
+    list's message and the desktop layout the specification adopted were never
+    built. A finding that does not gate is carried to the next sprint's lead,
+    who takes or declines it (`app.sprint.record.carried_from`).
+    """
+    return [
+        {
+            "round": round_number,
+            "source": "advice",
+            "severity": "minor",
+            "description": " ".join(str(line).split()),
+            "remediation": "build it as the specification adopted it, or decline it with the reason it no longer holds",
+            "gating": False,
+        }
+        for line in lines
+        if str(line).strip()
+    ]
+
+
 def findings_block(findings: dict[str, list[str]] | None) -> str:
     """The specialists' findings for the milestone reviewer, or "" when there are none."""
     lines = [line for role in REVIEWED_ROLES for line in (findings or {}).get(role) or []]
@@ -157,6 +183,7 @@ def findings_block(findings: dict[str, list[str]] | None) -> str:
 __all__ = [
     "AdviceReview",
     "REVIEWED_ROLES",
+    "as_sprint_findings",
     "build_advice_review_request",
     "create_advice_reviewer_agent",
     "findings_block",

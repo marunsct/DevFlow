@@ -741,6 +741,11 @@ def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     label, the locked suite passed - and three of the benchmark's hidden tests,
     which find the field by its label, failed. A product a person (or a screen
     reader) cannot use the way the brief says passed its own definition of done.
+
+    Every line, once per file. Naming only the first let QA fix that line and
+    hear of the next one a round later: one run's suite was sent back for
+    line 16 of a file and then for line 21 of the same file, and spent the
+    rounds it had on a fault it could have fixed in one.
     """
     found = contract.the_pack(repo_root)
     if found is None or not found[0].locators_nobody_sees:
@@ -753,17 +758,17 @@ def locators_nobody_sees(repo_root: str | Path) -> list[str]:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        for pattern in patterns:
-            match = pattern.search(text)
-            if match is None:
-                continue
-            line = text.count("\n", 0, match.start()) + 1
-            snippet = text.splitlines()[line - 1].strip()[:160]
-            problems.append(
-                f"`{path.relative_to(root).as_posix()}` line {line} finds a control by something no "
-                f"person sees (`{snippet}`). Find it by the label or name the brief gives it, "
-                "exactly; where the brief gives none, by its role and the name a person reads."
-            )
+        hits = sorted({text.count("\n", 0, match.start()) + 1
+                       for pattern in patterns for match in pattern.finditer(text)})
+        if not hits:
+            continue
+        snippet = text.splitlines()[hits[0] - 1].strip()[:160]
+        where = ", ".join(str(line) for line in hits[:12]) + (" ..." if len(hits) > 12 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` finds a control by something no person sees "
+            f"on line(s) {where} (`{snippet}`). Find each by the label or name the brief gives it, "
+            "exactly; where the brief gives none, by its role and the name a person reads."
+        )
     return problems[:6]
 
 

@@ -71,11 +71,27 @@ def test_a_suite_that_finds_a_control_by_its_placeholder_is_named(tmp_path) -> N
         "});\n"
     )
 
-    problems = suite.locators_nobody_sees(tmp_path)
+    [problem] = suite.locators_nobody_sees(tmp_path)
 
-    assert len(problems) == 2
-    assert "line 3" in problems[0] and "getByPlaceholder('Details')" in problems[0]
-    assert "line 4" in problems[1] and "getByTestId" in problems[1]
+    assert "line(s) 3, 4" in problem and "getByPlaceholder('Details')" in problem
+
+
+def test_every_line_of_a_file_is_named_in_one_round(tmp_path) -> None:
+    """Naming only the first let QA fix that line and hear of the next a round
+    later: one run's suite was sent back for line 16 of a file, then line 21."""
+    acceptance = _scaffolded(tmp_path)
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "notes.spec.js").write_text(
+        "test('[AC-1] adds', async ({ page }) => {\n"
+        "  const one = page.locator('.entry').filter({ hasText: 'a' });\n"
+        "  await page.getByLabel('Name', { exact: true }).fill('x');\n"
+        "  await expect(page.locator('.entry').filter({ hasText: 'b' })).toHaveCount(1);\n"
+        "});\n"
+    )
+
+    [problem] = suite.locators_nobody_sees(tmp_path)
+
+    assert "line(s) 2, 4" in problem
 
 
 def test_a_suite_that_finds_them_by_name_is_not(tmp_path) -> None:
@@ -148,7 +164,7 @@ def test_a_css_selector_on_role_is_named(tmp_path) -> None:
 
     problems = suite.locators_nobody_sees(tmp_path)
 
-    assert len(problems) == 1 and "line 3" in problems[0]
+    assert len(problems) == 1 and "line(s) 3 " in problems[0]
 
 
 def test_the_guide_warns_against_a_role_selector() -> None:

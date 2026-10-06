@@ -99,7 +99,9 @@ instructions**, never in the core.
  product_manager ─▶ [user_review_product_intake] ─▶ tools_models ─▶ stack_selector
         │
         ▼
- specialist_consultation (UI/UX if it has an interface, database if it keeps data, backend if it serves requests)
+ specialist_consultation (UI/UX if it has an interface, database if it keeps data, backend if it serves requests,
+                          security & reliability if it serves requests or handles sign-in/personal data/money/files,
+                          testing per acceptance criterion whenever it has criteria)
         │
         ▼
  principal_architect ◀──▶ architecture_review ─(converges)─▶ [user_review_specification]
@@ -123,7 +125,7 @@ instructions**, never in the core.
  │ test_and_triage (harness runs locked suite; test round) ◀─▶ defect_remediation│
  │   (fix guard reverts a fix that breaks what passed; broken locked test ─▶ QA)│
  │   ▼                                                                          │
- │ security_review ─▶ milestone_review (cannot accept red due criteria)         │
+ │ security_review ─▶ advice_review ─▶ milestone_review (cannot accept red due) │
  │   ▼ accept (decision)  /  revise  /  re-plan  /  escalation                   │
  │ [user_review_sprint] ─▶ sprint_advance  (or change_request ─▶ QA ─▶ re-plan)  │
  └──────────────────────────────────────────────────────────────────────────────┘
@@ -143,7 +145,7 @@ any other (escalation, failure, change request).
 | `product_manager` | Product Manager | default | `product_intake` (requirements, success measures, constraints) → `docs/product_intake.md` |
 | `tools_models` | Tools & Models Architect | default | technology comparison → `docs/tools_and_models.md` |
 | `stack_selector` | Stack Selector | default | `technology_stack` (language, frameworks, testing, product kind) → picks a **stack pack** |
-| `specialist_consultation` | the specialists the product needs | judgement | one structured answer each, before the specification: UI/UX when the product has an interface (a terminal program's commands and messages included), database when its stack keeps data of its own, backend when it serves requests; items numbered `UX-n`, `DB-n`, `BE-n` (`app/agents/specialist_advice.py`) |
+| `specialist_consultation` | the specialists the product needs | judgement | one structured answer each, before the specification: UI/UX when the product has an interface (a terminal program's commands and messages included), database when its stack keeps data of its own, backend when it serves requests, security & reliability when it serves requests or its brief is about sign-in, people's data, money or files (not where the brief rules it out), testing per acceptance criterion whenever there are criteria; items numbered `UX-n`, `DB-n`, `BE-n`, `SR-n`, `TS-n` (`app/agents/specialist_advice.py`). The adopted testability advice goes to QA and the QA lead |
 | `principal_architect` | Principal Architect | judgement | technical specification → `docs/technical_specification.md`; adopts or declines every advice item in `specialist_advice_decisions`, and writes `interface_design` for a product with an interface (sent straight back if either is missing). The lead copies the interface design into work orders and a UI/UX work order's brief carries it |
 | `architecture_review` | Senior Architect Reviewer | judgement | approve / changes; ≤ 6 revisions, then escalation (design) |
 | `scaffold` | harness | — | writes the pack's files, installs, runs its unit + acceptance smoke tests, writes `.harness/stack-pack.json` |
@@ -157,6 +159,7 @@ any other (escalation, failure, change request).
 | `test_and_triage` | test engineer + harness | judgement | harness runs the locked suite; round reports defects; ≤ 3 remediation attempts |
 | `defect_remediation` | owning specialist | judgement | one fix per defect; reverted if it breaks what passed |
 | `security_review` | Security Reviewer | judgement | findings |
+| `advice_review` | each consulted specialist with adopted advice (not testing) | judgement | which adopted items this sprint should have built and did not, read from the code; the UI/UX specialist also judges the page's screenshots when its model reads images; findings go to the milestone reviewer to weigh (`app/agents/advice_review.py`) |
 | `milestone_review` | Milestone Reviewer | judgement | accept / revise (≤ 3) / block; gate refuses red due criteria |
 | `sprint_advance` | harness | — | Sprint Record, carried-forward items, next sprint |
 | `change_request` | harness | — | a reviewer's change → `CR-n` with its own acceptance test, then re-plan |
@@ -283,7 +286,7 @@ cooperative cancellation at every node, gate and recursion limits.
 | Unit tests | work orders, test rounds, CI | the pack's unit command (e.g. `node --test`, pytest) with JUnit reports |
 | Acceptance suite | locked before building; run by the harness every round, at CI, at acceptance, at release | the pack's acceptance command (Playwright, pytest+httpx, …); per-criterion results; page check records the page's uncaught errors and accessibility tree; each failing test carries the page it failed on |
 | Suite integrity | before lock and after | tests broken by their own code (Playwright's refusals of the spec's shape included), tests the suite declares that the runner never ran, locators nobody sees, assertions the runner does not define → back to QA; after lock, repaired via recorded reopen (≤ 2) |
-| Interface | every test round (page products) | the page probe measures overflow at a phone's width (375px) and keeps desktop and phone screenshots; a page whose only styling is the scaffold's reset, or one wider than a phone when the brief asks for phones, is a UI/UX defect (`app/analysis/interface_checks.py`); a milestone reviewer whose model reads images is shown both screenshots with the interface design (`app/agents/page_screenshots.py`, `MODEL_READS_IMAGES`) |
+| Interface | every test round (page products) | the page probe measures overflow at a phone's width (375px), runs axe-core (a dev dependency of every page pack) and keeps only serious/critical rules, and keeps desktop and phone screenshots; a page whose only styling is the scaffold's reset, one wider than a phone when the brief asks for phones, or broken accessibility rules, is a UI/UX defect (`app/analysis/interface_checks.py`); a milestone reviewer whose model reads images is shown both screenshots with the interface design (`app/agents/page_screenshots.py`, `MODEL_READS_IMAGES`) |
 | CI regressions | each batch, each fix | snapshot vs last accepted and last measurement; regressions become defects; a regressing fix is reverted |
 | Reviews | per batch / sprint | code review, security review, milestone review (findings about later sprints' criteria made minor) |
 | Release gate | end | every non-deferred criterion passes |

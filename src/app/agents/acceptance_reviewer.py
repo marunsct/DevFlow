@@ -11,7 +11,7 @@ would fail if its criterion were not met.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -93,6 +93,7 @@ def build_acceptance_review_request(
     already_passing: list[str],
     deferred_text: str,
     brief: str = "",
+    testability: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     passing = (
         "--- Tests that already pass, before anything is built ---\n"
@@ -107,7 +108,15 @@ def build_acceptance_review_request(
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:12_000]}\n\n" if brief.strip() else "")
         + f"--- Acceptance criteria ---\n{criteria_text}\n\n"
         f"{deferred_text}"
-        f"--- The suite as written ---\n{suite_text}\n\n"
+        + (
+            "--- The testability advice the specification adopted ---\n"
+            + "\n".join(f"- {' '.join(str(line).split())}" for line in testability if str(line).strip())
+            + "\nA test that goes against an item here - finds a control by another name, acts "
+            "on data it never created, confirms a control the action takes away - is a finding.\n\n"
+            if any(str(line).strip() for line in testability or ())
+            else ""
+        )
+        + f"--- The suite as written ---\n{suite_text}\n\n"
         f"--- What running it showed ---\n{run_summary}\n\n"
         f"{passing}"
         "Review the suite. For each criterion, would its tests fail if the product did "

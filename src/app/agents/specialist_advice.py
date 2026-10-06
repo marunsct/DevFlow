@@ -10,7 +10,10 @@ page with the browser's own defaults and nothing designed.
 So the specialists a product needs are asked first, each in one structured
 answer: the UI/UX specialist when the product has an interface, the database
 specialist when it keeps data of its own, the backend specialist when it serves
-requests. The specification then takes up or declines each item, by id, and a
+requests, the security and reliability specialist when it serves requests or its
+brief is about sign-in, people's data, money or files, and the testing specialist
+- per acceptance criterion, on how each can be proven - whenever it has criteria.
+The specification then takes up or declines each item, by id, and a
 product with an interface gets an `interface_design` section built from the
 UI/UX advice - which the lead's work orders and the UI/UX specialist's brief
 carry from there.
@@ -30,13 +33,21 @@ from app.agents.role_agent import create_role_agent
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 
 #: The roles consulted, in the order they are asked.
-ADVICE_ROLES = ("ui_ux", "database", "backend")
+ADVICE_ROLES = ("ui_ux", "database", "backend", "security_reliability", "testing")
 
 #: Each role's prefix for the ids the specification answers by.
-ID_PREFIX = {"ui_ux": "UX", "database": "DB", "backend": "BE"}
+ID_PREFIX = {
+    "ui_ux": "UX", "database": "DB", "backend": "BE", "security_reliability": "SR", "testing": "TS",
+}
 
 #: How a role is named to the architect.
-ROLE_TITLE = {"ui_ux": "UI/UX specialist", "database": "database specialist", "backend": "backend specialist"}
+ROLE_TITLE = {
+    "ui_ux": "UI/UX specialist",
+    "database": "database specialist",
+    "backend": "backend specialist",
+    "security_reliability": "security and reliability specialist",
+    "testing": "testing specialist",
+}
 
 #: At most this many items per role: enough to design from, few enough that
 #: each one is a decision rather than a list to skim.
@@ -51,6 +62,27 @@ _SERVES_REQUESTS = frozenset({"http_api", "fullstack"})
 
 #: A `database` value that names no store of the product's own.
 _NO_STORE = re.compile(r"^(?:|-|n/?a\b.*|none\b.*|no\b.*|not (?:applicable|needed|required)\b.*)$", re.I)
+
+#: What in a brief needs a security and reliability specialist: people signing
+#: in, data about them or their money, files they send, or an API open to
+#: callers. Matched in the brief's own words, and not where the brief rules it
+#: out - "No authentication required" asks for none.
+_SENSITIVE = re.compile(
+    r"\b(?:sign(?:[- ])?(?:in|up|on)|log(?:[- ])?in|logout|passwords?|accounts?|authenticat\w*|"
+    r"authori[sz]\w*|sessions?|personal (?:data|information|details)|e-?mail address\w*|"
+    r"payments?|credit cards?|billing|checkout|uploads?|attachments?|public api|api keys?|tokens?)\b",
+    re.I,
+)
+_RULED_OUT = re.compile(r"\b(?:no|not|without|none|never|n't)\b[^.;:\n]*$", re.I)
+
+
+def _asks_for_something_sensitive(text: str) -> bool:
+    """Whether the brief asks for something a security specialist must see, not ruled out."""
+    for match in _SENSITIVE.finditer(text or ""):
+        before = text[max(0, text.rfind("\n", 0, match.start()) + 1):match.start()]
+        if not _RULED_OUT.search(before):
+            return True
+    return False
 
 
 class SpecialistAdvice(BaseModel):
@@ -90,7 +122,27 @@ def roles_to_consult(stack: Any, brief_text: str = "") -> list[str]:
         roles.append("database")
     if kind in _SERVES_REQUESTS:
         roles.append("backend")
+    # An API anyone can call, or a brief about people's sign-in, data, money
+    # or files.
+    if kind in _SERVES_REQUESTS or _asks_for_something_sensitive(brief_text):
+        roles.append("security_reliability")
+    # Every product with acceptance criteria: each is proven by an automated
+    # test, and most locked suites that could not pass were criteria hard to
+    # test as written - a test needing data it never made, a control that left
+    # the page as it was confirmed, a test written inside another.
+    if stack is not None and _criteria_of(brief_text):
+        roles.append("testing")
     return roles
+
+
+def _criteria_of(brief_text: str) -> list[Any]:
+    """The brief's acceptance criteria as the suite will number them, or []."""
+    try:
+        from app.acceptance.criteria import number
+
+        return list(number(brief_text or ""))
+    except Exception:  # noqa: BLE001
+        return []
 
 
 _WHAT_TO_COVER = {
@@ -119,6 +171,24 @@ _WHAT_TO_COVER = {
         "is validated, the error responses and status codes, what happens when two "
         "requests change the same thing at once, configuration, and limits."
     ),
+    "security_reliability": (
+        "what must be protected and how it fails safely. Who may do what, and how that "
+        "is checked on every operation; how people sign in and how a session ends; how "
+        "every input is validated and every output encoded; where secrets live and that "
+        "none is written to a log or sent to the client; how files sent in are checked "
+        "and stored; limits on how often and how much; and what happens on a timeout, a "
+        "crash or a write cut off half way, so no data is lost or left half changed."
+    ),
+    "testing": (
+        "how each acceptance criterion below can be proven by an automated test through "
+        "the product's real interface. Start each recommendation with the id of the "
+        "criterion it is for. Say the exact name a test finds each control or field by - "
+        "the one the brief gives; the data a test must create for itself first, since "
+        "every test starts from an empty product; anything that changes with time or "
+        "chance and how it is held still; what must be reset between tests; what result "
+        "a person would see that the test asserts on; and where an action takes its own "
+        "control off the page - assert on what remains, rather than confirm the control."
+    ),
 }
 
 _SYSTEM_PROMPT = (
@@ -137,10 +207,19 @@ _SYSTEM_PROMPT = (
 
 def build_advice_request(role: str, brief_text: str, intake_text: str, stack_text: str) -> dict[str, list[dict[str, str]]]:
     """The input asking one specialist for its advice."""
+    criteria = ""
+    if role == "testing":
+        numbered = _criteria_of(brief_text)
+        if numbered:
+            criteria = (
+                "--- The acceptance criteria, as the suite will number them ---\n"
+                + "\n".join(f"- {c.id}: {c.text}" for c in numbered) + "\n\n"
+            )
     content = (
         f"--- The brief ---\n{brief_text}\n\n"
         f"--- The product intake ---\n{intake_text}\n\n"
         f"--- The technology stack chosen ---\n{stack_text}\n\n"
+        f"{criteria}"
         f"As the {ROLE_TITLE[role]}, advise the architect on {_WHAT_TO_COVER[role]}"
     )
     return {"messages": [{"role": "user", "content": content}]}
@@ -224,6 +303,28 @@ def unanswered(specification: Any, advice: dict[str, list[str]] | None) -> list[
     ]
 
 
+def adopted(advice: dict[str, list[str]] | None, specification: Any, role: str) -> list[str]:
+    """One role's advice the specification adopted, as "ID: item" lines.
+
+    An item counts as adopted unless its line in `specialist_advice_decisions`
+    says it was declined; an item with no line at all is the architect's to
+    answer (`unanswered`), and is passed on rather than lost.
+    """
+    lines = [str(line) for line in getattr(specification, "specialist_advice_decisions", None) or []]
+    kept = []
+    for owner, ident, text in _numbered(advice or {}):
+        if owner != role:
+            continue
+        said = [
+            line for line in lines
+            if re.search(rf"(?<![A-Za-z0-9]){re.escape(ident)}(?![0-9])", line)
+        ]
+        if any(re.search(r"\bdeclin", line, re.I) for line in said):
+            continue
+        kept.append(f"{ident}: {text}")
+    return kept
+
+
 def what_the_specification_owes(specification: Any, advice: dict[str, list[str]] | None) -> list[str]:
     """Why the specification has not answered the specialists, or [] when it has."""
     problems = []
@@ -248,6 +349,7 @@ def what_the_specification_owes(specification: Any, advice: dict[str, list[str]]
 
 __all__ = [
     "ADVICE_ROLES",
+    "adopted",
     "SpecialistAdvice",
     "advice_block",
     "advice_from",

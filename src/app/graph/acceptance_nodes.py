@@ -124,6 +124,7 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     request = acceptance_requests.build_author_request(
         root, criteria, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
         brief=getattr(state.get("document"), "text", "") or "",
+        testability=_the_testability_advice(state),
     )
     update = _run_gated_agent(
         state, config,
@@ -245,6 +246,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             already_passing,
             deferred_text,
             brief=getattr(state.get("document"), "text", "") or "",
+            testability=_the_testability_advice(state),
         )
         update = _run_gated_agent(
             state, config,
@@ -383,6 +385,16 @@ def run_for_sprint(state: Any) -> tuple[suite.AcceptanceResult | None, list[str]
         return None, []
     due = criteria_due(state) or []
     return suite.run(root), due
+
+
+def _the_testability_advice(state: Any) -> list[str]:
+    """The testing specialist's advice the specification adopted. See `app.agents.specialist_advice`."""
+    try:
+        from app.agents.specialist_advice import adopted
+
+        return adopted(state.get("specialist_advice"), state.get("technical_specification"), "testing")
+    except Exception:  # noqa: BLE001 - a suite written without it is the suite there was
+        return []
 
 
 def _owner_for(state: Any) -> str:

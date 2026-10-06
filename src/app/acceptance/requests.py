@@ -51,6 +51,20 @@ def _how_to_write_them(repo_root: str | Path, project: str, acceptance_dir: str,
     )
 
 
+def _how_each_was_made_testable(testability: Sequence[str]) -> str:
+    """The adopted testability advice, for whoever writes or reviews the suite, or ""."""
+    lines = [" ".join(str(line).split()) for line in testability or () if str(line).strip()]
+    if not lines:
+        return ""
+    return (
+        "--- How each criterion is to be made testable (the testing specialist's advice, "
+        "adopted by the specification) ---\n"
+        + "\n".join(f"- {line}" for line in lines)
+        + "\nWrite the tests to it: the names to find each control by, the data each test "
+        "creates first, what is held still, and what is asserted.\n\n"
+    )
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -58,8 +72,12 @@ def build_author_request(
     feedback: Sequence[str] = (),
     change_requests: dict[str, str] | None = None,
     brief: str = "",
+    testability: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """The QA stage's brief: write the acceptance suite before anything is built.
+
+    `testability` is the testing specialist's advice the specification adopted,
+    one "TS-n: ..." line each. See `app.agents.specialist_advice`.
 
     `brief` is the customer's own document. It is where a product's interface
     is stated - the labels on its controls, its endpoints, its commands - and
@@ -103,6 +121,7 @@ def build_author_request(
         "You are the QA engineer. " + state_of_the_product + "Once "
         "reviewed, the suite is locked, and the product is finished when it passes.\n\n"
         f"--- Acceptance criteria ---\n{criteria_text(criteria, deferred)}\n\n"
+        f"{_how_each_was_made_testable(testability)}"
         f"{requests_text}"
         f"{feedback_text}"
         f"--- How to write them ---\n{_how_to_write_them(repo_root, project, acceptance_dir, stack)}\n\n"

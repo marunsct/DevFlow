@@ -53,8 +53,10 @@ class TestWhoIsAsked:
     @pytest.mark.parametrize("stack, roles", [
         (_stack("browser_app", database="Browser localStorage"), ["ui_ux", "database"]),
         (_stack("browser_app"), ["ui_ux"]),
-        (_stack("http_api", database="PostgreSQL", framework="Express"), ["database", "backend"]),
-        (_stack("fullstack", database="SQLite", framework="Express", frontend="React"), ["ui_ux", "database", "backend"]),
+        # An API anyone can call is one a security specialist must see.
+        (_stack("http_api", database="PostgreSQL", framework="Express"), ["database", "backend", "security_reliability"]),
+        (_stack("fullstack", database="SQLite", framework="Express", frontend="React"),
+         ["ui_ux", "database", "backend", "security_reliability"]),
         # A program run from a terminal has an interface: its commands and messages.
         (_stack("cli"), ["ui_ux"]),
         (_stack("library"), []),
@@ -68,6 +70,66 @@ class TestWhoIsAsked:
 
     def test_nothing_to_judge_by_asks_nobody(self) -> None:
         assert roles_to_consult(None) == []
+
+
+class TestTheNewRoles:
+    BRIEF = "# Brief\n## Acceptance Criteria\n- Users can add notes\n- Notes persist between page refreshes\n"
+
+    def test_a_brief_with_criteria_asks_the_testing_specialist(self) -> None:
+        assert roles_to_consult(_stack("browser_app"), self.BRIEF)[-1] == "testing"
+
+    def test_without_criteria_there_is_nothing_to_make_testable(self) -> None:
+        assert "testing" not in roles_to_consult(_stack("browser_app"), "Make something nice.")
+
+    @pytest.mark.parametrize("text", [
+        "Users sign in with an email address and a password.",
+        "Customers pay by credit card at checkout.",
+        "People can upload a photo to each note.",
+        "Each account keeps its own list.",
+    ])
+    def test_a_brief_about_sign_in_money_data_or_files_asks_for_security(self, text) -> None:
+        assert "security_reliability" in roles_to_consult(_stack("browser_app"), text)
+
+    @pytest.mark.parametrize("text", [
+        "No authentication required",
+        "It works without an account.",
+        "Users never sign in.",
+        "A page that lists notes.",
+    ])
+    def test_one_that_rules_them_out_does_not(self, text) -> None:
+        assert "security_reliability" not in roles_to_consult(_stack("browser_app"), text)
+
+    def test_the_testing_specialist_is_shown_the_criteria_numbered(self) -> None:
+        from app.agents.specialist_advice import build_advice_request
+
+        text = build_advice_request("testing", self.BRIEF, "intake", "stack")["messages"][0]["content"]
+
+        assert "- AC-1: Users can add notes" in text and "- AC-2:" in text
+        assert "Start each recommendation with the id of the" in text
+
+    def test_its_items_are_answered_like_any_other(self) -> None:
+        advice = {"testing": ["AC-1: find the field by its label Title."]}
+
+        assert "TS-1: AC-1: find the field" in advice_block(advice)
+        assert unanswered(SimpleNamespace(specialist_advice_decisions=[]), advice) == ["TS-1"]
+
+
+class TestWhatWasAdopted:
+    ADVICE = {"testing": ["AC-1: one", "AC-2: two", "AC-3: three"]}
+
+    def test_declined_items_are_left_out_and_unanswered_ones_kept(self) -> None:
+        from app.agents.specialist_advice import adopted
+
+        spec = SimpleNamespace(specialist_advice_decisions=[
+            "TS-1: adopted - testing", "TS-2: Declined - the brief names no such field",
+        ])
+
+        assert adopted(self.ADVICE, spec, "testing") == ["TS-1: AC-1: one", "TS-3: AC-3: three"]
+
+    def test_another_role_s_items_are_not_its(self) -> None:
+        from app.agents.specialist_advice import adopted
+
+        assert adopted(self.ADVICE, SimpleNamespace(), "ui_ux") == []
 
 
 ADVICE = {
@@ -246,3 +308,44 @@ def test_a_repair_keeps_the_interface_design_it_did_not_return() -> None:
 
     assert kept.interface_design == previous.interface_design
     assert kept.specialist_advice_decisions == ["UX-1: adopted"]
+
+
+class TestQaWritesAndReviewsToTheTestabilityAdvice:
+    LINES = ["TS-1: AC-1: find the field by its label Title, exactly."]
+
+    def test_the_author_is_given_it(self, tmp_path) -> None:
+        from app.acceptance import requests as acceptance_requests
+        from app.acceptance.criteria import Criterion
+
+        request = acceptance_requests.build_author_request(
+            tmp_path, [Criterion(id="AC-1", text="Add a note", source="brief")], testability=self.LINES
+        )
+
+        text = request["messages"][0]["content"]
+        assert "made testable" in text and "TS-1: AC-1: find the field by its label Title" in text
+
+    def test_the_qa_lead_is_given_it(self) -> None:
+        from app.agents.acceptance_reviewer import build_acceptance_review_request
+
+        text = build_acceptance_review_request("AC-1", "suite", "ran", [], "", testability=self.LINES)["messages"][0]["content"]
+
+        assert "testability advice the specification adopted" in text and "TS-1:" in text
+
+    def test_without_it_both_read_as_before(self, tmp_path) -> None:
+        from app.agents.acceptance_reviewer import build_acceptance_review_request
+
+        assert "testability" not in build_acceptance_review_request("AC-1", "s", "r", [], "")["messages"][0]["content"]
+
+    def test_the_stage_takes_what_the_specification_adopted(self) -> None:
+        state = {
+            "specialist_advice": {"testing": ["AC-1: one", "AC-2: two"]},
+            "technical_specification": SimpleNamespace(specialist_advice_decisions=["TS-2: declined - no"]),
+        }
+
+        assert acceptance_nodes_module()._the_testability_advice(state) == ["TS-1: AC-1: one"]
+
+
+def acceptance_nodes_module():
+    from app.graph import acceptance_nodes
+
+    return acceptance_nodes

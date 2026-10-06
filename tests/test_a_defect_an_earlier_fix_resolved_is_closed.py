@@ -157,3 +157,53 @@ class TestTheDispatch:
         state = _state(tmp_path, pending_inner_thread_id="inner")
 
         assert _closed_if_an_earlier_fix_resolved_it(state, cycle, 0) is None
+
+
+class TestTheNextRound:
+    """The second closing point: a defect left open into the next round.
+
+    Measured on one run: the second defect's fix was reverted, the first fix had
+    already made its criterion pass, and it stayed open through two green
+    rounds until the sprint failed on "exhausted remediation attempts" with all
+    of its own criteria passing.
+    """
+
+    def test_the_round_s_own_run_of_the_suite_closes_it(self, tmp_path) -> None:
+        from app.graph.workflow import _closed_by_this_round_s_measurement
+
+        _round_found(tmp_path, **{"AC-4": "passed", "AC-5": "failed"})
+        cycle = RemediationCycle(sprint_goal="Sprint 2", defects=[
+            _defect("the first", status="fixed", regression_test="t"),
+            _defect(failing_criteria=["AC-4"]),
+            _defect("AC-5 filter", failing_criteria=["AC-5"]),
+            _defect("no criterion named"),
+        ])
+
+        closed = _closed_by_this_round_s_measurement(_state(tmp_path), cycle, 3)
+
+        assert [d.status for d in closed.defects] == ["fixed", "fixed", "open", "open"]
+        assert "AC-4" in closed.defects[1].resolution and "round 3" in closed.defects[1].resolution
+        assert closed.defects[1].verified_by == "npm run test:acceptance"
+
+    def test_a_suite_that_did_not_run_closes_nothing(self, tmp_path) -> None:
+        from app.graph.workflow import _closed_by_this_round_s_measurement
+
+        path = tmp_path / suite.RESULT_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran": False, "criteria": {"AC-4": {"status": "passed"}}}))
+        cycle = RemediationCycle(sprint_goal="Sprint 2", defects=[_defect(failing_criteria=["AC-4"])])
+
+        assert _closed_by_this_round_s_measurement(_state(tmp_path), cycle, 3).defects[0].status == "open"
+
+    def test_a_closed_defect_does_not_count_against_the_sprint(self, tmp_path) -> None:
+        from app.graph.workflow import _closed_by_this_round_s_measurement
+        from app.sprint import record_test_run
+
+        _round_found(tmp_path, **{"AC-4": "passed"})
+        cycle = RemediationCycle(sprint_goal="Sprint 2", attempt=1, max_attempts=3,
+                                 defects=[_defect(failing_criteria=["AC-4"])])
+
+        cycle = _closed_by_this_round_s_measurement(_state(tmp_path), cycle, 3)
+        after = record_test_run(cycle, command=["specialist", "testing"], passed=True, new_defects=[])
+
+        assert after.attempt == 1

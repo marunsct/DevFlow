@@ -3456,6 +3456,43 @@ def _closed_if_an_earlier_fix_resolved_it(
         return None
 
 
+def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int) -> Any:
+    """`cycle` with every open defect this round's run of the suite shows resolved marked fixed.
+
+    See `acceptance_nodes.passing_in_the_round`. Never raises: a defect left
+    open here is counted as before.
+    """
+    try:
+        from app.acceptance import suite as acceptance_suite
+        from app.graph import acceptance_nodes
+
+        command = str(acceptance_suite.last_result(state["repository"].root_path).get("command") or "")
+        for index, defect in enumerate(list(cycle.defects)):
+            if defect.status != "open":
+                continue
+            resolved = acceptance_nodes.passing_in_the_round(state, list(defect.failing_criteria or []))
+            if not resolved:
+                continue
+            named = ", ".join(resolved)
+            logger.warning(
+                "Defect '%s' is fixed: %s, failing when it was reported, pass in "
+                "test_round_%d's run of the suite",
+                defect.description[:80], named, test_round,
+            )
+            cycle = mark_defect_fixed(
+                cycle, index,
+                regression_test=f"the locked acceptance tests of {named}",
+                verified_by=command,
+                resolution=(
+                    f"{named} failed when this was reported and pass in the harness's "
+                    f"run of the suite for test round {test_round}."
+                ),
+            )
+    except Exception:  # noqa: BLE001
+        logger.debug("Could not compare open defects with the round's measurement", exc_info=True)
+    return cycle
+
+
 def _failing_criteria_it_names(state: Any, reported: Any) -> list[str]:
     """The criteria a reported defect names that fail now. See `Defect.failing_criteria`."""
     try:
@@ -5761,6 +5798,10 @@ def build_workflow_graph(
         cycle = state.get("remediation") or start_remediation(
             milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
         )
+        # An earlier round's defect whose criteria this round's measurement
+        # finds passing is fixed, whichever fix did it, and does not count
+        # against the sprint as still open.
+        cycle = _closed_by_this_round_s_measurement(state, cycle, test_round)
         # The test command this round left failing, if it left one. See
         # `_needs_a_new_test`.
         caught_by, _ = _the_test_command_this_stage_left_failing(

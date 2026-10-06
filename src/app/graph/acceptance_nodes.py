@@ -453,6 +453,27 @@ def passing_since_reported(state: Any, failing: list[str]) -> list[str]:
     return list(failing)
 
 
+def passing_in_the_round(state: Any, failing: list[str]) -> list[str]:
+    """`failing` when each passes in the harness's run of the suite for this round, else [].
+
+    For a defect an earlier round reported: the round's own run of the locked
+    suite is later than that report, whoever's fix it measures. Measured on one
+    run: the second of two defects with one cause had its fix reverted, the
+    first fix had already made its criterion pass, and the defect stayed open
+    through two green rounds until the sprint failed on "exhausted remediation
+    attempts" with all of its own criteria passing.
+    """
+    if not failing:
+        return []
+    saved = suite.last_result(_root(state)) or {}
+    if not saved.get("ran"):
+        return []
+    entries = {**(saved.get("criteria") or {}), **(saved.get("change_requests") or {})}
+    if all((entries.get(criterion) or {}).get("status") == "passed" for criterion in failing):
+        return list(failing)
+    return []
+
+
 def done_by_the_definition(state: Any) -> list[str]:
     """The criteria due now when every one of them passes in the harness's last run, else [].
 

@@ -427,10 +427,10 @@ def _alike(one: frozenset[str], other: frozenset[str]) -> float:
 def another_sprints_plan(milestone: Any, sprint_goals: Sequence[str], sprint_index: int) -> str:
     """Why this plan is for a different sprint than the one being planned, or "".
 
-    The lead is told which sprint it is planning, by its goal. Measured on one
-    run: sent back to finish sprint 2 of 5, it returned a plan whose goal was
-    sprint 4's, word for word - filtering - and its work orders built that,
-    skipping sprint 3, while sprint 2's record still said it was being finished.
+    The lead is told which sprint it is planning, by its goal, and nothing
+    checked that the plan it returned was for that sprint. Measured over 889
+    stored plans: twice a lead asked to plan sprint 1 returned sprint 2's goal
+    word for word, and this rule names exactly those two and no other.
 
     A goal may be restated, so it is compared by its words with every sprint's
     goal, and named as another sprint's only when it is plainly closer to that

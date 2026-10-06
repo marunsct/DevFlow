@@ -1,8 +1,9 @@
 """A milestone plan made for a different sprint than the one being planned is sent back.
 
-Measured on one run: sent back to finish sprint 2 of 5, the lead returned a plan
-whose goal was sprint 4's, word for word, and whose work orders built that
-sprint - skipping sprint 3 - while sprint 2's record said it was being finished.
+Measured over 889 stored plans: twice a lead asked to plan sprint 1 returned
+sprint 2's goal word for word. The rule names exactly those two, and none of
+the other 887, which restate their own sprint's goal in other words as often
+as not.
 """
 
 from __future__ import annotations

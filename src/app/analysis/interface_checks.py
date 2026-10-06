@@ -36,6 +36,42 @@ def asks_for_small_screens(brief_text: str) -> bool:
     return bool(_SMALL_SCREENS.search(brief_text or ""))
 
 
+#: A sentence about something a person operates on a page.
+_A_CONTROL = re.compile(
+    r"\b(?:field|text ?area|box|button|checkbox|check box|link|menu|tab|switch|toggle|select|"
+    r"drop-?down|input|control|radio|slider|combo ?box)e?s?\b",
+    re.I,
+)
+
+#: The names a sentence gives: `labelled "Title"`, `named "All", "Active" and "Completed"`.
+_GIVES_NAMES = re.compile(
+    r"""\b(?:labell?ed|named|titled)\s+((?:["“][^"”\n]{1,60}["”](?:\s*(?:,|\band\b|\bor\b)\s*)*)+)""",
+    re.I,
+)
+_A_QUOTED_NAME = re.compile(r"""["“]([^"”\n]{1,60})["”]""")
+
+
+def controls_the_brief_names(brief_text: str) -> list[str]:
+    """Every name the brief gives a control a person operates, in order, once each.
+
+    Read from sentences that are about a control (a field, a box, a link ...)
+    and give it a quoted name: `a text field labelled "Title"`, `three
+    buttons named "All", "Active" and "Completed"`. A product that gives the
+    control another name, or none, is not the product the brief describes - and
+    a test that finds it some other way cannot tell the two apart.
+    """
+    names: list[str] = []
+    for sentence in re.split(r"\n+|(?<=[.;!?])\s+", brief_text or ""):
+        if not _A_CONTROL.search(sentence):
+            continue
+        for run in _GIVES_NAMES.finditer(sentence):
+            for name in _A_QUOTED_NAME.findall(run.group(1)):
+                name = name.strip()
+                if name and name not in names:
+                    names.append(name)
+    return names
+
+
 def _same(one: str, other: str) -> bool:
     return " ".join(one.split()) == " ".join(other.split())
 
@@ -81,4 +117,4 @@ def nobody_styled_it(repo_root: str | Path | None) -> str:
         return ""
 
 
-__all__ = ["asks_for_small_screens", "nobody_styled_it"]
+__all__ = ["asks_for_small_screens", "controls_the_brief_names", "nobody_styled_it"]

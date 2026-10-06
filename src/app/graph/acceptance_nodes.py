@@ -219,6 +219,10 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(suite.tests_that_broke_themselves(root, result))
     problems.extend(suite.tests_the_runner_never_ran(root, result))
     problems.extend(suite.locators_nobody_sees(root))
+    problems.extend(suite.locators_that_pick_one(root))
+    problems.extend(
+        suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
+    )
     problems.extend(suite.assertions_that_do_not_exist(root))
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))

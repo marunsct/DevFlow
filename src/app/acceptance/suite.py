@@ -767,6 +767,87 @@ def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def locators_that_pick_one(repo_root: str | Path) -> list[str]:
+    """Where the suite acts on whichever of several matching controls comes first.
+
+    A locator that matches two controls refuses to act, which is how a test
+    notices a page that shows one control twice. Measured on one run: every
+    filter was pressed through a selector handed to the page, which acts on the
+    first match; the product drew each filter twice, the locked suite passed,
+    and the benchmark's hidden test that finds the filter by its name failed on
+    "resolved to 2 elements".
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].locators_that_pick_one:
+        return []
+    patterns = [re.compile(pattern) for pattern in found[0].locators_that_pick_one]
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        hits = sorted({text.count("\n", 0, match.start()) + 1
+                       for pattern in patterns for match in pattern.finditer(text)})
+        if not hits:
+            continue
+        snippet = lines[hits[0] - 1].strip()[:160]
+        where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` acts on whichever match comes first, on "
+            f"line(s) {where} (`{snippet}`), so a page that shows the same control twice still "
+            "passes. Find each control with a locator that refuses more than one match - by the "
+            "label or name the brief gives it - and act on that locator."
+        )
+    return problems[:6]
+
+
+def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
+    """Each control the brief names that no test finds by that name, as one problem.
+
+    Measured on one run: the brief gave every item a box labelled "Done", the
+    product gave it no label, and the locked suite - which found the box by a
+    class - passed; the benchmark's hidden tests, which find it by "Done",
+    failed twice. A suite that never asks for a name cannot tell a product that
+    gave it from one that did not.
+    """
+    from app.analysis.interface_checks import controls_the_brief_names
+
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].finds_by_name:
+        return []
+    names = controls_the_brief_names(brief_text)
+    if not names:
+        return []
+    texts = []
+    for path in suite_files(repo_root):
+        try:
+            texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    if not texts:
+        return []
+    suite_text = "\n".join(texts)
+    missing = [
+        name for name in names
+        if not any(
+            re.search(template.replace("{name}", re.escape(name)), suite_text)
+            for template in found[0].finds_by_name
+        )
+    ]
+    if not missing:
+        return []
+    return [
+        "The brief names these controls and no test finds any of them by that name: "
+        + ", ".join(f'"{name}"' for name in missing)
+        + ". A test that finds a control another way passes whatever the product calls it - "
+        "or when it gives it no name at all. Find each by the exact name the brief gives it, "
+        "in a test that uses it."
+    ]
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 

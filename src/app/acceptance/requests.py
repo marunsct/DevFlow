@@ -65,6 +65,22 @@ def _how_each_was_made_testable(testability: Sequence[str]) -> str:
     )
 
 
+def _the_names_the_brief_gives(brief: str) -> str:
+    """The names the brief gives its controls, each to be found by exactly that name, or ""."""
+    from app.analysis.interface_checks import controls_the_brief_names
+
+    names = controls_the_brief_names(brief)
+    if not names:
+        return ""
+    return (
+        "--- The names the brief gives its controls ---\n"
+        + "\n".join(f'- "{name}"' for name in names)
+        + "\nSome test finds each of these by exactly that name, through a locator that "
+        "refuses two matches. The review sends back a suite that finds any of them another "
+        "way.\n\n"
+    )
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -126,6 +142,7 @@ def build_author_request(
         f"{feedback_text}"
         f"--- How to write them ---\n{_how_to_write_them(repo_root, project, acceptance_dir, stack)}\n\n"
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:BRIEF_CHARS]}\n\n" if brief.strip() else "")
+        + _the_names_the_brief_gives(brief)
         + "--- What to build them against ---\n"
         "Where the brief states the interface - the labels on controls, endpoints, commands, "
         "names - the tests use exactly those words: they are what the customer will check. "

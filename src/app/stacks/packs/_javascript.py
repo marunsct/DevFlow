@@ -547,7 +547,11 @@ control off the page - a record that no longer belongs in the view shown once it
 changes - is a `click()`, not `check()` or `uncheck()`: those confirm the new
 state on the control afterwards, a control that has gone cannot be confirmed,
 and the test times out on a product that did the right thing. Assert the change
-on what the page shows after it."""
+on what the page shows after it. Act on a locator - `page.getByLabel(...).fill(...)`,
+never `page.fill(selector, ...)` or `page.click(selector)` - and never take
+`.first()` of a control found by its name: both act on whichever match comes
+first, so a page that shows the same control twice still passes, where a
+locator refuses more than one."""
 
 #: Locators that find a control by something no person sees. A suite that
 #: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).
@@ -561,10 +565,41 @@ on what the page shows after it."""
 #: list, a `<button>`. One run's locked suite found every task that way, so a
 #: product rendering a plain list would have failed it while doing exactly what
 #: the brief asked.
+#:
+#: And any other CSS selector on an attribute, a class or an id. One run's
+#: locked suite found every completion control as
+#: `input[type="checkbox"].task-complete`: the brief labelled it "Done", the
+#: product gave it no label, the suite passed - and the two hidden tests that
+#: find it by its label failed. A selector on the document's head (a
+#: `meta[name="viewport"]`) is not a control, and an engine prefix
+#: (`text=`, `role=`) is not CSS.
 LOCATORS_NOBODY_SEES = (
     r"\bgetByPlaceholder\s*\(",
     r"\bgetByTestId\s*\(",
-    r"""\blocator\s*\(\s*['"`][^'"`]*\[\s*role\s*[~|^$*]?=""",
+    r"""\blocator\s*\(\s*(['"`])(?![a-z_-]+=)(?!\s*(?:meta|link|script|style|head|html|title)\b)"""
+    r"""(?:(?!\1).)*?(?:\[\s*[\w-]+\s*[~|^$*]?=|[.#][A-Za-z_-])""",
+)
+
+#: Ways a test acts on whichever of several matches comes first. Playwright's
+#: locators are strict - one that matches two controls refuses to act - and
+#: these are the ways round it. One run's locked suite pressed its filters
+#: with `page.click('text=Active')`; the product drew every filter twice, the
+#: suite passed, and the hidden test that finds the filter by its name failed
+#: on "resolved to 2 elements".
+LOCATORS_THAT_PICK_ONE = (
+    r"""\bpage\s*\.\s*(?:click|dblclick|fill|check|uncheck|hover|press|type|tap|focus|"""
+    r"""selectOption|setChecked|setInputFiles|dispatchEvent)\s*\(\s*['"`]""",
+    r"""\b(?:getByLabel|getByText|getByTitle|getByAltText)\s*\([^()]*\)\s*\.\s*(?:first|last|nth)\s*\(""",
+    r"""\bgetByRole\s*\([^()]*\bname\s*:[^()]*\)\s*\.\s*(?:first|last|nth)\s*\(""",
+    r"""\b(?:locator|filter)\s*\([^()]*\bhasText\s*:[^()]*\)\s*\.\s*(?:first|last|nth)\s*\(""",
+)
+
+#: How a test finds a control by a name, with `{name}` for the name escaped.
+#: A suite that never finds a control the brief names this way cannot tell a
+#: product that gave it that name from one that did not.
+FINDS_BY_NAME = (
+    r"""\bgetByLabel\s*\(\s*(?:(['"`]){name}\1|/\^?{name}\$?/)""",
+    r"""\bgetByRole\s*\([^()]*\bname\s*:\s*(?:(['"`]){name}\1|/\^?{name}\$?/)""",
 )
 
 #: The whole shape of a test, callback included. The example once ended in

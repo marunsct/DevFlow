@@ -150,7 +150,7 @@ any other (escalation, failure, change request).
 | `architecture_review` | Senior Architect Reviewer | judgement | approve / changes; ≤ 6 revisions, then escalation (design) |
 | `scaffold` | harness | — | writes the pack's files, installs, runs its unit + acceptance smoke tests, writes `.harness/stack-pack.json` |
 | `acceptance_author` | QA engineer (testing specialist) | judgement | acceptance tests, ≥1 per criterion, test names carry `[AC-n]` |
-| `acceptance_review` | harness + QA lead | judgement | mechanical checks (coverage, runs, tests broken by own code, locators nobody sees, undefined assertions), then reviewer; ≤ 3 rounds; then **lock** |
+| `acceptance_review` | harness + QA lead | judgement | mechanical checks (coverage, runs, tests broken by own code, locators nobody sees - a placeholder, a test id, a CSS class, id or attribute - actions on whichever match comes first, a control the brief names that no test finds by that name, undefined assertions), then reviewer; QA is given the brief's control names up front; ≤ 3 rounds; then **lock** |
 | `scrum_master` | Scrum Master | default | sprint plan; harness assigns every criterion to exactly one sprint |
 | `technical_lead` | Technical Lead | default (judgement on retries) | milestone plan of **work orders** (files, interfaces, steps, test cases, verification); definition of ready |
 | `specialist_worker` | ui_ux, backend, database, testing, documentation, security_reliability | default (judgement on retries) | code and unit tests for one work order |

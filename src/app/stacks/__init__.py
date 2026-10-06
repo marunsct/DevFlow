@@ -106,6 +106,12 @@ class StackPack:
     #: Patterns of locators that find a control by something no person sees (a
     #: placeholder, a test id). An acceptance suite using one is sent back.
     locators_nobody_sees: tuple[str, ...] = ()
+    #: Patterns of actions on whichever of several matching controls comes
+    #: first, which let a page showing one control twice pass. Sent back too.
+    locators_that_pick_one: tuple[str, ...] = ()
+    #: Patterns, with `{name}` for a regex-escaped name, of a test finding a
+    #: control by that name. Every control the brief names must be found so.
+    finds_by_name: tuple[str, ...] = ()
     #: (project root, evidence dir) -> test name -> what the product showed
     #: when that test failed, read from the runner's own failure context.
     failure_pages: Callable[[Path, str], Mapping[str, str]] | None = None

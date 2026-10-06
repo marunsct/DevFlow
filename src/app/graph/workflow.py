@@ -3488,10 +3488,26 @@ def _closed_if_an_earlier_fix_resolved_it(
         from app.graph import acceptance_nodes
 
         defect = cycle.defects[defect_index]
+        root = state["repository"].root_path
         resolved = acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
         if not resolved:
-            return None
-        root = state["repository"].root_path
+            from app.graph.engineering import no_longer_underlined
+
+            why = no_longer_underlined(root, defect.description)
+            if not why:
+                return None
+            logger.warning("Defect '%s' is already fixed: %s Closed without a fixer", defect.description[:80], why)
+            return _handing_on(
+                stage="defect_remediation",
+                defect_cursor=defect_index + 1,
+                fix_base_commit="",
+                remediation=mark_defect_fixed(
+                    cycle, defect_index,
+                    regression_test="the language service's check of the file",
+                    verified_by="the TypeScript language service",
+                    resolution=f"Fixed by an earlier fix in the same round: {why}",
+                ),
+            )
         named = ", ".join(resolved)
         logger.warning(
             "Defect '%s' is already fixed: %s, failing when it was reported, now "

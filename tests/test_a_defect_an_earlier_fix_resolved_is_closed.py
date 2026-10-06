@@ -149,6 +149,25 @@ class TestTheDispatch:
 
         assert _closed_if_an_earlier_fix_resolved_it(_state(tmp_path), cycle, 0) is None
 
+    def test_one_the_language_service_no_longer_underlines_is_closed(self, tmp_path, monkeypatch) -> None:
+        """One run queued three defects for one missing export; the first fix
+        resolved all three, and the other two went to fixers anyway."""
+        from app.analysis import language_service as service
+        from app.graph.workflow import _closed_if_an_earlier_fix_resolved_it
+
+        (tmp_path / "app").mkdir()
+        (tmp_path / "app" / "main.js").write_text("import { load } from './state.js';\n")
+        monkeypatch.setattr("app.analysis.language_service.underlined", lambda *a, **k: service.Underlined(here=[]))
+        cycle = self._cycle(_defect(
+            "app/main.js line 1: Module '\"./state.js\"' has no exported member 'load'. - this fails when the code runs."
+        ))
+
+        update = _closed_if_an_earlier_fix_resolved_it(_state(tmp_path), cycle, 0)
+
+        assert update is not None and update["defect_cursor"] == 1
+        closed = update["remediation"].defects[0]
+        assert closed.status == "fixed" and "no longer underlines it in app/main.js" in closed.resolution
+
     def test_a_stage_already_under_way_is_left_to_finish(self, tmp_path) -> None:
         from app.graph.workflow import _closed_if_an_earlier_fix_resolved_it
 

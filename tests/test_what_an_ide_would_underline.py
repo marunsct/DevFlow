@@ -263,3 +263,52 @@ def test_a_loosely_typed_element_or_the_product_s_own_object_is_not(tmp_path) ->
     found = service.underlined(tmp_path, project / "src" / "app.js", content, project)
 
     assert found is not None and found.here == []
+
+
+class TestADefectAnEarlierFixResolved:
+    """One run's round queued three defects for one missing export and three for
+    one undefined name, each to a fixer of its own after the first had fixed it."""
+
+    DEFECT = "app/src/a.js line 1: Cannot find name 'render'. - this fails when the code runs."
+
+    def test_it_closes_once_the_service_no_longer_underlines_it(self, tmp_path, monkeypatch) -> None:
+        from app.graph import engineering
+
+        _project(tmp_path, {"src/a.js": "export const a = 1;\n"})
+        monkeypatch.setattr("app.analysis.language_service.underlined", lambda *a, **k: service.Underlined(here=[]))
+
+        assert engineering.no_longer_underlined(str(tmp_path), self.DEFECT) == (
+            "The language service no longer underlines it in app/src/a.js."
+        )
+
+    def test_it_stays_while_the_service_still_does(self, tmp_path, monkeypatch) -> None:
+        from app.graph import engineering
+
+        _project(tmp_path, {"src/a.js": "export const a = render();\n"})
+        monkeypatch.setattr("app.analysis.language_service.underlined", lambda *a, **k: service.Underlined(here=[
+            {"line": 1, "code": 2304, "message": "Cannot find name 'render'.", "text": "export const a = render();"},
+        ]))
+
+        assert engineering.no_longer_underlined(str(tmp_path), self.DEFECT) == ""
+
+    def test_a_defect_of_another_kind_is_not_its_to_close(self, tmp_path) -> None:
+        from app.graph import engineering
+
+        assert engineering.no_longer_underlined(str(tmp_path), "The list does not update after a change.") == ""
+
+    def test_the_gate_writes_what_it_reads_back(self, tmp_path, monkeypatch) -> None:
+        import subprocess
+
+        from app.graph import engineering
+
+        subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+        before = _committed(tmp_path, {"app/src/a.js": "export const a = 1;\n"}, "before")
+        _committed(tmp_path, {"app/src/a.js": "export const a = render();\n"}, "batch")
+        monkeypatch.setattr("app.analysis.language_service.underlined", lambda *a, **k: service.Underlined(here=[
+            {"line": 1, "code": 2304, "message": "Cannot find name 'render'.", "text": "export const a = render();"},
+        ]))
+        (defect,) = engineering.underlined_in_the_batch({"milestone_plan": None}, str(tmp_path), before)
+        (tmp_path / "app" / "src" / "a.js").write_text("export const a = 1;\n")
+        monkeypatch.setattr("app.analysis.language_service.underlined", lambda *a, **k: service.Underlined(here=[]))
+
+        assert engineering.no_longer_underlined(str(tmp_path), defect.description)

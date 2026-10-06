@@ -19,6 +19,7 @@ knows.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -149,6 +150,42 @@ MOST_FILES_UNDERLINED = 12
 MOST_UNDERLINED_DEFECTS = 6
 
 
+#: How an underlined defect's description ends, so it can be read back.
+FAILS_WHEN_IT_RUNS = " - this fails when the code runs."
+_AN_UNDERLINED_DEFECT = re.compile(r"^(?P<file>\S+) line [\d, ]+: (?P<message>.+)" + re.escape(FAILS_WHEN_IT_RUNS) + "$", re.S)
+
+
+def no_longer_underlined(root: str, description: str) -> str:
+    """Why an underlined defect is already fixed, or "" when it still holds or cannot be told.
+
+    The language service is asked again about the file the defect names. One
+    run's round queued three defects for one missing export - the round's own,
+    and the language service's in the two files that import it - and three for
+    one undefined name; each went to a fixer of its own, five to eight minutes
+    apiece, after the first had already fixed it. Never raises.
+    """
+    found = _AN_UNDERLINED_DEFECT.match(str(description or "").strip())
+    if found is None:
+        return ""
+    try:
+        from app.analysis.language_service import underlined_any
+        from app.tools.repository import pinned_project_directory
+
+        target = Path(root) / found.group("file")
+        if not target.is_file():
+            return f"{found.group('file')} no longer exists."
+        pinned = pinned_project_directory(Path(root))
+        project = Path(root) / pinned if pinned else None
+        now = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
+        if now is None:
+            return ""
+        if any(finding["message"] == found.group("message") for finding in now.here):
+            return ""
+        return f"The language service no longer underlines it in {found.group('file')}."
+    except Exception:  # noqa: BLE001 - a defect not closed goes to a fixer as before
+        return ""
+
+
 def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     """Defects for what an IDE still underlines in the batch's files, once every work order is done.
 
@@ -184,7 +221,7 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
         for message, where in grouped.items():
             lines = ", ".join(str(f["line"]) for f in where[:6])
             defects.append(ReportedDefect(
-                description=f"{relative} line {lines}: {message} - this fails when the code runs.",
+                description=f"{relative} line {lines}: {message}{FAILS_WHEN_IT_RUNS}",
                 severity="major",
                 reproduction_steps=f"Read {relative} at line {lines}: `{where[0]['text']}`.",
                 expected_behavior="Every name the code uses is defined or imported, and every import names something its module exports.",

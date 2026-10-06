@@ -892,6 +892,38 @@ def locators_that_contradict_their_assertions(repo_root: str | Path) -> list[str
     return problems[:6]
 
 
+def locators_by_a_name_the_role_never_has(repo_root: str | Path) -> list[str]:
+    """Where the suite finds something by a name its role never takes from what it shows.
+
+    Such a locator matches nothing on a page that shows exactly what the brief
+    asks, so the test can never pass. See the pack's `locators_by_a_missing_name`.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].locators_by_a_missing_name:
+        return []
+    patterns = [re.compile(pattern) for pattern in found[0].locators_by_a_missing_name]
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        hits = sorted({text.count("\n", 0, match.start()) + 1
+                       for pattern in patterns for match in pattern.finditer(text)})
+        if not hits:
+            continue
+        snippet = text.splitlines()[hits[0] - 1].strip()[:160]
+        where = ", ".join(str(line) for line in hits[:12])
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` finds an element by a name its role never "
+            f"takes from what it shows, on line(s) {where} (`{snippet}`): the locator matches "
+            "nothing on a page that shows that text, so the test can never pass. Find it by "
+            "its role and filter it by the text it shows."
+        )
+    return problems[:6]
+
+
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
     """Each control the brief names that no test finds by that name, as one problem.
 

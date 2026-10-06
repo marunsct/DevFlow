@@ -220,6 +220,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(suite.tests_the_runner_never_ran(root, result))
     problems.extend(suite.locators_nobody_sees(root))
     problems.extend(suite.locators_that_pick_one(root))
+    problems.extend(suite.locators_by_a_name_the_role_never_has(root))
     problems.extend(suite.locators_that_contradict_their_assertions(root))
     problems.extend(
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
@@ -831,6 +832,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.tests_the_runner_never_ran(root, result),
         *suite.assertions_that_do_not_exist(root),
+        *suite.locators_by_a_name_the_role_never_has(root),
         *suite.tests_that_need_what_they_never_made(root, result),
     ]
     return acceptance_requests.acceptance_block(result, due), broken

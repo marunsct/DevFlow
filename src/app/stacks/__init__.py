@@ -109,6 +109,9 @@ class StackPack:
     #: Patterns of actions on whichever of several matching controls comes
     #: first, which let a page showing one control twice pass. Sent back too.
     locators_that_pick_one: tuple[str, ...] = ()
+    #: Patterns of a role found by a name it never takes from what it shows,
+    #: which matches nothing on a right page. Sent back, and reopened once built.
+    locators_by_a_missing_name: tuple[str, ...] = ()
     #: Patterns, with `{name}` for a regex-escaped name, of a test finding a
     #: control by that name. Every control the brief names must be found so.
     finds_by_name: tuple[str, ...] = ()

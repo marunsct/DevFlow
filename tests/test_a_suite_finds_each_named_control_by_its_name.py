@@ -231,3 +231,30 @@ def test_what_the_rules_say_names_no_product_and_no_control(tmp_path) -> None:
     assert rules
     for word in BANNED:
         assert not re.search(rf"\b{re.escape(word)}\b", rules), word
+
+
+class TestARoleFoundByANameItNeverHas:
+    """Measured in a browser on one run: `getByRole('listitem', { name: 'Original' })`
+    found 0 items on a page listing "Original", `filter({ hasText })` found 1, and
+    the locked edit tests that used it could never pass."""
+
+    def test_is_named_with_its_lines(self, tmp_path) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(
+            "test('[AC-1] keeps', async ({ page }) => {\n"
+            "  const one = page.getByRole('listitem', { name: 'Original' }).first();\n"
+            "  const two = page.getByRole('listitem').filter({ hasText: 'Original' });\n"
+            "  await page.getByRole('button', { name: 'Keep', exact: true }).click();\n"
+            "});\n"
+        )
+
+        [problem] = suite.locators_by_a_name_the_role_never_has(tmp_path)
+
+        assert "line(s) 2 " in problem and "filter it by the text it shows" in problem
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", problem.split("(`")[0].lower() + problem.split("`)")[-1].lower()), word
+
+    def test_the_guide_says_how_to_find_an_item(self) -> None:
+        from app.stacks.packs._javascript import FIND_CONTROLS
+
+        assert "A list item takes no name from its text" in " ".join(FIND_CONTROLS.split())

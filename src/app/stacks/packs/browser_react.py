@@ -213,6 +213,7 @@ PACK = StackPack(
     runtime_report=js.PAGE_LOAD_REPORT,
     locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     locators_that_pick_one=js.LOCATORS_THAT_PICK_ONE,
+    locators_by_a_missing_name=js.LOCATORS_BY_A_NAME_THE_ROLE_NEVER_HAS,
     finds_by_name=js.FINDS_BY_NAME,
     contradicting_locators=js.asserted_without_the_text_it_is_found_by,
     locator_left_behind=js.a_locator_left_behind,

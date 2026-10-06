@@ -559,7 +559,10 @@ never `page.fill(selector, ...)` or `page.click(selector)` - and never take
 `.first()` of a control found by its name: both act on whichever match comes
 first, so a page that shows the same control twice still passes, where a
 locator refuses more than one. A locator found by its text keeps that filter:
-once the test changes the text, find the item again by its new text."""
+once the test changes the text, find the item again by its new text. A list
+item takes no name from its text: find one by
+`page.getByRole('listitem').filter({ hasText: '...' })`, never by
+`getByRole('listitem', { name: '...' })`, which matches none."""
 
 #: Locators that find a control by something no person sees. A suite that
 #: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).
@@ -587,6 +590,16 @@ LOCATORS_NOBODY_SEES = (
     r"""\blocator\s*\(\s*(['"`])(?![a-z_-]+=)(?!\s*(?:meta|link|script|style|head|html|title)\b)"""
     r"""(?:(?!\1).)*?(?:\[\s*[\w-]+\s*[~|^$*]?=|[.#][A-Za-z_-])""",
 )
+
+#: Roles that take no name from what they show, found by a `name` anyway: the
+#: locator matches nothing on a page that shows exactly what the brief asks.
+#: Measured on one run, in a browser: `getByRole('listitem', { name: 'Original' })`
+#: found 0 items on a page listing "Original"; `filter({ hasText })` found 1.
+#: The locked edit tests that used it could never pass.
+LOCATORS_BY_A_NAME_THE_ROLE_NEVER_HAS = (
+    r"""\bgetByRole\s*\(\s*['"`](?:listitem|list|paragraph|generic)['"`]\s*,\s*\{[^}]*\bname\s*:""",
+)
+
 
 #: Ways a test acts on whichever of several matches comes first. Playwright's
 #: locators are strict - one that matches two controls refuses to act - and

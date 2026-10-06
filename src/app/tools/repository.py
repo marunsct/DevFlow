@@ -589,6 +589,66 @@ def _without_read_line_numbers(wanted: str) -> str | None:
     return "\n".join(stripped) if removed else None
 
 
+#: A gutter exactly as a read prints it - the number, then two spaces, a tab
+#: or a bar - so the line's own indentation after it is kept. The digits are
+#: captured to check they count up the way a read's do.
+_COPIED_GUTTER = re.compile(r"^[ \t]*>?[ \t]*(\d+)(?:\t| {2}| ?\| ?)")
+
+
+def _gutter_stripped(text: str) -> str:
+    """`text` with a read's gutter taken off each line that has one, indentation kept."""
+    stripped = []
+    for line in text.splitlines():
+        found = _COPIED_GUTTER.match(line)
+        stripped.append(line[found.end():] if found else line)
+    return "\n".join(stripped) + ("\n" if text.endswith("\n") else "")
+
+
+def _content_without_a_copied_gutter(content: str, first_line: int | None = None) -> str:
+    """`content` with `read_file`'s line numbers removed, when it plainly carries them.
+
+    Plainly: every line with text in it starts with a gutter, and the numbers
+    count up one at a time - or, for one line, it is the number of the line
+    being replaced. Code whose lines begin with numbers does not count up from
+    the line it lands on. Measured on one run: five edits to a page each wrote
+    a gutter into it, and the page showed "11", "20", "21", "22" and "24" in
+    front of its heading, its filters and its list.
+    """
+    numbers = []
+    for line in content.splitlines():
+        if not line.strip():
+            continue
+        found = _COPIED_GUTTER.match(line)
+        if not found:
+            return content
+        numbers.append(int(found.group(1)))
+    if not numbers:
+        return content
+    if len(numbers) == 1:
+        if first_line is None or numbers[0] != first_line:
+            return content
+    elif any(later - earlier != 1 for earlier, later in zip(numbers, numbers[1:])):
+        return content
+    return _gutter_stripped(content)
+
+
+def _the_replacement_without_its_find_s_gutter(find: str, replace: str) -> str:
+    """`replace` without the line numbers its `find` was matched without. See below.
+
+    The edit tool forgave a `find` copied with `read_file`'s line numbers and
+    then wrote `replace` - copied the same way - as it came: one run's edit was
+    told "Matched after removing the line numbers from your text" while its
+    `11  <h1 ...>` went into the page. Only when every line of `replace` with
+    text in it carries a gutter, as every line of the copied `find` did.
+    """
+    if _without_read_line_numbers(find) is None:
+        return replace
+    lines = [line for line in replace.splitlines() if line.strip()]
+    if not lines or not all(_COPIED_GUTTER.match(line) for line in lines):
+        return replace
+    return _gutter_stripped(replace)
+
+
 def _without_double_escaping(wanted: str) -> str | None:
     """`wanted` with doubled backslashes collapsed, or None if there are none.
 
@@ -2894,6 +2954,7 @@ def replace_approved_lines(
             whose line numbers have drifted is applied at the range's new
             position instead of being refused, and costs you nothing.
     """
+    content = _content_without_a_copied_gutter(content, start_line)
     root, target = _guard_a_targeted_change(repo_root, relative_path, content)
 
     with _MUTATION_LOCK:
@@ -3247,13 +3308,16 @@ def edit_approved_artifact(
                 if span is None:
                     continue
                 start, end = span
+                written = _the_replacement_without_its_find_s_gutter(find, replace)
+                if written != replace:
+                    explanation += " The same line numbers were removed from your `replace`."
                 _write_unless_it_changes_nothing(
                     target,
                     original,
-                    original[:start] + replace + original[end:],
+                    original[:start] + written + original[end:],
                     relative_path,
                 )
-                return _edited(target, root, relative_path, replace, explanation, find)
+                return _edited(target, root, relative_path, written, explanation, find)
 
             # Before anything else: the model may be re-sending an edit it
             # already made, in which case every other message here is a
@@ -6028,6 +6092,8 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Artifact path is outside the repository root: {relative_path}"
         )
+    if not by_the_workflow:
+        content = _content_without_a_copied_gutter(content, 1)
 
     if is_secret_path(target):
         raise RepositoryToolError(

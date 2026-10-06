@@ -136,3 +136,54 @@ class TestAPageKeepsItsNewlines:
     ])
     def test_what_counts(self, path, text, found) -> None:
         assert escapes_between_tags(path, text) is found
+
+
+class TestACopiedGutterIsNotWritten:
+    """One run's edits to a page each wrote `read_file`'s line number into it -
+    "Matched after removing the line numbers from your text" for the `find`, and
+    `11  <h1 ...>` for the `replace` - and the page showed "11", "20", "21",
+    "22" and "24" in front of its heading, its filters and its list."""
+
+    def test_an_edit_matched_without_its_gutter_writes_its_replacement_without_one(self, tools, tmp_path) -> None:
+        from app.tools.repository import edit_approved_artifact
+
+        page = tmp_path / "app" / "index.html"
+        page.write_text(PAGE)
+
+        result = edit_approved_artifact(
+            str(tmp_path), "app/index.html",
+            "   5    <title>Notes</title>", "   5    <title>Notes and more</title>",
+        )
+
+        assert "  <title>Notes and more</title>\n" in page.read_text()
+        assert "5  <title>" not in page.read_text()
+        assert "removed from your `replace`" in str(result)
+
+    def test_lines_numbered_in_order_lose_their_numbers(self, tools, tmp_path) -> None:
+        page = tmp_path / "app" / "index.html"
+        page.write_text(PAGE)
+
+        tools.replace_lines("app/index.html", 4, 5, '   4    <meta charset="UTF-8">\n   5    <title>Kept</title>')
+
+        assert '  <meta charset="UTF-8">\n  <title>Kept</title>\n' in page.read_text()
+
+    def test_one_line_numbered_as_the_line_it_replaces(self, tools, tmp_path) -> None:
+        page = tmp_path / "app" / "index.html"
+        page.write_text(PAGE)
+
+        tools.replace_lines("app/index.html", 5, 5, "    5    <title>One</title>")
+
+        assert "  <title>One</title>" in page.read_text() and "5  <title>" not in page.read_text()
+
+    @pytest.mark.parametrize("content", [
+        "1 apple\n3 pears\n",       # does not count up
+        "7 days\n",                 # one line, not the line it replaces
+        "plain text\n2 more\n",     # not every line
+    ])
+    def test_text_that_only_starts_with_numbers_is_kept(self, tools, tmp_path, content) -> None:
+        notes = tmp_path / "app" / "notes.txt"
+        notes.write_text("x\ny\n")
+
+        tools.replace_lines("app/notes.txt", 1, 2, content.rstrip("\n"))
+
+        assert notes.read_text() == content

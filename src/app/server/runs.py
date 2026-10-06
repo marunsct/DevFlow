@@ -1049,6 +1049,7 @@ _WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
     "product_manager": ("Understanding your product", "Reading your document to work out what you want built and who it is for."),
     "tools_models": ("Comparing the options", "Weighing up the technologies and AI models that would suit this product."),
     "stack_selector": ("Choosing the technology", "Settling on the languages, frameworks and services the build will use."),
+    "specialist_consultation": ("Asking the specialists", "Getting the interface, data and service specialists' advice before the technical plan is written."),
     "principal_architect": ("Designing how it works", "Writing the technical plan: the pieces, the data, and how they fit together."),
     "architecture_review": ("Checking the design", "A second opinion on the plan, looking for security holes and things that will not work."),
     "user_review_specification": ("Your review", "Paused for you to read the technical plan and say whether to continue."),

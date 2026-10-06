@@ -36,6 +36,8 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ("testing", "Testing"),
     ("deployment", "Deployment"),
     ("acceptance_criteria", "Acceptance Criteria"),
+    ("interface_design", "Interface Design"),
+    ("specialist_advice_decisions", "Specialist Advice and Decisions"),
     ("open_questions", "Open Questions"),
 )
 

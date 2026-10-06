@@ -65,7 +65,11 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
     "ui_ux": (
         "You are the UI and UX specialist. You MUST write complete, "
         "production-ready frontend code. Do NOT just 'design' or output "
-        "snippets. Build and verify it the way this run's stack says: where the "
+        "snippets. Build the interface to the interface design in the "
+        "specification - layout at a phone's width and a desktop's, each control's "
+        "states, feedback after each action, accessibility, and the visual style - "
+        "and style it: an interface left in the browser's defaults is not finished. "
+        "Build and verify it the way this run's stack says: where the "
         "stack has a build step, run it with `run_terminal_command` and fix "
         "every compilation and linter error before returning; where the stack "
         "is plain HTML/CSS/JS with no build tooling, there is nothing to "
@@ -699,6 +703,19 @@ def _a_file_another_specialist_is_also_given(
     )
 
 
+def _the_interface_design(design: Sequence[str]) -> str:
+    """The specification's interface design for a task that builds the interface, or ""."""
+    lines = [" ".join(str(line).split()) for line in design or () if str(line).strip()]
+    if not lines:
+        return ""
+    return (
+        "--- The interface design in the specification (build your part to it) ---\n"
+        + "\n".join(f"- {line}" for line in lines)
+        + "\nThe stylesheet the scaffold left is a reset, not a design: style what you build "
+        "to this, at a phone's width and a desktop's.\n\n"
+    )
+
+
 def build_specialist_task_request(
     task_description: str,
     acceptance_criteria: list[str],
@@ -706,8 +723,12 @@ def build_specialist_task_request(
     stack: Any = None,
     other_tasks: Sequence[Any] = (),
     work_order: Any = None,
+    interface_design: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for one delegated specialist task.
+
+    `interface_design` is the specification's, given to a task that builds the
+    interface: the layout, states, feedback and visual style it is built to.
 
     `work_order` is the `SpecialistTask` itself, whose files, interfaces, steps,
     edge cases, test cases and verification commands are the rest of the
@@ -731,6 +752,7 @@ def build_specialist_task_request(
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
         f"{order}"
+        f"{_the_interface_design(interface_design)}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
         f"{_a_file_another_specialist_is_also_given(task_description, acceptance_criteria, other_tasks)}"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"

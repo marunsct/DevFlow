@@ -159,6 +159,12 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
 
     monkeypatch.setattr(acceptance_nodes, "scaffold", lambda state, config, ctx: {"stage": "acceptance_author"})
     monkeypatch.setattr(acceptance_nodes, "acceptance_author", lambda state, config, ctx: {"stage": "scrum_master"})
+    # And the specialists consulted before the specification: nobody here, so
+    # the stage passes straight to the architect. It has tests of its own
+    # (`test_the_specialists_advise_before_the_specification.py`).
+    from app.agents import specialist_advice
+
+    monkeypatch.setattr(specialist_advice, "roles_to_consult", lambda *args, **kwargs: [])
     return registry
 
 

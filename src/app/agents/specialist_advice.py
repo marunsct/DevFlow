@@ -1,0 +1,259 @@
+"""What the specialists advise before the technical specification is written.
+
+The architect wrote the specification alone, and nothing in it described the
+interface: its sections are scope, components, data, contracts, security,
+testing and deployment. The UI/UX specialist then built from work orders drawn
+against functional acceptance tests. Measured over the last 26 stored products:
+20 still shipped the scaffold's 11-line stylesheet, untouched by any stage - a
+page with the browser's own defaults and nothing designed.
+
+So the specialists a product needs are asked first, each in one structured
+answer: the UI/UX specialist when the product has an interface, the database
+specialist when it keeps data of its own, the backend specialist when it serves
+requests. The specification then takes up or declines each item, by id, and a
+product with an interface gets an `interface_design` section built from the
+UI/UX advice - which the lead's work orders and the UI/UX specialist's brief
+carry from there.
+"""
+
+from __future__ import annotations
+
+import re
+from pathlib import Path
+from typing import Any
+
+from langchain_core.language_models.chat_models import BaseChatModel
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.agents.role_agent import create_role_agent
+from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
+
+#: The roles consulted, in the order they are asked.
+ADVICE_ROLES = ("ui_ux", "database", "backend")
+
+#: Each role's prefix for the ids the specification answers by.
+ID_PREFIX = {"ui_ux": "UX", "database": "DB", "backend": "BE"}
+
+#: How a role is named to the architect.
+ROLE_TITLE = {"ui_ux": "UI/UX specialist", "database": "database specialist", "backend": "backend specialist"}
+
+#: At most this many items per role: enough to design from, few enough that
+#: each one is a decision rather than a list to skim.
+MOST_RECOMMENDATIONS = 10
+
+#: A product kind that has an interface a person uses. A program run from a
+#: terminal has one too - its commands, options, output and messages.
+_HAS_AN_INTERFACE = frozenset({"browser_app", "fullstack", "cli"})
+
+#: A product kind that serves requests.
+_SERVES_REQUESTS = frozenset({"http_api", "fullstack"})
+
+#: A `database` value that names no store of the product's own.
+_NO_STORE = re.compile(r"^(?:|-|n/?a\b.*|none\b.*|no\b.*|not (?:applicable|needed|required)\b.*)$", re.I)
+
+
+class SpecialistAdvice(BaseModel):
+    """One specialist's advice for the technical specification."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    recommendations: list[str] = Field(
+        ...,
+        min_length=1,
+        max_length=MOST_RECOMMENDATIONS,
+        description=(
+            "Each one concrete sentence the architect can adopt or decline and a "
+            "reviewer can check against the product - never a general aim."
+        ),
+    )
+
+
+def roles_to_consult(stack: Any, brief_text: str = "") -> list[str]:
+    """The specialists this product needs to hear from, by what it is.
+
+    UI/UX when it has an interface, database when its stack keeps data of its
+    own, backend when it serves requests. Never raises: with nothing to judge
+    by, nobody is consulted and the architect works as before.
+    """
+    try:
+        from app.stacks import product_kind
+
+        kind = product_kind(stack, brief_text)
+        database = str(getattr(stack, "database", "") or "").strip()
+    except Exception:  # noqa: BLE001
+        return []
+    roles = []
+    if kind in _HAS_AN_INTERFACE:
+        roles.append("ui_ux")
+    if stack is not None and not _NO_STORE.match(database):
+        roles.append("database")
+    if kind in _SERVES_REQUESTS:
+        roles.append("backend")
+    return roles
+
+
+_WHAT_TO_COVER = {
+    "ui_ux": (
+        "how a person meets the product. The layout at a phone's width and at a "
+        "desktop's, and what changes between them; the visual hierarchy - what is "
+        "seen first and what is secondary; every control and every item shown, with "
+        "each of its states - empty, focused, hovered, disabled, invalid, finished - "
+        "and how each looks; the feedback after each action; what is shown when there "
+        "is nothing yet; accessibility - a label for every control, use by keyboard "
+        "alone, focus that can be seen, enough contrast; and a small visual style the "
+        "whole interface keeps to: a spacing scale, type sizes, a few colours with "
+        "their uses. For a program run from a terminal the interface is its commands, "
+        "options, output and messages: how each reads, and how an error says what to "
+        "do next."
+    ),
+    "database": (
+        "the data the product keeps. Each kind of record, its fields and their types, "
+        "how a record is identified, which fields are required and how each is "
+        "validated, how the data is stored, loaded and saved, what happens when "
+        "stored data is missing, malformed or written by an older version, and what "
+        "must stay consistent between records."
+    ),
+    "backend": (
+        "the service. Each operation, what it accepts and what it returns, how input "
+        "is validated, the error responses and status codes, what happens when two "
+        "requests change the same thing at once, configuration, and limits."
+    ),
+}
+
+_SYSTEM_PROMPT = (
+    "You are a specialist on a product team, asked for your advice before the "
+    "architect writes the technical specification. You advise; you write no code "
+    "and no files. Keep within the brief: the names it gives controls, fields and "
+    "messages are fixed, its required behaviour is fixed, and its constraints - "
+    "what may be depended on, how large the product may be - hold. Advice that "
+    "would break any of them is wrong. Each recommendation is one concrete sentence "
+    "the architect can adopt or decline and a reviewer can check against the "
+    "product: name what, where and how - never a general aim such as 'make it "
+    "intuitive' or 'follow best practices'. Give the few that matter most, at most "
+    f"{MOST_RECOMMENDATIONS}.\n\n" + STRUCTURED_RESPONSE_RULE
+)
+
+
+def build_advice_request(role: str, brief_text: str, intake_text: str, stack_text: str) -> dict[str, list[dict[str, str]]]:
+    """The input asking one specialist for its advice."""
+    content = (
+        f"--- The brief ---\n{brief_text}\n\n"
+        f"--- The product intake ---\n{intake_text}\n\n"
+        f"--- The technology stack chosen ---\n{stack_text}\n\n"
+        f"As the {ROLE_TITLE[role]}, advise the architect on {_WHAT_TO_COVER[role]}"
+    )
+    return {"messages": [{"role": "user", "content": content}]}
+
+
+def create_specialist_advice_agent(
+    role: str,
+    model: str | BaseChatModel | None = None,
+    *,
+    checkpointer: BaseCheckpointSaver | None = None,
+    repo_root: str | Path | None = None,
+    allow_subdirectories: bool = True,
+) -> Any:
+    """The agent that gives one role's advice. It writes nothing."""
+    return create_role_agent(
+        name=f"{role}_advisor",
+        stage="specialist_consultation",
+        system_prompt=_SYSTEM_PROMPT,
+        response_format=SpecialistAdvice,
+        model=model,
+        checkpointer=checkpointer,
+        repo_root=repo_root,
+        allow_subdirectories=allow_subdirectories,
+        can_write=False,
+    )
+
+
+def advice_from(answer: Any) -> list[str]:
+    """The recommendations an answer gave, cleaned of blanks and repeats."""
+    kept: list[str] = []
+    for item in getattr(answer, "recommendations", None) or []:
+        text = " ".join(str(item).split())
+        if text and text not in kept:
+            kept.append(text)
+    return kept[:MOST_RECOMMENDATIONS]
+
+
+def _numbered(advice: dict[str, list[str]]) -> list[tuple[str, str, str]]:
+    """(role, id, recommendation) for every item, in the order the roles were asked."""
+    return [
+        (role, f"{ID_PREFIX[role]}-{number}", item)
+        for role in ADVICE_ROLES
+        for number, item in enumerate(advice.get(role) or [], start=1)
+    ]
+
+
+def advice_block(advice: dict[str, list[str]] | None) -> str:
+    """The advice, numbered, with what the architect must do with it; "" when there is none."""
+    items = _numbered(advice or {})
+    if not items:
+        return ""
+    lines = ["--- What the specialists advise, before you write the specification ---"]
+    for role in ADVICE_ROLES:
+        mine = [(ident, text) for owner, ident, text in items if owner == role]
+        if mine:
+            lines.append(f"The {ROLE_TITLE[role]}:")
+            lines.extend(f"- {ident}: {text}" for ident, text in mine)
+    lines.append(
+        "Decide on each item: adopt it into the section it belongs to, or decline it "
+        "with the reason - the brief or the stack rules it out, or it costs more than it "
+        "gives. Record one line per item in `specialist_advice_decisions`, starting with "
+        "its id: \"UX-1: adopted - interface_design\", or \"DB-2: declined - <why>\"."
+    )
+    if advice and advice.get("ui_ux"):
+        lines.append(
+            "The adopted UI/UX advice is the `interface_design` section: the layout at a "
+            "phone's width and a desktop's, each control's states, the feedback after "
+            "each action, accessibility, and the visual style - concrete enough that the "
+            "specialist who builds the interface and a reviewer who looks at it can check "
+            "one against the other."
+        )
+    return "\n".join(lines) + "\n\n"
+
+
+def unanswered(specification: Any, advice: dict[str, list[str]] | None) -> list[str]:
+    """The advice ids the specification neither adopts nor declines."""
+    said = " ".join(str(line) for line in getattr(specification, "specialist_advice_decisions", None) or [])
+    return [
+        ident for _, ident, _ in _numbered(advice or {})
+        if not re.search(rf"(?<![A-Za-z0-9]){re.escape(ident)}(?![0-9])", said)
+    ]
+
+
+def what_the_specification_owes(specification: Any, advice: dict[str, list[str]] | None) -> list[str]:
+    """Why the specification has not answered the specialists, or [] when it has."""
+    problems = []
+    missing = unanswered(specification, advice)
+    if missing:
+        problems.append(
+            "`specialist_advice_decisions` does not answer "
+            + ", ".join(missing)
+            + ": give each one line, starting with its id, saying it is adopted and where, "
+            "or declined and why."
+        )
+    if advice and advice.get("ui_ux") and not [
+        line for line in getattr(specification, "interface_design", None) or [] if str(line).strip()
+    ]:
+        problems.append(
+            "`interface_design` is empty, and this product has an interface: write it from "
+            "the UI/UX advice you adopted - layout at a phone's width and a desktop's, each "
+            "control's states, feedback, accessibility and the visual style."
+        )
+    return problems
+
+
+__all__ = [
+    "ADVICE_ROLES",
+    "SpecialistAdvice",
+    "advice_block",
+    "advice_from",
+    "build_advice_request",
+    "create_specialist_advice_agent",
+    "roles_to_consult",
+    "unanswered",
+    "what_the_specification_owes",
+]

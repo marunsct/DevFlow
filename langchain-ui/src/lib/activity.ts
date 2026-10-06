@@ -35,6 +35,10 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Choosing the technology',
     blurb: 'Settling on the languages, frameworks and services the build will use.',
   },
+  specialist_consultation: {
+    title: 'Asking the specialists',
+    blurb: "Getting the interface, data and service specialists' advice before the technical plan is written.",
+  },
   principal_architect: {
     title: 'Designing how it works',
     blurb: 'Writing the technical plan: the pieces, the data, and how they fit together.',

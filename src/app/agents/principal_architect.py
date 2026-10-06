@@ -160,6 +160,25 @@ class TechnicalSpecificationOutput(BaseModel):
     deployment: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     acceptance_criteria: list[str] = Field(default_factory=list)
+    # Optional, like every section here, so a specification written before
+    # these existed still loads. Required by `specialist_advice` when advice was
+    # given: an interface design for a product with an interface, and one line
+    # per advice item.
+    interface_design: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For a product a person uses: the layout at a phone's width and a "
+            "desktop's, each control's states, the feedback after each action, "
+            "accessibility, and the visual style - from the UI/UX advice adopted."
+        ),
+    )
+    specialist_advice_decisions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "One line per specialist advice item, starting with its id: adopted and "
+            "where, or declined and why."
+        ),
+    )
     decisions: list[ArchitectureDecisionRecord] = Field(
         default_factory=list, description="Every material decision made while producing this specification."
     )
@@ -275,12 +294,20 @@ def _the_briefs_own_constraints(document: Any) -> str:
         return ""
 
 
+def _the_specialists_advice(advice: dict[str, list[str]] | None) -> str:
+    """The specialists' numbered advice and what to do with it, or "". See `app.agents.specialist_advice`."""
+    from app.agents.specialist_advice import advice_block
+
+    return advice_block(advice)
+
+
 def build_architecture_request(
     product_intake_text: str,
     tools_and_models_text: str,
     stack_selection_text: str,
     repository: RepositoryContext,
     document: DocumentContent,
+    advice: dict[str, list[str]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved intake, tools/models plan, and repo context."""
     brief = (
@@ -304,7 +331,8 @@ def build_architecture_request(
         + f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan (/docs/tools_and_models.md) ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection (/docs/technology_stack.md) ---\n{stack_selection_text}\n\n"
-        f"--- Original uploaded documents ---\n"
+        + _the_specialists_advice(advice)
+        + f"--- Original uploaded documents ---\n"
         f"{_document_excerpt(document, INITIAL_DOCUMENT_BUDGET) if INITIAL_DOCUMENT_BUDGET else document.text}\n\n"
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
@@ -319,6 +347,7 @@ def build_architecture_revision_request(
     stack_selection_text: str,
     repository: RepositoryContext,
     document: DocumentContent,
+    advice: dict[str, list[str]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the input that sends a rejected specification back for a new revision.
 
@@ -362,7 +391,8 @@ def build_architecture_revision_request(
         + f"--- Approved product intake (/docs/product_intake.md) ---\n{product_intake_text}\n\n"
         f"--- Approved tools and models plan (/docs/tools_and_models.md) ---\n{tools_and_models_text}\n\n"
         f"--- Approved stack selection (/docs/technology_stack.md) ---\n{stack_selection_text}\n\n"
-        f"--- Original uploaded documents (excerpt) ---\n"
+        + _the_specialists_advice(advice)
+        + f"--- Original uploaded documents (excerpt) ---\n"
         f"{_document_excerpt(document, REVISION_DOCUMENT_BUDGET)}\n\n"
         "Your previous technical specification was NOT accepted. Produce a new "
         "revision that resolves every required change listed below.\n\n"

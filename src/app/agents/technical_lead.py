@@ -519,6 +519,11 @@ _CONTRACT_SECTIONS = (
     ("domain_model", "Domain model"),
     ("api_and_event_contracts", "Contracts"),
     ("data_flows", "Data flows"),
+    # What the interface looks like and how it behaves, from the UI/UX advice.
+    # A work order building the interface copies its part; without it the
+    # interface was built from functional tests alone, and 20 of 26 stored
+    # products shipped the scaffold's stylesheet untouched.
+    ("interface_design", "Interface design"),
     ("testing", "Testing"),
 )
 

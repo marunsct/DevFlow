@@ -121,6 +121,7 @@ from app.agents.sprint_summary import (
     render_sprint_summary,
 )
 from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
+from app.agents.specialist_advice import create_specialist_advice_agent
 from app.agents.specialists import (
     ReportedDefect,
     SpecialistOutput,
@@ -351,6 +352,7 @@ _NODE_NAMES = frozenset(
         "user_review_product_intake",
         "tools_models",
         "stack_selector",
+        "specialist_consultation",
         "principal_architect",
         "architecture_review",
         "user_review_specification",
@@ -400,6 +402,7 @@ _ITERATED_STAGE_OWNERS = {
     "acceptance_author_": "acceptance_author",
     "acceptance_review_": "acceptance_review",
     "code_review_": "code_review",
+    "consult_": "specialist_consultation",
 }
 """Maps an iterated stage-name prefix to the node that owns it.
 
@@ -451,6 +454,10 @@ class WorkflowGraphState(TypedDict, total=False):
     product_intake: ProductManagerOutput
     tools_models: ToolsAndModelsOutput
     stack_selection: StackSelectorOutput
+    # The specialists asked before the specification, and what each advised.
+    # See `app.agents.specialist_advice`.
+    consultation_roles: list[str]
+    specialist_advice: dict[str, list[str]]
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
@@ -2481,7 +2488,9 @@ def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
         return revised
     kept = {
         section: getattr(previous, section)
-        for section in _REQUIRED_SPECIFICATION_SECTIONS
+        # And the sections answering the specialists, which only some products
+        # have: a repair of `testing` is not a reason to lose the interface design.
+        for section in (*_REQUIRED_SPECIFICATION_SECTIONS, "interface_design", "specialist_advice_decisions")
         if not getattr(revised, section, None) and getattr(previous, section, None)
     }
     if kept:
@@ -3214,6 +3223,16 @@ _PRODUCED_BY: dict[str, str] = {
     "sprint_plan": "scrum_master",
     "milestone_plan": "technical_lead",
 }
+
+
+def _the_interface_design_for(state: Any, task: Any) -> list[str]:
+    """The specification's interface design, for a task that builds the interface; else []."""
+    if str(getattr(task, "specialist_role", "") or "") != "ui_ux":
+        return []
+    return [
+        str(line) for line in getattr(state.get("technical_specification"), "interface_design", None) or []
+        if str(line).strip()
+    ]
 
 
 def _as_text(value: Any) -> str:
@@ -4760,7 +4779,7 @@ def build_workflow_graph(
             agent=agent,
             initial_request=request,
             output_key="stack_selection",
-            next_stage="principal_architect",
+            next_stage="specialist_consultation",
         )
         if _hand_back(update, "stack_selection"):
             return update
@@ -4814,6 +4833,48 @@ def build_workflow_graph(
         )
         return update
 
+    def specialist_consultation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        """Ask each specialist this product needs for advice, one per entry. See `app.agents.specialist_advice`."""
+        from app.agents.specialist_advice import advice_from, build_advice_request, roles_to_consult
+
+        brief = getattr(state.get("document"), "text", "") or ""
+        roles = list(state.get("consultation_roles") or roles_to_consult(
+            getattr(state.get("stack_selection"), "technology_stack", None), brief
+        ))
+        advice = dict(state.get("specialist_advice") or {})
+        pending = [role for role in roles if role not in advice]
+        if not pending:
+            return _handing_on(stage="principal_architect", consultation_roles=roles, specialist_advice=advice)
+        role = pending[0]
+        agent = create_specialist_advice_agent(
+            role, model=judgement_model, checkpointer=shared_checkpointer,
+            repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        )
+        update = _run_gated_agent(
+            state,
+            config,
+            stage_name=f"consult_{role}",
+            agent=agent,
+            initial_request=build_advice_request(
+                role, brief, _as_text(state.get("product_intake")), _as_text(state.get("stack_selection"))
+            ),
+            output_key="__advice__",
+            next_stage="specialist_consultation",
+        )
+        if _hand_back(update, "__advice__"):
+            return update
+        advice[role] = advice_from(update.pop("__advice__"))
+        logger.info(
+            "Consulted the %s specialist before the specification: %d recommendation(s)",
+            role, len(advice[role]),
+        )
+        return _handing_on(**{
+            **update,
+            "consultation_roles": roles,
+            "specialist_advice": advice,
+            "stage": "specialist_consultation" if len(pending) > 1 else "principal_architect",
+        })
+
     def principal_architect_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "product_intake", "tools_models")
         if missing is not None:
@@ -4833,6 +4894,7 @@ def build_workflow_graph(
                 stack_selection_text=_as_text(state.get("stack_selection")),
                 repository=state["repository"],
                 document=state["document"],
+                advice=state.get("specialist_advice"),
             )
         else:
             request = build_architecture_request(
@@ -4841,6 +4903,7 @@ def build_workflow_graph(
                 _as_text(state.get("stack_selection")),
                 state["repository"],
                 state["document"],
+                advice=state.get("specialist_advice"),
             )
 
         update = _run_gated_agent(
@@ -4896,8 +4959,24 @@ def build_workflow_graph(
                 # a review cycle would only relay it.
                 from app.agents.principal_architect import testing_nobody_can_run
 
+                from app.agents.specialist_advice import what_the_specification_owes
+
                 unrunnable = testing_nobody_can_run(update.get("technical_specification"))
-                if unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
+                owed = what_the_specification_owes(
+                    update.get("technical_specification"), state.get("specialist_advice")
+                )
+                if owed and not unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
+                    # The specialists were asked; an answer that ignores them
+                    # leaves the advice where nobody reads it.
+                    update["specification_repair_count"] = repairs + 1
+                    update["stage"] = "principal_architect"
+                    update["revision_comments"] = [
+                        "The specification does not answer the specialists' advice:\n"
+                        + "\n".join(f"- {problem}" for problem in owed)
+                        + "\nReturn the whole specification with those sections completed; "
+                        "change nothing else."
+                    ]
+                elif unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
                     update["specification_repair_count"] = repairs + 1
                     update["stage"] = "principal_architect"
                     update["revision_comments"] = [
@@ -5513,6 +5592,7 @@ def build_workflow_graph(
                 # is told before it rewrites the file wholesale.
                 other_tasks=tasks,
                 work_order=task,
+                interface_design=_the_interface_design_for(state, task),
             )
             update = _run_gated_agent(
                 state,
@@ -5570,6 +5650,7 @@ def build_workflow_graph(
                 getattr(state.get("milestone_plan"), "delegated_tasks", None) or ()
             ),
             work_order=task,
+            interface_design=_the_interface_design_for(state, task),
         )
         
         # A worker may only answer its *own* approval gate.
@@ -6830,6 +6911,7 @@ def build_workflow_graph(
     graph.add_node("user_review_product_intake", user_review_product_intake_node)
     graph.add_node("tools_models", tools_models_node, retry_policy=agent_retry_policy)
     graph.add_node("stack_selector", stack_selector_node, retry_policy=agent_retry_policy)
+    graph.add_node("specialist_consultation", specialist_consultation_node, retry_policy=agent_retry_policy)
     graph.add_node("principal_architect", principal_architect_node, retry_policy=agent_retry_policy)
     graph.add_node("architecture_review", architecture_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_specification", user_review_specification_node)
@@ -6873,6 +6955,7 @@ def build_workflow_graph(
         "user_review_product_intake",
         "tools_models",
         "stack_selector",
+        "specialist_consultation",
         "principal_architect",
         "architecture_review",
         "user_review_specification",

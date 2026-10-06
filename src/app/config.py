@@ -44,6 +44,9 @@ class Settings:
     thinking_mode: str  # "default" (leave the server alone), "on", or "off".
     thinking_effort: str  # How much of the reply budget thinking may use: low, medium, high.
     execution_mode: str  # "linear" or "parallel"
+    # Whether the model can be shown images: "yes", "no", or "auto" - decided by
+    # the provider and the model's name. See `app.models.vision`.
+    model_reads_images: str = "auto"
 
 
 def _read_bool(environment: Mapping[str, str], name: str, default: bool) -> bool:
@@ -119,6 +122,7 @@ def load_settings(environment: Mapping[str, str] | None = None) -> Settings:
         thinking_mode=_read_str(values, "MODEL_THINKING_MODE", "default").lower(),
         thinking_effort=_read_str(values, "MODEL_THINKING_EFFORT", "medium").lower(),
         execution_mode=_read_str(values, "EXECUTION_MODE", "linear").lower(),
+        model_reads_images=_read_str(values, "MODEL_READS_IMAGES", "auto").lower(),
     )
 
 

@@ -111,6 +111,10 @@ SETTABLE_KEYS: dict[str, str] = {
     # the toggle could not be turned on and fourteen settings tests that post
     # a whole payload failed with it.
     "execution_mode": "EXECUTION_MODE",
+    # Whether the model can be shown images - "yes", "no" or "auto". The
+    # milestone review is given screenshots of the page only when it can. See
+    # `app.models.vision`.
+    "model_reads_images": "MODEL_READS_IMAGES",
     # A second model for the stages that judge rather than produce: the
     # architect, QA, the reviews, the test rounds and the fixes. Empty means
     # every stage uses the model above. See `app.models.roles`.

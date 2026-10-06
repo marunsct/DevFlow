@@ -112,6 +112,9 @@ class StackPack:
     #: Patterns, with `{name}` for a regex-escaped name, of a test finding a
     #: control by that name. Every control the brief names must be found so.
     finds_by_name: tuple[str, ...] = ()
+    #: A suite file's text -> (line, locator, text) where a test finds something
+    #: by a text and asserts that it does not show that text.
+    contradicting_locators: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
     #: (project root, evidence dir) -> test name -> what the product showed
     #: when that test failed, read from the runner's own failure context.
     failure_pages: Callable[[Path, str], Mapping[str, str]] | None = None

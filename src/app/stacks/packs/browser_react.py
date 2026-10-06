@@ -214,6 +214,7 @@ PACK = StackPack(
     locators_nobody_sees=js.LOCATORS_NOBODY_SEES,
     locators_that_pick_one=js.LOCATORS_THAT_PICK_ONE,
     finds_by_name=js.FINDS_BY_NAME,
+    contradicting_locators=js.asserted_without_the_text_it_is_found_by,
     failure_pages=js.failure_pages,
     near_misses=js.near_misses,
     needs_what_it_never_made=js.needs_what_it_never_made,

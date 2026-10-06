@@ -809,6 +809,33 @@ def locators_that_pick_one(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def locators_that_contradict_their_assertions(repo_root: str | Path) -> list[str]:
+    """Where a test finds something by a text and then asserts it does not show that text.
+
+    It can pass only on a page that keeps the text hidden in what it finds. See
+    the pack's `contradicting_locators`. Measured on one run: a fix stage did
+    exactly that for the locked suite, and the customer's check failed on it.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].contradicting_locators is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, name, said in found[0].contradicting_locators(text)[:3]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line} asserts that what `{name}` finds "
+                f"does not show \"{said}\", but `{name}` finds it by showing \"{said}\": it matches "
+                "only while that text is still somewhere in it, so the test can pass only on a page "
+                "that keeps the old text hidden. Find the item again by the text it shows now."
+            )
+    return problems[:6]
+
+
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
     """Each control the brief names that no test finds by that name, as one problem.
 

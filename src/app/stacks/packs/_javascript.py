@@ -551,7 +551,8 @@ on what the page shows after it. Act on a locator - `page.getByLabel(...).fill(.
 never `page.fill(selector, ...)` or `page.click(selector)` - and never take
 `.first()` of a control found by its name: both act on whichever match comes
 first, so a page that shows the same control twice still passes, where a
-locator refuses more than one."""
+locator refuses more than one. A locator found by its text keeps that filter:
+once the test changes the text, find the item again by its new text."""
 
 #: Locators that find a control by something no person sees. A suite that
 #: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).
@@ -593,6 +594,41 @@ LOCATORS_THAT_PICK_ONE = (
     r"""\bgetByRole\s*\([^()]*\bname\s*:[^()]*\)\s*\.\s*(?:first|last|nth)\s*\(""",
     r"""\b(?:locator|filter)\s*\([^()]*\bhasText\s*:[^()]*\)\s*\.\s*(?:first|last|nth)\s*\(""",
 )
+
+#: A locator found by the text it shows: `const row = page.getByRole(...).filter({ hasText: 'x' })`.
+_FOUND_BY_TEXT = re.compile(
+    r"""\b(?:const|let|var)\s+(\w+)\s*=\s*[^;\n]*?\.filter\(\s*\{\s*hasText\s*:\s*(?:(['"`])(.+?)\2|/(.+?)/\w*)"""
+)
+_A_TEST = re.compile(r"\btest\s*\(")
+
+
+def asserted_without_the_text_it_is_found_by(text: str) -> list[tuple[int, str, str]]:
+    """(line, locator, text) where a test finds something by a text and asserts it does not show it.
+
+    A locator filtered by a text matches only what shows that text, so asserting
+    that what it finds - or anything inside it - does not contain the text can
+    pass only on a page that hides the text somewhere in it. Measured on one
+    run: the locked test found an item by its title, edited the title, and
+    asserted the item no longer showed the old one; a fix stage kept the old
+    title in an invisible element "for locator matching", and the customer's
+    check that the old title is gone failed.
+    """
+    found = []
+    starts = [match.start() for match in _A_TEST.finditer(text)] + [len(text)]
+    for begin, end in zip(starts, starts[1:]):
+        body = text[begin:end]
+        for match in _FOUND_BY_TEXT.finditer(body):
+            name, said = match.group(1), match.group(3) or match.group(4) or ""
+            if not said:
+                continue
+            negated = re.compile(
+                r"expect\(\s*" + re.escape(name) + r"\b[^;]*?\)\s*\.\s*not\s*\.\s*(?:toContainText|toHaveText)\(\s*"
+                r"(?:(['\"`])" + re.escape(said) + r"\1|/" + re.escape(said) + r"/)"
+            )
+            for hit in negated.finditer(body, match.end()):
+                found.append((text.count("\n", 0, begin + hit.start()) + 1, name, said))
+    return found
+
 
 #: How a test finds a control by a name, with `{name}` for the name escaped.
 #: A suite that never finds a control the brief names this way cannot tell a

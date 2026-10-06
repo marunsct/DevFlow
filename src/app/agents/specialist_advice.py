@@ -270,7 +270,7 @@ def advice_from(answer: Any) -> list[str]:
         text = " ".join(str(item).split())
         if not text or text in kept:
             continue
-        if _DISABLED_UNTIL.search(text):
+        if disables_on_a_condition(text):
             logger.info("Advice left out, it disables a control until something is done: %s", text[:160])
             continue
         kept.append(text)
@@ -344,20 +344,35 @@ def adopted(advice: dict[str, list[str]] | None, specification: Any, role: str) 
             continue
         # Advice the harness rules out is never owed, even where it was
         # adopted before `advice_from` left it out. See `advice_from`.
-        if _DISABLED_UNTIL.search(text):
+        if disables_on_a_condition(text):
             continue
         kept.append(f"{ident}: {text}")
     return kept
 
 
 #: A control disabled on a condition: "disabled until the title holds text".
-_DISABLED_UNTIL = re.compile(
-    r"\bdisabled?\b[^.;\n]{0,80}?\b(?:until|unless|while|whenever|when(?:ever)? (?:the|it|no|empty)|if (?:the|no|empty))\b"
-    r"|\baria-disabled\b"
+#: A control disabled on a condition: "disabled until the title holds text",
+#: "if invalid, the form disables the add control", "enabled only once ...".
+#: Two parts on one line, in either order: one run's specification said "If
+#: invalid, the form disables" - a verb form and an order the first pattern
+#: did not know - and its product shipped the control disabled on load.
+_DISABLES = re.compile(
+    r"\bdisabl(?:e|es|ed|ing)\b|\baria-disabled\b"
     r"|\benabled?\b[^.;\n]{0,60}?\bonly (?:when|once|if|after)\b"
     r"|\b(?:becomes|is|are|stays?) (?:only )?(?:enabled|active|clickable) (?:only )?(?:when|once|after|if)\b",
     re.I,
 )
+_ON_A_CONDITION = re.compile(
+    r"\b(?:until|unless|while|whenever|when|if|once|invalid|empty|blank|missing)\b", re.I
+)
+
+
+def disables_on_a_condition(text: str) -> bool:
+    """Whether any line of `text` disables a control on a condition."""
+    return any(
+        _DISABLES.search(line) and _ON_A_CONDITION.search(line)
+        for line in re.split(r"(?<=[.;])\s+|\n", str(text or ""))
+    )
 
 
 def controls_disabled_until_something(specification: Any) -> list[str]:
@@ -377,7 +392,7 @@ def controls_disabled_until_something(specification: Any) -> list[str]:
     for value in fields.values():
         for item in value if isinstance(value, list) else [value]:
             for line in str(item or "").splitlines():
-                if _DISABLED_UNTIL.search(line):
+                if disables_on_a_condition(line):
                     lines.append(" ".join(line.split()))
     return lines
 

@@ -346,3 +346,13 @@ def test_disabling_advice_adopted_earlier_is_never_owed() -> None:
     spec = SimpleNamespace(specialist_advice_decisions=["UX-1: adopted", "UX-2: adopted"])
 
     assert adopted(advice, spec, "ui_ux") == ["UX-1: Stack the form above the list."]
+
+
+def test_a_specification_that_disables_on_a_condition_in_any_wording_is_caught() -> None:
+    """One run's specification said "If invalid, the form disables the Add
+    button" - a verb form and an order the first pattern did not know."""
+    from app.agents.specialist_advice import disables_on_a_condition
+
+    assert disables_on_a_condition("2. If invalid, the form disables the primary control (`disabled` attribute).")
+    assert disables_on_a_condition("On an empty field the control is disabled.")
+    assert not disables_on_a_condition("Visual states: placeholder, focus ring, hover, disabled, toast.")

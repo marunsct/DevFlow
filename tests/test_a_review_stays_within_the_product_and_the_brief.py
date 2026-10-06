@@ -227,3 +227,45 @@ def test_a_lead_is_told_untested_is_no_reason_to_decline() -> None:
     assert "no test checks an item is not a reason" in workflow._only_what_was_carried("x")
     for word in BANNED:
         assert not re.search(rf"\b{word}\b", NOT_A_REASON_TO_DECLINE.lower()), word
+
+
+class TestALocatorLeftBehindByItsOwnChange:
+    """One run's two locked edit tests found the item by its old title, changed
+    it, then looked for the new title through the same locator - "element(s)
+    not found" on every round of two attempts, handed to product fixers."""
+
+    MESSAGE = (
+        "expect(locator).toContainText(expected) failed\n\n"
+        "    Locator: getByRole('listitem').filter({ hasText: 'Old entry' })\n"
+        '    Expected substring: "New entry"\n'
+        "    Timeout: 3000ms\n"
+        "    Error: element(s) not found\n"
+        "\nWhat the page showed when this failed:\n"
+        "- main:\n  - list:\n    - listitem:\n      - text: New entry\n"
+    )
+
+    def test_is_read_from_the_failure_and_the_page(self) -> None:
+        from app.stacks.packs._javascript import a_locator_left_behind
+
+        assert a_locator_left_behind(self.MESSAGE) == ("Old entry", "New entry")
+
+    @pytest.mark.parametrize("change", [
+        ("New entry\n", "Something else\n"),         # the page does not show the change
+        ("New entry\n", "Old entry New entry\n"),    # the page still shows the old text
+        ("element(s) not found", "Received string: \"x\""),  # the locator found something
+    ])
+    def test_a_product_that_did_not_make_the_change_is_not_excused(self, change) -> None:
+        from app.stacks.packs._javascript import a_locator_left_behind
+
+        assert a_locator_left_behind(self.MESSAGE.replace(*change)) is None
+
+    def test_it_goes_back_to_qa_as_a_test_that_cannot_pass(self, scaffolded) -> None:
+        from app.acceptance import junit, suite
+
+        result = suite.AcceptanceResult(ran=True, command="npm run test:acceptance", report=junit.Report(
+            found=True, tests=[junit.TestResult(name="[AC-3] edits", outcome="failed", message=self.MESSAGE)],
+        ))
+
+        [problem] = suite.tests_left_behind_by_their_own_change(str(scaffolded), result)
+
+        assert "`[AC-3] edits`" in problem and "Find the item again by the text it shows now" in problem

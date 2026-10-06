@@ -630,6 +630,34 @@ def asserted_without_the_text_it_is_found_by(text: str) -> list[tuple[int, str, 
     return found
 
 
+_FAILED_LOCATOR_TEXT = re.compile(r"""Locator:[^\n]*\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
+_EXPECTED_TEXT = re.compile(r'Expected (?:substring|string): "([^"\n]+)"')
+
+
+def a_locator_left_behind(message: str) -> tuple[str, str] | None:
+    """(old text, new text) when a test failed on a locator found by a text the page no longer shows.
+
+    The test changed the text, then looked for the new one through the
+    locator it had found by the old: "element(s) not found", while the page it
+    failed on shows the new text and not the old. The product did the change;
+    the test cannot see it. Measured on one run: two locked tests of editing
+    failed this way on every round of two attempts at a sprint, handed each
+    time to product fixers who may not change the suite.
+    """
+    found = _FAILED_LOCATOR_TEXT.search(message or "")
+    expected = _EXPECTED_TEXT.search(message or "")
+    if not found or not expected or "element(s) not found" not in message:
+        return None
+    old = next(group for group in found.groups() if group)
+    new = expected.group(1)
+    if old in new:
+        return None
+    page = message.split("What the page showed when this failed:", 1)
+    if len(page) < 2 or new not in page[1] or old in page[1]:
+        return None
+    return old, new
+
+
 #: How a test finds a control by a name, with `{name}` for the name escaped.
 #: A suite that never finds a control the brief names this way cannot tell a
 #: product that gave it that name from one that did not.

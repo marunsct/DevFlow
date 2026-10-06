@@ -823,6 +823,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
     root = _root(state)
     broken = [
         *suite.tests_that_broke_themselves(root, result),
+        *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.tests_the_runner_never_ran(root, result),
         *suite.assertions_that_do_not_exist(root),
         *suite.tests_that_need_what_they_never_made(root, result),

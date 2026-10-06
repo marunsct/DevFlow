@@ -631,6 +631,32 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+def tests_left_behind_by_their_own_change(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Failed tests that looked for a change through a locator found by the text it replaced.
+
+    See the pack's `locator_left_behind`: the page shows the new text, the
+    locator was found by the old, so the test cannot pass on a product that
+    made the change.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].locator_left_behind is None:
+        return []
+    broken = []
+    for test in result.report.tests:
+        if test.outcome != "failed":
+            continue
+        left = found[0].locator_left_behind(test.message or "")
+        if left is None:
+            continue
+        old, new = left
+        broken.append(
+            f"`{test.name}` looks for \"{new}\" through a locator it found by \"{old}\". The page "
+            f"it failed on shows \"{new}\" and no longer shows \"{old}\", so the change was made "
+            "and the test cannot see it. Find the item again by the text it shows now."
+        )
+    return broken
+
+
 def tests_the_runner_never_ran(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Tests the suite's files declare for a criterion that the runner's report never lists.
 

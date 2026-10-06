@@ -115,6 +115,9 @@ class StackPack:
     #: A suite file's text -> (line, locator, text) where a test finds something
     #: by a text and asserts that it does not show that text.
     contradicting_locators: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
+    #: A failed test's message -> (old text, new text) when it failed on a
+    #: locator found by a text the page it failed on no longer shows.
+    locator_left_behind: Callable[[str], tuple[str, str] | None] | None = None
     #: (project root, evidence dir) -> test name -> what the product showed
     #: when that test failed, read from the runner's own failure context.
     failure_pages: Callable[[Path, str], Mapping[str, str]] | None = None

@@ -597,6 +597,17 @@ def _what_the_last_attempt_left(attempt: Any) -> str:
     return "\n".join(lines) + "\n\n"
 
 
+#: Measured on one run: the last sprint, whose goal was the responsive layout
+#: and the finish, declined every interface item the specification had adopted
+#: and its specialist found missing - "test suite passes, so ignore", "not
+#: required by tests" - and the product shipped without them.
+NOT_A_REASON_TO_DECLINE = (
+    "That no test checks an item, or that the tests pass without it, is not a reason "
+    "to decline it: what the specification adopted is for the person who uses the "
+    "product, and a specialist found it missing."
+)
+
+
 def build_milestone_planning_request(
     sprint_plan_text: str,
     selected_sprint_goal: str,
@@ -627,7 +638,7 @@ def build_milestone_planning_request(
             + "\n".join(f"- {item}" for item in carried)
             + "\nEach of these must either be taken by a work order in this milestone or "
             "declined with a reason. Record which in `carried_forward_decisions`, one "
-            "line per item.\n\n"
+            "line per item. " + NOT_A_REASON_TO_DECLINE + "\n\n"
             if carried else ""
         )
         + (

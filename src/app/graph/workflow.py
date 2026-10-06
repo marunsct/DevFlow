@@ -4447,8 +4447,8 @@ def _only_what_was_carried(why: str) -> str:
         f"{first}\n"
         "So this sprint's only work is what earlier sprints carried to it, listed above. Take "
         "each item that still holds as a work order to the role that owns it, and decline the "
-        "rest in `carried_forward_decisions` with the reason. Keep every name the brief gives "
-        "and every test passing. If you take none, hand out no work orders: the sprint then "
+        "rest in `carried_forward_decisions` with the reason. That no test checks an item is "
+        "not a reason to decline it. Keep every name the brief gives and every test passing. If you take none, hand out no work orders: the sprint then "
         "closes with nothing to build."
     )
 

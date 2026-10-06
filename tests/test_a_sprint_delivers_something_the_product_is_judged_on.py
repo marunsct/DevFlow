@@ -248,3 +248,15 @@ def test_a_sprint_whose_goal_builds_something_is_not_folded_for_missing_coverage
     )
 
     assert sprints_that_deliver_nothing(plan, MEASURES) == [1, 4]
+
+
+def test_a_folded_sprint_s_criteria_go_with_its_work() -> None:
+    """Merged with its scope, not dropped. One run's folded sprint lost its "3",
+    and the criterion was assigned again from words."""
+    plan = _real_plan(AS_THE_RUN_PLANNED_IT, ["1: Sprint 4", "2: Sprint 3", "3: Sprint 2", "4: every sprint"])
+    plan.sprints[0].criteria = ["3"]
+    plan.sprints[1].criteria = ["4"]
+
+    folded_plan, _ = with_setup_folded_into_the_sprint_that_needs_it(plan, MEASURES)
+
+    assert folded_plan.sprints[0].criteria == ["3", "4"]

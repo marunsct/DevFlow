@@ -282,6 +282,10 @@ def with_setup_folded_into_the_sprint_that_needs_it(
                     part.strip().rstrip(".") for part in (first.goal, second.goal) if part.strip()
                 ) + ".",
                 "in_scope": both("in_scope"),
+                # The criteria it was given go with its work. Left out, one
+                # run's folded sprint lost its "3" and the criterion was
+                # assigned again from words.
+                "criteria": both("criteria"),
                 "acceptance_criteria": both("acceptance_criteria"),
                 "test_strategy": both("test_strategy"),
                 "security_checks": both("security_checks"),

@@ -268,6 +268,7 @@ def render_sprint_summary(
         of_plan=f" of {total_sprints}" if total_sprints else "",
         goal=goal,
         status=latest.get("status", "Unknown"),
+        deferred=list(latest.get("deferred") or ()),
         completed=str(latest.get("status", "")).strip().lower() == "completed",
         attempts_line=attempts_line,
         reason=latest.get("reason") or "",

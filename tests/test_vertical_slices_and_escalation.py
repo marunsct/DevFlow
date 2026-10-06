@@ -88,6 +88,20 @@ def test_auto_mode_defers_what_fails_and_goes_on(tmp_path) -> None:
     assert "deferred" in (tmp_path / "docs" / "acceptance_criteria.md").read_text()
 
 
+def test_going_on_measures_the_state_the_run_goes_on_from(tmp_path, monkeypatch) -> None:
+    """The sprint's record counts it, and the next sprint is measured against it.
+
+    Without it, one run's sprint 4 record read "96 tests, 85 passed" - the last
+    accepted sprint's counts - when CI had just measured 110 of 115."""
+    measured = []
+    monkeypatch.setattr("app.graph.engineering.accepted_state", lambda root: measured.append(root))
+    _suite_with(tmp_path, failing=("AC-2",))
+
+    escalation.escalation(_state(tmp_path), CONFIG, None)
+
+    assert measured == [str(tmp_path)]
+
+
 def test_the_last_sprint_goes_on_to_the_release(tmp_path) -> None:
     _suite_with(tmp_path, failing=("AC-4",))
     update = escalation.escalation(_state(tmp_path, current_sprint_index=1), CONFIG, None)

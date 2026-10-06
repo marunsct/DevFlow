@@ -237,6 +237,13 @@ def _defer_and_continue(
     }
     if to_defer:
         suite.defer(root, to_defer)
+    # The run goes on from here, so this is the state the next sprint is
+    # measured against and the one this sprint's record counts. Without it the
+    # record reported the last accepted sprint's counts - one run's sprint 4
+    # read "96 tests, 85 passed" when CI had just measured 110 of 115.
+    from app.graph import engineering
+
+    engineering.accepted_state(root)
     record_decision(
         state, update, point="escalation",
         question="The sprint could not be finished: how does the run go on?",

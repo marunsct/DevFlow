@@ -2727,6 +2727,23 @@ def _record_document(state: WorkflowGraphState, relative_path: str, content: str
         logger.warning("Could not write %s", relative_path, exc_info=True)
 
 
+def _deferred_in_this_attempt(state: Any, since: str | None) -> list[str]:
+    """The criteria an escalation deferred since `since`, so this sprint went on without them.
+
+    One run's sprint 4 could not be finished, its two failing criteria were
+    deferred by an automatic decision, and its record read "Status: Completed"
+    with nothing to say the sprint had not delivered them.
+    """
+    deferred: list[str] = []
+    for record in state.get("decisions") or []:
+        if record.get("point") != "escalation" or not record.get("affects"):
+            continue
+        if since and str(record.get("decided_at") or "") <= since:
+            continue
+        deferred += [str(item) for item in record.get("affects") or [] if str(item) not in deferred]
+    return deferred
+
+
 def _the_accepted_counts(root: str) -> dict[str, int] | None:
     """Tests, passed and failed in the state the last sprint was accepted in, or None."""
     try:
@@ -2879,6 +2896,7 @@ def _record_sprint_summary(
         "sprint_index": sprint_index,
         "number": len(already) + 1,
         "status": status,
+        "deferred": _deferred_in_this_attempt(state, since),
         "reason": failure_reason or "",
         "cases": cases,
         "rounds": state.get("test_round", 0),

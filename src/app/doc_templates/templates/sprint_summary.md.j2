@@ -12,7 +12,7 @@
 # Sprint {{ number }}{{ of_plan }} Summary
 
 **Goal:** {{ goal or "Unknown goal" }}
-**Status:** {{ status }}
+**Status:** {{ status }}{{ (", without " ~ (deferred | join(", ")) ~ ": deferred because they could not be made to pass, so this sprint did not deliver them") if deferred else "" }}
 **Attempts:** {{ attempts_line }}
 {% if reason %}
 **Failure Reason:** {{ reason }}

@@ -447,6 +447,12 @@ def what_you_said_last_time(previous: Any, revisions_used: int, revisions_allowe
     return "".join(parts)
 
 
+def _what_the_specialists_found(findings: dict[str, list[str]] | None) -> str:
+    from app.agents.advice_review import findings_block
+
+    return findings_block(findings)
+
+
 def build_milestone_review_request(
     milestone_goal: str,
     changed_files: list[str],
@@ -461,8 +467,12 @@ def build_milestone_review_request(
     revisions_allowed: int = 0,
     sprint_scope: str = "",
     acceptance: str = "",
+    specialist_findings: dict[str, list[str]] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the milestone artifacts awaiting review.
+
+    `specialist_findings` is what the consulted specialists found of their
+    adopted advice not built this sprint. See `app.agents.advice_review`.
 
     `acceptance` is the harness's own run of the locked acceptance suite (see
     `app.acceptance.requests.acceptance_block`): which criteria pass, measured,
@@ -489,6 +499,7 @@ def build_milestone_review_request(
         + what_you_said_last_time(previous_review, revisions_used, revisions_allowed)
         + scope_text
         + acceptance
+        + _what_the_specialists_found(specialist_findings)
         + f"--- Milestone goal under review ---\n{milestone_goal}\n\n"
         f"--- Changed files ---\n{files_text}\n\n"
         f"--- Test evidence ---\n{test_evidence}\n\n"

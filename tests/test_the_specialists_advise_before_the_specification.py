@@ -244,12 +244,18 @@ class TestTheInterfaceDesignReachesItsBuilders:
 
 class TestThroughTheGraph:
     @staticmethod
-    def _consulting(monkeypatch, agents: ScriptedAgents, roles: list[str]) -> None:
+    def _consulting(monkeypatch, agents: ScriptedAgents, roles: list[str], reviewing: bool = False) -> None:
         monkeypatch.setattr(specialist_advice, "roles_to_consult", lambda *args, **kwargs: list(roles))
         monkeypatch.setattr(
             workflow_module, "create_specialist_advice_agent",
             lambda role, *args, **kwargs: agents.agent(f"advisor_{role}"),
         )
+        if not reviewing:
+            # The sprint's check of the adopted advice has tests of its own
+            # (`test_the_specialists_check_their_advice_each_sprint.py`).
+            from app.agents import advice_review
+
+            monkeypatch.setattr(advice_review, "roles_to_review", lambda *args, **kwargs: [])
 
     @staticmethod
     def _script_the_stack(agents: ScriptedAgents) -> None:

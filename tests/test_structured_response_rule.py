@@ -39,6 +39,7 @@ AGENTS = [
     "code_reviewer",
     "specialists",
     "specialist_advice",
+    "advice_review",
 ]
 
 

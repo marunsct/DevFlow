@@ -1059,6 +1059,7 @@ _WIZARD_STAGE_COPY: dict[str, tuple[str, str]] = {
     "test_and_triage": ("Testing", "Running the tests and writing down anything that failed."),
     "defect_remediation": ("Fixing what broke", "Sending each problem back to be fixed, then testing again."),
     "security_review": ("Security check", "Looking over the finished code for anything unsafe."),
+    "advice_review": ("Checking the specialists' advice", "Each specialist asked before the design checks its advice was built this sprint."),
     "milestone_review": ("Reviewing the work", "Checking the finished piece against what was planned."),
     "user_review_sprint": ("Your review", "Paused for you to look at the completed sprint and say whether to continue."),
     "sprint_advance": ("Starting the next sprint", "This chunk is done. Moving on to the next one."),

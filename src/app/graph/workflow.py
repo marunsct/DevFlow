@@ -122,6 +122,7 @@ from app.agents.sprint_summary import (
 )
 from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
 from app.agents.specialist_advice import create_specialist_advice_agent
+from app.agents.advice_review import create_advice_reviewer_agent
 from app.agents.specialists import (
     ReportedDefect,
     SpecialistOutput,
@@ -374,6 +375,7 @@ _NODE_NAMES = frozenset(
         "test_and_triage",
         "defect_remediation",
         "security_review",
+        "advice_review",
         "milestone_review",
         "user_review_sprint",
         "sprint_advance",
@@ -403,6 +405,7 @@ _ITERATED_STAGE_OWNERS = {
     "acceptance_review_": "acceptance_review",
     "code_review_": "code_review",
     "consult_": "specialist_consultation",
+    "advice_review_": "advice_review",
 }
 """Maps an iterated stage-name prefix to the node that owns it.
 
@@ -458,6 +461,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # See `app.agents.specialist_advice`.
     consultation_roles: list[str]
     specialist_advice: dict[str, list[str]]
+    # What each consulted specialist found of its adopted advice not built,
+    # this sprint, and which review it belongs to. See `app.agents.advice_review`.
+    advice_findings: dict[str, list[str]]
+    advice_review_cycle: str
     technical_specification: TechnicalSpecificationOutput
     architecture_review: ArchitectureReviewOutput
     architecture_revision_count: int
@@ -3223,6 +3230,14 @@ _PRODUCED_BY: dict[str, str] = {
     "sprint_plan": "scrum_master",
     "milestone_plan": "technical_lead",
 }
+
+
+def _this_review_s_advice_findings(state: Any) -> dict[str, list[str]]:
+    """The specialists' findings for the review under way, or {} when they belong to another."""
+    cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
+    if state.get("advice_review_cycle") != cycle:
+        return {}
+    return dict(state.get("advice_findings") or {})
 
 
 def _the_interface_design_for(state: Any, task: Any) -> list[str]:
@@ -6285,11 +6300,70 @@ def build_workflow_graph(
         from app.sprint.record import findings_of
 
         return _handing_on(
-            stage="milestone_review",
+            stage="advice_review",
             security_review=review,
             sprint_findings=list(state.get("sprint_findings") or [])
             + findings_of(review, "security", state.get("milestone_revision_count", 0) + 1),
         )
+
+    def advice_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""
+        from app.agents.advice_review import build_advice_review_request, findings_from, roles_to_review
+        from app.agents.specialist_advice import adopted
+
+        # One review per sprint and per milestone revision: a revised sprint is
+        # checked again, from nothing.
+        cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
+        found = dict(state.get("advice_findings") or {}) if state.get("advice_review_cycle") == cycle else {}
+        advice, specification = state.get("specialist_advice"), state.get("technical_specification")
+        pending = [role for role in roles_to_review(advice, specification) if role not in found]
+        if not pending:
+            return _handing_on(stage="milestone_review", advice_findings=found, advice_review_cycle=cycle)
+        role = pending[0]
+        milestone = state.get("milestone_plan")
+        request = build_advice_review_request(
+            role,
+            adopted(advice, specification, role),
+            str(getattr(milestone, "selected_sprint_goal", "") or ""),
+            _this_sprint_s_scope_for_review(state),
+            _the_files_this_milestone_changed(state, state.get("specialist_outputs", {})),
+        )
+        if role == "ui_ux":
+            # The design QA loop: the page as a person sees it, for a model that can see.
+            from app.models.vision import the_reviewer_reads_images
+
+            if the_reviewer_reads_images():
+                from app.agents.page_screenshots import with_the_page_screenshots
+
+                request = with_the_page_screenshots(
+                    request,
+                    state["repository"].root_path,
+                    getattr(specification, "interface_design", None) or [],
+                )
+        agent = create_advice_reviewer_agent(
+            role, model=judgement_model, checkpointer=shared_checkpointer,
+            repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        )
+        update = _run_gated_agent(
+            state,
+            config,
+            stage_name=f"advice_review_{role}",
+            agent=agent,
+            initial_request=request,
+            output_key="__advice_review__",
+            next_stage="advice_review",
+        )
+        if _hand_back(update, "__advice_review__"):
+            return update
+        found[role] = findings_from(role, update.pop("__advice_review__"))
+        if found[role]:
+            logger.info("The %s specialist found %d adopted item(s) not built", role, len(found[role]))
+        return _handing_on(**{
+            **update,
+            "advice_findings": found,
+            "advice_review_cycle": cycle,
+            "stage": "advice_review" if len(pending) > 1 else "milestone_review",
+        })
 
     def milestone_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Review the milestone, and keep its findings for the Sprint Record.
@@ -6368,6 +6442,7 @@ def build_workflow_graph(
             revisions_allowed=MAX_MILESTONE_REVISIONS,
             sprint_scope=_this_sprint_s_scope_for_review(state),
             acceptance=acceptance_text,
+            specialist_findings=_this_review_s_advice_findings(state),
         )
         # The page as a person sees it, for a reviewer whose model can see. See
         # `app.agents.page_screenshots`; a model that cannot is not sent them.
@@ -6953,6 +7028,7 @@ def build_workflow_graph(
     graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
+    graph.add_node("advice_review", advice_review_node, retry_policy=agent_retry_policy)
     graph.add_node("milestone_review", milestone_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_sprint", user_review_sprint_node)
     graph.add_node("sprint_advance", sprint_advance_node)
@@ -6992,6 +7068,7 @@ def build_workflow_graph(
         "test_and_triage",
         "defect_remediation",
         "security_review",
+        "advice_review",
         "milestone_review",
         "user_review_sprint",
         "sprint_advance",

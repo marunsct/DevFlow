@@ -75,6 +75,10 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: 'Security check',
     blurb: 'Looking over the finished code for anything unsafe.',
   },
+  advice_review: {
+    title: "Checking the specialists' advice",
+    blurb: 'Each specialist asked before the design checks its advice was built this sprint.',
+  },
   milestone_review: {
     title: 'Reviewing the work',
     blurb: 'Checking the finished piece against what was planned.',

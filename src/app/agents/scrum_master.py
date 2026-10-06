@@ -471,21 +471,61 @@ def _topics(text: str) -> set[str]:
 
 
 def _the_sprint_that_builds_it(sprints: list[Any], criterion: str) -> int | None:
-    """The earliest sprint whose own words share the most topics with a criterion."""
+    """The earliest sprint whose own words share the most topics with a criterion.
+
+    A shared word counts by how few sprints say it, and a word a sprint puts
+    out of its scope counts against it. The product's own nouns are in every
+    sprint and tell them apart by nothing: one run's "Edit a task's title" went
+    to the sprint that adds tasks with a title - and says editing is out of its
+    scope - over the sprint whose goal was editing.
+    """
     wanted = _topics(criterion)
     if not wanted:
         return None
-    best, best_score = None, 0
-    for index, sprint in enumerate(sprints):
-        said = " ".join(
+    said = [
+        _topics(" ".join(
             [str(getattr(sprint, "goal", "") or ""), str(getattr(sprint, "user_value", "") or "")]
             + [str(item) for item in getattr(sprint, "in_scope", None) or []]
             + [str(item) for item in getattr(sprint, "acceptance_criteria", None) or []]
+        ))
+        for sprint in sprints
+    ]
+    excluded = [
+        _topics(" ".join(str(item) for item in getattr(sprint, "out_of_scope", None) or []))
+        for sprint in sprints
+    ]
+
+    def weight(topic: str) -> float:
+        return 1 / max(1, sum(1 for other in said if topic in other))
+
+    best, best_score = None, 0.0
+    for index, topics in enumerate(said):
+        score = sum(weight(topic) for topic in wanted & topics) - sum(
+            weight(topic) for topic in wanted & excluded[index]
         )
-        score = len(wanted & _topics(said))
         if score > best_score:
             best, best_score = index, score
     return best
+
+
+def _the_ids_it_names(sprint: Any, known: list[str]) -> list[Any]:
+    """The criteria a sprint claims: its `criteria`, or else the ids its `acceptance_criteria` name.
+
+    Measured on one run: the planner left every sprint's `criteria` empty and
+    listed the ids under `acceptance_criteria` instead - sprint 2 "AC-2, AC-3,
+    AC-4". Read from `criteria` alone, all nine were assigned by their words,
+    and "Edit a task's title" went to sprint 1, whose scope says editing is not
+    in it.
+    """
+    from app.acceptance.junit import tags_in
+
+    claimed = list(getattr(sprint, "criteria", None) or [])
+    if claimed:
+        return claimed
+    named: list[str] = []
+    for item in getattr(sprint, "acceptance_criteria", None) or []:
+        named += [tag for tag in tags_in(str(item)) if tag in known and tag not in named]
+    return named
 
 
 def _as_a_criterion_id(item: Any, known: list[str]) -> str:
@@ -529,7 +569,7 @@ def with_every_criterion_assigned(
     cleaned: list[list[str]] = []
     for number, sprint in enumerate(sprints, 1):
         mine: list[str] = []
-        for item in getattr(sprint, "criteria", None) or []:
+        for item in _the_ids_it_names(sprint, known):
             item = _as_a_criterion_id(item, known)
             if item not in known:
                 notes.append(f"sprint {number} named {item}, which is not a criterion")

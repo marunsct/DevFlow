@@ -325,9 +325,44 @@ def test_the_read_rung_does_not_starve_the_repeat_rung() -> None:
     repeat_rung = guarded.find("_a_tool_refused_identically(messages)")
 
     assert read_rung != -1 and repeat_rung != -1
-    assert "if not correction:" in guarded[:read_rung], (
-        "a schema or budget correction should still take priority over both"
-    )
+
+
+def test_the_budget_warning_does_not_starve_the_repeat_rung() -> None:
+    """Both rungs used to wait for "no correction yet", and the call-budget
+    warning is due on every call from 70% of the budget on - the stretch where a
+    looping stage is. One run's fix stage sent one identical `read_command_output`
+    eight times running under that warning and was never stopped. The warning
+    still goes out; the notice goes with it."""
+    from types import SimpleNamespace
+
+    from pydantic import BaseModel
+
+    from app.agents.settled_answer import build_settled_answer_middleware
+
+    class _Answer(BaseModel):
+        ok: bool = True
+
+    class _Request:
+        def __init__(self, messages, tools):
+            self.messages, self.tools, self.model, self.model_settings = messages, tools, None, {}
+
+        def override(self, **changes):
+            return _Request(changes.get("messages", self.messages), changes.get("tools", self.tools))
+
+    same = "48: failed\n\n[This `read_command_output` returned exactly what it returned the 3 previous times ...]"
+    messages = [
+        SimpleNamespace(type="human", content="Fix the defect."),
+        *_conversation(8, tool="read_command_output", args={"reference": "x.log", "search": "AC-9"}, result=same),
+    ]
+    tools = [SimpleNamespace(name="read_command_output"), SimpleNamespace(name="edit_artifact")]
+    sent: list = []
+    middleware = build_settled_answer_middleware(_Answer, "defect_fix", step_limit=12)
+    middleware.wrap_model_call(_Request(messages, tools), lambda request: sent.append(request))
+
+    told = str(sent[0].messages[-1]["content"])
+    assert "model calls this stage is allowed" in told
+    assert "`read_command_output` has been withheld" in told
+    assert [tool.name for tool in sent[0].tools] == ["edit_artifact"]
 
 
 class TestAQueryThatKeepsAnsweringTheSame:

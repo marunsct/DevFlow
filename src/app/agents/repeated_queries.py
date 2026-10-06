@@ -55,8 +55,14 @@ SAME_ANSWER_MARKER = "returned exactly what it returned"
 #: `inspect_repository` takes no arguments at all and returns a listing, so a
 #: repeat of it is always a repeat. One run called it seven times in one
 #: stage.
+#:
+#: `read_command_output` and `changed_since_sprint` were the two read-only
+#: tools left out, and a test now fails for the next one. One run's fix stage
+#: sent one identical `read_command_output` eight times, answered identically
+#: each time with no note, so nothing counted it.
 QUERY_TOOLS = frozenset({
-    "ls", "grep", "glob", "read_repository_file", "inspect_repository"
+    "ls", "grep", "glob", "read_repository_file", "inspect_repository",
+    "read_command_output", "changed_since_sprint",
 })
 
 #: Mutating tools, watched only for repeated *failures*. A repeated successful

@@ -1347,17 +1347,27 @@ def build_settled_answer_middleware(
                 # `edit_artifact` repeated past the threshold and never withheld
                 # it once. Both can apply on one call, and the tool list below is
                 # narrowed by each in turn.
+                #
+                # And neither waits for the other corrections. Gated on "no
+                # correction yet", both were starved by the call-budget warning,
+                # which is due on every call from 70% of the budget on - the
+                # stretch where a looping stage is. Measured on one run: a fix
+                # stage sent one identical `read_command_output` eight times
+                # running under that warning and was never stopped.
                 repeated = None
-                if not correction:
+                if not answer_only:
+                    notices = []
                     if reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
-                        correction = _READ_TOOL_WITHHELD_NOTICE
+                        notices.append(_READ_TOOL_WITHHELD_NOTICE)
                     repeated = _a_tool_refused_identically(messages)
                     notice = _a_tool_withheld_notice(*repeated) if repeated is not None else ""
                     if repeated is None:
                         repeated = _a_query_answered_identically(messages)
                         notice = _a_query_withheld_notice(*repeated) if repeated is not None else ""
                     if notice:
-                        correction = f"{correction}\n\n{notice}" if correction else notice
+                        notices.append(notice)
+                    if notices:
+                        correction = "\n\n".join([correction, *notices] if correction else notices)
                 if not correction:
                     return handler(request)
                 overrides: dict[str, Any] = {}

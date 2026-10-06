@@ -59,8 +59,32 @@ def test_readiness_fails_when_redis_is_unreachable(client, monkeypatch):
 
 
 def test_model_health_is_reachable_for_an_admin(client):
+    """It pings every registered model, so it pings only a stand-in here.
+
+    Run after the tests that build chat models from this host's own settings,
+    it pinged whatever servers those named - the operator's local model servers,
+    busy with a real run - and the suite stopped there with no summary.
+    """
+    from types import SimpleNamespace
+
+    from app.models.router import ModelRouter
+
+    pinged = []
+
+    class _Model:
+        def invoke(self, messages, config=None):
+            pinged.append(messages)
+            return "pong"
+
+    ModelRouter.for_configuration(
+        SimpleNamespace(llm_provider="local", openai_base_url="http://stand-in/v1", model_name="m"),
+        [{"name": "m", "model": _Model()}],
+    )
+
     response = client.get("/api/health/models")
+
     assert response.status_code == 200
+    assert pinged and list(response.json().values()) == [{"m": "healthy"}]
 
 
 # ---------------------------------------------------------------------------

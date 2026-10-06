@@ -298,6 +298,22 @@ def client(authed_app):
 
 
 @pytest.fixture(autouse=True)
+def _no_model_router_outlives_its_test():
+    """A router registered by one test must not be pinged by another.
+
+    Building a chat model registers a router for its configuration, process-wide,
+    and the model health endpoint pings every registered model for real. A test
+    of that endpoint run after the tests that build models from this host's own
+    settings sent requests to the operator's local model servers.
+    """
+    from app.models.router import ModelRouter
+
+    ModelRouter.reset()
+    yield
+    ModelRouter.reset()
+
+
+@pytest.fixture(autouse=True)
 def _forget_what_stages_have_seen():
     """Per-stage memory must not carry from one test into the next.
 

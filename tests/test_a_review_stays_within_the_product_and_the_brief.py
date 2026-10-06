@@ -90,3 +90,38 @@ def test_advice_adds_no_rule_the_brief_does_not_state() -> None:
     sentence = ADVISOR[ADVISOR.index(rule):].split("Each recommendation")[0].lower()
     for word in BANNED:
         assert not re.search(rf"\b{word}\b", sentence), word
+
+
+class TestSecurityIsGradedByItsOwnReview:
+    """One run's milestone review made the security review's medium finding
+    major, twice in one sprint, and three attempts went on encryption."""
+
+    @staticmethod
+    def _milestone(*findings):
+        from app.agents.milestone_reviewer import MilestoneReviewFinding, MilestoneReviewOutput
+
+        return MilestoneReviewOutput(
+            status="changes_required",
+            findings=[MilestoneReviewFinding(severity=sev, category=cat, description=d, required_remediation="r")
+                      for sev, cat, d in findings],
+            acceptance_evidence="e", documentation_reviewed=True, tests_reviewed=True,
+        )
+
+    def test_a_security_finding_the_security_review_did_not_gate_is_minor(self) -> None:
+        review = self._milestone(("major", "security", "XOR with a fixed key"), ("major", "correctness", "Save does nothing"))
+        security = SecurityReviewOutput(status="findings", findings=[_finding("XOR with a fixed key").model_copy(update={"severity": "medium"})])
+
+        graded = workflow._security_graded_by_its_own_review(review, security)
+
+        assert [(f.category, f.severity) for f in graded.findings] == [("security", "minor"), ("correctness", "major")]
+
+    def test_one_it_graded_high_still_gates(self) -> None:
+        review = self._milestone(("blocking", "security", "Stored text runs as markup"))
+        security = SecurityReviewOutput(status="findings", findings=[_finding("innerHTML").model_copy(update={"severity": "high"})])
+
+        assert workflow._security_graded_by_its_own_review(review, security) is review
+
+    def test_without_a_security_review_nothing_changes(self) -> None:
+        review = self._milestone(("major", "security", "x"))
+
+        assert workflow._security_graded_by_its_own_review(review, None) is review

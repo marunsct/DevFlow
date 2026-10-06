@@ -4019,6 +4019,55 @@ def _findings_the_dependency_check_contradicts(review: Any, state: Any) -> Any:
         return review
 
 
+#: The security review's grades that may hold a sprint. Everything below them
+#: is the security reviewer saying "worth fixing, not urgent".
+_SECURITY_GRADES_THAT_GATE = frozenset({"critical", "high"})
+
+
+def _security_graded_by_its_own_review(review: Any, security_review: Any) -> Any:
+    """`review` with its gating security findings made minor when the security review gated none.
+
+    The security reviewer is the one asked to grade security, and the milestone
+    reviewer is shown its findings. Measured on one run, twice in one sprint:
+    the security review rated records in the user's own browser "readable via
+    devtools" medium and the milestone review made it major; once the sprint
+    had answered with an XOR cipher, the security review rated that low and
+    medium and the milestone review again made it major - three attempts at a
+    sprint spent on encryption the brief never mentions, and a real bug added
+    (`btoa` refuses text outside Latin-1).
+
+    Kept, as minor, with the security review's own word on it. Never raises.
+    """
+    try:
+        if security_review is None:
+            return review
+        graded = {
+            str(getattr(finding, "severity", "") or "").lower()
+            for finding in getattr(security_review, "findings", None) or []
+        }
+        if graded & _SECURITY_GRADES_THAT_GATE:
+            return review
+        findings, moved = [], 0
+        for finding in getattr(review, "findings", None) or []:
+            if (
+                str(getattr(finding, "category", "") or "").lower() == "security"
+                and _severity_gates(getattr(finding, "severity", ""))
+            ):
+                moved += 1
+                finding = finding.model_copy(update={"severity": "minor"})
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning(
+            "Milestone review raised %d security finding(s) above what the security "
+            "review graded; recorded as minor",
+            moved,
+        )
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
 def _findings_about_a_server_only_the_tests_start(review: Any, repo_root: str) -> Any:
     """`review` with each gating finding about a test runner's own server made minor.
 
@@ -6584,7 +6633,10 @@ def build_workflow_graph(
             _findings_the_command_record_contradicts(
                 _findings_about_a_server_only_the_tests_start(
                     _findings_the_dependency_check_contradicts(
-                        _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+                        _security_graded_by_its_own_review(
+                            _findings_a_later_sprint_builds(update.pop("__milestone_review__"), state),
+                            state.get("security_review"),
+                        ),
                         state,
                     ),
                     state["repository"].root_path,

@@ -10,6 +10,11 @@ from pathlib import Path
 #: version looks for a browser build that is not there.
 PLAYWRIGHT = "1.63.0"
 
+#: The accessibility engine the page probe runs (`page_check`). A dev
+#: dependency only: it is test setup, never shipped, and a brief's "no external
+#: dependencies" constrains what ships (`app.agents.brief_constraints`).
+AXE_CORE = "4.14.0"
+
 UNIT_SCRIPT = (
     "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout "
     "--test-reporter=junit --test-reporter-destination=test-results/unit.xml tests/"
@@ -90,6 +95,7 @@ _PAGE_CHECK = """// Kept by the harness. Before any test runs, the page is loade
 // every test fails with "element not found", which says nothing about why.
 import { chromium } from '@playwright/test';
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
 const NOT_THE_PRODUCT = /favicon\\.ico/;
@@ -140,6 +146,28 @@ export default async function pageCheck(config) {
     // here or named differently here.
     shows = (await page.locator('body').ariaSnapshot({ timeout: 3_000 })).slice(0, 1_500);
     try {
+      // What an accessibility engine finds on the page as it loads: only what
+      // it calls serious or critical. axe-core is a dev dependency of the
+      // project; without it this measures nothing and says nothing.
+      const axe = createRequire(import.meta.url).resolve('axe-core/axe.min.js');
+      await page.addScriptTag({ path: axe });
+      layout.accessibility = await page.evaluate(async () => {
+        const found = await window.axe.run(document, { resultTypes: ['violations'] });
+        return found.violations
+          .filter((rule) => rule.impact === 'serious' || rule.impact === 'critical')
+          .slice(0, 10)
+          .map((rule) => ({
+            id: rule.id,
+            impact: rule.impact,
+            help: rule.help,
+            count: rule.nodes.length,
+            where: rule.nodes.slice(0, 3).map((node) => node.target.join(' ')),
+          }));
+      });
+    } catch (error) {
+      // Not installed, or the page would not run it: nothing is said.
+    }
+    try {
       await page.setViewportSize({ width: 1280, height: 800 });
       await page.screenshot({ path: join(root, 'test-results/page-desktop.png'), fullPage: true });
       await page.setViewportSize({ width: 375, height: 740 });
@@ -167,6 +195,15 @@ export default async function pageCheck(config) {
   }
   if (shows) {
     console.log(`\\nThe page, loaded with nothing driving it, shows:\\n${shows}\\n`);
+  }
+  if (layout.accessibility?.length) {
+    console.log(
+      '\\nAn accessibility check of the page as it loads finds these serious or critical problems:\\n'
+      + layout.accessibility
+        .map((rule) => `  - ${rule.id} (${rule.impact}): ${rule.help} - ${rule.count} element(s), e.g. ${rule.where.join(', ')}`)
+        .join('\\n')
+      + '\\n',
+    );
   }
 }
 """

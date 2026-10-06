@@ -104,7 +104,12 @@ PACK = StackPack(
     language="javascript",
     frameworks=("express", "node", "node.js", "html", "vanilla", "javascript"),
     files={
-        "package.json": api.PACKAGE_JSON,
+        # The service's manifest, with the page probe's accessibility engine:
+        # this product has a page, the service alone does not.
+        "package.json": api.PACKAGE_JSON.replace(
+            '"@playwright/test": "%s"' % js.PLAYWRIGHT,
+            '"@playwright/test": "%s",\n    "axe-core": "%s"' % (js.PLAYWRIGHT, js.AXE_CORE),
+        ),
         "playwright.config.js": js.playwright_config(
             "node src/index.js", "/api/health", screenshot="on", checks_the_page=True
         ),

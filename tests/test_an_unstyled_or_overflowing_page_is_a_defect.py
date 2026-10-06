@@ -152,3 +152,60 @@ def test_the_acceptance_result_carries_the_overflow(tmp_path) -> None:
 
     assert suite._read_phone_overflow(report) == 37
     assert suite._read_phone_overflow(None) == 0
+
+
+class TestAnAccessibilityEngineChecksThePage:
+    """axe-core, a test-only dependency of every page pack, run by the page probe.
+
+    It catches what a script can: a control with no name, text too faint to
+    read, structure announced wrongly. Proven on a real product: with its
+    labels removed, the probe reported `label (critical): Form elements must
+    have labels`.
+    """
+
+    @pytest.mark.parametrize("name", ["browser-javascript", "browser-react", "fullstack-node"])
+    def test_every_page_pack_installs_it_for_tests_only(self, name) -> None:
+        from app.stacks.packs._javascript import AXE_CORE
+
+        manifest = json.loads(pack_named(name).files["package.json"].replace("{{project}}", "x"))
+
+        assert manifest["devDependencies"]["axe-core"] == AXE_CORE
+        assert "axe-core" not in (manifest.get("dependencies") or {})
+
+    def test_the_probe_runs_it_and_keeps_only_what_is_serious(self) -> None:
+        from app.stacks.packs._javascript import page_check
+
+        probe = page_check("/")
+
+        assert "axe-core/axe.min.js" in probe and "window.axe.run" in probe
+        assert "'serious'" in probe and "'critical'" in probe
+
+    def test_the_result_carries_what_it_found(self, tmp_path) -> None:
+        report = tmp_path / "page-load.json"
+        report.write_text(json.dumps({"layout": {"accessibility": [
+            {"id": "label", "impact": "critical", "help": "Form elements must have labels",
+             "count": 1, "where": ["#title-input"]},
+        ]}}))
+
+        assert suite._read_accessibility(report) == [{
+            "id": "label", "impact": "critical", "help": "Form elements must have labels",
+            "count": 1, "where": ["#title-input"],
+        }]
+        assert suite._read_accessibility(None) == []
+
+    def test_what_it_found_goes_to_the_ui_ux_specialist(self, tmp_path) -> None:
+        project = _scaffolded(tmp_path)
+        (project / "styles.css").write_text("main { gap: 1rem; }\n")
+        path = tmp_path / suite.RESULT_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"ran": True, "shows": "- main", "accessibility": [
+            {"id": "color-contrast", "impact": "serious", "help": "Elements must meet minimum color contrast ratio thresholds",
+             "count": 3, "where": ["p.hint"]},
+        ]}))
+
+        [defect] = acceptance_nodes.interface_defects(
+            {"repository": SimpleNamespace(root_path=str(tmp_path)), "document": SimpleNamespace(text="")}
+        )
+
+        assert defect.owner == "ui_ux" and "color-contrast" in defect.description
+        assert "3 element(s), e.g. p.hint" in defect.actual_behavior

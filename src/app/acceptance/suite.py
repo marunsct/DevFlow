@@ -296,6 +296,10 @@ class AcceptanceResult:
     #: How many pixels wider than a phone's screen (375px) the page is, from
     #: the same report; 0 when it fits or was not measured.
     phone_overflow: int = 0
+    #: The serious and critical rules an accessibility engine found broken on
+    #: the page as it loads - id, impact, help, count, where - from the same
+    #: report; [] when none, or when it could not run.
+    accessibility: list[dict[str, Any]] = field(default_factory=list)
 
     def failing(self, ids: Sequence[str] | None = None) -> list[CriterionResult]:
         wanted = set(ids) if ids is not None else None
@@ -369,6 +373,7 @@ class AcceptanceResult:
             "runtime_problems": self.runtime_problems,
             "shows": self.shows,
             "phone_overflow": self.phone_overflow,
+            "accessibility": self.accessibility,
         }
 
 
@@ -434,6 +439,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
     )
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
     result.phone_overflow = _read_phone_overflow(runtime_file)
+    result.accessibility = _read_accessibility(runtime_file)
     _with_the_pages_they_failed_on(repo_root, project, result)
     return _judged(repo_root, result, save)
 
@@ -538,6 +544,27 @@ def _read_phone_overflow(path: Path | None) -> int:
         return max(0, int(layout.get("phoneOverflow") or 0))
     except (OSError, ValueError, AttributeError, TypeError):
         return 0
+
+
+def _read_accessibility(path: Path | None) -> list[dict[str, Any]]:
+    """The accessibility rules the page probe found broken, from its report; [] if none or unknown."""
+    if path is None:
+        return []
+    try:
+        found = json.loads(path.read_text(encoding="utf-8")).get("layout", {}).get("accessibility") or []
+    except (OSError, ValueError, AttributeError):
+        return []
+    kept = []
+    for rule in found if isinstance(found, list) else []:
+        if isinstance(rule, dict) and rule.get("id"):
+            kept.append({
+                "id": str(rule.get("id"))[:80],
+                "impact": str(rule.get("impact") or "")[:20],
+                "help": str(rule.get("help") or "")[:200],
+                "count": int(rule.get("count") or 0) if str(rule.get("count") or "0").isdigit() else 0,
+                "where": [str(item)[:120] for item in (rule.get("where") or [])[:3]],
+            })
+    return kept[:10]
 
 
 def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> AcceptanceResult:

@@ -623,6 +623,32 @@ def interface_defects(state: Any) -> list[Any]:
             # The check itself is the test: it runs on every round.
             regression_test_required=False,
         ))
+    broken = [rule for rule in saved.get("accessibility") or [] if isinstance(rule, dict) and rule.get("id")]
+    if broken:
+        listed = "; ".join(
+            f"{rule.get('id')} ({rule.get('impact')}): {rule.get('help')} - {rule.get('count')} element(s)"
+            + (f", e.g. {', '.join(rule.get('where') or [])}" if rule.get("where") else "")
+            for rule in broken
+        )
+        defects.append(ReportedDefect(
+            description=(
+                f"An accessibility check of the page finds {len(broken)} serious or critical "
+                "rule(s) broken: " + ", ".join(str(rule.get("id")) for rule in broken) + "."
+            ),
+            severity="major",
+            reproduction_steps=(
+                "Load the page and run axe-core on it, as the harness's page check does before "
+                "every run of the acceptance suite; its report is in the suite's output."
+            ),
+            expected_behavior=(
+                "Every control has a name a screen reader announces, text has enough contrast "
+                "to read, and the page's structure is announced correctly."
+            ),
+            actual_behavior=listed[:1500],
+            affected_files=[],
+            owner="ui_ux",
+            regression_test_required=False,
+        ))
     overflow = int(saved.get("phone_overflow") or 0)
     brief = str(getattr(state.get("document"), "text", "") or "")
     if overflow > 0 and interface_checks.asks_for_small_screens(brief):

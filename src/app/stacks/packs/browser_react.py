@@ -27,6 +27,7 @@ PACKAGE_JSON = """{
   "devDependencies": {
     "@playwright/test": "%(playwright)s",
     "@testing-library/dom": "^10.4.0",
+    "axe-core": "%(axe)s",
     "@testing-library/react": "^16.1.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -37,7 +38,7 @@ PACKAGE_JSON = """{
     "vitest": "^3.2.0"
   }
 }
-""" % {"unit": UNIT_SCRIPT, "playwright": js.PLAYWRIGHT}
+""" % {"unit": UNIT_SCRIPT, "playwright": js.PLAYWRIGHT, "axe": js.AXE_CORE}
 
 VITE_CONFIG = """import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';

@@ -59,10 +59,11 @@ PACKAGE_JSON = """{
   },
   "devDependencies": {
     "@playwright/test": "%(playwright)s",
+    "axe-core": "%(axe)s",
     "jsdom": "%(jsdom)s"
   }
 }
-""" % {"unit": UNIT_SCRIPT, "playwright": js.PLAYWRIGHT, "jsdom": JSDOM}
+""" % {"unit": UNIT_SCRIPT, "playwright": js.PLAYWRIGHT, "jsdom": JSDOM, "axe": js.AXE_CORE}
 
 SERVE = """// Serves this project's files: for the acceptance tests, and for a person
 // trying the product (`npm start`, then open the address it prints).

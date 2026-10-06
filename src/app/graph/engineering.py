@@ -81,25 +81,63 @@ _OR_THE_TEST_IS_OUT_OF_DATE = (
 )
 
 
-def regression_defects(state: Any, lost: list[str]) -> list[Any]:
+#: What a regressed test that no longer exists may be: replaced on purpose.
+#:
+#: Measured on one run: a batch replaced four unit tests of a placeholder with
+#: tests of the behaviour that replaced it. CI reported the four as passing
+#: before and failing now; four fix stages looked for a failing test, found
+#: none, and one answered "unable to identify failure cause".
+_GONE_ON_PURPOSE = (
+    " If this sprint replaced what it tested on purpose, a test of the new "
+    "behaviour may stand in its place: then nothing is broken - name that test in "
+    "your answer and change nothing."
+)
+
+
+def _gone(after: Any, name: str) -> bool:
+    """Whether the test `name` ("unit: key") did not run at all in `after`."""
+    if after is None:
+        return False
+    kind, _, key = name.partition(": ")
+    ran = after.unit_ran if kind == "unit" else after.acceptance_ran
+    now = after.unit if kind == "unit" else after.acceptance
+    return bool(ran) and ci._outcome_now(now, key) is None
+
+
+def regression_defects(state: Any, lost: list[str], after: Any = None) -> list[Any]:
+    """A defect for each test that passed before and does not now.
+
+    `after` is the measurement that found them; with it, a test that did not run
+    at all is described as gone rather than failing.
+    """
     from app.agents.specialists import ReportedDefect
 
     owner = _owner_of(state, "")
-    defects = [
-        ReportedDefect(
-            description=f"Regression: `{name}` passed before this batch of work orders and fails now.",
+    defects = []
+    for name in lost[:MOST_REGRESSION_DEFECTS]:
+        gone = _gone(after, name)
+        unit = name.startswith("unit:")
+        defects.append(ReportedDefect(
+            description=(
+                f"Regression: `{name}` passed before this batch of work orders and "
+                + ("is gone now - no test of that name ran." if gone else "fails now.")
+            ),
             severity="major",
             reproduction_steps=f"Run the {name.split(':', 1)[0]} tests in the project directory.",
             expected_behavior=(
-                "It passes, as it did before this sprint's work orders."
-                + (_OR_THE_TEST_IS_OUT_OF_DATE if name.startswith("unit:") else "")
+                ("It still runs and passes." + (_GONE_ON_PURPOSE if unit else ""))
+                if gone
+                else "It passes, as it did before this sprint's work orders."
+                + (_OR_THE_TEST_IS_OUT_OF_DATE if unit else "")
             ),
-            actual_behavior="It fails after them.",
+            actual_behavior=(
+                "No test of that name ran after them: it was removed or renamed."
+                if gone
+                else "It fails after them."
+            ),
             affected_files=[],
             owner=owner,
-        )
-        for name in lost[:MOST_REGRESSION_DEFECTS]
-    ]
+        ))
     if len(lost) > MOST_REGRESSION_DEFECTS:
         defects[-1].actual_behavior += f" ({len(lost) - MOST_REGRESSION_DEFECTS} more tests regressed with it.)"
     return defects
@@ -195,7 +233,7 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         stage="code_review",
         ci_report=report,
         ci_batch_commit=batch,
-        review_defects=[*regression_defects(state, lost), *underlined],
+        review_defects=[*regression_defects(state, lost, after), *underlined],
     )
 
 

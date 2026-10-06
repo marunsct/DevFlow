@@ -5584,6 +5584,16 @@ LOSSES_BEFORE_REFUSING_A_REWRITE = 2
 #: Per-instance fallback, for a write outside a graph run.
 _LOSSES_OUTSIDE_A_RUN: dict[str, int] = {}
 
+#: A whole-file write under this share of the lines of the file it replaces,
+#: that would remove at least `FRAGMENT_DROPS` definitions, is a fragment sent
+#: as the file: refused on the first send rather than noted. See
+#: `_a_fragment_sent_as_the_file`.
+FRAGMENT_SHARE = 0.25
+FRAGMENT_DROPS = 5
+
+#: Per-instance fallback for the fragments refused once, outside a graph run.
+_FRAGMENTS_OUTSIDE_A_RUN: dict[str, bool] = {}
+
 
 def _what_a_file_defines(content: str) -> set[str]:
     """The top-level names a file defines, by the shallowest reading that works."""
@@ -5707,6 +5717,52 @@ def _the_version_there_now(relative_path: str, existing: str) -> str:
     return _quote(lines, 0, len(lines), None)
 
 
+def _a_fragment_sent_as_the_file(
+    target: Path, relative_path: str, content: str, dropped: list[str]
+) -> str:
+    """The refusal for a fragment written over the whole file, or "".
+
+    The rung below names a lost definition and lets the first such write land,
+    because a rewrite that drops one is sometimes a deliberate refactor. A few
+    lines written over a module that defined dozens of names is not one.
+    Measured over the stored runs: of 78 first writes that rule let land, the
+    largest losses were 1 to 17 lines sent over a module, removing 13 to 54
+    definitions - one run's fix stage wrote a four-line function over its
+    465-line `app.js`, every test failed, and the fix was reverted.
+
+    Refused once per content: the same write sent again is a decision, and
+    passes on to the rung below.
+    """
+    if len(dropped) < FRAGMENT_DROPS:
+        return ""
+    try:
+        existing = target.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+    before, after = _line_count(existing), _line_count(content)
+    if after >= before * FRAGMENT_SHARE:
+        return ""
+    import hashlib
+
+    digest = hashlib.sha1(f"{relative_path}\0{content}".encode("utf-8", "replace")).hexdigest()
+    try:
+        from app.agents.stage_memory import store
+
+        refused = store("fragments_written_as_a_file", _FRAGMENTS_OUTSIDE_A_RUN)
+    except Exception:  # noqa: BLE001 - bookkeeping must not decide a write
+        refused = _FRAGMENTS_OUTSIDE_A_RUN
+    if refused.get(digest):
+        return ""
+    refused[digest] = True
+    return (
+        f"Refusing to write '{relative_path}': a whole-file write replaces the file, "
+        f"and what you sent is {after} line(s) where the file has {before}, so this "
+        "would leave only what you sent. Nothing was written. To change one part, "
+        "change that part with `edit_artifact` or `replace_lines` and the rest stays. "
+        "If the file really is to become only this, send the same write again."
+    )
+
+
 def _a_rewrite_that_drops_what_the_file_defines(
     root: Path, target: Path, relative_path: str, content: str
 ) -> str:
@@ -5764,6 +5820,9 @@ def _a_rewrite_that_drops_what_the_file_defines(
         return ""
     listed = ", ".join(f"`{name}`" for name in dropped[:MAX_LOST_DEFINITIONS_NAMED])
     more = f" and {len(dropped) - MAX_LOST_DEFINITIONS_NAMED} more" if len(dropped) > MAX_LOST_DEFINITIONS_NAMED else ""
+    fragment = _a_fragment_sent_as_the_file(target, relative_path, content, dropped)
+    if fragment:
+        raise RepositoryToolError(fragment + f" It would remove {listed}{more}.")
     try:
         from app.agents.stage_memory import store
 

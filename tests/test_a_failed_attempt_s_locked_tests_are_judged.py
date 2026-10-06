@@ -79,11 +79,14 @@ class TestWhenADisputeIsDue:
             "[AC-5] does it"
         ]
 
-    def test_not_twice_for_one_sprint_nor_once_repairs_are_spent(self, tmp_path, monkeypatch) -> None:
+    def test_once_per_failed_attempt_and_not_once_repairs_are_spent(self, tmp_path, monkeypatch) -> None:
         monkeypatch.setattr(suite, "is_locked", lambda root: True)
         _measured(tmp_path, **{"AC-5": "failed"})
 
-        assert not workflow._a_dispute_is_due(self._state(tmp_path, disputed_sprints=[4]))
+        assert not workflow._a_dispute_is_due(self._state(tmp_path, disputed_sprints=["4:1"]))
+        again = self._state(tmp_path, disputed_sprints=["4:1"])
+        again["sprint_attempts"] = [*again["sprint_attempts"], {"sprint_index": 4, "status": "Failed"}]
+        assert workflow._a_dispute_is_due(again)
         assert not workflow._a_dispute_is_due(
             self._state(tmp_path, suite_repairs=acceptance_nodes.MAX_SUITE_REPAIRS)
         )

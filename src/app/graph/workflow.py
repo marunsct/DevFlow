@@ -516,8 +516,8 @@ class WorkflowGraphState(TypedDict, total=False):
     # the harness saw fail repeatedly. See `app.sprint.record`.
     sprint_findings: list[dict[str, Any]]
     nothing_left_but_carried: str | None
-    # The sprints whose failed attempt's locked tests the QA lead has judged.
-    disputed_sprints: list[int]
+    # The failed attempts ("sprint index:attempts") whose locked tests the QA lead has judged.
+    disputed_sprints: list[str]
     carried_forward: list[str]
     lessons: list[str]
     milestone_plan: MilestonePlanOutput
@@ -4458,6 +4458,23 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     return [entry for entry in failing if entry[0] and not (entry[0] in seen or seen.add(entry[0]))]
 
 
+def _this_attempt(state: Any) -> str:
+    """The sprint and how many attempts at it have been recorded: "4:2" for sprint 5's third.
+
+    A dispute is judged once per failed attempt, not once per sprint: one run's
+    first dispute named all three tests that could not pass, a fault in the
+    harness dropped the answer, and the sprint spent two more attempts on them
+    with its one dispute spent. The suite's repairs still bound how often it is
+    reopened.
+    """
+    index = int(state.get("current_sprint_index") or 0)
+    attempts = [
+        entry for entry in state.get("sprint_attempts") or []
+        if isinstance(entry, dict) and entry.get("sprint_index") == index
+    ]
+    return f"{index}:{len(attempts)}"
+
+
 def _a_dispute_is_due(state: Any) -> bool:
     """Whether this re-plan of a failed attempt should first have its failing locked tests judged."""
     from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS
@@ -4466,7 +4483,7 @@ def _a_dispute_is_due(state: Any) -> bool:
         return False
     if [c for c in state.get("revision_comments") or [] if str(c).strip()]:
         return False
-    if int(state.get("current_sprint_index") or 0) in (state.get("disputed_sprints") or []):
+    if _this_attempt(state) in (state.get("disputed_sprints") or []):
         return False
     if int(state.get("suite_repairs") or 0) >= MAX_SUITE_REPAIRS:
         return False
@@ -6574,8 +6591,7 @@ def build_workflow_graph(
         from app.agents.suite_dispute import build_dispute_request, tests_it_names
         from app.graph.acceptance_nodes import SPRINT_REPLAN, reopen_the_suite_for
 
-        index = int(state.get("current_sprint_index") or 0)
-        disputed = sorted({*(state.get("disputed_sprints") or []), index})
+        disputed = sorted({*map(str, state.get("disputed_sprints") or []), _this_attempt(state)})
         failing = _the_locked_tests_still_failing(state)
         if not failing:
             return _handing_on(stage="technical_lead", disputed_sprints=disputed)

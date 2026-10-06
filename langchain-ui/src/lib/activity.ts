@@ -79,6 +79,10 @@ const STAGE_COPY: Record<string, StageCopy> = {
     title: "Checking the specialists' advice",
     blurb: 'Each specialist asked before the design checks its advice was built this sprint.',
   },
+  acceptance_dispute: {
+    title: 'Judging the failing tests',
+    blurb: 'Before a failed sprint is planned again, the QA lead says which locked tests no right product could pass.',
+  },
   milestone_review: {
     title: 'Reviewing the work',
     blurb: 'Checking the finished piece against what was planned.',

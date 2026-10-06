@@ -299,7 +299,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
 
         return _handing_on(
             **update,
-            stage=return_to,
+            stage="technical_lead" if return_to == SPRINT_REPLAN else return_to,
             acceptance_return_to=None,
             acceptance_feedback=[],
             acceptance_open_problems=open_problems,
@@ -836,8 +836,15 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
     return acceptance_requests.acceptance_block(result, due), broken
 
 
-def reopen_the_suite_for(state: Any, broken: list[str]) -> dict[str, Any] | None:
-    """Send tests that can never pass back to QA, then back to this round; None when spent."""
+#: Where a suite repaired for a failed attempt's dispute goes back to: the
+#: sprint's planning, with no change request to brief it on.
+SPRINT_REPLAN = "sprint_replan"
+
+
+def reopen_the_suite_for(
+    state: Any, broken: list[str], return_to: str = "test_and_triage"
+) -> dict[str, Any] | None:
+    """Send tests that can never pass back to QA, then back to `return_to`; None when spent."""
     from app.acceptance.junit import tags_in
     from app.graph.workflow import _handing_on
 
@@ -857,7 +864,7 @@ def reopen_the_suite_for(state: Any, broken: list[str]) -> dict[str, Any] | None
     return _handing_on(
         **update,
         stage="acceptance_author",
-        acceptance_return_to="test_and_triage",
+        acceptance_return_to=return_to,
         acceptance_round=0,
         acceptance_feedback=[*broken, REPAIR_RULE],
         suite_repairs=repairs + 1,

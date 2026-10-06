@@ -137,6 +137,7 @@ def agents(monkeypatch: pytest.MonkeyPatch) -> ScriptedAgents:
         "create_milestone_reviewer_agent": "milestone_reviewer",
         "create_security_reviewer_agent": "security_reviewer",
         "create_stack_selector_agent": "stack_selector",
+        "create_suite_dispute_agent": "suite_dispute",
     }
     for factory_name, role in simple_roles.items():
         monkeypatch.setattr(

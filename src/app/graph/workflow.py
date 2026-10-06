@@ -123,6 +123,7 @@ from app.agents.sprint_summary import (
 from app.agents.stack_selector import StackSelectorOutput, create_stack_selector_agent
 from app.agents.specialist_advice import create_specialist_advice_agent
 from app.agents.advice_review import create_advice_reviewer_agent
+from app.agents.suite_dispute import create_suite_dispute_agent
 from app.agents.specialists import (
     ReportedDefect,
     SpecialistOutput,
@@ -377,6 +378,7 @@ _NODE_NAMES = frozenset(
         "security_review",
         "advice_review",
         "milestone_review",
+        "acceptance_dispute",
         "user_review_sprint",
         "sprint_advance",
         "change_request",
@@ -514,6 +516,8 @@ class WorkflowGraphState(TypedDict, total=False):
     # the harness saw fail repeatedly. See `app.sprint.record`.
     sprint_findings: list[dict[str, Any]]
     nothing_left_but_carried: str | None
+    # The sprints whose failed attempt's locked tests the QA lead has judged.
+    disputed_sprints: list[int]
     carried_forward: list[str]
     lessons: list[str]
     milestone_plan: MilestonePlanOutput
@@ -4431,6 +4435,44 @@ def _carried_to_this_plan(state: Any) -> list[str]:
 _UNTESTED_DECLINES = "technical_lead:untested_declines"
 
 
+def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
+    """(test name, criterion, failure) for each locked test the last measurement shows failing."""
+    from app.acceptance import suite as acceptance_suite
+
+    try:
+        root = state["repository"].root_path
+        if not acceptance_suite.is_locked(root):
+            return []
+        saved = acceptance_suite.last_result(root) or {}
+    except Exception:  # noqa: BLE001 - nothing readable, nothing to judge
+        return []
+    deferred = set(acceptance_suite.deferred(root) or {})
+    failing: list[tuple[str, str, str]] = []
+    for cid, criterion in (saved.get("criteria") or {}).items():
+        if not isinstance(criterion, dict) or cid in deferred:
+            continue
+        for test in criterion.get("tests") or []:
+            if isinstance(test, dict) and test.get("outcome") == "failed":
+                failing.append((str(test.get("name") or ""), f"{cid}: {criterion.get('text', '')}", str(test.get("message") or "")))
+    seen: set[str] = set()
+    return [entry for entry in failing if entry[0] and not (entry[0] in seen or seen.add(entry[0]))]
+
+
+def _a_dispute_is_due(state: Any) -> bool:
+    """Whether this re-plan of a failed attempt should first have its failing locked tests judged."""
+    from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS
+
+    if _the_last_failed_attempt_at_this_sprint(state) is None:
+        return False
+    if [c for c in state.get("revision_comments") or [] if str(c).strip()]:
+        return False
+    if int(state.get("current_sprint_index") or 0) in (state.get("disputed_sprints") or []):
+        return False
+    if int(state.get("suite_repairs") or 0) >= MAX_SUITE_REPAIRS:
+        return False
+    return bool(_the_locked_tests_still_failing(state))
+
+
 def _carried_here(state: Any) -> list[str]:
     """What earlier sprints carried to this one's lead to take or decline."""
     return [str(item) for item in state.get("carried_forward") or [] if str(item).strip()]
@@ -5430,6 +5472,12 @@ def build_workflow_graph(
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state["sprint_plan"].sprints
         current_goal = sprints[sprint_index].goal if sprints and sprint_index < len(sprints) else ""
+
+        # A failed attempt's locked tests are judged once before it is planned
+        # again: one that no right product could pass goes back to QA. See
+        # `app.agents.suite_dispute`.
+        if _a_dispute_is_due(state):
+            return _handing_on(stage="acceptance_dispute")
 
         # A sprint review that requested changes re-enters here. Reuse the
         # shared revision prompt so the lead sees its previous milestone plan
@@ -6518,6 +6566,50 @@ def build_workflow_graph(
             + findings_of(review, "security", state.get("milestone_revision_count", 0) + 1),
         )
 
+    def acceptance_dispute_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        """The QA lead judges a failed attempt's locked tests. See `app.agents.suite_dispute`."""
+        from pathlib import Path
+
+        from app.acceptance import suite as acceptance_suite
+        from app.agents.suite_dispute import build_dispute_request, tests_it_names
+        from app.graph.acceptance_nodes import SPRINT_REPLAN, reopen_the_suite_for
+
+        index = int(state.get("current_sprint_index") or 0)
+        disputed = sorted({*(state.get("disputed_sprints") or []), index})
+        failing = _the_locked_tests_still_failing(state)
+        if not failing:
+            return _handing_on(stage="technical_lead", disputed_sprints=disputed)
+        root = state["repository"].root_path
+        code = "\n\n".join(
+            f"--- {path.relative_to(Path(root)).as_posix()} ---\n{path.read_text(encoding='utf-8', errors='replace')}"
+            for path in acceptance_suite.suite_files(root)
+        )[:16000]
+        agent = create_suite_dispute_agent(
+            model=judgement_model, checkpointer=shared_checkpointer,
+            repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+        )
+        update = _run_gated_agent(
+            state,
+            config,
+            stage_name="acceptance_dispute",
+            agent=agent,
+            initial_request=build_dispute_request(
+                failing, code, getattr(state.get("document"), "text", "") or ""
+            ),
+            output_key="__suite_dispute__",
+            next_stage="acceptance_dispute",
+        )
+        if _hand_back(update, "__suite_dispute__"):
+            return update
+        named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing])
+        update.pop("stage", None)
+        if named:
+            logger.warning("The QA lead says %d locked test(s) cannot pass; reopening the suite", len(named))
+            reopened = reopen_the_suite_for(state, named, return_to=SPRINT_REPLAN)
+            if reopened is not None:
+                return _handing_on(**{**update, **reopened, "disputed_sprints": disputed})
+        return _handing_on(**update, stage="technical_lead", disputed_sprints=disputed)
+
     def advice_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""
         from app.agents.advice_review import build_advice_review_request, findings_from, roles_to_review
@@ -7249,6 +7341,7 @@ def build_workflow_graph(
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
     graph.add_node("advice_review", advice_review_node, retry_policy=agent_retry_policy)
+    graph.add_node("acceptance_dispute", acceptance_dispute_node, retry_policy=agent_retry_policy)
     graph.add_node("milestone_review", milestone_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_sprint", user_review_sprint_node)
     graph.add_node("sprint_advance", sprint_advance_node)
@@ -7290,6 +7383,7 @@ def build_workflow_graph(
         "security_review",
         "advice_review",
         "milestone_review",
+        "acceptance_dispute",
         "user_review_sprint",
         "sprint_advance",
         "change_request",

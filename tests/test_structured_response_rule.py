@@ -40,6 +40,7 @@ AGENTS = [
     "specialists",
     "specialist_advice",
     "advice_review",
+    "suite_dispute",
 ]
 
 

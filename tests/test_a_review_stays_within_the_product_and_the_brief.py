@@ -269,3 +269,41 @@ class TestALocatorLeftBehindByItsOwnChange:
         [problem] = suite.tests_left_behind_by_their_own_change(str(scaffolded), result)
 
         assert "`[AC-3] edits`" in problem and "Find the item again by the text it shows now" in problem
+
+
+class TestASpecificationThatDisablesAControl:
+    """One run's UI/UX advice, told never to disable a control the brief names,
+    advised disabling it until its field held text; the architect adopted it,
+    code review demanded it, the page check demanded the opposite, and the
+    sprint's fixers undid each other until its attempts ran out."""
+
+    @staticmethod
+    def _spec(**sections):
+        from app.agents.principal_architect import TechnicalSpecificationOutput
+        from test_graph_routing import _spec
+
+        return _spec(**sections)
+
+    def test_is_sent_back_to_the_architect(self) -> None:
+        from app.agents.specialist_advice import what_the_specification_owes
+
+        spec = self._spec(
+            interface_design=["The primary control is disabled until the first field holds text."],
+            specialist_advice_decisions=["UX-1: adopted - interface_design"],
+        )
+
+        [problem] = what_the_specification_owes(spec, {"ui_ux": ["x"]})
+
+        assert "disables a control until something is done" in problem
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", problem.split('"')[0].lower() + problem.split('". ')[-1].lower()), word
+
+    @pytest.mark.parametrize("line", [
+        "Buttons have hover, focus and disabled states.",
+        "A disabled control is shown at half opacity.",
+        "The list fades in when the page loads.",
+    ])
+    def test_a_disabled_style_alone_is_not(self, line) -> None:
+        from app.agents.specialist_advice import controls_disabled_until_something
+
+        assert controls_disabled_until_something(self._spec(interface_design=[line])) == []

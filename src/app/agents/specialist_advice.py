@@ -332,6 +332,36 @@ def adopted(advice: dict[str, list[str]] | None, specification: Any, role: str) 
     return kept
 
 
+#: A control disabled on a condition: "disabled until the title holds text".
+_DISABLED_UNTIL = re.compile(
+    r"\bdisabled?\b[^.;\n]{0,80}?\b(?:until|unless|while|whenever|when(?:ever)? (?:the|it|no|empty)|if (?:the|no|empty))\b"
+    r"|\baria-disabled\b",
+    re.I,
+)
+
+
+def controls_disabled_until_something(specification: Any) -> list[str]:
+    """The specification's lines that disable a control until a condition holds.
+
+    Measured on one run: the UI/UX advice, told never to disable a control the
+    brief names, advised that "Add task" be disabled until its title held text;
+    the architect adopted it, code review then demanded it, the harness's page
+    check demanded the opposite, and the sprint's fixers undid each other until
+    its attempts ran out.
+    """
+    lines: list[str] = []
+    try:
+        fields = specification.model_dump() if hasattr(specification, "model_dump") else dict(specification or {})
+    except Exception:  # noqa: BLE001 - nothing readable, nothing found
+        return []
+    for value in fields.values():
+        for item in value if isinstance(value, list) else [value]:
+            for line in str(item or "").splitlines():
+                if _DISABLED_UNTIL.search(line):
+                    lines.append(" ".join(line.split()))
+    return lines
+
+
 def what_the_specification_owes(specification: Any, advice: dict[str, list[str]] | None) -> list[str]:
     """Why the specification has not answered the specialists, or [] when it has."""
     problems = []
@@ -342,6 +372,14 @@ def what_the_specification_owes(specification: Any, advice: dict[str, list[str]]
             + ", ".join(missing)
             + ": give each one line, starting with its id, saying it is adopted and where, "
             "or declined and why."
+        )
+    disabling = controls_disabled_until_something(specification)
+    if disabling:
+        problems.append(
+            "It disables a control until something is done: "
+            + "; ".join(f"\"{line[:160]}\"" for line in disabling[:3])
+            + ". Every control the brief names stays usable: an action that cannot go ahead is "
+            "refused when it is tried, with a message saying why. Write it so, wherever it says this."
         )
     if advice and advice.get("ui_ux") and not [
         line for line in getattr(specification, "interface_design", None) or [] if str(line).strip()

@@ -574,6 +574,66 @@ def sprint_already_done(state: Any) -> str:
     )
 
 
+def interface_defects(state: Any) -> list[Any]:
+    """Defects in how the page is presented that a script can prove, for its UI/UX owner.
+
+    Only once the page renders something - before then there is nothing to
+    style. See `app.analysis.interface_checks` for why these are checked at all.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.analysis import interface_checks
+
+    root = _root(state)
+    saved = suite.last_result(root) or {}
+    if not saved.get("ran") or not str(saved.get("shows") or "").strip():
+        return []
+    defects = []
+    sheet = interface_checks.nobody_styled_it(root)
+    if sheet:
+        defects.append(ReportedDefect(
+            description=(
+                "The interface is not styled: the only stylesheet is the one the scaffold "
+                "wrote, and nothing else styles the page."
+            ),
+            severity="major",
+            reproduction_steps=(
+                f"Read {sheet}: it resets box sizing, the font and the page width, and the "
+                "page has no other stylesheet and no style block."
+            ),
+            expected_behavior=(
+                "The page is styled to the interface design in the technical specification: "
+                "its layout at a phone's width and a desktop's, each control's states, the "
+                "feedback after each action, and its visual style."
+            ),
+            actual_behavior="The page shows the browser's own defaults.",
+            affected_files=[sheet],
+            owner="ui_ux",
+            # The check itself is the test: it runs on every round.
+            regression_test_required=False,
+        ))
+    overflow = int(saved.get("phone_overflow") or 0)
+    brief = str(getattr(state.get("document"), "text", "") or "")
+    if overflow > 0 and interface_checks.asks_for_small_screens(brief):
+        defects.append(ReportedDefect(
+            description=(
+                f"At a phone's width (375px) the page is {overflow}px wider than the screen, "
+                "so it scrolls sideways."
+            ),
+            severity="major",
+            reproduction_steps=(
+                "Load the page in a 375px-wide window and compare the document's scroll "
+                "width with the window's width."
+            ),
+            expected_behavior="Everything fits a phone's width, as the brief asks.",
+            actual_behavior=f"The document is {overflow}px wider than a 375px window.",
+            affected_files=[],
+            owner="ui_ux",
+            # The check itself is the test: it runs on every round.
+            regression_test_required=False,
+        ))
+    return defects
+
+
 def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     """A defect for each due criterion that fails and that the round did not report.
 

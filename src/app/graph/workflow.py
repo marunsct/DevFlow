@@ -5878,6 +5878,14 @@ def build_workflow_graph(
                 test_round, len(left_out),
             )
             reported = reported + left_out
+        # How the page is presented, where a script can prove it: an interface
+        # nothing styles, or a page that does not fit the phone the brief asks
+        # for. Before the later-sprint filter, so a plan that styles later keeps
+        # that work for the sprint that builds it.
+        try:
+            reported = reported + acceptance_nodes.interface_defects(state)
+        except Exception:  # noqa: BLE001 - the round's own report stands
+            logger.debug("Could not check how the page is presented", exc_info=True)
         reported, later_work = _defects_a_later_sprint_builds(reported, state)
         if later_work:
             logger.warning(
@@ -6361,6 +6369,18 @@ def build_workflow_graph(
             sprint_scope=_this_sprint_s_scope_for_review(state),
             acceptance=acceptance_text,
         )
+        # The page as a person sees it, for a reviewer whose model can see. See
+        # `app.agents.page_screenshots`; a model that cannot is not sent them.
+        from app.models.vision import the_reviewer_reads_images
+
+        if the_reviewer_reads_images():
+            from app.agents.page_screenshots import with_the_page_screenshots
+
+            request = with_the_page_screenshots(
+                request,
+                state["repository"].root_path,
+                getattr(state.get("technical_specification"), "interface_design", None) or [],
+            )
         update = _run_gated_agent(
             state,
             config,

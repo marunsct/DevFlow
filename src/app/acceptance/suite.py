@@ -293,6 +293,9 @@ class AcceptanceResult:
     #: What the product shows a person before any test touches it (a page's
     #: accessibility tree), from the same report; "" when not recorded.
     shows: str = ""
+    #: How many pixels wider than a phone's screen (375px) the page is, from
+    #: the same report; 0 when it fits or was not measured.
+    phone_overflow: int = 0
 
     def failing(self, ids: Sequence[str] | None = None) -> list[CriterionResult]:
         wanted = set(ids) if ids is not None else None
@@ -365,6 +368,7 @@ class AcceptanceResult:
             "problem": self.problem,
             "runtime_problems": self.runtime_problems,
             "shows": self.shows,
+            "phone_overflow": self.phone_overflow,
         }
 
 
@@ -429,6 +433,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         problem="" if report.found else "the runner wrote no report; its output is below",
     )
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
+    result.phone_overflow = _read_phone_overflow(runtime_file)
     _with_the_pages_they_failed_on(repo_root, project, result)
     return _judged(repo_root, result, save)
 
@@ -522,6 +527,17 @@ def _read_runtime_report(path: Path | None) -> tuple[list[str], str]:
         return [], ""
     problems = [str(item)[:400] for item in data.get("problems") or [] if str(item).strip()]
     return problems[:MOST_RUNTIME_PROBLEMS], str(data.get("shows") or "")[:MOST_SHOWN_CHARS]
+
+
+def _read_phone_overflow(path: Path | None) -> int:
+    """How far past a phone's width the page reached, from the pack's runtime report; 0 if unknown."""
+    if path is None:
+        return 0
+    try:
+        layout = json.loads(path.read_text(encoding="utf-8")).get("layout") or {}
+        return max(0, int(layout.get("phoneOverflow") or 0))
+    except (OSError, ValueError, AttributeError, TypeError):
+        return 0
 
 
 def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> AcceptanceResult:

@@ -99,6 +99,11 @@ export default async function pageCheck(config) {
   if (!baseURL) return;
   const problems = [];
   let shows = '';
+  // How the page sits on a phone, and how it looks: measured once here, so
+  // every run of the suite records it. See `app.analysis.interface_checks`.
+  const layout = {};
+  const root = config.configFile ? dirname(config.configFile) : process.cwd();
+  mkdirSync(join(root, 'test-results'), { recursive: true });
   const note = (text) => {
     if (problems.length < 20 && !problems.includes(text)) problems.push(text);
   };
@@ -134,14 +139,24 @@ export default async function pageCheck(config) {
     // tests' locators search: a control a test cannot find is either absent
     // here or named differently here.
     shows = (await page.locator('body').ariaSnapshot({ timeout: 3_000 })).slice(0, 1_500);
+    try {
+      await page.setViewportSize({ width: 1280, height: 800 });
+      await page.screenshot({ path: join(root, 'test-results/page-desktop.png'), fullPage: true });
+      await page.setViewportSize({ width: 375, height: 740 });
+      await page.waitForTimeout(200);
+      layout.phoneOverflow = await page.evaluate(
+        () => Math.max(0, document.documentElement.scrollWidth - window.innerWidth),
+      );
+      await page.screenshot({ path: join(root, 'test-results/page-phone.png'), fullPage: true });
+    } catch (error) {
+      // A measurement that cannot be taken says nothing; the tests still run.
+    }
   } catch (error) {
     note(`the page did not load: ${String(error.message).split('\\n')[0]}`);
   } finally {
     await browser.close();
   }
-  const root = config.configFile ? dirname(config.configFile) : process.cwd();
-  mkdirSync(join(root, 'test-results'), { recursive: true });
-  writeFileSync(join(root, '%(report)s'), JSON.stringify({ problems, shows }, null, 2));
+  writeFileSync(join(root, '%(report)s'), JSON.stringify({ problems, shows, layout }, null, 2));
   if (problems.length) {
     console.log(
       '\\nThe page reported these problems when it loaded, before any test touched it:\\n'

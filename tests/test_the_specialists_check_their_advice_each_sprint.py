@@ -299,3 +299,25 @@ class TestUntestedIsNoReasonToDecline:
         text = untested_is_no_reason(["X-1 declined: not required by tests"]).lower()
         for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
             assert not re.search(rf"\b{word}\b", text), word
+
+
+def test_a_lead_that_answers_nothing_is_asked_again_once(agents, monkeypatch, tmp_path) -> None:
+    """One run's lead returned no work orders and no decisions on eight carried
+    items, and the sprint closed as if it had declined them."""
+    from app.agents.technical_lead import MilestonePlanOutput
+    from test_graph_routing import _milestone
+
+    silent = MilestonePlanOutput(selected_sprint_goal="Sprint 2: more")
+    TestWhatTheyFindIsCarriedForward._two_sprints(agents, monkeypatch, silent)
+    agents.script("technical_lead", [
+        responds_with(_milestone("testing")), responds_with(silent),
+        responds_with(silent.model_copy(update={
+            "carried_forward_decisions": ["UX-1: declined - styles.css already has the rule at 600px"],
+        })),
+    ])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-silent-lead")
+
+    assert len(agents.requests["technical_lead"]) == 3
+    assert "records 0. Give one line per item" in agents.last_request_text("technical_lead")
+    assert state["stage"] == "complete"

@@ -5516,19 +5516,31 @@ def build_workflow_graph(
             from app.analysis.work_orders import declined_because_untested, untested_is_no_reason
 
             untested = declined_because_untested(decisions)
+            carried = _carried_to_this_plan(state)
+            # Silence is no decision either: one run's lead returned no work
+            # orders and no decisions on eight carried items, and the sprint
+            # closed as if it had declined them.
+            unanswered = len(decisions) < len(carried)
             retries = dict(state.get("structured_retries") or {})
             asked = f"{_UNTESTED_DECLINES}:{state.get('current_sprint_index', 0)}"
-            if untested and not retries.get(asked):
+            if (untested or unanswered) and not retries.get(asked):
                 retries[asked] = 1
+                problems = [untested_is_no_reason(untested)] if untested else []
+                if unanswered:
+                    problems.append(
+                        f"{len(carried)} item(s) were carried here and `carried_forward_decisions` "
+                        f"records {len(decisions)}. Give one line per item: the work order that "
+                        "takes it, or why it no longer holds."
+                    )
                 logger.warning(
-                    "The lead declined %d carried item(s) because no test requires them; asking again",
-                    len(untested),
+                    "The lead answered %d of %d carried item(s), %d declined as untested; asking again",
+                    len(decisions), len(carried), len(untested),
                 )
                 return _handing_on(
                     stage="technical_lead",
                     structured_retries=retries,
                     nothing_left_but_carried=nothing_else,
-                    work_order_problems=[untested_is_no_reason(untested)],
+                    work_order_problems=problems,
                     unready_plan=update["milestone_plan"].model_dump_json(indent=2),
                 )
             # The lead's decisions first: the record keeps the rationale's

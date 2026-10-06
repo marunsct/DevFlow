@@ -534,7 +534,14 @@ harness can count."""
 #: expectations, so a bare TypeError or ReferenceError is the test's. One run's
 #: locked suite called `addTask(page, ...)` on a helper declared
 #: `addTask({ page }, ...)`: nine of eleven tests threw before touching the page.
+#:
+#: And Playwright's own refusals of the spec's shape, which no product can get
+#: past: one run's locked suite left a test unclosed, so the next two were
+#: written inside its body and the runner failed it with "did not expect
+#: test() to be called here" - read as the product failing, round after round.
 TEST_BUGS = (
+    r"Playwright Test did not expect \S+ to be called here",
+    r"First argument must use the object destructuring pattern",
     r"^(?!.*\bevaluate\b).*\b(?:TypeError|ReferenceError|SyntaxError)\b",
     r"^(?!.*\bevaluate\b).*Cannot read propert(?:y|ies) of (?:undefined|null)",
     r"^(?!.*\bevaluate\b).*\bis not a function\b",

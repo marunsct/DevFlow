@@ -116,7 +116,13 @@ def test_the_acceptance_stages_return_a_change_request_to_the_sprint(tmp_path, m
     spec = tmp_path / "notes" / "acceptance" / "notes.spec.js"
     suite.unlock(tmp_path)
     spec.write_text(spec.read_text() + "test('[CR-1] newest first', ()=>{});\n")
-    monkeypatch.setattr(suite, "run", lambda root: _result(tmp_path))
+    # A runner reports every test it collected, the change request's too.
+    report = junit.Report(found=True, tests=[
+        junit.TestResult(name=name) for name in ("[AC-1] adds", "[AC-2] deletes", "[CR-1] newest first")
+    ])
+    monkeypatch.setattr(suite, "run", lambda root: suite._judged(
+        root, suite.AcceptanceResult(ran=True, command="npm run test:acceptance", report=report), True
+    ))
 
     def gated(state, config, **kwargs):
         return {kwargs["output_key"]: SimpleNamespace(approved=True, findings=[]), "stage": "x"}

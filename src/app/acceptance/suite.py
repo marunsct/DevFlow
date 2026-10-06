@@ -588,6 +588,38 @@ def tests_that_broke_themselves(repo_root: str | Path, result: AcceptanceResult)
     return broken
 
 
+def tests_the_runner_never_ran(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Tests the suite's files declare for a criterion that the runner's report never lists.
+
+    Counted from the text, a test is there; the runner may never collect it. One
+    run's suite left a test unclosed, so the next two - its only tests of two
+    criteria - were written inside its body: Playwright never registered them,
+    the criteria read "untested" from the day the suite was locked, and each
+    round handed them to the product's fixers, who cannot change the suite.
+
+    Only titles that name a criterion and hold no template expression, so a
+    title built at run time is not taken for one that never ran.
+    """
+    if not result.ran or not result.report.found or not result.report.tests:
+        return []
+    reported = [test.name for test in result.report.tests]
+    missing = []
+    for shown, name in declared_tests(repo_root):
+        if not junit.tags_in(name) or "${" in name:
+            continue
+        # A title read from the text stops at an escaped quote - `a task\'s`
+        # reads as `a task\` - so what precedes the escape is what is matched.
+        if any(name.split("\\", 1)[0] in ran for ran in reported):
+            continue
+        missing.append(
+            f"`{name}` in {shown} is written but the runner never ran it: it is not in the "
+            "runner's report at all, so its criterion is untested whatever is built. A test "
+            "written inside another test's body, or after a block left unclosed, is never "
+            "collected. Make it a test of its own."
+        )
+    return missing
+
+
 def tests_that_need_what_they_never_made(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Locked tests that can pass only on a product that ships with data, by the pack's reader.
 

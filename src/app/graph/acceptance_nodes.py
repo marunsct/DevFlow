@@ -216,6 +216,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()
         )
     problems.extend(suite.tests_that_broke_themselves(root, result))
+    problems.extend(suite.tests_the_runner_never_ran(root, result))
     problems.extend(suite.locators_nobody_sees(root))
     problems.extend(suite.assertions_that_do_not_exist(root))
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
@@ -696,6 +697,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
     root = _root(state)
     broken = [
         *suite.tests_that_broke_themselves(root, result),
+        *suite.tests_the_runner_never_ran(root, result),
         *suite.assertions_that_do_not_exist(root),
         *suite.tests_that_need_what_they_never_made(root, result),
     ]

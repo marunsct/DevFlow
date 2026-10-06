@@ -168,7 +168,10 @@ def test_an_approved_suite_is_locked_and_described(tmp_path, gated, monkeypatch)
 
 def test_the_qa_lead_s_findings_go_back_until_the_last_round(tmp_path, gated, monkeypatch) -> None:
     _authored(tmp_path, ALL_THREE)
-    monkeypatch.setattr(suite, "run", lambda root: _ran(passed_names=["[AC-1] adds"]))
+    # A runner reports every test it collected, passed or not.
+    monkeypatch.setattr(suite, "run", lambda root: _ran(
+        passed_names=["[AC-1] adds"], failed_names=["[AC-2] deletes", "[AC-3] persists"]
+    ))
     finding = "AC-1: passes before anything is built; it only checks the heading"
     gated.answers["acceptance_review"] = [SimpleNamespace(approved=False, findings=[finding])] * 2
 
@@ -309,6 +312,7 @@ def test_a_locked_test_that_cannot_pass_sends_the_suite_back_to_qa_once_built(tm
     monkeypatch.setattr(nodes, "run_for_sprint", lambda state: (_ran(failed_names=["[AC-2] deletes"]), ["AC-2"]))
     monkeypatch.setattr(suite, "tests_that_broke_themselves", lambda root, result: list(broken))
     monkeypatch.setattr(suite, "assertions_that_do_not_exist", lambda root: [])
+    monkeypatch.setattr(suite, "tests_the_runner_never_ran", lambda root, result: [])
     state = _state(tmp_path, sprint_plan=_plan(["AC-1", "AC-2"]), current_sprint_index=0, decisions=[])
 
     text, cannot_pass = nodes.acceptance_for_round(state)

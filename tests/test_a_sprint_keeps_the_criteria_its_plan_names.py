@@ -63,3 +63,24 @@ def test_criteria_named_in_criteria_still_win() -> None:
 
     assert assigned.sprints[0].criteria == ["AC-1", "AC-2"]
     assert assigned.sprints[1].criteria == ["AC-3", "AC-4"]
+
+
+def test_a_bare_number_under_acceptance_criteria_is_the_criterion_it_numbers() -> None:
+    """The next run's planner listed sprint 3's criterion as "3", not "AC-3"."""
+    plan = _the_run_s_plan(named=True)
+    for sprint, numbers in zip(plan.sprints, (["1"], ["2", "3", "4"], ["5"])):
+        sprint.acceptance_criteria = numbers
+
+    assigned, notes = with_every_criterion_assigned(plan, IDS, TEXTS)
+
+    assert [s.criteria for s in assigned.sprints] == [["AC-1"], ["AC-2", "AC-3", "AC-4"], ["AC-5"]]
+    assert not any("by what each sprint says it builds" in note for note in notes)
+
+
+def test_prose_under_acceptance_criteria_names_nothing() -> None:
+    plan = _the_run_s_plan(named=False)
+    plan.sprints[0].acceptance_criteria = ["Users can add an item and see it at once"]
+
+    assigned, _ = with_every_criterion_assigned(plan, IDS, TEXTS)
+
+    assert "AC-1" in assigned.sprints[0].criteria

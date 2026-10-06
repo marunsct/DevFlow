@@ -524,7 +524,10 @@ def _the_ids_it_names(sprint: Any, known: list[str]) -> list[Any]:
         return claimed
     named: list[str] = []
     for item in getattr(sprint, "acceptance_criteria", None) or []:
-        named += [tag for tag in tags_in(str(item)) if tag in known and tag not in named]
+        # A bare number too, as `_as_a_criterion_id` reads one: the next run's
+        # planner listed sprint 3's as "3".
+        ids = list(tags_in(str(item))) or [_as_a_criterion_id(item, known)]
+        named += [tag for tag in ids if tag in known and tag not in named]
     return named
 
 

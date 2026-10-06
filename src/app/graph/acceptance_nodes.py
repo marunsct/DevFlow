@@ -407,6 +407,52 @@ def _failing_due(state: Any) -> tuple[list[dict[str, Any]], str]:
     return failing, str(saved.get("command") or "")
 
 
+def criteria_failing_now(state: Any, text: str) -> list[str]:
+    """The criteria `text` names that the harness's last run of the suite found failing."""
+    from app.acceptance.junit import tags_in
+
+    saved = suite.last_result(_root(state)) or {}
+    entries = {**(saved.get("criteria") or {}), **(saved.get("change_requests") or {})}
+    return [
+        tag for tag in tags_in(text)
+        if (entries.get(tag) or {}).get("status") in {"failed", "untested"}
+    ]
+
+
+def passing_since_reported(state: Any, failing: list[str]) -> list[str]:
+    """`failing` when every test of each passes in a measurement taken since, else [].
+
+    `failing` is what a test round found failing when it reported a defect. A
+    measurement taken by one of this round's fixes - `before` or `after` it, in
+    CI's own labels - is later than that report; a fix CI reverted is never
+    saved, so its passing tests cannot count.
+
+    Measured on one run: two defects in one round had one cause, the first fix
+    made every criterion of the second pass, and the second was handed to a
+    fixer anyway. Told to fix what already worked, it spent its budget on a
+    later sprint's criteria instead.
+    """
+    import re
+
+    from app import ci
+    from app.acceptance.junit import tags_in
+
+    if not failing:
+        return []
+    latest = ci.load(_root(state), "latest")
+    measured_since = rf"(?:before|after) defect_fix_{int(state.get('test_round', 0) or 0)}_\d+"
+    if latest is None or not re.fullmatch(measured_since, str(latest.label or "")):
+        return []
+    for criterion in failing:
+        outcomes = [
+            outcome for key, outcome in (latest.acceptance or {}).items()
+            if criterion in tags_in(key)
+        ]
+        if not outcomes or any(outcome != "passed" for outcome in outcomes):
+            return []
+    return list(failing)
+
+
 def done_by_the_definition(state: Any) -> list[str]:
     """The criteria due now when every one of them passes in the harness's last run, else [].
 

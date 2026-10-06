@@ -3410,6 +3410,62 @@ def _needs_a_regression_test(reported: Any) -> bool:
     return not _only_tests_or_scratch(getattr(reported, "affected_files", None))
 
 
+def _closed_if_an_earlier_fix_resolved_it(
+    state: Any, cycle: Any, defect_index: int
+) -> dict[str, Any] | None:
+    """The update closing this defect when a fix earlier in its round resolved it, else None.
+
+    Resolved means every criterion it named that was failing when it was
+    reported passes in a measurement taken since. See
+    `acceptance_nodes.passing_since_reported`. Never for a stage paused or under
+    way, whose fixer has already begun; never raises.
+    """
+    try:
+        if state.get("pending_inner_thread_id"):
+            return None
+        from app.acceptance import suite as acceptance_suite
+        from app.graph import acceptance_nodes
+
+        defect = cycle.defects[defect_index]
+        resolved = acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
+        if not resolved:
+            return None
+        root = state["repository"].root_path
+        named = ", ".join(resolved)
+        logger.warning(
+            "Defect '%s' is already fixed: %s, failing when it was reported, now "
+            "pass(es); closed without a fixer",
+            defect.description[:80], named,
+        )
+        return _handing_on(
+            stage="defect_remediation",
+            defect_cursor=defect_index + 1,
+            fix_base_commit="",
+            remediation=mark_defect_fixed(
+                cycle, defect_index,
+                regression_test=f"the locked acceptance tests of {named}",
+                verified_by=str(acceptance_suite.last_result(root).get("command") or ""),
+                resolution=(
+                    f"Fixed by an earlier fix in the same round: {named} failed when "
+                    "this was reported and pass since."
+                ),
+            ),
+        )
+    except Exception:  # noqa: BLE001 - a defect not closed here goes to a fixer as before
+        logger.debug("Could not tell whether an earlier fix resolved a defect", exc_info=True)
+        return None
+
+
+def _failing_criteria_it_names(state: Any, reported: Any) -> list[str]:
+    """The criteria a reported defect names that fail now. See `Defect.failing_criteria`."""
+    try:
+        from app.graph import acceptance_nodes
+
+        return acceptance_nodes.criteria_failing_now(state, str(getattr(reported, "description", "") or ""))
+    except Exception:  # noqa: BLE001 - a defect without them is dispatched as before
+        return []
+
+
 def _needs_a_new_test(reported: Any, caught_by: str) -> bool:
     """Whether a fix for this defect has to come with a test nobody has written yet.
 
@@ -5724,6 +5780,7 @@ def build_workflow_graph(
                 owner=item.owner,
                 regression_test_required=_needs_a_new_test(item, caught_by),
                 caught_by=caught_by,
+                failing_criteria=_failing_criteria_it_names(state, item),
             )
             for item in reported
         ]
@@ -5911,11 +5968,16 @@ def build_workflow_graph(
         defect = cycle.defects[defect_index]
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
 
+        # Fixed already, by an earlier fix in this round: nothing for a fixer
+        # to do, and a fixer told to fix what works finds other work.
+        closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, defect_index)
+        if closed is not None:
+            return closed
+
         agent = create_specialist_agent(
             defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         from app.acceptance.junit import tags_in
-        from app.graph import acceptance_nodes
 
         request = build_defect_fix_request(
             defect.description,

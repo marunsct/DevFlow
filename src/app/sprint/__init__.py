@@ -59,6 +59,14 @@ class Defect(BaseModel):
             "passing is its proof. Set by the controller, never by a specialist."
         ),
     )
+    failing_criteria: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The acceptance criteria this defect names that the harness's own run of "
+            "the locked suite found failing when it was reported. Set by the "
+            "controller, never by a specialist."
+        ),
+    )
     status: DefectStatus = Field(default="open")
     verified_by: str = Field(
         default="",

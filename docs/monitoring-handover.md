@@ -99,12 +99,33 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 
 | script | what it is for |
 |---|---|
-| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]` (also records the harness's own verdict and flags a false acceptance), `mutate [run] [n]` (n small changes to the product; how many the run's locked suite catches), `bench-report` (false acceptances per benchmark across `data/bench/`), `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment. |
-| `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0), redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
+| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]` (also records the harness's own verdict and flags a false acceptance), `mutate [run] [n]` (n small changes to the product; how many the run's locked suite catches), `bench-report` (false acceptances per benchmark across `data/bench/`), `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `defects [run-id]`, `asked [run-id] <stage> [visit] [--full] [--system]`, `failures [run-id] [--full]`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment. |
+| `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0; a call a restart cut off before its result is counted apart as `[+N re-run after a restart ... expected]`), the times the run was resumed after its worker stopped, redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
+| `defects.py` | `loop.sh defects [run-id]`: each sprint attempt's defect queue - the check that raised each defect (`test round`, `acceptance suite`, `language service`, `code review`, `page check`, `regression`, `cross-file check`, `test command`) and every event after it (closed without a fixer, closed by the round's measurement, fixed with the fixer's account, left open, reverted). Reads the transcript's `defect` records (from `cd06dd8`; older runs have none). Duplicates show as one story under several sources. |
+| `asked.py` | `loop.sh asked [run-id] <stage>`: what a stage was told (each message, cut at 3000 characters unless `--full`; the system prompt with `--system`), the calls it made, and its final structured answer. A stage visited several times lists its visits; a third argument picks one. Replaces the ad-hoc transcript snippets. |
+| `failures.py` | `loop.sh failures [run-id]`: each failing acceptance test of the last measurement, with its criterion, the error and call log, and the page as the product showed it when the test failed - what tells a stale locator, a missing `page.goto` and a product bug apart. |
 | `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
 | `product_audit.py` | the product half of the audit (`loop.sh product [run-id]`): the product files, code lines per file (counted as the brief's line cap is), the intake's acceptance criteria, what the harness claimed (sprint summary counts, milestone acceptance evidence), and the product's own test command run once. Prints evidence; the reading is the checklist in 0.4.1. |
 | `redundant_reads.py` | re-reads by (stage, file) and which notice answered them. One pair with many re-reads has twice been a misleading harness message. |
 | `scripts/audit_run.py` | the older whole-run audit (predates this loop): separates *refusals that prevented damage* from *failures that cost the run*, and runs the cross-file checks over the product. Use it on a finished run; see section 5. |
+
+Records the harness keeps for an audit (from `969d6e6`..`70c50cc`, 2026-10-07):
+
+- **Worker log lines** read `[time: LEVEL/process] [run-xxxxxxxx stage] message`:
+  the run (first 12 characters) and stage from the graph's config, or the run
+  the worker task executes; `[- -]` for a line outside any run. Filter a run's
+  lines with `grep "\[run-xxxxxxxx "` instead of by time window.
+- **Each defect carries its source**, shown in the Sprint Record as
+  `- [STATUS] description - raised by <source> (Owner: role)`.
+- **Every locked suite version** is kept in `<workspace>/.harness/acceptance-locks/vN/`
+  with `vN.diff` from the version before; the decision that re-locks a reopened
+  suite quotes the diff.
+- **Decision rationales are whole** in state and in `<workspace>/.harness/decisions.json`;
+  only `docs/decision_log.md` shortens one past 2000 characters, saying so.
+- **Mid-run hidden score, operator only**: `LOOP_SHADOW_SCORE=1 loop.sh wait N`
+  adds a shadow score to each check. Off by default - a score in view mid-run
+  invites tuning the harness to the benchmark. `score` deletes the hidden tests
+  and its working copy from the worker as soon as it finishes.
 
 `loop.sh start` logs in with `LOOP_USER` / `LOOP_PASSWORD` from the
 environment; no credential is stored in the repository. The loop's operator
@@ -141,7 +162,10 @@ auditing has to be copied again.
 
 Then, for every failure signature and every stage that looks wrong:
 
-1. `loop.sh stage <stage>` and read the replies around the failure. Decide:
+1. `loop.sh failures` for the failing tests with their pages, `loop.sh defects`
+   for what each round queued and how it ended, `loop.sh asked <stage>` for
+   what a stage was told and answered, and `loop.sh stage <stage>` to read the
+   replies around a failure. Decide:
    guard working as designed (a refused repeat, a parse refusal that kept a
    broken file off disk) - or a harness message that is wrong, misleading or
    missing. Only the second is a finding.

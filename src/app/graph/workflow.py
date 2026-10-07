@@ -2076,6 +2076,36 @@ def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
     )
 
 
+#: Stages whose "could not do it" the workflow already has an outcome for: a
+#: defect left open for the next round, a work order returned with blockers.
+_STAGES_THAT_MAY_RETURN_BLOCKED = ("defect_fix_", "specialist_")
+
+_CUT_OFF_BLOCKER = (
+    "Every reply of this stage was cut off at the model's output limit before it wrote "
+    "anything, so nothing was done here; the harness recorded this answer in its place."
+)
+
+
+def _blocked_for_want_of_room(stage_name: str) -> Any | None:
+    """A structured answer saying the stage could not reply, where the workflow handles one; else None.
+
+    Measured on one run: a defect-fix stage's first reply was 25,000 tokens of
+    reasoning, the reply after it - thinking off - was 25,000 tokens with
+    nothing in them, and the run failed 4 h 45 min in on that one stage. A fix
+    not made has an outcome - the defect stays open and the next round
+    measures it - so one fix or work-order stage that cannot reply does not
+    end the run. Every other stage still fails it, as before.
+    """
+    if not str(stage_name or "").startswith(_STAGES_THAT_MAY_RETURN_BLOCKED):
+        return None
+    try:
+        from app.agents.specialists import SpecialistOutput
+
+        return SpecialistOutput(blockers=[_CUT_OFF_BLOCKER])
+    except Exception:  # noqa: BLE001 - then the run fails, as before
+        return None
+
+
 def _nothing_but_reasoning(message: Any) -> bool:
     """Whether this reply hit the output ceiling having produced nothing at all.
 
@@ -2519,10 +2549,17 @@ def _run_gated_agent(
         )
         if restarted is not None:
             return restarted
-        attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
-        raise ValueError(
-            _missing_structured_response(stage_name, result, attempts=attempted + 1)
+        blocked = _blocked_for_want_of_room(stage_name) if out_of_room else None
+        if blocked is None:
+            attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
+            raise ValueError(
+                _missing_structured_response(stage_name, result, attempts=attempted + 1)
+            )
+        logger.warning(
+            "Stage %s produced only replies cut off at the output limit; recorded as blocked "
+            "rather than failing the run", stage_name,
         )
+        structured_response = blocked
 
     # An answer is cleaned, a file is refused: see `app.agents.model_output`.
     from app.agents.model_output import answer_without_leaked_turns
@@ -6802,7 +6839,18 @@ def build_workflow_graph(
         verified_by = _what_the_ledger_confirms(
             state["repository"].root_path, fix_result.verification
         )
-        if defect.regression_test_required and not regression_test:
+        if fix_result.blockers and not fix_result.changed_files:
+            # Blocked and nothing changed: not a fix. Recorded as fixed, it was
+            # closed with no change behind it, and a stage that could not
+            # reply at all now answers this way (`_blocked_for_want_of_room`).
+            # The next round measures it again.
+            update["remediation"] = cycle
+            defect_ledger.note(
+                "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                sprint=state.get("current_sprint_index", 0),
+                detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
+            )
+        elif defect.regression_test_required and not regression_test:
             # No named regression test: the defect stays open on purpose. The
             # next test round will count this as another failed attempt, so the
             # bounded loop still terminates.

@@ -718,6 +718,44 @@ def test_specialist_dispatch_runs_every_delegated_task(agents: ScriptedAgents, t
     }
 
 
+def test_a_fix_stage_whose_replies_are_all_cut_off_leaves_its_defect_open(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One run failed 4 h 45 min in because one defect fix lost its reply to
+    the output limit, and then the reply after it. A fix not made has an
+    outcome - the defect stays open for the next round - so the run goes on."""
+    from langchain_core.messages import AIMessage
+
+    from app.observability import defect_ledger
+
+    events: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(defect_ledger, "note", lambda event, stage, **fields: events.append((event, fields)))
+    cut_off = {"messages": [AIMessage(content="", response_metadata={"finish_reason": "length"})]}
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("backend"))])
+    agents.script("specialist_backend", [
+        responds_with(_specialist()),
+        cut_off,
+        cut_off,
+        responds_with(_specialist(tests=["tests/test_bookings_regression.py"])),
+    ])
+    agents.script("specialist_testing", [
+        responds_with(_specialist(defects=[_defect(owner="backend")])),
+        responds_with(_specialist()),
+        responds_with(_specialist()),
+    ])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-cut-off-fix")
+
+    assert state["stage"] == "complete", state.get("error")
+    left = [fields for event, fields in events if event == "left open"]
+    assert left and "changed nothing" in left[0]["detail"] and "output limit" in left[0]["detail"]
+    assert [event for event, _ in events].count("fixed") == 1
+
+
 def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:

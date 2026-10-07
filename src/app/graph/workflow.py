@@ -520,6 +520,7 @@ class WorkflowGraphState(TypedDict, total=False):
     nothing_left_but_carried: str | None
     # The failed attempts ("sprint index:attempts") whose locked tests the QA lead has judged.
     disputed_sprints: list[str]
+    dispute_returns_to: str | None
     carried_forward: list[str]
     lessons: list[str]
     milestone_plan: MilestonePlanOutput
@@ -4897,6 +4898,41 @@ def _a_dispute_is_due(state: Any) -> bool:
     return bool(_the_locked_tests_still_failing(state))
 
 
+def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
+    """Whether a fix stage's blockers name a file of the locked acceptance suite. Never raises."""
+    try:
+        from app.acceptance import suite as acceptance_suite
+
+        root = state["repository"].root_path
+        if not acceptance_suite.is_locked(root):
+            return False
+        names = {path.name for path in acceptance_suite.suite_files(root)}
+        text = " ".join(map(str, blockers or []))
+        return any(name and name in text for name in names)
+    except Exception:  # noqa: BLE001 - not blamed is how it was before
+        return False
+
+
+def _a_dispute_may_be_held_now(state: Any) -> bool:
+    """Whether this attempt may have its failing locked tests judged before it ends.
+
+    Measured on one run: sprint 4's locked responsive test had a logic error -
+    it switched to the "Active" view and expected no items, though the item it
+    had added was active. Every fix stage in two rounds - three of them sent to
+    defects already fixed - changed nothing and named that test as the reason,
+    and each defect was left open. A dispute waited for the attempt to fail,
+    which cost the attempt's remaining rounds first. Once per attempt, as at a
+    re-plan, and only while the suite may still be repaired.
+    """
+    from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS
+
+    if _this_attempt(state) in (state.get("disputed_sprints") or []):
+        return False
+    if int(state.get("suite_repairs") or 0) >= MAX_SUITE_REPAIRS:
+        return False
+    return bool(_the_locked_tests_still_failing(state))
+
+
 def _carried_here(state: Any) -> list[str]:
     """What earlier sprints carried to this one's lead to take or decline."""
     return [str(item) for item in state.get("carried_forward") or [] if str(item).strip()]
@@ -7014,6 +7050,17 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0),
                 detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
             )
+            if _blames_a_locked_test(state, fix_result.blockers) and _a_dispute_may_be_held_now(state):
+                # The fix stage says a locked test is what cannot pass. That is
+                # the QA lead's to judge, now - not after the attempt has spent
+                # its rounds on it. See `_a_dispute_may_be_held_now`.
+                logger.warning(
+                    "Stage %s changed nothing and blames the locked suite; the QA lead "
+                    "judges its failing tests before the round goes on", stage_name,
+                )
+                update["specialist_outputs"] = {**dict(state.get("specialist_outputs", {})), stage_name: fix_result}
+                update["defect_cursor"] = defect_index + 1
+                return _handing_on(**{**update, "stage": "acceptance_dispute", "dispute_returns_to": "test_and_triage"})
         elif defect.regression_test_required and not regression_test:
             # No named regression test: the defect stays open on purpose. The
             # next test round will count this as another failed attempt, so the
@@ -7110,9 +7157,13 @@ def build_workflow_graph(
         from app.graph.acceptance_nodes import SPRINT_REPLAN, reopen_the_suite_for
 
         disputed = sorted({*map(str, state.get("disputed_sprints") or []), _this_attempt(state)})
+        # Held mid-attempt, it goes back to the attempt: a repaired suite to the
+        # round, and nothing to repair to the remediation it interrupted.
+        returns_to = state.get("dispute_returns_to")
+        carry_on = "defect_remediation" if returns_to else "technical_lead"
         failing = _the_locked_tests_still_failing(state)
         if not failing:
-            return _handing_on(stage="technical_lead", disputed_sprints=disputed)
+            return _handing_on(stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None)
         root = state["repository"].root_path
         code = "\n\n".join(
             f"--- {path.relative_to(Path(root)).as_posix()} ---\n{path.read_text(encoding='utf-8', errors='replace')}"
@@ -7139,10 +7190,10 @@ def build_workflow_graph(
         update.pop("stage", None)
         if named:
             logger.warning("The QA lead says %d locked test(s) cannot pass; reopening the suite", len(named))
-            reopened = reopen_the_suite_for(state, named, return_to=SPRINT_REPLAN)
+            reopened = reopen_the_suite_for(state, named, return_to=returns_to or SPRINT_REPLAN)
             if reopened is not None:
-                return _handing_on(**{**update, **reopened, "disputed_sprints": disputed})
-        return _handing_on(**update, stage="technical_lead", disputed_sprints=disputed)
+                return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None})
+        return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None)
 
     def advice_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""

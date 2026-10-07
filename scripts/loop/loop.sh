@@ -21,6 +21,17 @@
 #                                            (scripts/bench/score.py); the result lands in data/bench/<run>.json
 #   scripts/loop/loop.sh checks [labels]     how often each cross-file check fires over the stored
 #                                            workspaces, and its precision against labels (check_precision.py)
+#   scripts/loop/loop.sh defects [run-id]    each round's defect queue: the check that raised each
+#                                            defect and what became of it (defects.py)
+#   scripts/loop/loop.sh asked [run-id] <stage> [visit] [--full] [--system]
+#                                            what a stage was told, the calls it made, and its answer (asked.py)
+#   scripts/loop/loop.sh failures [run-id] [--full]
+#                                            each failing acceptance test: criterion, error, the page (failures.py)
+#
+# LOOP_SHADOW_SCORE=1 makes `wait` also score the product against the benchmark's
+# hidden tests at every check - for the operator only, off by default: a score in
+# view mid-run invites tuning the harness to the benchmark instead of fixing its
+# faults in general. The hidden tests are deleted from the worker right after.
 #
 # Credentials: `start` logs in with LOOP_USER / LOOP_PASSWORD from the environment.
 # They are never stored in this repository. The loop's operator account is created with
@@ -93,6 +104,9 @@ score)
   docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status"
   mkdir -p data/bench
   docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  # The hidden tests and the copy they ran against leave the worker at once:
+  # it is the container the harness's agents work in.
+  docker compose exec -T -u root worker rm -rf /tmp/bench-src /tmp/bench-work "/tmp/bench-$run.json" || true
   ;;
 
 mutate)
@@ -143,9 +157,24 @@ wait)
     grep -iE "Traceback|thinking switched off|output budget|after this reply's earlier edits|Framework instructions" |
     tail -8 || true
   in_worker audit_live.py "$run"
+  if [ "${LOOP_SHADOW_SCORE:-0}" = 1 ]; then
+    echo "--- shadow score (operator only; never shown to the harness) ---"
+    "$0" score "$run" 2>&1 | grep -E "hidden tests pass|FALSE ACCEPTANCE|^  FAIL" | head -6 || true
+  fi
   ;;
 
 audit)  in_worker audit_live.py "${2:-$(current)}" ;;
+defects) in_worker defects.py "${2:-$(current)}" ;;
+asked)
+  shift
+  case "${1:-}" in run-*) ;; *) set -- "$(current)" "$@" ;; esac
+  in_worker asked.py "$@"
+  ;;
+failures)
+  shift
+  case "${1:-}" in run-*) ;; *) set -- "$(current)" "$@" ;; esac
+  in_worker failures.py "$@"
+  ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;

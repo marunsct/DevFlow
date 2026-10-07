@@ -13,7 +13,11 @@ What it prints, and what each line is for:
 
 - `now in` - the stage that wrote the last record, the tool-call count, and the
   share of tool calls whose result was an error or a refusal.
-- `duplicate executions` - one tool call id run more than once. This must be
+- `resumed after its worker stopped` - when orphan recovery resumed the run
+  (a mid-run deploy, a crash), from the transcript's `resumed` records.
+- `duplicate executions` - one tool call id run more than once. A call the
+  worker's restart cut off before its result was recorded runs again on the
+  resume; those are counted apart, as expected. The rest must be
   0; anything else means a resume replayed a call (a harness bug).
 - `redundant reads` - reads answered with a "you already have this" notice or a
   refusal. Healthy runs sit around 8-19%; the digest-less baseline was 20-49%.
@@ -57,6 +61,7 @@ for line in open(paths[0], errors="replace"):
         continue
 
 calls, by_id = {}, collections.defaultdict(list)
+answered, cut_off, resumes = set(), set(), []
 per_stage = collections.Counter()
 failed = collections.Counter()
 signatures = collections.Counter()
@@ -70,13 +75,21 @@ for rec in records:
         if not order or order[-1] != stage:
             order.append(stage)
     kind = rec.get("kind")
+    if kind == "resumed":
+        resumes.append(rec.get("at", "")[11:16])
     if kind == "tool_call":
+        if rec.get("call_id") in calls and rec.get("call_id") not in answered:
+            # Run again with no result recorded for the first time: the worker
+            # stopped mid-call (a deploy, a crash) and the resumed stage ran it
+            # again. Expected - only a replay of a finished call is a bug.
+            cut_off.add(rec.get("call_id"))
         calls[rec.get("call_id")] = rec
         by_id[rec.get("call_id")].append(stage)
         per_stage[stage] += 1
         if rec.get("tool") in READS:
             reads += 1
     elif kind == "tool_result":
+        answered.add(rec.get("call_id"))
         call = calls.get(rec.get("call_id")) or {}
         raw = rec.get("result") or rec.get("content") or ""
         text = json.dumps(raw) if not isinstance(raw, str) else raw
@@ -92,12 +105,16 @@ for rec in records:
             signatures[key] += 1
             examples.setdefault(key, (call.get("stage"), json.dumps(call.get("args") or {})[:100]))
 
-extra = sum(len(v) - 1 for v in by_id.values())
+extra = sum(len(v) - 1 for key, v in by_id.items() if key not in cut_off)
+restarted = sum(len(v) - 1 for key, v in by_id.items() if key in cut_off)
 total_calls = sum(per_stage.values())
 total_failed = sum(failed.values())
 print(f"now in: {last_stage}   records={len(records)}  tool calls={total_calls}  "
       f"failed={total_failed} ({100 * total_failed / max(1, total_calls):.1f}%)")
-print(f"duplicate executions (one call_id run twice): {extra}")
+print(f"duplicate executions (one call_id run twice): {extra}"
+      + (f"   [+{restarted} re-run after a restart cut the first off - expected]" if restarted else ""))
+if resumes:
+    print(f"resumed after its worker stopped (deploys, crashes), UTC: {', '.join(resumes)}")
 print(f"redundant reads: {redundant} of {reads} reads "
       f"({100 * redundant / max(1, reads):.0f}%)   [healthy: 8-19%; before the digest: 20-49%]")
 print("stage order: " + " -> ".join(order[-14:]))

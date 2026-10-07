@@ -2558,9 +2558,19 @@ def _run_gated_agent(
         if followed is not None:
             result = followed
             structured_response = answer_without_leaked_turns(followed["structured_response"])
-            still = _files_it_claims_but_never_wrote(result, structured_response)
-            if still:
-                logger.warning("Stage %s still reports changing %s, which nothing in it wrote", stage_name, ", ".join(still))
+            never_wrote = _files_it_claims_but_never_wrote(result, structured_response)
+    # Asked and still claimed, or not asked because the stage was out of
+    # calls: the record keeps only what changed. Measured on the first stage
+    # asked: one call from its budget, its tools withheld, it named the same
+    # file again.
+    if never_wrote and hasattr(structured_response, "model_copy"):
+        logger.warning(
+            "Stage %s still reports changing %s, which nothing in it wrote; recorded without them",
+            stage_name, ", ".join(never_wrote),
+        )
+        structured_response = structured_response.model_copy(update={"changed_files": [
+            name for name in structured_response.changed_files if str(name).strip() not in never_wrote
+        ]})
 
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)

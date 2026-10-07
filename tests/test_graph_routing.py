@@ -427,6 +427,20 @@ def test_a_stage_reporting_a_change_nothing_made_is_asked_once(agents: ScriptedA
     assert kept.changed_files == [] and kept.blockers
 
 
+def test_a_stage_that_claims_it_again_is_recorded_without_it(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """The first stage asked was one call from its budget, with its tools
+    withheld, and named the same file again: the record keeps only what changed."""
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+    claim = responds_with(_specialist(changed_files=["tests/test_bookings.py"]))
+    agents.script("specialist_testing", [claim, claim, responds_with(_specialist())])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-claimed-twice")
+
+    assert state["stage"] == "complete", state.get("error")
+    assert state["specialist_outputs"]["specialist_testing_0"].changed_files == []
+
+
 def test_a_completed_run_leaves_nothing_uncommitted(agents: ScriptedAgents, tmp_path: Any) -> None:
     """The release decision, its evidence and the last sprint's record are
     written after the release's own commit. Three finished runs ended with

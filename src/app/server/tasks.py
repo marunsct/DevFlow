@@ -24,7 +24,10 @@ from datetime import datetime, timezone
 
 from celery import Celery
 from celery.signals import (
+    after_setup_logger,
+    after_setup_task_logger,
     task_failure,
+    task_postrun,
     task_prerun,
     worker_process_init,
     worker_process_shutdown,
@@ -253,6 +256,34 @@ def _init_worker_process(**_kwargs) -> None:
     _runner = WorkflowRunner(event_bus=EventBus(), run_store=RunStore.shared())
     _runner_owner = os.getpid()
     logger.info("Worker process initialised")
+
+
+@after_setup_logger.connect
+@after_setup_task_logger.connect
+def _name_the_run_on_every_line(logger=None, **_kwargs) -> None:
+    """Every log line carries `[run stage]`. See `app.observability.log_context`."""
+    try:
+        from app.observability.log_context import install
+
+        install(logger)
+    except Exception:  # noqa: BLE001 - logging as it was beats no logging
+        pass
+
+
+@task_prerun.connect
+def _the_run_this_task_executes(task=None, args=None, kwargs=None, **_other) -> None:
+    """Name the task's run on lines logged outside a graph node; cleared after the task."""
+    from app.observability import log_context
+
+    run_id = (kwargs or {}).get("run_id") or (args[0] if args else None)
+    log_context._TASK_RUN.set(str(run_id) if run_id else None)
+
+
+@task_postrun.connect
+def _no_run_after_the_task(**_kwargs) -> None:
+    from app.observability import log_context
+
+    log_context._TASK_RUN.set(None)
 
 
 @task_prerun.connect

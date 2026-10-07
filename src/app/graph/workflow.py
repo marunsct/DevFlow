@@ -2872,6 +2872,14 @@ def _record_sprint_summary(
     defects = [defect for done in earlier for defect in done.get("defects") or []] + now["defects"]
 
     recorded = [dict(entry) for entry in (state.get("sprint_attempts") or [])]
+    # A failed attempt an escalation accepted is closed here, not followed by
+    # one more: the sprint goes on from it as it stands. See
+    # `escalation._the_failed_attempt_accepted`.
+    accepted_at_escalation = ""
+    if status == "Completed":
+        mine = [at for at, entry in enumerate(recorded) if entry.get("sprint_index") == sprint_index]
+        if mine and recorded[mine[-1]].get("accepted_at_escalation"):
+            accepted_at_escalation = str(recorded.pop(mine[-1])["accepted_at_escalation"])
     already = [entry for entry in recorded if entry.get("sprint_index") == sprint_index]
     # Counts belong to this attempt alone, so the window opens where the last
     # recorded attempt closed. Summing every test run in the sprint would count
@@ -2930,6 +2938,7 @@ def _record_sprint_summary(
         "status": status,
         "deferred": _deferred_in_this_attempt(state, since),
         "reason": failure_reason or "",
+        **({"accepted_at_escalation": accepted_at_escalation} if accepted_at_escalation else {}),
         "cases": cases,
         "rounds": state.get("test_round", 0),
         "revisions": len(earlier),

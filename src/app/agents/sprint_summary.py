@@ -244,6 +244,8 @@ def render_sprint_summary(
         for attempt in attempts:
             label = "re-run" if attempt.get("number", 1) > 1 else "first attempt"
             reason = f": {attempt['reason']}" if attempt.get("reason") else ""
+            if attempt.get("accepted_at_escalation"):
+                reason += f" at escalation ({attempt['accepted_at_escalation']})"
             tally = _defect_tally(attempt.get("defects") or ())
             history.append(
                 f"**Attempt {attempt.get('number', '?')}** ({label}) - "
@@ -272,6 +274,7 @@ def render_sprint_summary(
         completed=str(latest.get("status", "")).strip().lower() == "completed",
         attempts_line=attempts_line,
         reason=latest.get("reason") or "",
+        accepted_at_escalation=latest.get("accepted_at_escalation") or "",
         cases=latest.get("cases"),
         planned=[str(item).strip() for item in planned or () if str(item).strip()],
         features=[_one_line(feature) for feature in (latest.get("features") or ())],

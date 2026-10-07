@@ -258,11 +258,29 @@ def _defer_and_continue(
     )
     known = [*(state.get("known_issues") or []), *([error[:600]] if error and not to_defer else [])]
     return _handing_on(
-        **update,
+        **{**update, **_the_failed_attempt_accepted(state, update)},
         stage=_where_next(state),
         escalation=None,
         known_issues=known,
     )
+
+
+def _the_failed_attempt_accepted(state: Any, update: dict[str, Any]) -> dict[str, Any]:
+    """The `sprint_attempts` update marking this sprint's last failed attempt as the one accepted here.
+
+    The sprint goes on as it stands, so its record closes that attempt rather
+    than adding one. Measured on one run: an escalation accepted a sprint's
+    fifth attempt, and its record read "Attempts: 6", the sixth "Completed"
+    with the fifth's rounds and defects, for an attempt that never ran.
+    """
+    index = state.get("current_sprint_index", 0)
+    attempts = [dict(entry) for entry in (update.get("sprint_attempts") or state.get("sprint_attempts") or [])]
+    mine = [at for at, entry in enumerate(attempts) if entry.get("sprint_index") == index]
+    if not mine or attempts[mine[-1]].get("status") == "Completed":
+        return {}
+    decided = [record for record in update.get("decisions") or [] if isinstance(record, dict)]
+    attempts[mine[-1]]["accepted_at_escalation"] = str((decided[-1] if decided else {}).get("decision") or "accepted")
+    return {"sprint_attempts": attempts}
 
 
 def accept(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:

@@ -15,6 +15,9 @@
 **Goal:** {{ goal or "Unknown goal" }}
 **Status:** {{ status }}{{ (", without " ~ (deferred | join(", ")) ~ ": deferred because they could not be made to pass, so this sprint did not deliver them") if deferred else "" }}
 **Attempts:** {{ attempts_line }}
+{% if accepted_at_escalation %}
+**Accepted at escalation:** {{ accepted_at_escalation }} - its last attempt did not pass, and the run went on from it as it stands
+{% endif %}
 {% if reason %}
 **Failure Reason:** {{ reason }}
 {% endif %}

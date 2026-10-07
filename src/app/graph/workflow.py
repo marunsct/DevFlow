@@ -3710,6 +3710,39 @@ def _needs_a_regression_test(reported: Any) -> bool:
     return not _only_tests_or_scratch(getattr(reported, "affected_files", None))
 
 
+#: The test a regression defect names: "Regression: `unit: <key>` passed before ...".
+#: See `app.graph.engineering.regression_defects`.
+_A_REGRESSED_TEST = re.compile(r"^Regression: `((?:unit|acceptance): .+?)` passed before")
+
+
+def _a_regressed_test_passing_since(state: Any, defect: Any) -> str:
+    """The test a regression defect names, when a measurement since shows it passing; else "".
+
+    Since means by one of this round's fixes - `before` or `after` it - as for
+    a defect's criteria (`acceptance_nodes.passing_since_reported`). A
+    regression defect names one test and no criterion, so that check never
+    reached it. Measured on one run: a sprint's restyle undid an earlier
+    contrast fix, four checks raised it, and the first fixer restored it. The
+    regression defect - its test passing again in every measurement after - went
+    to two fixers in turn, each of which changed nothing and said it did not
+    reproduce; it stayed open, and the sprint's attempt was spent on it.
+    """
+    match = _A_REGRESSED_TEST.match(str(getattr(defect, "description", "") or ""))
+    if not match:
+        return ""
+    from app import ci
+
+    latest = ci.load(state["repository"].root_path, "latest")
+    since = rf"(?:before|after) defect_fix_{int(state.get('test_round', 0) or 0)}_\d+"
+    if latest is None or not re.fullmatch(since, str(latest.label or "")):
+        return ""
+    name = match.group(1)
+    kind, _, key = name.partition(": ")
+    ran = latest.unit_ran if kind == "unit" else latest.acceptance_ran
+    now = latest.unit if kind == "unit" else latest.acceptance
+    return name if ran and ci._outcome_now(now, key) == "passed" else ""
+
+
 def _closed_if_an_earlier_fix_resolved_it(
     state: Any, cycle: Any, defect_index: int
 ) -> dict[str, Any] | None:
@@ -3729,6 +3762,31 @@ def _closed_if_an_earlier_fix_resolved_it(
         defect = cycle.defects[defect_index]
         root = state["repository"].root_path
         resolved = acceptance_nodes.passing_since_reported(state, list(defect.failing_criteria or []))
+        regressed = "" if resolved else _a_regressed_test_passing_since(state, defect)
+        if regressed:
+            logger.warning(
+                "Defect '%s' is already fixed: %s passes again; closed without a fixer",
+                defect.description[:80], regressed,
+            )
+            from app.observability import defect_ledger
+
+            defect_ledger.note(
+                "closed without a fixer", f"defect_fix_{state.get('test_round', 0)}_{defect_index}",
+                defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                detail=f"{regressed} passes in a measurement taken since it was reported",
+                sprint=state.get("current_sprint_index", 0),
+            )
+            return _handing_on(
+                stage="defect_remediation",
+                defect_cursor=defect_index + 1,
+                fix_base_commit="",
+                remediation=mark_defect_fixed(
+                    cycle, defect_index,
+                    regression_test=regressed,
+                    verified_by="the harness's measurement after this round's fixes",
+                    resolution=f"Fixed by an earlier fix in the same round: {regressed} passes again.",
+                ),
+            )
         if not resolved:
             from app.graph.engineering import no_longer_underlined
 
@@ -3803,6 +3861,25 @@ def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int)
                 continue
             resolved = acceptance_nodes.passing_in_the_round(state, list(defect.failing_criteria or []))
             if not resolved:
+                regressed = _a_regressed_test_passing_since(state, defect)
+                if regressed:
+                    logger.warning(
+                        "Defect '%s' is fixed: %s passes in the measurement after this "
+                        "round's fixes", defect.description[:80], regressed,
+                    )
+                    from app.observability import defect_ledger
+
+                    defect_ledger.note(
+                        "closed by the round's measurement", f"test_round_{test_round}", defect=defect,
+                        round_=test_round, index=index, detail=f"{regressed} passes again",
+                        sprint=state.get("current_sprint_index", 0),
+                    )
+                    cycle = mark_defect_fixed(
+                        cycle, index,
+                        regression_test=regressed,
+                        verified_by="the harness's measurement after this round's fixes",
+                        resolution=f"{regressed} passes again in the measurement after test round {test_round}'s fixes.",
+                    )
                 continue
             named = ", ".join(resolved)
             logger.warning(

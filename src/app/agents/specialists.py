@@ -12,6 +12,7 @@ without a human approval (see `app.agents.role_agent`).
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
@@ -284,6 +285,18 @@ _NO_BLOCKER = frozenset({
 })
 
 
+def _says_there_is_none(item: str) -> bool:
+    """Whether a blocker entry says there is no blocker - alone, or before a full stop or dash.
+
+    "None of the fixtures load" is a blocker; "None. All tests pass." is not.
+    """
+    text = " ".join(item.split()).lower()
+    if text.strip(" .") in _NO_BLOCKER:
+        return True
+    head = re.split(r"\s*(?:[.;:]\s|[.;:]$|\s[-\u2013\u2014]+\s|[\u2013\u2014]+)", text, maxsplit=1)[0]
+    return head.strip(" .") in _NO_BLOCKER
+
+
 class SpecialistOutput(BaseModel):
     """Structured result every specialist returns, regardless of role.
 
@@ -320,12 +333,11 @@ class SpecialistOutput(BaseModel):
         One run's fix stage, sent a defect an earlier stage had already fixed,
         changed nothing and answered `"blockers": ["None"]`. A stage that is
         blocked and changed nothing leaves its defect open, so the ledger
-        recorded the fixed defect as "left open - ... reported: None".
+        recorded the fixed defect as "left open - ... reported: None". Another,
+        a round later, wrote "None. All sprint-2 tests pass." and "None - the
+        reported defect does not reproduce": the placeholder, then commentary.
         """
-        return [
-            item for item in value
-            if " ".join(str(item).split()).strip(" .").lower() not in _NO_BLOCKER
-        ]
+        return [item for item in value if not _says_there_is_none(str(item))]
 
     defects: list[ReportedDefect] = Field(
         default_factory=list,

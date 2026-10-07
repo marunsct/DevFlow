@@ -715,6 +715,30 @@ def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     ) > 0
 
 
+def test_a_defect_only_about_a_locked_test_beyond_repair_goes_to_no_fixer(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Once the suite may not be repaired again, the round is told which locked
+    tests cannot pass, and a defect about them alone is set aside: a fixer
+    would only answer that it may not change the locked suite."""
+    from app.graph import acceptance_nodes
+
+    broken = "`acceptance/a.spec.js` line 9: `[AC-1] books` looks for `second`, a value the test made itself"
+    monkeypatch.setattr(acceptance_nodes, "acceptance_for_round", lambda state: ("", [broken]))
+    monkeypatch.setattr(acceptance_nodes, "MAX_SUITE_REPAIRS", 0)
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+    unfixable = _defect(owner="testing", description="AC-1 locked test looks for a value it never entered")
+    agents.script("specialist_testing", [responds_with(_specialist()), responds_with(_specialist(defects=[unfixable]))])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-unrepairable")
+
+    assert state["stage"] == "complete", state.get("error")
+    verification = "\n".join(str(m.get("content", "")) for m in agents.requests["specialist_testing"][1]["messages"])
+    assert "cannot pass whatever is built (AC-1)" in verification and broken in verification
+    assert not (state.get("remediation") and state["remediation"].defects)
+
+
 def test_a_defect_open_when_its_attempt_ends_is_recorded_as_left_open(
     agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

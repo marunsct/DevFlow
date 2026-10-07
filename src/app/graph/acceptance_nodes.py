@@ -878,6 +878,32 @@ def reopen_the_suite_for(
     )
 
 
+def beyond_repair(state: Any, broken: list[str]) -> list[str]:
+    """The criteria of locked tests that cannot pass, once the suite may not be repaired again; else [].
+
+    Measured on one run: with its two repairs spent, the round's check named
+    the locked test that looked for a value it never entered - and the list
+    went nowhere. The test engineer found the same fault by reading the
+    evidence, reported it as a defect, and two fix stages in turn answered
+    "a test bug; this stage cannot change the locked suite".
+    """
+    from app.acceptance.junit import tags_in
+
+    if not broken or int(state.get("suite_repairs") or 0) < MAX_SUITE_REPAIRS:
+        return []
+    return sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")})
+
+
+def beyond_repair_note(broken: list[str], criteria: list[str]) -> str:
+    """What a test round is told about the locked tests `beyond_repair` names."""
+    return (
+        f"Locked tests that cannot pass whatever is built ({', '.join(criteria)}). The suite may not be "
+        "repaired again in this run, so their failures are not defects in the product and no fix "
+        "stage can close them: a defect that names only these criteria is set aside.\n"
+        + "\n".join(f"- {item}" for item in broken)
+    )
+
+
 # --- decision records ------------------------------------------------------------
 
 def _decide(state: Any, update: dict[str, Any], **record: Any) -> None:

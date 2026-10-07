@@ -3136,7 +3136,9 @@ def _proven_problems_the_round_left_out(
     return left_out
 
 
-def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any | None:
+def _a_suite_failure_the_round_did_not_report(
+    repo_root: str, stage: str, *, but_the_acceptance_suite: bool = False
+) -> Any | None:
     """A defect for a test round whose own last run of the suite failed, or None.
 
     A round with no defects sends the sprint on to its reviews. Measured on one
@@ -3144,9 +3146,15 @@ def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any
     heap-exhaustion trace, and returned an empty defect list. The sprint went
     to its milestone review as passing, the review found the suite failing, and
     the run ended on its last revision - with nobody ever asked to fix it.
+
+    `but_the_acceptance_suite`: not when that run was of the locked acceptance
+    suite, whose failures the round's defects were set aside for (locked tests
+    that cannot pass and may not be repaired again).
     """
     command, how = _the_test_command_this_stage_left_failing(repo_root, stage)
     if not command:
+        return None
+    if but_the_acceptance_suite and _runs_the_acceptance_suite(repo_root, command):
         return None
     return ReportedDefect(
         description=(
@@ -3160,6 +3168,19 @@ def _a_suite_failure_the_round_did_not_report(repo_root: str, stage: str) -> Any
         affected_files=[],
         owner="testing",
     )
+
+
+def _runs_the_acceptance_suite(repo_root: str, command: str) -> bool:
+    """Whether `command` (as `_the_test_command_this_stage_left_failing` gives it) runs the acceptance suite."""
+    try:
+        from app.acceptance import suite
+
+        found = suite._command(repo_root)
+    except Exception:  # noqa: BLE001 - unknown is not the acceptance suite
+        return False
+    if not found or not found[0]:
+        return False
+    return command.split()[: len(found[0])] == list(found[0])
 
 
 def _the_plan_assigns_nothing(unassigned: Any, measures: Any) -> bool:
@@ -3735,6 +3756,29 @@ def _this_sprint_s_scope_for_review(state: Any) -> str:
         return "\n".join(lines)
     except Exception:  # noqa: BLE001 - a review without the scope is the old review
         return ""
+
+
+def _defects_only_about(reported: list[Any], criteria: list[str]) -> tuple[list[Any], list[Any]]:
+    """(the reported defects a fix can close, those naming only `criteria`).
+
+    `criteria` are those whose locked tests cannot pass and may not be
+    repaired again (`acceptance_nodes.beyond_repair`): a defect about them
+    alone has nothing a fix stage can change.
+    """
+    if not criteria:
+        return reported, []
+    from app.acceptance.junit import tags_in
+
+    kept: list[Any] = []
+    set_aside: list[Any] = []
+    for item in reported:
+        text = " ".join(
+            str(getattr(item, name, "") or "")
+            for name in ("description", "reproduction_steps", "expected_behavior", "actual_behavior")
+        )
+        named = {tag for tag in tags_in(text) if tag.startswith("AC-")}
+        (set_aside if named and named <= set(criteria) else kept).append(item)
+    return kept, set_aside
 
 
 def _defects_a_later_sprint_builds(reported: list[Any], state: Any) -> tuple[list[Any], list[Any]]:
@@ -6115,6 +6159,7 @@ def build_workflow_graph(
         from app.graph import acceptance_nodes
 
         acceptance_text = ""
+        beyond_repair: list[str] = []
         if not state.get("pending_inner_thread_id"):
             # Before the round, not after a pause inside it: the stages that
             # wrote these have all finished, and the round should measure the
@@ -6126,6 +6171,18 @@ def build_workflow_graph(
             reopened = acceptance_nodes.reopen_the_suite_for(state, cannot_pass)
             if reopened is not None:
                 return reopened
+            # And once the suite may not be repaired again, the round is told,
+            # and its defects about them go to no fixer.
+            beyond_repair = acceptance_nodes.beyond_repair(state, cannot_pass)
+            if beyond_repair:
+                logger.warning(
+                    "Locked tests of %s cannot pass and the suite's repairs are spent; "
+                    "their failures are not product defects", ", ".join(beyond_repair),
+                )
+                acceptance_text = "\n\n".join(
+                    part for part in (acceptance_text, acceptance_nodes.beyond_repair_note(cannot_pass, beyond_repair))
+                    if part
+                )
         changed_files = _the_files_this_milestone_changed(state, outputs)
 
         agent = create_specialist_agent(
@@ -6217,6 +6274,14 @@ def build_workflow_graph(
                 test_round, len(later_work),
                 "; ".join(str(getattr(item, "description", ""))[:60] for item in later_work[:4]),
             )
+        reported, unfixable = _defects_only_about(reported, beyond_repair)
+        if unfixable:
+            logger.warning(
+                "test_round_%d reported %d defect(s) only about locked tests that cannot pass and may "
+                "not be repaired again; set aside: %s",
+                test_round, len(unfixable),
+                "; ".join(str(getattr(item, "description", ""))[:60] for item in unfixable[:4]),
+            )
         try:
             unreported_criteria = acceptance_nodes.failing_due_defects(state, reported)
         except Exception:  # noqa: BLE001 - the round's own report stands
@@ -6230,7 +6295,8 @@ def build_workflow_graph(
             reported = reported + raised_by("acceptance suite", unreported_criteria)
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
-                state["repository"].root_path, f"test_round_{test_round}"
+                state["repository"].root_path, f"test_round_{test_round}",
+                but_the_acceptance_suite=bool(unfixable),
             )
             if unreported is not None:
                 logger.warning(

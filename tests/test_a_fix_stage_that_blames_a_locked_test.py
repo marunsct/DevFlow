@@ -101,6 +101,50 @@ class TestWhenADisputeMayBeHeld:
         assert not _a_dispute_may_be_held_now(_state(locked))
 
 
+def test_a_change_that_left_it_open_and_a_decision_naming_the_test(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One run's fixer changed the stylesheet, named no regression test, and put
+    "the remaining failure is a logic bug in the locked test" among its decisions.
+    Left open for want of a regression test, not for a blocker, it is judged too."""
+    seen: list[list[str]] = []
+    held: list[int] = []
+    monkeypatch.setattr(
+        "app.graph.workflow._blames_a_locked_test",
+        lambda state, said: seen.append(list(said)) or any("views.spec.js" in s for s in said),
+    )
+    monkeypatch.setattr(
+        "app.graph.workflow._a_dispute_may_be_held_now",
+        lambda state: not held and (held.append(1) or True),
+    )
+    monkeypatch.setattr("app.graph.workflow._the_locked_tests_still_failing", lambda state: [])
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("backend"))])
+    from app.agents.specialists import SpecialistOutput
+
+    agents.script("specialist_backend", [
+        responds_with(_specialist()),
+        responds_with(SpecialistOutput(
+            decisions=["The remaining failure is a logic bug in the locked views.spec.js"],
+        )),
+        responds_with(_specialist(tests=["tests/test_bookings_regression.py"])),
+    ])
+    agents.script("specialist_testing", [
+        responds_with(_specialist(defects=[_defect(owner="backend")])),
+        responds_with(_specialist()),
+        responds_with(_specialist()),
+    ])
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-decided")
+
+    assert state["stage"] == "complete", state.get("error")
+    assert held == [1]
+    assert any("views.spec.js" in s for said in seen for s in said)
+
+
 def test_the_round_goes_on_after_a_dispute_that_finds_nothing(
     agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -7100,17 +7100,6 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0),
                 detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
             )
-            if _blames_a_locked_test(state, fix_result.blockers) and _a_dispute_may_be_held_now(state):
-                # The fix stage says a locked test is what cannot pass. That is
-                # the QA lead's to judge, now - not after the attempt has spent
-                # its rounds on it. See `_a_dispute_may_be_held_now`.
-                logger.warning(
-                    "Stage %s changed nothing and blames the locked suite; the QA lead "
-                    "judges its failing tests before the round goes on", stage_name,
-                )
-                update["specialist_outputs"] = {**dict(state.get("specialist_outputs", {})), stage_name: fix_result}
-                update["defect_cursor"] = defect_index + 1
-                return _handing_on(**{**update, "stage": "acceptance_dispute", "dispute_returns_to": "test_and_triage"})
         elif defect.regression_test_required and not regression_test:
             # No named regression test: the defect stays open on purpose. The
             # next test round will count this as another failed attempt, so the
@@ -7144,6 +7133,24 @@ def build_workflow_graph(
                 detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
             )
 
+        still_open = update["remediation"] is cycle
+        if (
+            still_open
+            and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
+            and _a_dispute_may_be_held_now(state)
+        ):
+            # The fix stage left its defect open and says a locked test is
+            # what cannot pass - in its blockers, or among its decisions beside
+            # a change that did not make it pass. That is the QA lead's to
+            # judge, now - not after the attempt has spent its rounds on it.
+            # See `_a_dispute_may_be_held_now`.
+            logger.warning(
+                "Stage %s left its defect open and blames the locked suite; the QA lead "
+                "judges its failing tests before the round goes on", stage_name,
+            )
+            update["specialist_outputs"] = outputs
+            update["defect_cursor"] = defect_index + 1
+            return _handing_on(**{**update, "stage": "acceptance_dispute", "dispute_returns_to": "test_and_triage"})
         update["specialist_outputs"] = outputs
         # Advance past this defect whether or not it closed. A defect left open
         # (no regression test named) must not be retried inside this round; the

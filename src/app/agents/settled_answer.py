@@ -882,11 +882,20 @@ _REASONED_PAST_THE_BUDGET_NOTICE = (
 _REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE = (
     "Your previous reply was cut off at its output limit while you were still "
     "reasoning, so nothing of it survived - no text, no tool call. Thinking is "
-    "switched off for the rest of this stage, so each reply goes straight to "
-    "action: take your next step now - the tool call your work needs next, or "
-    "your structured "
-    "response if the work is done. Do not plan all of it again; do the next "
-    "part of it."
+    "switched off for this reply, so it goes straight to action: take your next "
+    "step now - the tool call your work needs next, or your structured response "
+    "if the work is done. Do not plan all of it again; do the next part of it. "
+    "Thinking is back on the reply after: keep it short and about that one step."
+)
+
+#: Sent on a second lost reply in one visit: thinking stays off from here on.
+_REASONED_PAST_THE_BUDGET_AGAIN_NOTICE = (
+    "Your previous reply was cut off at its output limit while you were still "
+    "reasoning, for the second time in this stage, so nothing of it survived. "
+    "Thinking is switched off for the rest of this stage, so each reply goes "
+    "straight to action: take your next step now - the tool call your work needs "
+    "next, or your structured response if the work is done. Do not plan all of it "
+    "again; do the next part of it."
 )
 
 
@@ -1149,15 +1158,23 @@ def _the_same_refused_answer_running(messages: list[Any], schema: Any) -> int:
     return running
 
 
-def _thinking_is_off_here(messages: list[Any], stage_name: str) -> bool:
-    """Whether this call goes without thinking - the condition
-    `_without_reasoning_where_it_keeps_running_out` switches it off on."""
-    try:
-        from app.agents.thinking import reasoning_keeps_running_out_for
+#: Replies lost to reasoning in one visit after which thinking stays off for
+#: the rest of it. After the first, only the next reply goes without thinking -
+#: the one that lands the next step - and thinking is back on the reply after.
+#: Measured on two runs: with thinking kept off for the rest of a visit after
+#: one loss, and for the rest of the run after losses on two visits, 52% and
+#: 29% of replies went without it, and 35% and 22% of the calls they made
+#: repeated the call before exactly, against 3% and 0.4% with thinking on.
+LOST_REPLIES_BEFORE_THINKING_STAYS_OFF = 2
 
-        return bool(_replies_that_were_all_reasoning(messages)) or bool(reasoning_keeps_running_out_for(stage_name))
-    except Exception:  # noqa: BLE001 - unknown is thinking on, the ordinary rungs
-        return False
+
+def _thinking_is_off_here(messages: list[Any], stage_name: str = "") -> bool:
+    """Whether this call goes without thinking: the reply right after one lost
+    to reasoning, or any reply once a visit has lost
+    `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`."""
+    return _the_last_reply_was_all_reasoning(messages) or (
+        _replies_that_were_all_reasoning(messages) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
+    )
 
 
 def _the_same_call_running(messages: list[Any]) -> tuple[str, int] | None:
@@ -1263,37 +1280,23 @@ _READ_TOOL_WITHHELD_NOTICE = (
 )
 
 
-def _note_a_reply_that_was_all_reasoning(stage_name: str) -> None:
-    try:
-        from app.agents.thinking import note_a_reply_that_was_all_reasoning
-
-        note_a_reply_that_was_all_reasoning(stage_name)
-    except Exception:  # noqa: BLE001 - a memo must never fail a model call
-        pass
-
-
-def _without_reasoning_where_it_keeps_running_out(request: Any, stage_name: str) -> Any:
-    """`request` with thinking switched off, for a stage that keeps losing whole
-    replies to it in this run, or that lost one earlier in this visit;
-    otherwise `request` unchanged.
+def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str) -> Any:
+    """`request` with thinking switched off on the reply after one lost to
+    reasoning, and for the rest of a visit that has lost
+    `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`; otherwise `request` unchanged.
 
     The tools stay: this is the stage's ordinary work, done without the
-    reasoning that has produced nothing. See
-    `app.agents.thinking.note_a_reply_that_was_all_reasoning`.
-
-    Within a visit, from the first lost reply on - not for one call. One run's
-    defect-fix stage lost a reply, was asked once without thinking and made a
-    tool call in seven seconds, then had thinking back on the call after,
-    lost a second reply, and the run failed on it.
+    reasoning that has just produced nothing. Off for one reply first, not for
+    the rest of the visit: a stage asked on without thinking repeated its own
+    calls ten times as often as one thinking (see
+    `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`). A second loss in the visit - what
+    once failed a run, when thinking came straight back - keeps it off from
+    then on, still with the tools.
     """
     try:
-        from app.agents.thinking import (
-            answering_without_reasoning,
-            reasoning_keeps_running_out_for,
-        )
+        from app.agents.thinking import answering_without_reasoning
 
-        lost_one_here = _replies_that_were_all_reasoning(list(getattr(request, "messages", None) or []))
-        if not reasoning_keeps_running_out_for(stage_name) and not lost_one_here:
+        if not _thinking_is_off_here(list(getattr(request, "messages", None) or []), stage_name):
             return request
         quiet = answering_without_reasoning(getattr(request, "model", None))
         if not quiet:
@@ -1326,7 +1329,7 @@ def build_settled_answer_middleware(
             # that refuses the request because of it. Set only when thinking is
             # switched off below.
             refused_fallback = None
-            request = _without_reasoning_where_it_keeps_running_out(request, stage_name)
+            request = _without_reasoning_after_a_lost_reply(request, stage_name)
             try:
                 messages = getattr(request, "messages", None)
                 if not isinstance(messages, list) or not messages:
@@ -1382,20 +1385,19 @@ def build_settled_answer_middleware(
                 # `answer_only` path, because the remedy is identical - no tools,
                 # answer now - and a stage can be in both states at once.
                 spiralled = _the_last_reply_was_all_reasoning(messages)
-                # Thinking off with the tools kept, on a stage's first lost
-                # reply where thinking can be switched off - and off for the
-                # rest of the visit, by `_without_reasoning_where_it_keeps_running_out`;
-                # the tools withheld otherwise. See the notice for why.
+                # Thinking off with the tools kept, where it can be switched
+                # off: for the next reply after a first lost one, and for the
+                # rest of the visit after a second (`_without_reasoning_after_a_lost_reply`);
+                # the tools withheld where it cannot. See the notices for why.
                 spiral_quiet: dict = {}
                 spiral_plainer = None
                 if spiralled:
-                    _note_a_reply_that_was_all_reasoning(stage_name)
-                    if _replies_that_were_all_reasoning(messages) == 1:
-                        from app.agents.thinking import answering_without_reasoning
+                    from app.agents.thinking import answering_without_reasoning
 
-                        spiral_quiet = answering_without_reasoning(getattr(request, "model", None)) or {}
+                    spiral_quiet = answering_without_reasoning(getattr(request, "model", None)) or {}
+                    for_the_rest = _replies_that_were_all_reasoning(messages) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
                     notice = (
-                        _REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE
+                        (_REASONED_PAST_THE_BUDGET_AGAIN_NOTICE if for_the_rest else _REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE)
                         if spiral_quiet
                         else _REASONED_PAST_THE_BUDGET_NOTICE
                     )
@@ -1403,9 +1405,9 @@ def build_settled_answer_middleware(
                     if spiral_quiet:
                         logger.warning(
                             "Stage %s spent a whole reply's output budget on "
-                            "reasoning; thinking switched off for the rest of this "
-                            "visit, tools kept",
+                            "reasoning; thinking switched off %s, tools kept",
                             stage_name or "?",
+                            "for the rest of this visit" if for_the_rest else "for the next reply",
                         )
                     else:
                         logger.warning(

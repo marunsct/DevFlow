@@ -1,15 +1,13 @@
-"""A stage that keeps losing whole replies to reasoning stops being asked for it.
+"""Every visit of a stage starts with thinking, whatever earlier visits lost.
 
-Measured on one run. A reviewing stage was visited three times, and each time
-its first reply was 25,000 output tokens of reasoning with no text and no tool
-call - seven and a half minutes that produced nothing. Each verdict came from
-the call after, with thinking switched off, in under a minute. Every other
-stage of that run reasoned for a few hundred tokens a reply.
-
-The recovery after a cut-off reply starts from nothing on every visit, so the
-third visit paid what the first two had already shown would be wasted. What is
-remembered is per run and per stage: one runaway reply changes nothing, and a
-stage that reasons to an answer is never touched.
+The rule this file used to pin - a stage that lost a whole reply to reasoning
+on two visits is asked without it from then on, for the rest of the run - was
+dropped at the owner's request (2026-10-07). Measured on two runs: with it,
+and with thinking kept off for the rest of a visit after one loss, 52% and 29%
+of replies went without thinking, and 35% and 22% of the calls they made
+repeated the call before exactly, against 3% and 0.4% with thinking on. A loss
+now costs one reply without thinking, and two in one visit keep it off for
+that visit only (`settled_answer.LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`).
 """
 
 from __future__ import annotations
@@ -57,14 +55,8 @@ def _spiral() -> AIMessage:
 
 
 @pytest.fixture(autouse=True)
-def _a_run(monkeypatch):
-    """One run, whose current stage visit the test names."""
-    thinking.forget_the_replies_that_were_all_reasoning()
-    where = {"run": "a-run", "visit": "visit-1"}
-    monkeypatch.setattr(thinking, "_this_run_and_visit", lambda: (where["run"], where["visit"]))
+def _a_server_that_can_switch_thinking_off(monkeypatch):
     monkeypatch.setattr(thinking, "least_reasoning_effort", lambda model: "none")
-    yield where
-    thinking.forget_the_replies_that_were_all_reasoning()
 
 
 def _sent(messages: list, stage: str = "a_reviewer") -> _Request:
@@ -94,66 +86,14 @@ def test_a_stage_that_has_not_spiralled_is_asked_as_configured() -> None:
     assert not _thinking_is_off(_sent(_FIRST_CALL))
 
 
-def test_one_visit_that_spiralled_does_not_switch_the_next_one_off(_a_run) -> None:
-    """A single runaway reply is not a pattern."""
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
+def test_a_new_visit_after_visits_that_lost_replies_starts_with_thinking() -> None:
+    for _ in range(3):
+        _sent(_AFTER_A_SPIRAL)
+        _sent([*_AFTER_A_SPIRAL, HumanMessage(content="next"), _spiral()])
 
     assert not _thinking_is_off(_sent(_FIRST_CALL))
 
 
-def test_after_two_visits_that_spiralled_the_third_starts_without_reasoning(_a_run) -> None:
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-3"
-
-    third = _sent(_FIRST_CALL)
-
-    assert _thinking_is_off(third)
-    assert third.model_settings["extra_body"]["reasoning_effort"] == "none"
-
-
-def test_its_tools_are_kept(_a_run) -> None:
-    """It is the stage's ordinary work, not the answer-only call after a spiral."""
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-3"
-
-    assert [tool.name for tool in _sent(_FIRST_CALL).tools] == ["read_file"]
-
-
-def test_two_cut_off_replies_in_one_visit_count_once(_a_run) -> None:
-    _sent(_AFTER_A_SPIRAL)
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
-
-    assert not _thinking_is_off(_sent(_FIRST_CALL))
-
-
-def test_another_stage_is_not_affected(_a_run) -> None:
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-3"
-
-    assert not _thinking_is_off(_sent(_FIRST_CALL, stage="an_architect"))
-
-
-def test_another_run_starts_afresh(_a_run) -> None:
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
-    _sent(_AFTER_A_SPIRAL)
-    _a_run.update(run="another-run", visit="visit-1")
-
-    assert not _thinking_is_off(_sent(_FIRST_CALL))
-
-
-def test_outside_a_run_nothing_is_remembered(_a_run) -> None:
-    _a_run.update(run=None)
-    _sent(_AFTER_A_SPIRAL)
-    _a_run["visit"] = "visit-2"
-    _sent(_AFTER_A_SPIRAL)
-
-    assert not thinking.reasoning_keeps_running_out_for("a_reviewer")
+def test_nothing_is_remembered_across_visits() -> None:
+    for gone in ("note_a_reply_that_was_all_reasoning", "reasoning_keeps_running_out_for"):
+        assert not hasattr(thinking, gone), gone

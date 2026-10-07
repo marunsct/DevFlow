@@ -51,12 +51,8 @@ def _spiral() -> AIMessage:
 
 
 @pytest.fixture(autouse=True)
-def _a_run(monkeypatch):
-    thinking.forget_the_replies_that_were_all_reasoning()
-    monkeypatch.setattr(thinking, "_this_run_and_visit", lambda: ("a-run", "visit-1"))
+def _a_server_that_can_switch_thinking_off(monkeypatch):
     monkeypatch.setattr(thinking, "least_reasoning_effort", lambda model: "none")
-    yield
-    thinking.forget_the_replies_that_were_all_reasoning()
 
 
 def _sent(messages: list, model=None) -> _Request:
@@ -88,11 +84,12 @@ def test_the_first_spiral_keeps_the_tools_and_switches_thinking_off() -> None:
     assert "Thinking is switched off" in told and "withheld" not in told
 
 
-def test_a_second_spiral_in_the_same_visit_withholds_them() -> None:
+def test_a_second_spiral_in_the_same_visit_keeps_the_tools_and_thinking_stays_off() -> None:
     sent = _sent([*_ASKED, _spiral(), HumanMessage(content="next"), _spiral()])
 
-    assert sent.tools == []
-    assert "tools are withheld" in str(sent.messages[-1]["content"])
+    assert [tool.name for tool in sent.tools] == ["write_artifact"]
+    assert _thinking_is_off(sent)
+    assert "rest of this stage" in str(sent.messages[-1]["content"])
 
 
 def test_where_thinking_cannot_be_switched_off_the_tools_are_withheld(monkeypatch) -> None:
@@ -106,18 +103,42 @@ def test_where_thinking_cannot_be_switched_off_the_tools_are_withheld(monkeypatc
 def test_the_notice_names_no_product_and_no_control() -> None:
     import re
 
-    text = settled_answer._REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE.lower()
-    for word in ("task", "to-do", "todo", "button", "click", "checkbox", "page", "test"):
-        assert not re.search(rf"\b{word}\b", text), word
+    for notice in (
+        settled_answer._REASONED_PAST_THE_BUDGET_THINKING_OFF_NOTICE,
+        settled_answer._REASONED_PAST_THE_BUDGET_AGAIN_NOTICE,
+    ):
+        text = notice.lower()
+        for word in ("task", "to-do", "todo", "button", "click", "checkbox", "page", "test"):
+            assert not re.search(rf"\b{word}\b", text), word
 
 
-def test_thinking_stays_off_for_the_rest_of_the_visit() -> None:
-    """One run's defect fix made a tool call on the switched-off call, had
-    thinking back on the next, lost a second reply, and the run failed."""
+def _after(*replies) -> list:
+    """`replies` (lost or not), each a tool call answered, as a visit holds them."""
     from langchain_core.messages import ToolMessage
 
-    worked = AIMessage(content="", tool_calls=[{"name": "read_file", "args": {"file_path": "a"}, "id": "c1"}])
-    later = _sent([*_ASKED, _spiral(), worked, ToolMessage(content="text", tool_call_id="c1")])
+    messages = list(_ASKED)
+    for n, reply in enumerate(replies):
+        if reply == "lost":
+            messages.append(_spiral())
+        else:
+            messages.append(AIMessage(content="", tool_calls=[{"name": "read_file", "args": {"file_path": f"a{n}"}, "id": f"c{n}"}]))
+            messages.append(ToolMessage(content="text", tool_call_id=f"c{n}"))
+    return messages
+
+
+def test_after_one_lost_reply_thinking_is_back_on_the_reply_after() -> None:
+    """Off for the one reply that lands the next step; with it kept off for
+    the rest of the visit, a stage repeated its own calls ten times as often."""
+    later = _sent(_after("lost", "worked"))
+
+    assert not _thinking_is_off(later)
+    assert [tool.name for tool in later.tools] == ["write_artifact"]
+
+
+def test_after_two_lost_replies_it_stays_off_for_the_rest_of_the_visit() -> None:
+    """One run's defect fix had thinking back on straight after a loss, lost a
+    second reply, and the run failed: a second loss keeps it off."""
+    later = _sent(_after("lost", "worked", "lost", "worked", "worked"))
 
     assert _thinking_is_off(later)
     assert [tool.name for tool in later.tools] == ["write_artifact"]
@@ -128,13 +149,16 @@ def test_a_visit_that_lost_nothing_keeps_its_thinking() -> None:
 
 
 def test_the_notice_and_the_log_say_how_long_thinking_stays_off(caplog) -> None:
-    """Thinking stays off for the rest of the visit; both used to say "for this
-    call", which is what an auditor reading the log took to be the behaviour."""
+    """Each says for how long - an auditor reads the log for the behaviour."""
     import logging
 
     with caplog.at_level(logging.WARNING, logger=settled_answer.logger.name):
-        sent = _sent([*_ASKED, _spiral()])
-    told = str(sent.messages[-1]["content"])
-    assert "rest of this stage" in told and "for this call" not in told
+        first = _sent([*_ASKED, _spiral()])
+    told = str(first.messages[-1]["content"])
+    assert "for this reply" in told and "back on the reply after" in told
+    assert any("for the next reply" in r.getMessage() for r in caplog.records)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING, logger=settled_answer.logger.name):
+        second = _sent(_after("lost", "worked", "lost"))
+    assert "rest of this stage" in str(second.messages[-1]["content"])
     assert any("rest of this visit" in r.getMessage() for r in caplog.records)
-    assert not any("for one call" in r.getMessage() for r in caplog.records)

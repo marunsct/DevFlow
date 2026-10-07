@@ -82,14 +82,17 @@ def _sent(messages) -> _Request:
 
 
 def test_without_thinking_the_tool_is_withheld() -> None:
+    """Thinking stays off for the rest of a visit that lost two replies."""
     lost = AIMessage(content="", response_metadata={"finish_reason": "length"})
-    request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_repeats(3)])
+    request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_call(90, {"file_path": "x"}), lost, *_repeats(3)])
 
     assert [tool.name for tool in request.tools] == ["edit_artifact"]
     assert "sent it the same arguments 3 times in a row" in str(request.messages[-1]["content"])
 
 
 def test_with_thinking_on_the_ordinary_rungs_decide() -> None:
-    request = _sent([SimpleNamespace(type="human", content="Fix it."), *_repeats(3)])
+    """Including after a single lost reply, once the reply after it is made."""
+    lost = AIMessage(content="", response_metadata={"finish_reason": "length"})
+    request = _sent([SimpleNamespace(type="human", content="Fix it."), lost, *_repeats(3)])
 
     assert [tool.name for tool in request.tools] == ["read_file", "edit_artifact"]

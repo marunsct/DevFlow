@@ -406,6 +406,27 @@ def test_happy_path_runs_every_stage_in_order_and_completes(agents: ScriptedAgen
     assert "specialist_testing_0" in state["specialist_outputs"]
 
 
+def test_a_stage_reporting_a_change_nothing_made_is_asked_once(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """A work order answered with `changed_files` that nothing in the stage
+    wrote is asked, on the same thread, to make the change or say what it did;
+    the answer it gives then is the one kept."""
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+    agents.script("specialist_testing", [
+        responds_with(_specialist(changed_files=["tests/test_bookings.py"])),
+        responds_with(_specialist(blockers=["made no change: the existing tests already cover it"])),
+        responds_with(_specialist()),
+    ])
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-claimed")
+
+    assert state["stage"] == "complete", state.get("error")
+    follow_up = "\n".join(str(m.get("content", "")) for m in agents.requests["specialist_testing"][1]["messages"])
+    assert "`tests/test_bookings.py`" in follow_up and "nothing in this conversation wrote it" in follow_up
+    kept = state["specialist_outputs"]["specialist_testing_0"]
+    assert kept.changed_files == [] and kept.blockers
+
+
 def test_a_completed_run_leaves_nothing_uncommitted(agents: ScriptedAgents, tmp_path: Any) -> None:
     """The release decision, its evidence and the last sprint's record are
     written after the release's own commit. Three finished runs ended with
@@ -1287,6 +1308,9 @@ def test_a_reported_failure_becomes_a_tracked_defect_routed_to_its_owner(
     agents.script(
         "specialist_backend",
         [
+            responds_with(_specialist(changed_files=["src/api/bookings.py"])),
+            # A scripted answer reports a file nothing wrote, so it is asked
+            # once to make the change or say what it did.
             responds_with(_specialist(changed_files=["src/api/bookings.py"])),
             responds_with(_specialist(tests=["tests/test_bookings_regression.py"])),
         ],

@@ -1846,8 +1846,12 @@ def _nudge_for_the_structured_response(
     schema: Any = None,
     run_id: str | None = None,
     stage: str | None = None,
+    text: str | None = None,
 ) -> dict[str, Any] | None:
     """Ask the same conversation for the answer it already worked out.
+
+    `text`, when given, is what to ask instead of the reminder of the schema -
+    see `_ask_about_the_files_it_never_wrote`.
 
     The retry below starts the stage over on a clean conversation, which works
     but throws away everything the stage learned. Measured on one run:
@@ -1867,7 +1871,7 @@ def _nudge_for_the_structured_response(
     try:
         with remembering(inner_thread_id):
             result = agent.invoke(
-                {"messages": [{"role": "user", "content": _nudge_text(previous, schema)}]},
+                {"messages": [{"role": "user", "content": text or _nudge_text(previous, schema)}]},
                 config=_inner_agent_config(inner_thread_id, run_id, callbacks, stage=stage),
             )
     except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
@@ -1904,6 +1908,102 @@ def _nudge_for_the_structured_response(
         )
         return {**result, "structured_response": recovered}
     return None
+
+
+#: The tools whose success means a file now holds what the stage put there.
+_FILE_WRITES = frozenset({"write_artifact", "edit_artifact", "replace_lines", "delete_artifact", "move_artifact"})
+
+
+def _a_tool_result_that_succeeded(content: Any) -> bool:
+    """Whether a write tool's result says it did what it was asked."""
+    text = str(content or "").strip()
+    if not text or text.lower().startswith("error"):
+        return False
+    try:
+        parsed = json.loads(text)
+    except ValueError:
+        try:
+            import ast
+
+            parsed = ast.literal_eval(text)
+        except (ValueError, SyntaxError):
+            return True
+    return not (isinstance(parsed, dict) and parsed.get("error"))
+
+
+def _without_a_leading_dot_slash(path: str) -> str:
+    """`./a/b` and `/a/b` as `a/b`; `.gitignore` stays as it is."""
+    plain = path.strip()
+    while plain.startswith("./"):
+        plain = plain[2:]
+    return plain.lstrip("/")
+
+
+def _files_it_claims_but_never_wrote(result: Mapping[str, Any], answer: Any) -> list[str]:
+    """The files an answer's `changed_files` names that nothing in its conversation wrote.
+
+    Measured on one run: asked by a re-planned milestone to cut a file it
+    owned, a stage read that file once and answered that it had removed a
+    30-line block, replaced inline styles with classes, edited with
+    `replace_lines` and run the tests - none of which it did. The file was
+    unchanged, the milestone review blocked on the same size again, and the
+    record said the work order was delivered.
+
+    A file a terminal command names may have been changed by it, and is not
+    judged.
+    """
+    claimed = [str(name).strip() for name in (getattr(answer, "changed_files", None) or ()) if str(name).strip()]
+    if not claimed:
+        return []
+    messages = list(result.get("messages") or [])
+    results = {
+        str(getattr(message, "tool_call_id", "")): getattr(message, "content", "")
+        for message in messages if getattr(message, "type", None) == "tool"
+    }
+    written: set[str] = set()
+    commands: list[str] = []
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+            args = (call.get("args") if isinstance(call, dict) else getattr(call, "args", None)) or {}
+            call_id = str(call.get("id") if isinstance(call, dict) else getattr(call, "id", ""))
+            if name == "run_terminal_command":
+                commands.append(json.dumps(args))
+            if name in _FILE_WRITES and _a_tool_result_that_succeeded(results.get(call_id)):
+                for key in ("relative_path", "destination"):
+                    if args.get(key):
+                        written.add(_without_a_leading_dot_slash(str(args[key])))
+
+    def _was_written(name: str) -> bool:
+        plain = _without_a_leading_dot_slash(name)
+        if any(plain == path or plain.endswith("/" + path) or path.endswith("/" + plain) for path in written):
+            return True
+        return any(plain.rsplit("/", 1)[-1] in command for command in commands)
+
+    return [name for name in claimed if not _was_written(name)]
+
+
+def _ask_about_the_files_it_never_wrote(
+    agent: Any, inner_thread_id: str, callbacks: Any, files: list[str], run_id: str | None, stage: str,
+    schema: Any = None,
+) -> dict[str, Any] | None:
+    """Ask the same conversation once to make the change it reported, or to report what it did.
+
+    Returns the new result when it produced an answer or an approval pause,
+    and None when the follow-up failed - the first answer then stands.
+    """
+    named = ", ".join(f"`{name}`" for name in files)
+    text = (
+        f"Your answer lists {named} under `changed_files`, but nothing in this conversation "
+        f"wrote {'it' if len(files) == 1 else 'them'}: no write, edit, move or delete of "
+        f"{'that file' if len(files) == 1 else 'those files'} succeeded. Work is done when the "
+        "files hold it. Make the changes your work order asks for now, then answer again. If you "
+        "made no change, answer with `changed_files` naming only what you wrote, and say under "
+        "`blockers` what was not done and why."
+    )
+    return _nudge_for_the_structured_response(
+        agent, inner_thread_id, callbacks, None, schema, run_id, stage, text=text,
+    )
 
 
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
@@ -2428,6 +2528,39 @@ def _run_gated_agent(
     from app.agents.model_output import answer_without_leaked_turns
 
     structured_response = answer_without_leaked_turns(structured_response)
+
+    # Reported changes nothing made: asked once, on the stage's own thread,
+    # while it still holds what it read. See `_files_it_claims_but_never_wrote`.
+    from app.agents.settled_answer import was_stopped_by_the_budget as _stopped_by_the_budget
+
+    never_wrote = _files_it_claims_but_never_wrote(result, structured_response)
+    if never_wrote and not _stopped_by_the_budget(result):
+        logger.warning(
+            "Stage %s reported changing %s, which nothing in it wrote; asking it once to make "
+            "the change or say what it did", stage_name, ", ".join(never_wrote),
+        )
+        followed = _ask_about_the_files_it_never_wrote(
+            agent, inner_thread_id, activity, never_wrote,
+            config["configurable"].get(APP_RUN_ID_KEY), stage_name,
+            getattr(agent, "workflow_response_format", None),
+        )
+        if followed is not None and followed.get("__interrupt__"):
+            approval = extract_pending_approval(
+                followed, state["repository"].root_path, requested_by=stage_name, stage=stage_name,
+            )
+            return {
+                "stage": f"{APPROVAL_PAUSE_PREFIX}{stage_name}",
+                "pending_approval": approval,
+                "pending_inner_thread_id": inner_thread_id,
+                "pending_decision": None,
+                "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
+            }
+        if followed is not None:
+            result = followed
+            structured_response = answer_without_leaked_turns(followed["structured_response"])
+            still = _files_it_claims_but_never_wrote(result, structured_response)
+            if still:
+                logger.warning("Stage %s still reports changing %s, which nothing in it wrote", stage_name, ", ".join(still))
 
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)

@@ -3231,6 +3231,27 @@ def _the_last_failed_attempt_at_this_sprint(state: Any) -> dict | None:
         return None
 
 
+def _commit_the_last_records(repo_root: str) -> None:
+    """Commit what a completed run wrote after its last commit. Never raises.
+
+    The release decision, its evidence and the last sprint's record are written
+    after the release's own commit. Measured on three finished runs: each
+    repository's last commit was the release's CI files, with
+    `docs/decision_log.md`, `docs/reviews/release-evidence.md` and the last
+    sprint's summary left uncommitted - a history whose release was never
+    decided. Throwaway files go first, as before every test round.
+    """
+    try:
+        from app.tools.version_control import commit_all, is_repository
+
+        if not is_repository(repo_root):
+            return
+        _clear_the_throwaways(repo_root)
+        commit_all(repo_root, "Run complete: the release decision, its evidence and the last sprint's record")
+    except Exception:  # noqa: BLE001 - the run is complete either way
+        logger.warning("Could not commit the run's last records", exc_info=True)
+
+
 def _sprint_already_summarised(state: WorkflowGraphState) -> bool:
     """Whether the current sprint already has a completed attempt recorded.
 
@@ -7333,8 +7354,11 @@ def build_workflow_graph(
         delivered the product was the one with nothing to show for it.
         """
         if _sprint_already_summarised(state):
+            _commit_the_last_records(state["repository"].root_path)
             return {"stage": "complete"}
-        return {**_record_sprint_summary(state, "Completed"), "stage": "complete"}
+        summary = _record_sprint_summary(state, "Completed")
+        _commit_the_last_records(state["repository"].root_path)
+        return {**summary, "stage": "complete"}
 
     def failed_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
         """Terminal failure - always with a reason, even when nothing set one.

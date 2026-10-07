@@ -406,6 +406,29 @@ def test_happy_path_runs_every_stage_in_order_and_completes(agents: ScriptedAgen
     assert "specialist_testing_0" in state["specialist_outputs"]
 
 
+def test_a_completed_run_leaves_nothing_uncommitted(agents: ScriptedAgents, tmp_path: Any) -> None:
+    """The release decision, its evidence and the last sprint's record are
+    written after the release's own commit. Three finished runs ended with
+    them uncommitted: a history whose release was never decided."""
+    import subprocess
+
+    from app.tools.version_control import initialise_repository
+
+    assert initialise_repository(tmp_path)
+    _script_through_architecture(agents, _approved_review())
+    _script_through_sprint(agents)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-committed")
+
+    assert state["stage"] == "complete", state.get("error")
+    left = subprocess.run(["git", "status", "--porcelain"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert left == "", left
+    last = subprocess.run(["git", "log", "-1", "--format=%s"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert last.startswith("Run complete:")
+    tracked = subprocess.run(["git", "ls-files"], cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "docs/sprint_1_summary.md" in tracked and "docs/decision_log.md" in tracked
+
+
 def test_a_specification_missing_sections_goes_straight_back_to_the_architect(
     agents: ScriptedAgents, tmp_path: Any
 ) -> None:

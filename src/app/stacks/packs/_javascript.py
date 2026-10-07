@@ -715,6 +715,61 @@ def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
     return found
 
 
+#: Something only the test can know: the clock, a random number, a fresh id.
+_MADE_AT_RUN_TIME = re.compile(
+    r"\bDate\s*\.\s*now\s*\(|\bMath\s*\.\s*random\s*\(|\brandomUUID\s*\(|\bperformance\s*\.\s*now\s*\(|"
+    r"\bnew\s+Date\s*\(\s*\)\s*\.\s*(?:getTime|valueOf|toISOString)\s*\("
+)
+_A_BINDING = re.compile(r"\b(?:const|let|var)\s+(\w+)\s*=\s*([^;\n]+)")
+#: What stands just before a value a test looks for, not one it gives:
+#: `hasText: v`, `getByRole('row', { name: v`, `getByText(v`, `toHaveText(v`,
+#: `text=${v`. A `name:` anywhere else may be a request body's - given.
+_LOOKED_FOR = re.compile(
+    r"""(?:\bhasText\s*:|\bgetByRole\s*\([^()]*\{[^{}()]*\bname\s*:|\bgetBy\w+\s*\(|\.\s*to[A-Z]\w*\s*\(|"""
+    r"""text=\$\{|has-text\(\s*['"`]?\$\{)\s*$"""
+)
+
+
+def expects_what_it_never_gave(text: str) -> list[tuple[int, str, str]]:
+    """(line, title, value) of each test that looks for a value it made and never gave the product.
+
+    A value made by the test at run time - from the clock, a random number, a
+    fresh id, or a helper of the file that uses one - exists only in the test.
+    A test that looks for it on the page without first entering it, sending
+    it, or passing it to anything that might, can never pass. Measured on one
+    run: the locked test of adding, editing and deleting in turn made a new
+    title, pressed Save without typing it, and looked for an item showing it;
+    every round of three sprints failed it, and the criterion was deferred.
+    """
+    starts = [match.start() for match in _A_TEST.finditer(text)]
+    makers = set()
+    helpers = list(_A_HELPER.finditer(text))
+    bounds = sorted({*starts, *(match.start() for match in helpers), len(text)})
+    for match in helpers:
+        name = match.group(1) or match.group(2)
+        body = text[match.end():next(at for at in bounds if at > match.start())]
+        if name and _MADE_AT_RUN_TIME.search(body[:400]):
+            makers.add(name)
+    made_by = re.compile(
+        _MADE_AT_RUN_TIME.pattern
+        + "".join(rf"|\b{re.escape(name)}\s*\(" for name in sorted(makers))
+    )
+    found = []
+    for begin, end in zip(starts, starts[1:] + [len(text)]):
+        body = text[begin:end]
+        title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
+        for binding in _A_BINDING.finditer(body):
+            value, made = binding.group(1), binding.group(2)
+            if not made_by.search(made):
+                continue
+            uses = [use for use in re.finditer(rf"\b{re.escape(value)}\b", body) if use.start() >= binding.end()]
+            looked = [use for use in uses if _LOOKED_FOR.search(body[max(0, use.start() - 120):use.start()])]
+            if looked and len(looked) == len(uses):
+                line = text.count("\n", 0, begin + looked[0].start()) + 1
+                found.append((line, title.group(2) if title else "a test", value))
+    return found
+
+
 _FILTERED_BY_TEXT = re.compile(r"""\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
 #: What a test looked for inside the filtered item: `.getByLabel('Edit title')`
 #: or `.getByRole('button', { name: 'Save' })`.

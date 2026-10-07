@@ -124,6 +124,9 @@ class StackPack:
     #: A suite file's text -> (line, title) of each test that acts on the page
     #: with nothing that opens it; it can never pass.
     opens_no_page: Callable[[str], Sequence[tuple[int, str]]] | None = None
+    #: A suite file's text -> (line, title, value) of each test that looks on
+    #: the page for a value it made at run time and never gave the product.
+    expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
     #: A failed test's message -> the text it filtered by, when the page it
     #: failed on shows that text only as a field's value.
     filtered_by_a_field_value: Callable[[str], str | None] | None = None

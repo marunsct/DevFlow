@@ -171,7 +171,7 @@ docker exec langchain-app-1 python -m app.server.manage create-user harness-test
   from the containers, reasoning effort low, execution mode parallel. It reads
   text only. `loop.sh ready` before every run; on `NOT ALL READY` start
   nothing and wait for the owner - never load a model or change their settings.
-- **Suite baseline (2026-10-07):** 9,433 pass, 29 skip, and the three
+- **Suite baseline (2026-10-07):** 9,443 pass, 29 skip, and the three
   `tests/test_codebase_seeding_api.py` S3 failures, in about 3 minutes.
 - **After a mid-run deploy:** `loop.sh resumed`, then `loop.sh status`. The
   audit counts a call a restart cut off apart (`re-run after a restart`).
@@ -296,7 +296,7 @@ working (the tool-approval check can fail transiently), schedule a retry about
   server: cancel it with `POST /api/runs/{id}/cancel`.
 - Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
 - Containers log UTC; the host is JST (+9). Transcript times are UTC.
-- The full suite (`loop.sh suite`) takes about 3 minutes here: 9,433 pass,
+- The full suite (`loop.sh suite`) takes about 3 minutes here: 9,443 pass,
   29 skip (2026-10-07), and three `tests/test_codebase_seeding_api.py` tests
   fail for want of S3 credentials. Tests that need the TypeScript compiler or
   Pyright skip on the host; run those inside the worker after a deploy. Any other failure is real - unless `src/` was edited while the

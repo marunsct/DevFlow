@@ -1016,6 +1016,28 @@ def tests_that_never_open_the_page(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def tests_that_expect_what_they_never_gave(repo_root: str | Path) -> list[str]:
+    """Tests that look for a value they made and never gave the product. See the pack's `expects_what_it_never_gave`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].expects_what_it_never_gave is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, title, value in list(found[0].expects_what_it_never_gave(text))[:4]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` looks for `{value}`, a "
+                "value the test made itself and never gave the product - it is not entered, sent or "
+                "passed on before it is looked for - so no product can show it and the test can never "
+                "pass. Give the product the value first, as a user would, or look for one it was given."
+            )
+    return problems[:6]
+
+
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
     """Each control the brief names that no test finds by that name, as one problem.
 

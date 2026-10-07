@@ -254,6 +254,7 @@ PACK = StackPack(
     contradicting_locators=js.asserted_without_the_text_it_is_found_by,
     locator_left_behind=js.a_locator_left_behind,
     opens_no_page=js.tests_that_never_open_the_page,
+    expects_what_it_never_gave=js.expects_what_it_never_gave,
     filtered_by_a_field_value=js.a_locator_filtered_by_a_field_value,
     failure_pages=js.failure_pages,
     near_misses=js.near_misses,

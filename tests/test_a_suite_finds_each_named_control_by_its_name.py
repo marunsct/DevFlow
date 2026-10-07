@@ -300,3 +300,76 @@ class TestATestThatNeverOpensThePage:
         [problem] = suite.tests_that_never_open_the_page(tmp_path)
 
         assert "nothing opens it" in problem and "`[AC-1] keeps`" in problem
+
+
+class TestATestThatLooksForAValueItNeverGave:
+    """One run's locked test made a new title, pressed Save without typing
+    it, and looked for an item showing it: every round of three sprints
+    failed it, and its criterion was deferred."""
+
+    HELPER = "const unique = () => `Item ${Date.now()}-${Math.random().toString(36).slice(2)}`;\n"
+
+    def _test(self, body: str) -> str:
+        return (
+            self.HELPER
+            + "test.beforeEach(async ({ page }) => { await page.goto('/'); });\n"
+            + "test('[AC-3] renames it', async ({ page }) => {\n" + body + "});\n"
+        )
+
+    def test_is_named(self) -> None:
+        from app.stacks.packs._javascript import expects_what_it_never_gave
+
+        text = self._test(
+            "  const first = unique();\n"
+            "  await page.getByLabel('Name').fill(first);\n"
+            "  const second = unique();\n"
+            "  await page.getByRole('button', { name: 'Keep' }).click();\n"
+            "  await expect(page.getByRole('listitem').filter({ hasText: second })).toBeVisible();\n"
+        )
+
+        assert expects_what_it_never_gave(text) == [(8, "[AC-3] renames it", "second")]
+
+    @pytest.mark.parametrize("given", [
+        "  await page.getByLabel('Name').fill(second);\n",
+        "  await page.getByLabel('Name').pressSequentially(second);\n",
+        "  await addOne(page, second);\n",
+        "  await request.post('/api/items', { data: { name: second } });\n",
+        "  await page.evaluate((v) => localStorage.setItem('k', v), second);\n",
+    ])
+    def test_a_value_entered_sent_or_passed_on_counts_as_given(self, given) -> None:
+        from app.stacks.packs._javascript import expects_what_it_never_gave
+
+        text = self._test(
+            "  const second = unique();\n" + given
+            + "  await expect(page.getByRole('listitem').filter({ hasText: second })).toBeVisible();\n"
+        )
+
+        assert expects_what_it_never_gave(text) == []
+
+    @pytest.mark.parametrize("made", ["'Fixed name'", "`Item ${n}`", "await page.getByLabel('Name').inputValue()"])
+    def test_a_value_the_test_did_not_make_at_run_time_is_not_judged(self, made) -> None:
+        from app.stacks.packs._javascript import expects_what_it_never_gave
+
+        text = self._test(
+            "  const n = 2;\n  const second = " + made + ";\n"
+            "  await expect(page.getByText(second)).toBeVisible();\n"
+        )
+
+        assert expects_what_it_never_gave(text) == []
+
+    def test_the_review_and_every_round_send_it_back(self, tmp_path, monkeypatch) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(self._test(
+            "  const second = unique();\n  await expect(page.getByText(second)).toBeVisible();\n"
+        ))
+
+        [problem] = suite.tests_that_expect_what_they_never_gave(tmp_path)
+
+        assert "`[AC-3] renames it` looks for `second`" in problem and "never gave the product" in problem
+        outside = re.sub(r"`[^`]*`", "", problem).lower()
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", outside), word
+        review = (Path(nodes.__file__).read_text())
+        assert review.count("suite.tests_that_expect_what_they_never_gave(root)") == 2, (
+            "checked when the suite is reviewed and on every round"
+        )

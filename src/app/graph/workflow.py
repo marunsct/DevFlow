@@ -6383,6 +6383,18 @@ def build_workflow_graph(
         nobody had been given a chance to fix.
         """
         revision_count = state.get("sprint_replan_count", 0) + 1
+        # Every defect still open ends its story here: the ledger had it
+        # raised and nothing after, which reads like a round cut short.
+        from app.observability import defect_ledger
+
+        ending = "escalated to a person" if revision_count > MAX_MILESTONE_REVISIONS else "the sprint is planned again"
+        for index, defect in enumerate(getattr(cycle, "defects", None) or []):
+            if getattr(defect, "status", "") == "open":
+                defect_ledger.note(
+                    "left open", f"test_round_{state.get('test_round', 0)}", defect=defect,
+                    round_=state.get("test_round", 0), index=index,
+                    sprint=state.get("current_sprint_index", 0), detail=f"{why}; {ending}",
+                )
         # The sprint as this round leaves it, not as it entered it. `state`
         # still holds the cycle from before the round just recorded, so a
         # summary written from it left out the round that ended the sprint and

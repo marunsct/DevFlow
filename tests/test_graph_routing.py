@@ -715,6 +715,32 @@ def test_a_defect_that_never_gets_fixed_escalates_instead_of_looping(
     ) > 0
 
 
+def test_a_defect_open_when_its_attempt_ends_is_recorded_as_left_open(
+    agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The defect ledger closes each story. A defect still open when its
+    sprint's attempt ended showed as raised and nothing after - the same as a
+    round cut short - so an audit could not tell the two apart."""
+    from app.observability import defect_ledger
+
+    events: list[tuple[str, str, dict[str, Any]]] = []
+    monkeypatch.setattr(defect_ledger, "note", lambda event, stage, **fields: events.append((event, stage, fields)))
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    attempts_allowed = workflow_module.MAX_MILESTONE_REVISIONS + 1
+    agents.script("technical_lead", [responds_with(_milestone("backend"))] * (attempts_allowed + 2))
+    agents.script("specialist_backend", [responds_with(_specialist())] * 60)
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] * 60)
+
+    start_workflow(_graph(), _document(), _repository(tmp_path), "run-blocked")
+
+    left = [fields for event, stage, fields in events if event == "left open" and stage.startswith("test_round_")]
+    assert len(left) >= attempts_allowed, "each ended attempt closes the stories it leaves open"
+    assert all("remediation attempts" in fields["detail"] for fields in left)
+    assert "planned again" in left[0]["detail"]
+    assert "escalated to a person" in left[-1]["detail"]
+
+
 # --------------------------------------------------------------------------
 # Mandatory approval gate (Step 3.2) driven through the controller
 # --------------------------------------------------------------------------

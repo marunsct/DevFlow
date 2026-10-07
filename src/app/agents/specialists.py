@@ -18,6 +18,7 @@ from typing import Any, Literal, Sequence
 from langchain_core.language_models.chat_models import BaseChatModel
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, create_model, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
@@ -132,6 +133,14 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
 }
 
 
+def raised_by(source: str, defects: Sequence[Any]) -> list[Any]:
+    """`defects`, each marked as raised by `source` unless it already says which check did."""
+    return [
+        defect if getattr(defect, "source", "") else defect.model_copy(update={"source": source})
+        for defect in defects
+    ]
+
+
 class ReportedDefect(BaseModel):
     """One test failure, as reported by the Testing specialist (Step 5.4).
 
@@ -186,6 +195,12 @@ class ReportedDefect(BaseModel):
         default=True,
         description="Whether closing this defect requires a new or updated regression test. Normally true.",
     )
+    #: Which check raised it - "test round", "acceptance suite", "language
+    #: service", "code review", "page check", "regression", "cross-file
+    #: check", "test command". Set by the harness and kept out of the schema
+    #: a model answers to. One run's round queued nine defects for four bugs,
+    #: and telling which check raised each meant reading every description.
+    source: SkipJsonSchema[str] = ""
 
     # "High" is not in this vocabulary and is in two of the other three the
     # same model is asked for elsewhere in the same run. See

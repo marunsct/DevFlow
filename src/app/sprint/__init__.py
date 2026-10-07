@@ -59,6 +59,10 @@ class Defect(BaseModel):
             "passing is its proof. Set by the controller, never by a specialist."
         ),
     )
+    source: str = Field(
+        default="",
+        description="Which check raised it. Set by the controller, never by a specialist.",
+    )
     failing_criteria: list[str] = Field(
         default_factory=list,
         description=(

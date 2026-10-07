@@ -27,6 +27,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app import ci
 from app.acceptance import suite
+from app.agents.specialists import raised_by
 from app.stacks import contract
 
 logger = logging.getLogger(__name__)
@@ -278,7 +279,10 @@ def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         stage="code_review",
         ci_report=report,
         ci_batch_commit=batch,
-        review_defects=[*regression_defects(state, lost, after), *underlined],
+        review_defects=[
+            *raised_by("regression", regression_defects(state, lost, after)),
+            *raised_by("language service", underlined),
+        ],
     )
 
 
@@ -360,7 +364,7 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     return _handing_on(
         **update,
         stage="test_and_triage",
-        review_defects=[*(state.get("review_defects") or []), *found],
+        review_defects=[*(state.get("review_defects") or []), *raised_by("code review", found)],
     )
 
 

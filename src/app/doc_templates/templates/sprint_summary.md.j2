@@ -4,7 +4,8 @@
     The block down to "Attempt History" is parsed by the sprint panel in the UI
     (langchain-ui/src/components/SprintSummaryPanel.tsx): its bold field labels,
     the bullets under "Planned for This Sprint" and "Features Implemented", and
-    the `- [STATUS] description (Owner: role)` lines under "Defect Summary". The
+    the `- [STATUS] description (Owner: role)` lines under "Defect Summary" - the
+    check that raised a defect goes before "(Owner:", never after it. The
     sections after it must never produce a line of that last shape - the panel
     reads defect lines from "Defect Summary" to the end of the file.
 
@@ -39,7 +40,7 @@ These are the tasks this sprint delegated, not a record of what passed: the spri
 
 ### Defect Summary
 {% for d in defects %}
-- [{{ d.status | upper }}] {{ d.description }} (Owner: {{ d.owner }})
+- [{{ d.status | upper }}] {{ d.description }}{{ (" - raised by " ~ d.source) if d.source else "" }} (Owner: {{ d.owner }})
 {% endfor %}
 {% endif %}
 {% if history %}

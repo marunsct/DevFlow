@@ -131,6 +131,7 @@ from app.agents.specialists import (
     build_specialist_task_request,
     build_test_run_request,
     create_specialist_agent,
+    raised_by,
 )
 from app.agents.technical_lead import (
     build_milestone_revision_request,
@@ -2798,6 +2799,8 @@ def _what_a_plan_did(plan: Any, cycle: Any) -> dict[str, Any]:
                 "status": getattr(defect, "status", "open"),
                 "description": getattr(defect, "description", ""),
                 "owner": getattr(defect, "owner", "unassigned"),
+                "source": getattr(defect, "source", "") or "",
+                "resolution": getattr(defect, "resolution", "") or "",
             }
             for defect in (getattr(cycle, "defects", None) or [])
         ],
@@ -4544,7 +4547,7 @@ def _close_a_sprint_with_nothing_to_build(state: WorkflowGraphState, why: str) -
         question=f"Is sprint {index + 1} done?",
         options=["accept without new work", "plan work for it"],
         decision="accept without new work",
-        rationale=why[:1500],
+        rationale=why,
     )
     logger.info("Sprint %d needs no new work: its criteria already pass", index + 1)
     delivery.write_evidence({**state, **accepted}, index + 1, goal)
@@ -4767,7 +4770,7 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
             f"{getattr(final, 'language', '')} / {getattr(final, 'framework', '')}"
             + (f" - {pack.title}" if pack else " - no stack pack fits; the agents set the project up")
         ),
-        rationale=(support_tier(pack) + "\n" + str(getattr(chosen, "rationale", "") or ""))[:1700],
+        rationale=support_tier(pack) + "\n" + str(getattr(chosen, "rationale", "") or ""),
     )
     return out
 
@@ -6140,7 +6143,7 @@ def build_workflow_graph(
         test_result: SpecialistOutput = update.pop("__test_result__")
         # CI's regressions and the code review's findings for this batch, once.
         reported: list[ReportedDefect] = _each_defect_once(
-            [*test_result.defects, *(state.get("review_defects") or [])]
+            [*raised_by("test round", test_result.defects), *(state.get("review_defects") or [])]
         )
         if len(reported) < len(test_result.defects):
             logger.warning(
@@ -6175,13 +6178,13 @@ def build_workflow_graph(
                 "test_round_%d left out %d problem(s) it was handed as proven; recording them as defects",
                 test_round, len(left_out),
             )
-            reported = reported + left_out
+            reported = reported + raised_by("cross-file check", left_out)
         # How the page is presented, where a script can prove it: an interface
         # nothing styles, or a page that does not fit the phone the brief asks
         # for. Before the later-sprint filter, so a plan that styles later keeps
         # that work for the sprint that builds it.
         try:
-            reported = reported + acceptance_nodes.interface_defects(state)
+            reported = reported + raised_by("page check", acceptance_nodes.interface_defects(state))
         except Exception:  # noqa: BLE001 - the round's own report stands
             logger.debug("Could not check how the page is presented", exc_info=True)
         reported, later_work = _defects_a_later_sprint_builds(reported, state)
@@ -6202,7 +6205,7 @@ def build_workflow_graph(
                 "test_round_%d did not report %d failing acceptance criteria; recording them as defects",
                 test_round, len(unreported_criteria),
             )
-            reported = reported + unreported_criteria
+            reported = reported + raised_by("acceptance suite", unreported_criteria)
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}"
@@ -6212,7 +6215,7 @@ def build_workflow_graph(
                     "test_round_%d reported no defects, but its last run of the suite "
                     "failed; recording that as a defect", test_round,
                 )
-                reported = [unreported]
+                reported = raised_by("test command", [unreported])
         cycle = state.get("remediation") or start_remediation(
             milestone.selected_sprint_goal, max_attempts=MAX_REMEDIATION_ATTEMPTS
         )
@@ -6239,6 +6242,7 @@ def build_workflow_graph(
                 owner=item.owner,
                 regression_test_required=_needs_a_new_test(item, caught_by),
                 caught_by=caught_by,
+                source=str(getattr(item, "source", "") or ""),
                 failing_criteria=_failing_criteria_it_names(state, item),
             )
             for item in reported

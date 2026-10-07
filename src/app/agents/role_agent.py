@@ -468,6 +468,19 @@ _WRITING_RULES = (
     "- A long absolute path quoted as the repository root is the HOST's path and\n"
     "  does not exist here. Never use it.\n"
     "\n"
+    # Measured on two runs of one model: 75% of all output tokens were
+    # reasoning, 23 replies ran out of room while still reasoning, and one
+    # stage reasoned for 20,821 tokens and then reported edits it never made
+    # - it had made them in its reasoning.
+    "REASONING IS NOT WORK:\n"
+    "- Keep your reasoning to deciding the next step. Write code, tests and file\n"
+    "  contents in the write and edit calls themselves - never compose a whole\n"
+    "  file in your reasoning first: a long draft there can use up the reply\n"
+    "  before any call is made, and then none of it exists.\n"
+    "- A change exists only when the call that made it succeeded. Report in your\n"
+    "  structured response only what such calls did: a file you planned,\n"
+    "  reasoned about or described has not changed.\n"
+    "\n"
     "ARTIFACTS ARE NOT YOUR STRUCTURED RESPONSE:\n"
     "- Files hold content a person reads or a program runs. Your result is\n"
     "  returned by calling your answer tool - never written to a file, never\n"

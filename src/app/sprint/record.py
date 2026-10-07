@@ -268,12 +268,61 @@ def definition_of_done_gaps(plan: Any, outputs: Mapping[str, Any] | None, cycle:
     return gaps
 
 
+#: How many earlier fixes one request lists, the latest kept.
+MAX_FIXES_TO_KEEP = 10
+
+
+def _the_same_file(one: str, other: str) -> bool:
+    """Whether two workspace paths name one file, however much of the path each gives."""
+    a, b = str(one).strip().lstrip("./").lstrip("/"), str(other).strip().lstrip("./").lstrip("/")
+    return bool(a and b) and (a == b or a.endswith("/" + b) or b.endswith("/" + a))
+
+
+def fixes_to_keep(
+    attempts: Iterable[Mapping[str, Any]], *, files: Sequence[str] = (), role: str = ""
+) -> list[str]:
+    """Each defect an earlier attempt fixed, as one line - for `files` or `role` when given.
+
+    A defect that names files is kept for a request whose files include one of
+    them; one that names none, for a request of the role that owned it. With
+    neither given, every fixed defect is kept.
+
+    Measured on one run: sprint 1 darkened three colours the specification gave
+    for contrast. Sprint 3's restyle wrote one of them back, and sprint 4's work
+    order - "fix all responsive and styling issues in styles.css to match the
+    technical specification" - wrote all three back. Each time four checks raised
+    the same failures again and fixers made the same changes again; nothing told
+    the builders the specification's values had been found wanting.
+    """
+    lines: list[str] = []
+    seen: set[str] = set()
+    for attempt in attempts or ():
+        for row in attempt.get("defect_log") or ():
+            if not str(row.get("state") or "").startswith("fixed"):
+                continue
+            named = [str(f) for f in row.get("files") or [] if str(f).strip()]
+            if files or role:
+                if named:
+                    if not any(_the_same_file(mine, theirs) for mine in files or () for theirs in named):
+                        continue
+                elif not role or str(row.get("owner") or "") != role:
+                    continue
+            description = " ".join(str(row.get("description") or "").split())[:220]
+            if not description or description.lower() in seen:
+                continue
+            seen.add(description.lower())
+            resolution = " ".join(str(row.get("resolution") or "").split())[:220]
+            lines.append(f"{description} - fixed: {resolution}" if resolution else description)
+    return lines[-MAX_FIXES_TO_KEEP:]
+
+
 __all__ = [
     "GATING",
     "carried_from",
     "defect_log",
     "definition_of_done_gaps",
     "findings_of",
+    "fixes_to_keep",
     "lessons_from",
     "with_dispositions",
     "work_order_outcomes",

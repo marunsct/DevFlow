@@ -4004,6 +4004,24 @@ def _what_later_sprints_build(state: Any) -> str:
         return ""
 
 
+def _the_fixes_to_keep(state: Any, task: Any = None) -> list[str]:
+    """The defects earlier attempts fixed - in `task`'s files or role, or all. [] on any failure."""
+    try:
+        from app.sprint import record as sprint_record
+
+        attempts = list(state.get("sprint_attempts") or [])
+        if task is None:
+            return sprint_record.fixes_to_keep(attempts)
+        return sprint_record.fixes_to_keep(
+            attempts,
+            files=[str(f) for f in getattr(task, "files", None) or []],
+            role=str(getattr(task, "specialist_role", "") or ""),
+        )
+    except Exception:  # noqa: BLE001 - a request without them is the one before this
+        logger.debug("Could not list the fixes to keep", exc_info=True)
+        return []
+
+
 def _the_later_sprints_brief(state: Any) -> str:
     """Record what this sprint does not owe, and tell its builders. "" on any failure.
 
@@ -5952,6 +5970,13 @@ def build_workflow_graph(
             request["messages"][-1]["content"] += due_brief
         # Recorded here too, not only when the builders start, so the lead's own
         # listing and snapshot tell a later sprint's tests from this one's.
+        from app.agents.specialists import fixes_to_keep_section
+
+        kept = fixes_to_keep_section(_the_fixes_to_keep(state))
+        if kept:
+            request["messages"][-1]["content"] += (
+                "\n\n" + kept + "No work order undoes one of these, even to match the specification.\n"
+            )
         later_brief = _the_later_sprints_brief(state)
         if later_brief:
             request["messages"][-1]["content"] += (
@@ -6306,6 +6331,7 @@ def build_workflow_graph(
                 work_order=task,
                 interface_design=_the_interface_design_for(state, task),
                 later_sprints_brief=_the_later_sprints_brief(state),
+                earlier_fixes=_the_fixes_to_keep(state, task),
             )
             update = _run_gated_agent(
                 state,
@@ -6365,6 +6391,7 @@ def build_workflow_graph(
             work_order=task,
             interface_design=_the_interface_design_for(state, task),
             later_sprints_brief=_the_later_sprints_brief(state),
+            earlier_fixes=_the_fixes_to_keep(state, task),
         )
         
         # A worker may only answer its *own* approval gate.

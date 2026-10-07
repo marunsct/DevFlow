@@ -766,6 +766,21 @@ def _the_interface_design(design: Sequence[str]) -> str:
     )
 
 
+def fixes_to_keep_section(fixes: Sequence[str]) -> str:
+    """The defects already fixed here, as a section that outranks the specification; or ""."""
+    lines = [" ".join(str(line).split()) for line in fixes or () if str(line).strip()]
+    if not lines:
+        return ""
+    return (
+        "--- Fixed earlier - keep these fixes ---\n"
+        "These were found in this product and fixed before now. Where the specification "
+        "or your work order says otherwise, the fix stands: both were written before the "
+        "defect was found, and building to them again brings it back.\n"
+        + "\n".join(f"- {line}" for line in lines)
+        + "\n\n"
+    )
+
+
 def build_specialist_task_request(
     task_description: str,
     acceptance_criteria: list[str],
@@ -775,6 +790,7 @@ def build_specialist_task_request(
     work_order: Any = None,
     interface_design: Sequence[str] = (),
     later_sprints_brief: str = "",
+    earlier_fixes: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for one delegated specialist task.
 
@@ -783,6 +799,9 @@ def build_specialist_task_request(
 
     `later_sprints_brief` says which locked criteria later sprints deliver and
     what this sprint's plan leaves out - see `app.acceptance.sprint_scope`.
+
+    `earlier_fixes` are the defects earlier attempts fixed in this work order's
+    files - see `app.sprint.record.fixes_to_keep`.
 
     `work_order` is the `SpecialistTask` itself, whose files, interfaces, steps,
     edge cases, test cases and verification commands are the rest of the
@@ -806,6 +825,7 @@ def build_specialist_task_request(
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
         f"{later_sprints_brief}"
+        f"{fixes_to_keep_section(earlier_fixes)}"
         f"{order}"
         f"{_the_interface_design(interface_design)}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"

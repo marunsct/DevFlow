@@ -323,6 +323,15 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
             _resume_one(run_id)
             queued += 1
             logger.info("Resumed run %s, abandoned by a worker that stopped", run_id)
+            # In the transcript too, so an audit can tell a call the restart
+            # cut off - and the stage ran again - from a resume that replayed
+            # a finished one. See `scripts/loop/audit_live.py`.
+            try:
+                from app.observability.transcript import record
+
+                record(run_id, "", "resumed", why="the worker that ran it stopped (a deploy or a crash)")
+            except Exception:  # noqa: BLE001 - the resume stands without its note
+                pass
         except Exception:  # noqa: BLE001 - one bad run must not block the rest
             logger.warning("Could not resume run %s", run_id, exc_info=True)
     return queued

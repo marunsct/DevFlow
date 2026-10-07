@@ -53,3 +53,20 @@ def test_the_sprint_record_shows_it_where_the_panel_still_reads_the_owner() -> N
     assert line == "- [FIXED] Missing export - raised by language service (Owner: backend)"
     panel = re.match(r"^- \[(\w+)\] (.+?) \(Owner: (.+?)\)$", line)
     assert panel and panel.group(3) == "backend"
+
+
+def test_each_event_of_a_defect_goes_to_the_transcript(monkeypatch) -> None:
+    """What became of a defect was spread over the worker log, the Sprint
+    Record and the fixer's transcript; the ledger puts each event in one place."""
+    from app.observability import defect_ledger, transcript
+
+    seen = []
+    monkeypatch.setattr(transcript, "_run_id_from_config", lambda: "run-deadbeef")
+    monkeypatch.setattr(transcript, "record", lambda run, stage, kind, **fields: seen.append((run, stage, kind, fields)))
+
+    defect_ledger.note("fixed", "defect_fix_1_0", defect=_reported(source="code review"), round_=1, index=0,
+                       sprint=2, detail="changed src/a.js")
+
+    [(run, stage, kind, fields)] = seen
+    assert (run, stage, kind) == ("run-deadbeef", "defect_fix_1_0", "defect")
+    assert fields["event"] == "fixed" and fields["source"] == "code review" and fields["sprint"] == 2

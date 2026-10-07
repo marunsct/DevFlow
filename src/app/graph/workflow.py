@@ -3504,6 +3504,13 @@ def _closed_if_an_earlier_fix_resolved_it(
             if not why:
                 return None
             logger.warning("Defect '%s' is already fixed: %s Closed without a fixer", defect.description[:80], why)
+            from app.observability import defect_ledger
+
+            defect_ledger.note(
+                "closed without a fixer", f"defect_fix_{state.get('test_round', 0)}_{defect_index}",
+                defect=defect, round_=state.get("test_round", 0), index=defect_index, detail=why,
+                sprint=state.get("current_sprint_index", 0),
+            )
             return _handing_on(
                 stage="defect_remediation",
                 defect_cursor=defect_index + 1,
@@ -3520,6 +3527,14 @@ def _closed_if_an_earlier_fix_resolved_it(
             "Defect '%s' is already fixed: %s, failing when it was reported, now "
             "pass(es); closed without a fixer",
             defect.description[:80], named,
+        )
+        from app.observability import defect_ledger
+
+        defect_ledger.note(
+            "closed without a fixer", f"defect_fix_{state.get('test_round', 0)}_{defect_index}",
+            defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            detail=f"{named} failing when it was reported, passing since",
+            sprint=state.get("current_sprint_index", 0),
         )
         return _handing_on(
             stage="defect_remediation",
@@ -3562,6 +3577,13 @@ def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int)
                 "Defect '%s' is fixed: %s, failing when it was reported, pass in "
                 "test_round_%d's run of the suite",
                 defect.description[:80], named, test_round,
+            )
+            from app.observability import defect_ledger
+
+            defect_ledger.note(
+                "closed by the round's measurement", f"test_round_{test_round}", defect=defect,
+                round_=test_round, index=index, detail=f"{named} pass in this round's run of the suite",
+                sprint=state.get("current_sprint_index", 0),
             )
             cycle = mark_defect_fixed(
                 cycle, index,
@@ -6248,6 +6270,11 @@ def build_workflow_graph(
             for item in reported
         ]
 
+        from app.observability import defect_ledger
+
+        for position, item in enumerate(new_defects, start=len(cycle.defects)):
+            defect_ledger.note("raised", f"test_round_{test_round}", defect=item, round_=test_round, index=position,
+                                sprint=state.get("current_sprint_index", 0))
         try:
             cycle = record_test_run(
                 cycle,
@@ -6489,7 +6516,14 @@ def build_workflow_graph(
         broke = engineering.after_a_fix(
             state["repository"].root_path, fix_base, stage_name, defect.description
         )
+        from app.observability import defect_ledger
+
         if broke:
+            defect_ledger.note(
+                "reverted", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                sprint=state.get("current_sprint_index", 0),
+                detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
+            )
             noted = cycle.model_copy(update={"defects": [
                 item.model_copy(update={
                     "actual_behavior": (
@@ -6522,6 +6556,11 @@ def build_workflow_graph(
             # next test round will count this as another failed attempt, so the
             # bounded loop still terminates.
             update["remediation"] = cycle
+            defect_ledger.note(
+                "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                sprint=state.get("current_sprint_index", 0),
+                detail="the fix named no regression test",
+            )
         else:
             if not verified_by:
                 logger.info(
@@ -6538,6 +6577,11 @@ def build_workflow_graph(
             update["remediation"] = mark_defect_fixed(
                 cycle, defect_index, regression_test=regression_test, verified_by=verified_by,
                 resolution=resolution,
+            )
+            defect_ledger.note(
+                "fixed", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                sprint=state.get("current_sprint_index", 0),
+                detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
             )
 
         update["specialist_outputs"] = outputs

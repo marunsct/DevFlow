@@ -1109,6 +1109,46 @@ def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None
 SAME_CALL_RUNNING_WITHOUT_THINKING = 3
 
 
+#: The same structured answer refused this many times running ends the visit.
+#: The schema's refusal says what is missing; a stage that sends the identical
+#: object back after reading it three times will not read it a fourth.
+SAME_REFUSED_ANSWERS_BEFORE_ENDING = 3
+
+
+def _the_same_refused_answer_running(messages: list[Any], schema: Any) -> int:
+    """How many replies running ended with the identical structured answer refused by its schema.
+
+    0 unless the conversation ends with such a refusal. A refused answer
+    leaves the schema's error as a tool message after the reply, so the last
+    message is not the reply.
+    """
+    name = str(getattr(schema, "__name__", "") or "")
+    if not name or not messages:
+        return 0
+    results = {
+        str(getattr(m, "tool_call_id", "") or ""): str(getattr(m, "content", "") or "")
+        for m in messages if getattr(m, "type", None) == "tool"
+    }
+    last = messages[-1]
+    if getattr(last, "type", None) != "tool" or not str(getattr(last, "content", "") or "").lstrip().startswith("Error"):
+        return 0
+    running, previous = 0, None
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "ai":
+            continue
+        calls = list(getattr(message, "tool_calls", None) or [])
+        if len(calls) != 1 or (calls[0] or {}).get("name") != name:
+            break
+        if not results.get(str((calls[0] or {}).get("id") or ""), "").lstrip().startswith("Error"):
+            break
+        signature = json.dumps((calls[0] or {}).get("args") or {}, sort_keys=True, default=str)
+        if previous is not None and signature != previous:
+            break
+        previous = signature
+        running += 1
+    return running
+
+
 def _thinking_is_off_here(messages: list[Any], stage_name: str) -> bool:
     """Whether this call goes without thinking - the condition
     `_without_reasoning_where_it_keeps_running_out` switches it off on."""
@@ -1541,6 +1581,23 @@ def build_settled_answer_middleware(
                 return None
             last = messages[-1]
             if getattr(last, "type", None) != "ai":
+                # A structured answer its schema refused: the error follows the
+                # reply, so the budget check below never saw it. Measured on one
+                # run: a fix stage sent the same empty answer about fifty times
+                # after reading the refusal, 51 calls past its budget, until the
+                # run's own guard restarted it.
+                refused = _the_same_refused_answer_running(messages, schema)
+                over = bool(step_limit) and _model_calls_used(messages) >= step_limit
+                if refused and (over or refused >= SAME_REFUSED_ANSWERS_BEFORE_ENDING):
+                    logger.warning(
+                        "Stage %s sent the same refused answer %d time(s) running%s; ending it so "
+                        "the run can retry on a fresh conversation",
+                        stage_name or "?", refused, " past its model-call budget" if over else "",
+                    )
+                    return {
+                        "messages": [AIMessage(content="", additional_kwargs={BUDGET_STOP_MARKER: True})],
+                        "jump_to": "end",
+                    }
                 return None
             pending = list(getattr(last, "tool_calls", None) or [])
             # The answer need not be in the LAST message. One run's

@@ -65,6 +65,13 @@ try:
     from app.stacks.contract import owned_by_the_harness
 except Exception:  # noqa: BLE001 - outside the worker nothing is the harness's
     owned_by_the_harness = lambda root, relative: ""  # noqa: E731
+try:
+    # The harness's own count, so this and the milestone review's number agree:
+    # a one-line comment pattern counted multi-line CSS block comments as code
+    # and once read 622 where the review (rightly) said 578.
+    from app.analysis.integration_checks import _code_lines
+except Exception:  # noqa: BLE001 - outside the worker, the rough count
+    _code_lines = lambda text: sum(1 for line in text.splitlines() if line.strip() and not COMMENT.match(line))  # noqa: E731
 
 print("\n== 2. code lines (non-blank, non-comment; the harness's own setup is not the product's)")
 total = 0
@@ -78,7 +85,7 @@ for path in files:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     except OSError:
         continue
-    code = sum(1 for line in lines if line.strip() and not COMMENT.match(line))
+    code = _code_lines("\n".join(lines))
     total += code
     print(f"  {code:5d}  {path.relative_to(root)}  ({len(lines)} raw)")
 print(f"  {total:5d}  total product code (tests excluded)")

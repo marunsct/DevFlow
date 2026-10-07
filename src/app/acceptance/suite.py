@@ -30,6 +30,11 @@ logger = logging.getLogger(__name__)
 
 STATE_FILE = f"{contract.HARNESS_DIR}/acceptance.json"
 SNAPSHOT_DIR = f"{contract.HARNESS_DIR}/acceptance-snapshot"
+#: Every version of the suite that was ever locked, `v1`, `v2`, ..., each next
+#: to `vN.diff` - what changed from the version before. A lock replaces the
+#: snapshot, so when QA repaired a reopened suite nothing showed what it
+#: changed: one run's repair rewrote nine tests and no record said how.
+LOCKS_DIR = f"{contract.HARNESS_DIR}/acceptance-locks"
 RESULT_FILE = f"{contract.HARNESS_DIR}/acceptance-result.json"
 
 #: The file a QA stage writes, for a stack no pack covers, to say how its
@@ -197,9 +202,10 @@ def _digest(path: Path) -> str:
 
 
 def lock(repo_root: str | Path) -> dict[str, str]:
-    """Freeze the suite as it stands. Returns {relative path: checksum}."""
+    """Freeze the suite as it stands, keeping it as a new version. Returns {relative path: checksum}."""
     root = Path(repo_root)
     snapshot = root / SNAPSHOT_DIR
+    before = _the_files_of(snapshot)
     shutil.rmtree(snapshot, ignore_errors=True)
     checksums: dict[str, str] = {}
     for path in suite_files(repo_root):
@@ -210,8 +216,64 @@ def lock(repo_root: str | Path) -> dict[str, str]:
         shutil.copy2(path, target)
     state = _state(repo_root)
     state["lock"] = checksums
+    state["lock_version"] = _keep_this_version(root, snapshot, before)
     _save_state(repo_root, state)
     return checksums
+
+
+def _the_files_of(directory: Path) -> dict[str, str]:
+    """{path relative to `directory`: text} for every file under it; {} if there is none."""
+    if not directory.is_dir():
+        return {}
+    return {
+        path.relative_to(directory).as_posix(): path.read_text(encoding="utf-8", errors="replace")
+        for path in sorted(directory.rglob("*")) if path.is_file()
+    }
+
+
+def _keep_this_version(root: Path, snapshot: Path, before: dict[str, str]) -> int:
+    """Copy the snapshot just taken to the next version, with its diff from `before`. Never raises."""
+    import difflib
+
+    try:
+        versions = root / LOCKS_DIR
+        number = 1 + max(
+            (int(path.name[1:]) for path in versions.glob("v*") if path.is_dir() and path.name[1:].isdigit()),
+            default=0,
+        )
+        shutil.copytree(snapshot, versions / f"v{number}")
+        if number > 1:
+            after = _the_files_of(snapshot)
+            diff = "".join(
+                line
+                for name in sorted(set(before) | set(after))
+                for line in difflib.unified_diff(
+                    before.get(name, "").splitlines(keepends=True),
+                    after.get(name, "").splitlines(keepends=True),
+                    fromfile=f"v{number - 1}/{name}", tofile=f"v{number}/{name}",
+                )
+            )
+            (versions / f"v{number}.diff").write_text(diff, encoding="utf-8")
+        return number
+    except Exception:  # noqa: BLE001 - the lock stands without its history
+        return 0
+
+
+def changes_at_this_lock(repo_root: str | Path) -> str:
+    """What the version locked last changed from the one before: a count and the diff; "" for the first."""
+    number = int(_state(repo_root).get("lock_version") or 0)
+    path = Path(repo_root) / LOCKS_DIR / f"v{number}.diff"
+    if number < 2 or not path.is_file():
+        return ""
+    diff = path.read_text(encoding="utf-8", errors="replace")
+    added = sum(1 for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff.splitlines() if line.startswith("-") and not line.startswith("---"))
+    if not diff.strip():
+        return f"Locked as version {number}, unchanged from version {number - 1}."
+    return (
+        f"Locked as version {number}: {added} line(s) added and {removed} removed since version "
+        f"{number - 1} ({LOCKS_DIR}/v{number}.diff).\n{diff}"
+    )
 
 
 def unlock(repo_root: str | Path) -> None:

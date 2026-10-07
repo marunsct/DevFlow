@@ -10,6 +10,8 @@ answers. The records travel in graph state (`decisions`), are rendered to
 
 from __future__ import annotations
 
+import json
+
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -29,6 +31,17 @@ POINTS = (
     "change_request",
     "release",
 )
+
+
+#: A rationale is kept whole up to this length - a diff of the suite, a defect
+#: report - and only the rendered log shortens it. Callers used to cut it at
+#: 1500 characters, and one run's decision log showed a suite summary where
+#: the lead's own decisions had been: they came after the cut.
+STORED_RATIONALE_CHARS = 20000
+#: What the rendered log shows of a rationale; the rest is in `FULL_RECORDS`.
+RENDERED_RATIONALE_CHARS = 2000
+#: Every record, rationale whole, beside the rendered log.
+FULL_RECORDS = ".harness/decisions.json"
 
 
 def _now() -> str:
@@ -53,7 +66,7 @@ def make_record(
         "question": question,
         "options": list(options or []),
         "decision": decision,
-        "rationale": rationale,
+        "rationale": str(rationale or "")[:STORED_RATIONALE_CHARS],
         "decided_by": decided_by,
         "comment": comment,
         "affects": list(affects or []),
@@ -97,6 +110,9 @@ def record_decision(
         target = Path(root) / "docs" / "decision_log.md"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(render(existing), encoding="utf-8")
+        full = Path(root) / FULL_RECORDS
+        full.parent.mkdir(parents=True, exist_ok=True)
+        full.write_text(json.dumps(existing, indent=2), encoding="utf-8")
     except Exception:  # noqa: BLE001 - the record in state is the authority
         logger.debug("Could not write the decision log", exc_info=True)
     return record
@@ -116,7 +132,13 @@ def render(records: list[dict[str, Any]]) -> str:
         lines.append(f"- **Decided by:** {record.get('decided_by')}, {record.get('decided_at')}")
         if record.get("options"):
             lines.append(f"- **Options:** {'; '.join(record['options'])}")
-        lines.append(f"- **Why:** {record.get('rationale')}")
+        why = str(record.get("rationale") or "")
+        if len(why) > RENDERED_RATIONALE_CHARS:
+            why = (
+                why[:RENDERED_RATIONALE_CHARS].rstrip()
+                + f" ... (shortened here; the whole of it is {record.get('id')} in `{FULL_RECORDS}`)"
+            )
+        lines.append(f"- **Why:** {why}")
         if record.get("comment"):
             lines.append(f"- **Comment:** {record['comment']}")
         if record.get("affects"):

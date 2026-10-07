@@ -217,7 +217,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
                 question="Is the product ready to release?",
                 options=["release", "fix the failing criteria first"],
                 decision="fix the failing criteria first",
-                rationale=summary[:1500],
+                rationale=summary,
             )
             return _handing_on(
                 **update,
@@ -253,7 +253,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "Every acceptance criterion passes"
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
             + ".\n" + (f"{packaged}\n" if packaged else "") + summary
-        )[:2000],
+        ),
     )
     goal = str(getattr(state.get("product_intake"), "product_name", "") or "the product")
     write_evidence({**state, **update}, len(getattr(state.get("sprint_plan"), "sprints", None) or []), goal, "Release")

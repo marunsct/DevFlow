@@ -289,7 +289,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             f"{tests} test(s) over {len(suite.criteria(root))} criteria; "
             + ("every criterion is covered and the QA lead approved."
                if not open_problems else
-               f"locked after {rounds} round(s) with these still open: " + "; ".join(open_problems)[:800])
+               f"locked after {rounds} round(s) with these still open: " + "; ".join(open_problems))
+            + (f"\n{changed}" if (changed := suite.changes_at_this_lock(root)) else "")
         ),
     )
     logger.info("Acceptance suite locked: %d test(s)", tests)
@@ -861,7 +862,7 @@ def reopen_the_suite_for(
         question="The locked suite has tests that cannot pass whatever is built: how does the run go on?",
         options=["QA repairs those tests and the suite is reviewed and locked again", "build against it as it is"],
         decision="QA repairs those tests and the suite is reviewed and locked again",
-        rationale="; ".join(broken)[:1500],
+        rationale="; ".join(broken),
         affects=sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")}),
     )
     logger.warning("Reopening the locked suite: %d test(s) cannot pass", len(broken))

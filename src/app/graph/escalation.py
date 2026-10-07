@@ -252,7 +252,7 @@ def _defer_and_continue(
             f"defer {', '.join(sorted(to_defer))} and continue" if to_defer
             else "accept the sprint with its open problems recorded as known issues"
         ),
-        rationale=error[:1500],
+        rationale=error,
         decided_by=decided_by,
         affects=sorted(to_defer),
     )

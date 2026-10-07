@@ -330,5 +330,21 @@ for _key in ("react", "vue", "angular", "nextjs"):
 for _key, _line in _TESTING_BY_LANGUAGE.items():
     SEED_INSTRUCTIONS[_key] += "\n" + _line
 
+#: Playwright, wherever a stack names it. Before this a generated note stood
+#: here, telling every stage to run `npx playwright install` and download three
+#: browser engines - in a project whose browser the harness had installed and
+#: matched to its pinned Playwright, where `--with-deps` is refused. QA ran it
+#: in every run, and one run twice before writing a test.
+SEED_INSTRUCTIONS["playwright"] = (
+    "Playwright:\n"
+    "- End-to-end tests run in a real headless browser with `@playwright/test`,\n"
+    "  through `npx playwright test`.\n"
+    "- Where the harness set the project up, the browser its Playwright version\n"
+    "  needs is already installed: install nothing. `npx playwright install\n"
+    "  --with-deps` is refused here - it installs system packages as root.\n"
+    "- Use a built-in reporter, `--reporter=line` or `--reporter=list`; never\n"
+    "  `tap`, which Playwright resolves to an npm package that is not installed."
+)
+
 
 __all__ = ["SEED_INSTRUCTIONS", "SETUP"]

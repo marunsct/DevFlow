@@ -312,3 +312,20 @@ class TestADefectAnEarlierFixResolved:
         monkeypatch.setattr("app.analysis.language_service.underlined", lambda *a, **k: service.Underlined(here=[]))
 
         assert engineering.no_longer_underlined(str(tmp_path), defect.description)
+
+
+def test_a_throwaway_script_is_not_the_product_s(tmp_path, monkeypatch) -> None:
+    """One run's round raised two defects against `tmp_test_run.js` and
+    `tmp_import_from_tests.mjs`, closed only because they were gone by then."""
+    import subprocess
+
+    from app.graph import engineering
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    before = _committed(tmp_path, {"app/src/a.js": "export const a = 1;\n"}, "before")
+    _committed(tmp_path, {"app/tmp_test_run.js": "render();\n"}, "batch")
+    seen = []
+    monkeypatch.setattr("app.analysis.language_service.underlined", lambda root, target, *a, **k: seen.append(target) or None)
+
+    assert engineering.underlined_in_the_batch({"milestone_plan": None}, str(tmp_path), before) == []
+    assert seen == []

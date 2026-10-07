@@ -205,7 +205,15 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
     except Exception:  # noqa: BLE001
         pinned = None
     project = Path(root) / pinned if pinned else None
-    files = [p for p in ci.changed_since(root, since) if p.lower().endswith(ALL_SUFFIXES)][:MOST_FILES_UNDERLINED]
+    from app.analysis.file_kinds import is_scratch
+
+    # A stage's throwaway script is not the product, and the harness removes
+    # it: one run's round raised two defects against `tmp_test_run.js` and
+    # `tmp_import_from_tests.mjs`, closed only because they were gone by then.
+    files = [
+        p for p in ci.changed_since(root, since)
+        if p.lower().endswith(ALL_SUFFIXES) and not is_scratch(Path(p).name)
+    ][:MOST_FILES_UNDERLINED]
     defects = []
     for relative in files:
         target = Path(root) / relative

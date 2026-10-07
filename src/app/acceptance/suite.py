@@ -924,6 +924,27 @@ def locators_by_a_name_the_role_never_has(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def tests_that_never_open_the_page(repo_root: str | Path) -> list[str]:
+    """Tests that act on the page with nothing that opens it. See the pack's `opens_no_page`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].opens_no_page is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, title in list(found[0].opens_no_page(text))[:4]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` acts on the page and "
+                "nothing opens it - every test starts on a blank page, so it can never pass. Open "
+                "the page first, in the test or in a `beforeEach`."
+            )
+    return problems[:6]
+
+
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
     """Each control the brief names that no test finds by that name, as one problem.
 

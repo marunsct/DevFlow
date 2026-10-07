@@ -253,6 +253,7 @@ PACK = StackPack(
     finds_by_name=js.FINDS_BY_NAME,
     contradicting_locators=js.asserted_without_the_text_it_is_found_by,
     locator_left_behind=js.a_locator_left_behind,
+    opens_no_page=js.tests_that_never_open_the_page,
     failure_pages=js.failure_pages,
     near_misses=js.near_misses,
     needs_what_it_never_made=js.needs_what_it_never_made,

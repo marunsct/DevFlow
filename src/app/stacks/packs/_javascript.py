@@ -678,6 +678,40 @@ def a_locator_left_behind(message: str) -> tuple[str, str] | None:
     return old, new
 
 
+_A_HELPER = re.compile(r"(?:async\s+)?function\s+(\w+)\s*\(|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(")
+
+
+def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
+    """(line, title) of each test that acts on `page` with nothing that opens it.
+
+    Every test starts in a blank browser tab, so one that never calls `goto` -
+    itself, in a `beforeEach`, or through a helper of the file that does - acts
+    on a page with nothing on it and can never pass. Measured on one run: two
+    locked tests filled the title field with no `page.goto('/')`, timed out
+    on every round, and the QA lead asked whether any right product could pass
+    them said none could not.
+    """
+    if re.search(r"\bbeforeEach\s*\([^)]*\)?[\s\S]{0,600}?\bgoto\s*\(", text):
+        return []
+    opening = set()
+    starts = [match.start() for match in _A_TEST.finditer(text)]
+    for match in _A_HELPER.finditer(text):
+        name = match.group(1) or match.group(2)
+        following = text[match.end():next((at for at in starts if at > match.start()), len(text))]
+        if name and re.search(r"\bgoto\s*\(", following[:2000]):
+            opening.add(name)
+    found = []
+    for begin, end in zip(starts, starts[1:] + [len(text)]):
+        body = text[begin:end]
+        if "page" not in body or re.search(r"\bgoto\s*\(", body):
+            continue
+        if any(re.search(rf"\b{re.escape(name)}\s*\(", body) for name in opening):
+            continue
+        title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
+        found.append((text.count("\n", 0, begin) + 1, title.group(2) if title else "a test"))
+    return found
+
+
 #: How a test finds a control by a name, with `{name}` for the name escaped.
 #: A suite that never finds a control the brief names this way cannot tell a
 #: product that gave it that name from one that did not.

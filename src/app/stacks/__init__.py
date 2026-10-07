@@ -121,6 +121,9 @@ class StackPack:
     #: A failed test's message -> (old text, new text) when it failed on a
     #: locator found by a text the page it failed on no longer shows.
     locator_left_behind: Callable[[str], tuple[str, str] | None] | None = None
+    #: A suite file's text -> (line, title) of each test that acts on the page
+    #: with nothing that opens it; it can never pass.
+    opens_no_page: Callable[[str], Sequence[tuple[int, str]]] | None = None
     #: (project root, evidence dir) -> test name -> what the product showed
     #: when that test failed, read from the runner's own failure context.
     failure_pages: Callable[[Path, str], Mapping[str, str]] | None = None

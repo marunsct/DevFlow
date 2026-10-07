@@ -258,3 +258,45 @@ class TestARoleFoundByANameItNeverHas:
         from app.stacks.packs._javascript import FIND_CONTROLS
 
         assert "A list item takes no name from its text" in " ".join(FIND_CONTROLS.split())
+
+
+class TestATestThatNeverOpensThePage:
+    """One run's locked tests filled the title field with no `page.goto('/')`,
+    timed out on every round, and the QA lead asked about them saw no fault."""
+
+    def test_is_named(self, tmp_path) -> None:
+        from app.stacks.packs._javascript import tests_that_never_open_the_page
+
+        text = (
+            "test('[AC-8] shows it', async ({ page }) => {\n"
+            "  await page.getByLabel('Name', { exact: true }).fill('x');\n"
+            "});\n"
+            "test('[AC-1] opens', async ({ page }) => {\n"
+            "  await page.goto('/');\n"
+            "});\n"
+        )
+
+        assert tests_that_never_open_the_page(text) == [(1, "[AC-8] shows it")]
+
+    @pytest.mark.parametrize("opening", [
+        "test.beforeEach(async ({ page }) => { await page.goto('/'); });\n",
+        "async function openIt(page) { await page.goto('/'); }\n",
+        "const openIt = async (page) => { await page.goto('/'); };\n",
+    ])
+    def test_a_before_each_or_a_helper_that_opens_it_counts(self, opening) -> None:
+        from app.stacks.packs._javascript import tests_that_never_open_the_page
+
+        call = "  await openIt(page);\n" if "openIt" in opening else ""
+        text = opening + "test('[AC-8] shows it', async ({ page }) => {\n" + call + "  await page.getByLabel('Name').fill('x');\n});\n"
+
+        assert tests_that_never_open_the_page(text) == []
+
+    def test_the_review_and_every_round_send_it_back(self, tmp_path) -> None:
+        acceptance = _scaffolded(tmp_path)
+        (acceptance / "notes.spec.js").write_text(
+            "test('[AC-1] keeps', async ({ page }) => { await page.getByLabel('Name').fill('x'); });\n"
+        )
+
+        [problem] = suite.tests_that_never_open_the_page(tmp_path)
+
+        assert "nothing opens it" in problem and "`[AC-1] keeps`" in problem

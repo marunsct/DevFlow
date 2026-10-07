@@ -4073,6 +4073,35 @@ def _the_fixes_to_keep(state: Any, task: Any = None) -> list[str]:
         return []
 
 
+def _what_a_fix_stage_must_leave_alone(state: Any, defect: Any) -> str:
+    """What later sprints build, and the fixes earlier ones made in the defect's files, for a fix stage.
+
+    The builders and the lead were told both; a fix stage was told neither.
+    Measured on one run: sprint 1's first fix stage, sent a code-review defect
+    about the unit test command, ran the whole acceptance suite, saw its failures
+    - nearly all later sprints' - and began building filtering, completion and
+    deletion into sprint 1's module "to fix the 6 failing tests". Never raises.
+    """
+    try:
+        from app.agents.specialists import fixes_to_keep_section
+        from app.sprint import record as sprint_record
+
+        later = _the_later_sprints_brief(state)
+        kept = fixes_to_keep_section(sprint_record.fixes_to_keep(
+            list(state.get("sprint_attempts") or []),
+            files=[str(f) for f in getattr(defect, "affected_files", None) or []],
+            role=str(getattr(defect, "owner", "") or ""),
+        ))
+    except Exception:  # noqa: BLE001 - a request without them is the one before this
+        return ""
+    if not (later or kept):
+        return ""
+    return (
+        "\n\n" + later + kept
+        + ("Fix this defect only. A failing test of a later criterion is not this defect.\n" if later else "")
+    )
+
+
 def _fixes_a_review_must_not_undo(state: Any) -> str:
     """The defects earlier attempts fixed, for a reviewer: a difference they made is no finding.
 
@@ -7052,6 +7081,7 @@ def build_workflow_graph(
                 else acceptance_nodes.done_by_the_definition(state)
             ),
         )
+        request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
         # A fix that breaks what passed before it is reverted to exactly where
         # it started. The commit it starts from is taken on the stage's first
         # entry and carried across an approval pause. See `app.graph.engineering`.

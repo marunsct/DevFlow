@@ -284,3 +284,61 @@ class TestTheWorkflowRecordsIt:
 
         assert sprint_scope.not_yet_due(root) == []
         assert text == ""
+
+
+class TestAFixStageIsToldToo:
+    """One run's first fix stage, sent a code-review defect about the unit test
+    command, ran the whole suite and began building later sprints' features into
+    sprint 1 "to fix the 6 failing tests"."""
+
+    def _state(self, root: Path, index: int, attempts=()) -> dict:
+        sprints = [
+            SimpleNamespace(criteria=["AC-1", "AC-2"], out_of_scope=["Renaming (deferred to Sprint 2)"]),
+            SimpleNamespace(criteria=["AC-3", "AC-4"], out_of_scope=[]),
+        ]
+        return {
+            "repository": SimpleNamespace(root_path=str(root)),
+            "sprint_plan": SimpleNamespace(sprints=sprints),
+            "current_sprint_index": index,
+            "sprint_attempts": list(attempts),
+        }
+
+    def _defect(self, files=("notes/styles.css",)):
+        return SimpleNamespace(affected_files=list(files), owner="ui_ux")
+
+    def test_what_later_sprints_build_and_to_fix_this_defect_only(self, root):
+        from app.graph.workflow import _what_a_fix_stage_must_leave_alone
+
+        text = _what_a_fix_stage_must_leave_alone(self._state(root, 0), self._defect())
+
+        assert "--- What later sprints build - not this sprint's work ---" in text
+        assert "- AC-3: A note can be renamed" in text
+        assert "Fix this defect only. A failing test of a later criterion is not this defect." in text
+
+    def test_the_fixes_already_made_in_its_files(self, root):
+        from app.graph.workflow import _what_a_fix_stage_must_leave_alone
+
+        attempts = [{"defect_log": [{
+            "description": "The empty state fails contrast", "state": "fixed, verified",
+            "files": ["notes/styles.css"], "owner": "ui_ux", "resolution": "Darkened it to #555555",
+        }]}]
+
+        text = _what_a_fix_stage_must_leave_alone(self._state(root, 1, attempts), self._defect())
+
+        assert "--- Fixed earlier - keep these fixes ---" in text
+        assert "Fix this defect only" not in text
+
+    def test_nothing_to_say_in_the_last_sprint_with_nothing_fixed(self, root):
+        from app.graph.workflow import _what_a_fix_stage_must_leave_alone
+
+        assert _what_a_fix_stage_must_leave_alone(self._state(root, 1), self._defect()) == ""
+
+    def test_the_words_name_no_product(self, root):
+        from app.graph.workflow import _what_a_fix_stage_must_leave_alone
+
+        sprint_scope.record(root, sprint=1, of=2, not_yet_due=["AC-9"])
+        text = _what_a_fix_stage_must_leave_alone(self._state(root, 0), self._defect()).split("This sprint's plan leaves out")[0]
+        text = "\n".join(line for line in text.splitlines() if not line.startswith("- AC-")).lower()
+
+        for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+            assert not re.search(rf"\b{re.escape(word)}\b", text), word

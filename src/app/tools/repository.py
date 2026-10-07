@@ -17,6 +17,7 @@ import subprocess
 import logging
 import threading
 import tomllib
+from collections import OrderedDict
 from fnmatch import fnmatch
 from pathlib import Path, PurePosixPath
 from typing import Any, Mapping
@@ -3493,13 +3494,15 @@ def _line_count(content: str) -> int:
     return content.count("\n") + (0 if content.endswith("\n") else 1)
 
 
-def _remember_who_wrote_it(root: Path, relative_path: str) -> None:
+def _remember_who_wrote_it(root: Path, relative_path: str, created: bool = False) -> None:
     """Record the authoring stage in the project memory. Never raises.
 
     Called from the two success paths every mutation funnels through, so a
     third path cannot reopen the gap - the mistake `_edited`'s own docstring
-    names. See `app.analysis.project_memory`.
+    names. See `app.analysis.project_memory`. `created` is a write that made
+    the file, which makes every name in it this stage's own.
     """
+    _note_the_names_this_change_introduced(root / relative_path, created)
     try:
         from app.analysis import project_memory
         from app.observability.transcript import _stage_from_config
@@ -5781,6 +5784,93 @@ def _what_a_file_defines(content: str) -> set[str]:
     return found
 
 
+#: For each file, the names it defined after its last change through these
+#: tools - which is what it defined before the next one. In-process, as the
+#: stage memory is: a worker that restarts starts it empty, and a file with no
+#: record has every name in it treated as someone else's, the guard's
+#: behaviour before this existed.
+_LAST_CHANGE: OrderedDict[str, frozenset[str]] = OrderedDict()
+
+#: Files remembered before the oldest is dropped. A ceiling against a process
+#: that serves many runs, not a working limit.
+MAX_FILES_ATTRIBUTED = 4096
+
+#: Where a stage visit keeps, per file, the names it added (`own`) and the
+#: names it found there that it did not add (`others`).
+_AUTHORSHIP = "definitions_by_authorship"
+
+
+def _authorship(target: Path) -> dict[str, set[str]] | None:
+    """This stage visit's record for `target`, or None outside a run."""
+    from app.agents.stage_memory import current_stage_key, store
+
+    if current_stage_key() is None:
+        return None
+    return store(_AUTHORSHIP, {}).setdefault(
+        str(target.resolve()), {"own": set(), "others": set()}
+    )
+
+
+def _note_the_names_this_change_introduced(target: Path, created: bool) -> None:
+    """Remember which definitions this stage visit added to `target`. Never raises.
+
+    `_a_rewrite_that_drops_what_the_file_defines` protects code another task may
+    own, and refused a stage's rewrite of its own. Measured over every stored
+    run: eight refusals, four of them on a file no other stage had ever
+    written. In one, a backend specialist created `app.js`, added a `wrapper`
+    to its own edit-mode function, and was refused the rewrite that took that
+    `wrapper` out again - "Another task in this sprint may own the part you
+    are dropping", when none could. It spent its last calls on line-number
+    edits, ran out of its call budget and was started again from nothing.
+
+    A name is this visit's own when the visit created the file, or when one of
+    its changes added a name the file did not hold before and the visit had
+    never found there. Anything the file held before the visit's first change,
+    anything another stage added in between, and a name the visit took out and
+    later put back all stay someone else's - protected exactly as before. With
+    no record of the file before this change, nothing is attributed. Keyed by
+    the stage visit, not the stage's name: a later sprint reuses the names, and
+    its code is not the earlier sprint's.
+    """
+    try:
+        path = str(target.resolve())
+        now = frozenset(_what_a_file_defines(target.read_text(encoding="utf-8")))
+        before = _LAST_CHANGE.get(path)
+        _LAST_CHANGE[path] = now
+        _LAST_CHANGE.move_to_end(path)
+        while len(_LAST_CHANGE) > MAX_FILES_ATTRIBUTED:
+            _LAST_CHANGE.popitem(last=False)
+        held = _authorship(target)
+        if held is None:
+            return
+        if created:
+            held["own"].update(now - held["others"])
+        elif before is None:
+            held["others"].update(now - held["own"])
+        else:
+            held["others"].update(before - held["own"])
+            held["own"].update(now - before - held["others"])
+    except Exception:  # noqa: BLE001 - bookkeeping must never fail a write
+        pass
+
+
+def _names_this_stage_introduced(target: Path, existing: set[str]) -> set[str]:
+    """The definitions this stage visit added to `target`; empty outside a run.
+
+    `existing` is what the file defines as the rewrite finds it. Whatever of it
+    the visit did not add is recorded as someone else's here too, so a name
+    taken out and put back by a later write is never mistaken for its own.
+    """
+    try:
+        held = _authorship(target)
+        if held is None:
+            return set()
+        held["others"].update(existing - held["own"])
+        return set(held["own"])
+    except Exception:  # noqa: BLE001 - an unknown author is everyone's code
+        return set()
+
+
 def _what_this_rewrite_would_drop(target: Path, content: str) -> list[str]:
     """Names the file defines now and would not after this write."""
     try:
@@ -5998,9 +6088,23 @@ def _a_rewrite_that_drops_what_the_file_defines(
         return ""
     listed = ", ".join(f"`{name}`" for name in dropped[:MAX_LOST_DEFINITIONS_NAMED])
     more = f" and {len(dropped) - MAX_LOST_DEFINITIONS_NAMED} more" if len(dropped) > MAX_LOST_DEFINITIONS_NAMED else ""
+    # Whoever wrote it: a fragment sent as the file loses a stage's own work as
+    # surely as anyone else's.
     fragment = _a_fragment_sent_as_the_file(target, relative_path, content, dropped)
     if fragment:
         raise RepositoryToolError(fragment + f" It would remove {listed}{more}.")
+    # Only what another task may own. A stage taking out names it added itself
+    # is editing its own work. See `_note_the_names_this_change_introduced`.
+    try:
+        existing = _what_a_file_defines(target.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError):
+        existing = set()
+    own = _names_this_stage_introduced(target, existing)
+    dropped = [name for name in dropped if name not in own]
+    if not dropped:
+        return ""
+    listed = ", ".join(f"`{name}`" for name in dropped[:MAX_LOST_DEFINITIONS_NAMED])
+    more = f" and {len(dropped) - MAX_LOST_DEFINITIONS_NAMED} more" if len(dropped) > MAX_LOST_DEFINITIONS_NAMED else ""
     try:
         from app.agents.stage_memory import store
 
@@ -6308,6 +6412,7 @@ def write_approved_artifact(
     # to the same file.
     with _MUTATION_LOCK:
         unchanged = False
+        created = not target.is_file()
         if target.is_file():
             try:
                 unchanged = target.read_text(encoding="utf-8") == content
@@ -6397,7 +6502,7 @@ def write_approved_artifact(
         )
     else:
         result["status"] = "written"
-        _remember_who_wrote_it(root, str(target.relative_to(root)))
+        _remember_who_wrote_it(root, str(target.relative_to(root)), created=created)
     notes = [
         # First, because it explains why what landed differs from what was
         # sent. A silent repair teaches the model nothing and it escapes the

@@ -277,6 +277,13 @@ class VerificationRun(BaseModel):
         return value
 
 
+#: Blocker entries that say there is none.
+_NO_BLOCKER = frozenset({
+    "", "none", "n/a", "na", "nil", "null", "nothing", "-", "--", "no blockers",
+    "no blocker", "none identified", "none found", "not applicable",
+})
+
+
 class SpecialistOutput(BaseModel):
     """Structured result every specialist returns, regardless of role.
 
@@ -304,6 +311,22 @@ class SpecialistOutput(BaseModel):
     documentation: list[str] = Field(default_factory=list, description="Documentation added or updated for this task.")
     risks: list[str] = Field(default_factory=list, description="Risks introduced or discovered by this task.")
     blockers: list[str] = Field(default_factory=list, description="Anything preventing this task from being completed.")
+
+    @field_validator("blockers", mode="after")
+    @classmethod
+    def _a_placeholder_is_no_blocker(cls, value: list[str]) -> list[str]:
+        """Drop entries that say there is no blocker.
+
+        One run's fix stage, sent a defect an earlier stage had already fixed,
+        changed nothing and answered `"blockers": ["None"]`. A stage that is
+        blocked and changed nothing leaves its defect open, so the ledger
+        recorded the fixed defect as "left open - ... reported: None".
+        """
+        return [
+            item for item in value
+            if " ".join(str(item).split()).strip(" .").lower() not in _NO_BLOCKER
+        ]
+
     defects: list[ReportedDefect] = Field(
         default_factory=list,
         description=(

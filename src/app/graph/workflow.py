@@ -491,6 +491,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # asks for them. See `unaccounted_success_measures` and
     # `capabilities_the_plan_never_names`.
     sprint_plan_gaps: list[dict[str, Any]]
+    sprint_plan_built_ahead: list[str]
     current_sprint_index: int
     # Every attempt at every sprint, oldest first, each one a mapping of the
     # shape `sprint_summary.render_sprint_summary` documents. A sprint that
@@ -5653,6 +5654,7 @@ def build_workflow_graph(
         spec_text = _as_text(state.get("technical_specification"))
         measures = _what_the_sprints_must_deliver(state.get("product_intake"))
         gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
+        built_ahead_asked_about = list(state.get("sprint_plan_built_ahead") or [])
         from app.acceptance import suite as acceptance_suite
         from app.acceptance.requests import criteria_text as numbered_criteria
 
@@ -5667,6 +5669,7 @@ def build_workflow_graph(
                 if acceptance_suite.is_locked(root_path)
                 else ""
             ),
+            built_ahead=built_ahead_asked_about,
         )
         update = _run_gated_agent(
             state,
@@ -5766,6 +5769,27 @@ def build_workflow_graph(
             )
             if assignment_notes:
                 logger.info("Sprint plan's criteria adjusted: %s", "; ".join(assignment_notes))
+            # Once, as for the success measures: a sprint whose scope builds a
+            # later sprint's criteria has its lead write work orders for them
+            # and its builders build every sprint in the first. See
+            # `scope_a_later_sprint_delivers`.
+            from app.agents.scrum_master import scope_a_later_sprint_delivers
+
+            ahead = scope_a_later_sprint_delivers(update["sprint_plan"], {c.id: c.text for c in numbered})
+            if ahead and not built_ahead_asked_about:
+                logger.warning("Sprint plan builds later sprints' work early; asking once more: %s", ahead)
+                return _handing_on(
+                    stage="scrum_master",
+                    sprint_plan_built_ahead=ahead,
+                    sprint_plan=update["sprint_plan"],
+                )
+            if ahead:
+                logger.warning(
+                    "Sprint plan still builds later sprints' work early after one re-plan; "
+                    "continuing, and each sprint's lead and builders are told what later "
+                    "sprints deliver: %s", ahead,
+                )
+            update["sprint_plan_built_ahead"] = []
             from app.decisions import record_decision
 
             planned = list(getattr(update["sprint_plan"], "sprints", None) or [])
@@ -5849,6 +5873,15 @@ def build_workflow_graph(
         due_brief = acceptance_nodes.criteria_brief(state)
         if due_brief:
             request["messages"][-1]["content"] += due_brief
+        # Recorded here too, not only when the builders start, so the lead's own
+        # listing and snapshot tell a later sprint's tests from this one's.
+        later_brief = _the_later_sprints_brief(state)
+        if later_brief:
+            request["messages"][-1]["content"] += (
+                "\n\n" + later_brief
+                + "No work order builds what only those criteria need, even where this "
+                "sprint's scope lists it: their sprint plans that work.\n"
+            )
         if nothing_else:
             request["messages"][-1]["content"] += _only_what_was_carried(nothing_else)
         # What the harness set up and owns. Without it one run's lead wrote a

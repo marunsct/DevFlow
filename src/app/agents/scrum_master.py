@@ -407,6 +407,7 @@ def build_sprint_planning_request(
     success_measures: list[str] | None = None,
     gaps: list[Any] | None = None,
     acceptance_criteria: str = "",
+    built_ahead: list[str] | None = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the approved technical specification.
 
@@ -421,7 +422,9 @@ def build_sprint_planning_request(
 
     `success_measures` are the intake's, numbered so the plan can account for
     each; `gaps` are the numbers a previous attempt left unassigned. See
-    `unaccounted_success_measures`.
+    `unaccounted_success_measures`. `built_ahead` is what a previous attempt's
+    scope built before the sprint whose criteria need it - see
+    `scope_a_later_sprint_delivers`.
     """
     from app.agents.text_budget import excerpt, specification_budget
 
@@ -435,6 +438,7 @@ def build_sprint_planning_request(
         + f"--- Approved technical specification (/docs/technical_specification.md) ---\n{specification}\n\n"
         + _the_success_measures(list(success_measures or []), list(gaps or []))
         + _the_acceptance_criteria(acceptance_criteria)
+        + _built_ahead(list(built_ahead or []))
         + f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
@@ -452,7 +456,10 @@ def _the_acceptance_criteria(criteria: str) -> str:
         "sprint's `criteria`, list the ids it makes pass; every id belongs to exactly one "
         "sprint. A sprint is done only when its criteria and every earlier sprint's pass, "
         "measured by the suite, so order sprints so that what a criterion needs is built "
-        "no later than the sprint that claims it.\n\n"
+        "no later than the sprint that claims it. A sprint's `in_scope` builds what its "
+        "own criteria and earlier sprints' need, and no earlier: work only a later "
+        "sprint's criteria need belongs in that sprint's scope - not built ahead as "
+        "functions, wiring or placeholders.\n\n"
     )
 
 
@@ -552,6 +559,71 @@ def _as_a_criterion_id(item: Any, known: list[str]) -> str:
     if bare.isdigit() and f"AC-{int(bare)}" in known:
         return f"AC-{int(bare)}"
     return text.upper().replace("_", "-")
+
+
+def scope_a_later_sprint_delivers(plan: Any, criteria_texts: dict[str, str]) -> list[str]:
+    """One line per scope item that builds what only a later sprint's criteria need.
+
+    One run's plan assigned editing, deleting and filtering to sprint 2's
+    criteria and put them in sprint 2's scope - and in sprint 1's, as "inline
+    edit flow with Edit/Save buttons per task, Delete button per task, filter
+    button handlers". The lead wrote sprint 1's work orders from that scope, its
+    builders built every sprint's features in the first, and nothing was left
+    for sprint 2 but to build them again. Before it, another run's sprint 1 did
+    the same unprompted, and its milestone review had the revision delete the
+    work over the size limit.
+
+    A sprint's own text is its goal and the criteria due by it, earlier sprints'
+    included; a later sprint's is its goal and its criteria. See
+    `app.analysis.integration_checks.work_a_later_sprint_delivers`.
+    """
+    from app.analysis.integration_checks import work_a_later_sprint_delivers
+
+    sprints = list(getattr(plan, "sprints", None) or [])
+
+    def text_of(sprint: Any) -> list[str]:
+        return [
+            str(getattr(sprint, "goal", "") or ""),
+            *(criteria_texts.get(str(item), "") for item in getattr(sprint, "criteria", None) or ()),
+        ]
+
+    notes: list[str] = []
+    for index, sprint in enumerate(sprints):
+        later = sprints[index + 1:]
+        if not later:
+            break
+        due = "\n".join(part for earlier in sprints[: index + 1] for part in text_of(earlier))
+        coming = "\n".join(part for each in later for part in text_of(each))
+        for item in getattr(sprint, "in_scope", None) or ():
+            actions = work_a_later_sprint_delivers(str(item), due, coming)
+            if not actions:
+                continue
+            owners = [
+                str(cid)
+                for each in later
+                for cid in getattr(each, "criteria", None) or ()
+                if work_a_later_sprint_delivers(str(item), due, criteria_texts.get(str(cid), ""))
+            ]
+            notes.append(
+                f"Sprint {index + 1}'s scope builds {', '.join(actions)}, which only a later "
+                f"sprint's criteria need{' (' + ', '.join(owners) + ')' if owners else ''}: "
+                f"\"{' '.join(str(item).split())[:200]}\""
+            )
+    return notes
+
+
+def _built_ahead(notes: list[str]) -> str:
+    """The section asking for work built ahead of its sprint to be moved, or ""."""
+    if not notes:
+        return ""
+    return (
+        "YOUR LAST PLAN BUILT THESE BEFORE THE SPRINT THAT NEEDS THEM:\n"
+        + "\n".join(f"- {note}" for note in notes)
+        + "\nReturn the complete plan again with that work in the scope of the sprint "
+        "whose criteria need it, or with those criteria moved into the earlier sprint "
+        "together with the work. A sprint's scope builds its own criteria and nothing "
+        "a later sprint delivers.\n\n"
+    )
 
 
 def with_every_criterion_assigned(

@@ -5426,6 +5426,36 @@ def later_sprint_work_in(finding: str, this_sprint: str, later_sprints: str) -> 
     return claimed
 
 
+def work_a_later_sprint_delivers(item: str, this_sprint: str, later_sprints: str) -> list[str]:
+    """The user actions a sprint's scope item builds that only later sprints' criteria name.
+
+    The planning counterpart of `later_sprint_work_in`. One run's plan gave
+    editing, deleting and filtering to sprint 2's criteria and listed them in
+    sprint 2's scope - and in sprint 1's too: "inline edit flow with Edit/Save
+    buttons per task, Delete button per task, filter button handlers". The lead
+    copied sprint 1's scope into its work orders and the builders built every
+    sprint's features in the first.
+
+    An action counts when the item names it and a later sprint's text names it
+    by the same word, and this sprint's text - its goal and the criteria due by
+    it - names it by no spelling at all. So `complete` in a sprint that marks
+    things complete, or `add` that both sprints mention, is never reported.
+    """
+    if not (later_sprints or "").strip():
+        return []
+    found: list[str] = []
+    for action in _SAME_ACTION:
+        own = _own_spellings(action)
+        if not _names_the_action(item or "", own, inflected=True):
+            continue
+        if not _names_the_action(later_sprints, own, inflected=True):
+            continue
+        if _names_the_action(this_sprint or "", _group_spellings(action), inflected=True):
+            continue
+        found.append(action)
+    return found
+
+
 #: A file named in prose: a lower-case name with an extension of two or more
 #: characters, optionally under directories. Lower case so that a technology
 #: written with a dot - "a Node.js module", which one run's blocking finding

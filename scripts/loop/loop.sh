@@ -27,14 +27,20 @@
 #                                            what a stage was told, the calls it made, and its answer (asked.py)
 #   scripts/loop/loop.sh failures [run-id] [--full]
 #                                            each failing acceptance test: criterion, error, the page (failures.py)
+#   scripts/loop/loop.sh ready               is the model the settings name served where they name it?
+#                                            last line ALL READY, or start nothing (model_ready.py)
+#   scripts/loop/loop.sh resumed             after a deploy while a run was live: wait up to 10 minutes
+#                                            for orphan recovery to resume it (await_resume.sh)
 #
 # LOOP_SHADOW_SCORE=1 makes `wait` also score the product against the benchmark's
 # hidden tests at every check - for the operator only, off by default: a score in
 # view mid-run invites tuning the harness to the benchmark instead of fixing its
 # faults in general. The hidden tests are deleted from the worker right after.
 #
-# Credentials: `start` logs in with LOOP_USER / LOOP_PASSWORD from the environment.
-# They are never stored in this repository. The loop's operator account is created with
+# Credentials: `bench`, `start` and `cancel` log in with LOOP_USER / LOOP_PASSWORD from the
+# environment. The loop's operator account and its password are written in
+# docs/monitoring-handover.md section 0.3.1 (at the owner's request; it exists only in the
+# local database). A fresh database lacks it; create it with
 #   docker exec langchain-app-1 python -m app.server.manage create-user <name> --password <pw> --role operator
 # Do not use the admin account for the loop.
 #
@@ -179,6 +185,8 @@ reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
 checks) in_worker check_precision.py "${2:-}" ;;
+ready)  in_worker model_ready.py ;;
+resumed) sh "$HERE/await_resume.sh" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }
   in_worker stage_trace.py "$(current)" "$2" "${3:-}"
@@ -214,5 +222,5 @@ suite)
   echo "(the three tests/test_codebase_seeding_api.py failures need S3 credentials this host lacks)"
   ;;
 
-*) sed -n '2,20p' "$0"; exit 2 ;;
+*) sed -n '2,/^set -euo/p' "$0" | sed '$d'; exit 2 ;;
 esac

@@ -68,9 +68,11 @@ execution toggle in settings, and the sprint summary.
 **Never:** hard-code run ids (`tests/test_no_run_ids_in_the_source.py`
 enforces it), read or reset the `admin` password, use the admin account for
 the loop, write the settings table directly (settings need admin; the owner
-configured the model endpoint `:8888` and parallel mode), print values from
-`.env`, kill the owner's GPU processes (llama-server and friends), or add
-knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`.
+sets the model, its endpoint and parallel mode - now `openai/gpt-oss-20b` on
+LM Studio `:1234`, see 0.3.1), print values from `.env`, kill the owner's GPU
+processes (llama-server and friends), load a model yourself, add
+knowledge/doc credentials to `sandbox._ENV_PASSTHROUGH`, or commit or alter
+`docs/logs.md` (the owner's own file; it always shows as modified).
 
 ### 0.2 Where it stands
 
@@ -99,15 +101,17 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 
 | script | what it is for |
 |---|---|
-| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]` (also records the harness's own verdict and flags a false acceptance), `mutate [run] [n]` (n small changes to the product; how many the run's locked suite catches), `bench-report` (false acceptances per benchmark across `data/bench/`), `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `defects [run-id]`, `asked [run-id] <stage> [visit] [--full] [--system]`, `failures [run-id] [--full]`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment. |
+| `loop.sh` | the one entry point: `status`, `bench <benchmark>` (a gate run, e.g. `bench web-todo`), `start [brief]` (a brief file; defaults to `tests/brief_low.md`), `wait [minutes]`, `cancel [run-id]`, `score [run] [benchmark]` (also records the harness's own verdict and flags a false acceptance), `mutate [run] [n]` (n small changes to the product; how many the run's locked suite catches), `bench-report` (false acceptances per benchmark across `data/bench/`), `audit`, `stage <name> [HH:MM]`, `reads`, `timing`, `product [run-id]`, `checks`, `defects [run-id]`, `asked [run-id] <stage> [visit] [--full] [--system]`, `failures [run-id] [--full]`, `ready`, `resumed`, `deploy`, `suite`. Its header documents each. `bench`, `start` and `cancel` need `LOOP_USER`/`LOOP_PASSWORD` in the environment (the account is in 0.3.1). |
 | `audit_live.py` | the 15-minute check: failure rate, duplicate executions (must be 0; a call a restart cut off before its result is counted apart as `[+N re-run after a restart ... expected]`), the times the run was resumed after its worker stopped, redundant reads, stage order, failures per stage, failure signatures with an example each. Says *where* to look. |
-| `defects.py` | `loop.sh defects [run-id]`: each sprint attempt's defect queue - the check that raised each defect (`test round`, `acceptance suite`, `language service`, `code review`, `page check`, `regression`, `cross-file check`, `test command`) and every event after it (closed without a fixer, closed by the round's measurement, fixed with the fixer's account, left open, reverted). Reads the transcript's `defect` records (from `cd06dd8`; older runs have none). Duplicates show as one story under several sources. |
+| `defects.py` | `loop.sh defects [run-id]`: each sprint attempt's defect queue - the check that raised each defect (`test round`, `acceptance suite`, `language service`, `code review`, `page check`, `regression`, `cross-file check`, `test command`) and every event after it (closed without a fixer, closed by the round's measurement, fixed with the fixer's account, left open - with no regression test, or still open when the attempt ended and why - reverted). Reads the transcript's `defect` records (from `cd06dd8`; older runs have none; a defect raised before a mid-run deploy shows as `raised before the ledger`). Duplicates show as one story under several sources. |
 | `asked.py` | `loop.sh asked [run-id] <stage>`: what a stage was told (each message, cut at 3000 characters unless `--full`; the system prompt with `--system`), the calls it made, and its final structured answer. A stage visited several times lists its visits; a third argument picks one. Replaces the ad-hoc transcript snippets. |
 | `failures.py` | `loop.sh failures [run-id]`: each failing acceptance test of the last measurement, with its criterion, the error and call log, and the page as the product showed it when the test failed - what tells a stale locator, a missing `page.goto` and a product bug apart. |
 | `stage_trace.py` | every model reply, tool call and result of one stage, in order. Says *why*: the model's words just before a failed call usually name the harness message it misread. `HH:MM` is UTC (JST - 9) and skips earlier sprints of the same stage name. |
 | `product_audit.py` | the product half of the audit (`loop.sh product [run-id]`): the product files, code lines per file (counted as the brief's line cap is), the intake's acceptance criteria, what the harness claimed (sprint summary counts, milestone acceptance evidence), and the product's own test command run once. Prints evidence; the reading is the checklist in 0.4.1. |
 | `redundant_reads.py` | re-reads by (stage, file) and which notice answered them. One pair with many re-reads has twice been a misleading harness message. |
 | `scripts/audit_run.py` | the older whole-run audit (predates this loop): separates *refusals that prevented damage* from *failures that cost the run*, and runs the cross-file checks over the product. Use it on a finished run; see section 5. |
+| `model_ready.py` | `loop.sh ready`: is the model the settings name served at the address they name (and the judgement model, when one is set)? Prints one line per model, never a key; the last line must be `ALL READY` before any `bench`/`start`. |
+| `await_resume.sh` | `loop.sh resumed`: after a deploy while a run was live, waits up to 10 minutes for orphan recovery to resume it (the worker making model calls again). |
 
 Records the harness keeps for an audit (from `969d6e6`..`70c50cc`, 2026-10-07):
 
@@ -127,20 +131,72 @@ Records the harness keeps for an audit (from `969d6e6`..`70c50cc`, 2026-10-07):
   invites tuning the harness to the benchmark. `score` deletes the hidden tests
   and its working copy from the worker as soon as it finishes.
 
-`loop.sh start` logs in with `LOOP_USER` / `LOOP_PASSWORD` from the
-environment; no credential is stored in the repository. The loop's operator
-account (currently `harness-test`) exists only in the local database and must
-be deleted when the loop ends. On a fresh database, create one:
+### 0.3.1 Taking over: the account, the model, and what does not travel
+
+**The loop's operator account** (recorded here at the owner's request,
+2026-10-07, so any agent can run the scripts; the owner deletes it when
+development completes):
+
+| | |
+|---|---|
+| user | `harness-test` (role `operator`) |
+| password | `loop-test-only-pw-2026` |
+| where it lives | the local Postgres only (`./data/postgres`); it is not a production credential |
+
+`bench`, `start` and `cancel` read it from the environment - export it once per
+shell, or put it before the command:
 
 ```sh
-docker exec langchain-app-1 python -m app.server.manage create-user <name> \
-  --password <password> --role operator
+export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
+LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026 scripts/loop/loop.sh bench web-todo
 ```
+
+If a rebuilt database has lost it, recreate it with the same values (never
+use, read or reset the `admin` account instead):
+
+```sh
+docker exec langchain-app-1 python -m app.server.manage create-user harness-test \
+  --password loop-test-only-pw-2026 --role operator
+```
+
+**The rest of what a new agent needs:**
+
+- **Where:** the repo is `/home/arun/Desktop/langchain`, branch
+  `harness-hardening-session`, git remote named `main`
+  (`git push main harness-hardening-session`). Containers `langchain-app-1`,
+  `langchain-worker-1`, `langchain-db-1`, `langchain-redis-1`; the API on
+  `http://localhost:8000`. Tests run from `.venv` (`loop.sh suite`).
+- **The model (the owner's choice; they change it without saying so):**
+  `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`
+  from the containers, reasoning effort low, execution mode parallel. It reads
+  text only. `loop.sh ready` before every run; on `NOT ALL READY` start
+  nothing and wait for the owner - never load a model or change their settings.
+- **Suite baseline (2026-10-07):** 9,433 pass, 29 skip, and the three
+  `tests/test_codebase_seeding_api.py` S3 failures, in about 3 minutes.
+- **After a mid-run deploy:** `loop.sh resumed`, then `loop.sh status`. The
+  audit counts a call a restart cut off apart (`re-run after a restart`).
+- **Waiting:** one background `loop.sh wait 10` (first 40 minutes) or
+  `wait 18`; tell the owner when it reports, in JST. Never edit `loop.sh`
+  while a wait runs (`pgrep -f "loop.sh wait"` first).
+- **Two sessions in one tree:** before any commit, deploy, start or cancel,
+  check for another Claude session (`ListAgents`) and edits that are not
+  yours (`git status`). One session drives (commits, deploys, starts,
+  cancels); any other audits read-only and sends its findings to the driver.
+  If the driver has gone, take the role so the loop does not stall.
+- **Nothing in a session's scratchpad travels.** Every helper the loop uses
+  is in `scripts/loop/`; put a new one there, not in `/tmp`.
+- **Awaiting the owner's decision - do not change on your own:** the
+  CRITERION severity policy (minor vs blocking grading); the `node -e`
+  policy (one-off command-line code is refused); whether a browser test must
+  cover every action the brief names; whether every fix must add a
+  regression test; whether CLI products get the UI/UX consultation; deleting
+  `harness-test` when the loop ends.
 
 ### 0.4 One iteration, step by step
 
 ```sh
-export LOOP_USER=harness-test LOOP_PASSWORD=...        # the operator account
+export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026   # the operator account (0.3.1)
+scripts/loop/loop.sh ready                             # last line must be ALL READY; otherwise start nothing
 scripts/loop/loop.sh bench web-todo                    # the benchmark the gate is on; prints the run id and JST start
 scripts/loop/loop.sh wait 10                           # first 40 minutes; then `wait 18`
 scripts/loop/loop.sh score                             # when it ends: the hidden tests
@@ -156,8 +212,8 @@ see a requirement no test checks (run-eb409cbe's suite caught 5 of 6 changes yet
 the product scored 2/10). Do not edit `loop.sh` while a `wait` runs: bash reads
 the script as it goes, and the wait dies with a syntax error.
 
-Before `bench`, check the served model matches the settings (`docs/HANDOVER.md`
-§5). After `deploy`, the worker's `/tmp` is empty: anything copied there for
+Before `bench`, check the served model matches the settings (`loop.sh ready`;
+the manual check is in `docs/HANDOVER.md` §5). After `deploy`, the worker's `/tmp` is empty: anything copied there for
 auditing has to be copied again.
 
 Then, for every failure signature and every stage that looks wrong:
@@ -179,8 +235,8 @@ Then, for every failure signature and every stage that looks wrong:
 4. Commit with a message that says what the run did and why the change
    answers it; `git push main harness-hardening-session`.
 5. `loop.sh deploy`. A run that already has a finding may be resumed on the
-   new code (orphan recovery does it); a run that could still be clean should
-   be left to finish first.
+   new code (orphan recovery does it; `loop.sh resumed` waits for it); a run
+   that could still be clean should be left to finish first.
 6. When the run ends, `loop.sh score`, then **audit the generated product
    before counting the run** (0.4.1). Then: if it scored 100% and nothing was
    found in the run or the product, count it toward the gate; otherwise the
@@ -240,8 +296,8 @@ working (the tool-approval check can fail transiently), schedule a retry about
   server: cancel it with `POST /api/runs/{id}/cancel`.
 - Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
 - Containers log UTC; the host is JST (+9). Transcript times are UTC.
-- The full suite (`loop.sh suite`) takes about 3.3 minutes here: roughly
-  8,840 pass, 17 skip, and three `tests/test_codebase_seeding_api.py` tests
+- The full suite (`loop.sh suite`) takes about 3 minutes here: 9,433 pass,
+  29 skip (2026-10-07), and three `tests/test_codebase_seeding_api.py` tests
   fail for want of S3 credentials. Tests that need the TypeScript compiler or
   Pyright skip on the host; run those inside the worker after a deploy. Any other failure is real - unless `src/` was edited while the
   suite ran (tests that read source with `inspect` then see shifted lines).

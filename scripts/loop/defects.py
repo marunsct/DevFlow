@@ -36,21 +36,24 @@ if not events:
     print("no defect records in this run's transcript (it predates the ledger, or no round has run)")
     raise SystemExit(0)
 
-# A sprint's defects are numbered within its current remediation cycle, which
-# starts again at 0 on a re-planned attempt: a defect raised at an index the
-# cycle already holds opens a new cycle.
+# A sprint's defects are numbered within its current remediation cycle: the
+# numbers only grow within a cycle and start again at 0 on a re-planned
+# attempt, so a defect raised at a number no higher than one the cycle already
+# holds opens a new cycle. An event about a defect raised before the ledger
+# began (a run deployed onto mid-way) joins the current cycle.
 cycles = collections.defaultdict(list)  # sprint -> [ {index: [events]} ]
 for event in events:
     sprint, index = event.get("sprint"), event.get("index")
     sprint_cycles = cycles[sprint]
     if event.get("event") == "raised":
-        if not sprint_cycles or index in sprint_cycles[-1]:
+        held = [i for i in (sprint_cycles[-1] if sprint_cycles else {}) if isinstance(i, int)]
+        if not sprint_cycles or (isinstance(index, int) and held and index <= max(held)):
             sprint_cycles.append({})
         sprint_cycles[-1][index] = [event]
-    elif sprint_cycles and index in sprint_cycles[-1]:
-        sprint_cycles[-1][index].append(event)
     else:
-        sprint_cycles.append({index: [event]})
+        if not sprint_cycles:
+            sprint_cycles.append({})
+        sprint_cycles[-1].setdefault(index, []).append(event)
 
 
 def _short(text, limit=110):
@@ -61,18 +64,21 @@ def _short(text, limit=110):
 for sprint in sorted(cycles, key=lambda s: (s is None, s)):
     for attempt, defects in enumerate(cycles[sprint], 1):
         by_source = collections.Counter(
-            (story[0].get("source") or "?") for story in defects.values() if story[0].get("event") == "raised"
+            (story[0].get("source") or "?") if story[0].get("event") == "raised" else "raised before the ledger"
+            for story in defects.values()
         )
         number = "?" if sprint is None else sprint + 1
         print(f"== sprint {number}, attempt {attempt}: {len(defects)} defect(s) - "
               + ", ".join(f"{count} {source}" for source, count in by_source.most_common()))
-        for index in sorted(defects, key=lambda i: (i is None, i)):
+        for index in sorted(defects, key=lambda i: (not isinstance(i, int), i if isinstance(i, int) else 0)):
             story = defects[index]
             first = story[0]
-            print(f"  #{index} round {first.get('round')} [{first.get('source') or '?'}] "
+            raised = first.get("event") == "raised"
+            source = (first.get("source") or "?") if raised else "raised before the ledger"
+            print(f"  #{index} round {first.get('round')} [{source}] "
                   f"{first.get('owner') or '-'}: {_short(first.get('description'))}")
-            for later in story[1:]:
+            for later in story[1:] if raised else story:
                 print(f"      {later.get('at', '')[11:19]} {later.get('stage')}: {later.get('event')}"
                       + (f" - {_short(later.get('detail'), 160)}" if later.get("detail") else ""))
-            if len(story) == 1:
+            if raised and len(story) == 1:
                 print("      (nothing recorded after it was raised: still open, or the round ended first)")

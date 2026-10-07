@@ -640,21 +640,30 @@ def tests_left_behind_by_their_own_change(repo_root: str | Path, result: Accepta
     made the change.
     """
     found = contract.the_pack(repo_root)
-    if found is None or found[0].locator_left_behind is None:
+    if found is None:
         return []
+    pack = found[0]
     broken = []
     for test in result.report.tests:
         if test.outcome != "failed":
             continue
-        left = found[0].locator_left_behind(test.message or "")
-        if left is None:
+        left = pack.locator_left_behind(test.message or "") if pack.locator_left_behind else None
+        if left is not None:
+            old, new = left
+            broken.append(
+                f"`{test.name}` looks for \"{new}\" through a locator it found by \"{old}\". The page "
+                f"it failed on shows \"{new}\" and no longer shows \"{old}\", so the change was made "
+                "and the test cannot see it. Find the item again by the text it shows now."
+            )
             continue
-        old, new = left
-        broken.append(
-            f"`{test.name}` looks for \"{new}\" through a locator it found by \"{old}\". The page "
-            f"it failed on shows \"{new}\" and no longer shows \"{old}\", so the change was made "
-            "and the test cannot see it. Find the item again by the text it shows now."
-        )
+        value = pack.filtered_by_a_field_value(test.message or "") if pack.filtered_by_a_field_value else None
+        if value is not None:
+            broken.append(
+                f"`{test.name}` looks inside an item found by the text \"{value}\", and the page it "
+                f"failed on shows \"{value}\" only as the value of a field - a field's value is not "
+                "the text of what holds it, so the item stops matching the moment it is edited. Find "
+                "what the edit shows by its label or name on the page, not inside the item."
+            )
     return broken
 
 

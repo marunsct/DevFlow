@@ -356,3 +356,69 @@ def test_a_specification_that_disables_on_a_condition_in_any_wording_is_caught()
     assert disables_on_a_condition("2. If invalid, the form disables the primary control (`disabled` attribute).")
     assert disables_on_a_condition("On an empty field the control is disabled.")
     assert not disables_on_a_condition("Visual states: placeholder, focus ring, hover, disabled, toast.")
+
+
+class TestALocatorFilteredByAFieldValue:
+    """One run's locked edit tests found "Edit title" and "Save" inside the item
+    filtered by its title; while it was edited the item held a field whose
+    value was the title, so the filter matched nothing, on every round of
+    three attempts at a sprint."""
+
+    @staticmethod
+    def _message(locator: str, list_lines: str) -> str:
+        return (
+            "Error: locator.click: Timeout 3000ms exceeded.\n    Call log:\n"
+            f"      - waiting for {locator}\n\n"
+            "What the page showed when this failed:\n- main:\n  - list:\n    - listitem:\n" + list_lines
+        )
+
+    def test_the_title_moved_into_the_field(self) -> None:
+        from app.stacks.packs._javascript import a_locator_filtered_by_a_field_value
+
+        message = self._message(
+            "getByRole('listitem').filter({ hasText: 'Entry one' }).getByLabel('Edit title')",
+            '      - textbox "Edit title": Entry one\n      - button "Save"\n',
+        )
+
+        assert a_locator_filtered_by_a_field_value(message) == "Entry one"
+
+    def test_the_field_already_holds_the_new_title(self) -> None:
+        from app.stacks.packs._javascript import a_locator_filtered_by_a_field_value
+
+        message = self._message(
+            "getByRole('listitem').filter({ hasText: 'Entry one' }).getByRole('button', { name: 'Save' })",
+            '      - textbox "Edit title": Entry two\n      - button "Save"\n',
+        )
+
+        assert a_locator_filtered_by_a_field_value(message) == "Entry one"
+
+    @pytest.mark.parametrize("list_lines", [
+        "      - text: Entry one\n",                                      # shown as text: the filter would match
+        '      - textbox "Edit title": Entry two\n',                      # what it looked for is not there
+    ])
+    def test_a_product_that_lost_the_item_is_not_excused(self, list_lines) -> None:
+        from app.stacks.packs._javascript import a_locator_filtered_by_a_field_value
+
+        message = self._message(
+            "getByRole('listitem').filter({ hasText: 'Entry one' }).getByRole('button', { name: 'Save' })",
+            list_lines,
+        )
+
+        assert a_locator_filtered_by_a_field_value(message) is None
+
+    def test_it_reopens_the_suite(self, scaffolded) -> None:
+        from app.acceptance import junit, suite
+
+        message = self._message(
+            "getByRole('listitem').filter({ hasText: 'Entry one' }).getByLabel('Edit title')",
+            '      - textbox "Edit title": Entry one\n',
+        )
+        result = suite.AcceptanceResult(ran=True, command="npm run test:acceptance", report=junit.Report(
+            found=True, tests=[junit.TestResult(name="[AC-3] edits", outcome="failed", message=message)],
+        ))
+
+        [problem] = suite.tests_left_behind_by_their_own_change(str(scaffolded), result)
+
+        assert "only as the value of a field" in problem
+        for word in BANNED:
+            assert not re.search(rf"\b{word}\b", problem.split("`")[-1].lower()), word

@@ -562,7 +562,10 @@ locator refuses more than one. A locator found by its text keeps that filter:
 once the test changes the text, find the item again by its new text. A list
 item takes no name from its text: find one by
 `page.getByRole('listitem').filter({ hasText: '...' })`, never by
-`getByRole('listitem', { name: '...' })`, which matches none."""
+`getByRole('listitem', { name: '...' })`, which matches none. What an edit
+shows - its field, the control that confirms it - is found on the page by its
+label or name, not inside the item: while it is edited the item's text is in a
+field, and a field's value is not text a filter can match."""
 
 #: Locators that find a control by something no person sees. A suite that
 #: uses one is sent back by the acceptance review (`suite.locators_nobody_sees`).
@@ -710,6 +713,48 @@ def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
         title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
         found.append((text.count("\n", 0, begin) + 1, title.group(2) if title else "a test"))
     return found
+
+
+_FILTERED_BY_TEXT = re.compile(r"""\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
+#: What a test looked for inside the filtered item: `.getByLabel('Edit title')`
+#: or `.getByRole('button', { name: 'Save' })`.
+_WITHIN_THE_FILTER = re.compile(
+    r"""^\s*\}?\s*\)?\s*\.(?:getByLabel\(\s*'([^']+)'|getByRole\(\s*'\w+'\s*,\s*\{\s*name:\s*'([^']+)')"""
+)
+#: A line of the page tree for a field, its value after the colon.
+_A_FIELD_LINE = re.compile(r"^\s*-\s*(?:textbox|searchbox|combobox|spinbutton)\b.*:\s*(.+)$")
+
+
+def a_locator_filtered_by_a_field_value(message: str) -> str | None:
+    """The text, when a test failed on a locator filtered by it and the page shows it only in a field.
+
+    A field's value is not the text of what holds it, so `filter({ hasText })`
+    stops matching an item the moment its text moves into a field to be
+    edited. Measured on one run: three locked edit tests found the "Edit
+    title" field and the "Save" control inside the item filtered by its title;
+    the page they failed on showed the item holding a field "Edit title" whose
+    value was that title - and nothing else with it - on every round of three
+    attempts at a sprint.
+    """
+    message = message or ""
+    found = _FILTERED_BY_TEXT.search(message)
+    if not found or not ("Timeout" in message or "element(s) not found" in message):
+        return None
+    said = next(group for group in found.groups() if group)
+    page = message.split("What the page showed when this failed:", 1)
+    if len(page) < 2:
+        return None
+    lines = [line for line in page[1].splitlines() if said in line]
+    if lines:
+        return said if all(_A_FIELD_LINE.match(line) for line in lines) else None
+    # Shown nowhere at all: the field's value was changed too. The test's own
+    # target - the field or control it looked for inside the item - being on
+    # the page is the evidence the item is there, being edited.
+    target = _WITHIN_THE_FILTER.search(message[found.end():found.end() + 200])
+    wanted = target and (target.group(1) or target.group(2))
+    if wanted and f'"{wanted}"' in page[1]:
+        return said
+    return None
 
 
 #: How a test finds a control by a name, with `{name}` for the name escaped.

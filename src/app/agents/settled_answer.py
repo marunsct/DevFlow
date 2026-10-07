@@ -1098,6 +1098,58 @@ def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None
     return name, count
 
 
+#: With thinking off, the same call this many times running is a loop. The
+#: rungs above were measured on stages that think, and wait for a refusal or a
+#: "nothing changed" note to repeat: a stage that lost a reply to reasoning and
+#: carries on without it reads those notes and sends the call again. Measured
+#: on one run: 35% of the tool calls made without thinking repeated the call
+#: before them exactly, against 3% with thinking on; one fix stage sent one
+#: refused edit 6 times and one refused `replace_lines` 13 times, and two
+#: stages read one file 14 times, every repeat after its reply was lost.
+SAME_CALL_RUNNING_WITHOUT_THINKING = 3
+
+
+def _thinking_is_off_here(messages: list[Any], stage_name: str) -> bool:
+    """Whether this call goes without thinking - the condition
+    `_without_reasoning_where_it_keeps_running_out` switches it off on."""
+    try:
+        from app.agents.thinking import reasoning_keeps_running_out_for
+
+        return bool(_replies_that_were_all_reasoning(messages)) or bool(reasoning_keeps_running_out_for(stage_name))
+    except Exception:  # noqa: BLE001 - unknown is thinking on, the ordinary rungs
+        return False
+
+
+def _the_same_call_running(messages: list[Any]) -> tuple[str, int] | None:
+    """The tool of the last call and how many calls running had exactly its arguments, or None below the threshold."""
+    calls: list[tuple[str, str]] = []
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = str((call or {}).get("name") or "")
+            if name:
+                calls.append((name, json.dumps((call or {}).get("args") or {}, sort_keys=True, default=str)))
+    if not calls:
+        return None
+    running = 0
+    for call in reversed(calls):
+        if call != calls[-1]:
+            break
+        running += 1
+    if running < SAME_CALL_RUNNING_WITHOUT_THINKING:
+        return None
+    return calls[-1][0], running
+
+
+def _the_same_call_running_notice(name: str, times: int) -> str:
+    """Why a tool is gone for this call: the stage sent it the same arguments again and again."""
+    return (
+        f"`{name}` is withheld for this call. You have sent it the same arguments {times} "
+        "times in a row, and the same call returns the same thing: what it returned is "
+        "already in this conversation above. Take the next step instead - change "
+        "something, run a different check, or return your structured response."
+    )
+
+
 def _a_query_withheld_notice(name: str, repeats: int) -> str:
     """Why a query tool is gone: it kept answering the same question the same way."""
     return (
@@ -1364,6 +1416,9 @@ def build_settled_answer_middleware(
                     if repeated is None:
                         repeated = _a_query_answered_identically(messages)
                         notice = _a_query_withheld_notice(*repeated) if repeated is not None else ""
+                    if repeated is None and _thinking_is_off_here(messages, stage_name):
+                        repeated = _the_same_call_running(messages)
+                        notice = _the_same_call_running_notice(*repeated) if repeated is not None else ""
                     if notice:
                         notices.append(notice)
                     if notices:

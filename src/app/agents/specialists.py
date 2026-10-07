@@ -739,11 +739,15 @@ def build_specialist_task_request(
     other_tasks: Sequence[Any] = (),
     work_order: Any = None,
     interface_design: Sequence[str] = (),
+    later_sprints_brief: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for one delegated specialist task.
 
     `interface_design` is the specification's, given to a task that builds the
     interface: the layout, states, feedback and visual style it is built to.
+
+    `later_sprints_brief` says which locked criteria later sprints deliver and
+    what this sprint's plan leaves out - see `app.acceptance.sprint_scope`.
 
     `work_order` is the `SpecialistTask` itself, whose files, interfaces, steps,
     edge cases, test cases and verification commands are the rest of the
@@ -766,6 +770,7 @@ def build_specialist_task_request(
         f"{project_contract(repository_root)}"
         f"--- Delegated task ---\n{task_description}\n\n"
         f"--- Acceptance criteria ---\n{criteria_text}\n\n"
+        f"{later_sprints_brief}"
         f"{order}"
         f"{_the_interface_design(interface_design)}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"

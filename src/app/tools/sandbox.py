@@ -3986,6 +3986,20 @@ def _a_silent_success(outcome: Dict[str, Any]) -> str:
     )
 
 
+def _failures_a_later_sprint_owns(repo_root: str, since: float) -> str:
+    """Which of a test command's failures are a later sprint's tests, or "". Never raises.
+
+    See `app.acceptance.sprint_scope`: a builder shown a later sprint's failures
+    beside its own, with nothing to tell them apart, built that sprint's work.
+    """
+    try:
+        from app.acceptance import sprint_scope
+
+        return sprint_scope.note_on_failures(repo_root, since)
+    except Exception:  # noqa: BLE001 - a note must never fail the command
+        return ""
+
+
 def _note_about_running_this_again(
     repo_root: str,
     command: Sequence[str],
@@ -4347,6 +4361,7 @@ class SandboxExecutor:
             return outcome
 
         already_timed_out = 0 if harness else timed_out_this_way_before(repo_root, command, working_directory, category)
+        later_sprints = ""
         if already_timed_out:
             outcome = {
                 "error": (
@@ -4357,11 +4372,15 @@ class SandboxExecutor:
                 )
             }
         else:
+            began = time.time()
             outcome = cls._run(
                 command, repo_root, role_name, category, extra_env, working_directory
             )
+            if not harness and _as_exit_code(outcome.get("returncode")) not in (None, 0):
+                later_sprints = _failures_a_later_sprint_owns(repo_root, began)
         notes = [n for n in (redundant_cd, doubled, redirected, _a_missing_path_that_is_here(outcome),
-                             _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory)) if n]
+                             _a_relative_path_missing_from_where_it_ran(outcome, repo_root, working_directory),
+                             later_sprints) if n]
         if notes:
             outcome = {**outcome, "note": " ".join(notes)}
         regressed = _fewer_pass_than_last_time(

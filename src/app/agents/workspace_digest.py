@@ -124,7 +124,7 @@ def _entry_for(root: Path, name: str, path: Path, text: str) -> list[str]:
         # Marked where a stage looks on every call. Listed as an ordinary file,
         # the harness's server read as product: one run's lead planned work
         # orders to change it and its stages tried to run it 19 times.
-        return [f"{head} - {owner}: {_what_to_do_with(owner)}"]
+        return [f"{head} - {owner}: {_what_to_do_with(owner, root, name)}"]
     try:
         changed_by = project_memory.who_changed(root, name)
         if changed_by:
@@ -164,10 +164,29 @@ def _owned_by_the_harness(root: Path, name: str) -> str:
         return ""
 
 
-def _what_to_do_with(owner: str) -> str:
+def _a_later_sprint_s(root: Path, name: str) -> list[str]:
+    """The criteria a locked suite file tests, when every one is a later sprint's. Never raises."""
+    try:
+        from app.acceptance.sprint_scope import later_sprints_files
+
+        return later_sprints_files(root).get(name, [])
+    except Exception:  # noqa: BLE001 - the plain label is the old behaviour
+        return []
+
+
+def _what_to_do_with(owner: str, root: Path | None = None, name: str = "") -> str:
     """What a stage may do with a file the harness owns."""
     from app.stacks import contract
 
+    if owner == contract.LOCKED_SUITE and root is not None:
+        later = _a_later_sprint_s(root, name)
+        if later:
+            # "read it for what the product must do" said a later sprint's
+            # tests were this one's work. See `app.acceptance.sprint_scope`.
+            return (
+                f"tests of criteria a later sprint builds ({', '.join(later)}); they fail "
+                "until then and are not this sprint's work; never change it"
+            )
     return {
         # "the acceptance command runs it" was untrue of a unit test setup.
         contract.KEPT_SETUP: "the project's test commands run it; do not change, run or test it",

@@ -67,6 +67,16 @@ def _readable(path: Path) -> str | None:
         return None
 
 
+def _later_sprints_files(root: Path) -> dict[str, list[str]]:
+    """The locked suite files that are wholly a later sprint's. Never raises."""
+    try:
+        from app.acceptance.sprint_scope import later_sprints_files
+
+        return later_sprints_files(root)
+    except Exception:  # noqa: BLE001 - a snapshot without this shows everything
+        return {}
+
+
 def project_snapshot(repo_root: str | Path) -> str:
     """The project's files with numbered lines, or "" when there is no project or it is too big.
 
@@ -108,9 +118,16 @@ def project_snapshot(repo_root: str | Path) -> str:
 
         shown: list[str] = []
         left_out: list[str] = []
+        later = _later_sprints_files(root)
+        held_back: list[str] = []
         used = 0
         for name, text in files:
             lines = len(text.splitlines())
+            if name in later:
+                # A later sprint's tests, inlined in full, read as this stage's
+                # work. See `app.acceptance.sprint_scope`.
+                held_back.append(f"{name} ({', '.join(later[name])})")
+                continue
             block = f"--- {name} ({lines} lines) ---\n{_numbered(text)}\n"
             if used + len(block) > SNAPSHOT_BUDGET_CHARS:
                 left_out.append(f"{name} ({lines} lines)")
@@ -123,6 +140,10 @@ def project_snapshot(repo_root: str | Path) -> str:
             "\nNot included, to keep this short - read these if you need them: "
             + ", ".join(left_out) + "."
             if left_out else ""
+        ) + (
+            "\nNot included because every test in them is for a criterion a later "
+            "sprint builds: " + ", ".join(held_back) + "."
+            if held_back else ""
         )
         return (
             f"The project's files as they stood when this stage started "

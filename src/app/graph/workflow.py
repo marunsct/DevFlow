@@ -3926,6 +3926,31 @@ def _what_later_sprints_build(state: Any) -> str:
         return ""
 
 
+def _the_later_sprints_brief(state: Any) -> str:
+    """Record what this sprint does not owe, and tell its builders. "" on any failure.
+
+    The record is what the workspace listing, a stage's opening snapshot and a
+    test command's result read to tell a later sprint's tests from this
+    sprint's. See `app.acceptance.sprint_scope`.
+    """
+    try:
+        from app.acceptance import sprint_scope, suite
+        from app.graph import acceptance_nodes
+
+        root = state["repository"].root_path
+        sprints = list(getattr(state.get("sprint_plan"), "sprints", None) or [])
+        index = int(state.get("current_sprint_index", 0) or 0)
+        if not sprints or index >= len(sprints):
+            return ""
+        due = acceptance_nodes.criteria_due(state)
+        later = [] if due is None else [c.id for c in suite.criteria(root) if c.id not in due]
+        sprint_scope.record(root, sprint=index + 1, of=len(sprints), not_yet_due=later)
+        return sprint_scope.brief(root, deferred=getattr(sprints[index], "out_of_scope", None) or ())
+    except Exception:  # noqa: BLE001 - see docstring
+        logger.debug("Could not record the sprint scope", exc_info=True)
+        return ""
+
+
 def _what_this_sprint_builds(state: Any) -> str:
     """The goal, in-scope work and acceptance criteria of the current sprint, or ""."""
     try:
@@ -6170,6 +6195,7 @@ def build_workflow_graph(
                 other_tasks=tasks,
                 work_order=task,
                 interface_design=_the_interface_design_for(state, task),
+                later_sprints_brief=_the_later_sprints_brief(state),
             )
             update = _run_gated_agent(
                 state,
@@ -6228,6 +6254,7 @@ def build_workflow_graph(
             ),
             work_order=task,
             interface_design=_the_interface_design_for(state, task),
+            later_sprints_brief=_the_later_sprints_brief(state),
         )
         
         # A worker may only answer its *own* approval gate.

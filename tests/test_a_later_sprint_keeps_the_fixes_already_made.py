@@ -115,3 +115,30 @@ class TestTheWorkflowReadsTheRecord:
         from app.graph.workflow import _the_fixes_to_keep
 
         assert _the_fixes_to_keep({}, SimpleNamespace(files=[STYLES], specialist_role="ui_ux")) == []
+
+
+class TestWhatAReviewIsTold:
+    """With builders and the lead told, the fixes survived a revision - and the UI
+    advice review reported both as departures from the adopted advice, which the
+    milestone review carried as findings."""
+
+    def test_a_difference_a_fix_made_is_no_finding(self):
+        from app.graph.workflow import _fixes_a_review_must_not_undo
+
+        text = _fixes_a_review_must_not_undo({"sprint_attempts": _attempts(_row("The empty state fails contrast"))})
+
+        assert "--- Fixed earlier - keep these fixes ---" in text
+        assert "A difference from the specification or from adopted advice that one of these fixes made is not a finding" in text
+
+    def test_nothing_fixed_says_nothing(self):
+        from app.graph.workflow import _fixes_a_review_must_not_undo
+
+        assert _fixes_a_review_must_not_undo({}) == ""
+
+    def test_the_words_name_no_product(self):
+        from app.graph.workflow import _fixes_a_review_must_not_undo
+
+        text = _fixes_a_review_must_not_undo({"sprint_attempts": _attempts(_row("x"))}).lower()
+
+        for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+            assert not re.search(rf"\b{re.escape(word)}\b", text), word

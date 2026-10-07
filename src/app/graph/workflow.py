@@ -4073,6 +4073,31 @@ def _the_fixes_to_keep(state: Any, task: Any = None) -> list[str]:
         return []
 
 
+def _fixes_a_review_must_not_undo(state: Any) -> str:
+    """The defects earlier attempts fixed, for a reviewer: a difference they made is no finding.
+
+    Measured on one run: with the builders and the lead told to keep them
+    (`_the_fixes_to_keep`), the colours sprint 1 had fixed for contrast survived
+    sprint 4's revision - and its UI advice review reported both as departures
+    from the adopted advice ("#empty-state color is #666666, spec requires
+    #999999"), which the milestone review carried as findings. A review that asks
+    for a fix to be undone is the specification's mistake made a third time.
+    """
+    try:
+        from app.agents.specialists import fixes_to_keep_section
+
+        kept = fixes_to_keep_section(_the_fixes_to_keep(state))
+    except Exception:  # noqa: BLE001 - a review without them is the one before this
+        return ""
+    if not kept:
+        return ""
+    return (
+        "\n\n" + kept + "A difference from the specification or from adopted advice that "
+        "one of these fixes made is not a finding: both were written before the defect "
+        "was found.\n"
+    )
+
+
 def _the_later_sprints_brief(state: Any) -> str:
     """Record what this sprint does not owe, and tell its builders. "" on any failure.
 
@@ -7274,6 +7299,7 @@ def build_workflow_graph(
             _this_sprint_s_scope_for_review(state),
             _the_files_this_milestone_changed(state, state.get("specialist_outputs", {})),
         )
+        request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
         if role == "ui_ux":
             # The design QA loop: the page as a person sees it, for a model that can see.
             from app.models.vision import the_reviewer_reads_images
@@ -7394,6 +7420,7 @@ def build_workflow_graph(
             acceptance=acceptance_text,
             specialist_findings=_this_review_s_advice_findings(state),
         )
+        request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
         # The page as a person sees it, for a reviewer whose model can see. See
         # `app.agents.page_screenshots`; a model that cannot is not sent them.
         from app.models.vision import the_reviewer_reads_images

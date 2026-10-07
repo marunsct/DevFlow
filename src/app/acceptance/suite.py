@@ -636,9 +636,18 @@ def _judged(repo_root: str | Path, result: AcceptanceResult, save: bool) -> Acce
     for test in result.report.tests:
         for tag in test.tags:
             by_tag.setdefault(tag, []).append(test)
+    # A criterion due now is judged by its tests that can pass now: one that
+    # also needs a later sprint's work fails until then, whatever it carries.
+    # See `sprint_scope.waiting_tests`. A criterion with no other test keeps
+    # them all, as before.
+    from app.acceptance import sprint_scope
+
+    waiting = sprint_scope.waiting_tests(repo_root)
 
     def judge(item_id: str, text: str) -> CriterionResult:
         tests = by_tag.get(item_id, [])
+        if waiting:
+            tests = [t for t in tests if not sprint_scope.waits_on(t.name, waiting)] or tests
         if item_id in excused:
             status = "deferred"
         elif not tests:

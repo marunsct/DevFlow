@@ -97,28 +97,107 @@ def not_yet_due(repo_root: str | Path | None) -> list[str]:
     return [str(item) for item in items] if isinstance(items, list) else []
 
 
-def later_sprints_files(repo_root: str | Path | None) -> dict[str, list[str]]:
-    """Each locked suite file whose every tagged test is a later sprint's, with those criteria.
+#: A name a criterion puts in quotes - the control, field or label it names:
+#: `a checkbox labelled "Done"`, `a button named “Delete”`.
+_QUOTED = re.compile(r'"([^"\n]{1,60})"|\u201c([^\u201d\n]{1,60})\u201d')
 
-    A file that also tests a criterion due now is not one: it is this sprint's
-    to read as well.
+
+def _names_only_later_criteria_quote(repo_root: str | Path, later: set[str]) -> dict[str, set[str]]:
+    """Each name quoted by not-yet-due criteria and by no criterion due now."""
+    from app.acceptance import suite
+
+    quoted_by: dict[str, set[str]] = {}
+    for criterion in suite.criteria(repo_root):
+        for match in _QUOTED.finditer(criterion.text or ""):
+            name = (match.group(1) or match.group(2) or "").strip()
+            if name:
+                quoted_by.setdefault(name, set()).add(criterion.id)
+    return {name: ids for name, ids in quoted_by.items() if ids <= later}
+
+
+def _declared_with_bodies(repo_root: str | Path) -> list[tuple[str, str, str]]:
+    """(file, test title, the test's text up to the next declaration) for every locked test."""
+    from app.acceptance import suite
+
+    root = Path(repo_root)
+    found: list[tuple[str, str, str]] = []
+    for path in suite.suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        shown = path.relative_to(root).as_posix()
+        marks = sorted(
+            [(m.start(), m.group(2)) for m in suite._TITLED.finditer(text)]
+            + [(m.start(), m.group(1)) for m in suite._NAMED.finditer(text)]
+        )
+        for index, (begins, title) in enumerate(marks):
+            ends = marks[index + 1][0] if index + 1 < len(marks) else len(text)
+            found.append((shown, title, text[begins:ends]))
+    return found
+
+
+def waiting_tests(repo_root: str | Path | None) -> dict[str, list[str]]:
+    """Each locked test that cannot pass before a later sprint, by title, with what it waits on.
+
+    A test waits on a criterion it carries that is not yet due - and on one
+    whose control it drives, whatever it carries. Measured on one run: two
+    tests tagged with sprint 1's "a task cannot be added without a title" were
+    persistence tests that ticked "Done" and pressed "Delete", which sprint 2's
+    criteria name. Judged with sprint 1, they failed it, and its fix stage
+    built sprint 2's completion and deletion to make them pass.
+
+    A control is a name a criterion quotes, and a test drives it when its own
+    text quotes the same name. A name a criterion due now also quotes is this
+    sprint's, so it never makes a test wait.
     """
     later = set(not_yet_due(repo_root))
-    if not later:
+    if not later or not repo_root:
         return {}
     try:
-        from app.acceptance import suite
+        names = _names_only_later_criteria_quote(repo_root, later)
+        waiting: dict[str, set[str]] = {}
+        for _, title, body in _declared_with_bodies(repo_root):
+            needs = set(junit.tags_in(title)) & later
+            for name, ids in names.items():
+                if re.search(r"([\'\"`])" + re.escape(name) + r"\1", body):
+                    needs |= ids
+            if needs:
+                waiting.setdefault(title, set()).update(needs)
+    except Exception:  # noqa: BLE001 - unreadable means due
+        logger.debug("Could not read which tests wait on a later sprint", exc_info=True)
+        return {}
+    return {title: _ordered(list(ids)) for title, ids in waiting.items()}
 
-        per_file: dict[str, set[str]] = {}
-        for name, test in suite.declared_tests(repo_root):
-            per_file.setdefault(name, set()).update(junit.tags_in(test))
+
+def waits_on(name: str, waiting: dict[str, list[str]]) -> list[str]:
+    """What the test a runner reported as `name` waits on, or []. Runners prefix a test's groups."""
+    for title, ids in waiting.items():
+        if name == title or name.endswith(f" {title}") or name.endswith(title):
+            return ids
+    return []
+
+
+def later_sprints_files(repo_root: str | Path | None) -> dict[str, list[str]]:
+    """Each locked suite file whose every test waits on a later sprint, with what they wait on.
+
+    A file holding one test this sprint can pass is this sprint's to read as well.
+    """
+    waiting = waiting_tests(repo_root)
+    if not waiting:
+        return {}
+    try:
+        per_file: dict[str, list[str]] = {}
+        for name, title, _ in _declared_with_bodies(repo_root):
+            per_file.setdefault(name, []).append(title)
     except Exception:  # noqa: BLE001 - unreadable means due
         return {}
-    return {
-        name: _ordered(list(tags))
-        for name, tags in per_file.items()
-        if tags and tags <= later
-    }
+    files: dict[str, list[str]] = {}
+    for name, titles in per_file.items():
+        tagged = [title for title in titles if junit.tags_in(title)]
+        if tagged and all(title in waiting for title in tagged):
+            files[name] = _ordered([item for title in tagged for item in waiting[title]])
+    return files
 
 
 def brief(repo_root: str | Path | None, deferred: Sequence[str] = ()) -> str:
@@ -191,8 +270,8 @@ def note_on_failures(repo_root: str | Path | None, since: float) -> str:
     Read from the reports the command wrote - any written at or after `since`
     (a wall-clock time) - so it does not depend on one runner's console output.
     """
-    later = set(not_yet_due(repo_root))
-    if not later:
+    waiting = waiting_tests(repo_root)
+    if not waiting:
         return ""
     root = Path(str(repo_root))
     failed: list[junit.TestResult] = []
@@ -205,18 +284,18 @@ def note_on_failures(repo_root: str | Path | None, since: float) -> str:
         failed.extend(test for test in junit.read(path).tests if test.outcome == "failed")
     if not failed:
         return ""
-    theirs = [test for test in failed if test.tags and set(test.tags) <= later]
+    theirs = [test for test in failed if waits_on(test.name, waiting)]
     if not theirs:
         return ""
-    ids = _listed(_ordered([tag for test in theirs for tag in test.tags]))
+    ids = _listed(_ordered([item for test in theirs for item in waits_on(test.name, waiting)]))
     if len(theirs) == len(failed):
         return (
-            f"Every failing test here ({len(theirs)}) tests a criterion a later sprint "
-            f"builds ({ids}). They are expected to fail until that sprint: this one is "
+            f"Every failing test here ({len(theirs)}) needs what a later sprint builds "
+            f"({ids}). They are expected to fail until that sprint: this one is "
             "not asked to make them pass, so leave them failing."
         )
     return (
-        f"{len(theirs)} of the {len(failed)} failing tests test criteria a later sprint "
+        f"{len(theirs)} of the {len(failed)} failing tests need what a later sprint "
         f"builds ({ids}) and are expected to fail until then - leave those. The other "
         f"{len(failed) - len(theirs)} are this sprint's."
     )
@@ -227,6 +306,8 @@ __all__ = [
     "brief",
     "later_sprints_files",
     "not_yet_due",
+    "waiting_tests",
+    "waits_on",
     "note_on_failures",
     "record",
 ]

@@ -339,6 +339,18 @@ working (the tool-approval check can fail transiently), schedule a retry about
   (`app.acceptance.sprint_scope`, `3b01d8a`), so this should not recur. If a review
   asks for it again, the reviewer and the lead need to be told that work a later sprint's
   criteria need is never deleted, only made smaller.
+- A fix that departs from the specification can be undone by a later sprint's builder who
+  builds to the specification. Seen once (2026-10-08): sprint 1's fix darkened the empty
+  state's text from the specification's #999999 to #555555 for contrast; sprint 3's UI
+  specialist, restyling for the filters, wrote #999999 back. The regression check, the
+  test round, code review and the page check each raised it (five defects, one cause) and
+  a fixer restored it within the round. A run's other regression (2 of 5 runs with a
+  defect ledger) had another cause. If it recurs: give each builder the earlier sprints'
+  fixed defects in its files (`sprint_attempts[*].defect_log`), as overriding the
+  specification.
+- The plan check (`work_a_later_sprint_delivers`) reads the user-action table, which has
+  no persistence: one run's sprint 1 still built storage that sprint 3's criterion
+  (persist between refreshes) delivers. Minor - storage is a few lines - so not fixed.
 
 ### 0.6 Removed on 2026-09-29
 

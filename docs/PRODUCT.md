@@ -84,10 +84,10 @@ instructions**, never in the core.
 | Stack packs | `src/app/stacks/` | Per product kind × language: scaffold, commands, kept files, guides, release files |
 | CI | `src/app/ci.py`, `src/app/graph/engineering.py` | Snapshots, regressions, fix guard (revert), code review |
 | Delivery | `src/app/graph/delivery.py`, `src/app/stacks/release.py` | Release gate, evidence, change requests, CI/container files |
-| Decisions | `src/app/decisions.py` | Decision records (DR-n) in state and `docs/decision_log.md` |
+| Decisions | `src/app/decisions.py` | Decision records (DR-n) in state and `docs/decision_log.md` (which shortens a rationale past 2000 characters); every record whole in `.harness/decisions.json` |
 | Models | `src/app/models/` | Client construction, router/fallback, judgement model, endpoint kind, probes |
 | Plugins | `src/app/plugins/` | Framework instructions injected per selected stack (seed + store); a key's runner-setup notes (`<key>:setup`) are left out where a stack pack set the project up |
-| Observability | `src/app/observability/` | Transcripts (every model/tool call), metrics, cost tracking |
+| Observability | `src/app/observability/` | Transcripts (every model/tool call, each defect's events, each resume after a restart), `[run stage]` on every worker log line, metrics, cost tracking |
 | Benchmarks | `benchmarks/`, `scripts/bench/score.py` | Briefs with hidden tests; scoring |
 | Improvement loop | `scripts/loop/loop.sh`, `docs/HANDOVER.md`, `docs/monitoring-handover.md` | Operating the harness on benchmarks, auditing, deploying |
 
@@ -187,7 +187,7 @@ deliver most of its criteria is stopped rather than shipped.
 | **Project contract** | `.harness/stack-pack.json`: which pack, commands, paths; the harness puts back kept files/scripts a stage changed |
 | **Kept files** | Test setup the harness owns (e.g. `playwright.config.js`, `playwright.setup.mjs`, `test-setup.mjs` - a jsdom page for browser unit tests - `scripts/serve.mjs`, `pytest.ini`, `acceptance/conftest.py`); refused to agents, marked in the digest |
 | **Acceptance criteria** | `AC-1..n`, numbered from the brief (features, its interface section line by line, and acceptance criteria) or the intake |
-| **Acceptance suite** | QA's tests for the criteria, **locked** (checksums + snapshot in `.harness/`) after review: the definition of done. Only QA, via a recorded reopen, may change it |
+| **Acceptance suite** | QA's tests for the criteria, **locked** (checksums + snapshot in `.harness/`) after review: the definition of done. Only QA, via a recorded reopen, may change it; every locked version is kept in `.harness/acceptance-locks/vN/` with `vN.diff` from the one before, quoted by the decision that re-locks it |
 | **Due criteria** | The criteria a sprint must leave passing: its own plus every earlier sprint's (the last sprint answers for all) |
 | **Work order** | One delegated task: role, title, description, files, interfaces, steps, edge cases, test cases, verification |
 | **Definition of ready** | Mechanical check on a plan before dispatch (files named, test cases, testing order when behaviour changes, no harness-owned files, carried-forward decisions) |
@@ -197,7 +197,7 @@ deliver most of its criteria is stopped rather than shipped.
 | **Review point** | A place a person may be asked: `product_intake`, `technical_specification`, `acceptance_tests`, `sprint`, `release`, `escalation` |
 | **Change request** | `CR-n`: a reviewer's requested change, given its own acceptance test |
 | **Deferred criterion** | A criterion deliberately not delivered, with a recorded reason (escalation) |
-| **Sprint Record** | Per-sprint summary: backlog and outcome, defects, findings and dispositions, carried forward, lessons (`app.sprint.record`) |
+| **Sprint Record** | Per-sprint summary: backlog and outcome, defects (each with the check that raised it), findings and dispositions, carried forward, lessons (`app.sprint.record`) |
 | **Judgement model** | Optional stronger model for the judging stages and retries (`JUDGEMENT_*` settings) |
 | **Harness run** | A command the harness runs itself (scaffold, suite, CI): never withheld by agent repeat guards (`sandbox._FOR_THE_HARNESS`) |
 

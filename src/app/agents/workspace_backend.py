@@ -1111,7 +1111,13 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
 
     def read(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
         _HELD.note = ""
-        result = super().read(file_path, *args, **kwargs)
+        try:
+            result = super().read(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import ReadResult
+                return ReadResult(error=str(e))
+            raise
         error = getattr(result, "error", None)
         if error:
             if "not found" not in error:
@@ -1121,7 +1127,14 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
             # `_the_one_path_it_meant` for what makes this unambiguous.
             instead = self._the_one_path_it_meant(file_path)
             if instead:
-                corrected = super().read(instead, *args, **kwargs)
+                try:
+                    corrected = super().read(instead, *args, **kwargs)
+                except ValueError as e:
+                    if "Path traversal" in str(e):
+                        from deepagents.backends.filesystem import ReadResult
+                        corrected = ReadResult(error=str(e))
+                    else:
+                        raise
                 if not getattr(corrected, "error", None):
                     return self.read(instead, *args, **kwargs)
             # What is in it, before where else it might be: a model that read
@@ -1196,7 +1209,13 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
 
     def ls(self, path: str) -> Any:
         path = path.strip()
-        result = super().ls(path)
+        try:
+            result = super().ls(path)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import LsResult
+                return LsResult(error=str(e))
+            raise
         error = getattr(result, "error", None)
         if error and "path_not_found" in error:
             hint = (
@@ -1218,14 +1237,26 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         return replace(result, entries=[e for e in entries if not _is_hidden(e, path)])
 
     def glob(self, pattern: str, path: str | None = None) -> Any:
-        result = super().glob(pattern, path)
+        try:
+            result = super().glob(pattern, path)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import GlobResult
+                return GlobResult(error=str(e))
+            raise
         matches = getattr(result, "matches", None)
         if not matches:
             return result
         return replace(result, matches=[m for m in matches if not _is_hidden(m, path)])
 
     def grep(self, *args: Any, **kwargs: Any) -> Any:
-        result = super().grep(*args, **kwargs)
+        try:
+            result = super().grep(*args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import GrepResult
+                return GrepResult(error=str(e))
+            raise
         matches = getattr(result, "matches", None)
         if not matches and not getattr(result, "error", None):
             result = self._each_alternative(result, *args, **kwargs)
@@ -1270,6 +1301,34 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                     seen.add(key)
                     found.append(match)
         return replace(result, matches=found) if found else result
+
+
+    def write(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().write(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import WriteResult
+                return WriteResult(path=file_path, error=str(e))
+            raise
+
+    def edit(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().edit(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import EditResult
+                return EditResult(path=file_path, error=str(e))
+            raise
+
+    def delete(self, file_path: str, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return super().delete(file_path, *args, **kwargs)
+        except ValueError as e:
+            if "Path traversal" in str(e):
+                from deepagents.backends.filesystem import DeleteResult
+                return DeleteResult(path=file_path, error=str(e))
+            raise
 
 
 __all__ = ["WorkspaceBackend", "held_read_note"]

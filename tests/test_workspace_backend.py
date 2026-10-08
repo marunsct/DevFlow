@@ -553,3 +553,25 @@ def test_the_content_is_still_complete_when_a_notice_is_added(tmp_path) -> None:
         content = backend.read("/a.js").file_data["content"]
         for line in ("line one", "line two", "line three"):
             assert line in content
+
+def test_path_traversal_is_caught(tmp_path: Path) -> None:
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+    
+    # Each operation outside the workspace should return an error result, not crash
+    read = backend.read("../outside.txt")
+    assert getattr(read, "error", None) and "Path traversal" in getattr(read, "error")
+    
+    write = backend.write("../outside.txt", "content")
+    assert getattr(write, "error", None) and "Path traversal" in getattr(write, "error")
+    
+    ls = backend.ls("../outside")
+    assert getattr(ls, "error", None) and "Path traversal" in getattr(ls, "error")
+    
+    glob = backend.glob("*.txt", "../outside")
+    assert getattr(glob, "error", None) and "Path traversal" in getattr(glob, "error")
+    
+    edit = backend.edit("../outside.txt", "content", "new")
+    assert getattr(edit, "error", None) and "Path traversal" in getattr(edit, "error")
+    
+    delete = backend.delete("../outside.txt")
+    assert getattr(delete, "error", None) and "Path traversal" in getattr(delete, "error")

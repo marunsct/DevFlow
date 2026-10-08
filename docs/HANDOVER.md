@@ -20,9 +20,9 @@ the next gate run:
 ```sh
 cd /home/arun/Desktop/langchain
 git status --short                      # only " M docs/logs.md" - the owner's file; never commit or touch it
-git log --oneline -1                    # the latest handover commit; code is at 344b4a9
+git log --oneline -1                    # the latest handover commit
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
-scripts/loop/loop.sh status             # current run: run-d211dc86 (cancelled); "live runs:" must be empty
+scripts/loop/loop.sh status             # current run: run-141f09e2 (cancelled); "live runs:" must be empty
 scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
 scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`

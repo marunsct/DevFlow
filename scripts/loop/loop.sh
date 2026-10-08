@@ -195,7 +195,7 @@ stage)
 deploy)
   echo "live runs before deploy (they will be resumed by orphan recovery):"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
-  docker compose build app worker >/dev/null
+  docker compose build --progress=plain app worker >/dev/null 2>&1
   docker compose up -d app worker
   sleep 10
   # The image bakes src/ in; a restart without a build deploys nothing. Prove it.

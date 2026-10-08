@@ -70,7 +70,7 @@ problems, each tied to its work order by its title, with the file's full path
 and what to change. Do not ask for style changes, comments, renames or tests of things no
 criterion asks for. If the batch does what its work orders say, approve it.
 
-Read files with your tools when the diff is not enough.
+Read files with your tools when the diff is not enough. Do not repeat a tool call that returns no new information. If a tool tells you you already have the file or it has not changed, use what you have or answer immediately.
 
 {STRUCTURED_RESPONSE_RULE}"""
 

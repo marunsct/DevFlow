@@ -374,3 +374,6 @@ def test_a_review_finding_nothing_shows_is_advice(workspace, monkeypatch) -> Non
 
     assert update["review_defects"] == []
     assert update["review_advice"] == ["notes/src/notes.js: add() does not sanitize its input Suggested: escape it"]
+def test_the_code_review_is_told_not_to_repeat_reads() -> None:
+    from app.agents.code_reviewer import _SYSTEM_PROMPT
+    assert "do not repeat a tool call" in _SYSTEM_PROMPT.lower()

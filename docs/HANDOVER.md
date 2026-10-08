@@ -163,7 +163,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). Last code commit `344b4a9`. `docs/PRODUCT.md` describes the whole product. |
 | deployed | the image matches `bc8e360` (deployed 14:09 JST, between runs). `344b4a9` changes only `scripts/loop/model_ready.py`, which runs from the host, so no deploy is pending. |
-| current run | none. `data/loop/current_run.txt` names run-d211dc86, cancelled within seconds at 14:10 because it started on the wrong model (§2.3). |
+| current run | run-4eb14786-2602-4b8d-824f-d5b223024573 (started 2026-10-09 08:56 JST) |
 | model | `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`, context 131,000, thinking effort medium, thinking mode default, execution mode **parallel**, no judgement model. The owner set this at 14:12 JST on 2026-10-08. Before that it was `qwen3.6-35b-a3b-mtp` (from 11:35 JST on 2026-10-07). |
 | gate | stage 1 (`web-todo`): **0 of 2** clean runs |
 | suite | 9,687 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials), about 3 minutes |

@@ -55,3 +55,7 @@ if judging is not None:
 for ok, line in results:
     print(line)
 print("ALL READY" if all(ok for ok, _ in results) else "NOT ALL READY")
+# Non-zero when not ready, so `loop.sh ready && loop.sh bench ...` never starts
+# a run on a model other than the one the settings name. It used to exit 0 -
+# and one run was started on a model the owner had just swapped in.
+raise SystemExit(0 if all(ok for ok, _ in results) else 1)

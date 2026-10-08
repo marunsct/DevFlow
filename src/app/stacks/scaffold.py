@@ -155,6 +155,18 @@ def scaffold(
             code = _step(result.steps, argv, run(argv, "test", project))
             parsed = junit.read(project_root / report)
             if code != 0 or not parsed.found or parsed.passed < 1 or parsed.failed:
+                # One retry, as for the install. Measured on one run, started a
+                # minute after the worker was recreated: the acceptance smoke
+                # test failed once (0 passed, 1 failed) on a pack every other
+                # run proves, the scaffold was left to the agents, and its
+                # files stayed with no contract behind them - "the harness
+                # keeps this" in their own comments, and nothing kept them. A
+                # later sprint's tester then switched the next sprint's tests
+                # off in the runner configuration, and nothing put it back.
+                (project_root / report).unlink(missing_ok=True)
+                code = _step(result.steps, argv, run(argv, "test", project))
+                parsed = junit.read(project_root / report)
+            if code != 0 or not parsed.found or parsed.passed < 1 or parsed.failed:
                 result.problem = (
                     f"The {label} smoke test did not pass through `{' '.join(argv)}` "
                     f"(exit {code}, {parsed.passed} passed, {parsed.failed} failed, "

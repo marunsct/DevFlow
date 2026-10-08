@@ -1,220 +1,432 @@
 # Handover - the harness improvement loop
 
-Written 2026-10-01 16:20 JST and last updated 07:41 JST (2026-10-02), for the next Claude Code session (a different
-account on a different desktop) and for the owner. Read this first, then
-`docs/monitoring-handover.md` §0 (mechanics and the full gate history),
-§0.4.1 (product audit checklist), §0.7 (how a sprint runs) and §0.9 (where a
-run's time goes).
+**Written for:** any coding agent (or person) taking over the loop, with none
+of the previous sessions' context. Last updated **2026-10-08 14:30 JST**, when
+the owner moved the loop to a different agent.
 
-Your previous session's memory does not travel with the account. Everything it
-held that is not a secret is in this file.
+Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
+the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
+sprint runs) and §0.9 (where a run's time goes). `AGENTS.md` at the repo root
+points here.
+
+The previous agent's private notes (Claude Code's memory) do not travel.
+Everything they held that is not a secret is in this file.
+
+## 0. Your first ten minutes
+
+The tree is clean and pushed, no run is live, and the model is ready. Start
+the next gate run:
+
+```sh
+cd /home/arun/Desktop/langchain
+git status --short                      # only " M docs/logs.md" - the owner's file; never commit or touch it
+git log --oneline -1                    # the latest handover commit; code is at 344b4a9
+export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
+scripts/loop/loop.sh status             # current run: run-d211dc86 (cancelled); "live runs:" must be empty
+scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
+scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
+scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
+```
+
+At 14:14 JST `ready` said `ALL READY` on `openai/gpt-oss-20b`. The owner
+switched the settings to it at 14:12. Check again before you start, because
+the owner changes the model without saying so.
+
+`loop.sh wait N` blocks for up to N minutes and then prints the status, key
+log lines and the audit. Run it so that its output reaches you when it ends:
+as a background task your agent is notified about, or in the foreground with
+a timeout longer than N minutes. Never detach it with a bare `&` and forget
+it. Each time you start a wait, tell the owner the clock time of the next
+check **in JST**. Containers and transcripts log UTC; JST = UTC+9.
+
+Then work through §2.2 ("Verify on the next run") as the run goes.
 
 ## 1. The standing instruction
 
-The owner wants a loop that never stops on its own:
+The owner wants a loop that **never stops on its own**:
 
-1. Start a run (`scripts/loop/loop.sh bench <name>` from `benchmarks/`, or
-   `scripts/loop/loop.sh start <brief>` for a brief with no hidden tests).
+1. Start a run (`loop.sh bench <name>` from `benchmarks/`, or
+   `loop.sh start <brief>` for a brief with no hidden tests).
 2. Audit it: transcripts, worker logs, the database, tool calls - especially
    failed and unnecessary ones.
 3. Fix what you find **technology-agnostically**: the harness must build any
    product in any language or framework. Never fix for one stack, one product
    or one run.
-4. Add tests, run the full suite (`loop.sh suite`).
-5. Commit, push (`git push main harness-hardening-session` - the remote is
-   named `main`), deploy (`loop.sh deploy`), start the next run.
+4. Add tests (each proven to fail on the old code) and run the full suite
+   (`loop.sh suite`).
+5. Commit and push (`git push main harness-hardening-session` - the remote is
+   named `main`), deploy (`loop.sh deploy`), and start the next run.
 
-**Gate (since the 2026-10-03 redesign, `docs/redesign-software-company.md`).**
-A run is clean when its product scores 100% on its benchmark's hidden tests
-(`loop.sh score`) and the run needed no harness fix; any fix resets the current
-stage's count. Stages, in order (`benchmarks/README.md`):
+**Gate** (since the 2026-10-03 redesign, `docs/redesign-software-company.md`,
+`benchmarks/README.md`). A run is clean when its product scores 100% on its
+benchmark's hidden tests (`loop.sh score`), the run needed no harness fix, and
+the product audit (monitoring §0.4.1) passes. Any fix resets the current
+stage's count. Stages, in order:
+
 1. `web-todo`: two consecutive clean runs.
 2. `notes-api`, `wordstats-cli`, `textkit-lib`: one clean run each.
 3. `fullstack-bookmarks`: two consecutive clean runs.
-4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand as before.
-Still read the product and the transcripts after every run: the score says
-whether it works, not whether the harness wasted calls getting there.
-**Current: stage 1 (web-todo), 0 of 2.**
+4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand.
 
-**Early stop.** A bug found in a run's first 40 minutes: cancel the run
-(`loop.sh cancel`), fix, deploy, start again - do not wait for it to finish. A
-major harness bug or gap at any time: cancel immediately.
+**Current: stage 1 (`web-todo`), 0 of 2.**
 
-**Cadence.** Check about every 10 minutes during a run's first 40 minutes, then
-about every 18 (`loop.sh wait 10` / `loop.sh wait 18` in the background - one
-wait, not a per-minute monitor). Every time you start a wait, tell the owner
-when the next check reports, **in JST** (containers and transcripts log UTC;
-JST = UTC+9).
+**Early stop.** If you find a bug in a run's first 40 minutes, cancel the run
+(`loop.sh cancel`), fix, deploy and start again. If you find a major harness
+bug or gap at any time, cancel immediately.
 
-**Product audit, every run, at the end.** `loop.sh product <run-id>`, then read
-every product source file against the brief (§0.4.1). Check every brief
-feature is built *and reachable by a user*, edge inputs, constraints, that the
-tests exercise the real code, and that every claim in the sprint summaries and
-the milestone review is true.
+**No deploys into a live run** (agreed with the owner 2026-10-08, after they
+asked whether the fixes were introducing new bugs):
 
-**Code rules.**
-- No run ids in code, comments, prompts or tests. Evidence goes in commit
-  messages and docstrings as "one run".
-- No language- or framework-specific instructions in code. They belong in
+- After the first 40 minutes, a finding that is not major is written down and
+  the run goes on.
+- The fixes are designed, tested and deployed together **between runs**.
+- Cancel only for a major bug: one that makes the run's result meaningless or
+  burns hours.
+
+**Design each batch fully before deploying it.** For each fix:
+
+- trace every other path it touches;
+- replay it on the real evidence (the transcript, the workspace's `.harness/`
+  files) rather than a made-up fixture;
+- fix the cause once, not one symptom per run.
+
+Two lessons behind this rule:
+
+- `38ef971` introduced a regression.
+- The sprint-scope fixes (`3b01d8a` → `6ff499e` → `c3a5fca` → `d833edb` →
+  `351d1ec`) arrived one run at a time when one design would have done.
+
+**Product audit, every run, at the end.** Run `loop.sh product <run-id>`, then
+read every product source file against the brief (monitoring §0.4.1). Check:
+
+- every brief feature is built *and reachable by a user*;
+- edge inputs and the brief's constraints;
+- that the tests exercise the real code;
+- that every claim in the sprint summaries and the milestone review is true.
+
+**After each run:**
+
+1. `loop.sh score <run> web-todo` and `loop.sh product <run>`.
+2. Record the run in §2 of this file and in the gate row of monitoring §0.2.
+3. Commit and push.
+4. Deploy the batch, if there is one.
+5. Start the next run.
+
+**Code rules:**
+
+- **No run ids** in code, comments, prompts or tests
+  (`tests/test_no_run_ids_in_the_source.py`). The placeholders `deadbeef` and
+  `abc12345` are fine. Evidence goes in commit messages, and in docstrings as
+  "one run".
+- **No language- or framework-specific instructions in code.** They belong in
   `src/app/plugins/seed.py` (the `plugin_instructions` table, injected
-  dynamically). Rules for agents must be product-agnostic too: no examples
-  from the test brief (to-do, task, add form), no UI-only words (button, click)
-  in rules meant for every product. Each new prompt rule gets a test that bans
-  such words.
-- Preserve the owner's features: dynamic agent-instruction injection, the
-  parallel/linear execution toggle (settings), the sprint summary, and the
-  work orders / document templates / Sprint Record (§0.7). Fix them where
-  wrong; never remove them.
-- The CRITERION severity policy (minor vs blocking grading) awaits the
-  owner's decision - do not change it on your own.
-- Use the LangChain docs MCP server when changing LangChain/LangGraph behaviour.
+  dynamically) or in a stack pack (`src/app/stacks/packs/`).
+- **Rules for agents are product-agnostic.** No examples from the test brief,
+  and no UI-only words in rules meant for every product. Every new prompt rule
+  gets a test that bans the whole words task, tasks, to-do, todo, button,
+  click and checkbox (e.g. `tests/test_a_suite_that_asserts_an_unstated_order.py`).
+- **Preserve the owner's features:**
+  - dynamic agent-instruction injection;
+  - the parallel/linear execution toggle;
+  - the sprint summary;
+  - work orders, document templates and the Sprint Record (monitoring §0.7).
 
-**When the shell fails** for an infrastructure reason, stop retrying, schedule
-a check about 10 minutes later, and resume. Order when it returns: deploy the
-pending fix and start the next run first; commit and push afterwards. A git
-step that fails must never stop the testing.
+  Fix them where wrong; never remove them.
+- **Implement only what adds value** (owner, 2026-10-04). That holds for the
+  owner's own plans too. Where an existing implementation does not fit the
+  product vision (a software-company harness: auto mode decides, approval mode
+  asks), replace it rather than patch it. Say which items you drop and why.
+- **Use the LangChain docs MCP server** (or the docs site) when changing
+  LangChain/LangGraph behaviour.
 
-## 2. Where it stands (2026-10-01 16:20 JST)
+**Standing permissions and habits:**
+
+- **You may edit any file in the repo, `.env` and `docker-compose.yml`
+  included** (owner, 2026-09-28). Back `.env` up first and never print its
+  values. Don't wait for the owner's input: make the best decision and keep
+  the loop going. The exceptions are the owner's decisions in §7 and the
+  model (§5).
+- **Commit and push after every change**, handover updates included. Never
+  leave the tree dirty between steps, apart from `docs/logs.md`.
+- **Keep monitoring §0 current in the same commit** as any change to how runs
+  are tested: the gate, the cadence, the scripts, the healthy numbers or the
+  suite size.
+- **When idle and waiting on the owner** (for example a model mismatch), use
+  one long passive watcher, not periodic wake-ups. Credits are limited.
+- **When the shell fails** for an infrastructure reason (a tool-approval check
+  that gives no verdict), stop retrying. Schedule a check about 10 minutes
+  later, or tell the owner when you will retry, and resume. Testing comes
+  first when it returns: deploy the pending fix and start the next run, then
+  commit and push. A failing git step must never stop the testing.
+
+## 2. Where it stands (2026-10-08 14:30 JST)
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, last code commit `bc8e360`, pushed to `https://github.com/marunsct/DevFlow.git`. `docs/PRODUCT.md` describes the whole product. |
-| deployed | the running image matches `bc8e360` (deployed 14:09 JST on 2026-10-08, between runs), at the owner's request: one cause, one defect (defects naming one thing in one place are merged before any fixer is sent); a code review finding is a defect only when a test or check shows it, else advice for the milestone review; a test asserting an order no criterion states is sent back before the suite is locked, and the QA lead compares tests that take the same steps. Also `1dde0ed` (a scaffold smoke test is retried once). `351d1ec` (mid-run 12:20): a test command failing only on later sprints' tests is no defect. `60971c5` (mid-run 11:16): two fixes reverted for breaking one locked test have the locked tests judged at once. `8da1e0d` (mid-run 09:38): a file the specification spells one way and the project another is one file to the plan's readiness check. `d833edb` (mid-run 08:55): a fix stage hears what later sprints build and the fixes already made in its files. `97d9dd1` (07:46, between runs): reviews hear the earlier fixes - a difference one made is no finding (`97d9dd1`); any defect left open by a stage that blames a locked test has it judged (`548a63d`). `cc875e7` (mid-run 06:21): a page-check defect the page check no longer finds is closed. `4bdf05c` (mid-run about 05:55): a fix stage that changes nothing and blames a locked test has the QA lead judge the failing locked tests at once, once per attempt. `fa8da1a` (mid-run 04:56): builders hear the defects earlier sprints fixed in their files, and the lead hears all of them, as overriding the specification. `9cc524a` (mid-run 03:34): a regression defect whose test passes again in a measurement since is closed, and "None. ..." is no blocker. `f3d2409` (mid-run 01:48): a due criterion is judged by its tests that can pass now - a locked test that carries a not-yet-due criterion or quotes a control only later criteria name waits for that sprint (`c3a5fca`); a blocker that says "None" is no blocker (`f3d2409`). `6ff499e` (00:16, between runs): a sprint plan whose scope builds a later sprint's work early is asked for once more, and the lead hears what later sprints deliver. `3b01d8a` (23:25, between runs): a sprint's builders are told which locked tests are a later sprint's - in their request, the workspace listing, the opening snapshot and a failed test command's result. `46be22f` (mid-run 22:33): a stage may rewrite names it added itself - the rewrite guard protects only what another writer, an earlier visit or the project's setup put in the file. `0054496` (20:59, between runs): Playwright's notes say to install nothing where the harness set the project up. `38ef971` (20:30): a fix or work-order stage whose replies are all cut off leaves its work open instead of failing the run; and, at the owner's request, thinking is switched off for one reply after a lost one (for the rest of a visit only after a second loss; the run-long rule is gone, `c0e9b56`) and every writing stage is told to write in its calls, not its reasoning (`6277701`). `374a576` (19:09): a visit that keeps sending an answer its schema refused is ended and retried fresh. `7cc1910` (18:24): a stage running without thinking is stopped after three identical calls. `7556a2c` (17:21): a claim still unbacked after the follow-up is dropped from changed_files. `8812c97` (16:54): a stage whose answer names files it never wrote is asked once to make the change or say what it did. Before it: `6ff9456` (14:23) - a completed run commits the release decision, its evidence and the last sprint's record. Before it: `c0c42d5` (12:12) - a failed attempt an escalation accepts is closed in the Sprint Record rather than followed by a phantom one. Before it: `69d3931` (about 12:00) - a locked test beyond repair goes to no fixer; `ad0102f` (11:29) - a locked test that looks for a value it made and never gave is sent back or reopened; `424598a` (11:17) - the ledger notes defects left open when an attempt ends; `70c50cc` (10:53) - the tracking requests (log context, defect sources and ledger, suite versions, whole rationales, `loop.sh defects`/`asked`/`failures`, restarts apart in the audit, shadow score). |
-| current run | none - the loop is paused: at 14:10 JST LM Studio served `openai/gpt-oss-20b` while the settings named `qwen3.6-35b-a3b-mtp`; run-d211dc86, started by mistake (`loop.sh ready` exited 0 when not ready - fixed), was cancelled within seconds. The owner chooses the model. Before it: run-7b219f82 (07:47-13:57 JST, `97d9dd1`) cancelled by the owner in sprint 2's second revision, after asking why runs take 5-8 hours (the qwen model's 2,100-3,700 tokens and 19-32 s per call against gpt-oss-20b's 400-840 and 5-8 s) - not clean: Not clean: its plan and builders stayed in sprint 1's scope, but sprint 1's first fix stage - sent a code-review defect about the unit test command - ran the whole suite and began building later sprints' features (`d833edb`, deployed mid-run 08:55). Sprint 1's first attempt failed over a code-review defect two fixers left without a regression test (the regression-test-per-fix policy awaits the owner); its re-plan was sent back twice over `style.css` (the specification's name) against the project's `styles.css` (`8da1e0d`, deployed mid-run 09:38). Sprint 2's locked delete test wants new items last and its list test wants them first; two fixes were reverted for breaking the list test (`60971c5`, deployed mid-run 11:16). That worked: the dispute was held mid-attempt and QA repaired the test. Sprint 2's attempt then failed anyway: `npm test` runs the acceptance suite too, exited 1 on sprint 3's tests alone, and the harness recorded "the suite does not pass" (`351d1ec`, deployed mid-run 12:20). Its scaffold's smoke test had failed once at the start, so no contract kept the pack's files: a sprint 2 tester added a grepInvert to the runner configuration that switched sprint 3's filter and layout tests off, QA was refused undoing it, and those criteria were judged beyond repair (`1dde0ed`: the smoke test is retried once; deploy after this run). Its technical lead spent 14 minutes re-reading files it held (the model's habit; the read limits ended it). Before it: run-0e484d19 (00:17-07:44 JST, `6ff499e`) COMPLETED, hidden tests 10/10, locked suite 25/0, 407 code lines, 106 unit tests green, product audit clean (repository committed, nothing stray) - not clean: Not clean: two locked tests tagged with sprint 1's AC-7 drove sprint 2's "Done" and "Delete", so sprint 1's fix stage built completion and deletion (`c3a5fca`, deployed mid-run 01:48). The plan check worked: the first plan built sprint 2-3's work in sprint 1 and was asked again; sprint 1's builders then built only sprint 1. Sprint 3's first attempt failed over a regression defect already fixed: two fixers answered "None. ..." and it stayed open (`9cc524a`, deployed mid-run 03:34). Sprint 4's work order said to match the specification and its builder wrote back every colour sprint 1 had fixed for contrast (`fa8da1a`, deployed mid-run 04:56). Its locked responsive test had a logic error; every fixer in two rounds named it and left its defect open, and the dispute waited for the attempt to fail (`4bdf05c`, deployed mid-run about 05:55). A page-check contrast defect already fixed went to a fixer in two rounds, the second spending fifteen minutes on it (`cc875e7`, deployed mid-run 06:21). Before it: run-379e32c0 (23:24-00:06 JST, `3b01d8a`) cancelled as sprint 1's builders began: the sprint plan put sprint 2's edit, delete and filter work in sprint 1's scope as well, the lead's work orders copied it and the backend specialist built it (`6ff499e`: the plan is checked and asked for once more; the lead hears what later sprints deliver). Before it: run-d43cb02c (21:00-23:14 JST, 2026-10-07, `0054496`, `qwen3.6-35b-a3b-mtp`) cancelled in sprint 1's revision: sprint 1's builders built every sprint's features and spent 30 minutes and a restart on later sprints' failing tests; the milestone review then had the revision delete that work over the 500-line limit, for sprint 2 to rebuild. Builders now hear which locked tests are a later sprint's (`3b01d8a`). Earlier in it, not clean: the rewrite guard refused a stage its own code (`46be22f`, deployed mid-run 22:33). Before it: run-041ae93b (20:32) cancelled at 20:57 (`0054496`); run-1a89a0d8 (14:25-20:12) FAILED, hidden tests 10/10. |
-| model | changed by the owner at 11:35 JST on 2026-10-07 (during run-23928a49): `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. Before it, from 11:44 JST on 2026-10-06: `openai/gpt-oss-20b` on the same LM Studio, reasoning effort low. Earlier: `qwen3.6-35b-a3b-mtp` (2026-10-05, it lost whole replies to reasoning - 4 in run-72ab020e, 6 to 17 minutes each), `zai-org/glm-4.7-flash` (2026-10-02), `unsloth/Qwen3.6-35B-A3B-MTP-GGUF` on :8888, and gpt-oss-20b and qwen on :9090. Check with `scripts/loop/loop.sh ready`. |
-| gate | stage 1 (`web-todo`): 0 of 2 clean runs (history in `docs/monitoring-handover.md` §0.2) |
+| branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). Last code commit `344b4a9`. `docs/PRODUCT.md` describes the whole product. |
+| deployed | the image matches `bc8e360` (deployed 14:09 JST, between runs). `344b4a9` changes only `scripts/loop/model_ready.py`, which runs from the host, so no deploy is pending. |
+| current run | none. `data/loop/current_run.txt` names run-d211dc86, cancelled within seconds at 14:10 because it started on the wrong model (§2.3). |
+| model | `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`, context 131,000, thinking effort medium, thinking mode default, execution mode **parallel**, no judgement model. The owner set this at 14:12 JST on 2026-10-08. Before that it was `qwen3.6-35b-a3b-mtp` (from 11:35 JST on 2026-10-07). |
+| gate | stage 1 (`web-todo`): **0 of 2** clean runs |
+| suite | 9,687 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials), about 3 minutes |
 
-Runs b69802cd, 391a8b68 and d9642862 were on qwen; the current one is back on gpt-oss. Expect behaviour the gpt-oss runs did
-not show, and separate "the model did something odd" from "the harness let it"
-before fixing. The reasoning switch is measured once per endpoint and model and
-logged by the worker as `Reasoning switch for ...`; check it chose sensibly.
+### 2.1 What the last batch changed (`bc8e360` and `1dde0ed`, deployed 14:09)
 
-**What `2beaf2e`, `a754eb7`, `904ecf8`, `c0fea69` and `ce4f12d` changed - verify them on this run:**
-- An `edit_artifact`/`replace_lines` result now carries the same
-  module-system notes as a write (CommonJS under `"type": "module"`, etc.).
-- A `replace_lines` pin copied with the harness's own `N | ` gutter is
-  accepted (`ae2e040`).
-- `docs/technology_stack.md` does not argue against its own testing field:
-  when the worker logs "Stack selection named ... recording ...", the
-  rationale must not say the browser runner is not needed (`acf55ea`), and
-  the architecture review must not loop on that contradiction.
-- A "Milestone plan is not ready" warning names real files only: a method
-  such as `store.read()` in the sprint's scope is not a file (`6df0d5f`).
-- The framework list holds `html` and `css`, never `html5` or `css3`
-  beside them (`1024cc3`). Two generated rows named `html5` and `css3`
-  are still in `plugin_instructions`; they are no longer selected.
-- A sprint plan is handed back only for a success measure's own list items
-  (an MVP feature needs only a sprint assigned), and never for a function
-  word such as "does" - check the worker's "Sprint plan left success
-  measures" warning, if any, names real capabilities.
-- The project directory is the product's name alone, cut between words
-  (it was `...-single-page-tas`), and early stages do not `ls`/`glob` an
-  empty project - the snapshot now says it is empty.
-- The worker's "Framework instructions resolved for this stack: ..." line
-  must name only what the stack chose - no framework the stack document
-  rejects, and no language that appears only as a tool command.
-- The sprint planner's checklist now holds the intake's MVP candidates after
-  its success measures, each to be assigned a sprint. In
-  `docs/sprint_plan.md` every MVP feature should have a coverage line.
-- A defect whose affected files are all tests or throwaway scripts
-  (`file_kinds.is_scratch`) needs no regression test and is not charged to the
-  remediation budget; the fix stage is told to delete a debugging script and
-  to fix a test in place. Watch for `defect_fix_*` stages still writing
-  "regression tests" for probes, and count `tmp_*`, `*debug*` and `*.probe`
-  files in the final product.
-- A `replace_lines` refused for a parse error whose content carries `-`/`+`
-  diff markers says so.
+The owner asked for the first three changes after two runs whose test rounds
+spent most of their time on duplicate, unfounded or test-made defects.
 
-**The last completed run, `run-e3985f85`** (gpt-oss-20b, 144 min, accepted):
-NOT clean. The brief's "Mark tasks as complete/incomplete" was never built,
-and the product shipped about 21 debug scripts and debug suites. Both are
-addressed by `2beaf2e`. Also seen and not changed: the milestone review had the
-whole brief and still accepted a product missing a brief feature - a model
-judgement miss. If it recurs, look for a deterministic check.
+- **One cause, one defect.** Before any fixer is sent, defects are merged
+  when they name a thing in common in one place:
+  - the thing is a quoted name, a selector, a code identifier or a criterion;
+  - "one place" means a file in common, or one defect names no file.
+
+  A whole-page rule such as `color-contrast` matches by its words. The merged
+  defect keeps the first report's owner and place, carries every other check's
+  words under "The same problem, as other checks reported it:", and takes the
+  highest severity. In code: `_one_defect_per_cause` in
+  `src/app/graph/workflow.py`, called in test_and_triage.
+- **Review findings need evidence.** A blocking or major code-review finding
+  is a defect only when one of these shows it:
+  - a due criterion it names fails;
+  - a test it names fails in the measurement after the batch;
+  - an IDE underline sits in its file.
+
+  Anything else becomes `review_advice`, which the milestone review reads. The
+  review may send a sprint back over advice only by naming what fails. In
+  code: `code_review` in `src/app/graph/engineering.py`.
+- **A suite is checked before it is locked.** A test that asserts what two or
+  more places of a list show, for criteria that state no order, is sent back
+  to QA (`suite.tests_that_assert_an_unstated_order`, and
+  `positions_it_asserts` in the JS stack packs). The QA lead is also told to
+  compare tests that take the same steps (`acceptance_reviewer._SYSTEM_PROMPT`).
+  Tests the runner never collects were already sent back at this review.
+- **A scaffold smoke test that fails once is retried** (`1dde0ed`). The run
+  before it lost its scaffold contract after one flaky smoke test. Without the
+  contract, kept files were neither protected nor enforced.
+
+### 2.2 Verify on the next run
+
+1. **Scaffold.**
+   - Check that the workspace has `.harness/stack-pack.json` once set-up ends.
+   - If the worker log shows the smoke test failing and then passing, the retry
+     worked.
+   - If it is "left to the agents" again (failed twice), that is the parked gap
+     in monitoring §0.5.1.
+2. **Merging.**
+   - Look in the worker log for `N defects describe one problem; merged into one: ...`.
+   - Look in `loop.sh defects` for the merged defect's "The same problem, as
+     other checks reported it:" list.
+   - Then read whether every merged report really was one problem. A false
+     merge hides a defect, and that would be a major bug.
+3. **Review advice.**
+   - Look for `Code review found N problem(s) a test or check shows; to fix`
+     and `Code review raised N finding(s) no test or check shows; advice, not defects`.
+   - Read the advice: a real product bug that no test happens to show is now
+     only advice. Check that the milestone review sees it
+     (`loop.sh asked <milestone stage> --full`).
+4. **Unstated order.**
+   - If QA's suite is sent back with "`<test>` checks what N places of a list
+     show ... `<criterion>` states none", check that the criterion really
+     states no order and that QA's repair is sensible.
+   - A send-back over a criterion that does state an order is a false
+     positive.
+5. **The model change.**
+   - The run is back on gpt-oss-20b after a day on qwen. Read the worker's
+     `Reasoning switch for ...` line, which is measured once per endpoint and
+     model, and check that it chose sensibly.
+   - Separate "the model did something odd" from "the harness let it" before
+     fixing anything.
+6. **Earlier fixes, live once and still worth watching:**
+   - the sprint plan's scope check;
+   - builders staying in their sprint's scope;
+   - regression and page-check defects closed by measurement;
+   - the mid-attempt QA-lead dispute;
+   - fixes carried to later sprints ("Fixed earlier - keep these fixes").
+
+### 2.3 Recent runs (newest first; full history in monitoring §0.2)
+
+- **run-d211dc86** (14:10 JST, 2026-10-08): cancelled within seconds.
+  `loop.sh ready` printed NOT READY but exited 0, so the run started while
+  LM Studio served gpt-oss and the settings named qwen. Fixed in `344b4a9`,
+  so `ready` exits 1.
+- **run-7b219f82** (07:47-13:57, on `97d9dd1`): cancelled by the owner in
+  sprint 2's second revision. Not clean. Findings, each fixed in the commit
+  named:
+  - A fix stage built later sprints' features (`d833edb`).
+  - `style.css` against `styles.css` in the plan check (`8da1e0d`).
+  - Two locked tests contradicted each other on order (`60971c5`; the
+    mid-attempt dispute then worked).
+  - `npm test` failed only on sprint 3's tests and was recorded as a defect
+    (`351d1ec`).
+  - The scaffold smoke test failed once, so no contract kept the pack's files.
+    A tester then switched sprint 3's tests off in the runner configuration
+    (`1dde0ed`).
+- **run-0e484d19** (00:17-07:44): COMPLETED. Hidden tests 10/10, locked suite
+  25/0, product audit clean. Not clean: seven fixes were deployed during it
+  (`c3a5fca`, `f3d2409`, `9cc524a`, `fa8da1a`, `4bdf05c`, `cc875e7`, and
+  `548a63d`/`97d9dd1` after it).
+- **run-379e32c0** (23:24-00:06): cancelled. The sprint plan put sprint 2's
+  work in sprint 1 (`6ff499e`).
+- **run-d43cb02c** (21:00-23:14, 2026-10-07): cancelled. Sprint 1 built every
+  sprint's features (`3b01d8a`), and the rewrite guard refused a stage its own
+  code (`46be22f`).
+- **run-f7f82c39** (12:15-14:15, 2026-10-07): COMPLETED 10/10 with no harness
+  fix during the run. It was not clean only because the release record was left
+  uncommitted (`6ff9456`). It is the closest any run has come.
+
+### 2.4 Why runs got long, and what to expect now
+
+Runs went from 1-3 hours to 5-8 hours on 2026-10-07. Three causes:
+
+- **The owner's model switch.** `qwen3.6-35b-a3b-mtp` writes 2,100-3,700
+  output tokens and takes 19-32 s per call, against gpt-oss-20b's 400-840
+  tokens and 5-8 s.
+- **Thinking left on.**
+- **Sprints that now really are sprints** (the scope fixes above).
+
+Back on gpt-oss-20b, expect calls about 4× faster. The thinking budget is the
+biggest remaining lever, and it is the owner's decision (§7).
 
 ## 3. Setting up on a new desktop
+
+Skip this section on the same machine (`/home/arun/Desktop/langchain`):
+everything is already set up there.
 
 1. `git clone https://github.com/marunsct/DevFlow.git` and
    `git checkout harness-hardening-session`. Name the remote `main`
    (`git remote rename origin main`) so the push command above works.
-2. **`.env`** - copy it from the old machine yourself, by a private route. It
-   holds secrets: never commit it, print it, or paste it into a chat. (The old
-   machine's `/home/arun/harness-handover-2026-09-19.zip` contains a `.env` too
-   - treat it the same way.)
-3. **Database** - Postgres data lives in `./data/postgres` (git-ignored). Copy
-   that directory across to keep runs, settings and users, or start fresh: a
-   fresh database's admin password comes from `ADMIN_PASSWORD` in `.env` or is
+2. **`.env`**: copy it from the old machine yourself, by a private route. It
+   holds secrets: never commit it, print it or paste it into a chat. The old
+   machine's `/home/arun/harness-handover-2026-09-19.zip` contains a `.env`
+   too; treat it the same way.
+3. **Database**: Postgres data lives in `./data/postgres` (git-ignored). Copy
+   that directory across to keep runs, settings and users, or start fresh. A
+   fresh database's admin password comes from `ADMIN_PASSWORD` in `.env`, or is
    printed once in the app log. Transcripts and workspaces live in the Docker
    volume `appdata` and do not travel; they are only needed for history.
-4. `docker compose build app worker && docker compose up -d`. Containers:
-   `langchain-app-1`, `langchain-worker-1`, `langchain-db-1`, `langchain-redis-1`.
-5. Model server: the owner sets `model_name`, the base URL and the reasoning
-   settings in the admin UI's settings. A model on the host is reached from the
-   containers as `host.docker.internal`.
-6. Loop operator account (do not use the admin account for the loop):
-   user `harness-test`, password `loop-test-only-pw-2026`, role `operator` -
-   recorded here at the owner's request (2026-10-07) so any agent can run the
-   scripts; it exists only in the local Postgres and the owner deletes it when
-   development completes. `export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026`
-   in your shell. If a fresh database lacks it:
-   `docker exec langchain-app-1 python -m app.server.manage create-user harness-test --password loop-test-only-pw-2026 --role operator`.
-   Everything else a new agent needs is in `docs/monitoring-handover.md` §0.3.1.
-7. Tests: a Python venv at `.venv` with the project installed, and Node on the
-   host (some tests run `node --check`). Then `loop.sh suite`.
+4. `docker compose build app worker && docker compose up -d`. The containers
+   are `langchain-app-1`, `langchain-worker-1`, `langchain-db-1` and
+   `langchain-redis-1`; the API is on `http://localhost:8000`.
+5. **Model server**: the owner sets `model_name`, the base URL and the
+   reasoning settings in the admin UI's settings. A model on the host is
+   reached from the containers as `host.docker.internal`.
+6. **Loop operator account.** Do not use the admin account for the loop. Use
+   user `harness-test`, password `loop-test-only-pw-2026`, role `operator`.
+   - It is written here at the owner's request (2026-10-07) so any agent can
+     run the scripts.
+   - It exists only in the local Postgres, and the owner deletes it when
+     development completes.
+   - Run `export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026`
+     in your shell.
+   - If a fresh database lacks it:
+     `docker exec langchain-app-1 python -m app.server.manage create-user harness-test --password loop-test-only-pw-2026 --role operator`.
+7. **Tests** need a Python venv at `.venv` with the project and its test extra
+   (`uv sync --extra test --inexact`), and Node on the host (some tests run
+   `node --check`). Then run `loop.sh suite`.
 
 ## 4. Commands
 
 ```sh
 scripts/loop/loop.sh status              # current run + anything live
-scripts/loop/loop.sh ready               # the served model matches the settings? last line ALL READY
+scripts/loop/loop.sh ready               # served model matches the settings? last line ALL READY, exit 0
 scripts/loop/loop.sh bench web-todo      # a gate run; needs LOOP_USER / LOOP_PASSWORD (§3 step 6)
 scripts/loop/loop.sh start [brief]       # a brief with no hidden tests; same credentials
 scripts/loop/loop.sh cancel [run-id]
 scripts/loop/loop.sh wait [minutes]      # blocks until the run ends or N minutes, then audits
 scripts/loop/loop.sh audit [run-id]      # failures, redundant reads, stage order
-scripts/loop/loop.sh stage <stage>       # trace one stage
+scripts/loop/loop.sh stage <stage> [HH:MM]  # trace one stage (HH:MM is UTC)
 scripts/loop/loop.sh timing [run-id]     # model vs tool time, reasoning share
 scripts/loop/loop.sh product [run-id]    # the generated product, the harness's claims, its own tests
 scripts/loop/loop.sh score [run] [name]  # the hidden tests of a finished run
 scripts/loop/loop.sh failures [run-id]   # each failing acceptance test, its error and the page
 scripts/loop/loop.sh defects [run-id]    # each round's defects: what raised each, how it ended
-scripts/loop/loop.sh asked [run-id] <stage>  # what a stage was told, and its answer
-scripts/loop/loop.sh resumed             # after a mid-run deploy: waits for the run to resume
+scripts/loop/loop.sh asked [run-id] <stage> [visit] [--full] [--system]  # what a stage was told, and its answer
+scripts/loop/loop.sh mutate [run] [n]    # how many small product changes the locked suite catches
+scripts/loop/loop.sh bench-report        # false acceptances across every scored run
+scripts/loop/loop.sh resumed             # after a deploy into a live run: waits for it to resume
 scripts/loop/loop.sh deploy              # rebuild, restart, verify the image matches the tree
-scripts/loop/loop.sh suite               # full suite -> data/loop/suite.log (~2.5 min)
+scripts/loop/loop.sh suite               # full suite -> data/loop/suite.log (~3 min)
 
-docker exec langchain-db-1 psql -U postgres -d langchain -tAc "<sql>"   # tables: runs, runtime_settings, ...
+docker exec langchain-db-1 psql -U postgres -d langchain -tAc "<sql>"   # read-only; tables: runs, runtime_settings, ...
 docker compose logs --since 20m worker   # model calls, stage failures
 ```
 
-The current run id is in `data/loop/current_run.txt` (git-ignored). A run the
-owner starts from the UI is not written there: put its id in by hand. A run
-started by the admin account may refuse a cancel from the operator account; if
-so, ask the owner to cancel it from the UI.
+**State files:**
+
+- The current run id is in `data/loop/current_run.txt`, and the current brief
+  in `data/loop/current_brief.txt` (both git-ignored).
+- A run the owner starts from the UI is not written there; put its id in by
+  hand.
+- A run started by the admin account may refuse a cancel from the operator
+  account. If so, ask the owner to cancel it from the UI.
+
+**Where a run's evidence lives:**
+
+- **Transcripts:** `/app/data/transcripts/<run-id>*.jsonl` inside the worker.
+  - Record kinds: `model_request`, `model_response` (text, usage,
+    finish_reason, tool_calls), `tool_call` (`tool`, `call_id`, `args`),
+    `tool_result` and `defect`.
+  - `model_request` records are windowed: use the `carried` offset for
+    absolute message positions.
+- **Workspace:** `runs.repo_root`, e.g.
+  `/app/data/workspaces/default/workspace-<run-id>/`.
+  - The harness's own state is in its `.harness/` folder (git-ignored):
+    - `stack-pack.json` (the scaffold contract);
+    - `acceptance.json` and `acceptance-result.json`;
+    - `acceptance-locks/vN/` (every locked suite version, each with its diff);
+    - `ci.json`, `decisions.json` and `sprint-scope.json` (this sprint, the
+      total and the criteria not yet due).
+- **Truncated tool output:** the full text is under
+  `/app/data/journal/<reference>` in the worker.
+
+**For one-off analysis:** pipe a Python script into the worker
+(`docker compose exec -T worker python - <args> < script.py`), as
+`scripts/loop/*.py` do. Put a helper you will reuse in `scripts/loop/`, never
+only in a scratch directory: a deploy wipes the worker's `/tmp`, and
+scratchpads don't travel between agents.
 
 ## 5. Things that bite
 
-- There is no source mount: a restart deploys nothing. A deploy wipes
+**Deploys and the worker:**
+
+- There is no source mount, so a restart deploys nothing. A deploy wipes
   `docker logs` and the worker's `/tmp`.
 - Orphan recovery resumes any `running` run after a deploy. Cancel a
-  superseded one, or it competes for the worker and the model server.
-- Do not edit `src/` while the suite runs (tests that read source see shifted
-  lines and fail). Do not edit `loop.sh` while a `wait` is running.
-- Suite baseline: about 7,855 pass, 16 skip, and three
-  `tests/test_codebase_seeding_api.py` tests fail for want of S3 credentials.
-  Any other failure is real.
+  superseded run, or it competes for the worker and the model server.
+
+**Editing while something runs:**
+
+- Do not edit `src/` while the suite runs. Tests that read source with
+  `inspect` see shifted lines and fail.
+- Do not edit `loop.sh` while a `wait` is running: bash reads the script as it
+  goes. Check with `pgrep -f "loop.sh wait"` first.
+
+**Tests:**
+
+- The suite baseline is in §2. Apart from the three expected S3 failures, any
+  failure is real. Tests that need the TypeScript compiler or Pyright skip on
+  the host; verify those inside the worker after a deploy.
+- A test must reproduce the state production really produces. Prove that a new
+  test fails on the old code (stash the fix, run the test, restore) before
+  trusting it.
+
+**The environment:**
+
+- `uv add` / `uv remove` re-sync `.venv` without the test extra and drop
+  pytest. Restore it with `uv sync --extra test --inexact`, then
+  `uv pip install uvloop watchfiles` if they went too.
 - Auth is a form-encoded `POST /api/auth/token`; there is no JSON login.
-- Transcript `model_request` records are windowed; use the `carried` offset
-  for absolute message positions.
+
+**Before starting a run, check the model:**
+
 - Never start a run while the model server's loaded model differs from
-  `runtime_settings.model_name`. The owner changes both without saying so:
-  compare them before every `loop.sh start`. Check passively, with
-  `curl <base url>/v1/models` - `lms ps` wakes LM Studio's background service
-  when the app is closed. With no model loaded, do not load one: leave one
-  long background watcher on that endpoint, on `runtime_settings` and on
-  live runs, and start when they agree.
-- Scheduled heartbeats and background waits belong to the session. After a
-  restart there are none: start the wait (or the watcher) again.
+  `runtime_settings.model_name`. The owner changes both without saying so.
+  Run `loop.sh ready` before every `bench`/`start`; it exits 1 when they
+  differ.
+- With no model loaded, do not load one. Leave one long background watcher on
+  the endpoint, the settings and live runs, and start when they agree.
+- Check passively with `curl <base url>/v1/models`. `lms ps` wakes LM Studio's
+  background service when the app is closed.
 - A model server that needs a key answers 401 to a bare `curl`. Ask through
   the harness's own settings instead, inside the worker, and print names only:
 
@@ -229,8 +441,23 @@ so, ask the owner to cancel it from the UI.
   print(s.model_name, "at", s.openai_base_url, "served:", s.model_name in served)
   PY
   ```
-- A test must reproduce the state production really produces. Prove a new
-  test fails on the old code before trusting it.
+
+**Your own session:**
+
+- Waits, watchers and scheduled retries belong to the session that started
+  them. After a restart there are none, so start them again.
+- **Two agents in one tree:** before any commit, deploy, start or cancel, look
+  for edits that are not yours (`git status`) and for another agent's waits
+  (`pgrep -af "loop.sh"`). One agent drives (commits, deploys, starts and
+  cancels); any other audits read-only and passes its findings on. If the
+  driver has gone, take the role so the loop does not stall.
+
+**Reading the evidence:**
+
+- About 63% of reported defects in a 46-run study were about tests and their
+  set-up, not the product. When a run stalls, read the failing test command's
+  raw output before believing any defect description.
+- Ordinals in guard messages count the whole run, not the stage.
 
 ## 6. Security rules
 
@@ -238,7 +465,9 @@ so, ask the owner to cancel it from the UI.
   need changing, and back the file up first.
 - Do not kill the owner's GPU or model processes (llama-server, Bonsai,
   unsloth, the server on port 9090, LM Studio), and do not take over the
-  port-8888 server. Do not change the owner's model-server settings.
+  port-8888 server.
+- Do not change the owner's model-server settings, and never load a model
+  yourself.
 - Never add knowledge or documentation credentials to
   `sandbox._ENV_PASSTHROUGH`.
 - Do not read or reset the admin password, use the admin account, escalate
@@ -248,21 +477,46 @@ so, ask the owner to cancel it from the UI.
   owner asks.
 - API keys that appear in `ps` output or logs are never repeated.
 - For GitHub tokens, the owner uses their own terminal.
+- Docker socket access is root-level; don't enable it more widely.
 - The loop account's password is in this file by the owner's decision
-  (2026-10-07); it is the only credential that may be written down. Never
-  commit or alter `docs/logs.md`, the owner's own file.
+  (2026-10-07). It is the only credential that may be written down.
+- Never commit or alter `docs/logs.md`, the owner's own file.
 - Never route shell work through another command-running tool to get around
-  the safety check.
+  the tool-approval check.
 
-## 7. Open and parked
+## 7. Open, parked, and awaiting the owner
 
-- **Throughput** (§0.9): a brief_low run takes 2.5-3 hours, nearly all of it
-  model time. Proposals measured but not built: two-step lead planning,
-  per-role reasoning effort (the owner's setting), one sprint for a small
-  brief (conflicts with the product design).
-- In parallel mode with auto-approve, gated calls pause and drain one per
-  superstep - a redesign of the runner's auto-approve loop, not a fix.
-- Parked (§0.5.1): wildcard arguments are not expanded (commands run without
-  a shell); tools are offered when command execution is disabled; duplicate
-  `test/` and `tests/` suites.
-- Delete the `harness-test` operator account when the loop ends.
+**The owner's decisions - do not change these on your own:**
+
+- **The thinking budget** (thinking effort / thinking mode per role). This is
+  the biggest time lever (§2.4).
+- **Whether every fix must add a regression test.** A run-7b219f82 attempt
+  failed over a code-review defect two fixers left without one.
+- **The CRITERION severity policy** (minor vs blocking grading).
+- **The `node -e` policy.** One-off command-line code is refused.
+- **Whether a browser test must cover every action the brief names.**
+- **Whether CLI products get the UI/UX consultation.**
+- **Deleting the `harness-test` account** when the loop ends.
+
+**Parked** (details in monitoring §0.5.1):
+
+- A milestone review may ask for later sprints' work to be removed.
+- The plan check's action table has no persistence: sprint 1 may build storage
+  early, which is minor.
+- A scaffold whose smoke test fails twice leaves its files unkept, though
+  their comments say the harness keeps them.
+- A stage's own notes (`blocker.txt`, `verification.log`) may ship in the
+  product.
+- Wildcard arguments are not expanded, because commands run without a shell.
+- Tools are offered when command execution is disabled.
+- `test/` and `tests/` suites are duplicated.
+
+**Throughput** (monitoring §0.9). Proposals measured but not built:
+
+- two-step lead planning;
+- per-role reasoning effort (the owner's setting);
+- one sprint for a small brief (conflicts with the product design).
+
+In parallel mode with auto-approve, gated calls pause and drain one per
+superstep. Fixing that would be a redesign of the runner's auto-approve loop,
+not a fix.

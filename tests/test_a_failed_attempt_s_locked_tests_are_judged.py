@@ -150,3 +150,21 @@ def test_only_the_tests_of_criteria_due_by_this_sprint_are_judged(tmp_path, monk
     failing = workflow._the_locked_tests_still_failing(TestWhenADisputeIsDue._state(tmp_path))
 
     assert [name for name, _, _ in failing] == ["[AC-1] does it"]
+
+def test_identical_test_names_combine_failures(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(suite, "is_locked", lambda root: True)
+    monkeypatch.setattr(acceptance_nodes, "criteria_due", lambda state: ["AC-1"])
+    path = tmp_path / suite.RESULT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"ran": True, "criteria": {
+        "AC-1": {"id": "AC-1", "text": "criterion 1", "status": "failed", "tests": [
+            {"name": "[AC-1] common name", "outcome": "failed", "message": "msg 1"},
+            {"name": "[AC-1] common name", "outcome": "failed", "message": "msg 2"},
+        ]}
+    }}))
+
+    failing = workflow._the_locked_tests_still_failing(TestWhenADisputeIsDue._state(tmp_path))
+
+    assert len(failing) == 1
+    assert failing[0][0] == "[AC-1] common name"
+    assert failing[0][2] == "msg 1\n\n--- Also failed with ---\n\nmsg 2"

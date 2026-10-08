@@ -5118,14 +5118,25 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
 
     due = set(criteria_due(state) or [])
     failing: list[tuple[str, str, str]] = []
+    seen: dict[str, int] = {}
     for cid, criterion in (saved.get("criteria") or {}).items():
         if not isinstance(criterion, dict) or cid in deferred or cid not in due:
             continue
         for test in criterion.get("tests") or []:
             if isinstance(test, dict) and test.get("outcome") == "failed":
-                failing.append((str(test.get("name") or ""), f"{cid}: {criterion.get('text', '')}", str(test.get("message") or "")))
-    seen: set[str] = set()
-    return [entry for entry in failing if entry[0] and not (entry[0] in seen or seen.add(entry[0]))]
+                name = str(test.get("name") or "")
+                if not name:
+                    continue
+                text = f"{cid}: {criterion.get('text', '')}"
+                message = str(test.get("message") or "")
+                if name in seen:
+                    idx = seen[name]
+                    old_name, old_text, old_message = failing[idx]
+                    failing[idx] = (old_name, old_text, f"{old_message}\n\n--- Also failed with ---\n\n{message}")
+                else:
+                    seen[name] = len(failing)
+                    failing.append((name, text, message))
+    return failing
 
 
 def _this_attempt(state: Any) -> str:

@@ -59,6 +59,11 @@ REQUEST = {"messages": [{"role": "user", "content": "Review the milestone."}]}
 
 
 class TestTheReviewIsShown:
+    @pytest.fixture(autouse=True)
+    def mock_reads_images(self, monkeypatch) -> None:
+        import app.models.vision
+        monkeypatch.setattr(app.models.vision, "the_reviewer_reads_images", lambda: True)
+
     def test_both_screenshots_follow_the_text_with_the_design(self, tmp_path) -> None:
         _with_screenshots(tmp_path)
 
@@ -86,6 +91,16 @@ class TestTheReviewIsShown:
 
         for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
             assert not re.search(rf"\b{word}\b", text), word
+
+    def test_when_the_reviewer_cannot_read_images_none_are_sent(self, tmp_path, monkeypatch) -> None:
+        _with_screenshots(tmp_path)
+        import app.models.vision
+        monkeypatch.setattr(app.models.vision, "the_reviewer_reads_images", lambda: False)
+        
+        sent = with_the_page_screenshots(REQUEST, tmp_path)
+        
+        assert sent is REQUEST
+
 
 
 def test_the_setting_is_one_an_owner_can_change() -> None:

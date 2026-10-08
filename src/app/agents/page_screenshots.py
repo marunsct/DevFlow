@@ -50,6 +50,10 @@ def with_the_page_screenshots(
     Never raises: a review without pictures is the review there was before.
     """
     try:
+        from app.models.vision import the_reviewer_reads_images
+        if not the_reviewer_reads_images():
+            return request
+        
         shots = _the_screenshots(repo_root)
         messages = list(request.get("messages") or [])
         if not shots or not messages:

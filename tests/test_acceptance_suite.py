@@ -493,3 +493,15 @@ def test_the_product_finding_rule_names_no_product_and_no_control(project, word:
     request = requests.build_author_request(project, suite.criteria(project), feedback=["x"])["messages"][0]["content"]
     rule = request[request.index("Fix each of these that is about"):][:300]
     assert not re.search(rf"\b{re.escape(word)}\b", rule, re.I), word
+
+def test_author_request_requires_testing_persistence_of_all_changes():
+    from types import SimpleNamespace
+    criteria = [SimpleNamespace(id="AC-1", text="some criteria", automatability_reason="")]
+    req = requests.build_author_request(
+        "tmp_path", 
+        criteria, 
+        brief="## Interface\n- x"
+    )
+    content = req["messages"][0]["content"]
+    assert "A test for persistence or reloading must check that every kind of change - not just creation, but edits, deletions, and state changes like completion - survives a reload" in content
+    assert "In Playwright, always use `{ exact: true }`" in content

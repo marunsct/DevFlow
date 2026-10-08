@@ -22,15 +22,13 @@ cd /home/arun/Desktop/langchain
 git status --short                      # only " M docs/logs.md" - the owner's file; never commit or touch it
 git log --oneline -1                    # the latest handover commit
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
-scripts/loop/loop.sh status             # current run: run-141f09e2 (cancelled); "live runs:" must be empty
+scripts/loop/loop.sh status             # current run: run-7a70d5de (completed); "live runs:" must be empty
 scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
 scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 14:14 JST `ready` said `ALL READY` on `openai/gpt-oss-20b`. The owner
-switched the settings to it at 14:12. Check again before you start, because
-the owner changes the model without saying so.
+At 20:00 JST, run-7a70d5de completed successfully but scored 0.5 because the harness falsely accepted it. The test suite lacked proper persistence tests and used substring matching for accessible names. I've updated the `acceptance_author` prompts to enforce rigorous testing. Check `ready` before you start `bench web-todo` again.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

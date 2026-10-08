@@ -170,3 +170,82 @@ class TestWhatAStageIsTold:
         assert sprint_scope.later_sprints_files(root) == {
             f"{PROJECT}/acceptance/persistence.spec.js": ["AC-2", "AC-3"]
         }
+
+
+def _reports(root: Path, *cases: tuple[str, bool], unit: tuple[tuple[str, bool], ...] = ()) -> None:
+    for name, rows in (("acceptance.xml", cases), ("unit.xml", unit)):
+        if not rows:
+            continue
+        body = "".join(
+            f'<testcase name="{title}" classname="x">' + ("" if ok else '<failure message="no">no</failure>') + "</testcase>"
+            for title, ok in rows
+        )
+        path = root / PROJECT / "r" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'<testsuites><testsuite name="s">{body}</testsuite></testsuites>')
+
+
+class TestOnlyLaterSprintsFail:
+    """One run's `npm test` ran the whole acceptance suite after the unit tests,
+    so sprint 2's round ended "exited 1" on sprint 3's tests alone - and the
+    harness recorded that as a defect, which spent the attempt."""
+
+    @pytest.fixture(autouse=True)
+    def reports_where_the_contract_says(self, root):
+        contract = json.loads((root / ".harness" / "stack-pack.json").read_text())
+        contract.update({"unit_report": "r/unit.xml", "acceptance_report": "r/acceptance.xml"})
+        (root / ".harness" / "stack-pack.json").write_text(json.dumps(contract))
+
+    def test_failures_that_all_wait(self, root):
+        _sprint_one(root)
+        _reports(root, ("[AC-1] an empty heading is refused", True), ("[AC-1] removing a note survives a reload", False),
+                 unit=(("unit test", True),))
+
+        assert sprint_scope.only_later_sprints_fail(root)
+
+    def test_a_failure_due_now(self, root):
+        _sprint_one(root)
+        _reports(root, ("[AC-1] an empty heading is refused", False), ("[AC-1] removing a note survives a reload", False))
+
+        assert not sprint_scope.only_later_sprints_fail(root)
+
+    def test_a_failing_unit_test(self, root):
+        _sprint_one(root)
+        _reports(root, ("[AC-1] removing a note survives a reload", False), unit=(("unit test", False),))
+
+        assert not sprint_scope.only_later_sprints_fail(root)
+
+    def test_no_failure_listed_is_not_only_later_failures(self, root):
+        """A run that crashed lists nothing failed; that is its own failure."""
+        _sprint_one(root)
+        _reports(root, ("[AC-1] an empty heading is refused", True))
+
+        assert not sprint_scope.only_later_sprints_fail(root)
+
+    def test_the_last_sprint_has_no_later_failures(self, root):
+        sprint_scope.record(root, sprint=2, of=2, not_yet_due=[])
+        _reports(root, ("[AC-1] removing a note survives a reload", False))
+
+        assert not sprint_scope.only_later_sprints_fail(root)
+
+    def test_the_round_records_no_defect_for_them(self, root, monkeypatch):
+        from app.graph.workflow import _a_suite_failure_the_round_did_not_report
+
+        _sprint_one(root)
+        _reports(root, ("[AC-1] removing a note survives a reload", False))
+        monkeypatch.setattr(
+            "app.graph.workflow._the_test_command_this_stage_left_failing", lambda root, stage: ("npm test", "exited 1")
+        )
+
+        assert _a_suite_failure_the_round_did_not_report(str(root), "test_round_2") is None
+
+    def test_the_round_still_records_one_due_now(self, root, monkeypatch):
+        from app.graph.workflow import _a_suite_failure_the_round_did_not_report
+
+        _sprint_one(root)
+        _reports(root, ("[AC-1] an empty heading is refused", False))
+        monkeypatch.setattr(
+            "app.graph.workflow._the_test_command_this_stage_left_failing", lambda root, stage: ("npm test", "exited 1")
+        )
+
+        assert _a_suite_failure_the_round_did_not_report(str(root), "test_round_2") is not None

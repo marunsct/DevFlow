@@ -3348,6 +3348,16 @@ def _a_suite_failure_the_round_did_not_report(
         return None
     if but_the_acceptance_suite and _runs_the_acceptance_suite(repo_root, command):
         return None
+    try:
+        from app.acceptance import sprint_scope
+
+        if sprint_scope.only_later_sprints_fail(repo_root):
+            # A later sprint's tests failing is what a sprint before it expects.
+            # See `sprint_scope.only_later_sprints_fail`.
+            logger.info("`%s` failed only on tests a later sprint makes pass; not a defect", command)
+            return None
+    except Exception:  # noqa: BLE001 - unreadable reports leave the defect as before
+        pass
     return ReportedDefect(
         description=(
             f"The suite does not pass: `{command}` {how} on this round's last run "

@@ -264,6 +264,30 @@ def _reports(repo_root: Path) -> list[Path]:
     return found
 
 
+def only_later_sprints_fail(repo_root: str | Path | None) -> bool:
+    """Whether the project's last test reports fail only on tests that wait on a later sprint.
+
+    False when nothing waits, when no report can be read, or when no failed test
+    is listed at all - a run that crashed lists none, and that is a failure of
+    its own. Measured on one run: sprint 2's `npm test` ran the unit tests and
+    then the whole acceptance suite, so it exited 1 on sprint 3's filtering and
+    layout tests alone; the round, rightly, reported no defect, and the harness
+    recorded "the suite does not pass" as one - which spent the attempt.
+    """
+    waiting = waiting_tests(repo_root)
+    if not waiting or not repo_root:
+        return False
+    failed: list[junit.TestResult] = []
+    read_any = False
+    for path in _reports(Path(str(repo_root))):
+        if not path.is_file():
+            continue
+        report = junit.read(path)
+        read_any = read_any or bool(report.tests)
+        failed.extend(test for test in report.tests if test.outcome == "failed")
+    return read_any and bool(failed) and all(waits_on(test.name, waiting) for test in failed)
+
+
 def note_on_failures(repo_root: str | Path | None, since: float) -> str:
     """What a test command's failures that belong to later sprints are, or "".
 
@@ -309,5 +333,6 @@ __all__ = [
     "waiting_tests",
     "waits_on",
     "note_on_failures",
+    "only_later_sprints_fail",
     "record",
 ]

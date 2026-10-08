@@ -372,7 +372,9 @@ def _an_answer_says_something(cls: Any, data: Any) -> Any:
             "end the stage. Say what you changed (`changed_files`), what you ran and "
             "how it ended (`verification`), the regression test that proves a fix "
             "(`tests`), and anything unfinished or in your way (`blockers`). If the "
-            "work is not finished, keep working - your tools are available again."
+            "work is not finished, keep working - your tools are available again. "
+            "If you found no defect to fix, or no changes were needed, explain why in "
+            "`decisions` or `verification`."
         )
     return data
 

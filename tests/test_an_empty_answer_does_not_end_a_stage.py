@@ -29,6 +29,17 @@ class TestTheAgentsSchema:
 
         assert "reports nothing" in str(caught.value)
         assert "keep working" in str(caught.value)
+        assert "explain why in `decisions` or `verification`" in str(caught.value)
+
+    def test_refusal_message_is_agnostic(self):
+        with pytest.raises(ValidationError) as caught:
+            AGENT_ANSWER.model_validate({})
+        
+        message = str(caught.value).lower()
+        banned = ["task", "tasks", "to-do", "todo", "button", "click", "checkbox"]
+        for word in banned:
+            import re
+            assert not re.search(rf"\b{re.escape(word)}\b", message), f"Message contains banned word: {word}"
 
     def test_fields_that_are_all_empty_are_refused(self):
         with pytest.raises(ValidationError):

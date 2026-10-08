@@ -178,3 +178,52 @@ def test_the_round_goes_on_after_a_dispute_that_finds_nothing(
     assert held == [1]
     assert state.get("disputed_sprints")
     assert not state.get("dispute_returns_to")
+
+
+class TestTwoLockedTestsThatAskForOppositeThings:
+    """One run's locked delete test wanted new items last and its list test wanted
+    them first. Each fix that made one pass broke the other and was reverted,
+    twice in one round."""
+
+    REVERTED = "A fix was tried and reverted, because it broke what passed before it: {}."
+
+    def _cycle(self, *broken: str):
+        from app.sprint import Defect, RemediationCycle
+
+        return RemediationCycle(sprint_goal="s", defects=[
+            Defect(
+                description=f"d{n}", severity="major", reproduction_steps="r", expected_behavior="e",
+                actual_behavior="It fails.\n" + self.REVERTED.format(names), owner="ui_ux",
+            )
+            for n, names in enumerate(broken)
+        ])
+
+    def test_two_reverts_for_one_locked_test_name_it(self):
+        from app.graph.workflow import _a_locked_test_two_fixes_broke
+
+        name = "acceptance: todo.spec.js › [AC-8] items appear in a list"
+        cycle = self._cycle(name, f"{name}; acceptance: todo.spec.js › [AC-1] adds")
+
+        assert _a_locked_test_two_fixes_broke(cycle) == name
+
+    def test_one_revert_is_a_bad_fix(self):
+        from app.graph.workflow import _a_locked_test_two_fixes_broke
+
+        assert _a_locked_test_two_fixes_broke(self._cycle("acceptance: a › [AC-8] x")) == ""
+
+    def test_a_unit_test_is_not_the_locked_suite(self):
+        from app.graph.workflow import _a_locked_test_two_fixes_broke
+
+        assert _a_locked_test_two_fixes_broke(self._cycle("unit: a › b", "unit: a › b")) == ""
+
+    def test_the_qa_lead_is_told_why(self):
+        from app.graph.workflow import _with_the_reason
+
+        request = _with_the_reason({"messages": [{"role": "user", "content": "judge these"}]}, "two fixes broke X")
+
+        assert request["messages"][-1]["content"].endswith("--- Why this is judged now ---\ntwo fixes broke X\n")
+
+    def test_no_reason_adds_nothing(self):
+        from app.graph.workflow import _with_the_reason
+
+        assert _with_the_reason({"messages": [{"role": "user", "content": "x"}]}, "")["messages"][-1]["content"] == "x"

@@ -521,6 +521,7 @@ class WorkflowGraphState(TypedDict, total=False):
     # The failed attempts ("sprint index:attempts") whose locked tests the QA lead has judged.
     disputed_sprints: list[str]
     dispute_returns_to: str | None
+    dispute_reason: str | None
     carried_forward: list[str]
     lessons: list[str]
     milestone_plan: MilestonePlanOutput
@@ -5037,6 +5038,40 @@ def _a_dispute_may_be_held_now(state: Any) -> bool:
     return bool(_the_locked_tests_still_failing(state))
 
 
+#: What a reverted fix leaves on its defect's actual behaviour. See the
+#: `broke` branch of `defect_remediation_node`.
+_REVERTED_FOR = re.compile(r"A fix was tried and reverted, because it broke what passed before it: (.+?)\.(?:\n|$)")
+
+
+def _a_locked_test_two_fixes_broke(cycle: Any) -> str:
+    """A locked acceptance test that two fixes in this attempt were reverted for breaking, or "".
+
+    Measured on one run: the locked delete test added "Task one" then "Task two"
+    and expected "Task two" to remain after deleting the first item - new
+    items last - while the locked list test expected the second item added to
+    come first. Each fix that made one pass broke the other and was reverted,
+    twice in one round; the attempt would have spent its rounds on it before the
+    QA lead saw it. One revert is a bad fix; two for the same locked test is two
+    locked tests asking for opposite things.
+    """
+    from collections import Counter
+
+    counts: Counter[str] = Counter()
+    for defect in getattr(cycle, "defects", None) or []:
+        for match in _REVERTED_FOR.finditer(str(getattr(defect, "actual_behavior", "") or "")):
+            for name in match.group(1).split("; "):
+                if name.strip().startswith("acceptance:"):
+                    counts[name.strip()] += 1
+    return next((name for name, count in counts.most_common() if count >= 2), "")
+
+
+def _with_the_reason(request: dict, reason: str) -> dict:
+    """A dispute request with why it is being held now, when there is a reason to give."""
+    if reason.strip():
+        request["messages"][-1]["content"] += f"\n\n--- Why this is judged now ---\n{reason.strip()}\n"
+    return request
+
+
 def _carried_here(state: Any) -> list[str]:
     """What earlier sprints carried to this one's lead to take or decline."""
     return [str(item) for item in state.get("carried_forward") or [] if str(item).strip()]
@@ -7126,6 +7161,26 @@ def build_workflow_graph(
                 }) if position == defect_index else item
                 for position, item in enumerate(cycle.defects)
             ]})
+            contested = _a_locked_test_two_fixes_broke(noted)
+            if contested and _a_dispute_may_be_held_now(state):
+                logger.warning(
+                    "Two fixes were reverted for breaking the locked test %s; the QA lead "
+                    "judges the failing locked tests before the round goes on", contested,
+                )
+                return _handing_on(**{
+                    **update,
+                    "remediation": noted,
+                    "defect_cursor": defect_index + 1,
+                    "fix_base_commit": "",
+                    "stage": "acceptance_dispute",
+                    "dispute_returns_to": "test_and_triage",
+                    "dispute_reason": (
+                        f"Fixes for these failures were reverted, twice, because each broke "
+                        f"`{contested}`, which passed before. Two locked tests may ask for "
+                        "opposite things: a test that cannot pass while another one does is "
+                        "one to name."
+                    ),
+                })
             return _handing_on(**{
                 **update,
                 "remediation": noted,
@@ -7275,7 +7330,7 @@ def build_workflow_graph(
         carry_on = "defect_remediation" if returns_to else "technical_lead"
         failing = _the_locked_tests_still_failing(state)
         if not failing:
-            return _handing_on(stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None)
+            return _handing_on(stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)
         root = state["repository"].root_path
         code = "\n\n".join(
             f"--- {path.relative_to(Path(root)).as_posix()} ---\n{path.read_text(encoding='utf-8', errors='replace')}"
@@ -7290,8 +7345,9 @@ def build_workflow_graph(
             config,
             stage_name="acceptance_dispute",
             agent=agent,
-            initial_request=build_dispute_request(
-                failing, code, getattr(state.get("document"), "text", "") or ""
+            initial_request=_with_the_reason(
+                build_dispute_request(failing, code, getattr(state.get("document"), "text", "") or ""),
+                str(state.get("dispute_reason") or ""),
             ),
             output_key="__suite_dispute__",
             next_stage="acceptance_dispute",
@@ -7304,8 +7360,8 @@ def build_workflow_graph(
             logger.warning("The QA lead says %d locked test(s) cannot pass; reopening the suite", len(named))
             reopened = reopen_the_suite_for(state, named, return_to=returns_to or SPRINT_REPLAN)
             if reopened is not None:
-                return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None})
-        return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None)
+                return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
+        return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)
 
     def advice_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""

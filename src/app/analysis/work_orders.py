@@ -327,6 +327,33 @@ def _pinned_project_directory(repo_root: str | Path | None) -> str:
         return ""
 
 
+def _another_spelling_of(name: str, known: set[str]) -> bool:
+    """Whether `name` is a file the project already has, or a work order lists, spelled otherwise.
+
+    Same extension, and a stem that differs by a plural "s" or barely at all.
+    Measured on one run: the specification called the stylesheet `style.css`,
+    the scaffold had made `styles.css`, and a constraint the sprint plan quoted
+    from the specification - "index.html + style.css + app.js" - was read as a
+    file the sprint names and nobody is given. The lead's plan was sent back
+    twice for it and dispatched unready on the third; giving `style.css` to a
+    work order would have made a second stylesheet.
+    """
+    from difflib import SequenceMatcher
+
+    stem, dot, extension = name.rpartition(".")
+    if not dot or not stem:
+        return False
+    for other in known:
+        other_stem, other_dot, other_extension = other.rpartition(".")
+        if not other_dot or other_extension != extension or not other_stem:
+            continue
+        if stem.rstrip("s") == other_stem.rstrip("s"):
+            return True
+        if min(len(stem), len(other_stem)) >= 4 and SequenceMatcher(None, stem, other_stem).ratio() >= 0.85:
+            return True
+    return False
+
+
 def _files_the_sprint_names_and_nobody_is_given(
     sprint_scope: str, tasks: Sequence[Any], repo_root: str | Path | None, project_dir: str
 ) -> list[str]:
@@ -359,7 +386,11 @@ def _files_the_sprint_names_and_nobody_is_given(
         # called: `store.read()` in a scope is a call, not a file to hand out.
         in_use = {name.rsplit(".", 1)[-1] for name in listed | existing if "." in name}
         named = files_named_in(sprint_scope, in_use)
-        return sorted(name for name in named if name.lower() not in listed and name.lower() not in existing)
+        known = listed | existing
+        return sorted(
+            name for name in named
+            if name.lower() not in known and not _another_spelling_of(name.lower(), known)
+        )
     except Exception:  # noqa: BLE001 - the plan is still checked for everything else
         return []
 

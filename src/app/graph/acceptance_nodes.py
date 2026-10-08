@@ -223,6 +223,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(suite.locators_by_a_name_the_role_never_has(root))
     problems.extend(suite.tests_that_never_open_the_page(root))
     problems.extend(suite.tests_that_expect_what_they_never_gave(root))
+    problems.extend(suite.tests_that_assert_an_unstated_order(root))
     problems.extend(suite.locators_that_contradict_their_assertions(root))
     problems.extend(
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")

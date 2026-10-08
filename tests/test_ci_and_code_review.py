@@ -141,9 +141,14 @@ def test_the_code_review_s_blocking_findings_become_owned_defects(workspace, mon
     engineering.accepted_state(str(workspace.root))
     (workspace.root / "notes" / "src" / "notes.js").write_text("export function remove() { return []; }\n")
     ci.commit(workspace.root, "batch")
+    # What the CI gate measures after the batch: `[AC-2] deletes` fails. A
+    # finding becomes a defect only when a test or check shows it - see
+    # `test_a_review_finding_needs_evidence`.
+    ci.save(workspace.root, ci.take(workspace.root, "after the work orders"))
     review = CodeReviewOutput(approved=False, findings=[
         CodeReviewFinding(work_order="Delete notes", severity="blocking", file="notes/src/notes.js",
-                          problem="remove() returns an empty list instead of removing one note", fix="filter by id"),
+                          problem="remove() returns an empty list instead of removing one note, so [AC-2] deletes fails",
+                          fix="filter by id"),
         CodeReviewFinding(work_order="Delete notes", severity="minor", problem="naming"),
     ])
     seen: list[Any] = []
@@ -200,6 +205,9 @@ def test_a_finding_about_later_sprints_criteria_is_not_a_defect_now(workspace, m
     engineering.accepted_state(str(workspace.root))
     (workspace.root / "notes" / "src" / "notes.js").write_text("export function add() { return []; }\n")
     ci.commit(workspace.root, "batch")
+    # The suite shows AC-1 failing, so that finding is shown and is a defect.
+    workspace.runner.acceptance = {"[AC-1] adds": "failed", "[AC-2] deletes": "failed"}
+    suite.run(workspace.root)
     review = CodeReviewOutput(approved=False, findings=[
         CodeReviewFinding(work_order="Add notes", severity="blocking", problem="AC‑2 fails: delete is not wired"),
         CodeReviewFinding(work_order="Add notes", severity="major", problem="AC-1 fails: add returns nothing"),
@@ -336,3 +344,33 @@ def test_the_round_filters_before_the_due_criteria_backstop() -> None:
     assert source.index("_defects_a_later_sprint_builds(reported, state)") < source.index(
         "acceptance_nodes.failing_due_defects(state, reported)"
     )
+
+
+def test_a_review_finding_nothing_shows_is_advice(workspace, monkeypatch) -> None:
+    """See `test_a_review_finding_needs_evidence`: an unshown finding is advice, not a defect."""
+    from app.agents.code_reviewer import CodeReviewFinding, CodeReviewOutput
+
+    engineering.accepted_state(str(workspace.root))
+    (workspace.root / "notes" / "src" / "notes.js").write_text("export function add(t) { return t; }\n")
+    ci.commit(workspace.root, "batch")
+    review = CodeReviewOutput(approved=False, findings=[
+        CodeReviewFinding(work_order="Add notes", severity="blocking", file="notes/src/notes.js",
+                          problem="add() does not sanitize its input", fix="escape it"),
+    ])
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent",
+                        lambda state, config, **kw: {kw["output_key"]: review, "stage": "code_review"})
+    monkeypatch.setattr("app.agents.code_reviewer.create_code_reviewer_agent", lambda *a, **k: object())
+    state = {
+        "repository": SimpleNamespace(root_path=str(workspace.root)),
+        "milestone_plan": SimpleNamespace(delegated_tasks=[
+            SimpleNamespace(title="Add notes", task_description="Add a note", specialist_role="backend"),
+        ]),
+        "review_defects": [],
+    }
+
+    update = engineering.code_review(state, CONFIG, SimpleNamespace(
+        judgement_model=None, checkpointer=None, repo_root=None, allow_subdirectories=True,
+    ))
+
+    assert update["review_defects"] == []
+    assert update["review_advice"] == ["notes/src/notes.js: add() does not sanitize its input Suggested: escape it"]

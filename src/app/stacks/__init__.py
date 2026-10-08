@@ -127,6 +127,9 @@ class StackPack:
     #: A suite file's text -> (line, title, value) of each test that looks on
     #: the page for a value it made at run time and never gave the product.
     expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
+    #: A suite file's text -> (line, title, positions) of each test that asserts
+    #: what two or more places of a list show: an order.
+    positions_it_asserts: Callable[[str], Sequence[tuple[int, str, Sequence[str]]]] | None = None
     #: A failed test's message -> the text it filtered by, when the page it
     #: failed on shows that text only as a field's value.
     filtered_by_a_field_value: Callable[[str], str | None] | None = None

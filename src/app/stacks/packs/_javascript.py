@@ -770,6 +770,54 @@ def expects_what_it_never_gave(text: str) -> list[tuple[int, str, str]]:
     return found
 
 
+#: A position in a list a test reads: `.nth(1)`, `.first()`, `.last()`.
+_A_POSITION = re.compile(r"\.\s*(?:nth\s*\(\s*(\d+)\s*\)|(first)\s*\(\s*\)|(last)\s*\(\s*\))")
+#: What a test asserts a thing shows.
+_ITS_TEXT = re.compile(r"\b(?:toContainText|toHaveText)\s*\(|\bgetByText\s*\(")
+
+
+def positions_it_asserts(text: str) -> list[tuple[int, str, list[str]]]:
+    """(line, title, positions) of each test that asserts what is shown at two or more places in a list.
+
+    Reading a position to act on it - the first item's checkbox - says nothing
+    about order; asserting what two positions show does. Measured on one run:
+    the locked list test added two items and expected the second at
+    position 0 and the first at position 1 - newest first - while the locked
+    removal test removed the first item and expected the second to remain -
+    oldest first. Each fix that made one pass broke the other, twice, and
+    neither criterion said anything about order.
+    """
+    found = []
+    starts = [match.start() for match in _A_TEST.finditer(text)]
+    for begin, end in zip(starts, starts[1:] + [len(text)]):
+        body = text[begin:end]
+        title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
+        held: dict[str, str] = {}
+        positions: list[str] = []
+        first_line = 0
+        offset = 0
+        for statement in body.split(";"):
+            where = [
+                match.group(1) or ("0" if match.group(2) else "last")
+                for match in _A_POSITION.finditer(statement)
+            ]
+            bound = re.match(r"\s*(?:const|let|var)\s+(\w+)\s*=", statement)
+            if bound and where:
+                held[bound.group(1)] = where[-1]
+            if _ITS_TEXT.search(statement):
+                asserted = where[-1:] or [
+                    held[name] for name in held if re.search(rf"\b{re.escape(name)}\b", statement)
+                ][-1:]
+                for position in asserted:
+                    if position not in positions:
+                        positions.append(position)
+                        first_line = first_line or text.count("\n", 0, begin + offset) + 1
+            offset += len(statement) + 1
+        if len(positions) >= 2:
+            found.append((first_line, title.group(2) if title else "a test", positions))
+    return found
+
+
 _FILTERED_BY_TEXT = re.compile(r"""\.filter\(\{\s*hasText:\s*(?:'([^'\n]+)'|"([^"\n]+)"|/([^/\n]+)/\w*)""")
 #: What a test looked for inside the filtered item: `.getByLabel('Edit title')`
 #: or `.getByRole('button', { name: 'Save' })`.

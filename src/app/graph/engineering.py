@@ -346,26 +346,91 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     ]
     if later:
         logger.info("Code review raised %d finding(s) about criteria later sprints deliver; not defects now", len(later))
+    serious = [
+        finding for finding in getattr(review, "findings", None) or []
+        if finding.severity in {"blocking", "major"} and finding not in later
+    ]
+    # Only what a test or a check shows becomes a defect; the rest is advice for
+    # the milestone review. See `what_shows_it`.
+    shown = [(finding, what_shows_it(state, finding)) for finding in serious]
     found = [
         ReportedDefect(
             description=f"Code review ({finding.work_order}): {finding.problem}",
             severity="blocking" if finding.severity == "blocking" else "major",
-            reproduction_steps=f"Read {finding.file or 'the files the work order names'}.",
+            reproduction_steps=f"Read {finding.file or 'the files the work order names'}. {why}",
             expected_behavior=finding.fix or "What the work order asked for.",
             actual_behavior=finding.problem,
             affected_files=[finding.file] if finding.file else [],
             owner=_owner_of(state, finding.work_order),
         )
-        for finding in getattr(review, "findings", None) or []
-        if finding.severity in {"blocking", "major"} and finding not in later
+        for finding, why in shown
+        if why
+    ]
+    advice = [
+        f"{finding.file or finding.work_order}: {' '.join(str(finding.problem).split())}"
+        + (f" Suggested: {' '.join(str(finding.fix).split())}" if finding.fix else "")
+        for finding, why in shown
+        if not why
     ]
     if found:
-        logger.info("Code review found %d problem(s) to fix", len(found))
+        logger.info("Code review found %d problem(s) a test or check shows; to fix", len(found))
+    if advice:
+        logger.info("Code review raised %d finding(s) no test or check shows; advice, not defects", len(advice))
     return _handing_on(
         **update,
         stage="test_and_triage",
         review_defects=[*(state.get("review_defects") or []), *raised_by("code review", found)],
+        review_advice=[*(state.get("review_advice") or []), *advice][-MOST_REVIEW_ADVICE:],
     )
+
+
+#: How much code review advice a sprint keeps for its milestone review.
+MOST_REVIEW_ADVICE = 12
+
+
+def what_shows_it(state: Any, finding: Any) -> str:
+    """What demonstrates a code review finding, as a sentence; "" when nothing does.
+
+    A reviewer reads a diff and can be wrong. Measured on one run: "the form
+    submit handler does not sanitize user input" - on a page that renders with
+    `textContent` - became a defect, its fixer escaped the input before
+    storing it, and the page then showed "&amp;" where a user typed "&": a
+    real bug, made by fixing an unreal one. Another finding said a test
+    command's flags were in the wrong order; they were not, and a fix stage
+    was spent finding that out.
+
+    Shown means: a criterion due now that the finding names fails in the
+    harness's last run of the suite; a test the finding names fails in the
+    measurement after this batch; or what an IDE underlines in this batch is
+    in the finding's file. Never raises: nothing readable shows nothing.
+    """
+    text = f"{getattr(finding, 'problem', '')} {getattr(finding, 'fix', '') or ''}"
+    try:
+        from app.graph.acceptance_nodes import criteria_due, criteria_failing_now
+
+        due = set(criteria_due(state) or [])
+        failing = [item for item in criteria_failing_now(state, text) if not due or item in due]
+        if failing:
+            return f"The acceptance suite shows {', '.join(failing)} failing."
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        latest = ci.load(_root(state), "latest")
+        if latest is not None:
+            for name, outcome in {**latest.unit, **latest.acceptance}.items():
+                bare = ci._bare(name)
+                if outcome != "passed" and len(bare) >= 12 and bare in text:
+                    return f"`{bare}` fails in the measurement after this batch."
+    except Exception:  # noqa: BLE001
+        pass
+    named = str(getattr(finding, "file", "") or "").strip()
+    if named:
+        for defect in state.get("review_defects") or []:
+            if str(getattr(defect, "source", "")) != "language service":
+                continue
+            if any(str(f).endswith(named) or named.endswith(str(f)) for f in getattr(defect, "affected_files", None) or []):
+                return "An IDE underlines code in this file in this batch."
+    return ""
 
 
 # --- the guard around a fix -----------------------------------------------------------

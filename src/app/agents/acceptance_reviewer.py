@@ -76,6 +76,13 @@ test created is there. A test that acts on something it never created (an item,
 a record, an entry) can pass only on a product that ships with that data, which
 no correct product does: it must create what it acts on first.
 
+Then read the tests side by side. Two tests that take the same steps must expect
+the same result: one that expects the newest record first and another that
+expects the oldest first cannot both pass, whatever is built. A test may assert
+only what its criterion states - an order, a count, a wording - and nothing the
+criterion leaves open. Name every pair of tests whose expectations contradict,
+and every test that asserts something its criterion leaves open.
+
 Do not ask for style changes, more comments, or tests of things no criterion
 asks for. Do not judge the product: it has not been built yet, and the tests
 are expected to fail now.

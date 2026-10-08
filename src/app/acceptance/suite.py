@@ -1047,6 +1047,48 @@ def tests_that_expect_what_they_never_gave(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+#: Words a criterion uses when it does state an order.
+_STATES_AN_ORDER = re.compile(
+    r"\b(?:order|ordered|orders|first|last|top|bottom|newest|oldest|latest|earliest|recent|"
+    r"sort|sorted|sorts|chronological|ascending|descending|before|after|above|below|sequence|position)\b",
+    re.I,
+)
+
+
+def tests_that_assert_an_unstated_order(repo_root: str | Path) -> list[str]:
+    """Tests that assert what two places of a list show when no criterion they carry states an order.
+
+    Measured on one run: the locked list test expected the newest item first and
+    the locked removal test expected the oldest first; neither criterion said
+    anything about order, and each fix that made one pass broke the other. A
+    test that holds the product to an order the criteria leave open is a
+    contradiction waiting for its partner. See the pack's `positions_it_asserts`.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].positions_it_asserts is None:
+        return []
+    texts = {c.id: c.text for c in criteria(repo_root)}
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, title, positions in found[0].positions_it_asserts(text):
+            carried = junit.tags_in(title)
+            if _STATES_AN_ORDER.search(" ".join(texts.get(item, "") for item in carried)):
+                continue
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: `{title}` checks what "
+                f"{len(positions)} places of a list show - an order - but "
+                f"{', '.join(carried) or 'no criterion it carries'} states none. Another test may "
+                "expect another order from the same steps, and no product can pass both. Check that "
+                "each one is there, not where it is."
+            )
+    return problems[:6]
+
+
 def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list[str]:
     """Each control the brief names that no test finds by that name, as one problem.
 

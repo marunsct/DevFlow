@@ -585,6 +585,7 @@ class WorkflowGraphState(TypedDict, total=False):
     ci_report: str
     ci_batch_commit: str
     review_defects: list[Any]
+    review_advice: list[str]
     fix_base_commit: str
     decisions: list[dict[str, Any]]
 
@@ -3254,6 +3255,134 @@ def _each_defect_once(reported: list[Any]) -> list[Any]:
     return kept
 
 
+#: What names the thing a defect is about: a quoted name, a selector, a code
+#: identifier, a criterion. File names are not among them: a file is what two
+#: defects share when they are in one place, not what makes them one problem.
+_A_NAME = re.compile(
+    r"`([^`\n]{2,120})`"
+    r"|(?<![\w/.])([#.][A-Za-z][\w-]*[A-Za-z0-9])"
+    r"|\b([a-z]+(?:[A-Z][a-z0-9]+)+)\b"
+    r"|\b([a-z][a-z0-9]*(?:[-_][a-z0-9]+)+)\b"
+    r"|\b((?:AC|CR)-\d+)\b"
+)
+_A_FILE_NAME = re.compile(r"^[\w./-]+\.[a-z][a-z0-9]{0,5}$", re.I)
+_SEVERITY_RANK = {"blocking": 0, "major": 1, "minor": 2}
+
+
+#: The label a check puts before what it found - "Code review (the work
+#: order's title): ..." - which names who found it, not what was found.
+_A_LABEL = re.compile(r"^[A-Z][\w ]{0,30}\([^()\n]*(?:\([^()\n]*\)[^()\n]*)*\):\s*")
+
+
+def _names_in(text: str) -> set[str]:
+    """The names a defect's text gives, lower-cased: what it is about."""
+    names: set[str] = set()
+    for match in _A_NAME.finditer(_A_LABEL.sub("", text or "", count=1)):
+        name = next(group for group in match.groups() if group).strip().lower()
+        if _A_FILE_NAME.match(name) and not name.startswith(("#", ".")):
+            continue
+        names.add(name)
+        # A name inside a quoted test name counts on its own as well.
+        if match.group(1):
+            names.update(_names_in(match.group(1)) - {name})
+    return names
+
+
+def _the_same_cause(one: Any, other: Any) -> bool:
+    """Whether two defects describe one problem: in one place, about one named thing.
+
+    In one place: they name a file in common, or one names none. About one
+    thing: a name in common, or a compound name of one - a check's rule, like
+    `color-contrast` - whose words both appear in the other.
+    """
+    files = {PurePosixPath(str(f)).name.lower() for f in getattr(one, "affected_files", None) or []}
+    theirs = {PurePosixPath(str(f)).name.lower() for f in getattr(other, "affected_files", None) or []}
+    if files and theirs and not files & theirs:
+        return False
+    text, other_text = str(getattr(one, "description", "") or ""), str(getattr(other, "description", "") or "")
+    names, other_names = _names_in(text), _names_in(other_text)
+    if names & other_names:
+        return True
+
+    def spelled_out(compounds: set[str], prose: str, whole_page: bool) -> bool:
+        # A check of the whole product - one that names no file, like a page's
+        # accessibility rule `color-contrast` - is matched by any long word of
+        # its rule; anything else by every word of its name, so that a defect
+        # about `empty-state` is not matched by any text that says "state".
+        words = set(re.findall(r"[a-z0-9]+", _A_LABEL.sub("", prose, count=1).lower()))
+        for name in compounds:
+            parts = [part for part in re.split(r"[-_]", name.lstrip("#.")) if part]
+            if len(parts) < 2:
+                continue
+            if whole_page and any(len(part) >= 5 and part in words for part in parts):
+                return True
+            if all(len(part) >= 3 and part in words for part in parts):
+                return True
+        return False
+
+    return spelled_out(names, other_text, not files) or spelled_out(other_names, text, not theirs)
+
+
+def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
+    """`reported` with the defects that describe one problem merged into one, in order.
+
+    Measured on one run: one colour that a sprint's restyle had put back was
+    reported by the test round, the regression check, the code review and the
+    page check - five defects, five fix stages, the first of which fixed it and
+    the rest of which found nothing to do. Merged, the first such defect keeps
+    its place and owner, and carries what every other check said about it, so
+    its one fixer sees every symptom; its files are all of theirs, and it is as
+    severe as the most severe of them.
+    """
+    if len(reported) < 2:
+        return list(reported)
+    parent = list(range(len(reported)))
+
+    def root(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for i in range(len(reported)):
+        for j in range(i + 1, len(reported)):
+            if root(i) != root(j) and _the_same_cause(reported[i], reported[j]):
+                parent[root(j)] = root(i)
+    groups: dict[int, list[int]] = {}
+    for index in range(len(reported)):
+        groups.setdefault(root(index), []).append(index)
+    merged: list[Any] = []
+    for index, item in enumerate(reported):
+        group = groups[root(index)]
+        if group[0] != index:
+            continue
+        if len(group) == 1:
+            merged.append(item)
+            continue
+        others = [reported[i] for i in group[1:]]
+        files = list(dict.fromkeys(
+            str(f) for member in (item, *others) for f in getattr(member, "affected_files", None) or []
+        ))
+        severity = min(
+            (str(getattr(member, "severity", "major") or "major") for member in (item, *others)),
+            key=lambda value: _SEVERITY_RANK.get(value, 1),
+        )
+        also = "\n".join(
+            f"- [{getattr(other, 'source', '') or 'reported'}] {' '.join(str(other.description).split())[:400]}"
+            for other in others
+        )
+        merged.append(item.model_copy(update={
+            "description": f"{item.description}\n\nThe same problem, as other checks reported it:\n{also}",
+            "affected_files": files,
+            "severity": severity,
+        }))
+        logger.warning(
+            "%d defects describe one problem; merged into one: %s",
+            len(group), " ".join(str(item.description).split())[:100],
+        )
+    return merged
+
+
 def _proven_problems_the_round_left_out(
     proven: list[str], reported: list[Any], milestone: Any
 ) -> list[Any]:
@@ -4110,6 +4239,24 @@ def _what_a_fix_stage_must_leave_alone(state: Any, defect: Any) -> str:
     return (
         "\n\n" + later + kept
         + ("Fix this defect only. A failing test of a later criterion is not this defect.\n" if later else "")
+    )
+
+
+def _the_code_review_s_advice(state: Any) -> str:
+    """The code review's findings no test or check shows, for the milestone review; or "".
+
+    They were defects, each with a fixer; now they are advice. See
+    `app.graph.engineering.what_shows_it` for the finding that made a bug of
+    a non-problem.
+    """
+    advice = [" ".join(str(item).split()) for item in state.get("review_advice") or [] if str(item).strip()]
+    if not advice:
+        return ""
+    return (
+        "\n\n--- The code review's advice: no test or check shows these ---\n"
+        + "\n".join(f"- {item}" for item in advice)
+        + "\nAdvice, not defects. Send the sprint back over one only if you can name what "
+        "fails because of it.\n"
     )
 
 
@@ -6852,6 +6999,8 @@ def build_workflow_graph(
                 test_round, len(unreported_criteria),
             )
             reported = reported + raised_by("acceptance suite", unreported_criteria)
+        # One problem, one fixer. See `_one_defect_per_cause`.
+        reported = _one_defect_per_cause(reported)
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}",
@@ -7517,6 +7666,7 @@ def build_workflow_graph(
             specialist_findings=_this_review_s_advice_findings(state),
         )
         request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
+        request["messages"][-1]["content"] += _the_code_review_s_advice(state)
         # The page as a person sees it, for a reviewer whose model can see. See
         # `app.agents.page_screenshots`; a model that cannot is not sent them.
         from app.models.vision import the_reviewer_reads_images
@@ -7917,6 +8067,7 @@ def build_workflow_graph(
             "carried_forward": list(latest.get("carried_forward") or []),
             "lessons": list(latest.get("lessons") or []),
             "sprint_findings": [],
+            "review_advice": [],
             "nothing_left_but_carried": None,
             "stage": "technical_lead",
             "current_sprint_index": state.get("current_sprint_index", 0) + 1,

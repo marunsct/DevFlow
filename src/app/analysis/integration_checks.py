@@ -1054,7 +1054,8 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         # files from `tests/`; without following that, this reported all four
         # as never executed - four wrong findings out of ten, for tests that
         # run on every `npm test`.
-        imported = _what_those_files_import(listed_files, project)
+        imported_flags = _explicitly_imported_in_command(command)
+        imported = _what_those_files_import(listed_files + imported_flags, project)
         from app.analysis.test_discovery import holds_no_test
 
         tests = [
@@ -1258,6 +1259,20 @@ def _is_within(path: Path, directory: Path) -> bool:
     except ValueError:
         return False
     return True
+
+def _explicitly_imported_in_command(command: str) -> list[str]:
+    """Files imported via --import, --require, or -r flags in the node --test command."""
+    import shlex
+
+    try:
+        words = shlex.split(command)
+    except ValueError:
+        words = command.split()
+    imports = []
+    for i, word in enumerate(words):
+        if word in {"--import", "--require", "-r"} and i + 1 < len(words):
+            imports.append(words[i + 1])
+    return imports
 
 
 def _paths_named_after_the_test_flag(command: str) -> list[str]:

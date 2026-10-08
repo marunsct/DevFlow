@@ -55,6 +55,20 @@ def test_a_hex_colour_is_not_an_id_selector(tmp_path):
     assert "No cross-file problems found" in report
 
 
+def test_setup_file_imported_in_test_command_is_not_stranded(tmp_path):
+    """`--import` flags execute their file so they shouldn't be stranded."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": '{"scripts": {"test": "node --import ./test-setup.mjs --test tests/"}}',
+            "test-setup.mjs": 'import { test } from "node:test";',
+            "tests/app.test.js": "import '../test-setup.mjs';"
+        },
+    )
+    report = summarise_integration(root)
+    assert "No cross-file problems found" in report
+
+
 def test_a_script_nothing_loads_is_reported(tmp_path):
     """One run: `script.js` exported a function; no page had a script tag."""
     root = _workspace(

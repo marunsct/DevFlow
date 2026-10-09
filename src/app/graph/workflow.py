@@ -49,7 +49,7 @@ import uuid
 import operator
 import time
 from datetime import datetime, timezone
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any, Mapping, TypedDict, Annotated
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -7517,6 +7517,8 @@ def build_workflow_graph(
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
         changed_files = _the_files_this_milestone_changed(state, outputs)
+        from pathlib import Path
+
         from app.agents.security_reviewer import _WORTH_REVIEWING
         code_files = [f for f in changed_files if Path(f).suffix.lower() in _WORTH_REVIEWING]
         if not code_files and not state.get("pending_inner_thread_id"):

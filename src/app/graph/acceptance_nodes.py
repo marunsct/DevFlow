@@ -230,6 +230,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
     )
     problems.extend(suite.assertions_that_do_not_exist(root))
+    problems.extend(suite.locators_that_do_not_exist(root))
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
@@ -837,6 +838,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.tests_the_runner_never_ran(root, result),
         *suite.assertions_that_do_not_exist(root),
+        *suite.locators_that_do_not_exist(root),
         *suite.locators_by_a_name_the_role_never_has(root),
         *suite.tests_that_never_open_the_page(root),
         *suite.tests_that_expect_what_they_never_gave(root),

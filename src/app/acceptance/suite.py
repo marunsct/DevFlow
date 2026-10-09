@@ -908,6 +908,44 @@ def locators_nobody_sees(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def locators_that_do_not_exist(repo_root: str | Path) -> list[str]:
+    """Where the suite calls locator methods the test runner does not define.
+
+    Acceptance tests run before anything is built and fail before reaching
+    the call - so the run that locks the suite never sees it. Once the product
+    is built and the page loads, the test fails with "is not a function".
+    Measured on one run: tests called locator methods from another test library
+    instead of the runner's defined locator methods, locking a suite no product
+    could ever pass.
+    """
+    found = contract.the_pack(repo_root)
+    if found is None or not found[0].locators_that_do_not_exist:
+        return []
+    patterns = [re.compile(pattern) for pattern in found[0].locators_that_do_not_exist]
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        hits = sorted({text.count("\n", 0, match.start()) + 1
+                       for pattern in patterns for match in pattern.finditer(text)})
+        if not hits:
+            continue
+        lines = text.splitlines()
+        snippet = lines[hits[0] - 1].strip()[:160]
+        where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
+        called = sorted({m.group(0).split("(")[0].strip() for p in patterns for m in p.finditer(text)})
+        called_str = ", ".join(f"`{c}`" for c in called[:3])
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` calls {called_str}, which the test runner does not "
+            f"define, on line(s) {where} (`{snippet}`). Use a locator method defined by the project's "
+            "test framework."
+        )
+    return problems[:6]
+
+
 def locators_that_pick_one(repo_root: str | Path) -> list[str]:
     """Where the suite acts on whichever of several matching controls comes first.
 

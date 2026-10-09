@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-09 12:48 JST**.
+of the previous sessions' context. Last updated **2026-10-09 16:15 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,7 +27,7 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 12:26 JST on 2026-10-09, run-4eb14786 completed clean (10/10 hidden tests pass, locked suite 16 passed, 484 LOC under 500 budget, 21 unit tests pass, repo clean). Stage 1 achieved 1 of 2 clean runs toward the gate. A batch of 6 performance optimizations was implemented and deployed between runs to reduce total run time from 3.5h down to under 45 minutes for small apps.
+At 15:53 JST on 2026-10-09, run-66699bc2 was cancelled after 2h51m in sprint 1 due to QA hallucinating `page.getByLabelText` (Testing Library locator not in Playwright). Because navigation fails before the product is built, the error was hidden during initial authoring and the suite locked. Fix deployed: `locators_that_do_not_exist` lints and rejects invalid locator methods before locking, and reopens if encountered in rounds. Clean gate run count resets to 0 of 2 toward Stage 1 gate. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

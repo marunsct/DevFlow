@@ -539,6 +539,12 @@ def playwright_assertions(project_root: Path) -> frozenset[str]:
 #: once, `check()` timed out on a control that was gone, and two criteria were
 #: deferred as undeliverable on a product the benchmark's hidden tests passed
 #: 10 of 10.
+PLAYWRIGHT_LOCATORS_RULE = (
+    "Use Playwright's locator methods: getByLabel, getByRole, getByText, getByAltText. "
+    "Methods from other libraries like getByLabelText, getByPlaceholderText, findBy* or queryBy* "
+    "do not exist in Playwright."
+)
+
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
 it: a field the brief says is labelled "Email" is
 `page.getByLabel('Email', { exact: true })`, a button named "Send" is
@@ -558,7 +564,7 @@ on what the page shows after it. Act on a locator - `page.getByLabel(...).fill(.
 never `page.fill(selector, ...)` or `page.click(selector)` - and never take
 `.first()` of a control found by its name: both act on whichever match comes
 first, so a page that shows the same control twice still passes, where a
-locator refuses more than one. A locator found by its text keeps that filter:
+locator refuses more than one. """ + PLAYWRIGHT_LOCATORS_RULE + """ A locator found by its text keeps that filter:
 once the test changes the text, find the item again by its new text. A list
 item takes no name from its text: find one by
 `page.getByRole('listitem').filter({ hasText: '...' })`, never by
@@ -592,6 +598,16 @@ LOCATORS_NOBODY_SEES = (
     r"\bgetByTestId\s*\(",
     r"""\blocator\s*\(\s*(['"`])(?![a-z_-]+=)(?!\s*(?:meta|link|script|style|head|html|title)\b)"""
     r"""(?:(?!\1).)*?(?:\[\s*[\w-]+\s*[~|^$*]?=|[.#][A-Za-z_-])""",
+)
+
+#: Locator methods from other libraries (such as Testing Library) that do not
+#: exist on Playwright page or locator objects. A suite using one fails at runtime
+#: with "is not a function" once the page opens.
+LOCATORS_THAT_DO_NOT_EXIST = (
+    r"\b(?:get|query|find|getAll|queryAll|findAll)ByLabelText\s*\(",
+    r"\b(?:get|query|find|getAll|queryAll|findAll)ByPlaceholderText\s*\(",
+    r"\b(?:get|query|find|getAll|queryAll|findAll)ByDisplayValue\s*\(",
+    r"\b(?:query|find|getAll|queryAll|findAll)By(?:Role|Text|Label|Placeholder|AltText|Title|TestId)\s*\(",
 )
 
 #: Roles that take no name from what they show, found by a `name` anyway: the

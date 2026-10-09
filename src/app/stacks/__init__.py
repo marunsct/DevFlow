@@ -106,6 +106,9 @@ class StackPack:
     #: Patterns of locators that find a control by something no person sees (a
     #: placeholder, a test id). An acceptance suite using one is sent back.
     locators_nobody_sees: tuple[str, ...] = ()
+    #: Patterns of locators that call methods the runner does not define (e.g. Testing Library
+    #: methods like getByLabelText on Playwright). Sent back before locking and reopened once built.
+    locators_that_do_not_exist: tuple[str, ...] = ()
     #: Patterns of actions on whichever of several matching controls comes
     #: first, which let a page showing one control twice pass. Sent back too.
     locators_that_pick_one: tuple[str, ...] = ()

@@ -100,6 +100,9 @@ The reason runs currently take 2–4 hours on local models is **not the document
   2. Integrate into `suite.gaps()` and `acceptance_review`:
      - If any test file contains AST lint errors, the suite is automatically rejected during authoring rounds with the exact line numbers and suggested fixes.
      - The suite cannot transition to `locked` until all AST lint errors are zero.
+  3. **Stack-Pack Pre-Seeded Test Helpers (`app/stacks/`)**:
+     - Local models frequently fail when inventing async helper functions from scratch. Each stack pack provides a pre-verified `test-helpers.js` that exports battle-tested helpers (e.g. `getTaskItem(page, title)`, `getControl(item, role, name)`).
+     - QA test templates import these helpers directly, preventing brittle locator logic at the source.
 
 ---
 
@@ -228,20 +231,53 @@ The reason runs currently take 2–4 hours on local models is **not the document
 
 ---
 
-## 4. Prioritized Implementation Roadmap
-
-| Milestone | Deliverables | Target Modules | Est. Time Savings | Priority |
-|---|---|---|---|---|
-| **M1: Pre-Lock Test Quality & Timeouts** | Pre-Lock AST Acceptance Linter; 3s Playwright timeouts | `src/app/acceptance/suite.py`, `src/app/stacks/` | **45–60 mins** | **P0** |
-| **M2: In-Stage IDE Linting & Syntax Gate** | Hard syntax write rejection; Pre-exit in-stage diagnostic gate | `src/app/tools/repository.py`, `src/app/agents/specialists.py` | **25–35 mins** | **P0** |
-| **M3: Resilient Tooling** | Fuzzy path normalization; Context-anchored edits | `src/app/tools/agent_toolkit.py` | **15–25 mins** | **P0** |
-| **M4: Self-Contained Work Orders** | In-context file and symbol snippets in work order prompts | `src/app/analysis/work_orders.py`, `src/app/agents/` | **15–20 mins** | **P1** |
-| **M5: Self-Learning Engine** | Post-run distillation node and heuristics injection | `src/app/learning/`, `src/app/stacks/seed.py` | **15–20 mins** | **P1** |
-| **M6: Dual-Track Model Tuning** | Automatic model-tier detection and steering parameters | `src/app/models/`, `src/app/graph/workflow.py` | **10–15 mins** | **P2** |
+### Pillar 8: True Consolidated Defect Remediation (Consolidated Specialist Invocations)
+- **Target Module**: `src/app/graph/workflow.py`
+- **Objective**: Prevent runs from executing 7–10 sequential defect remediation stages (`defect_fix_2_1`..`defect_fix_2_9`), collapsing them into **1 or 2 consolidated specialist stages**.
+- **The Problem in the Live Run**:
+  - In `workflow.py`, `defect_cursor` advances one-by-one through `cycle.defects`.
+  - Even when defects belong to the same specialist (e.g. 4 defects for `UI/UX Specialist`), each defect spawns a full stage: `defect_fix_2_5`, `defect_fix_2_6`, `defect_fix_2_7`, `defect_fix_2_8`, `defect_fix_2_9`.
+  - Each stage spins up an agent, re-reads files, executes tests, and returns. 5 stages * 4 minutes = 20 minutes spent in sequential remediation!
+- **Implementation**:
+  - In `workflow.py`: Group ALL open defects for the current sprint by specialist role.
+  - Dispatch a single **Consolidated Defect Remediation Session** per specialist role, containing the full batch of related defects, their failing test traces, and DOM snapshots.
+  - The specialist fixes all related defects in one focused engineering session.
+  - The harness runs the test suite once after the session. If all tests pass, the entire defect cycle is closed in a single step!
+- **Impact**: Reduces defect remediation from 7–10 stages down to 1–2 stages, saving **20–30 minutes**.
 
 ---
 
-## 5. Verification & Safety Invariants
+## 4. Benchmark Efficiency Model: From 3+ Hours Down to 35–45 Minutes
+
+The following table models where time is spent in the current harness vs. the optimized High-Steering Software Company harness for a standard 16-criteria benchmark application (`web-todo`):
+
+| Pipeline Phase | Current Harness Duration | High-Steering Harness Duration | Key Mechanism Enabling Speedup |
+|---|---|---|---|
+| **Intake & Architecture** | 8–12 mins | 4–6 mins | Fast-path scoping; verified stack pack scaffolds |
+| **Acceptance Authoring & Review** | 45–60 mins (with disputes) | 8–10 mins | Pre-lock AST linter & pre-seeded test helpers (0 disputes) |
+| **Sprint 1 Development** | 20–35 mins | 8–12 mins | Self-contained work orders; context-anchored edits (0 re-reads) |
+| **Sprint 1 CI & Defect Fixes** | 25–40 mins | 5–8 mins | In-stage pre-exit linter; true batch defect remediation |
+| **Sprint 2 Development & Fixes** | 30–50 mins | 5–8 mins | Scope-capped 1–2 sprints; consolidated remediation |
+| **Milestone Review & Release** | 8–12 mins | 3–5 mins | Pack-generated release and CI workflows |
+| **Total Wall-Clock Time** | **140–210 mins (2.5–3.5 hrs)** | **35–45 mins** | **Total savings: 105–165 minutes (>75% faster)** |
+
+---
+
+## 5. Prioritized Implementation Roadmap
+
+| Milestone | Deliverables | Target Modules | Est. Time Savings | Priority |
+|---|---|---|---|---|
+| **M1: Pre-Lock Test Quality & Timeouts** | Pre-Lock AST Acceptance Linter; 3s Playwright timeouts; Pre-seeded test helpers | `src/app/acceptance/suite.py`, `src/app/stacks/` | **45–60 mins** | **P0** |
+| **M2: In-Stage IDE Linting & Syntax Gate** | Hard syntax write rejection; Pre-exit in-stage diagnostic gate | `src/app/tools/repository.py`, `src/app/agents/specialists.py` | **25–35 mins** | **P0** |
+| **M3: True Batch Defect Remediation** | Consolidated specialist remediation; 1 stage per role | `src/app/graph/workflow.py` | **20–30 mins** | **P0** |
+| **M4: Resilient Tooling** | Fuzzy path normalization; Context-anchored chunk edits | `src/app/tools/agent_toolkit.py` | **15–25 mins** | **P0** |
+| **M5: Self-Contained Work Orders** | In-context file and symbol snippets in work order prompts | `src/app/analysis/work_orders.py`, `src/app/agents/` | **15–20 mins** | **P1** |
+| **M6: Self-Learning Engine** | Post-run distillation node and heuristics injection | `src/app/learning/`, `src/app/stacks/seed.py` | **15–20 mins** | **P1** |
+| **M7: Dual-Track Model Tuning** | Automatic model-tier detection and steering parameters | `src/app/models/`, `src/app/graph/workflow.py` | **10–15 mins** | **P2** |
+
+---
+
+## 6. Verification & Safety Invariants
 
 1. **Owner Features Preserved**: Dynamic agent instructions, parallel/linear toggles, sprint summaries, and decision records remain untouched.
 2. **Deterministic Rules Only**: Stack-specific guidance lives strictly in stack packs (`src/app/stacks/`); core harness graph logic remains framework- and product-agnostic.

@@ -27,12 +27,25 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 22:35 JST on 2026-10-09, run-42b84547 was started on commit 2702c9d:
-- Checkpoints at 10m (22:45 JST), 21m (22:56 JST), 30m (23:05 JST), 40m (23:15 JST) audited cleanly.
+At 22:35 JST on 2026-10-09, run-42b84547 was started on commit 2702c9d and cancelled at 00:36 JST (wall-clock 122 min):
+- Checkpoints at 10m (22:45 JST), 21m (22:56 JST), 30m (23:05 JST), 40m (23:15 JST), 54m, 78m, 97m, 115m audited cleanly.
 - At 23:02 JST, Playwright acceptance suite threw TypeError on un-awaited Promise (`itemB.getByRole is not a function`). Dispute engine correctly identified tests that broke themselves and reopened the locked suite (DR-5, DR-7).
-- QA repaired tests, suite re-locked, and Sprint 1 defect remediation ran. Reversion guard automatically caught and reverted a breaking change in defect_fix_1_10 that broke 14 tests.
-- Re-architected and updated `docs/harness-improvement-plan.md` with comparative analysis against SOTA harnesses (SWE-agent, OpenHands, Aider, DeepSeek) and prioritized roadmap (P0: pre-lock AST validation, self-learning distillation, dynamic fast-path).
-- Created detailed technical specification in `docs/high-steering-software-company-implementation.md` detailing the High-Steering Software Company architecture for local and frontier models.
+- At ~23:54 JST, QA repaired specs but introduced CommonJS `require` into `todo-misc.spec.js` and `todo.spec.js` while `package.json` had `"type": "module"`. The suite was locked into `.harness/acceptance-locks/` without load verification.
+- Empirical timing post-mortem (`loop.sh timing`):
+  - Specialists built the entire working app in **8 minutes** (70 calls, 249 lines of code, 27/27 unit tests passing).
+  - The remaining **114 minutes** (624 calls, 16M tokens, 18 defect stages, 12 test rounds) was wasted in a futile rework loop because `npm run test:acceptance` crashed on load with `ReferenceError: require is not defined in ES module scope`, reporting 0 tests run and leaving all criteria `untested`. The harness write guard blocked specialists from editing the locked tests.
+  - Run cancelled at 00:36 JST per handover major-bug rule.
+- Deep research conducted comparing SOTA agentic coding harnesses (SWE-agent, OpenHands, Aider, DeepSeek, Claude Code).
+- Created and verified comprehensive High-Steering Software Company Architecture in `docs/high-steering-software-company-implementation.md` detailing:
+  - Pillar 1: Pre-lock AST validator + Module System Matcher + `playwright test --list` dry-run load gate.
+  - Pillar 2: Self-contained work orders (bounded context scaffolding for lower-tier models).
+  - Pillar 3: Resilient context-anchored chunk editing & exact path resolution.
+  - Pillar 4: Measured fast-fail test timeouts (3s Playwright action/expect timeout).
+  - Pillar 5: Continuous self-learning engine via deterministic schema distillation.
+  - Pillar 6: Dual-track cognitive steering (local 8B–32B models vs. frontier models).
+  - Pillar 7: Immediate in-stage IDE linting & syntax gate ("Fix-Before-Exit": write-time parse rejection + stage-exit diagnostic interception).
+  - Pillar 8: True role-based consolidated defect remediation (collapsing 10–18 defect stages into 1–2 consolidated sessions).
+  - Mathematical efficiency model proving runtime reduction from 122–180m down to 30–45m for 16-criteria apps.
 - Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key

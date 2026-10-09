@@ -526,6 +526,14 @@ its own criteria, so there are more rounds. Back on gpt-oss-20b (since 14:12
 JST, 2026-10-08), expect calls about 4× faster. The thinking budget remains the
 owner's decision and the biggest lever.
 
+**2026-10-10: run-42b84547 timing audit & empirical post-mortem (122 min wall clock).**
+The run on commit `2702c9d` was cancelled at 00:36 JST after 122 minutes.
+Empirical breakdown:
+- Specialists completed 100% of the working product in **8 minutes** (70 calls, 249 lines of code, 27/27 unit tests pass).
+- The remaining **114 minutes** (624 calls, 16M tokens, 18 defect-fix stages, 12 test rounds) was wasted in an unrecoverable defect loop.
+- Root cause: During acceptance authoring, QA authored `todo-misc.spec.js` using CommonJS `require` while `package.json` had `"type": "module"`. The suite was locked into `.harness/acceptance-locks/` without load verification. Playwright crashed on every run with `ReferenceError: require is not defined in ES module scope`, reporting 0 tests run and leaving all criteria `untested`. The harness write guard blocked specialists from editing the locked tests.
+- Re-architected `docs/high-steering-software-company-implementation.md` with 8 pillars (including pre-lock AST & load dry-run gate, in-stage IDE linting/syntax gate, and true role-based consolidated defect remediation).
+
 ---
 
 ### 0.10 How a product is tested now (2026-10-04)

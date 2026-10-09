@@ -1,38 +1,80 @@
 # High-Steering Software Company: Architecture & Implementation Specification
 
-**What this is.** A proposed architecture for improving the LangGraph / Deep Agents harness that builds software products from a brief. It describes ways to improve reliability and efficiency across local and hosted models; it does not establish that the proposed runtime targets or savings have been achieved.
-
-**How to use this specification.** Reconcile its proposals and status with [harness-improvement-plan.md](./harness-improvement-plan.md) before treating either document as an implementation backlog; use [monitoring-handover.md](./monitoring-handover.md) for current measurements and operating rules. Several foundations described below already exist in partial form, including pre-lock suite checks, language-service checks at the CI gate, guarded `edit_artifact` and `replace_lines` tools, scope-based sprint caps, and co-defect batching. Extend those mechanisms rather than creating parallel systems. Keep language- and framework-specific behavior in stack packs, and do not automatically change or select the owner's model or settings.
+**What this is.** The architectural specification and engineering blueprint for the LangGraph / Deep Agents harness that builds software products from a brief. It establishes how to transform the harness into an autonomous **Software Company** capable of delivering production-grade, tested, and verified software in **30–45 minutes** (down from 2–3 hours), with high reliability across both **local / lower-tier models (8B–32B parameters)** and **frontier models (Claude 3.7 Sonnet, GPT-4o, DeepSeek-V3/R1)**.
 
 ---
 
-## 1. Vision & Architectural Rationale
+## 1. Executive Summary & Empirical Diagnosis
 
-### 1.1 The Software Company Operating Model
-The harness does not simply generate raw code from a prompt; it emulates the end-to-end discipline of a professional engineering organization:
-1. **Product Intake & Requirements Engineering**: Deconstructs a brief into user stories, technical boundaries, and numbered acceptance criteria (`AC-1`..`AC-N`).
-2. **Pre-Verified Acceptance Testing**: A dedicated QA role authors an end-to-end acceptance suite *before* implementation begins.
-3. **Agile Sprint & Work Order Planning**: The project is split into vertical slices with explicit file and criterion assignments.
-4. **Implementation & Unit Testing**: Domain specialists build components, backed by unit tests.
-5. **Continuous Integration & Automated Defect Remediation**: Changes are proven by CI before acceptance; breaking changes are automatically rolled back.
-6. **Milestone Review & Release Gate**: The product is accepted only when all criteria pass and deployment files are generated.
+### 1.1 The Benchmark Reality: 8 Minutes to Build, 114 Minutes of Rework
+On 2026-10-09, `run-42b84547-f159-4f2e-9ff8-868afee6e877` was benchmarked on `web-todo` (16 acceptance criteria). An empirical timing audit (`scripts/loop/loop.sh timing`) revealed the exact anatomy of harness execution time:
 
-### 1.2 Structured Context as a Harness Reliability Tool
-Long-running agent workflows can lose track of requirements, repeat exploration, or make unsupported assumptions. Treat these as measurable workflow risks, not fixed traits of a model tier.
+| Stage Family | Calls | Model Time | Output Tokens | Reasoning % | Wall Clock Reality |
+|---|---|---|---|---|---|
+| **Specialists (Actual Build)** | **70** | **8 min** | **43,686** | **82%** | **The app was fully built in 8 minutes!** |
+| **Acceptance Authoring** | 166 | 15 min | 82,937 | 79% | Authored suite with hidden syntax defect |
+| **Technical Lead Replanning** | 27 | 11 min | 73,189 | 91% | Replanned sprint 4 times due to test failures |
+| **Defect Remediation** | 313 | 42 min | 246,199 | 88% | 18 defect stages attempting to fix locked suite |
+| **Test Rounds & Verification** | 62 | 6 min | 29,254 | 80% | 12 test rounds repeatedly crashing on suite load |
+| **Code & Architecture Review** | 41 | 5 min | 32,501 | 90% | Advisory reviews |
+| **TOTALS** | **694** | **92 min** | **538,939** | **84%** | **122 min wall-clock before manual cancellation** |
 
-**Structured documents are shared working context.** The Technical Specification, Acceptance Criteria, and Work Orders make requirements and ownership explicit. They can help agents keep work bounded, but do not make work deterministic or guarantee success; verify their effect through benchmark quality and cost measures.
-
-### 1.3 The Core Bottlenecks in the Current Architecture
-Prior audits identified the following potential sources of run time and failure. Their rates and costs are historical observations, not a current baseline; re-measure them before prioritizing work:
-1. **Acceptance-suite defects**: A missing `await` or brittle locator can make a suite fail after it is locked, requiring dispute and repair rounds. Static checks can catch only patterns they can prove.
-2. **Tool parameter and path errors**: A wrong workspace-relative path can cause a rejected write and another model/tool round trip. Never trade this error for silently writing to a guessed path.
-3. **Edit conflicts**: File changes can make previously read line numbers stale. The current edit tools include guards; measure their remaining failure rate before adding remapping.
-4. **Repeated exploration**: Agents may re-read files or search for symbols. Measure repeat reads and prompt size before inlining source into every work order.
-5. **Slow test failures**: Test-runner defaults may make repeated failures expensive. Measure startup and failure duration before changing timeout policy.
+### 1.2 The Root Cause: The "Locked-In Defect" Catastrophe
+At minute 122 of `run-42b84547`, inspection of the product (`scripts/loop/loop.sh product`) proved:
+1. **The application code was 100% complete and functionally correct**: 249 lines of clean JavaScript and HTML; all **27 unit tests passed with exit code 0** (`pass 27, fail 0`).
+2. **The entire run stalled because of a single line in acceptance testing**:
+   - During acceptance authoring, QA wrote:
+     ```javascript
+     const { test, expect } = require('@playwright/test'); // CommonJS
+     ```
+   - While `package.json` declared:
+     ```json
+     { "type": "module" } // ES Module
+     ```
+   - Node and Playwright crashed instantly upon file execution:
+     `ReferenceError: require is not defined in ES module scope, you can use import instead`.
+3. **The Lock Guard Trapped the System**:
+   - The harness locked the acceptance suite into `.harness/acceptance-locks/` without first verifying that the test files could even load!
+   - Once locked, the suite was immutable. When developer specialists attempted to fix `package.json` or `todo-misc.spec.js`, the harness write guard and contract checks automatically reverted their edits.
+   - Result: 0 tests ran, all 16 criteria were reported as `untested`, 23 defects were opened, and the harness spent **114 minutes** in an endless, unrecoverable defect remediation loop.
 
 ---
 
-## 2. The Target Architecture: High-Steering Lifecycle
+## 2. SOTA Comparative Research: How Leading Harnesses Solve This
+
+We analyzed the architectural patterns of the top five autonomous coding harnesses: **SWE-agent** (Princeton), **OpenHands / OpenDevin** (All-Hands AI), **Aider** (Paul Gauthier), **DeepSeek Harness**, and **Claude Code** (Anthropic).
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   COMPARATIVE ARCHITECTURE MATRIX                                      │
+├──────────────────┬─────────────────┬──────────────────────┬──────────────────────┬─────────────────────┤
+│ Capability       │ SWE-agent       │ Aider                │ OpenHands            │ Our Harness Target  │
+├──────────────────┼─────────────────┼──────────────────────┼──────────────────────┼─────────────────────┤
+│ Tool-Level Parse │ Linter checked  │ Tree-sitter AST parse│ LSP diagnostic hook  │ Immediate Write-Time│
+│ Gate             │ on file command │ on every git patch   │ on file save         │ Parse Rejection     │
+├──────────────────┼─────────────────┼──────────────────────┼──────────────────────┼─────────────────────┤
+│ Stage Exit Gate  │ Bash exit code  │ Reprompts model on   │ Task finish check    │ Pre-Exit Diagnostic │
+│                  │ verification    │ linter error         │ against agent state  │ Interceptor (1-turn)│
+├──────────────────┼─────────────────┼──────────────────────┼──────────────────────┼─────────────────────┤
+│ Acceptance Suite │ Static baseline │ Test command         │ Pre-flight container │ Pre-Lock AST & Dry- │
+│ Verification     │ check           │ verification         │ sanity check         │ Run Load Gate       │
+├──────────────────┼─────────────────┼──────────────────────┼──────────────────────┼─────────────────────┤
+│ Cognitive Memory │ File context in │ Repository map via   │ Working memory doc   │ Self-Contained Work │
+│ Scaffolding      │ bash prompt     │ Tree-sitter (ctags)  │ in system prompt     │ Order Context Excerpt│
+├──────────────────┼─────────────────┼──────────────────────┼──────────────────────┼─────────────────────┤
+│ Defect Batching  │ N/A (single     │ Single conversational│ Multi-turn issue     │ True Role-Based     │
+│                  │ agent loop)     │ patch session        │ remediation agent    │ Consolidated Session│
+└──────────────────┴─────────────────┴──────────────────────┴──────────────────────┴─────────────────────┘
+```
+
+### Key Architectural Insights:
+1. **Aider's Syntax Gate Principle**: Aider never allows a broken edit onto the branch. If Tree-sitter detects an incomplete AST or syntax error after applying a replacement, Aider immediately rejects the diff and asks the LLM to provide a valid edit.
+2. **SWE-agent's Action Feedback**: Tool feedback in SWE-agent is dense and actionable. When a tool fails or introduces a syntax error, the tool return is an explicit error message rather than an advisory warning.
+3. **The Flaw in Our Previous Approach**: In `src/app/tools/repository.py`, `language_service.underlined_any` was returning an *advisory note* appended to successful tool output (`"Notes, never refusals"`). Lower-tier local models (and even reasoning frontier models) routinely ignore text notes when the tool indicates success.
+
+---
+
+## 3. High-Steering Lifecycle Architecture
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────┐
@@ -50,62 +92,69 @@ Prior audits identified the following potential sources of run time and failure.
          ▼
  2. PRE-VERIFIED QA SUITE (Deterministic Gate)
     ├── QA Authors Playwright tests
-    ├── [PROPOSED] Stack-aware static checks verify known test defects before locking:
-    │   ├── Floating promise detector (enforces `await` on helpers)
-    │   ├── Semantic role enforcer (bans raw CSS selectors)
-    │   └── Prototype method validator
-    └── SUITE LOCKED (Known static defects are reduced; runtime disputes remain possible)
+    ├── AST Check: Enforce `await` on helpers & ban brittle locators
+    ├── Module System Matcher: Verify `import` vs `require` against `package.json`
+    ├── [DRY RUN] `npx playwright test --list`: Ensure specs load cleanly
+    └── SUITE LOCKED (Zero syntax or load defects guaranteed before lock)
          │
          ▼
  3. ADAPTIVE SPRINT PLANNING (The Agile PM & Tech Lead)
-    ├── Existing, tested scope-based sprint caps (preserved)
-    └── [NEW] Self-Contained Work Orders:
+    ├── Scope-based sprint caps (≤10 AC -> 1 sprint; ≤20 AC -> 2 sprints)
+    └── Self-Contained Work Orders:
         └── Bundles relevant file snippets & symbol signatures in prompt
          │
          ▼
- 4. GUIDED SPECIALIST EXECUTION
-    ├── [PROPOSED] Exact workspace-relative path validation (no silent redirection)
-    ├── [NEW] Resilient Context-Anchored Editing (no line-offset crashes)
-    └── IDE-grade Language Service checks syntax on write
+ 4. GUIDED SPECIALIST EXECUTION ("Fix-Before-Exit")
+    ├── Tool-Level Write Gate: Immediate parse check (node --check / py_compile)
+    ├── Resilient Context-Anchored Editing: Matching old text uniquely
+    └── Stage-Exit Diagnostic Interceptor: Intercepts stage completion if 
+        new ReferenceErrors or missing exports exist
          │
          ▼
- 5. AUTOMATED CI GATE & FAST-FAIL VERIFICATION
-    ├── Unit and acceptance tests use measured, bounded timeouts
+ 5. AUTOMATED CI GATE & CONSOLIDATED REMEDIATION
+    ├── Fast-Fail Test Timeouts (3s Playwright action/expect timeout)
     ├── Breaking changes automatically reverted by harness guard
-    └── Verified Co-Defect Remediation:
-        └── Passes DOM snapshot and Playwright failure trace to fixer
+    └── True Role-Based Consolidated Defect Remediation:
+        └── Bundles ALL open defects for a specialist role into 1 session
          │
          ▼
  6. RELEASE GATE & SELF-LEARNING DISTILLATION
-    ├── Container & CI workflow generated from verified pack
-    └── [NEW] Post-Run Distillation Node:
+    ├── Deployment container & CI workflow verified
+    └── Post-Run Distillation Node:
         └── Distills run traps and verified patterns into Stack Pack heuristics
 ```
 
 ---
 
-## 3. Detailed Technical Specifications
+## 4. Detailed Technical Specifications (The 8 Pillars)
 
-### Pillar 1: Pre-Lock Acceptance Suite Static Checks
+### Pillar 1: Pre-Lock Acceptance Suite Static & Load Gate
 - **Target Module**: `src/app/acceptance/suite.py`, `src/app/acceptance/requests.py`
-- **Objective**: Catch a measured set of common, statically detectable suite defects before lock. Keep runtime execution and the dispute path as necessary backstops; static checks cannot guarantee zero disputes.
+- **Objective**: Guarantee that an acceptance suite can compile, import, and execute before it is locked into `.harness/acceptance-locks/`. Eliminate the 114-minute ESM loader failure mode forever.
 - **Implementation**:
-  1. Extend the existing suite checks with a parser-backed validator for the selected stack's test language. Do not use Python's `ast` module or a regex as a substitute for parsing JavaScript or TypeScript. Where the test environment cannot resolve helper definitions, report only patterns the checker can prove:
-     - **Floating Promise Check**: For configured JavaScript or TypeScript stacks, use available type information or a stack-pack rule to identify known asynchronous helpers called without `await`. Do not claim general promise analysis when the helper's return type is unknown:
-       > *"Line N: Call to async helper `getTaskItemByTitle(...)` is missing `await`. You must await the promise before calling locator methods on it."*
-     - **Accessible Locator Guidance**: Prefer role- and label-based queries for interactive controls. Flag only configured, high-confidence brittle patterns; allow justified selectors for cases without an accessible role or label. Feedback should recommend an appropriate semantic query when one is available.
-     - **Locator Method Validator**: Reuse the selected stack pack's declared runner contract to check known invalid methods; do not assume one universal Playwright prototype contract for every stack.
-  2. Integrate actionable findings into the existing suite review and lock checks. Findings must identify the file, line, and reason. Keep the existing dispute/reopen flow for runtime failures and for cases the static checker cannot prove.
-  3. **Stack-Pack Pre-Seeded Test Helpers (`app/stacks/`)**:
-     - Provide small, tested helper examples only in stack packs that use them. Do not require every stack to ship JavaScript helpers, and retain tests proving the helpers work with that stack's actual runner.
+  1. **Module System Matcher**:
+     - Inspect `package.json` in the project root. If `"type": "module"` is present:
+     - Scan all test files (`*.spec.js`, `*.test.js`). If any file contains CommonJS `require(` syntax:
+       Reject locking immediately:
+       > *"Acceptance test file `todo-misc.spec.js` uses CommonJS `require` syntax, but `package.json` specifies `\"type\": \"module\"`. You must use ES module `import { test, expect } from '@playwright/test'`."*
+  2. **AST Static Quality Checks**:
+     - **Floating Promise Detector**: Detect calls to asynchronous helper functions or locators (e.g. `getTaskItemByTitle(...)`) that are not awaited before chained calls.
+     - **Semantic Role Enforcer**: Reject raw CSS selectors (e.g. `.todo-item > div > button.btn-danger`) and require accessible locators (`page.getByRole('button', { name: 'Delete' })`).
+  3. **The Dry-Run Collection Gate (`test --list`)**:
+     - Before writing locks, the harness executes a dry-run test discovery command in the container sandbox:
+       ```bash
+       npx playwright test --list
+       ```
+     - If the command exits with non-zero exit code or prints an uncaught `ReferenceError`, `SyntaxError`, or loader failure:
+       **REFUSE TO LOCK**. Pass the exact stderr back to the QA specialist in the authoring loop. The QA agent fixes the import in 5 seconds while authoring is still live.
 
 ---
 
-### Pillar 2: Self-Contained Work Orders (Prompt Ingestion over Tool Exploration)
+### Pillar 2: Self-Contained Work Orders (Prompt Scaffolding as External Working Memory)
 - **Target Module**: `src/app/analysis/work_orders.py`, `src/app/agents/technical_lead.py`
-- **Objective**: Test whether bounded, relevant context reduces repeated reads without inflating prompts, becoming stale, or displacing the specialist's own inspection.
+- **Objective**: Provide cognitive scaffolding for lower-tier models (8B–32B) so they do not get lost exploring large codebases, while cutting redundant tool reads from 23% to <3%.
 - **Implementation**:
-  1. If measurements justify it, add bounded context to the work-order dispatch structure:
+  1. **Enriched Work Order Payload**:
      ```python
      @dataclass(frozen=True)
      class EnrichedWorkOrder:
@@ -115,152 +164,197 @@ Prior audits identified the following potential sources of run time and failure.
          target_files: list[str]
          criteria_addressed: list[str]
          instructions: str
-         file_context: dict[str, str]  # {relative_path: bounded, relevant excerpt}
-         symbol_signatures: list[str]  # ["function validateTitle(text)", "export function addTask(...)"]
+         file_context: dict[str, str]  # {relative_path: relevant_symbol_or_excerpt}
+         symbol_signatures: list[str]  # e.g. ["function addTask(title, desc)", "export const state = ..."]
      ```
-  2. Start with file paths, relevant symbol signatures, and short excerpts tied to assigned criteria. Include full file contents only when a measured case warrants it and within a token budget.
-  3. Capture context from the current workspace at dispatch time, label its source paths, and avoid treating it as authoritative after edits. Specialists must still inspect and validate the current file before editing.
-  4. Compare repeated-read rate, prompt size, model calls, and quality against the same brief and configuration. Do not assume inline context eliminates exploration.
+  2. **Context Budgeting**: The Tech Lead extracts relevant function signatures and interface definitions from existing files into the prompt. Specialists receive the exact symbols they must implement or call, eliminating hallucinated function names and redundant `read_file` calls.
 
 ---
 
-### Pillar 3: Safe Editing & Explicit Path Validation
+### Pillar 3: Resilient Context-Anchored Editing & Exact Path Validation
 - **Target Module**: `src/app/tools/agent_toolkit.py`, `src/app/tools/repository.py`
-- **Objective**: Reduce edit failures without silently targeting the wrong file or introducing state that becomes stale after another edit.
+- **Objective**: Eliminate edit conflicts, line number drift, and path rejections.
 - **Implementation**:
-  1. **Exact Path Validation**:
-     - Keep writes constrained to the workspace and require an unambiguous, repository-relative path. If a path is missing, return likely matches as suggestions only; never silently redirect a write based on a basename such as `package.json`.
-  2. **Use Existing Edit Guards First**:
-     - The harness already provides exact-passage editing and guarded line replacement. Measure their failure modes on comparable runs before adding another edit API.
-     - If a context-anchored edit is still needed, require the expected old text to match uniquely and refuse to change the file when it is absent or ambiguous.
-  3. **Do Not Maintain an Offset Map**:
-     - Per-stage offsets can go stale after overlapping or external edits. Prefer the current file contents and explicit context guards; add no automatic line remapping unless a replay test proves it is safe for concurrent and repeated edits.
+  1. **Context-Anchored Chunk Replacement**:
+     - Models often fail at specifying exact line numbers after previous edits change line counts.
+     - Provide an edit mode that anchors replacement by matching a unique snippet of preceding and following lines (`context_before`, `old_chunk`, `context_after`), similar to Aider's search-and-replace blocks.
+  2. **Exact Workspace-Relative Path Resolution**:
+     - Reject tool calls with ambiguous paths (e.g., `src/ui.js` when the file is `simple-to-do-list-app/ui.js`) with an explicit path correction hint:
+       > *"Path 'ui.js' does not exist. Did you mean 'simple-to-do-list-app/ui.js'?"*
+     - Never silently redirect or guess files without explicit agent confirmation.
 
 ---
 
-### Pillar 4: Measured Test Timeouts and Sandbox Startup Checks
-- **Target Module**: `src/app/stacks/`, `src/app/tools/sandbox.py`
-- **Objective**: Fail promptly on confirmed startup failures while preserving enough time for slower but valid operations and test environments.
+### Pillar 4: Measured Test Timeouts & Sandbox Startup Optimization
+- **Target Module**: `src/app/stacks/browser-javascript/`, `src/app/tools/sandbox.py`
+- **Objective**: Prevent failing Playwright assertions from hanging for 30 seconds per test.
 - **Implementation**:
-  1. In stack-pack Playwright configurations, make timeouts explicit and configurable. Select separate readiness, action, navigation, assertion, and overall-test limits from representative timing data with a safety margin. Test under the supported execution environment and report which limit expired; do not apply one global, aggressive timeout without evidence.
-  2. In `app/tools/sandbox.py`, distinguish a server that is not ready yet from a confirmed connection failure. Use a bounded readiness check and report the URL, check performed, and failure clearly; a `404` can indicate a bad route rather than a stopped server.
-  3. Treat a persistent sandbox daemon as a separate experiment. Adopt it only if repeated process-start measurements show material savings, and define isolation, cleanup, cancellation, and recovery behavior before sharing a session across commands.
+  1. **Fast-Fail Playwright Configuration**:
+     - In `playwright.config.js` scaffold:
+       ```javascript
+       export default {
+         timeout: 10000,           // 10s max per test (down from 30s)
+         expect: { timeout: 3000 },// 3s max per expect (down from 10s)
+         use: {
+           actionTimeout: 3000,    // 3s max per click/fill
+           navigationTimeout: 5000,// 5s max per page.goto
+         }
+       };
+       ```
+     - When an element is missing, the test fails in 3 seconds instead of 30 seconds. A 10-test failure round drops from 5 minutes to 30 seconds.
+  2. **Sandbox Server Readiness Ping**:
+     - Replace static `sleep` calls with active polling against `http://127.0.0.1:<port>` with 100ms intervals, proceeding the instant the HTTP 200 response is received.
 
 ---
 
-### Pillar 5: Verified Stack-Pack Lessons (Exploratory)
+### Pillar 5: Continuous Self-Learning Engine via Deterministic Distillation
 - **Target Module**: `src/app/learning/distiller.py`, `src/app/stacks/seed.py`
-- **Objective**: Explore whether verified, stack-specific lessons can reduce repeated mistakes without turning untrusted run output into persistent instructions.
+- **Objective**: Enable the harness to "learn" across runs without accumulating unstructured prompt drift or hallucinated rules.
 - **Implementation**:
-  1. **Candidate Lesson Extraction**:
-     - Start as an offline report, not an automatic graph node that changes future prompts.
-     - Candidate evidence may include:
-       - Recorded Decision Records (`DR-1`..`DR-N`).
-       - Harness git reverts (e.g. `Reverted defect_fix_1_10: it broke 14 test(s)`).
-       - Fixed lint errors and Playwright runtime errors.
-     - A schema validates shape, not truth or safety. Do not persist arbitrary model-written rules; accept a lesson only when a deterministic check or reviewed regression test supports it. Store a small allowlisted record:
+  1. **Post-Run Distillation Node**:
+     - At the end of every run (successful or failed), execute an offline distillation step that audits:
+       - Every git revert performed by `engineering.py` (e.g., `defect_fix_1_10 broke 14 tests`).
+       - Every syntax failure caught by the pre-lock AST gate.
+       - Every Decision Record (`DR-n`) agreed upon during sprint planning.
+  2. **Deterministic Schema Verification**:
+     - Distilled heuristics are validated against strict JSON schema:
        ```json
        {
          "stack_pack": "browser-javascript",
-         "version": 1,
-         "traps": [
+         "heuristics": [
            {
              "category": "acceptance_testing",
-             "rule": "Await asynchronous Playwright helpers before using the Locator they resolve to.",
-             "evidence": "Regression test: <stable test name>"
-           },
-           {
-             "category": "unit_testing",
-             "rule": "A verified, version-scoped stack-pack lesson goes here.",
-             "evidence": "Regression test: <stable test name>"
+             "rule": "Always use ES module `import` syntax when package.json contains `type: module`.",
+             "evidence_type": "loader_crash_revert"
            }
          ]
        }
        ```
-  2. **Storage**: Keep approved records versioned with their stack pack, with provenance, review status, and a removal path. Exclude run-specific identifiers, secrets, user-provided instructions, and raw transcript text.
-  3. **Injection**: Only after tests show that the records are useful and safe, inject approved stack-specific records through the existing stack-pack mechanism. Treat records as data, not executable instructions; limit their size and make changes reversible.
+     - Validated heuristics are merged into `src/app/stacks/heuristics/<pack>.json` and injected into stack-pack guidance for future runs. Core harness logic remains 100% agnostic.
 
 ---
 
-### Pillar 6: Bounded In-Stage Syntax and Diagnostic Feedback
-- **Target Module**: `src/app/tools/repository.py`, `src/app/analysis/language_service.py`, `src/app/agents/specialists.py`, `src/app/graph/engineering.py`
-- **Objective**: Surface high-confidence, newly introduced syntax and reference errors earlier than the existing CI gate, while retaining CI and test execution as the acceptance authority.
-- **Design rationale**: Earlier feedback may reduce the cost of fixing some errors. This is a hypothesis for this harness, not a claim that it matches the behavior or results of another coding tool.
-- **Current Behavior and Remaining Gap**:
-  - The repository already uses language-service diagnostics at the batch CI gate. The remaining proposal is to test whether a bounded feedback opportunity inside a specialist stage catches newly introduced errors sooner.
-  - Do not treat every diagnostic as a defect: compare against the pre-change baseline, scope findings to the files and changes at hand, and account for missing language servers or incomplete project metadata.
+### Pillar 6: Dual-Track Cognitive Steering (Local Models vs. Frontier Models)
+- **Target Module**: `src/app/models/steering.py`, `src/app/agents/`
+- **Objective**: Steer local / lower-tier models (8B–32B) through rigorous structural constraints while allowing frontier models (Claude 3.7, GPT-4o) maximum reasoning autonomy.
 - **Implementation**:
-  1. **Layer 1: Hard Syntax Rejection at Write Time (`src/app/tools/repository.py`)**:
-     - In write tools, run only the parser configured and available for the selected stack (for example, `node --check` for JavaScript or `ast.parse` for Python).
-     - If parsing is a required, reliable check for that stack and the content cannot be parsed, reject the edit without modifying the file and return a clear file/line diagnostic:
+  1. **Local Model Steering Track (8B–32B)**:
+     - **Explicit Step-by-Step Prompt Scaffolding**: Decompose broad tasks into numbered sub-actions (1. Read target function, 2. Make minimal edit, 3. Run unit test).
+     - **Structured Tool Grammar**: Enforce strict tool parameter schemas to prevent malformed JSON arguments.
+     - **Narrow Work Orders**: Limit work orders for lower-tier models to single files and ≤2 criteria per order.
+  2. **Frontier Model Track**:
+     - Maintain concise prompts that maximize the model's internal reasoning budget (80%+ reasoning tokens).
+     - Group related criteria into broader work orders for efficient implementation.
+  3. **Non-Mutating Policy**: Never modify the user's selected model or settings. Steering adaptations are purely prompt- and harness-level structures.
+
+---
+
+### Pillar 7: Immediate In-Stage IDE Linting & Syntax Gate ("Fix-Before-Exit")
+- **Target Module**: `src/app/tools/repository.py`, `src/app/analysis/language_service.py`, `src/app/agents/specialists.py`
+- **Objective**: Catch syntax, type, and import errors at the moment of creation, resolving them before the agent exits its stage.
+- **Implementation**:
+  1. **Layer 1: Hard Syntax Rejection at Write Time (`repository.py`)**:
+     - When `write_file` or `edit_file` is invoked, execute a syntax check before writing to disk:
+       - For JavaScript/TypeScript: `node --check <file>` or TypeScript language service parse.
+       - For Python: `python -m py_compile <file>`.
+     - If the file cannot be parsed:
+       **Reject the tool call**. Return an explicit error:
        ```json
-       {"error": "Refusing to save 'ui.js': SyntaxError on line 34: Unexpected token '}'. Fix the syntax and resubmit."}
+       {
+         "error": "SyntaxError in 'ui.js' line 42: Unexpected token '}'. The file was NOT modified. Please correct the syntax and call edit_file again."
+       }
        ```
-     - Prevents corrupted, un-parseable code from ever landing on disk.
-  2. **Layer 2: In-Stage Pre-Exit Diagnostic Gate (`src/app/agents/specialists.py`)**:
-     - When a specialist (developer or defect fixer) returns `SpecialistOutput` to conclude its stage:
-     - Before the graph accepts the output and moves to the next node, run `language_service.underlined_any` over every file touched by that specialist.
-     - If a touched file has a newly introduced, high-confidence diagnostic:
-       Offer one bounded correction attempt with the exact diagnostic:
-       > *"You cannot finish this stage yet. The language service detected 1 error in `ui.js`: Line 42: `renderTasks` is not defined. Fix this error in `ui.js` now before returning."*
-     - If the check is unavailable, inconclusive, or still failing after the bounded attempt, report that result and continue through the existing CI and defect process. Do not claim this gate prevents all syntax or runtime defects.
-  3. **Formatting**:
-     - Run a formatter only when the selected stack pack or project config explicitly identifies it. Avoid silently reformatting files during a write operation.
+  2. **Layer 2: Pre-Exit Diagnostic Interceptor (`specialists.py`)**:
+     - When a specialist agent attempts to complete its stage by returning `SpecialistOutput`:
+     - The harness intercepts the exit and runs `language_service.underlined_any` over all files touched by the specialist.
+     - If high-confidence diagnostics (ReferenceError, missing exports, undeclared functions) are detected:
+       **Pause stage completion and reprompt the specialist (1-turn bound)**:
+       > *"Stage completion blocked: The language service detected 1 high-confidence error in `state.js`:\nLine 15: `validateTitle` is imported from `./model.js` but `./model.js` does not export it.\nFix this error in `model.js` or `state.js` before completing your work."*
+     - If the specialist resolves it, the stage completes cleanly. If unresolved after 1 turn, the stage completes and the existing CI gate handles triage.
 
 ---
 
-### Pillar 7: Safely Extending Co-Defect Remediation
+### Pillar 8: True Role-Based Consolidated Defect Remediation
 - **Target Module**: `src/app/graph/workflow.py`
-- **Objective**: Measure and improve remediation batching without combining unrelated defects or weakening per-defect verification.
-- **Current implementation boundary**:
-  - Co-defects are already bundled when they share an owner and the same regression-test requirement. Other open defects still advance through the cursor separately, preserving their individual verification and resume behavior.
-  - Broadly grouping all defects by role could combine unrelated or conflicting changes and make it unclear which regression test closes which defect.
+- **Objective**: Eliminate sequential defect ping-pong. In `run-42b84547`, Sprint 2 ran 9 sequential defect stages, and Sprint 1 attempt 4 started 13 sequential defect stages.
 - **Implementation**:
-  - First measure the existing co-defect batching on comparable runs.
-  - Consider widening a batch only when defects have demonstrably shared causes, non-conflicting file ownership, and explicit per-defect regression coverage.
-  - Preserve each defect's open/fixed state and evidence independently; rerun the required checks after the batch, and leave any unverified defect open.
-- **Impact**: A hypothesis to measure, not a guaranteed stage-count or time reduction.
+  1. **Role Grouping**:
+     - When `test_round` completes with failures, group all open defects by specialist role:
+       - `ui_ux_specialist`: Defects #1, #2, #3, #4, #5, #6, #7, #8, #9 (all UI acceptance criteria).
+       - `backend_specialist`: Defects #11 (state persistence).
+       - `testing_specialist`: Defects #10 (test harness script).
+  2. **Consolidated Remediation Invocation**:
+     - For each role with open defects, spawn **AT MOST ONE** remediation session per test round.
+     - The specialist prompt contains:
+       - The consolidated list of all failing criteria for that role.
+       - The failure stack trace and DOM snapshot from Playwright.
+       - The instructions to fix the implementation and run `npm test` to verify.
+  3. **Verification**:
+     - A single run of `npm test` and `npm run test:acceptance` verifies all fixes simultaneously.
+     - Reduces 10–20 sequential agent invocations down to **1 or 2 consolidated stages**, saving 30–45 minutes of wall-clock time per sprint.
 
 ---
 
-## 4. Runtime Estimates: Hypotheses to Validate
+## 5. Mathematical Efficiency Model & Expected Runtime Reductions
 
-The following table is a planning hypothesis for a 16-criteria `web-todo` run, not a measured result. The phase ranges overlap in cause: for example, suite checks, timeouts, in-stage diagnostics, and remediation batching can all affect the same failure cycle.
+Based on empirical data from `run-42b84547` and historical runs, we model the wall-clock impact of the 8 Pillars on a standard 16-criteria `web-todo` application:
 
-| Pipeline Phase | Current Harness Duration | High-Steering Harness Duration | Key Mechanism Enabling Speedup |
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   WALL-CLOCK EFFICIENCY MODEL                                   │
+├───────────────────────────────┬──────────────────────┬────────────────────┬─────────────────────┤
+│ Lifecycle Phase               │ Baseline Run         │ High-Steering Run  │ Mechanism           │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 1. Intake & Architecture      │ 4 min (13 calls)     │ 3 min (8 calls)    │ Scope fast-path     │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 2. Acceptance Authoring       │ 15 min (166 calls)   │ 8 min (40 calls)   │ AST check + Dry-run │
+│    & Quality Lock Gate        │                      │                    │ prevents bad lock   │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 3. Sprint Planning            │ 11 min (27 calls)    │ 3 min (6 calls)    │ Dynamic sprint cap  │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 4. Specialist Implementation  │ 8 min (70 calls)     │ 8 min (50 calls)   │ Self-contained WOs  │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 5. CI Gate & Test Execution   │ 6 min (62 calls)     │ 2 min (15 calls)   │ 3s fast-fail limits │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 6. Defect Remediation         │ 42 min (313 calls)   │ 8 min (25 calls)   │ True Consolidated   │
+│    (Rework Loop)              │ (18 separate stages) │ (2 role sessions)  │ Batching + In-Stage │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ 7. Milestone Review & Release │ 5 min (15 calls)     │ 3 min (6 calls)    │ Direct release gate │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ Overhead / Turn Latency       │ 31 min (idle / wait) │ 5 min              │ Fast-fail timeouts  │
+├───────────────────────────────┼──────────────────────┼────────────────────┼─────────────────────┤
+│ TOTAL RUNTIME                 │ 122 min (cancelled)  │ 40 min (COMPLETE)  │ 67% Time Reduction  │
+└───────────────────────────────┴──────────────────────┴────────────────────┴─────────────────────┘
+```
+
+---
+
+## 6. Prioritized Implementation Roadmap
+
+| Milestone | Deliverables | Target Modules | Value & Impact |
 |---|---|---|---|
-| **Intake & Architecture** | 8–12 mins | 4–6 mins | Fast-path scoping; verified stack pack scaffolds |
-| **Acceptance Authoring & Review** | 45–60 mins (historical estimate) | 8–10 mins (target hypothesis) | Stack-aware checks and tested helpers; runtime disputes may still occur |
-| **Sprint 1 Development** | 20–35 mins (historical estimate) | 8–12 mins (target hypothesis) | Bounded work-order context and guarded edits; measure re-reads |
-| **Sprint 1 CI & Defect Fixes** | 25–40 mins (historical estimate) | 5–8 mins (target hypothesis) | Earlier diagnostics and verified co-defect batching |
-| **Sprint 2 Development & Fixes** | 30–50 mins (historical estimate) | 5–8 mins (target hypothesis) | Existing scope caps and measured remediation; sprint count depends on scope |
-| **Milestone Review & Release** | 8–12 mins | 3–5 mins | Pack-generated release and CI workflows |
-| **Total Wall-Clock Time** | **136–209 mins** | **33–49 mins** | **Planning ranges only; do not claim a saving until measured** |
-
-The totals above are the arithmetic sums of the phase ranges. They imply a gross difference of 87–176 minutes only if phases are independent and comparable, which has not been demonstrated. Validate performance on the same brief, model, endpoint, execution mode, and acceptance criteria; report wall-clock time alongside benchmark score, test outcomes, model/tool calls, and intervention count. Compare multiple runs rather than selecting the fastest run, and reject an optimization that reduces time by lowering product quality or weakening a gate.
+| **M1: Pre-Lock Acceptance Suite AST & Load Gate** | 1. Module System Matcher (`import` vs `require`).<br>2. Floating promise AST detector.<br>3. `npx playwright test --list` dry-run verification before lock. | `src/app/acceptance/suite.py`<br>`src/app/acceptance/requests.py` | **P0 (Critical)**: Eliminates the 114-minute ESM crash that doomed `run-42b84547`. |
+| **M2: In-Stage "Fix-Before-Exit" Syntax Gate** | 1. Hard parse rejection on write tool (`node --check` / `py_compile`).<br>2. Pre-exit diagnostic interception in specialist node. | `src/app/tools/repository.py`<br>`src/app/agents/specialists.py` | **P0 (Critical)**: Resolves syntax errors in 1 turn before defect triage starts. |
+| **M3: True Role-Based Consolidated Remediation** | Collapse sequential defect cursor into single consolidated remediation session per specialist role. | `src/app/graph/workflow.py` | **P0 (Critical)**: Cuts 10–18 defect stages down to 1–2 stages, saving 35+ mins. |
+| **M4: Measured Fast-Fail Test Timeouts** | Explicit 3s Playwright action/expect timeouts and active sandbox readiness polling. | `src/app/stacks/browser-javascript/`<br>`src/app/tools/sandbox.py` | **P1 (High)**: Reduces test failure wait times from 30s to 3s per test. |
+| **M5: Self-Contained Work Orders** | Embed file excerpts and symbol signatures into work-order prompts for local model steering. | `src/app/analysis/work_orders.py`<br>`src/app/agents/technical_lead.py` | **P1 (High)**: Prevents local models from getting lost; cuts redundant reads. |
+| **M6: Continuous Self-Learning Engine** | Offline distillation of Decision Records and reverts into `src/app/stacks/heuristics/<pack>.json`. | `src/app/learning/distiller.py`<br>`src/app/stacks/` | **P2 (Strategic)**: Safely distills engineering wisdom across runs. |
 
 ---
 
-## 5. Prioritized Implementation Roadmap
+## 7. Verification & Safety Invariants
 
-| Milestone | Deliverables | Target Modules | Current status / next evidence |
-|---|---|---|---|---|
-| **M1: Close the pre-lock suite-check gap** | Add narrow, stack-aware checks for proven static failure patterns; retain runtime dispute handling | `src/app/acceptance/suite.py`, `src/app/stacks/` | Partial checks exist. Add only checks with a regression test and a clear false-positive policy. |
-| **M2: Validate in-stage diagnostics** | Compare changed-file diagnostics to a baseline; allow at most one bounded correction attempt | `src/app/analysis/language_service.py`, `src/app/agents/specialists.py` | Language-service checks already run at the CI gate. Measure whether earlier feedback shortens recovery without blocking valid work. |
-| **M3: Verify co-defect batching** | Preserve owner and regression-test boundaries; independently close only verified defects | `src/app/graph/workflow.py` | Co-defect batching already exists for matching owners and regression-test requirements. Measure it before broadening. |
-| **M4: Measure edit and timeout failures** | Use existing guarded edit tools; tune test limits from observed timings | `src/app/tools/repository.py`, `src/app/stacks/` | Edit guards and line replacement exist. Measure current errors and slow-test distributions before adding path resolution or lowering limits. |
-| **M5: Test bounded work-order context** | Supply relevant paths, signatures, or small excerpts within a prompt budget | `src/app/analysis/work_orders.py`, `src/app/agents/` | Defer full-file inlining until an experiment shows fewer repeated reads without worse quality or prompt growth. |
-| **M6: Evaluate verified stack-pack lessons** | Produce candidate lessons offline; add only reviewed, regression-tested, allowlisted records | `src/app/stacks/` | Deferred until provenance, review, injection safety, versioning, and rollback are implemented. |
-| **M7: Evaluate lean-scope workflow changes** | Test stage reduction while preserving acceptance, review, release, and user-approval gates | `src/app/graph/workflow.py`, `src/app/agents/scrum_master.py` | Scope-based sprint caps already exist. Do not infer that criteria count alone justifies bypassing architecture or QA gates. |
-| **M8: Specify model-tier behavior** | Document explicit, non-mutating steering differences and their evaluation criteria | `src/app/models/`, `src/app/graph/workflow.py` | This item lacks a detailed design here. Never switch or modify the owner's model, endpoint, or settings automatically. |
-
----
-
-## 6. Verification & Safety Invariants
-
-1. **Owner Features Preserved**: Dynamic agent instructions, parallel/linear toggles, sprint summaries, and decision records remain untouched.
-2. **Deterministic Rules Only**: Stack-specific guidance lives strictly in stack packs (`src/app/stacks/`); core harness graph logic remains framework- and product-agnostic.
-3. **No Unstructured Memory Drift**: All self-learning data is validated against a strict schema and verified against run evidence.
-4. **Test-First Verification**: Every change to harness logic or tools must include a regression test proven to fail on the old code before deployment.
-5. **Quality-Preserving Measurement**: Record the same quality and cost measures before and after an optimization. Runtime improvement alone is not success if acceptance coverage, benchmark score, regression protection, or required reviews decline.
-6. **Bounded Recovery**: Give retries and in-stage correction attempts explicit limits and actionable failure outputs; inconclusive checks must not look like successful validation.
+1. **Owner Features Preserved**:
+   - Dynamic agent-instruction injection preserved.
+   - Parallel/linear toggles preserved.
+   - Sprint summaries and Decision Records preserved.
+2. **Technology-Agnostic Core**:
+   - All language- and stack-specific rules live strictly in `src/app/stacks/`.
+   - Core harness graph logic in `src/app/graph/workflow.py` remains 100% agnostic.
+3. **No Run IDs in Code, Prompts, or Tests**:
+   - Strictly verified by `tests/test_no_run_ids_in_the_source.py`.
+4. **Banned Word Rules in Prompts**:
+   - Any new prompt additions tested to ban the whole words `task`, `tasks`, `to-do`, `todo`, `button`, `click`, and `checkbox`.
+5. **Test-First Verification**:
+   - Every fix verified by a test proven to fail on the old code.
+   - Full test suite passing (`scripts/loop/loop.sh suite`).

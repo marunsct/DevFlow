@@ -4099,6 +4099,51 @@ def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int)
     return cycle
 
 
+def _bundle_co_defects(cycle: RemediationCycle, defect_index: int) -> list[tuple[int, Any]]:
+    """Return open co-defects owned by the same specialist with the same regression test requirement."""
+    defect = cycle.defects[defect_index]
+    return [
+        (pos, d) for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
+        if d.status == "open" and d.owner == defect.owner and d.regression_test_required == defect.regression_test_required
+    ]
+
+
+def _apply_batch_co_defect_fixes(
+    cycle: RemediationCycle,
+    co_defects: list[tuple[int, Any]],
+    *,
+    defect_index: int,
+    regression_test: str,
+    verified_by: str,
+    resolution: str,
+    stage_name: str,
+    round_: int,
+    sprint: int,
+) -> RemediationCycle:
+    """Mark co-defects fixed if they satisfy regression test requirements, leaving others open."""
+    from app.observability import defect_ledger
+
+    current_cycle = cycle
+    for pos, co_d in co_defects:
+        if co_d.regression_test_required and not regression_test:
+            defect_ledger.note(
+                "left open", stage_name, defect=co_d, round_=round_, index=pos,
+                sprint=sprint,
+                detail="the batch fix named no regression test for this defect",
+            )
+            continue
+        current_cycle = mark_defect_fixed(
+            current_cycle, pos, regression_test=regression_test, verified_by=verified_by,
+            resolution=f"Fixed in batch with defect {defect_index}: {resolution}",
+        )
+        defect_ledger.note(
+            "fixed", stage_name, defect=co_d, round_=round_, index=pos,
+            sprint=sprint,
+            detail=f"resolved in batch with defect {defect_index}",
+        )
+    return current_cycle
+
+
 def _failing_criteria_it_names(state: Any, reported: Any) -> list[str]:
     """The criteria a reported defect names that fail now. See `Defect.failing_criteria`."""
     try:
@@ -7298,10 +7343,7 @@ def build_workflow_graph(
             ),
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
-        co_defects = [
-            (pos, d) for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
-            if d.status == "open" and d.owner == defect.owner
-        ]
+        co_defects = _bundle_co_defects(cycle, defect_index)
         if co_defects:
             batch_lines = ["\n--- Related failures owned by your role to resolve in this same fix ---"]
             for pos, co_d in co_defects:
@@ -7434,16 +7476,17 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0),
                 detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
             )
-            for pos, co_d in co_defects:
-                update["remediation"] = mark_defect_fixed(
-                    update["remediation"], pos, regression_test=regression_test, verified_by=verified_by,
-                    resolution=f"Fixed in batch with defect {defect_index}: {resolution}",
-                )
-                defect_ledger.note(
-                    "fixed", stage_name, defect=co_d, round_=state.get("test_round", 0), index=pos,
-                    sprint=state.get("current_sprint_index", 0),
-                    detail=f"resolved in batch with defect {defect_index}",
-                )
+            update["remediation"] = _apply_batch_co_defect_fixes(
+                update["remediation"],
+                co_defects,
+                defect_index=defect_index,
+                regression_test=regression_test,
+                verified_by=verified_by,
+                resolution=resolution,
+                stage_name=stage_name,
+                round_=state.get("test_round", 0),
+                sprint=state.get("current_sprint_index", 0),
+            )
 
         still_open = update["remediation"] is cycle
         if (

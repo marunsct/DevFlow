@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-09 21:36 JST**.
+of the previous sessions' context. Last updated **2026-10-09 22:33 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,13 +27,18 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 21:26 JST on 2026-10-09, run-e9e4ecbf failed at 1h 21m in sprint 1 entering `security_review_node`:
-- `NameError: name 'Path' is not defined` on line 7521 of `src/app/graph/workflow.py`: `code_files = [f for f in changed_files if Path(f).suffix.lower() in _WORTH_REVIEWING]`.
-- Cause: `Path` was not imported in `security_review_node` or at top of `src/app/graph/workflow.py` (only `PurePosixPath` was imported). Tests with mock outputs had empty `changed_files`, so list comprehension never evaluated `Path(f)`. Once real changed files arrived, it threw `NameError`.
+At 22:14 JST on 2026-10-09, run-1c696369 was cancelled at 35m (under the 40m early stop rule):
+- Sprint 1 passed cleanly in <20 min with dynamic 2-sprint cap and batch defect remediation verified.
+- Deadlock in Sprint 2: QA omitted tags for `[AC-9]`, `[AC-10]`, `[AC-11]`, `[AC-13]` in `app.spec.js` (even though the test code checked the elements). These criteria were reported as `status: untested`.
+- `_failing_due` treated `untested` as defects and handed them to product fixers. All 18 unit tests and 11 acceptance tests passed, but developers cannot edit the locked suite.
+- When attempt 1 failed, `_the_locked_tests_still_failing` checked only `outcome == "failed"`, skipping criteria with 0 tests. Thus `_a_dispute_is_due` returned `False`, dispute never reopened the suite, and attempt 2 repeated the identical failure.
 Fix deployed:
-- Imported `Path` at module top and inside `security_review_node` in `src/app/graph/workflow.py`.
-- Added unit test `tests/test_security_review_imports.py` (proven to fail on old code, passes on new code).
-- Full test suite: 9,754 passed, only 3 S3 tests failed. Clean gate run count resets to 0 of 2 toward Stage 1 gate. Target is 2 consecutive clean runs.
+- `src/app/acceptance/requests.py`: prompt rule requiring bracketed IDs for all criteria, including multi-criteria test titles (`[AC-2][AC-9]`).
+- `src/app/acceptance/suite.py`: `gaps` feedback directs adding `[{c.id}]` to an existing test title if already tested.
+- `src/app/graph/workflow.py`: `_the_locked_tests_still_failing` includes untested due criteria so dispute triggers, and `acceptance_dispute_node` reopens the suite to repair missing tests.
+- `src/app/agents/suite_dispute.py`: `tests_it_names` matches criterion tags.
+- Added regression tests `tests/test_untested_criteria_dispute.py` (banned-word checks passing).
+- Full suite: 9,759 passed, 3 S3 failed. Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

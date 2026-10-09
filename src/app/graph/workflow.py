@@ -5167,7 +5167,16 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
     for cid, criterion in (saved.get("criteria") or {}).items():
         if not isinstance(criterion, dict) or cid in deferred or cid not in due:
             continue
-        for test in criterion.get("tests") or []:
+        status = str(criterion.get("status") or "")
+        tests = criterion.get("tests") or []
+        if status == "untested" or not tests:
+            name = f"[{cid}] (missing from locked suite)"
+            text = f"{cid}: {criterion.get('text', '')}"
+            message = "The locked acceptance suite has no test for this due criterion."
+            seen[name] = len(failing)
+            failing.append((name, text, message))
+            continue
+        for test in tests:
             if isinstance(test, dict) and test.get("outcome") == "failed":
                 name = str(test.get("name") or "")
                 if not name:
@@ -7613,10 +7622,16 @@ def build_workflow_graph(
         if _hand_back(update, "__suite_dispute__"):
             return update
         named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing])
+        missing = [
+            f"`{name}` is missing from the locked suite; no test checks what the criterion says. Add a test for `{name.split()[0]}` or tag an existing test that proves it."
+            for name, _, _ in failing
+            if "missing from locked suite" in name
+        ]
+        to_repair = [*named, *missing]
         update.pop("stage", None)
-        if named:
-            logger.warning("The QA lead says %d locked test(s) cannot pass; reopening the suite", len(named))
-            reopened = reopen_the_suite_for(state, named, return_to=returns_to or SPRINT_REPLAN)
+        if to_repair:
+            logger.warning("The QA lead / harness identifies %d locked test(s)/missing criteria cannot pass; reopening the suite", len(to_repair))
+            reopened = reopen_the_suite_for(state, to_repair, return_to=returns_to or SPRINT_REPLAN)
             if reopened is not None:
                 return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
         return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)

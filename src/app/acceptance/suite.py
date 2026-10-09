@@ -182,7 +182,8 @@ def gaps(repo_root: str | Path) -> list[str]:
     excused = set(deferred(repo_root))
     covered = coverage(repo_root)
     problems = [
-        f"{c.id} (\"{c.text}\") has no test whose name carries `{c.id}`."
+        f"{c.id} (\"{c.text}\") has no test whose name carries `{c.id}`. "
+        f"Either write a test for it, or if an existing test already proves it, add `[{c.id}]` to that test's title."
         for c in criteria(repo_root)
         if c.id not in covered and c.id not in excused
     ]

@@ -134,7 +134,8 @@ def tests_it_names(answer: Any, failing_names: Sequence[str]) -> list[str]:
     lines = [" ".join(str(line).split()) for line in getattr(answer, "cannot_pass", None) or []]
     named = []
     for name in failing_names:
-        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip()))
+        clean_tag = name.split()[0] if name.startswith("[") else name
+        why = _what_a_line_says_of(lines, (name, _TAGS.sub("", name).strip(), clean_tag))
         # A name with no reason is not a judgement: one run's QA lead listed
         # nine names bare, eight of them a later sprint's unbuilt work.
         if why and len(why.split()) >= 3:

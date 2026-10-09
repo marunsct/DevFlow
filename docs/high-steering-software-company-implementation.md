@@ -197,22 +197,34 @@ The reason runs currently take 2–4 hours on local models is **not the document
 
 ---
 
-### Pillar 6: Dual-Track Steering (Local vs. Frontier Model Adaptivity)
-- **Target Module**: `src/app/models/roles.py`, `src/app/graph/workflow.py`
-- **Objective**: Automatically tune harness execution parameters to match the model tier.
+### Pillar 7: Immediate In-Stage IDE Linting & Syntax Gate (The "Fix-Before-Exit" Engine)
+- **Target Module**: `src/app/tools/repository.py`, `src/app/analysis/language_service.py`, `src/app/agents/specialists.py`, `src/app/graph/engineering.py`
+- **Objective**: Catch and resolve syntax errors, undefined symbols, and broken imports *immediately inside the authoring specialist's session*, completely preventing them from escaping into CI, test rounds, and multi-round defect remediation ping-pong (`defect_fix_2_1`..`defect_fix_2_7`).
+- **Comparative Benchmark**:
+  - **Aider**: Operates an interactive "lint-before-commit" loop. After every file modification, Aider executes `eslint` / `tsc` / `flake8`. If diagnostics are found, it immediately re-prompts the coder in the same turn: *"I noticed these lint errors... please fix them."* The error is resolved in 10–15 seconds before tests or commits ever run.
+  - **SWE-agent**: Operates an Agent-Computer Interface (ACI) syntax interceptor. If an edit produces a syntax parse error, the file write is hard-rejected (`SyntaxError: Unexpected token... File not saved`), forcing the model to fix it in the next command.
+  - **Cursor / OpenHands**: Language Server Protocol (LSP) diagnostics with severity `Error` (red squiggles) block task completion until resolved.
+- **The Flaw in the Current Harness**:
+  - Currently, `app.analysis.language_service` produces an *advisory note* in the tool output (`{"notes": ["This file's imports: ..."]}`).
+  - Because the tool status is `"ok"` and the file is saved to disk, local and lesser models **ignore the advisory note** and complete their stage.
+  - The error is only discovered later during CI or test rounds. It is logged as a defect, and the harness enters sequential defect remediation stages (`defect_fix_2_0`, `defect_fix_2_1`..`defect_fix_2_7`), each taking 3–5 minutes and 15+ inference calls. A 5-second syntax typo becomes a **25-minute multi-agent ping-pong loop**!
 - **Implementation**:
-  1. Detect model tier:
-     - If `OPENAI_BASE_URL` is local loopback/docker host or `MODEL_TIER=local`: activate **High-Steering Track**.
-     - If provider is Anthropic/OpenAI hosted or `MODEL_TIER=frontier`: activate **Autonomous Track**.
-  2. Parameter Tuning Matrix:
-
-| Feature | Local / Lower-Tier Model Track | Frontier Model Track (Claude 3.5 Sonnet / GPT-4o) |
-|---|---|---|
-| **Work Order Scope** | Micro work orders (1 file per order) | Macro work orders (multi-file features) |
-| **In-Context Snippets** | Pre-fills full target file in prompt | Provides symbol RepoMap outline |
-| **Path & Edit Tolerance** | Fuzzy path matching & anchor replacement | Standard strict paths |
-| **Sprint Batches** | 1–2 sprints max | Up to 3 parallel sprints |
-| **CI Feedback** | Unit test check on every file edit | Full suite at CI batch gate |
+  1. **Layer 1: Hard Syntax Rejection at Write Time (`src/app/tools/repository.py`)**:
+     - In `write_approved_artifact` and `replace_approved_lines`, run a fast syntax parser (`node --check` for JS, `ast.parse` for Python, tree-sitter for CSS).
+     - If the code cannot be parsed, **hard-reject the tool call without modifying the file**:
+       ```json
+       {"error": "Refusing to save 'ui.js': SyntaxError on line 34: Unexpected token '}'. Fix the syntax and resubmit."}
+       ```
+     - Prevents corrupted, un-parseable code from ever landing on disk.
+  2. **Layer 2: In-Stage Pre-Exit Diagnostic Gate (`src/app/agents/specialists.py`)**:
+     - When a specialist (developer or defect fixer) returns `SpecialistOutput` to conclude its stage:
+     - Before the graph accepts the output and moves to the next node, run `language_service.underlined_any` over every file touched by that specialist.
+     - If any touched file has severe diagnostics (undefined local symbols, missing imports from existing files):
+       **Intercept stage completion** and feed the diagnostic directly back as a single-turn correction prompt:
+       > *"You cannot finish this stage yet. The language service detected 1 error in `ui.js`: Line 42: `renderTasks` is not defined. Fix this error in `ui.js` now before returning."*
+     - The specialist fixes the issue inside its own stage in **1 turn (15 seconds)**, completely bypassing the CI gate defect queue.
+  3. **Layer 3: Automated Mechanical Formatting**:
+     - Run an automatic formatter (`prettier` or `ruff`) on saved files so local models never fail on missing semicolons, trailing commas, or indentation.
 
 ---
 
@@ -220,11 +232,12 @@ The reason runs currently take 2–4 hours on local models is **not the document
 
 | Milestone | Deliverables | Target Modules | Est. Time Savings | Priority |
 |---|---|---|---|---|
-| **M1: Test Quality & Timeouts** | Pre-Lock AST Acceptance Linter; 3s Playwright timeouts | `src/app/acceptance/suite.py`, `src/app/stacks/` | **45–60 mins** | **P0** |
-| **M2: Resilient Tooling** | Fuzzy path normalization; Context-anchored edits | `src/app/tools/agent_toolkit.py` | **15–25 mins** | **P0** |
-| **M3: Self-Contained Work Orders** | In-context file and symbol snippets in work order prompts | `src/app/analysis/work_orders.py`, `src/app/agents/` | **15–20 mins** | **P1** |
-| **M4: Self-Learning Engine** | Post-run distillation node and heuristics injection | `src/app/learning/`, `src/app/stacks/seed.py` | **15–20 mins** | **P1** |
-| **M5: Dual-Track Model Tuning** | Automatic model-tier detection and steering parameters | `src/app/models/`, `src/app/graph/workflow.py` | **10–15 mins** | **P2** |
+| **M1: Pre-Lock Test Quality & Timeouts** | Pre-Lock AST Acceptance Linter; 3s Playwright timeouts | `src/app/acceptance/suite.py`, `src/app/stacks/` | **45–60 mins** | **P0** |
+| **M2: In-Stage IDE Linting & Syntax Gate** | Hard syntax write rejection; Pre-exit in-stage diagnostic gate | `src/app/tools/repository.py`, `src/app/agents/specialists.py` | **25–35 mins** | **P0** |
+| **M3: Resilient Tooling** | Fuzzy path normalization; Context-anchored edits | `src/app/tools/agent_toolkit.py` | **15–25 mins** | **P0** |
+| **M4: Self-Contained Work Orders** | In-context file and symbol snippets in work order prompts | `src/app/analysis/work_orders.py`, `src/app/agents/` | **15–20 mins** | **P1** |
+| **M5: Self-Learning Engine** | Post-run distillation node and heuristics injection | `src/app/learning/`, `src/app/stacks/seed.py` | **15–20 mins** | **P1** |
+| **M6: Dual-Track Model Tuning** | Automatic model-tier detection and steering parameters | `src/app/models/`, `src/app/graph/workflow.py` | **10–15 mins** | **P2** |
 
 ---
 
@@ -234,3 +247,4 @@ The reason runs currently take 2–4 hours on local models is **not the document
 2. **Deterministic Rules Only**: Stack-specific guidance lives strictly in stack packs (`src/app/stacks/`); core harness graph logic remains framework- and product-agnostic.
 3. **No Unstructured Memory Drift**: All self-learning data is validated against a strict schema and verified against run evidence.
 4. **Test-First Verification**: Every change to harness logic or tools must include a regression test proven to fail on the old code before deployment.
+

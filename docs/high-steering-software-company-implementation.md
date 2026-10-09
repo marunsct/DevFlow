@@ -64,7 +64,7 @@ Prior audits identified the following potential sources of run time and failure.
          │
          ▼
  4. GUIDED SPECIALIST EXECUTION
-    ├── [NEW] Fuzzy Path Normalization (auto-resolves workspace paths)
+    ├── [PROPOSED] Exact workspace-relative path validation (no silent redirection)
     ├── [NEW] Resilient Context-Anchored Editing (no line-offset crashes)
     └── IDE-grade Language Service checks syntax on write
          │

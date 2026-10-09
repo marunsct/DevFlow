@@ -3,7 +3,7 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-10-09 22:33 JST (stage 1 gate: 0 of 2 clean runs; start at
+**As of:** 2026-10-09 23:25 JST (stage 1 gate: 0 of 2 clean runs; start at
 `docs/HANDOVER.md` §0), branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
 kept current by whoever runs the loop - **in the same commit as any change to

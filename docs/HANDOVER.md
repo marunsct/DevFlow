@@ -27,18 +27,12 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 22:14 JST on 2026-10-09, run-1c696369 was cancelled at 35m (under the 40m early stop rule):
-- Sprint 1 passed cleanly in <20 min with dynamic 2-sprint cap and batch defect remediation verified.
-- Deadlock in Sprint 2: QA omitted tags for `[AC-9]`, `[AC-10]`, `[AC-11]`, `[AC-13]` in `app.spec.js` (even though the test code checked the elements). These criteria were reported as `status: untested`.
-- `_failing_due` treated `untested` as defects and handed them to product fixers. All 18 unit tests and 11 acceptance tests passed, but developers cannot edit the locked suite.
-- When attempt 1 failed, `_the_locked_tests_still_failing` checked only `outcome == "failed"`, skipping criteria with 0 tests. Thus `_a_dispute_is_due` returned `False`, dispute never reopened the suite, and attempt 2 repeated the identical failure.
-Fix deployed:
-- `src/app/acceptance/requests.py`: prompt rule requiring bracketed IDs for all criteria, including multi-criteria test titles (`[AC-2][AC-9]`).
-- `src/app/acceptance/suite.py`: `gaps` feedback directs adding `[{c.id}]` to an existing test title if already tested.
-- `src/app/graph/workflow.py`: `_the_locked_tests_still_failing` includes untested due criteria so dispute triggers, and `acceptance_dispute_node` reopens the suite to repair missing tests.
-- `src/app/agents/suite_dispute.py`: `tests_it_names` matches criterion tags.
-- Added regression tests `tests/test_untested_criteria_dispute.py` (banned-word checks passing).
-- Full suite: 9,759 passed, 3 S3 failed. Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
+At 22:35 JST on 2026-10-09, run-42b84547 was started on commit 2702c9d:
+- Checkpoints at 10m (22:45 JST), 21m (22:56 JST), 30m (23:05 JST), 40m (23:15 JST) audited cleanly.
+- At 23:02 JST, Playwright acceptance suite threw TypeError on un-awaited Promise (`itemB.getByRole is not a function`). Dispute engine correctly identified tests that broke themselves and reopened the locked suite (DR-5, DR-7).
+- QA repaired tests, suite re-locked, and Sprint 1 defect remediation ran. Reversion guard automatically caught and reverted a breaking change in defect_fix_1_10 that broke 14 tests.
+- Re-architected and updated `docs/harness-improvement-plan.md` with comparative analysis against SOTA harnesses (SWE-agent, OpenHands, Aider, DeepSeek) and prioritized roadmap (P0: pre-lock AST validation, self-learning distillation, dynamic fast-path).
+- Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

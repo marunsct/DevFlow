@@ -320,6 +320,72 @@ def with_setup_folded_into_the_sprint_that_needs_it(
         return plan, folded
 
 
+def max_sprints_for_criteria_count(criteria_count: int) -> int:
+    """The maximum number of sprints permitted for a given number of criteria."""
+    if criteria_count <= 10:
+        return 2
+    if criteria_count <= 15:
+        return 3
+    return 4
+
+
+def with_capped_sprint_count(plan: Any, criteria_count: int) -> tuple[Any, list[str]]:
+    """`plan` with sprint count capped according to the scope of criteria.
+
+    If the number of sprints exceeds the maximum for the criteria count,
+    excess sprints at the end are folded into earlier sprints.
+    """
+    max_sprints = max_sprints_for_criteria_count(criteria_count)
+    sprints = list(getattr(plan, "sprints", None) or [])
+    if len(sprints) <= max_sprints:
+        return plan, []
+
+    original_count = len(sprints)
+    folded = []
+    target_idx = max_sprints - 1
+    while len(sprints) > max_sprints:
+        excess = sprints.pop()
+        target = sprints[target_idx]
+
+        def both(field: str) -> list[str]:
+            merged: list[str] = []
+            for item in [*getattr(target, field, []), *getattr(excess, field, [])]:
+                if item not in merged:
+                    merged.append(item)
+            return merged
+
+        merged_sprint = target.model_copy(update={
+            "goal": f"{target.goal.rstrip('.')}; then {excess.goal.rstrip('.')}." if getattr(excess, "goal", "") else target.goal,
+            "in_scope": both("in_scope"),
+            "criteria": both("criteria"),
+            "acceptance_criteria": both("acceptance_criteria"),
+            "test_strategy": both("test_strategy"),
+            "security_checks": both("security_checks"),
+            "documentation_work": both("documentation_work"),
+            "risks": both("risks"),
+        })
+        sprints[target_idx] = merged_sprint
+        folded.append(str(getattr(excess, "goal", "")).strip())
+
+    coverage = list(getattr(plan, "success_measure_coverage", None) or [])
+    new_coverage = []
+    for line in coverage:
+        remapped_line = line
+        for excess_num in range(max_sprints + 1, original_count + 1):
+            remapped_line = re.sub(
+                rf"\b(sprints?\s*#?\s*){excess_num}\b",
+                rf"\g<1>{max_sprints}",
+                remapped_line,
+                flags=re.I,
+            )
+        new_coverage.append(remapped_line)
+
+    update_dict: dict[str, Any] = {"sprints": sprints}
+    if hasattr(plan, "success_measure_coverage"):
+        update_dict["success_measure_coverage"] = new_coverage
+    return plan.model_copy(update=update_dict), folded
+
+
 def how_much_a_plan_leaves_out(plan: Any, measures: list[str]) -> int:
     """How many success measures a plan fails to assign or to deliver in full."""
     return len(
@@ -460,6 +526,10 @@ def _the_acceptance_criteria(criteria: str) -> str:
         "own criteria and earlier sprints' need, and no earlier: work only a later "
         "sprint's criteria need belongs in that sprint's scope - not built ahead as "
         "functions, wiring or placeholders.\n\n"
+        "Keep the plan lean: when the acceptance criteria count is 10 or fewer, plan "
+        "no more than 2 sprints (Sprint 1: Core walking skeleton, Sprint 2: Remaining "
+        "capabilities and polish). For scopes with 5 or fewer criteria, deliver in a "
+        "single sprint. Avoid over-slicing small scopes into many sprints.\n\n"
     )
 
 
@@ -770,4 +840,6 @@ __all__ = [
     "SprintPlanOutput",
     "build_sprint_planning_request",
     "create_scrum_master_agent",
+    "max_sprints_for_criteria_count",
+    "with_capped_sprint_count",
 ]

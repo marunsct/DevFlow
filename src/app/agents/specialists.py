@@ -783,6 +783,21 @@ def fixes_to_keep_section(fixes: Sequence[str]) -> str:
     )
 
 
+def _work_order_file_ownership_note(work_order: Any) -> str:
+    """Explicitly remind the specialist which files it is allowed to touch."""
+    files = list(getattr(work_order, "files", None) or [])
+    if not files:
+        return ""
+    listed = ", ".join(f"`{f}`" for f in files)
+    return (
+        "--- File ownership for this work order ---\n"
+        f"You are assigned to work on: {listed}. "
+        "You may create or edit only these files. Any modification to files assigned "
+        "to other work orders is prohibited and will be rejected. If you need functionality "
+        "from other files, import or invoke their interface, or record a blocker.\n\n"
+    )
+
+
 def build_specialist_task_request(
     task_description: str,
     acceptance_criteria: list[str],
@@ -829,6 +844,7 @@ def build_specialist_task_request(
         f"{later_sprints_brief}"
         f"{fixes_to_keep_section(earlier_fixes)}"
         f"{order}"
+        f"{_work_order_file_ownership_note(work_order)}"
         f"{_the_interface_design(interface_design)}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
         f"{_a_file_another_specialist_is_also_given(task_description, acceptance_criteria, other_tasks)}"

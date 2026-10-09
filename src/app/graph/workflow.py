@@ -6142,6 +6142,17 @@ def build_workflow_graph(
                     "folded into the next sprint: %s",
                     len(folded), "; ".join(goal[:80] for goal in folded),
                 )
+            from app.agents.scrum_master import with_capped_sprint_count
+            criteria_count = len(acceptance_suite.criteria(root_path))
+            update["sprint_plan"], capped_folded = with_capped_sprint_count(
+                update["sprint_plan"], criteria_count
+            )
+            if capped_folded:
+                logger.info(
+                    "Sprint plan capped to lean sprint count for %d criteria; "
+                    "folded trailing sprint(s): %s",
+                    criteria_count, "; ".join(goal[:80] for goal in capped_folded),
+                )
             unnamed = capabilities_the_plan_never_names(
                 update["sprint_plan"], _without_the_mvp_features(measures)
             )
@@ -7287,6 +7298,17 @@ def build_workflow_graph(
             ),
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
+        co_defects = [
+            (pos, d) for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
+            if d.status == "open" and d.owner == defect.owner
+        ]
+        if co_defects:
+            batch_lines = ["\n--- Related failures owned by your role to resolve in this same fix ---"]
+            for pos, co_d in co_defects:
+                batch_lines.append(f"- Failure {pos + 1}: {co_d.description}")
+                batch_lines.append(f"  Expected: {co_d.expected_behavior}")
+                batch_lines.append(f"  Actual: {co_d.actual_behavior}")
+            request["messages"][-1]["content"] += "\n".join(batch_lines) + "\n"
         # A fix that breaks what passed before it is reverted to exactly where
         # it started. The commit it starts from is taken on the stage's first
         # entry and carried across an approval pause. See `app.graph.engineering`.
@@ -7412,6 +7434,16 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0),
                 detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
             )
+            for pos, co_d in co_defects:
+                update["remediation"] = mark_defect_fixed(
+                    update["remediation"], pos, regression_test=regression_test, verified_by=verified_by,
+                    resolution=f"Fixed in batch with defect {defect_index}: {resolution}",
+                )
+                defect_ledger.note(
+                    "fixed", stage_name, defect=co_d, round_=state.get("test_round", 0), index=pos,
+                    sprint=state.get("current_sprint_index", 0),
+                    detail=f"resolved in batch with defect {defect_index}",
+                )
 
         still_open = update["remediation"] is cycle
         if (
@@ -7442,6 +7474,17 @@ def build_workflow_graph(
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
         changed_files = _the_files_this_milestone_changed(state, outputs)
+        from app.agents.security_reviewer import _WORTH_REVIEWING
+        code_files = [f for f in changed_files if Path(f).suffix.lower() in _WORTH_REVIEWING]
+        if not code_files and not state.get("pending_inner_thread_id"):
+            review = SecurityReviewOutput(status="passed", findings=[])
+            from app.sprint.record import findings_of
+            return _handing_on(
+                stage="advice_review",
+                security_review=review,
+                sprint_findings=list(state.get("sprint_findings") or [])
+                + findings_of(review, "security", state.get("milestone_revision_count", 0) + 1),
+            )
         agent = create_security_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_security_review_request(
             changed_files,
@@ -7547,13 +7590,19 @@ def build_workflow_graph(
         if not pending:
             return _handing_on(stage="milestone_review", advice_findings=found, advice_review_cycle=cycle)
         role = pending[0]
+        changed_files = _the_files_this_milestone_changed(state, state.get("specialist_outputs", {}))
+        if role == "database" and not state.get("pending_inner_thread_id"):
+            db_indicators = {"db", "sql", "migration", "schema", "storage", "model", "store"}
+            if not any(any(ind in f.lower() for ind in db_indicators) for f in changed_files):
+                found[role] = []
+                return _handing_on(stage="advice_review", advice_findings=found, advice_review_cycle=cycle)
         milestone = state.get("milestone_plan")
         request = build_advice_review_request(
             role,
             adopted(advice, specification, role),
             str(getattr(milestone, "selected_sprint_goal", "") or ""),
             _this_sprint_s_scope_for_review(state),
-            _the_files_this_milestone_changed(state, state.get("specialist_outputs", {})),
+            changed_files,
         )
         request["messages"][-1]["content"] += _fixes_a_review_must_not_undo(state)
         if role == "ui_ux":

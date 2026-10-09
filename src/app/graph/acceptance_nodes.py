@@ -218,6 +218,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         )
     problems.extend(suite.tests_that_broke_themselves(root, result))
     problems.extend(suite.tests_the_runner_never_ran(root, result))
+    problems.extend(suite.tests_that_need_what_they_never_made(root, result))
     problems.extend(suite.locators_nobody_sees(root))
     problems.extend(suite.locators_that_pick_one(root))
     problems.extend(suite.locators_by_a_name_the_role_never_has(root))

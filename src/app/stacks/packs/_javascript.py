@@ -543,7 +543,9 @@ PLAYWRIGHT_LOCATORS_RULE = (
     "Use Playwright's locator methods: getByLabel, getByRole, getByText, getByAltText. "
     "Methods from other libraries like getByLabelText, getByPlaceholderText, findBy* or queryBy* "
     "do not exist in Playwright. For form fields, find them by their label: getByLabel('...', { exact: true }). "
-    "In getByRole, the role must be an ARIA role (e.g. textbox, combobox) - never an HTML tag like textarea or select."
+    "In getByRole, the role must be an ARIA role (e.g. textbox, combobox) - never an HTML tag like textarea or select. "
+    "Every test starts on a blank page; navigate with await page.goto('/') before any storage access - "
+    "never access localStorage or sessionStorage before goto, which causes a browser SecurityError."
 )
 
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
@@ -731,6 +733,79 @@ def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
         title = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
         found.append((text.count("\n", 0, begin) + 1, title.group(2) if title else "a test"))
     return found
+
+
+_STORAGE_USAGE = re.compile(r"\b(localStorage|sessionStorage)\b")
+_GOTO = re.compile(r"\bgoto\s*\(")
+
+
+def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
+    """(line, storage_name, context) of storage accessed before page.goto.
+
+    Playwright starts every test with a blank page (`about:blank`). Accessing
+    `localStorage` or `sessionStorage` in `evaluate` on `about:blank` throws a
+    browser `SecurityError: Access is denied for this document.` in Chromium.
+    Storage operations require navigating to the application origin with
+    `await page.goto('/')` first.
+    """
+    before_each_has_goto = bool(re.search(r"\bbeforeEach\s*\([^)]*\)?[\s\S]{0,600}?\bgoto\s*\(", text))
+    starts = [m.start() for m in _A_TEST.finditer(text)]
+    first_test = starts[0] if starts else len(text)
+    preamble = text[:first_test]
+
+    helpers_touching_storage: dict[str, tuple[int, str, str, bool]] = {}
+    for match in _A_HELPER.finditer(preamble):
+        name = match.group(1) or match.group(2)
+        if not name:
+            continue
+        next_helper = _A_HELPER.search(preamble, match.end())
+        end_pos = next_helper.start() if next_helper else first_test
+        body = preamble[match.start():end_pos]
+        s_match = _STORAGE_USAGE.search(body)
+        if s_match:
+            g_match = _GOTO.search(body)
+            line = text.count("\n", 0, match.start() + s_match.start()) + 1
+            if g_match and g_match.start() > s_match.start():
+                helpers_touching_storage[name] = (line, s_match.group(1), name, True)
+            elif not g_match:
+                helpers_touching_storage[name] = (line, s_match.group(1), name, False)
+
+    problems: list[tuple[int, str, str]] = []
+    for name, (line, storage_name, ctx, has_late_goto) in helpers_touching_storage.items():
+        if has_late_goto:
+            problems.append((line, storage_name, f"helper `{name}`"))
+
+    for be_match in re.finditer(r"\bbeforeEach\s*\(", preamble):
+        body = preamble[be_match.start():first_test]
+        s_match = _STORAGE_USAGE.search(body)
+        if s_match:
+            g_match = _GOTO.search(body[:s_match.start()])
+            if not g_match:
+                line = text.count("\n", 0, be_match.start() + s_match.start()) + 1
+                problems.append((line, s_match.group(1), "`beforeEach`"))
+
+    for begin, end in zip(starts, starts[1:] + [len(text)]):
+        body = text[begin:end]
+        title_match = re.match(r"""test\s*\(\s*(['"`])(.*?)\1""", body)
+        title = title_match.group(2) if title_match else "a test"
+
+        if not before_each_has_goto:
+            s_match = _STORAGE_USAGE.search(body)
+            if s_match:
+                g_match = _GOTO.search(body[:s_match.start()])
+                if not g_match:
+                    line = text.count("\n", 0, begin + s_match.start()) + 1
+                    problems.append((line, s_match.group(1), f"test `{title}`"))
+            for h_name, (h_line, s_name, _, has_late_goto) in helpers_touching_storage.items():
+                if not has_late_goto:
+                    h_call = re.search(rf"\b{re.escape(h_name)}\s*\(", body)
+                    if h_call:
+                        g_match = _GOTO.search(body[:h_call.start()])
+                        if not g_match:
+                            line = text.count("\n", 0, begin + h_call.start()) + 1
+                            problems.append((line, s_name, f"test `{title}` calling `{h_name}`"))
+
+    return problems
 
 
 #: Something only the test can know: the clock, a random number, a fresh id.

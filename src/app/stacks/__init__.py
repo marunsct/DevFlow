@@ -127,6 +127,9 @@ class StackPack:
     #: A suite file's text -> (line, title) of each test that acts on the page
     #: with nothing that opens it; it can never pass.
     opens_no_page: Callable[[str], Sequence[tuple[int, str]]] | None = None
+    #: A suite file's text -> (line, storage_name, context) where storage is accessed
+    #: before the page is opened; it throws a browser SecurityError on about:blank.
+    storage_before_page_open: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
     #: A suite file's text -> (line, title, value) of each test that looks on
     #: the page for a value it made at run time and never gave the product.
     expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None

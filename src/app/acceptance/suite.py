@@ -1063,6 +1063,28 @@ def tests_that_never_open_the_page(repo_root: str | Path) -> list[str]:
     return problems[:6]
 
 
+def tests_that_access_storage_before_opening_the_page(repo_root: str | Path) -> list[str]:
+    """Tests or helpers that access storage before opening the page. See the pack's `storage_before_page_open`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].storage_before_page_open is None:
+        return []
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for line, storage_name, context in list(found[0].storage_before_page_open(text))[:4]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: {context} accesses `{storage_name}` "
+                "before opening the page with `goto`. Every test starts on a blank page where storage access "
+                "is forbidden and throws a browser SecurityError. Navigate with `await page.goto('/')` "
+                "first before touching storage."
+            )
+    return problems[:6]
+
+
 def tests_that_expect_what_they_never_gave(repo_root: str | Path) -> list[str]:
     """Tests that look for a value they made and never gave the product. See the pack's `expects_what_it_never_gave`."""
     found = contract.the_pack(repo_root)

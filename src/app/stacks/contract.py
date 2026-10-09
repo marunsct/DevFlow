@@ -68,11 +68,111 @@ def read(repo_root: str | Path | None) -> dict[str, Any] | None:
 def the_pack(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] | None:
     """The pack and its recorded contract, or None."""
     record = read(repo_root)
-    if record is None:
+    if record is not None:
+        pack = pack_named(record.get("pack"))
+        if pack is not None:
+            return pack, record
+    return _infer_contract(repo_root)
+
+
+def _infer_contract(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] | None:
+    """Infer the pack and contract when CONTRACT_FILE was not written.
+
+    If a scaffold failed its smoke test or was left to the agents, CONTRACT_FILE
+    was not written. Every later stage (kept-file protections, QA locator and
+    assertion linters, runtime reports, failure pages) relies on the pack.
+    Inferring the pack from decisions or the technology stack document ensures
+    the harness still protects kept files and lints acceptance tests.
+    """
+    if not repo_root:
         return None
-    pack = pack_named(record.get("pack"))
+    root = Path(repo_root)
+    if not root.is_dir():
+        return None
+
+    from app.stacks.packs import ALL_PACKS
+    from app.tools.repository import pinned_project_directory
+
+    pack: StackPack | None = None
+
+    # 1. From .harness/decisions.json (DR-1 or point == "stack")
+    decisions_path = root / HARNESS_DIR / "decisions.json"
+    if decisions_path.is_file():
+        try:
+            decisions_data = json.loads(decisions_path.read_text(encoding="utf-8"))
+            if isinstance(decisions_data, list):
+                for item in decisions_data:
+                    if isinstance(item, dict) and item.get("point") == "stack":
+                        rationale = str(item.get("rationale") or "")
+                        options = [str(o) for o in (item.get("options") or [])]
+                        decision = str(item.get("decision") or "")
+                        for p in ALL_PACKS:
+                            if p.name in rationale or p.title in options or p.title in decision:
+                                pack = p
+                                break
+                    if pack is not None:
+                        break
+        except (OSError, ValueError):
+            pass
+
+    # 2. From docs/technology_stack.md
+    if pack is None:
+        tech_path = root / "docs" / "technology_stack.md"
+        if tech_path.is_file():
+            try:
+                content = tech_path.read_text(encoding="utf-8")
+                for p in ALL_PACKS:
+                    if p.title in content or p.name in content:
+                        pack = p
+                        break
+            except OSError:
+                pass
+
     if pack is None:
         return None
+
+    project = pinned_project_directory(root) or ""
+    if not project:
+        from app.tools.repository import _NON_PROJECT_DIRECTORIES, IGNORED_DIRECTORIES
+
+        for child in sorted(root.iterdir()):
+            if (
+                child.is_dir()
+                and not child.name.startswith(".")
+                and child.name not in _NON_PROJECT_DIRECTORIES
+                and child.name not in IGNORED_DIRECTORIES
+                and (
+                    (child / "package.json").is_file()
+                    or (child / "pyproject.toml").is_file()
+                    or (child / "go.mod").is_file()
+                )
+            ):
+                project = child.name
+                break
+
+    from app.stacks import python_package_name
+
+    title = project.replace("-", " ").replace("_", " ").title() if project else pack.title
+    package = python_package_name(project) if pack.language == "python" else None
+    record = {
+        "pack": pack.name,
+        "project": project,
+        "title": title,
+        "package": package or (python_package_name(project) if project else None),
+        **pack.commands(project, package),
+        "unit_report": pack.unit_report,
+        "acceptance_report": pack.acceptance_report,
+        "unit_dir": pack.unit_dir,
+        "acceptance_dir": pack.acceptance_dir,
+        "unit_pattern": pack.unit_pattern,
+        "acceptance_pattern": pack.acceptance_pattern,
+        "evidence_dir": pack.evidence_dir,
+    }
+    try:
+        (root / CONTRACT_FILE).parent.mkdir(parents=True, exist_ok=True)
+        (root / CONTRACT_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    except OSError:
+        pass
     return pack, record
 
 
@@ -81,8 +181,10 @@ def the_pack_above(path: str | Path | None) -> tuple[StackPack, dict[str, Any]] 
     if not path:
         return None
     for folder in Path(path).resolve().parents:
-        if (folder / CONTRACT_FILE).is_file():
-            return the_pack(folder)
+        if (folder / CONTRACT_FILE).is_file() or (folder / "docs" / "technology_stack.md").is_file():
+            found = the_pack(folder)
+            if found is not None:
+                return found
     return None
 
 

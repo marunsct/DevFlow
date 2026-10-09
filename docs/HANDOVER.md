@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-09 18:55 JST**.
+of the previous sessions' context. Last updated **2026-10-09 20:05 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,7 +27,13 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 18:43 JST on 2026-10-09, run-9af1e8ed failed at 49m in sprint 1 (attempt 2 defect remediation) due to an unhandled ValueError: `mark_defect_fixed` was called on a co-defect requiring a regression test when `regression_test` was empty (`""`). Fix deployed: `_bundle_co_defects` only bundles open defects with matching `regression_test_required` status, and `_apply_batch_co_defect_fixes` leaves co-defects requiring regression tests open instead of raising when no regression test is provided. Clean gate run count resets to 0 of 2 toward Stage 1 gate. Target is 2 consecutive clean runs.
+At 19:42 JST on 2026-10-09, run-38352564 was cancelled at 43m in sprint 1 due to two fatal issues:
+1) A transient scaffold acceptance smoke test failure left `.harness/stack-pack.json` unwritten; `contract.the_pack` returned `None`, disabling all stack pack lints and kept-file protections.
+2) QA authored acceptance test helper `resetPage`: `await page.evaluate(() => localStorage.clear()); await page.goto('/');`. On Playwright's initial `about:blank` document, accessing storage throws `SecurityError: Failed to read the 'localStorage' property from 'Window': Access is denied for this document.`, failing 8 tests on line 5 before opening the app.
+Fixes deployed:
+1) Fallback pack inference in `contract.the_pack` (`src/app/stacks/contract.py`): infers pack and project from `.harness/decisions.json` or `docs/technology_stack.md` and self-heals by persisting `CONTRACT_FILE`.
+2) Added `storage_before_page_open` in `src/app/stacks/packs/_javascript.py` and `tests_that_access_storage_before_opening_the_page` in `src/app/acceptance/suite.py` and `src/app/graph/acceptance_nodes.py`: rejects storage calls preceding `page.goto`. Updated `PLAYWRIGHT_LOCATORS_RULE` (zero banned words).
+Full test suite: 9,751 passed, only 3 S3 tests failed. Clean gate run count resets to 0 of 2 toward Stage 1 gate. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

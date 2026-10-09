@@ -223,6 +223,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(suite.locators_that_pick_one(root))
     problems.extend(suite.locators_by_a_name_the_role_never_has(root))
     problems.extend(suite.tests_that_never_open_the_page(root))
+    problems.extend(suite.tests_that_access_storage_before_opening_the_page(root))
     problems.extend(suite.tests_that_expect_what_they_never_gave(root))
     problems.extend(suite.tests_that_assert_an_unstated_order(root))
     problems.extend(suite.locators_that_contradict_their_assertions(root))
@@ -841,6 +842,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         *suite.locators_that_do_not_exist(root),
         *suite.locators_by_a_name_the_role_never_has(root),
         *suite.tests_that_never_open_the_page(root),
+        *suite.tests_that_access_storage_before_opening_the_page(root),
         *suite.tests_that_expect_what_they_never_gave(root),
         *suite.tests_that_need_what_they_never_made(root, result),
     ]

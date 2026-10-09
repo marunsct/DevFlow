@@ -295,7 +295,39 @@ We analyzed the architectural patterns of the top five autonomous coding harness
 
 ---
 
-## 5. Mathematical Efficiency Model & Expected Runtime Reductions
+### Pillar 9: Curated Context Bus (idea 1, evaluated: GOOD, as a small extension)
+- **Verdict**: Sound, but most of it already exists. Work orders (`analysis/work_orders.py`), the workspace digest, the project snapshot, `carry_over.py` (facts, not reasoning, survive a restart) and `stage_memory.py` already pass context to agents. What is missing is one *versioned, role-scoped* record of the facts that must never be lost between stages.
+- **Design (proposed)**: a small harness-owned file of typed entries: `requirement`, `decision`, `interface_contract`, `convention`, `known_trap`. Each entry has an id, a source artifact, a version and the roles that need it.
+  1. Entries are written only by the harness from harness-owned artifacts (the locked acceptance suite, Decision Records, stack-pack conventions), never from `docs/` text a run can rewrite.
+  2. Each stage receives only its slice, with a hard character budget, ranked by role relevance and recency. Over budget: drop lowest rank and name what was dropped.
+  3. A trap is added only after the same failure class recurs; stack-specific traps live in the stack pack, not core.
+- **Why not a free-form shared memory**: unvalidated notes drift and poison weaker models. Carrying prior *reasoning* between stages was measured and rejected.
+- **Success criterion**: fewer repeated tool calls and fewer "contract mismatch" defects against the current baseline on the same brief. **Rollback**: a flag that disables injection; stages fall back to work orders alone.
+
+### Pillar 10: Code and Test Index (idea 2, evaluated: GOOD if kept bounded)
+- **Verdict**: `analysis/project_memory.py` already is a language-agnostic file index (purpose, up to 8 signatures per file, who created or changed each file). The proposal is to extend it, not build a second index.
+- **Evidence**: Aider sends a compact repository map (files plus key symbols with signatures, extracted with tree-sitter), ranks it with a graph algorithm when the repository is large, and lets the model request specific files afterwards (https://aider.chat/2023/10/22/repomap.html). This supports an outline plus on-demand reads. The repo's own measurement rejects whole-file inlining (only 13% of reads are whole small files).
+- **Delta (proposed)**:
+  1. Import and reference edges between files (reuse `analysis/local_imports.py`).
+  2. A test-to-criterion-to-file map (reuse `analysis/test_discovery.py` and the acceptance suite) so a defect points at the files and tests involved.
+  3. A ranked, size-capped outline per stage, and a read-only `find_symbol` style query tool. Regex extraction stays the fallback where no tree-sitter grammar exists.
+- **Gate before building**: measure the current share of read and search calls that return nothing used. Build only if it is large; otherwise the digest already suffices.
+- **Rollback**: outline injection behind a flag; the index file is advisory and never blocks a stage.
+
+### Tiered Steering by Model Capability
+Plan-first structure stays for every model, because a short plan before execution helps weaker ones. Steering intensity varies by a *measured* signal, not a model name:
+- **Strong tier** (few repeated calls, parses structured output first time): compact work orders, fewer gates.
+- **Weak tier** (restarts, repeated identical calls, parse failures): full work order with excerpts and signatures, in-stage syntax gate, tighter retry budget, smaller scopes per stage.
+The tier is chosen per stage from `stage_memory` counters, can move up or down mid-run, and never changes the owner's model or settings.
+
+### Efficiency for Long Runs
+Bounded retries and time budgets per stage; stage collapsing for small scopes (exists: `_cap_sprints_for_scope`); one remediation session per role (Pillar 8); and a context budget that stays flat as the project grows (outline, not file dumps).
+
+---
+
+## 5. Efficiency Model (HYPOTHESES, NOT MEASURED)
+> The table below is an estimate built from one run. Every "High-Steering Run" figure is an unverified target. Replace each with a measured value from `scripts/loop/audit_live.py` after the pillar ships, or delete it. Do not quote the 67% figure.
+
 
 Based on empirical data from `run-42b84547` and historical runs, we model the wall-clock impact of the 8 Pillars on a standard 16-criteria `web-todo` application:
 
@@ -358,3 +390,10 @@ Based on empirical data from `run-42b84547` and historical runs, we model the wa
 5. **Test-First Verification**:
    - Every fix verified by a test proven to fail on the old code.
    - Full test suite passing (`scripts/loop/loop.sh suite`).
+
+---
+
+## 8. Sources and Open Verification
+- Verified: Aider repository map (https://aider.chat/2023/10/22/repomap.html).
+- Unverified, treat as hypotheses until sourced: SWE-agent agent-computer interface, OpenHands, persistent sandbox startup, DOM-snapshot failure packets, all runtime-reduction numbers.
+- Order of work: measure (read churn, context-miss failures) then Pillars 1, 7, 8, then 9, then 10.

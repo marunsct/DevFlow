@@ -542,7 +542,8 @@ def playwright_assertions(project_root: Path) -> frozenset[str]:
 PLAYWRIGHT_LOCATORS_RULE = (
     "Use Playwright's locator methods: getByLabel, getByRole, getByText, getByAltText. "
     "Methods from other libraries like getByLabelText, getByPlaceholderText, findBy* or queryBy* "
-    "do not exist in Playwright."
+    "do not exist in Playwright. For form fields, find them by their label: getByLabel('...', { exact: true }). "
+    "In getByRole, the role must be an ARIA role (e.g. textbox, combobox) - never an HTML tag like textarea or select."
 )
 
 FIND_CONTROLS = """Find each control by the name a person sees, exactly as the brief gives
@@ -608,6 +609,7 @@ LOCATORS_THAT_DO_NOT_EXIST = (
     r"\b(?:get|query|find|getAll|queryAll|findAll)ByPlaceholderText\s*\(",
     r"\b(?:get|query|find|getAll|queryAll|findAll)ByDisplayValue\s*\(",
     r"\b(?:query|find|getAll|queryAll|findAll)By(?:Role|Text|Label|Placeholder|AltText|Title|TestId)\s*\(",
+    r"""\b(?:get|query|find|getAll|queryAll|findAll)ByRole\s*\(\s*['"`](?:textarea|input|select|dropdown|field)['"`]""",
 )
 
 #: Roles that take no name from what they show, found by a `name` anyway: the

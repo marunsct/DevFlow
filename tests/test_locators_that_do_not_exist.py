@@ -69,6 +69,25 @@ def test_suite_catches_nonexistent_locators(tmp_path: Path) -> None:
     assert "line(s) 3, 4, 5" in problem
 
 
+def test_suite_catches_invalid_role_locators(tmp_path: Path) -> None:
+    acceptance = _scaffolded(tmp_path)
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "items.spec.js").write_text(
+        "test('[AC-1] displays items', async ({ page }) => {\n"
+        "  await page.goto('/');\n"
+        "  const area = page.getByRole('textarea', { name: 'Details', exact: true });\n"
+        "  const field = page.getByRole('input', { name: 'Name', exact: true });\n"
+        "});\n"
+    )
+
+    problems = suite.locators_that_do_not_exist(tmp_path)
+    assert len(problems) == 1, f"Expected 1 problem report, got: {problems}"
+    problem = problems[0]
+    assert "items.spec.js" in problem
+    assert "textarea" in problem
+    assert "line(s) 3, 4" in problem
+
+
 def test_suite_allows_valid_playwright_locators(tmp_path: Path) -> None:
     acceptance = _scaffolded(tmp_path)
     acceptance.mkdir(parents=True, exist_ok=True)

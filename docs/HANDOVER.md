@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-09 16:15 JST**.
+of the previous sessions' context. Last updated **2026-10-09 17:45 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,7 +27,7 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 15:53 JST on 2026-10-09, run-66699bc2 was cancelled after 2h51m in sprint 1 due to QA hallucinating `page.getByLabelText` (Testing Library locator not in Playwright). Because navigation fails before the product is built, the error was hidden during initial authoring and the suite locked. Fix deployed: `locators_that_do_not_exist` lints and rejects invalid locator methods before locking, and reopens if encountered in rounds. Clean gate run count resets to 0 of 2 toward Stage 1 gate. Target is 2 consecutive clean runs.
+At 17:42 JST on 2026-10-09, run-61290727 was cancelled after 1h22m in sprint 1 (attempt 3 defect loop) due to QA authoring 14 acceptance tests calling `getByRole('textarea', ...)` instead of `getByLabel(...)` or ARIA role `textbox`. In W3C ARIA, `<textarea>` has ARIA role `textbox`, while `textarea` is an HTML tag. Playwright strictly matches valid ARIA roles, causing the tests to timeout. Because navigation fails before the product is built, this was hidden from pre-lock review. Fix deployed: `LOCATORS_THAT_DO_NOT_EXIST` now rejects HTML tag names mistakenly used as ARIA roles in `getByRole` (`textarea`, `input`, `select`, `dropdown`, `field`), and `PLAYWRIGHT_LOCATORS_RULE` was updated. Clean gate run count resets to 0 of 2 toward Stage 1 gate. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:
@@ -65,7 +65,7 @@ stage's count. Stages, in order:
 3. `fullstack-bookmarks`: two consecutive clean runs.
 4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand.
 
-**Current: stage 1 (`web-todo`), 1 of 2.**
+**Current: stage 1 (`web-todo`), 0 of 2.**
 
 **Early stop.** If you find a bug in a run's first 40 minutes, cancel the run
 (`loop.sh cancel`), fix, deploy and start again. If you find a major harness
@@ -156,16 +156,16 @@ read every product source file against the brief (monitoring §0.4.1). Check:
   first when it returns: deploy the pending fix and start the next run, then
   commit and push. A failing git step must never stop the testing.
 
-## 2. Where it stands (2026-10-09 12:48 JST)
+## 2. Where it stands (2026-10-09 17:45 JST)
 
 | | |
 |---|---|
-| branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). Last code commit before this batch `392a9ab`. `docs/PRODUCT.md` describes the whole product. |
-| deployed | Deploying the performance optimizations batch between runs before starting gate run 2. |
-| current run | run-4eb14786-2602-4b8d-824f-d5b223024573 completed clean (10/10 hidden tests, locked suite 16 passed, 484 LOC, clean git repo). Ready for gate run 2. |
+| branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
+| deployed | Reject HTML element tags used as ARIA roles in getByRole before locking suite. |
+| current run | run-61290727-a45a-4633-a75e-0681f13d4cc8 cancelled at 1h22m (17:42 JST) due to getByRole('textarea') ARIA role confusion. Fix verified with 14 unit tests. |
 | model | `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`, context 131,000, thinking effort medium, thinking mode default, execution mode **parallel**, no judgement model. |
-| gate | stage 1 (`web-todo`): **1 of 2** clean runs |
-| suite | 9,716 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials), about 3 minutes |
+| gate | stage 1 (`web-todo`): **0 of 2** clean runs |
+| suite | 9,732 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials), about 3 minutes |
 
 ### 2.1 What the performance optimizations batch changed (deployed 12:50 JST)
 

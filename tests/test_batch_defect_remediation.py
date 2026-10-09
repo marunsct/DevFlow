@@ -49,7 +49,7 @@ def test_batch_remediation_prompt_contains_no_forbidden_words() -> None:
     assert not (words & forbidden), f"Found forbidden words: {words & forbidden}"
 
 
-def test_bundle_co_defects_matches_regression_test_requirement() -> None:
+def test_bundle_co_defects_groups_all_open_defects_for_specialist_role() -> None:
     from app.graph.workflow import _bundle_co_defects
 
     d1 = Defect(
@@ -79,14 +79,25 @@ def test_bundle_co_defects_matches_regression_test_requirement() -> None:
         owner="ui_ux",
         regression_test_required=False,
     )
-    cycle = RemediationCycle(sprint_goal="Fix UI issues", defects=[d1, d2, d3])
+    d4 = Defect(
+        description="Backend issue",
+        severity="minor",
+        reproduction_steps="step 4",
+        expected_behavior="expect 4",
+        actual_behavior="actual 4",
+        owner="backend",
+        regression_test_required=False,
+    )
+    cycle = RemediationCycle(sprint_goal="Fix UI issues", defects=[d1, d2, d3, d4])
 
     bundled = _bundle_co_defects(cycle, 0)
-    # d2 requires a regression test while d1 does not, so d2 must NOT be bundled with d1.
-    # d3 does not require a regression test, so d3 is bundled.
-    assert len(bundled) == 1
-    assert bundled[0][0] == 2
-    assert bundled[0][1].description == "Third issue"
+    # Under Pillar 8, all open defects for the same specialist role are bundled together
+    # regardless of regression_test_required. d4 belongs to backend and is not bundled.
+    assert len(bundled) == 2
+    assert bundled[0][0] == 1
+    assert bundled[0][1].description == "Filter view does not update immediately"
+    assert bundled[1][0] == 2
+    assert bundled[1][1].description == "Third issue"
 
 
 def test_apply_batch_co_defect_fixes_leaves_untested_co_defect_open_without_raising() -> None:
@@ -112,7 +123,7 @@ def test_apply_batch_co_defect_fixes_leaves_untested_co_defect_open_without_rais
     )
     cycle = RemediationCycle(sprint_goal="Fix UI issues", defects=[d1, d2])
 
-    # Suppose d2 was bundled as a co-defect, but no regression test was provided:
+    # Suppose d2 was bundled as a co-defect, but neither regression test nor verified_by was provided:
     # it must not raise ValueError, and d2 must remain open.
     updated = _apply_batch_co_defect_fixes(
         cycle,
@@ -126,5 +137,19 @@ def test_apply_batch_co_defect_fixes_leaves_untested_co_defect_open_without_rais
         sprint=1,
     )
     assert updated.defects[1].status == "open"
+
+    # When verified_by ran and passed, d2 is resolved in batch:
+    verified_update = _apply_batch_co_defect_fixes(
+        cycle,
+        [(1, d2)],
+        defect_index=0,
+        regression_test="",
+        verified_by="npm test",
+        resolution="Fixed UI",
+        stage_name="defect_fix_1_0",
+        round_=1,
+        sprint=1,
+    )
+    assert verified_update.defects[1].status == "fixed"
 
 

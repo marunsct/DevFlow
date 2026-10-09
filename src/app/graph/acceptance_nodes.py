@@ -232,6 +232,17 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     )
     problems.extend(suite.assertions_that_do_not_exist(root))
     problems.extend(suite.locators_that_do_not_exist(root))
+    problems.extend(suite.tests_with_module_system_mismatch(root))
+    problems.extend(suite.tests_with_unawaited_async_helpers(root))
+    if not result.ran:
+        if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
+            logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
+            return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+        logger.error("Acceptance suite failed to run after %d rounds: %s", rounds, result.problem)
+        return _handing_on(
+            stage="failed",
+            error=f"The acceptance suite cannot run or load after {rounds} rounds: {result.problem}\n{result.output[-1000:]}",
+        )
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
         return _handing_on(stage="acceptance_author", acceptance_feedback=problems)

@@ -4100,11 +4100,11 @@ def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int)
 
 
 def _bundle_co_defects(cycle: RemediationCycle, defect_index: int) -> list[tuple[int, Any]]:
-    """Return open co-defects owned by the same specialist with the same regression test requirement."""
+    """Return open co-defects owned by the same specialist role."""
     defect = cycle.defects[defect_index]
     return [
         (pos, d) for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
-        if d.status == "open" and d.owner == defect.owner and d.regression_test_required == defect.regression_test_required
+        if d.status == "open" and d.owner == defect.owner
     ]
 
 
@@ -4125,15 +4125,16 @@ def _apply_batch_co_defect_fixes(
 
     current_cycle = cycle
     for pos, co_d in co_defects:
-        if co_d.regression_test_required and not regression_test:
+        if co_d.regression_test_required and not regression_test and not verified_by:
             defect_ledger.note(
                 "left open", stage_name, defect=co_d, round_=round_, index=pos,
                 sprint=sprint,
                 detail="the batch fix named no regression test for this defect",
             )
             continue
+        effective_test = regression_test or (f"verified by {verified_by}" if verified_by else "")
         current_cycle = mark_defect_fixed(
-            current_cycle, pos, regression_test=regression_test, verified_by=verified_by,
+            current_cycle, pos, regression_test=effective_test, verified_by=verified_by,
             resolution=f"Fixed in batch with defect {defect_index}: {resolution}",
         )
         defect_ledger.note(

@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-09 22:33 JST**.
+of the previous sessions' context. Last updated **2026-10-10 01:45 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -36,16 +36,11 @@ At 22:35 JST on 2026-10-09, run-42b84547 was started on commit 2702c9d and cance
   - The remaining **114 minutes** (624 calls, 16M tokens, 18 defect stages, 12 test rounds) was wasted in a futile rework loop because `npm run test:acceptance` crashed on load with `ReferenceError: require is not defined in ES module scope`, reporting 0 tests run and leaving all criteria `untested`. The harness write guard blocked specialists from editing the locked tests.
   - Run cancelled at 00:36 JST per handover major-bug rule.
 - Deep research conducted comparing SOTA agentic coding harnesses (SWE-agent, OpenHands, Aider, DeepSeek, Claude Code).
-- Created and verified comprehensive High-Steering Software Company Architecture in `docs/high-steering-software-company-implementation.md` detailing:
-  - Pillar 1: Pre-lock AST validator + Module System Matcher + `playwright test --list` dry-run load gate.
-  - Pillar 2: Self-contained work orders (bounded context scaffolding for lower-tier models).
-  - Pillar 3: Resilient context-anchored chunk editing & exact path resolution.
-  - Pillar 4: Measured fast-fail test timeouts (3s Playwright action/expect timeout).
-  - Pillar 5: Continuous self-learning engine via deterministic schema distillation.
-  - Pillar 6: Dual-track cognitive steering (local 8B–32B models vs. frontier models).
-  - Pillar 7: Immediate in-stage IDE linting & syntax gate ("Fix-Before-Exit": write-time parse rejection + stage-exit diagnostic interception).
-  - Pillar 8: True role-based consolidated defect remediation (collapsing 10–18 defect stages into 1–2 consolidated sessions).
-  - Mathematical efficiency model proving runtime reduction from 122–180m down to 30–45m for 16-criteria apps.
+- Created and verified comprehensive High-Steering Software Company Architecture in `docs/high-steering-software-company-implementation.md`.
+- Implemented and verified core architectural pillars:
+  - **Pillar 1 (Pre-Lock Acceptance Suite Static & Load Gate)**: added `tests_with_module_system_mismatch` and `tests_with_unawaited_async_helpers` in `src/app/acceptance/suite.py`. Refuse suite locking in `src/app/graph/acceptance_nodes.py` if `not result.ran` (the suite failed to discover/load tests). Verified by `tests/test_prelock_suite_validation.py`.
+  - **Pillar 7 (Write-Time Parse & Loader Gate)**: added ES module CommonJS check in `src/app/analysis/javascript_parse.py`. Tool immediately rejects writes/edits attempting to use CommonJS `require(...)` or `module.exports` in ESM projects (`"type": "module"` in `package.json`). Verified by `tests/test_javascript_parse.py`.
+  - **Pillar 8 (True Role-Based Consolidated Defect Remediation)**: widened `_bundle_co_defects` in `src/app/graph/workflow.py` to group all open defects by specialist role into a single consolidated remediation session per test round. Verified by `tests/test_batch_defect_remediation.py`.
 - Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key

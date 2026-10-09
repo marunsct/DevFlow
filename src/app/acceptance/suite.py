@@ -1194,6 +1194,90 @@ def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list
     ]
 
 
+def tests_with_module_system_mismatch(repo_root: str | Path) -> list[str]:
+    """Where the suite mixes CommonJS require and ES module syntax, causing loader failure.
+
+    In a package with `"type": "module"`, Node treats `.js` files as ES modules and
+    calling `require(...)` throws ReferenceError at module evaluation time before
+    any tests run.
+    """
+    where = location(repo_root)
+    if where is None:
+        return []
+    project, _ = where
+    pkg_path = Path(repo_root) / project / "package.json"
+    if not pkg_path.is_file():
+        return []
+    try:
+        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+    is_esm = pkg.get("type") == "module"
+    root = Path(repo_root)
+    problems = []
+    for path in suite_files(repo_root):
+        if path.suffix not in (".js", ".mjs", ".ts"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if is_esm or path.suffix == ".mjs":
+            matches = list(re.finditer(r"\brequire\s*\(", text))
+            if matches:
+                line = text.count("\n", 0, matches[0].start()) + 1
+                problems.append(
+                    f"`{path.relative_to(root).as_posix()}` line {line} uses CommonJS `require(...)` syntax in an "
+                    "ES module project (`package.json` specifies `\"type\": \"module\"`). Use ES module `import` syntax "
+                    "(e.g. `import { test, expect } from '@playwright/test';`)."
+                )
+    return problems
+
+
+def tests_with_unawaited_async_helpers(repo_root: str | Path) -> list[str]:
+    """Where the suite calls an async helper function without `await` before method access.
+
+    An un-awaited async function returns a Promise. Calling locator methods on it
+    throws TypeError: `... is not a function`.
+    """
+    root = Path(repo_root)
+    problems = []
+    _ASYNC_FN = re.compile(
+        r"""(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*async\b|async\s+function\s+([a-zA-Z0-9_$]+)\b"""
+    )
+    for path in suite_files(repo_root):
+        if path.suffix not in (".js", ".mjs", ".ts", ".jsx", ".tsx"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        helpers = {
+            m.group(1) or m.group(2)
+            for m in _ASYNC_FN.finditer(text)
+            if m.group(1) or m.group(2)
+        }
+        if not helpers:
+            continue
+        lines = text.splitlines()
+        for idx, line in enumerate(lines, 1):
+            for h in helpers:
+                pattern = rf"\b{re.escape(h)}\s*\("
+                for m in re.finditer(pattern, line):
+                    preceding = line[:m.start()].strip()
+                    if re.search(r"\bawait\s*$", preceding) or re.search(r"\breturn\s*$", preceding):
+                        continue
+                    if re.search(r"\b(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=", preceding) or re.match(r"[^;]*\)\s*\.", line[m.start():]):
+                        problems.append(
+                            f"`{path.relative_to(root).as_posix()}` line {idx}: async helper `{h}` is called without `await`. "
+                            f"An async function returns a Promise; await the result before using it (e.g. `await {h}(...)`)."
+                        )
+                        break
+    return problems
+
+
+
+
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:
     """Whether a ledger entry is a run of the locked acceptance suite.
 

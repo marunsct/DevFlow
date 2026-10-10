@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-10 01:45 JST**.
+of the previous sessions' context. Last updated **2026-10-10 11:40 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,21 +27,19 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 22:35 JST on 2026-10-09, run-42b84547 was started on commit 2702c9d and cancelled at 00:36 JST (wall-clock 122 min):
-- Checkpoints at 10m (22:45 JST), 21m (22:56 JST), 30m (23:05 JST), 40m (23:15 JST), 54m, 78m, 97m, 115m audited cleanly.
-- At 23:02 JST, Playwright acceptance suite threw TypeError on un-awaited Promise (`itemB.getByRole is not a function`). Dispute engine correctly identified tests that broke themselves and reopened the locked suite (DR-5, DR-7).
-- At ~23:54 JST, QA repaired specs but introduced CommonJS `require` into `todo-misc.spec.js` and `todo.spec.js` while `package.json` had `"type": "module"`. The suite was locked into `.harness/acceptance-locks/` without load verification.
-- Empirical timing post-mortem (`loop.sh timing`):
-  - Specialists built the entire working app in **8 minutes** (70 calls, 249 lines of code, 27/27 unit tests passing).
-  - The remaining **114 minutes** (624 calls, 16M tokens, 18 defect stages, 12 test rounds) was wasted in a futile rework loop because `npm run test:acceptance` crashed on load with `ReferenceError: require is not defined in ES module scope`, reporting 0 tests run and leaving all criteria `untested`. The harness write guard blocked specialists from editing the locked tests.
-  - Run cancelled at 00:36 JST per handover major-bug rule.
-- Deep research conducted comparing SOTA agentic coding harnesses (SWE-agent, OpenHands, Aider, DeepSeek, Claude Code).
-- Created and verified comprehensive High-Steering Software Company Architecture in `docs/high-steering-software-company-implementation.md`.
-- Implemented and verified core architectural pillars:
-  - **Pillar 1 (Pre-Lock Acceptance Suite Static & Load Gate)**: added `tests_with_module_system_mismatch` and `tests_with_unawaited_async_helpers` in `src/app/acceptance/suite.py`. Refuse suite locking in `src/app/graph/acceptance_nodes.py` if `not result.ran` (the suite failed to discover/load tests). Verified by `tests/test_prelock_suite_validation.py`.
-  - **Pillar 7 (Write-Time Parse & Loader Gate)**: added ES module CommonJS check in `src/app/analysis/javascript_parse.py`. Tool immediately rejects writes/edits attempting to use CommonJS `require(...)` or `module.exports` in ESM projects (`"type": "module"` in `package.json`). Verified by `tests/test_javascript_parse.py`.
-  - **Pillar 8 (True Role-Based Consolidated Defect Remediation)**: widened `_bundle_co_defects` in `src/app/graph/workflow.py` to group all open defects by specialist role into a single consolidated remediation session per test round. Verified by `tests/test_batch_defect_remediation.py`.
-- Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
+At 01:56 JST on 2026-10-10, run-e4c69b89-8712-4113-8c5f-6389b0d7deb1 was started on commit a76e480 and completed at 07:26 JST (wall-clock 330 min):
+- **Benchmark Score**: **1.0 (10/10 hidden tests pass)**!
+- **Unit Tests**: **30/30 passed (`exit code 0`)**.
+- **False Acceptance**: None (`false_acceptance: false`).
+- Empirical timing breakdown (`loop.sh timing run-e4c69b89`):
+  - Model busy 246 min (75%), 2,065 model calls.
+  - Plan: 3 min (8 calls); Sprint plan: 20 min (87 calls); Build: 38 min (378 calls); Verify: 147 min (1,392 calls).
+  - 1,170 model calls (116 model min) spent in 16 defect fix stages / 26 test rounds, resolving reference and import errors that could have been resolved immediately in-stage.
+- Improvements implemented between runs:
+  - Updated `PLAYWRIGHT = "1.64.0"` in `scripts/bench/score.py` to match the container's installed browser cache (`chromium_headless_shell-1248`).
+  - Implemented Pillar 7: In-stage syntax and reference diagnostic interceptor (`_diagnostics_in_files_touched`, `_ask_about_high_confidence_diagnostics`) in `src/app/graph/workflow.py`. Gives the specialist a single-turn prompt to fix undeclared names or broken imports in-place before completing the stage, bypassing downstream test failures and defect triage.
+  - Verified by `tests/test_in_stage_syntax_and_reference_interceptor.py` (passes banned words check, proved failing on old code, 3/3 passed).
+- Gate count: 0 of 2 clean runs toward Stage 1 (fixes applied between runs reset the count). Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

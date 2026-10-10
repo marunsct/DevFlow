@@ -2010,6 +2010,83 @@ def _ask_about_the_files_it_never_wrote(
     )
 
 
+def _ask_about_high_confidence_diagnostics(
+    agent: Any, inner_thread_id: str, callbacks: Any, diagnostics: list[str], run_id: str | None, stage: str,
+    schema: Any = None,
+) -> dict[str, Any] | None:
+    """Ask the conversation once to fix high-confidence errors in modified files before exiting."""
+    bullet_points = "\n".join(diagnostics[:4])
+    text = (
+        "The language service detected errors in the files modified in this stage:\n"
+        f"{bullet_points}\n"
+        "Fix these errors now before completing your work."
+    )
+    return _nudge_for_the_structured_response(
+        agent, inner_thread_id, callbacks, None, schema, run_id, stage, text=text,
+    )
+
+
+def _diagnostics_in_files_touched(
+    state: Any, result: dict[str, Any], structured_response: Any,
+) -> list[str]:
+    """High-confidence syntax or reference diagnostics in files modified by this stage.
+
+    Runs what an IDE would underline (via `language_service.underlined_any`) over the
+    files touched by this stage. Only certain errors (ReferenceError, missing exports,
+    undeclared names) are reported, bounded to a maximum of 4 items.
+    """
+    from app.analysis.file_kinds import is_scratch
+    from app.analysis.language_service import ALL_SUFFIXES, underlined_any
+
+    repo = state.get("repository") if isinstance(state, dict) else None
+    root = getattr(repo, "root_path", None)
+    if not root or not Path(root).is_dir():
+        return []
+
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        pinned = pinned_project_directory(Path(root))
+    except Exception:  # noqa: BLE001
+        pinned = None
+    project = Path(root) / pinned if pinned else None
+
+    files_to_check: set[str] = set()
+    for file_name in getattr(structured_response, "changed_files", None) or ():
+        files_to_check.add(_without_a_leading_dot_slash(str(file_name)))
+
+    for message in result.get("messages") or ():
+        for call in getattr(message, "tool_calls", None) or ():
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+            args = (call.get("args") if isinstance(call, dict) else getattr(call, "args", None)) or {}
+            if name in _FILE_WRITES:
+                for key in ("relative_path", "destination"):
+                    if args.get(key):
+                        files_to_check.add(_without_a_leading_dot_slash(str(args[key])))
+
+    diagnostics: list[str] = []
+    for relative in sorted(files_to_check):
+        if not relative.lower().endswith(ALL_SUFFIXES) or is_scratch(Path(relative).name):
+            continue
+        target = Path(root) / relative
+        if not target.is_file():
+            continue
+        try:
+            content = target.read_text(encoding="utf-8", errors="replace")
+            found = underlined_any(root, target, content, project)
+            if found and getattr(found, "here", None):
+                for finding in found.here:
+                    line = finding.get("line", "?")
+                    msg = finding.get("message", "")
+                    diagnostics.append(f"- In `{relative}` line {line}: {msg}")
+                    if len(diagnostics) >= 4:
+                        return diagnostics
+        except Exception:  # noqa: BLE001
+            continue
+
+    return diagnostics
+
+
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
     """Whether the model hit its output ceiling having emitted nothing.
 
@@ -2612,6 +2689,33 @@ def _run_gated_agent(
         structured_response = structured_response.model_copy(update={"changed_files": [
             name for name in structured_response.changed_files if str(name).strip() not in never_wrote
         ]})
+
+    if not never_wrote and not _stopped_by_the_budget(result):
+        diagnostics = _diagnostics_in_files_touched(state, result, structured_response)
+        if diagnostics:
+            logger.warning(
+                "Stage %s touched files with high-confidence diagnostics: %s; asking once to fix before exit",
+                stage_name, "; ".join(diagnostics),
+            )
+            followed = _ask_about_high_confidence_diagnostics(
+                agent, inner_thread_id, activity, diagnostics,
+                config["configurable"].get(APP_RUN_ID_KEY), stage_name,
+                getattr(agent, "workflow_response_format", None),
+            )
+            if followed is not None and followed.get("__interrupt__"):
+                approval = extract_pending_approval(
+                    followed, state["repository"].root_path, requested_by=stage_name, stage=stage_name,
+                )
+                return {
+                    "stage": f"{APPROVAL_PAUSE_PREFIX}{stage_name}",
+                    "pending_approval": approval,
+                    "pending_inner_thread_id": inner_thread_id,
+                    "pending_decision": None,
+                    "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
+                }
+            if followed is not None:
+                result = followed
+                structured_response = answer_without_leaked_turns(followed["structured_response"])
 
     succeeded = dict(state.get("structured_retries") or {})
     succeeded.pop(stage_name, None)

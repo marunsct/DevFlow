@@ -37,7 +37,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 RUNNERS = Path(os.environ.get("BENCH_RUNNERS", "/tmp/bench-runners"))
-PLAYWRIGHT = "1.63.0"
+PLAYWRIGHT = "1.64.0"
 
 
 def _free_port() -> int:

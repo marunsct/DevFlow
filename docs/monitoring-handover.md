@@ -3,7 +3,7 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-10-10 01:45 JST (stage 1 gate: 0 of 2 clean runs; start at
+**As of:** 2026-10-10 11:40 JST (stage 1 gate: 0 of 2 clean runs; start at
 `docs/HANDOVER.md` §0), branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
 kept current by whoever runs the loop - **in the same commit as any change to
@@ -526,13 +526,19 @@ its own criteria, so there are more rounds. Back on gpt-oss-20b (since 14:12
 JST, 2026-10-08), expect calls about 4× faster. The thinking budget remains the
 owner's decision and the biggest lever.
 
-**2026-10-10: run-42b84547 timing audit & empirical post-mortem (122 min wall clock).**
-The run on commit `2702c9d` was cancelled at 00:36 JST after 122 minutes.
-Empirical breakdown:
-- Specialists completed 100% of the working product in **8 minutes** (70 calls, 249 lines of code, 27/27 unit tests pass).
-- The remaining **114 minutes** (624 calls, 16M tokens, 18 defect-fix stages, 12 test rounds) was wasted in an unrecoverable defect loop.
-- Root cause: During acceptance authoring, QA authored `todo-misc.spec.js` using CommonJS `require` while `package.json` had `"type": "module"`. The suite was locked into `.harness/acceptance-locks/` without load verification. Playwright crashed on every run with `ReferenceError: require is not defined in ES module scope`, reporting 0 tests run and leaving all criteria `untested`. The harness write guard blocked specialists from editing the locked tests.
-- Re-architected `docs/high-steering-software-company-implementation.md` with 8 pillars (including pre-lock AST & load dry-run gate, in-stage IDE linting/syntax gate, and true role-based consolidated defect remediation).
+**2026-10-10: run-e4c69b89-8712-4113-8c5f-6389b0d7deb1 timing audit & empirical post-mortem (330 min wall clock).**
+Completed at 07:26 JST on 2026-10-10.
+- **Benchmark Score**: **1.0 (10/10 hidden tests pass)**!
+- **Unit Tests**: **30/30 passed (`exit code 0`)**.
+- **False Acceptance**: None (`false_acceptance: false`).
+- Empirical breakdown (`loop.sh timing run-e4c69b89`):
+  - Model busy 246 min (75%), tools busy 44 min (13%), 2,065 model calls, 1.33M output tokens (80% reasoning).
+  - Phase 1 plan: 3 min (8 calls); Phase 2 sprint plan: 20 min (87 calls); Phase 3 build: 38 min (378 calls); Phase 4 verify: 147 min (1,392 calls).
+  - Defect remediation: 1,170 model calls (116 model min) spent across 16 defect-fix stages and 26 test rounds, resolving reference and import errors that could have been resolved immediately in-stage.
+- Improvements implemented between runs:
+  - Updated `PLAYWRIGHT = "1.64.0"` in `scripts/bench/score.py` to match the container's installed browser cache (`chromium_headless_shell-1248`).
+  - Implemented Pillar 7: In-stage syntax and reference diagnostic interceptor (`_diagnostics_in_files_touched`, `_ask_about_high_confidence_diagnostics`) in `src/app/graph/workflow.py`. Gives the specialist a single-turn prompt to fix undeclared names or broken imports in-place before completing the stage, bypassing downstream test failures and defect triage.
+  - Verified by `tests/test_in_stage_syntax_and_reference_interceptor.py` (passes banned words check, proved failing on old code, 3/3 passed).
 
 ---
 

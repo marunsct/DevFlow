@@ -65,7 +65,8 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
     root = _root(state)
     pack = pack_named(state.get("stack_pack"))
     update: dict[str, Any] = {}
-    if pack is not None and contract.read(root) is None:
+    already_done = bool((state.get("scaffold_result") or {}).get("ok"))
+    if pack is not None and not already_done:
         from app.stacks.scaffold import scaffold as scaffold_pack
         from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
 

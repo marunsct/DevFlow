@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-10 11:40 JST**.
+of the previous sessions' context. Last updated **2026-10-10 12:15 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,19 +27,13 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 01:56 JST on 2026-10-10, run-e4c69b89-8712-4113-8c5f-6389b0d7deb1 was started on commit a76e480 and completed at 07:26 JST (wall-clock 330 min):
-- **Benchmark Score**: **1.0 (10/10 hidden tests pass)**!
-- **Unit Tests**: **30/30 passed (`exit code 0`)**.
-- **False Acceptance**: None (`false_acceptance: false`).
-- Empirical timing breakdown (`loop.sh timing run-e4c69b89`):
-  - Model busy 246 min (75%), 2,065 model calls.
-  - Plan: 3 min (8 calls); Sprint plan: 20 min (87 calls); Build: 38 min (378 calls); Verify: 147 min (1,392 calls).
-  - 1,170 model calls (116 model min) spent in 16 defect fix stages / 26 test rounds, resolving reference and import errors that could have been resolved immediately in-stage.
-- Improvements implemented between runs:
-  - Updated `PLAYWRIGHT = "1.64.0"` in `scripts/bench/score.py` to match the container's installed browser cache (`chromium_headless_shell-1248`).
-  - Implemented Pillar 7: In-stage syntax and reference diagnostic interceptor (`_diagnostics_in_files_touched`, `_ask_about_high_confidence_diagnostics`) in `src/app/graph/workflow.py`. Gives the specialist a single-turn prompt to fix undeclared names or broken imports in-place before completing the stage, bypassing downstream test failures and defect triage.
-  - Verified by `tests/test_in_stage_syntax_and_reference_interceptor.py` (passes banned words check, proved failing on old code, 3/3 passed).
-- Gate count: 0 of 2 clean runs toward Stage 1 (fixes applied between runs reset the count). Target is 2 consecutive clean runs.
+At 11:42 JST on 2026-10-10, run-b30deacb-081d-4ce5-b10c-c6bc39f6b25b was started on commit a4129bc and caught at 24 min (12:06 JST) per the early-stop rule:
+- Checkpoints at 10m (11:52 JST) and 20m (12:02 JST) audited.
+- In acceptance authoring rounds 1-5, QA failed running the acceptance suite with `ENOENT: Could not read package.json` (exit 254).
+- Root cause: during `principal_architect` and `architecture_review`, workspace file checks called `contract.the_pack()`, triggering `_infer_contract()` which persisted `.harness/stack-pack.json` before `scaffold` ran. When the `scaffold` node ran in `src/app/graph/acceptance_nodes.py`, it checked `if pack is not None and contract.read(root) is None:`. Because the contract was already on disk, `scaffold` skipped executing `scaffold_pack()`, leaving `simple-to-do-list-app/` un-scaffolded with no `package.json`, `index.html`, or dependencies.
+- Fix: in `src/app/graph/acceptance_nodes.py`, replaced the flawed `contract.read(root) is None` check with `already_done = bool((state.get("scaffold_result") or {}).get("ok"))` and `if pack is not None and not already_done:`.
+- Verified by `tests/test_scaffold_not_skipped_by_inferred_contract.py` (proven failing on old code, 1/1 passed, zero banned words, zero run IDs).
+- Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

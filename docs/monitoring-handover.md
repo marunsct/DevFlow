@@ -3,7 +3,7 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-10-10 11:40 JST (stage 1 gate: 0 of 2 clean runs; start at
+**As of:** 2026-10-10 12:15 JST (stage 1 gate: 0 of 2 clean runs; start at
 `docs/HANDOVER.md` §0), branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
 kept current by whoever runs the loop - **in the same commit as any change to
@@ -526,19 +526,12 @@ its own criteria, so there are more rounds. Back on gpt-oss-20b (since 14:12
 JST, 2026-10-08), expect calls about 4× faster. The thinking budget remains the
 owner's decision and the biggest lever.
 
-**2026-10-10: run-e4c69b89-8712-4113-8c5f-6389b0d7deb1 timing audit & empirical post-mortem (330 min wall clock).**
-Completed at 07:26 JST on 2026-10-10.
-- **Benchmark Score**: **1.0 (10/10 hidden tests pass)**!
-- **Unit Tests**: **30/30 passed (`exit code 0`)**.
-- **False Acceptance**: None (`false_acceptance: false`).
-- Empirical breakdown (`loop.sh timing run-e4c69b89`):
-  - Model busy 246 min (75%), tools busy 44 min (13%), 2,065 model calls, 1.33M output tokens (80% reasoning).
-  - Phase 1 plan: 3 min (8 calls); Phase 2 sprint plan: 20 min (87 calls); Phase 3 build: 38 min (378 calls); Phase 4 verify: 147 min (1,392 calls).
-  - Defect remediation: 1,170 model calls (116 model min) spent across 16 defect-fix stages and 26 test rounds, resolving reference and import errors that could have been resolved immediately in-stage.
-- Improvements implemented between runs:
-  - Updated `PLAYWRIGHT = "1.64.0"` in `scripts/bench/score.py` to match the container's installed browser cache (`chromium_headless_shell-1248`).
-  - Implemented Pillar 7: In-stage syntax and reference diagnostic interceptor (`_diagnostics_in_files_touched`, `_ask_about_high_confidence_diagnostics`) in `src/app/graph/workflow.py`. Gives the specialist a single-turn prompt to fix undeclared names or broken imports in-place before completing the stage, bypassing downstream test failures and defect triage.
-  - Verified by `tests/test_in_stage_syntax_and_reference_interceptor.py` (passes banned words check, proved failing on old code, 3/3 passed).
+**2026-10-10: run-b30deacb-081d-4ce5-b10c-c6bc39f6b25b early stop & empirical post-mortem (24 min wall clock).**
+Started at 11:42 JST on 2026-10-10, caught and failed at 12:06 JST (24 min).
+- Outcome: Acceptance suite failed to run with `ENOENT: Could not read package.json` (exit 254) in rounds 1-5.
+- Root cause: Premature contract inference in architecture stages. `contract.the_pack()` ran during workspace file checks in `principal_architect` and `architecture_review`, triggering `_infer_contract()` which persisted `.harness/stack-pack.json` to disk before the `scaffold` node ran. When the `scaffold` node ran in `src/app/graph/acceptance_nodes.py`, `if pack is not None and contract.read(root) is None:` evaluated to false because `.harness/stack-pack.json` already existed. Scaffolding was completely skipped, leaving `simple-to-do-list-app/` with no `package.json`, `index.html`, or dependencies.
+- Fix: In `src/app/graph/acceptance_nodes.py`, replaced the flawed `contract.read(root) is None` gate with `already_done = bool((state.get("scaffold_result") or {}).get("ok"))` and `if pack is not None and not already_done:`.
+- Verified by `tests/test_scaffold_not_skipped_by_inferred_contract.py` (proven failing on old code, 1/1 passed, zero banned words, zero run IDs).
 
 ---
 

@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-10 23:25 JST**.
+of the previous sessions' context. Last updated **2026-10-11 06:15 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -71,7 +71,7 @@ stage's count. Stages, in order:
 3. `fullstack-bookmarks`: two consecutive clean runs.
 4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand.
 
-**Current: stage 1 (`web-todo`), 0 of 2.**
+**Current: stage 1 (`web-todo`), 1 of 2 clean runs.** (Clean run 1: `run-49dec2db-57e8-4600-b003-807ad7760511` score 1.0, 426 LOC, 16/16 locked tests, 54 unit tests).
 
 **Early stop.** If you find a bug in a run's first 40 minutes, cancel the run
 (`loop.sh cancel`), fix, deploy and start again. If you find a major harness
@@ -159,16 +159,16 @@ read every product source file against the brief (monitoring §0.4.1). Check:
   first when it returns: deploy the pending fix and start the next run, then
   commit and push. A failing git step must never stop the testing.
 
-## 2. Where it stands (2026-10-09 18:55 JST)
+## 2. Where it stands (2026-10-11 06:15 JST)
 
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | Batch defect remediation respects regression test requirements (_bundle_co_defects and _apply_batch_co_defect_fixes). |
-| current run | run-9af1e8ed-4d46-443c-945c-c25ae93d5ec5 failed at 49m (18:43 JST) due to co-defect regression test ValueError. Fix verified with unit tests. |
-| model | `openai/gpt-oss-20b` on LM Studio, `http://host.docker.internal:1234/v1`, context 131,000, thinking effort medium, thinking mode default, execution mode **parallel**, no judgement model. |
-| gate | stage 1 (`web-todo`): **0 of 2** clean runs |
-| suite | 9,734 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials), about 3 minutes |
+| deployed | 4 High-Steering Efficiency Optimizations (in-turn file edits, procedural test round, IDE diagnostic warnings, adaptive sprint sizing) deployed. |
+| current run | `run-49dec2db-57e8-4600-b003-807ad7760511` COMPLETED cleanly at 06:08 JST (327m), score 10/10 (1.0), 426 LOC, 16/16 locked tests, 54 unit tests, product audit passed. Clean Run 1 of 2. |
+| model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, context 131,000, parallel execution mode. |
+| gate | stage 1 (`web-todo`): **1 of 2** clean runs |
+| suite | 9,796 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials) |
 
 ### 2.1 What the performance optimizations batch changed (deployed 12:50 JST)
 

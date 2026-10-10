@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-10 12:15 JST**.
+of the previous sessions' context. Last updated **2026-10-10 18:50 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,12 +27,11 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 11:42 JST on 2026-10-10, run-b30deacb-081d-4ce5-b10c-c6bc39f6b25b was started on commit a4129bc and caught at 24 min (12:06 JST) per the early-stop rule:
-- Checkpoints at 10m (11:52 JST) and 20m (12:02 JST) audited.
-- In acceptance authoring rounds 1-5, QA failed running the acceptance suite with `ENOENT: Could not read package.json` (exit 254).
-- Root cause: during `principal_architect` and `architecture_review`, workspace file checks called `contract.the_pack()`, triggering `_infer_contract()` which persisted `.harness/stack-pack.json` before `scaffold` ran. When the `scaffold` node ran in `src/app/graph/acceptance_nodes.py`, it checked `if pack is not None and contract.read(root) is None:`. Because the contract was already on disk, `scaffold` skipped executing `scaffold_pack()`, leaving `simple-to-do-list-app/` un-scaffolded with no `package.json`, `index.html`, or dependencies.
-- Fix: in `src/app/graph/acceptance_nodes.py`, replaced the flawed `contract.read(root) is None` check with `already_done = bool((state.get("scaffold_result") or {}).get("ok"))` and `if pack is not None and not already_done:`.
-- Verified by `tests/test_scaffold_not_skipped_by_inferred_contract.py` (proven failing on old code, 1/1 passed, zero banned words, zero run IDs).
+At 12:15 JST on 2026-10-10, run-d96ae4c7-44f0-4691-b12a-e3613918acda ran on `web-todo` and COMPLETED at 17:32 JST (317 min wall clock):
+- Benchmark score: 10/10 hidden tests pass (score 1.0).
+- Product audit clean: 323 code lines (cap 500), 47 unit tests pass (exit 0), working tree clean.
+- Not clean: 102 minutes spent in defect remediation (898 calls) because QA authored `await expect(item.locator('button', { name: 'Edit', exact: true })).toHaveCount(1)` in `edit-task.spec.js` and `delete-task.spec.js`. In Playwright, `locator()` ignores the `name` option, matching all buttons (`locator('button')`), which had count 2 in Sprint 2 where both Edit and Delete buttons exist. The locked suite held tests failing on `expected: 1, received: 2` until auto-escalation deferred criteria.
+- Fix: `locators_with_invalid_name_option` in `src/app/acceptance/suite.py`, checked before suite lock in `acceptance_review_node` and in `acceptance_for_round` in `src/app/graph/acceptance_nodes.py`, updated `PLAYWRIGHT_LOCATORS_RULE` in `src/app/stacks/packs/_javascript.py`. Regression test `tests/test_locators_with_invalid_name_option.py` (proven failing on old code, 3/3 passed, zero banned words, zero run IDs).
 - Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
@@ -77,14 +76,11 @@ stage's count. Stages, in order:
 (`loop.sh cancel`), fix, deploy and start again. If you find a major harness
 bug or gap at any time, cancel immediately.
 
-**No deploys into a live run** (agreed with the owner 2026-10-08, after they
-asked whether the fixes were introducing new bugs):
+**Mid-run deploys when defect fixed (owner instruction 2026-10-10 18:45 JST):**
 
-- After the first 40 minutes, a finding that is not major is written down and
-  the run goes on.
-- The fixes are designed, tested and deployed together **between runs**.
-- Cancel only for a major bug: one that makes the run's result meaningless or
-  burns hours.
+- When a harness defect or bottleneck is caught during a run, implement the fix and test immediately.
+- Deploy mid-run (`loop.sh deploy`) and wait for orphan recovery to resume it (`loop.sh resumed`) once the fix is verified (not at an exact scheduled time).
+- This ensures the run is not held on the same defect and can be observed through its remaining stages for further defects and improvements.
 
 **Design each batch fully before deploying it.** For each fix:
 
@@ -224,6 +220,15 @@ Implemented 6 performance optimizations to reduce run execution times from 3.5h 
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
 
+- **run-d96ae4c7** (12:15-17:32 JST, 2026-10-10): COMPLETED, score 10/10 (1.0).
+  Product audit clean: 323 LOC, 47 unit tests pass (exit 0), working tree clean.
+  Not clean: locked acceptance suite had `locator('button', { name: 'Edit' })`
+  and `locator('button', { name: 'Delete' })` asserting `toHaveCount(1)`. In
+  Playwright, `locator()` does not accept `name` options (only `hasText`, `has`,
+  `hasNot`), so Playwright ignored `name` and matched all buttons (2 buttons in
+  sprint 2), trapping specialists in 102 minutes of defect remediation until
+  auto-escalation deferred criteria. Fixed before next run with
+  `suite.locators_with_invalid_name_option` and `PLAYWRIGHT_LOCATORS_RULE`.
 - **run-d211dc86** (14:10 JST, 2026-10-08): cancelled within seconds.
   `loop.sh ready` printed NOT READY but exited 0, so the run started while
   LM Studio served gpt-oss and the settings named qwen. Fixed in `344b4a9`,

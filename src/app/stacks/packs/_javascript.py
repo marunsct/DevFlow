@@ -544,6 +544,8 @@ PLAYWRIGHT_LOCATORS_RULE = (
     "Methods from other libraries like getByLabelText, getByPlaceholderText, findBy* or queryBy* "
     "do not exist in Playwright. For form fields, find them by their label: getByLabel('...', { exact: true }). "
     "In getByRole, the role must be an ARIA role (e.g. textbox, combobox) - never an HTML tag like textarea or select. "
+    "locator() accepts only hasText, hasNotText, has and hasNot options - never a name option; "
+    "to find by an accessible name, use getByRole. "
     "Every test starts on a blank page; navigate with await page.goto('/') before any storage access - "
     "never access localStorage or sessionStorage before goto, which causes a browser SecurityError."
 )

@@ -1276,6 +1276,36 @@ def tests_with_unawaited_async_helpers(repo_root: str | Path) -> list[str]:
     return problems
 
 
+def locators_with_invalid_name_option(repo_root: str | Path) -> list[str]:
+    """Where the suite calls locator(selector, { name: ... }).
+
+    In Playwright, `locator(selector, options)` accepts only `hasText`, `hasNotText`,
+    `has`, and `hasNot`. It does not accept a `name` option; Playwright silently ignores
+    it and matches all elements of that selector. To find an element by accessible name,
+    tests must use `getByRole('role', { name: '...' })` or `locator('...', { hasText: '...' })`.
+    """
+    root = Path(repo_root)
+    pattern = re.compile(r"""\blocator\s*\(\s*['"`][^'"`]+['"`]\s*,\s*\{[^}]*\bname\s*:""")
+    problems = []
+    for path in suite_files(repo_root):
+        if path.suffix not in (".js", ".mjs", ".ts", ".jsx", ".tsx"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        hits = sorted({text.count("\n", 0, m.start()) + 1 for m in pattern.finditer(text)})
+        if not hits:
+            continue
+        lines = text.splitlines()
+        snippet = lines[hits[0] - 1].strip()[:160]
+        where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
+        problems.append(
+            f"`{path.relative_to(root).as_posix()}` line(s) {where} (`{snippet}`) calls "
+            "`locator(..., { name: ... })`. `locator()` does not accept a name option; "
+            "use `getByRole('role', { name: '...' })` or `locator('...', { hasText: '...' })` instead."
+        )
+    return problems[:6]
 
 
 def is_an_acceptance_run(repo_root: str | Path, entry: Any) -> bool:

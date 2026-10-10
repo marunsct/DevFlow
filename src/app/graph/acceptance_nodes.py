@@ -235,6 +235,7 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     problems.extend(suite.locators_that_do_not_exist(root))
     problems.extend(suite.tests_with_module_system_mismatch(root))
     problems.extend(suite.tests_with_unawaited_async_helpers(root))
+    problems.extend(suite.locators_with_invalid_name_option(root))
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
@@ -853,6 +854,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         *suite.assertions_that_do_not_exist(root),
         *suite.locators_that_do_not_exist(root),
         *suite.locators_by_a_name_the_role_never_has(root),
+        *suite.locators_with_invalid_name_option(root),
         *suite.tests_that_never_open_the_page(root),
         *suite.tests_that_access_storage_before_opening_the_page(root),
         *suite.tests_that_expect_what_they_never_gave(root),

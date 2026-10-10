@@ -34,6 +34,16 @@ def test_max_sprints_scale_with_criteria_count() -> None:
     assert max_sprints_for_criteria_count(25) == 4
 
 
+def test_scrum_master_sprint_sizing_rule_has_no_banned_words() -> None:
+    text = (
+        "Sprint Sizing: For focused scopes (10 or fewer acceptance criteria), "
+        "plan a single comprehensive sprint where possible, and never more than 2 sprints."
+    )
+    outside = re.sub(r"`[^`]*`", "", text).lower()
+    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+        assert not re.search(rf"\b{word}\b", outside), f"Banned word '{word}' found in prompt rule"
+
+
 def test_with_capped_sprint_count_folds_excess_sprints() -> None:
     plan = SprintPlanOutput(
         sprints=[
@@ -61,8 +71,8 @@ def test_with_capped_sprint_count_preserves_lean_plans() -> None:
             _sprint("Sprint 2: Remaining", ["AC-3", "AC-4", "AC-5", "AC-6", "AC-7", "AC-8"]),
         ]
     )
-    # 8 criteria allows 2 sprints; plan already has 2 sprints
-    capped, folded = with_capped_sprint_count(plan, criteria_count=8)
+    # 15 criteria allows 2 sprints (<= 20); plan already has 2 sprints
+    capped, folded = with_capped_sprint_count(plan, criteria_count=15)
     assert len(capped.sprints) == 2
     assert len(folded) == 0
 

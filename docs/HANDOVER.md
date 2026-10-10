@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-10 18:50 JST**.
+of the previous sessions' context. Last updated **2026-10-10 23:25 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -27,12 +27,13 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-At 12:15 JST on 2026-10-10, run-d96ae4c7-44f0-4691-b12a-e3613918acda ran on `web-todo` and COMPLETED at 17:32 JST (317 min wall clock):
-- Benchmark score: 10/10 hidden tests pass (score 1.0).
-- Product audit clean: 323 code lines (cap 500), 47 unit tests pass (exit 0), working tree clean.
-- Not clean: 102 minutes spent in defect remediation (898 calls) because QA authored `await expect(item.locator('button', { name: 'Edit', exact: true })).toHaveCount(1)` in `edit-task.spec.js` and `delete-task.spec.js`. In Playwright, `locator()` ignores the `name` option, matching all buttons (`locator('button')`), which had count 2 in Sprint 2 where both Edit and Delete buttons exist. The locked suite held tests failing on `expected: 1, received: 2` until auto-escalation deferred criteria.
-- Fix: `locators_with_invalid_name_option` in `src/app/acceptance/suite.py`, checked before suite lock in `acceptance_review_node` and in `acceptance_for_round` in `src/app/graph/acceptance_nodes.py`, updated `PLAYWRIGHT_LOCATORS_RULE` in `src/app/stacks/packs/_javascript.py`. Regression test `tests/test_locators_with_invalid_name_option.py` (proven failing on old code, 3/3 passed, zero banned words, zero run IDs).
-- Gate count: 0 of 2 clean runs toward Stage 1. Target is 2 consecutive clean runs.
+- Four High-Steering Efficiency Optimizations implemented & deployed:
+  1) In-Turn File Edits / Avoid Micro-Slicing (`src/app/agents/role_agent.py`): prompt rule instructing agents to read files under 400 lines in a single `read_file` call before editing, avoiding expensive 15-20 line micro-slicing. Tested in `tests/test_read_file_limit_expansion.py` (zero banned words, passing).
+  2) Automated Procedural Test Execution (`src/app/graph/workflow.py`): In `test_and_triage_node`, when all acceptance criteria due and unit tests pass procedurally with zero defects, skips invoking the 15-turn specialist LLM agent and completes procedurally. Tested in `tests/test_procedural_test_round.py` (2/2 passing, verified failing on unfixed code).
+  3) Immediate In-Stage IDE Linting Feedback (`src/app/analysis/language_service.py`): language service diagnostics formatted as prominent imperative `IDE DIAGNOSTIC WARNING` highlighting runtime errors to be fixed immediately before stage exit. Tested in `tests/test_ide_diagnostic_warning_format.py` (2/2 passing, zero banned words).
+  4) Adaptive Sprint Sizing & Prompt Cleanup (`src/app/agents/scrum_master.py`): added sprint sizing prompt guidance for lean plans and cleaned contradictory `write_artifact` instructions. Tested in `tests/test_lean_sprint_count.py` (zero banned words, all passing).
+- Suite status: 9,796 passed, 3 failed (only the three S3 tests in `tests/test_codebase_seeding_api.py` requiring external credentials).
+
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:

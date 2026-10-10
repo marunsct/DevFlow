@@ -1851,6 +1851,7 @@ def _nudge_for_the_structured_response(
     run_id: str | None = None,
     stage: str | None = None,
     text: str | None = None,
+    out_result: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Ask the same conversation for the answer it already worked out.
 
@@ -1878,6 +1879,8 @@ def _nudge_for_the_structured_response(
                 {"messages": [{"role": "user", "content": text or _nudge_text(previous, schema)}]},
                 config=_inner_agent_config(inner_thread_id, run_id, callbacks, stage=stage),
             )
+            if out_result is not None:
+                out_result.append(result)
     except Exception:  # noqa: BLE001 - a failed nudge is not a failed run
         # Whatever went wrong here, the restart below is still available and is
         # the path this code took before the nudge existed.
@@ -2085,6 +2088,33 @@ def _diagnostics_in_files_touched(
             continue
 
     return diagnostics
+
+
+def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool, str]:
+    """Run unit tests procedurally if a contract or test script exists.
+
+    Returns (ok, output). If no unit test command is known, returns (True, "").
+    """
+    try:
+        from app.stacks import contract
+        from app.stacks.scaffold import sandbox_runner
+
+        found = contract.read(repo_root)
+        if not found or not found.get("unit_test"):
+            return True, ""
+
+        cmd = found.get("unit_test")
+        project = str(found.get("project") or "")
+        if not isinstance(cmd, list) or not cmd:
+            return True, ""
+
+        runner = sandbox_runner(repo_root)
+        outcome = runner(cmd, "test", project)
+        rc = outcome.get("returncode", 1)
+        output = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
+        return rc == 0, output
+    except Exception:  # noqa: BLE001 - procedural test failure falls back to agent triage
+        return False, ""
 
 
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:
@@ -2551,6 +2581,7 @@ def _run_gated_agent(
         from app.agents.settled_answer import was_stopped_by_the_budget
 
         nudged = None
+        nudge_result_box: list[dict[str, Any]] = []
         if not was_stopped_by_the_budget(result):
             nudged = _nudge_for_the_structured_response(
                 agent,
@@ -2560,6 +2591,7 @@ def _run_gated_agent(
                 getattr(agent, "workflow_response_format", None),
                 config["configurable"].get(APP_RUN_ID_KEY),
                 stage_name,
+                out_result=nudge_result_box,
             )
         elif schema_of_stage := getattr(agent, "workflow_response_format", None):
             # The nudge's second half is free: it reads the conversation the
@@ -2591,6 +2623,11 @@ def _run_gated_agent(
                 }
             result = nudged
             structured_response = nudged["structured_response"]
+        elif nudge_result_box:
+            # The nudge ran but did not return a structured response. Keep its
+            # reply in `result` so the diagnosis below evaluates the messages
+            # the stage actually ended on, not the pre-nudge turn.
+            result = nudge_result_box[0]
 
     if structured_response is None:
         # One failure is not worth restarting for: a reply cut off at the output
@@ -7070,41 +7107,85 @@ def build_workflow_graph(
                     part for part in (acceptance_text, acceptance_nodes.beyond_repair_note(cannot_pass, beyond_repair))
                     if part
                 )
-        changed_files = _the_files_this_milestone_changed(state, outputs)
+        failing_due, _ = acceptance_nodes._failing_due(state)
+        unit_ok, _ = _run_unit_tests_procedurally(state["repository"].root_path)
 
-        agent = create_specialist_agent(
-            "testing", model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+        skip_agent = (
+            not state.get("pending_inner_thread_id")
+            and not failing_due
+            and not cannot_pass
+            and not state.get("review_defects")
+            and unit_ok
         )
-        request = build_test_run_request(
-            milestone.selected_sprint_goal,
-            changed_files,
-            state["repository"].root_path,
-            getattr(state.get("stack_selection"), "technology_stack", None),
-            # The plan's own prose, so a file it named and nobody wrote is found
-            # here rather than at the milestone review, where it costs a
-            # revision. Both of the last two runs ended that way.
-            planned=[
-                *(getattr(milestone, "milestone_scope", None) or ()),
-                *(
-                    getattr(task, "task_description", "")
-                    for task in (getattr(milestone, "delegated_tasks", None) or ())
-                ),
-            ],
-            later_sprints=_what_later_sprints_build(state),
-            brief=getattr(state.get("document"), "text", "") or "",
-            acceptance=acceptance_text,
-        )
-        update = _run_gated_agent(
-            state,
-            config,
-            stage_name=f"test_round_{test_round}",
-            agent=agent,
-            initial_request=request,
-            output_key="__test_result__",
-            next_stage="test_and_triage",
-        )
-        if "__test_result__" not in update:
-            return update  # paused waiting for approval on a test artifact
+        still_proven: list[str] = []
+        if skip_agent:
+            try:
+                from app.agents.specialists import what_the_files_already_prove
+
+                still_proven = what_the_files_already_prove(
+                    state["repository"].root_path,
+                    getattr(state.get("stack_selection"), "technology_stack", None),
+                    [
+                        *(getattr(milestone, "milestone_scope", None) or ()),
+                        *(
+                            getattr(task, "task_description", "")
+                            for task in (getattr(milestone, "delegated_tasks", None) or ())
+                        ),
+                    ],
+                    _what_later_sprints_build(state),
+                    getattr(state.get("document"), "text", "") or "",
+                )
+            except Exception:
+                still_proven = []
+
+        if skip_agent and not still_proven:
+            logger.info(
+                "test_round_%d: all acceptance criteria due and unit tests passed procedurally with 0 defects; skipping specialist LLM invocation",
+                test_round,
+            )
+            update = {
+                "__test_result__": SpecialistOutput(
+                    changed_files=[],
+                    defects=[],
+                    tests=["Automated test execution: all acceptance criteria due and unit tests passed cleanly with 0 defects."],
+                )
+            }
+        else:
+            changed_files = _the_files_this_milestone_changed(state, outputs)
+
+            agent = create_specialist_agent(
+                "testing", model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            )
+            request = build_test_run_request(
+                milestone.selected_sprint_goal,
+                changed_files,
+                state["repository"].root_path,
+                getattr(state.get("stack_selection"), "technology_stack", None),
+                # The plan's own prose, so a file it named and nobody wrote is found
+                # here rather than at the milestone review, where it costs a
+                # revision. Both of the last two runs ended that way.
+                planned=[
+                    *(getattr(milestone, "milestone_scope", None) or ()),
+                    *(
+                        getattr(task, "task_description", "")
+                        for task in (getattr(milestone, "delegated_tasks", None) or ())
+                    ),
+                ],
+                later_sprints=_what_later_sprints_build(state),
+                brief=getattr(state.get("document"), "text", "") or "",
+                acceptance=acceptance_text,
+            )
+            update = _run_gated_agent(
+                state,
+                config,
+                stage_name=f"test_round_{test_round}",
+                agent=agent,
+                initial_request=request,
+                output_key="__test_result__",
+                next_stage="test_and_triage",
+            )
+            if "__test_result__" not in update:
+                return update  # paused waiting for approval on a test artifact
 
         test_result: SpecialistOutput = update.pop("__test_result__")
         # CI's regressions and the code review's findings for this batch, once.

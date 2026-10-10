@@ -247,22 +247,22 @@ class Underlined:
                 for message, found in list(grouped.items())[:MOST_FINDINGS]
             )
             parts.append(
-                "An IDE would underline these in this file - the TypeScript language service, "
-                "reporting only what fails when the code runs (a name nothing defines throws "
-                "ReferenceError; a method no built-in type has throws TypeError; an import of "
-                f"something that is not exported fails as the module loads):\n{lines}"
+                "IDE DIAGNOSTIC WARNING - The language service detected errors (e.g. ReferenceError/TypeError/SyntaxError) in this file that will fail when executed:\n"
+                f"{lines}\n"
+                "Fix these errors now before completing this stage."
             )
         if self.elsewhere:
             lines = "\n".join(
                 f"  {f['file']} line {f['line']}: {f['message']}" for f in self.elsewhere[:MOST_FINDINGS]
             )
-            parts.append(f"And in the files that import this one, which now fail as they load:\n{lines}")
+            parts.append(
+                "And in files that import this one, which will now fail as they load:\n"
+                f"{lines}\n"
+                "Ensure exports and imports match."
+            )
         if not parts:
             return ""
-        return "\n".join(parts) + (
-            "\nIf another work order is about to write what is missing, this clears when it does; "
-            "otherwise it is a bug."
-        )
+        return "\n".join(parts)
 
 
 def runs_in(repo_root: str | Path) -> str:

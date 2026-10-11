@@ -71,7 +71,8 @@ stage's count. Stages, in order:
 3. `fullstack-bookmarks`: two consecutive clean runs.
 4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand.
 
-**Current: stage 1 (`web-todo`), 2 of 2 clean runs — STAGE 1 GATE PASSED!** (Clean run 1: `run-49dec2db-57e8-4600-b003-807ad7760511` score 1.0, 426 LOC, 16/16 locked tests, 54 unit tests; Clean run 2: `run-5aadbddd-7e10-4790-8611-6f3289b015f2` score 1.0, 482 LOC, 10/10 locked tests, 81 unit tests, 80 min wall time). Next: Stage 2 (`notes-api`, `wordstats-cli`, `textkit-lib`: 1 clean run each).
+**Current: stage 1 (`web-todo`), 2 of 2 clean runs — STAGE 1 GATE PASSED!** (Clean run 1: `run-49dec2db-57e8-4600-b003-807ad7760511` score 1.0, 426 LOC, 16/16 locked tests, 54 unit tests; Clean run 2: `run-5aadbddd-7e10-4790-8611-6f3289b015f2` score 1.0, 482 LOC, 10/10 locked tests, 81 unit tests, 80 min wall time).
+**Active Run**: `run-fdc1385c-e858-4caf-922a-c75534fb2907` started at 12:59 JST (2026-10-11) from `tests/brief_medium.md`. Monitoring early stop window (first 40 min).
 
 **Early stop.** If you find a bug in a run's first 40 minutes, cancel the run
 (`loop.sh cancel`), fix, deploy and start again. If you find a major harness

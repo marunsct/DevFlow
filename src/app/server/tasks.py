@@ -424,41 +424,43 @@ def execute_workflow_run(
     decision_payload: dict | None = None,
 ) -> None:
     """Run one segment of a workflow graph."""
-    runner = _get_runner()
-    record = runner.run_store.load(run_id)
-    if record is None:
-        logger.error("Run %s not found; nothing to execute", run_id)
-        return
-
-    if runner.run_store.is_cancel_requested(run_id):
-        logger.info("Run %s was cancelled before execution started", run_id)
-        _record_a_cancellation_nothing_else_will(runner, run_id, record.status)
-        return
-
-    if decision_payload:
-        record.pending_decision_payload = decision_payload
-
-    document = None
-    if record.document_paths and not resume:
-        from app.documents import read_document
-
-        try:
-            document = read_document(record.document_paths)
-        except Exception as exc:  # noqa: BLE001
-            _mark_failed(run_id, f"Could not read the uploaded documents: {exc}")
-            return
-
-    repository = None
-    if record.repo_root:
-        from app.tools.repository import build_repository_context
-
-        try:
-            repository = build_repository_context(record.repo_root, allow_subdirectories=True)
-        except Exception as exc:  # noqa: BLE001
-            _mark_failed(run_id, f"Could not prepare the workspace: {exc}")
-            return
+    from app.server.runner import _explain_failure
 
     try:
+        runner = _get_runner()
+        record = runner.run_store.load(run_id)
+        if record is None:
+            logger.error("Run %s not found; nothing to execute", run_id)
+            return
+
+        if runner.run_store.is_cancel_requested(run_id):
+            logger.info("Run %s was cancelled before execution started", run_id)
+            _record_a_cancellation_nothing_else_will(runner, run_id, record.status)
+            return
+
+        if decision_payload:
+            record.pending_decision_payload = decision_payload
+
+        document = None
+        if record.document_paths and not resume:
+            from app.documents import read_document
+
+            try:
+                document = read_document(record.document_paths)
+            except Exception as exc:  # noqa: BLE001
+                _mark_failed(run_id, _explain_failure(exc))
+                return
+
+        repository = None
+        if record.repo_root:
+            from app.tools.repository import build_repository_context
+
+            try:
+                repository = build_repository_context(record.repo_root, allow_subdirectories=True)
+            except Exception as exc:  # noqa: BLE001
+                _mark_failed(run_id, _explain_failure(exc))
+                return
+
         # asyncio.run gives each task its own loop and closes it afterwards.
         # get_event_loop() was deprecated in this position and raises outright
         # under the threads and gevent worker pools.
@@ -478,7 +480,7 @@ def execute_workflow_run(
         # outside it. Not retried: re-running would duplicate file writes and
         # model spend.
         logger.exception("Run %s failed permanently", run_id)
-        _mark_failed(run_id, f"{type(exc).__name__}: {exc}")
+        _mark_failed(run_id, _explain_failure(exc))
         raise
 
 

@@ -27,11 +27,14 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-- Run Audit (tests/brief_medium.md): run-fdc1385c-e858-4caf-922a-c75534fb2907 (12:59-16:45 JST, 2026-10-11). Stages through product_manager -> acceptance_author_0..2 -> scrum_master -> specialists -> code_review_0_0 all passed cleanly. In test_and_triage_node, test_round_0 exhausted model call budget without outputting SpecialistOutput schema, and exhausted all structured retries. In workflow.py, test_round_ was not in _STAGES_THAT_MAY_RETURN_BLOCKED, raising ValueError and aborting the run.
+- Run Audit (tests/brief_medium.md):
+  - Run 1 (run-fdc1385c-e858-4caf-922a-c75534fb2907, 12:59-16:45 JST, 2026-10-11): test_round_0 exhausted model call budget without outputting SpecialistOutput schema, and exhausted all structured retries. In workflow.py, test_round_ was not in _STAGES_THAT_MAY_RETURN_BLOCKED, raising ValueError. Fixed by adding "test_round_" to _STAGES_THAT_MAY_RETURN_BLOCKED and adding _blocked_when_retries_exhausted. Tested and deployed.
+  - Run 2 (run-fd3a244d-4cd5-41c2-897a-0c326bc2598d, 17:16-23:17 JST, 2026-10-11): Progressed through sprint 1, passed test_round_0 cleanly, progressed through Sprint 2 (defect fixes, acceptance authoring, reviews). At exactly 6 hours (21,600s), Celery soft time limit fired (SoftTimeLimitExceeded). execute_workflow_run in tasks.py lacked _explain_failure formatting on unhandled exceptions and Celery time limits.
 - Fix:
-  1) Added "test_round_" to _STAGES_THAT_MAY_RETURN_BLOCKED and added _blocked_when_retries_exhausted in src/app/graph/workflow.py so that when structured retries are spent on test_round_, the harness falls back to recording blockers and proceeds with procedural checks and remaining defects rather than crashing the run.
-  2) Added regression test in tests/test_run_recovery.py: test_test_round_exhausted_retries_returns_blocked (proven failing on unfixed code, 0 banned words, 0 run IDs).
-- Suite status: 9,797 passed, 3 failed (only the three S3 tests in tests/test_codebase_seeding_api.py requiring external credentials).
+  1) Raised default CELERY_TASK_SOFT_TIME_LIMIT from 21600 (6h) to 43200 (12h) and CELERY_TASK_TIME_LIMIT from 21900 to 43500 in tasks.py, docker-compose.yml, and .env.example.
+  2) Wrapped execute_workflow_run in tasks.py so that unhandled exceptions (including SoftTimeLimitExceeded) are explained via _explain_failure, providing actionable operator guidance.
+  3) Added regression test in tests/test_progress_and_tasks.py: test_unhandled_exception_marks_run_failed_with_explained_message (proven failing on unfixed code, 0 banned words, 0 run IDs).
+- Suite status: 9,798 passed, 3 failed (only the three S3 tests in tests/test_codebase_seeding_api.py requiring external credentials).
 
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key

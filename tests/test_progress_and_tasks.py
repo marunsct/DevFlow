@@ -200,6 +200,25 @@ def test_marking_a_run_failed_is_recorded(run_store, monkeypatch):
     assert "something went wrong" in record.error
 
 
+def test_unhandled_exception_marks_run_failed_with_explained_message(run_store, monkeypatch):
+    """An unhandled exception in execute_workflow_run must use _explain_failure."""
+    from billiard.exceptions import SoftTimeLimitExceeded
+    from app.server import tasks
+    from app.server.run_store import RunStore
+
+    _seed_run(run_store, run_id="run-timeout-unhandled")
+    monkeypatch.setattr(RunStore, "shared", classmethod(lambda cls: run_store))
+    monkeypatch.setattr(tasks, "_get_runner", lambda: (_ for _ in ()).throw(SoftTimeLimitExceeded()))
+
+    with pytest.raises(SoftTimeLimitExceeded):
+        tasks.execute_workflow_run("run-timeout-unhandled")
+
+    record = run_store.load("run-timeout-unhandled")
+    assert record.status == "failed"
+    assert "CELERY_TASK_SOFT_TIME_LIMIT" in record.error
+    assert "still making progress" in record.error
+
+
 def test_the_dead_letter_queue_is_bounded(monkeypatch):
     """An unbounded DLQ was itself a way to fill Redis."""
     from app.server import tasks

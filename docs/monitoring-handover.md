@@ -69,6 +69,11 @@ redesign the gate was two clean hand-audited runs each of `tests/brief_low.md`,
 `plugin_instructions` table, the seed and its middleware), the parallel/linear
 execution toggle in settings, and the sprint summary.
 
+**Stack selection and scaffolding:** Never force the model to pick only from
+pre-existing scaffolds. If the best open-source option for a brief is not in the
+existing scaffolding, allow the model to choose the ideal open-source stack,
+and implement/extend scaffolding for open-source frameworks.
+
 **Never:** hard-code run ids (`tests/test_no_run_ids_in_the_source.py`
 enforces it), read or reset the `admin` password, use the admin account for
 the loop, write the settings table directly (settings need admin; the owner

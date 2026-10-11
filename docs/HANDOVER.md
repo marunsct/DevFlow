@@ -135,6 +135,12 @@ read every product source file against the brief (monitoring §0.4.1). Check:
   - work orders, document templates and the Sprint Record (monitoring §0.7).
 
   Fix them where wrong; never remove them.
+- **Do not force the model to pick only from pre-existing scaffolds:**
+  If the best open-source option for a product's requirements is not in the
+  existing scaffolding (`app.stacks.packs`), do not force the model to select a
+  non-ideal technological stack. The stack selector chooses the optimal stack
+  for the product, and the harness supports and scaffolds open-source stacks
+  cleanly. Extend scaffolding to cover known open-source frameworks.
 - **Implement only what adds value** (owner, 2026-10-04). That holds for the
   owner's own plans too. Where an existing implementation does not fit the
   product vision (a software-company harness: auto mode decides, approval mode

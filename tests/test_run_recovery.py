@@ -484,6 +484,27 @@ def test_a_stage_that_succeeds_clears_its_retry_debt():
     assert "specialist_ui_ux_0" not in update["structured_retries"]
 
 
+def test_test_round_exhausted_retries_returns_blocked():
+    """When retries are spent in test_round_, the harness proceeds with blockers."""
+    agent = _DeafAgent()
+    state = {**_fresh_state(), "stage": "test_round_0", "structured_retries": {"test_round_0": 2}}
+
+    update = _run_gated_agent(
+        state,
+        {"configurable": {"thread_id": "thread-outer"}},
+        stage_name="test_round_0",
+        agent=agent,
+        initial_request={"messages": []},
+        output_key="__test_result__",
+        next_stage="test_and_triage",
+    )
+
+    assert "__test_result__" in update
+    result = update["__test_result__"]
+    assert result.blockers
+
+
+
 # ---------------------------------------------------------------------------
 # A revision has to assign the change, not just record it
 #

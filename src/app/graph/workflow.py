@@ -2189,7 +2189,7 @@ def _it_spent_its_whole_output_budget(stage_name: str, attempts: int) -> str:
 
 #: Stages whose "could not do it" the workflow already has an outcome for: a
 #: defect left open for the next round, a work order returned with blockers.
-_STAGES_THAT_MAY_RETURN_BLOCKED = ("defect_fix_", "specialist_")
+_STAGES_THAT_MAY_RETURN_BLOCKED = ("defect_fix_", "specialist_", "test_round_")
 
 _CUT_OFF_BLOCKER = (
     "Every reply of this stage was cut off at the model's output limit before it wrote "
@@ -2213,6 +2213,28 @@ def _blocked_for_want_of_room(stage_name: str) -> Any | None:
         from app.agents.specialists import SpecialistOutput
 
         return SpecialistOutput(blockers=[_CUT_OFF_BLOCKER])
+    except Exception:  # noqa: BLE001 - then the run fails, as before
+        return None
+
+
+#: Stages that can continue with procedural evidence or blockers when structured
+#: retries are spent, rather than failing the run.
+_STAGES_THAT_MAY_FALLBACK_ON_EXHAUSTION = ("test_round_",)
+
+_EXHAUSTED_BLOCKER = (
+    "This stage produced no structured response across all retry attempts; "
+    "the harness recorded this answer so procedural checks and remaining defects can proceed."
+)
+
+
+def _blocked_when_retries_exhausted(stage_name: str) -> Any | None:
+    """A structured answer when retries are spent, where procedural steps follow; else None."""
+    if not str(stage_name or "").startswith(_STAGES_THAT_MAY_FALLBACK_ON_EXHAUSTION):
+        return None
+    try:
+        from app.agents.specialists import SpecialistOutput
+
+        return SpecialistOutput(blockers=[_EXHAUSTED_BLOCKER])
     except Exception:  # noqa: BLE001 - then the run fails, as before
         return None
 
@@ -2669,13 +2691,16 @@ def _run_gated_agent(
             return restarted
         blocked = _blocked_for_want_of_room(stage_name) if out_of_room else None
         if blocked is None:
+            blocked = _blocked_when_retries_exhausted(stage_name)
+        if blocked is None:
             attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
             raise ValueError(
                 _missing_structured_response(stage_name, result, attempts=attempted + 1)
             )
         logger.warning(
-            "Stage %s produced only replies cut off at the output limit; recorded as blocked "
-            "rather than failing the run", stage_name,
+            "Stage %s recorded as blocked rather than failing the run: %s",
+            stage_name,
+            "; ".join(getattr(blocked, "blockers", []) or []),
         )
         structured_response = blocked
 

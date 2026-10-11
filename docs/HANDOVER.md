@@ -27,12 +27,11 @@ scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
 scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
 ```
 
-- Four High-Steering Efficiency Optimizations implemented & deployed:
-  1) In-Turn File Edits / Avoid Micro-Slicing (`src/app/agents/role_agent.py`): prompt rule instructing agents to read files under 400 lines in a single `read_file` call before editing, avoiding expensive 15-20 line micro-slicing. Tested in `tests/test_read_file_limit_expansion.py` (zero banned words, passing).
-  2) Automated Procedural Test Execution (`src/app/graph/workflow.py`): In `test_and_triage_node`, when all acceptance criteria due and unit tests pass procedurally with zero defects, skips invoking the 15-turn specialist LLM agent and completes procedurally. Tested in `tests/test_procedural_test_round.py` (2/2 passing, verified failing on unfixed code).
-  3) Immediate In-Stage IDE Linting Feedback (`src/app/analysis/language_service.py`): language service diagnostics formatted as prominent imperative `IDE DIAGNOSTIC WARNING` highlighting runtime errors to be fixed immediately before stage exit. Tested in `tests/test_ide_diagnostic_warning_format.py` (2/2 passing, zero banned words).
-  4) Adaptive Sprint Sizing & Prompt Cleanup (`src/app/agents/scrum_master.py`): added sprint sizing prompt guidance for lean plans and cleaned contradictory `write_artifact` instructions. Tested in `tests/test_lean_sprint_count.py` (zero banned words, all passing).
-- Suite status: 9,796 passed, 3 failed (only the three S3 tests in `tests/test_codebase_seeding_api.py` requiring external credentials).
+- Run Audit (tests/brief_medium.md): run-fdc1385c-e858-4caf-922a-c75534fb2907 (12:59-16:45 JST, 2026-10-11). Stages through product_manager -> acceptance_author_0..2 -> scrum_master -> specialists -> code_review_0_0 all passed cleanly. In test_and_triage_node, test_round_0 exhausted model call budget without outputting SpecialistOutput schema, and exhausted all structured retries. In workflow.py, test_round_ was not in _STAGES_THAT_MAY_RETURN_BLOCKED, raising ValueError and aborting the run.
+- Fix:
+  1) Added "test_round_" to _STAGES_THAT_MAY_RETURN_BLOCKED and added _blocked_when_retries_exhausted in src/app/graph/workflow.py so that when structured retries are spent on test_round_, the harness falls back to recording blockers and proceeds with procedural checks and remaining defects rather than crashing the run.
+  2) Added regression test in tests/test_run_recovery.py: test_test_round_exhausted_retries_returns_blocked (proven failing on unfixed code, 0 banned words, 0 run IDs).
+- Suite status: 9,797 passed, 3 failed (only the three S3 tests in tests/test_codebase_seeding_api.py requiring external credentials).
 
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key

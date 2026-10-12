@@ -140,3 +140,38 @@ def test_a_full_stack_framework_no_pack_is_built_with_gets_none(framework):
         database="", testing_framework="", product_kind="",
     )
     assert choose_pack(stack, "") is None
+
+
+@pytest.mark.parametrize("frontend, chosen", [
+    ("", "fullstack-django"),
+    ("Django templates", "fullstack-django"),
+    ("React", None),
+])
+def test_a_django_product_with_its_own_pages_gets_its_pack(frontend, chosen):
+    """Its pages are Django's templates; one with a React page is not this pack's."""
+    stack = SimpleNamespace(
+        language="Python", framework="Django", frontend_framework=frontend,
+        database="", testing_framework="", product_kind="",
+    )
+    found = choose_pack(stack, "A web application for small teams")
+    assert (found.name if found else None) == chosen
+
+
+def test_go_never_fetches_a_toolchain_into_a_run(tmp_path):
+    """Gin's latest release asked for a newer Go, and Go fetched one - some 250 MB - into every run's workspace."""
+    from app.tools.sandbox import _child_environment
+
+    assert _child_environment(str(tmp_path), None)["GOTOOLCHAIN"] == "local"
+
+
+def test_a_compiled_language_gets_the_live_budget_node_gets(tmp_path):
+    from app.tools.resources import ResourceState, concurrency_environment
+
+    environment = concurrency_environment(
+        1024**3,
+        ResourceState(memory_limit=8 * 1024**3, memory_in_use=1024**3, memory_peak=None, oom_kills=0,
+                      cpus=2, pids_in_use=None),
+    )
+
+    assert environment["GOMAXPROCS"] == "2" and environment["CARGO_BUILD_JOBS"] == "2"
+    assert environment["GOMEMLIMIT"].endswith("MiB")

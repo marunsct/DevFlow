@@ -41,7 +41,9 @@ PACK = service_pack(
     language="go",
     frameworks=("gin", "gin-gonic"),
     files={
-        "go.mod": go.GO_MOD,
+        # Gin 1.10: later releases add HTTP/3 and a database driver to every
+        # build, more than a service's sandbox has memory to compile.
+        "go.mod": go.GO_MOD + "\nrequire github.com/gin-gonic/gin v1.10.0\n",
         "main.go": go.MAIN,
         "server.go": SERVER,
     },

@@ -174,21 +174,24 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # with Maven, Rust, Ruby with Bundler, PHP with Composer, and .NET. A product in
 # any of these languages starts from a pack whose own tests already run
 # (`app.stacks.packs`), and a stage asked to build it can run what it writes.
-# System-wide, from Debian's packages where Debian has them: the sandbox gives
+# System-wide - from Debian's packages where Debian's are current, Go from its
+# own release (Debian's 1.24 is older than modules like Gin now require, and Go
+# fetched a newer toolchain into every run's workspace) - since the sandbox gives
 # every command a home inside its run's workspace, so a toolchain installed
 # under a user's home (rustup, sdkman) would not be found. Before anything a
 # deploy changes, so a deploy keeps them. The test reporters each language
 # lacks - gotestsum for Go, cargo-nextest for Rust - are pinned.
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        golang-go \
         openjdk-21-jdk-headless maven \
         rustc cargo \
         ruby ruby-dev ruby-bundler build-essential \
         php-cli php-xml php-mbstring php-curl php-sqlite3 composer unzip \
         libicu76 \
     && rm -rf /var/lib/apt/lists/* \
-    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache go install gotest.tools/gotestsum@v1.12.3 \
+    && curl -fsSL https://go.dev/dl/go1.26.9.linux-amd64.tar.gz | tar -xz -C /usr/local \
+    && ln -sf /usr/local/go/bin/go /usr/local/bin/go && ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache GOTOOLCHAIN=local go install gotest.tools/gotestsum@v1.12.3 \
     && rm -rf /tmp/gopath /tmp/gocache \
     && curl -fsSL https://get.nexte.st/0.9.104/linux | tar -xz -C /usr/local/bin \
     && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \

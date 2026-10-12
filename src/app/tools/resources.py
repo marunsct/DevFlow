@@ -310,6 +310,11 @@ def concurrency_environment(ceiling: int, state: ResourceState | None = None) ->
         "VITEST_MIN_THREADS": "1",
         "VITEST_MAX_FORKS": str(cpus),
         "UV_THREADPOOL_SIZE": str(min(cpus * 2, 8)),
+        # The Go compiler and test binaries are Go programs: a soft heap limit
+        # makes them collect sooner rather than die at the hard one.
+        "GOMAXPROCS": str(cpus),
+        "GOMEMLIMIT": f"{per_worker_mb}MiB",
+        "CARGO_BUILD_JOBS": str(cpus),
     }
 
 

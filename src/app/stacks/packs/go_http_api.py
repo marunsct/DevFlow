@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.stacks.packs._service import service_pack
 
-GO_VERSION = "1.24"
+GO_VERSION = "1.26"
 
 GO_MOD = """module {{package}}
 

@@ -808,6 +808,10 @@ TOOLCHAIN_ENVIRONMENT = {
     "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
     "DOTNET_NOLOGO": "1",
     "NEXT_TELEMETRY_DISABLED": "1",
+    # Go fetched a newer toolchain into the run's workspace (some 250 MB)
+    # whenever a module asked for one, every run. A module that needs a newer
+    # Go than the image's is now an error the stage can act on.
+    "GOTOOLCHAIN": "local",
 }
 
 

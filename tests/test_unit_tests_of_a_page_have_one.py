@@ -49,7 +49,7 @@ def test_the_dom_s_version_runs_on_the_node_the_image_and_ci_use() -> None:
     from app.stacks.packs.browser_javascript import JSDOM
 
     # jsdom 27 and later need Node 22.
-    assert int(JSDOM.split(".")[0]) <= 26 and js.NODE_MAJOR == "20"
+    assert int(JSDOM.split(".")[0]) <= 26 or int(js.NODE_MAJOR) >= 22
     assert json.loads(BROWSER.render("n", "N")["package.json"])["devDependencies"]["jsdom"] == JSDOM
 
 

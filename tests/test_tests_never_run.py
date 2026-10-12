@@ -55,7 +55,10 @@ MEASURED_TEST_FILES = [
 
 
 def test_the_six_stranded_suites_are_reported(tmp_path: Path) -> None:
-    (problem,) = _project(tmp_path, "node --test ./", [*MEASURED_TEST_FILES, "app.test.mjs"])
+    # The measured script, bare. `node --test ./` searched the same way on
+    # Node 20; on Node 24 it runs nothing at all, which is reported as such
+    # (`test_a_named_test_command_strands_the_rest`).
+    (problem,) = _project(tmp_path, "node --test", [*MEASURED_TEST_FILES, "app.test.mjs"])
 
     for name in MEASURED_TEST_FILES:
         assert name in problem

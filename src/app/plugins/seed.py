@@ -269,7 +269,8 @@ _JAVASCRIPT_TESTING = """Testing JavaScript and TypeScript:
   collect `*.test.js` and `*.spec.js` unless told where to look, so a unit
   runner left to itself loads the browser specs and fails on every one. Keep
   the browser specs in a directory of their own (`e2e/`) and say so once: the
-  unit script names its directory (`node --test tests/`, `vitest run tests`) or
+  unit script names its files (`node --test 'tests/**/*.test.js'` - Node takes
+  a quoted pattern, never a directory - or `vitest run tests`) or
   its configuration ignores the other (`testPathIgnorePatterns: ['/e2e/']` for
   Jest, `exclude: ['e2e/**', 'node_modules/**']` for Vitest), and Playwright's
   configuration sets `testDir: 'e2e'`."""

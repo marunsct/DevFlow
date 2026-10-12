@@ -1032,7 +1032,7 @@ def _run_and_watch_the_tree(
 
 def _image_for(executable: str) -> str:
     if executable in {"npm", "npx", "node", "yarn", "pnpm"}:
-        return os.environ.get("SANDBOX_NODE_IMAGE", "node:20-slim")
+        return os.environ.get("SANDBOX_NODE_IMAGE", "node:24-slim")
     if executable in {"python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"}:
         return os.environ.get("SANDBOX_PYTHON_IMAGE", "python:3.12-slim")
     if executable == "go":
@@ -1817,6 +1817,19 @@ def validate_command(
             "it contains."
         )
 
+    directory = _a_directory_given_to_node_test(argv, repo_root)
+    if directory is not None:
+        base = directory.rstrip("/").removeprefix("./")
+        pattern = "**/*.test.js" if base in {"", "."} else f"{base}/**/*.test.js"
+        corrected = [pattern if part == directory else part for part in argv]
+        raise CommandNotAllowed(
+            f"`node --test {directory}` runs no test on the Node here: it loads a "
+            "directory argument as a module and fails before any test starts (\"Could "
+            "not find\", ERR_UNSUPPORTED_DIR_IMPORT). Give it the test files, or a "
+            f"pattern Node expands itself - send {corrected!r}. In a package.json "
+            f"script, quote the pattern: `node --test '{pattern}'`."
+        )
+
     root_install = _needs_root_the_sandbox_will_not_give(argv)
     if root_install is not None:
         raise CommandNotAllowed(root_install)
@@ -2065,6 +2078,61 @@ def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
             continue
         suffix = os.path.splitext(part)[1].lower()
         if suffix and suffix not in _JAVASCRIPT_SUFFIXES:
+            return part
+    return None
+
+
+#: `node` flags whose value follows as the next argument, so it is not a path.
+_NODE_FLAGS_WITH_A_VALUE = frozenset({
+    "--test-reporter", "--test-reporter-destination", "--test-name-pattern",
+    "--test-skip-pattern", "--test-concurrency", "--test-timeout", "--test-shard",
+    "--test-coverage-include", "--test-coverage-exclude", "--import", "--require",
+    "-r", "--loader", "--experimental-loader", "--env-file", "--conditions", "-C",
+})
+
+
+def _a_directory_given_to_node_test(argv: Sequence[str], repo_root: str | Path | None) -> str | None:
+    """The directory this `node --test` is given, or None.
+
+    Node 20 searched a directory argument for test files. The Node here does
+    not: measured in the run image on Node 24.21, `node --test ./` stops at
+    "Could not find './'", and `node --test tests/` loads the directory as a
+    module and reports one failed test, ERR_UNSUPPORTED_DIR_IMPORT - none of
+    the suite's own tests run, however they are written. The harness's own
+    packs named `tests/` until the image moved on, and each failed its smoke
+    test that way.
+
+    A trailing `/`, `.`, or a name with no extension that is a directory in
+    the workspace or the project. A pattern (`tests/**/*.test.js`) is what
+    Node expands itself, and a flag's value is not a path.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) != "node" or "--test" not in parts[1:]:
+        return None
+    after = parts[parts.index("--test") + 1 :]
+    skip = False
+    for part in after:
+        if skip:
+            skip = False
+            continue
+        if part.startswith("-"):
+            skip = part in _NODE_FLAGS_WITH_A_VALUE
+            continue
+        if re.search(r"[*?\[{]", part):
+            continue
+        if part.endswith("/") or part in {".", ".."}:
+            return part
+        if os.path.splitext(part)[1] or repo_root is None:
+            continue
+        root = Path(repo_root)
+        candidates = [root / part]
+        try:
+            project = (root / ".project-directory").read_text(encoding="utf-8").strip()
+        except OSError:
+            project = ""
+        if project:
+            candidates.append(root / project / part)
+        if any(candidate.is_dir() for candidate in candidates):
             return part
     return None
 

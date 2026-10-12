@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # Stage 1: build the frontend
 # ---------------------------------------------------------------------------
-FROM node:20-slim AS frontend-builder
+FROM node:24-slim AS frontend-builder
 WORKDIR /app/langchain-ui
 
 COPY langchain-ui/package*.json ./

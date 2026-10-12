@@ -177,7 +177,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
 | deployed | `6314d91` (the review fixes) plus the stack packs and the pinned browser below, deployed 13:25 JST between runs. |
-| current run | none live; the next is `tests/brief_medium.md` in parallel mode. |
+| current run | `run-c7a1f6cf` (brief_medium, parallel), started 21:19 JST 2026-10-12 on `b0c092c`. |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
@@ -254,6 +254,20 @@ Stack packs and the image:
    an IDE note about an import.
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
+
+- **run-c7a1f6cf** (brief_medium, started 21:19 JST 2026-10-12, parallel, on
+  `b0c092c`): in progress.
+- **run-c83ee867** (brief_medium, 13:40-14:34 JST 2026-10-12, on `b2f837b`):
+  FAILED at sprint planning.
+  - The scrum master reasoned through its whole 25,000-token reply twice.
+  - The first loss was carried by the graph's one nudge, with thinking off;
+    the second ended the stage with thinking never switched off for the rest
+    of the visit.
+  - Fixed in `b0c092c`: a lost reply jumps straight back to the model.
+  - The architecture, consultation and acceptance-authoring stages before it
+    had 0 failed tool calls.
+  - The loop then sat idle about seven hours: the operator session had hit its
+    usage limit.
 
 - **run-fe7854b9** (brief_medium, 23:50 JST 2026-10-11 - 02:29 JST
   2026-10-12): cancelled in a defect fix.

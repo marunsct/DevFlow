@@ -92,6 +92,7 @@ A new agent, session or account starts at `docs/HANDOVER.md`: the first ten minu
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
 | clean runs toward the gate | **stage 1 (web-todo) passed.**
   - **2026-10-12 13:40 JST:** the owner directed testing on `tests/brief_medium.md`, parallel mode first, then linear.
+  - **run-c83ee867** (13:40-14:34 JST) FAILED in sprint planning: two lost replies; the second ended the stage before thinking could be switched off for the rest of the visit. Fixed in `b0c092c` (the settled-answer hook jumps back to the model after a lost reply). **run-c7a1f6cf** started 21:19 JST.
   - **`6314d91`:** fixes from the review of the 35 commits since `9c41cba`:
     - no guessed contracts (two of three medium runs had been given a wrong pack's runner files);
     - honest batching, and unknown is not passed;

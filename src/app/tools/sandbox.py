@@ -2240,6 +2240,13 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
             return part
         if part not in _SERVER_COMMANDS:
             continue
+        # A program `_SERVER_SUBCOMMANDS` names is a server only with one of
+        # those subcommands, which the loop above has already checked. Caught
+        # here by its name alone, `rails test`, `ng test` and `flask db
+        # upgrade` were refused as servers - a pack's own unit test command
+        # among them.
+        if part in _SERVER_SUBCOMMANDS:
+            continue
         # A generic word is only a server behind something that takes one;
         # `npm run dev` reaches here as `dev` and is caught above, while a
         # file called `start` is not a server.

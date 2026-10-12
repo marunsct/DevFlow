@@ -21,6 +21,7 @@ from app.stacks.packs.python_cli import PACK as PYTHON_CLI
 from app.stacks.packs.python_flask_api import PACK as PYTHON_FLASK_API
 from app.stacks.packs.python_http_api import PACK as PYTHON_HTTP_API
 from app.stacks.packs.python_library import PACK as PYTHON_LIBRARY
+from app.stacks.packs.ruby_rails_api import PACK as RUBY_RAILS_API
 from app.stacks.packs.ruby_sinatra_api import PACK as RUBY_SINATRA_API
 from app.stacks.packs.rust_axum_api import PACK as RUST_AXUM_API
 
@@ -48,5 +49,6 @@ ALL_PACKS = (
     CSHARP_ASPNET_API,
     RUST_AXUM_API,
     RUBY_SINATRA_API,
+    RUBY_RAILS_API,
     PHP_SLIM_API,
 )

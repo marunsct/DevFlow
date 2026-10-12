@@ -467,11 +467,11 @@ def test_the_retry_budget_is_not_infinite(monkeypatch):
     monkeypatch.setenv("WORKFLOW_MAX_STRUCTURED_RETRIES", "1")
     agent = _NoStructuredResponseAgent()
 
-    first = _gated(_fresh_state(), agent, stage_name="specialist_ui_ux_0")
+    first = _gated(_fresh_state(), agent, stage_name="principal_architect")
     state = {**_fresh_state(), **{k: v for k, v in first.items() if k != "stage"}}
 
     with pytest.raises(ValueError, match="tried 2 times"):
-        _gated(state, agent, stage_name="specialist_ui_ux_0")
+        _gated(state, agent, stage_name="principal_architect")
 
 
 def test_a_stage_that_succeeds_clears_its_retry_debt():
@@ -502,6 +502,29 @@ def test_test_round_exhausted_retries_returns_blocked():
     assert "__test_result__" in update
     result = update["__test_result__"]
     assert result.blockers
+
+
+@pytest.mark.parametrize("stage", ["defect_fix_1_3", "specialist_backend_1"])
+def test_a_fix_or_work_order_stage_out_of_retries_leaves_its_work_open(stage):
+    """Measured on one run: a defect-fix stage spent its 40 calls three times
+    over on one defect - the third attempt found the cause on its last call -
+    and the run failed at 9 h 52 min. A fix not made leaves its defect open for
+    the next round; a work order returned with blockers has its outcome too."""
+    agent = _DeafAgent()
+    state = {**_fresh_state(), "stage": stage, "structured_retries": {stage: 2}}
+
+    update = _run_gated_agent(
+        state,
+        {"configurable": {"thread_id": "thread-outer"}},
+        stage_name=stage,
+        agent=agent,
+        initial_request={"messages": []},
+        output_key="__fix__",
+        next_stage="test_and_triage",
+    )
+
+    blockers = update["__fix__"].blockers
+    assert blockers and "Where its last attempt ended: prose, not a schema" in blockers[0]
 
 
 

@@ -2286,8 +2286,15 @@ def _blocked_for_want_of_room(stage_name: str) -> Any | None:
 
 
 #: Stages that can continue with procedural evidence or blockers when structured
-#: retries are spent, rather than failing the run.
-_STAGES_THAT_MAY_FALLBACK_ON_EXHAUSTION = ("test_round_",)
+#: retries are spent, rather than failing the run: every stage whose "could not
+#: do it" the workflow already has an outcome for. Measured on one run: a
+#: defect-fix stage spent its 40 calls three times over on one defect - the
+#: third attempt found the cause on its last call - and the run failed at
+#: 9 h 52 min, though a fix not made leaves its defect open for the next round.
+_STAGES_THAT_MAY_FALLBACK_ON_EXHAUSTION = _STAGES_THAT_MAY_RETURN_BLOCKED
+
+#: How much of the last attempt's final message the blocker keeps.
+_LAST_WORDS_CHARS = 600
 
 _EXHAUSTED_BLOCKER = (
     "This stage produced no structured response across all retry attempts; "
@@ -2295,14 +2302,26 @@ _EXHAUSTED_BLOCKER = (
 )
 
 
-def _blocked_when_retries_exhausted(stage_name: str) -> Any | None:
-    """A structured answer when retries are spent, where procedural steps follow; else None."""
+def _blocked_when_retries_exhausted(stage_name: str, result: dict[str, Any] | None = None) -> Any | None:
+    """A structured answer when retries are spent, where procedural steps follow; else None.
+
+    With what the last attempt's final message said, when it said anything: it
+    is where the stage's own investigation ended, and the defect it leaves open
+    carries it to whoever picks it up next.
+    """
     if not str(stage_name or "").startswith(_STAGES_THAT_MAY_FALLBACK_ON_EXHAUSTION):
         return None
+    last = next(
+        (m for m in reversed((result or {}).get("messages") or []) if getattr(m, "type", None) == "ai"),
+        None,
+    )
+    words = " ".join(str(getattr(last, "content", "") or "").split())[:_LAST_WORDS_CHARS]
     try:
         from app.agents.specialists import SpecialistOutput
 
-        return SpecialistOutput(blockers=[_EXHAUSTED_BLOCKER])
+        return SpecialistOutput(blockers=[
+            _EXHAUSTED_BLOCKER + (f" Where its last attempt ended: {words}" if words else "")
+        ])
     except Exception:  # noqa: BLE001 - then the run fails, as before
         return None
 
@@ -2759,7 +2778,7 @@ def _run_gated_agent(
             return restarted
         blocked = _blocked_for_want_of_room(stage_name) if out_of_room else None
         if blocked is None:
-            blocked = _blocked_when_retries_exhausted(stage_name)
+            blocked = _blocked_when_retries_exhausted(stage_name, result)
         if blocked is None:
             attempted = (state.get("structured_retries") or {}).get(stage_name, 0)
             raise ValueError(

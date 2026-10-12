@@ -168,6 +168,7 @@ PACK = StackPack(
     kind="browser_app",
     language="typescript",
     frameworks=("react", "vite"),
+    frontend_frameworks=("react",),
     files={
         "package.json": PACKAGE_JSON,
         "vite.config.ts": VITE_CONFIG,

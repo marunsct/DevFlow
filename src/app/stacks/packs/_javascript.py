@@ -8,7 +8,7 @@ from pathlib import Path
 
 #: The Playwright release whose browser build the image installs. A different
 #: version looks for a browser build that is not there.
-PLAYWRIGHT = "1.63.0"
+PLAYWRIGHT = "1.64.0"
 
 #: The accessibility engine the page probe runs (`page_check`). A dev
 #: dependency only: it is test setup, never shipped, and a brief's "no external

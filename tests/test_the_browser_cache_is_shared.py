@@ -82,7 +82,7 @@ def test_the_image_actually_installs_a_browser():
     dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile"
     text = dockerfile.read_text(encoding="utf-8")
 
-    install = re.search(r"^RUN npx .*playwright install chromium", text, re.M)
+    install = re.search(r"^RUN npx .*playwright(?:@\S+)? install chromium", text, re.M)
     assert install, "the image must ship a browser for the preferred path to exist"
 
     # As `appuser`, or it lands in root's home and the preference misses.

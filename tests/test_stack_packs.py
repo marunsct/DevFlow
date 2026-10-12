@@ -51,7 +51,7 @@ def test_the_pack_fits_the_stack(stack, text, expected) -> None:
     [
         (_stack(language="Go", framework="Gin"), "A REST API"),  # no Go pack
         (_stack(language="Python", framework="Django"), "A REST API"),  # no Django pack
-        (_stack(language="JavaScript", framework="Vue", frontend_framework="Vue"), ""),
+        (_stack(language="JavaScript", framework="Svelte", frontend_framework="Svelte"), ""),
         (_stack(language="Python", framework="None"), ""),  # nothing says what kind
     ],
 )

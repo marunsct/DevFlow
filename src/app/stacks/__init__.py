@@ -181,6 +181,12 @@ class StackPack:
     #: directory - for a service, how to run it in a container. Never written
     #: over a file the product already has.
     release_files: Mapping[str, str] = field(default_factory=dict)
+    #: Words naming the component framework the pack's interface is built with
+    #: (React, Vue ...), for a pack with a browser interface; empty for one in
+    #: plain HTML, CSS and JavaScript. A stack naming a component framework
+    #: fits only a pack built with that one: "Vue on Vite" fitted the React
+    #: pack, which names Vite too.
+    frontend_frameworks: tuple[str, ...] = ()
 
     def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""
@@ -261,15 +267,51 @@ def stated_module(text: str) -> str | None:
     return None
 
 
-def _language(stack: Any) -> str:
+#: How a stack's language field names each language a pack can be in.
+_LANGUAGE_NAMES = {
+    "typescript": re.compile(r"typescript|(?<![a-z])ts(?![a-z])"),
+    "javascript": re.compile(r"javascript|(?<![a-z])(?:js|node(?:\.js)?|html|css)(?![a-z])"),
+    "python": re.compile(r"python"),
+    "go": re.compile(r"(?<![a-z])(?:go|golang)(?![a-z])"),
+    "java": re.compile(r"(?<![a-z])java(?![a-z])"),
+    "kotlin": re.compile(r"kotlin"),
+    "csharp": re.compile(r"c#|c sharp|csharp|\.net|dotnet"),
+    "rust": re.compile(r"(?<![a-z])rust(?![a-z])"),
+    "ruby": re.compile(r"(?<![a-z])ruby(?![a-z])"),
+    "php": re.compile(r"(?<![a-z])php(?![a-z])"),
+}
+
+#: The languages a framework is written in, for a stack whose language field
+#: names only one side of it: "Python", with React chosen for the interface.
+_WRITTEN_IN = {
+    ("react", "preact", "vue", "svelte", "solid", "lit", "express", "fastify", "koa", "hapi"): (
+        "javascript", "typescript"),
+    ("angular", "nest", "nestjs"): ("typescript",),
+    ("fastapi", "flask", "django", "starlette"): ("python",),
+    ("gin", "fiber", "chi"): ("go",),
+    ("spring",): ("java", "kotlin"),
+    ("ktor",): ("kotlin",),
+    ("aspnet", "asp.net"): ("csharp",),
+    ("actix", "axum", "rocket"): ("rust",),
+    ("rails", "sinatra"): ("ruby",),
+    ("laravel", "symfony", "slim"): ("php",),
+}
+
+
+def _languages(stack: Any) -> set[str]:
+    """Every language the stack is written in: named in its language field, or by its frameworks.
+
+    A full-stack product is written in two. Read as one - the first named,
+    TypeScript before Python - a Python service with a React page matched no
+    pack whose language was the service's.
+    """
     text = str(getattr(stack, "language", "") or "").lower()
-    if "typescript" in text or re.search(r"(?<![a-z])ts(?![a-z])", text):
-        return "typescript"
-    if "python" in text:
-        return "python"
-    if "javascript" in text or re.search(r"(?<![a-z])(?:js|node(?:\.js)?|html|css)(?![a-z])", text):
-        return "javascript"
-    return text.strip()
+    found = {name for name, pattern in _LANGUAGE_NAMES.items() if pattern.search(text)}
+    frameworks = _framework_text(stack)
+    for words, languages in _WRITTEN_IN.items():
+        if any(re.search(rf"(?<![a-z]){re.escape(word)}(?![a-z])", frameworks) for word in words):
+            found.update(languages)
+    return found
 
 
 def _framework_text(stack: Any) -> str:
@@ -381,15 +423,40 @@ def choose_pack(stack: Any, text: str = "") -> StackPack | None:
     kind = product_kind(stack, text)
     if not kind:
         return None
-    language = _language(stack)
+    languages = _languages(stack)
     for pack in ALL_PACKS:
         if pack.kind != kind:
             continue
-        if pack.language != language:
+        if pack.language not in languages:
             continue
-        if _framework_fits(pack, stack):
+        if _framework_fits(pack, stack) and _frontend_fits(pack, stack):
             return pack
     return None
+
+
+#: Component frameworks an interface is built with. A stack names at most one.
+_COMPONENT_FRAMEWORKS = ("react", "preact", "vue", "svelte", "angular", "solid", "lit")
+
+
+def _frontend_fits(pack: StackPack, stack: Any) -> bool:
+    """Whether the pack's interface is built with the component framework the stack chose.
+
+    Only for a pack with a browser interface. A stack that names a component
+    framework fits only a pack built with that one; a stack that names none
+    fits only a pack in plain HTML, CSS and JavaScript.
+    """
+    if pack.kind not in {"browser_app", "fullstack"}:
+        return True
+    frontend = " ".join([
+        str(getattr(stack, "frontend_framework", "") or ""),
+        str(getattr(stack, "framework", "") or ""),
+    ]).lower()
+    # "React.js", "Vue.js", "AngularJS" name the framework too.
+    frontend = re.sub(rf"(?<![a-z])({'|'.join(_COMPONENT_FRAMEWORKS)})\.?js(?![a-z])", r"\1", frontend)
+    named = {word for word in _COMPONENT_FRAMEWORKS if re.search(rf"(?<![a-z]){word}(?![a-z])", frontend)}
+    if not pack.frontend_frameworks:
+        return not named
+    return bool(named) and any(word in pack.frontend_frameworks for word in named)
 
 
 #: What a run on a stack can promise, by whether a pack fits it. Stated in the

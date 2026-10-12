@@ -134,13 +134,6 @@ ENV VIRTUAL_ENV=/opt/venv \
     WORKFLOW_WORKSPACE_ROOT=/app/data/workspaces \
     DATA_DIR=/app/data
 
-COPY --from=python-builder /opt/venv /opt/venv
-
-WORKDIR /app
-COPY --chown=appuser:appuser src/ ./src/
-COPY --chown=appuser:appuser pyproject.toml ./
-COPY --from=frontend-builder --chown=appuser:appuser /app/langchain-ui/dist /app/langchain-ui/dist
-
 # Node for the agents, not for this image's own build - the UI specialist is
 # expected to run `npm install` and compile what it writes, and cannot install a
 # runtime for itself. Copied from the frontend builder rather than downloaded
@@ -150,11 +143,6 @@ COPY --from=frontend-builder /usr/local/lib/node_modules /usr/local/lib/node_mod
 RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
     && node --version && npm --version
-
-RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser /app/data
-
-# Runs unprivileged. The image previously ran as root.
-USER appuser
 
 # Chromium in the image, downloaded once and shared by every run.
 #
@@ -173,9 +161,35 @@ USER appuser
 #
 # The system libraries Chromium needs are installed further up, as root,
 # with a note explaining why `--with-deps` is not used here.
-RUN npx --yes playwright install chromium \
+#
+# Pinned to the Playwright release every JavaScript pack pins
+# (`app.stacks.packs._javascript.PLAYWRIGHT`, and the benchmark scorer's), and
+# installed before anything that changes with the source. Unpinned, `npx --yes`
+# fetched whatever release was newest on the day of the build, and because it ran
+# after `COPY src/`, every deploy did it again: from one deploy on the image held
+# only Chromium 1248 (Playwright 1.64) while the packs pinned 1.63, whose browser
+# is 1243, and three of four runs had their scaffold "left to the agents" over an
+# acceptance smoke test that could not start a browser.
+ARG PLAYWRIGHT_VERSION=1.64.0
+USER appuser
+RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install chromium \
     && test -d "$HOME/.cache/ms-playwright" \
     && du -sh "$HOME/.cache/ms-playwright"
+USER root
+
+COPY --from=python-builder /opt/venv /opt/venv
+
+WORKDIR /app
+COPY --chown=appuser:appuser src/ ./src/
+COPY --chown=appuser:appuser pyproject.toml ./
+COPY --from=frontend-builder --chown=appuser:appuser /app/langchain-ui/dist /app/langchain-ui/dist
+
+
+RUN mkdir -p /app/data/uploads /app/data/workspaces && chown -R appuser:appuser /app/data
+
+# Runs unprivileged. The image previously ran as root.
+USER appuser
+
 
 EXPOSE 8000
 

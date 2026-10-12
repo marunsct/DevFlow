@@ -26,7 +26,8 @@ from app.stacks import pack_named
 from app.stacks.packs import ALL_PACKS
 from app.stacks.scaffold import scaffold
 
-PAGES = {"browser-javascript", "browser-react", "fullstack-node"}
+#: Every pack whose product has a page.
+PAGES = {p.name for p in ALL_PACKS if p.kind in {"browser_app", "fullstack"}}
 
 BRIEF = """# Notes
 ## Features

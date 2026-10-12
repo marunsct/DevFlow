@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-11 10:15 JST**.
+of the previous sessions' context. Last updated **2026-10-12 13:40 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -13,29 +13,24 @@ Everything they held that is not a secret is in this file.
 
 ## 0. Your first ten minutes
 
-The tree is clean and pushed, no run is live, and the model is ready. Start
-the next gate run:
+The owner's direction (2026-10-12): test on **`tests/brief_medium.md`**, in
+**parallel** execution mode first and linear mode after; a run taking unusually
+long is cancelled, improved, deployed and started again. Check what is live
+before anything else:
 
 ```sh
 cd /home/arun/Desktop/langchain
 git status --short                      # only " M docs/logs.md" - the owner's file; never commit or touch it
-git log --oneline -1                    # the latest handover commit
 export LOOP_USER=harness-test LOOP_PASSWORD=loop-test-only-pw-2026
-scripts/loop/loop.sh status             # live runs must be empty
+scripts/loop/loop.sh status             # the current run, and whether anything is live
 scripts/loop/loop.sh ready              # last line ALL READY, exit 0 - otherwise start nothing (§5)
-scripts/loop/loop.sh bench web-todo     # prints the run id and its JST start
-scripts/loop/loop.sh wait 10            # first check; every ~10 min for 40 min, then `wait 18`
+scripts/loop/loop.sh start tests/brief_medium.md   # only when nothing is live
+scripts/loop/loop.sh wait 10            # every ~10 min for 40 min, then `wait 18`
 ```
 
-- Run Audit (tests/brief_medium.md):
-  - Run 1 (run-fdc1385c-e858-4caf-922a-c75534fb2907, 12:59-16:45 JST, 2026-10-11): test_round_0 exhausted model call budget without outputting SpecialistOutput schema, and exhausted all structured retries. In workflow.py, test_round_ was not in _STAGES_THAT_MAY_RETURN_BLOCKED, raising ValueError. Fixed by adding "test_round_" to _STAGES_THAT_MAY_RETURN_BLOCKED and adding _blocked_when_retries_exhausted. Tested and deployed.
-  - Run 2 (run-fd3a244d-4cd5-41c2-897a-0c326bc2598d, 17:16-23:17 JST, 2026-10-11): Progressed through sprint 1, passed test_round_0 cleanly, progressed through Sprint 2 (defect fixes, acceptance authoring, reviews). At exactly 6 hours (21,600s), Celery soft time limit fired (SoftTimeLimitExceeded). execute_workflow_run in tasks.py lacked _explain_failure formatting on unhandled exceptions and Celery time limits.
-- Fix:
-  1) Raised default CELERY_TASK_SOFT_TIME_LIMIT from 21600 (6h) to 43200 (12h) and CELERY_TASK_TIME_LIMIT from 21900 to 43500 in tasks.py, docker-compose.yml, and .env.example.
-  2) Wrapped execute_workflow_run in tasks.py so that unhandled exceptions (including SoftTimeLimitExceeded) are explained via _explain_failure, providing actionable operator guidance.
-  3) Added regression test in tests/test_progress_and_tasks.py: test_unhandled_exception_marks_run_failed_with_explained_message (proven failing on unfixed code, 0 banned words, 0 run IDs).
-- Suite status: 9,798 passed, 3 failed (only the three S3 tests in tests/test_codebase_seeding_api.py requiring external credentials).
-
+Execution mode is a global setting read at every dispatch (`runtime_settings`
+`execution_mode`); there is no per-run override. Switching to linear is the
+owner's setting change - ask them, never write the settings table.
 
 `loop.sh wait N` blocks for up to N minutes and then prints the status, key
 log lines and the audit. Run it so that its output reaches you when it ends:
@@ -73,8 +68,16 @@ stage's count. Stages, in order:
 3. `fullstack-bookmarks`: two consecutive clean runs.
 4. `tests/brief_medium.md`, then `tests/brief_high.md`, audited by hand.
 
-**Current: stage 1 (`web-todo`), 2 of 2 clean runs — STAGE 1 GATE PASSED!** (Clean run 1: `run-49dec2db-57e8-4600-b003-807ad7760511` score 1.0, 426 LOC, 16/16 locked tests, 54 unit tests; Clean run 2: `run-5aadbddd-7e10-4790-8611-6f3289b015f2` score 1.0, 482 LOC, 10/10 locked tests, 81 unit tests, 80 min wall time).
-**Active Run**: `run-fdc1385c-e858-4caf-922a-c75534fb2907` started at 12:59 JST (2026-10-11) from `tests/brief_medium.md`. Monitoring early stop window (first 40 min).
+**Gate:** stage 1 (`web-todo`) passed - run-49dec2db and run-5aadbddd scored
+10/10 with no harness fix during them (49dec2db's scaffold was "left to the
+agents" over the browser-version mismatch below, and it still scored 10/10).
+By the owner's direction the loop now tests `tests/brief_medium.md`, which has no
+hidden tests: audit it by hand (§0.4.1 of the monitoring handover).
+
+**Unusually long (owner, 2026-10-12):** a run that stalls - one stage visit over
+~30 minutes, a fix loop that keeps reopening the same failure, no sprint
+accepted after ~2.5 hours on brief_medium - is cancelled (`loop.sh cancel`),
+the cause fixed in general, deployed, and the run started again.
 
 **Early stop.** If you find a bug in a run's first 40 minutes, cancel the run
 (`loop.sh cancel`), fix, deploy and start again. If you find a major harness
@@ -168,67 +171,112 @@ read every product source file against the brief (monitoring §0.4.1). Check:
   first when it returns: deploy the pending fix and start the next run, then
   commit and push. A failing git step must never stop the testing.
 
-## 2. Where it stands (2026-10-11 10:15 JST)
+## 2. Where it stands (2026-10-12 13:40 JST)
 
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | 4 High-Steering Efficiency Optimizations (in-turn file edits, procedural test round, IDE diagnostic warnings, adaptive sprint sizing) deployed. |
-| current run | `run-5aadbddd-7e10-4790-8611-6f3289b015f2` COMPLETED cleanly at 07:34 JST (80m), score 10/10 (1.0), 482 LOC, 10/10 locked tests, 81 unit tests, product audit clean. Clean Run 2 of 2. |
-| model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, context 131,000, parallel execution mode. |
-| gate | stage 1 (`web-todo`): **2 of 2 clean runs (GATE PASSED!)**. Next: Stage 2 (`notes-api`, `wordstats-cli`, `textkit-lib`: 1 clean run each) |
-| suite | 9,796 pass, 29 skip, 3 expected fails (`tests/test_codebase_seeding_api.py`, which need S3 credentials) |
+| deployed | `6314d91` (the review fixes) plus the stack packs and the pinned browser below, deployed 13:25 JST between runs. |
+| current run | none live; the next is `tests/brief_medium.md` in parallel mode. |
+| model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
+| Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
+| suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
 
-### 2.1 What the performance optimizations batch changed (deployed 12:50 JST)
+### 2.1 What changed on 2026-10-12
 
-Implemented 6 performance optimizations to reduce run execution times from 3.5h down to under 45 minutes on small applications without sacrificing quality:
+A review of the 35 commits since `9c41cba` (`6314d91`, each fix with a test
+proven to fail on the code before it):
 
-- **Dynamic Sprint Count Capping by Scope:** `max_sprints_for_criteria_count` and `with_capped_sprint_count` in `src/app/agents/scrum_master.py`. Capped sprint count based on scope (≤10 criteria → max 2 sprints; ≤15 criteria → max 3 sprints; >15 criteria → max 4 sprints). Remaps success measure coverage on excess sprint folds so coverage remains complete and valid.
-- **Explicit File Ownership in Work Orders:** Added `_work_order_file_ownership_note` in `src/app/agents/specialists.py` reminding specialists of the exact files their work order owns, avoiding costly out-of-order edit rejections.
-- **Pre-Emptive Acceptance Test Linting:** Added `suite.tests_that_need_what_they_never_made` into `acceptance_review` in `src/app/graph/acceptance_nodes.py` to catch unpassable tests before suite lock.
-- **Conditional Security & Advice Reviews:** In `src/app/graph/workflow.py`, `security_review_node` and `advice_review_node` check whether relevant code/database files were modified during the sprint; if untouched, reviews pass automatically without invoking the model.
-- **Batch Defect Remediation:** In `src/app/graph/workflow.py`, `defect_remediation_node` bundles all open defects belonging to the same specialist role within the test round into a single prompt and resolves them in batch.
+- **No contract is guessed.** `contract.the_pack()` used to read pack names out
+  of the stack decision and the stack document, write its guess to
+  `.harness/stack-pack.json`, and `enforce()` then wrote that pack's runner
+  configuration into the project. Two of three brief_medium runs got a wrong
+  pack that way. The lookup only reads now. A scaffold that cannot be proven
+  records its pack with `scaffolded: false`: its test checks and commands
+  apply, nothing of it is kept or put back (`contract.scaffolded`).
+- **Batched defects stay open.** A fixer is shown every open defect of its role
+  that a measurement can close. Only the measurement taken after the fix closes
+  them; one still failing goes to its own fixer. The batch no longer marks them
+  fixed on the first defect's answer, and no longer writes "verified by
+  <command>" in place of a regression test.
+- **Unknown is not passed.** The procedural test round skips the testing
+  specialist only when the locked suite ran and passes everything due, and the
+  unit tests ran and passed.
+- **The "missing from locked suite" dispute needs a suite that ran.** A test
+  carrying two criteria is now one failure naming both.
+- **Suite checks are the pack's and refuse no correct test.** They accept
+  `addInitScript` seeding storage, comments, `await Promise.all([helper()])` and
+  `createRequire`. The generic QA prompt carries no Playwright rule.
+- **Reviews run on code in any language.** They skip only a sprint that changed
+  nothing but prose, styles and images.
+- **Builders are not told to fix another work order's file.** This holds in
+  both execution modes: the in-write note and the exit gate both treat an
+  import of a file another work order is writing as expected.
+- **One sprint-sizing rule.** It is computed from
+  `max_sprints_for_criteria_count`.
+
+Stack packs and the image:
+
+- **Five new packs**, each scaffolded for real in the worker with its smoke
+  tests passing:
+  - `browser-vue`;
+  - `fullstack-react-express` and `fullstack-vue-express`;
+  - `fullstack-react-fastapi` and `fullstack-vue-fastapi`.
+
+  The page is built with Vite and served by the service beside `/api/`, so the
+  product is one process on one port. Unit tests are Vitest for the page, and
+  Vitest or pytest for the service, merged into one report.
+- **Matching reads both languages of a full-stack stack.** It also requires
+  the component framework a stack names: "Vue on Vite" had matched the React
+  pack. The medium brief's stack (Python/FastAPI + React on Vite) now gets
+  `fullstack-react-fastapi`; before, no pack fit it.
+- **One Playwright release everywhere: 1.64.0.** This covers the packs
+  (`_javascript.PLAYWRIGHT`), the image (`ARG PLAYWRIGHT_VERSION`) and the
+  scorer, and `tests/test_one_playwright_everywhere.py` keeps them equal.
+  - The image used to install the newest release on every deploy, after
+    `COPY src/`.
+  - From one deploy on, it held Chromium 1248 while the packs looked for 1243.
+  - Three of four web-todo runs had their scaffold "left to the agents" over a
+    browser that could not start.
+  - The browser is now installed in a layer before anything a deploy changes.
 
 ### 2.2 Verify on the next run
 
-1. **Scaffold.**
-   - Check that the workspace has `.harness/stack-pack.json` once set-up ends.
-   - If the worker log shows the smoke test failing and then passing, the retry
-     worked.
-   - If it is "left to the agents" again (failed twice), that is the parked gap
-     in monitoring §0.5.1.
-2. **Merging.**
-   - Look in the worker log for `N defects describe one problem; merged into one: ...`.
-   - Look in `loop.sh defects` for the merged defect's "The same problem, as
-     other checks reported it:" list.
-   - Then read whether every merged report really was one problem. A false
-     merge hides a defect, and that would be a major bug.
-3. **Review advice.**
-   - Look for `Code review found N problem(s) a test or check shows; to fix`
-     and `Code review raised N finding(s) no test or check shows; advice, not defects`.
-   - Read the advice: a real product bug that no test happens to show is now
-     only advice. Check that the milestone review sees it
-     (`loop.sh asked <milestone stage> --full`).
-4. **Unstated order.**
-   - If QA's suite is sent back with "`<test>` checks what N places of a list
-     show ... `<criterion>` states none", check that the criterion really
-     states no order and that QA's repair is sensible.
-   - A send-back over a criterion that does state an order is a false
-     positive.
-5. **The model change.**
-   - The run is back on gpt-oss-20b after a day on qwen. Read the worker's
-     `Reasoning switch for ...` line, which is measured once per endpoint and
-     model, and check that it chose sensibly.
-   - Separate "the model did something odd" from "the harness let it" before
-     fixing anything.
-6. **Earlier fixes, live once and still worth watching:**
-   - the sprint plan's scope check;
-   - builders staying in their sprint's scope;
-   - regression and page-check defects closed by measurement;
-   - the mid-attempt QA-lead dispute;
-   - fixes carried to later sprints ("Fixed earlier - keep these fixes").
+1. **The scaffold.** The decision record says the pack's title. On brief_medium
+   that is `fullstack-react-fastapi` or a sibling, not "left to the agents".
+   `.harness/stack-pack.json` has `"scaffolded": true`.
+2. **Batching.** In `loop.sh defects`, a bundled defect's story reads "bundled",
+   then either "closed without a fixer" (by measurement) or a fixer of its own -
+   never "fixed in batch".
+3. **The procedural test round.** "skipping specialist LLM invocation" appears
+   only when the locked suite ran green.
+4. **Builders in parallel.** No `belongs to another work order` refusal follows
+   an IDE note about an import.
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
+
+- **run-fe7854b9** (brief_medium, 23:50 JST 2026-10-11 - 02:29 JST
+  2026-10-12): cancelled in a defect fix.
+  - Its stack decision said no pack fits (Python/FastAPI + React), yet the
+    contract lookup wrote a `node-http-api` contract two minutes in.
+  - It inferred that from a stack-document sentence explaining why a
+    JavaScript option was rejected.
+  - Fixed in `6314d91`.
+- **run-fd3a244d** (brief_medium, 17:16-23:17 JST 2026-10-11): FAILED at the
+  6-hour Celery limit.
+  - It was given a guessed `python-http-api` contract; that pack's
+    `pytest.ini` and `acceptance/conftest.py` were written into a project with
+    a browser page.
+  - The pack's acceptance command never produced a report (13/13 criteria
+    "untested").
+- **run-fdc1385c** (brief_medium, 12:59-16:45 JST 2026-10-11): FAILED. Its
+  test round could not answer, which `f9987af` now records as blocked.
+- **run-5aadbddd / run-49dec2db** (web-todo, 2026-10-10/11): the stage 1 gate
+  runs, 10/10 each.
+  - 49dec2db took 327 min (4 defect-fix stages over one ambiguous locked
+    locator); 5aadbddd took 80 min with no defects - same code.
+  - 49dec2db's scaffold was "left to the agents" over the browser-version
+    mismatch.
 
 - **run-d96ae4c7** (12:15-17:32 JST, 2026-10-10): COMPLETED, score 10/10 (1.0).
   Product audit clean: 323 LOC, 47 unit tests pass (exit 0), working tree clean.

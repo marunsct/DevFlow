@@ -22,7 +22,8 @@ from app.stacks import release
 from app.stacks.packs import ALL_PACKS
 from app.stacks.scaffold import scaffold
 
-SERVICES = {"node-http-api", "fullstack-node", "python-http-api"}
+#: Every pack whose product is a running service: one with an HTTP interface.
+SERVICES = {p.name for p in ALL_PACKS if p.kind in {"http_api", "fullstack"}}
 
 
 def _files(name: str) -> dict[str, str]:

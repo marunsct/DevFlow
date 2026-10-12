@@ -39,7 +39,7 @@ def test_a_service_in_the_language_gets_its_pack(language, framework, chosen):
 
 
 @pytest.mark.parametrize("language, framework", [
-    ("Java", "Quarkus"), ("PHP", "Laravel"), ("Go", "Chi"), ("Kotlin", "Ktor"),
+    ("Java", "Quarkus"), ("PHP", "Symfony"), ("Go", "Chi"), ("Kotlin", "Ktor"),
 ])
 def test_a_framework_no_pack_is_built_with_gets_none(language, framework):
     """Not the language's other pack: a Quarkus service fitted the Spring Boot pack."""
@@ -189,3 +189,21 @@ def test_a_nestjs_service_gets_its_pack_and_keeps_its_own_manifest():
     assert pack.name == "node-nest-api"
     assert '"@nestjs/core"' in manifest and '"@playwright/test"' in manifest
     assert pack.kept_scripts["test"].startswith("jest")
+
+
+@pytest.mark.parametrize("language, framework, chosen", [
+    ("Ruby", "Ruby on Rails", "ruby-rails-api"),
+    ("Ruby 3.3", "Rails 8", "ruby-rails-api"),
+    ("PHP", "Laravel 12", "php-laravel-api"),
+])
+def test_the_batteries_included_frameworks_get_theirs(language, framework, chosen):
+    assert choose_pack(_service(language, framework), "").name == chosen
+
+
+def test_a_laravel_project_s_key_is_its_own():
+    """Generated when it is set up, never one written into the template every project shares."""
+    pack = pack_named("php-laravel-api")
+    env = pack.render("shop", "Shop")[".env"]
+
+    assert "APP_KEY=\n" in env
+    assert ("php", "artisan", "key:generate", "--force") in pack.install

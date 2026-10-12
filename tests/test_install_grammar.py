@@ -55,6 +55,8 @@ NOT_A_PACKAGE_MANAGER = frozenset({
     "python", "python3", "pytest", "ruff",
     "gofmt", "rustc", "rustfmt", "java", "javac",
     "kotlin", "rake", "rspec", "phpunit", "swiftc", "elixir",
+    # Go's test runner reporter: runs `go test`, installs nothing.
+    "gotestsum",
     # A browser-driving test runner, invoked as `npx playwright test`. It
     # installs packages no more than `jest` does.
     "playwright",

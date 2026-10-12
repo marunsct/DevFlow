@@ -169,7 +169,7 @@ def scaffold(
             ("unit", commands["unit_test"], pack.unit_report),
             ("acceptance", commands["acceptance_test"], pack.acceptance_report),
         ):
-            (project_root / report).unlink(missing_ok=True)
+            junit.clear(project_root / report)
             code = _step(result.steps, argv, run(argv, "test", project))
             parsed = junit.read(project_root / report)
             if code != 0 or not parsed.found or parsed.passed < 1 or parsed.failed:
@@ -181,7 +181,7 @@ def scaffold(
                 # keeps this" in their own comments, and nothing kept them. A
                 # later sprint's tester then switched the next sprint's tests
                 # off in the runner configuration, and nothing put it back.
-                (project_root / report).unlink(missing_ok=True)
+                junit.clear(project_root / report)
                 code = _step(result.steps, argv, run(argv, "test", project))
                 parsed = junit.read(project_root / report)
             if code != 0 or not parsed.found or parsed.passed < 1 or parsed.failed:
@@ -196,7 +196,7 @@ def scaffold(
             (project_root / relative).unlink(missing_ok=True)
         for report in (pack.unit_report, pack.acceptance_report, pack.runtime_report):
             if report:
-                (project_root / report).unlink(missing_ok=True)
+                junit.clear(project_root / report)
         if pack.evidence_dir:
             shutil.rmtree(project_root / pack.evidence_dir, ignore_errors=True)
 

@@ -170,6 +170,35 @@ RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
 # only Chromium 1248 (Playwright 1.64) while the packs pinned 1.63, whose browser
 # is 1243, and three of four runs had their scaffold "left to the agents" over an
 # acceptance smoke test that could not start a browser.
+# The toolchains the stack packs build with, beyond Node and Python: Go, Java
+# with Maven, Rust, Ruby with Bundler, PHP with Composer, and .NET. A product in
+# any of these languages starts from a pack whose own tests already run
+# (`app.stacks.packs`), and a stage asked to build it can run what it writes.
+# System-wide, from Debian's packages where Debian has them: the sandbox gives
+# every command a home inside its run's workspace, so a toolchain installed
+# under a user's home (rustup, sdkman) would not be found. Before anything a
+# deploy changes, so a deploy keeps them. The test reporters each language
+# lacks - gotestsum for Go, cargo-nextest for Rust - are pinned.
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        golang-go \
+        openjdk-21-jdk-headless maven \
+        rustc cargo \
+        ruby ruby-dev ruby-bundler build-essential \
+        php-cli php-xml php-mbstring php-curl php-sqlite3 composer unzip \
+        libicu76 \
+    && rm -rf /var/lib/apt/lists/* \
+    && GOBIN=/usr/local/bin GOPATH=/tmp/gopath GOCACHE=/tmp/gocache go install gotest.tools/gotestsum@v1.12.3 \
+    && rm -rf /tmp/gopath /tmp/gocache \
+    && curl -fsSL https://get.nexte.st/0.9.104/linux | tar -xz -C /usr/local/bin \
+    && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /usr/share/dotnet \
+    && ln -sf /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && rm /tmp/dotnet-install.sh \
+    && go version && java -version && mvn -v && cargo --version && cargo nextest --version \
+    && ruby --version && bundle --version && php --version && composer --version && dotnet --version
+ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 DOTNET_ROOT=/usr/share/dotnet
+
 ARG PLAYWRIGHT_VERSION=1.64.0
 USER appuser
 RUN npx --yes playwright@${PLAYWRIGHT_VERSION} install chromium \

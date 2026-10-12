@@ -481,7 +481,7 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         return _judged(repo_root, result, save)
     argv, report_path, project = command
     report_file = Path(repo_root) / project / report_path
-    report_file.unlink(missing_ok=True)
+    junit.clear(report_file)
     runtime_file = _runtime_report(repo_root, project)
     if runtime_file is not None:
         runtime_file.unlink(missing_ok=True)

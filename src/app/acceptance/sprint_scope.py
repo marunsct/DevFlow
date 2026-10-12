@@ -280,7 +280,7 @@ def only_later_sprints_fail(repo_root: str | Path | None) -> bool:
     failed: list[junit.TestResult] = []
     read_any = False
     for path in _reports(Path(str(repo_root))):
-        if not path.is_file():
+        if not path.exists():
             continue
         report = junit.read(path)
         read_any = read_any or bool(report.tests)
@@ -301,7 +301,7 @@ def note_on_failures(repo_root: str | Path | None, since: float) -> str:
     failed: list[junit.TestResult] = []
     for path in _reports(root):
         try:
-            if not path.is_file() or path.stat().st_mtime < since:
+            if not path.exists() or path.stat().st_mtime < since:
                 continue
         except OSError:
             continue

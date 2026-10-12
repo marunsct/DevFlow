@@ -6808,6 +6808,10 @@ def _tests_no_suite_runs(root: Path, project: Path, files: list[Path]) -> list[P
     if found is None:
         return []
     pack = found[0]
+    if pack.unit_dir.strip("/") in {"", "."}:
+        # The pack's unit tests sit beside the code they test (Go's
+        # `*_test.go`), and its runner finds them wherever they are.
+        return []
     homes = tuple(f"{d.strip('/')}/" for d in (pack.unit_dir, pack.acceptance_dir) if d)
     unrun = []
     for path in files:

@@ -244,6 +244,7 @@ def playwright_config(
     screenshot: str = "only-on-failure",
     *,
     checks_the_page: bool = False,
+    server_timeout_ms: int = 30_000,
 ) -> str:
     """A Playwright configuration that starts the product with `server_command`.
 
@@ -299,11 +300,12 @@ export default defineConfig({
     // A fresh, empty data directory for every run of the suite.
     env: { PORT: String(port), DATA_DIR: `test-results/acceptance-data-${port}-${process.env.ACCEPTANCE_RUN}` },
     reuseExistingServer: false,
-    timeout: 30_000,
+    timeout: %(server_timeout)s,
   },
 });
 """ % {
         "command": server_command, "ready": ready_path, "screenshot": screenshot,
+        "server_timeout": f"{server_timeout_ms:_}",
         "global_setup": "\n  globalSetup: './playwright.setup.mjs'," if checks_the_page else "",
     }
 

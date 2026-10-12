@@ -138,7 +138,7 @@ def _run_unit(root: str | Path, runner: Runner | None) -> tuple[dict[str, str], 
     pack, record = found
     project = str(record.get("project") or "")
     report = Path(root) / project / pack.unit_report
-    report.unlink(missing_ok=True)
+    junit.clear(report)
     if runner is None:
         from app.stacks.scaffold import sandbox_runner
 

@@ -140,9 +140,31 @@ def parse(text: str) -> Report:
 
 
 def read(path: str | Path) -> Report:
-    """Parse the report at `path`; an absent or unreadable file is an empty report."""
+    """Parse the report at `path`; an absent or unreadable file is an empty report.
+
+    A directory is every report in it, read as one: some runners write one file
+    per test class (Maven's Surefire, Gradle) and cannot be asked for one.
+    """
+    path = Path(path)
+    if path.is_dir():
+        merged = Report()
+        for part in sorted(path.glob("*.xml")):
+            found = read(part)
+            merged.found = merged.found or found.found
+            merged.tests.extend(found.tests)
+        return merged
     try:
-        text = Path(path).read_text(encoding="utf-8", errors="replace")
+        text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return Report()
     return parse(text)
+
+
+def clear(path: str | Path) -> None:
+    """Remove the report at `path` before a run writes it again: the file, or every report in its directory."""
+    path = Path(path)
+    if path.is_dir():
+        for part in path.glob("*.xml"):
+            part.unlink(missing_ok=True)
+    else:
+        path.unlink(missing_ok=True)

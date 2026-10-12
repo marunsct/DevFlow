@@ -284,8 +284,8 @@ _LANGUAGE_NAMES = {
 #: The languages a framework is written in, for a stack whose language field
 #: names only one side of it: "Python", with React chosen for the interface.
 _WRITTEN_IN = {
-    ("react", "preact", "vue", "svelte", "solid", "lit", "express", "fastify", "koa", "hapi"): (
-        "javascript", "typescript"),
+    ("react", "preact", "vue", "svelte", "solid", "lit", "express", "fastify", "koa", "hapi",
+     "next", "nextjs", "nuxt", "sveltekit", "remix"): ("javascript", "typescript"),
     ("angular", "nest", "nestjs"): ("typescript",),
     ("fastapi", "flask", "django", "starlette"): ("python",),
     ("gin", "fiber", "chi"): ("go",),
@@ -323,13 +323,20 @@ def _framework_text(stack: Any) -> str:
 
 
 _BACKEND_FRAMEWORKS = re.compile(
-    r"\b(?:express|fastify|koa|hapi|nest(?:js)?|fastapi|flask|django|starlette|"
-    r"sinatra|rails|gin|echo|fiber|actix|axum|rocket|spring|laravel|aspnet|asp\.net)\b"
+    r"\b(?:express|fastify|koa|hapi|nest(?:js)?|adonis|fastapi|flask|django|starlette|tornado|"
+    r"sinatra|rails|hanami|roda|grape|gin|echo|fiber|chi|beego|actix|axum|rocket|warp|"
+    r"spring|quarkus|micronaut|javalin|dropwizard|vert\.?x|ktor|play|"
+    r"laravel|symfony|slim|lumen|codeigniter|cakephp|yii|phoenix|aspnet|asp\.net)\b"
 )
 _FRONTEND_FRAMEWORKS = re.compile(
     r"\b(?:react|vue|svelte|angular|solid|preact|lit|vite|html|css|dom|browser|"
     r"vanilla js|vanilla javascript)\b"
 )
+#: Frameworks that are a page and its own service in one application.
+_FULLSTACK_FRAMEWORKS = re.compile(r"\b(?:next(?:\.?js)?|nuxt(?:\.?js)?|svelte ?kit|remix)\b")
+#: The component framework each of those builds its page with.
+_BUILT_ON = {"next": "react", "nextjs": "react", "remix": "react", "nuxt": "vue", "sveltekit": "svelte", "svelte kit": "svelte"}
+
 _CLI_FRAMEWORKS = re.compile(r"\b(?:click|typer|argparse|commander|yargs|oclif|cobra|clap)\b")
 
 _SAYS_BROWSER = re.compile(
@@ -365,6 +372,8 @@ def product_kind(stack: Any, text: str = "") -> str:
     if stated in KINDS:
         return stated
     frameworks = _framework_text(stack)
+    if _FULLSTACK_FRAMEWORKS.search(frameworks):
+        return "fullstack"
     frontend = str(getattr(stack, "frontend_framework", "") or "").strip().lower()
     has_frontend = bool(_FRONTEND_FRAMEWORKS.search(frameworks)) or (
         frontend not in NO_FRAMEWORK and bool(frontend)
@@ -407,7 +416,7 @@ def _framework_fits(pack: StackPack, stack: Any) -> bool:
         return True
     # Only words that are not a framework at all ("javascript", "html5",
     # "node.js") remain: the stack chose the language and nothing on top.
-    return not (_BACKEND_FRAMEWORKS.search(text) or re.search(
+    return not (_BACKEND_FRAMEWORKS.search(text) or _FULLSTACK_FRAMEWORKS.search(text) or re.search(
         r"\b(?:react|vue|svelte|angular|solid|preact|lit|click|typer|commander|yargs|nest)\b", text
     ))
 
@@ -454,6 +463,10 @@ def _frontend_fits(pack: StackPack, stack: Any) -> bool:
     # "React.js", "Vue.js", "AngularJS" name the framework too.
     frontend = re.sub(rf"(?<![a-z])({'|'.join(_COMPONENT_FRAMEWORKS)})\.?js(?![a-z])", r"\1", frontend)
     named = {word for word in _COMPONENT_FRAMEWORKS if re.search(rf"(?<![a-z]){word}(?![a-z])", frontend)}
+    named.update(
+        built_on for framework, built_on in _BUILT_ON.items()
+        if re.search(rf"(?<![a-z]){re.escape(framework)}(?![a-z])", frontend.replace(".js", ""))
+    )
     if not pack.frontend_frameworks:
         return not named
     return bool(named) and any(word in pack.frontend_frameworks for word in named)

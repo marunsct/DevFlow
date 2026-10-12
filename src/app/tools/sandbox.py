@@ -795,6 +795,26 @@ def _concurrency_environment() -> Dict[str, str]:
     return concurrency_environment(_memory_limit_bytes())
 
 
+#: Settings a toolchain needs to run inside this sandbox at all - not secrets,
+#: and the same for every command.
+#:
+#: .NET maps its executable memory twice, through a file it sizes far beyond
+#: the largest file a command may write (`MAX_WRITE_BYTES`, as RLIMIT_FSIZE):
+#: every `dotnet` command, `dotnet --version` included, was killed by SIGXFSZ
+#: before printing a word. Its write-xor-execute hardening is off in here; the
+#: sandbox's own limits are the boundary.
+TOOLCHAIN_ENVIRONMENT = {
+    "DOTNET_EnableWriteXorExecute": "0",
+    "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
+    "DOTNET_NOLOGO": "1",
+    "NEXT_TELEMETRY_DISABLED": "1",
+    # Go fetched a newer toolchain into the run's workspace (some 250 MB)
+    # whenever a module asked for one, every run. A module that needs a newer
+    # Go than the image's is now an error the stage can act on.
+    "GOTOOLCHAIN": "local",
+}
+
+
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
     """A minimal environment for a directly-executed command."""
     environment = {
@@ -821,6 +841,7 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
         _pw_cache = os.path.join(home, ".cache", "ms-playwright")
     if os.path.isdir(_pw_cache):
         environment["PLAYWRIGHT_BROWSERS_PATH"] = _pw_cache
+    environment.update(TOOLCHAIN_ENVIRONMENT)
     # Before `extra_env`, so a caller can still override a specific value.
     environment.update(_concurrency_environment())
     # A port nothing is listening on, for a suite that starts the product
@@ -1241,7 +1262,7 @@ TOOLCHAINS: dict[str, frozenset[str]] = {
     "javascript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "playwright"}),
     "typescript": frozenset({"node", "npm", "npx", "yarn", "pnpm", "jest", "vitest", "mocha", "tsc", "ts-node", "playwright"}),
     "python": frozenset({"python", "python3", "pip", "pip3", "pytest", "uv", "poetry", "ruff"}),
-    "go": frozenset({"go", "gofmt"}),
+    "go": frozenset({"go", "gofmt", "gotestsum"}),
     "rust": frozenset({"cargo", "rustc", "rustfmt"}),
     "java": frozenset({"java", "javac", "mvn", "gradle"}),
     "kotlin": frozenset({"kotlin", "kotlinc", "gradle"}),

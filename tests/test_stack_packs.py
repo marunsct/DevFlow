@@ -49,9 +49,9 @@ def test_the_pack_fits_the_stack(stack, text, expected) -> None:
 @pytest.mark.parametrize(
     "stack, text",
     [
-        (_stack(language="Go", framework="Gin"), "A REST API"),  # no Go pack
+        (_stack(language="Kotlin", framework="Ktor"), "A REST API"),  # no Kotlin pack
         (_stack(language="Python", framework="Django"), "A REST API"),  # no Django pack
-        (_stack(language="JavaScript", framework="Svelte", frontend_framework="Svelte"), ""),
+        (_stack(language="TypeScript", framework="Angular", frontend_framework="Angular"), ""),
         (_stack(language="Python", framework="None"), ""),  # nothing says what kind
     ],
 )
@@ -69,7 +69,8 @@ def test_every_pack_is_complete_and_named_once() -> None:
         assert not any("{{" in path or "{{" in body for path, body in rendered.items()), pack.name
         assert all(name in rendered for name in pack.kept_files), pack.name
         smoke = pack.rendered_smoke_files("demo-app", "Demo App")
-        assert any(path.startswith(pack.unit_dir + "/") for path in smoke), pack.name
+        # A pack whose unit tests sit beside the code (`unit_dir` ".") keeps its smoke test there too.
+        assert pack.unit_dir == "." or any(path.startswith(pack.unit_dir + "/") for path in smoke), pack.name
         assert any(path.startswith(pack.acceptance_dir + "/") for path in smoke), pack.name
         assert pack.acceptance_report and pack.unit_report
         assert "{{" not in pack.filled(pack.guide + pack.acceptance_guide, "demo-app")

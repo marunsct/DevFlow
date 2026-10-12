@@ -15,9 +15,15 @@ PLAYWRIGHT = "1.64.0"
 #: dependencies" constrains what ships (`app.agents.brief_constraints`).
 AXE_CORE = "4.14.0"
 
+#: The unit test files: Node's own test-file names, anywhere under `tests/`, as
+#: a pattern Node expands itself - quoted, so no shell expands it first. Node 22
+#: and later load a directory given to `--test` as a module and fail before a
+#: test runs, so `tests/` itself cannot be named the way Node 20 allowed.
+UNIT_FILES = "'tests/**/{test,test-*,*[._-]test}.{js,mjs,cjs}'"
+
 UNIT_SCRIPT = (
     "mkdir -p test-results && node --test --test-reporter=spec --test-reporter-destination=stdout "
-    "--test-reporter=junit --test-reporter-destination=test-results/unit.xml tests/"
+    f"--test-reporter=junit --test-reporter-destination=test-results/unit.xml {UNIT_FILES}"
 )
 
 GITIGNORE = """node_modules/
@@ -32,7 +38,7 @@ ACCEPTANCE_TEST = ("npm", "run", "test:acceptance")
 
 #: The Node.js major version the harness's own image runs, so CI tests the
 #: product on the runtime it was built and tested on.
-NODE_MAJOR = "20"
+NODE_MAJOR = "24"
 
 CI_SETUP = (
     "      - uses: actions/setup-node@v4\n"

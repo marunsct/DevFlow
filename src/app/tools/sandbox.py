@@ -33,6 +33,7 @@ import signal
 import re
 import shutil
 import subprocess
+import functools
 import threading
 import time
 import tomllib
@@ -742,13 +743,38 @@ _MEMORY_BYTES = {"k": 1024, "m": 1024**2, "g": 1024**3}
 
 
 def _memory_limit_bytes() -> int:
-    raw = MEMORY_LIMIT.strip().lower()
+    return _bytes_of(MEMORY_LIMIT, 2 * 1024**3)
+
+
+def _bytes_of(size: str, fallback: int) -> int:
+    """`"1g"`, `"512m"` or a plain number of bytes, as bytes; `fallback` if unreadable."""
+    raw = str(size).strip().lower()
     multiplier = _MEMORY_BYTES.get(raw[-1:], 1)
     digits = raw[:-1] if multiplier > 1 else raw
     try:
         return int(float(digits) * multiplier)
     except ValueError:
-        return 2 * 1024**3
+        return fallback
+
+
+def _process_memory(workspace: str | Path | None) -> int:
+    """The data limit for each process of a command in this workspace, in bytes.
+
+    The configured limit, or more where the project's pack says its toolchain
+    needs more (`StackPack.process_memory`). Read from the pack the contract
+    names, which the scaffold writes before its first install, so the
+    scaffold's own commands get it too.
+    """
+    configured = _memory_limit_bytes()
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(workspace)
+    except Exception:  # noqa: BLE001 - then the configured limit stands
+        return configured
+    if not found or not found[0].process_memory:
+        return configured
+    return max(configured, _bytes_of(found[0].process_memory, 0))
 
 
 MAX_WRITE_BYTES = int(os.environ.get("SANDBOX_MAX_FILE_BYTES", str(2 * 1024**3)))
@@ -864,8 +890,11 @@ def _a_free_port() -> int:
         return probe.getsockname()[1]
 
 
-def _apply_limits() -> None:
+def _apply_limits(data_bytes: int | None = None) -> None:
     """Cap the child before it execs. Runs between fork and exec.
+
+    `data_bytes` is the data limit, by default the configured one; see
+    `_process_memory`.
 
     Nothing here can be relied on the way a container's cgroup can - these are
     per-process rlimits, and a command that forks can multiply its memory use -
@@ -894,7 +923,7 @@ def _apply_limits() -> None:
     # local execution, where there is no cgroup.
     memory_limit = getattr(resource, "RLIMIT_DATA", resource.RLIMIT_AS)
     for limit, value in (
-        (memory_limit, _memory_limit_bytes()),
+        (memory_limit, data_bytes or _memory_limit_bytes()),
         (resource.RLIMIT_FSIZE, MAX_WRITE_BYTES),
     ):
         try:
@@ -972,7 +1001,7 @@ def _kill_the_tree(group: int) -> None:
 
 
 def _run_and_watch_the_tree(
-    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int
+    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int, data_bytes: int | None = None
 ) -> "subprocess.CompletedProcess[str]":
     """`subprocess.run`, bounding the command's whole process tree.
 
@@ -997,7 +1026,7 @@ def _run_and_watch_the_tree(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        preexec_fn=_apply_limits,  # noqa: PLW1509 - the point is to limit the child
+        preexec_fn=functools.partial(_apply_limits, data_bytes),  # noqa: PLW1509 - the point is to limit the child
         start_new_session=False,   # _apply_limits calls setsid itself
     )
     budget = _tree_budget_bytes()
@@ -1032,7 +1061,7 @@ def _run_and_watch_the_tree(
 
 def _image_for(executable: str) -> str:
     if executable in {"npm", "npx", "node", "yarn", "pnpm"}:
-        return os.environ.get("SANDBOX_NODE_IMAGE", "node:20-slim")
+        return os.environ.get("SANDBOX_NODE_IMAGE", "node:24-slim")
     if executable in {"python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"}:
         return os.environ.get("SANDBOX_PYTHON_IMAGE", "python:3.12-slim")
     if executable == "go":
@@ -1817,6 +1846,19 @@ def validate_command(
             "it contains."
         )
 
+    directory = _a_directory_given_to_node_test(argv, repo_root)
+    if directory is not None:
+        base = directory.rstrip("/").removeprefix("./")
+        pattern = "**/*.test.js" if base in {"", "."} else f"{base}/**/*.test.js"
+        corrected = [pattern if part == directory else part for part in argv]
+        raise CommandNotAllowed(
+            f"`node --test {directory}` runs no test on the Node here: it loads a "
+            "directory argument as a module and fails before any test starts (\"Could "
+            "not find\", ERR_UNSUPPORTED_DIR_IMPORT). Give it the test files, or a "
+            f"pattern Node expands itself - send {corrected!r}. In a package.json "
+            f"script, quote the pattern: `node --test '{pattern}'`."
+        )
+
     root_install = _needs_root_the_sandbox_will_not_give(argv)
     if root_install is not None:
         raise CommandNotAllowed(root_install)
@@ -2069,6 +2111,61 @@ def _checks_a_file_node_cannot_parse(argv: Sequence[str]) -> str | None:
     return None
 
 
+#: `node` flags whose value follows as the next argument, so it is not a path.
+_NODE_FLAGS_WITH_A_VALUE = frozenset({
+    "--test-reporter", "--test-reporter-destination", "--test-name-pattern",
+    "--test-skip-pattern", "--test-concurrency", "--test-timeout", "--test-shard",
+    "--test-coverage-include", "--test-coverage-exclude", "--import", "--require",
+    "-r", "--loader", "--experimental-loader", "--env-file", "--conditions", "-C",
+})
+
+
+def _a_directory_given_to_node_test(argv: Sequence[str], repo_root: str | Path | None) -> str | None:
+    """The directory this `node --test` is given, or None.
+
+    Node 20 searched a directory argument for test files. The Node here does
+    not: measured in the run image on Node 24.21, `node --test ./` stops at
+    "Could not find './'", and `node --test tests/` loads the directory as a
+    module and reports one failed test, ERR_UNSUPPORTED_DIR_IMPORT - none of
+    the suite's own tests run, however they are written. The harness's own
+    packs named `tests/` until the image moved on, and each failed its smoke
+    test that way.
+
+    A trailing `/`, `.`, or a name with no extension that is a directory in
+    the workspace or the project. A pattern (`tests/**/*.test.js`) is what
+    Node expands itself, and a flag's value is not a path.
+    """
+    parts = [str(part) for part in argv]
+    if not parts or os.path.basename(parts[0]) != "node" or "--test" not in parts[1:]:
+        return None
+    after = parts[parts.index("--test") + 1 :]
+    skip = False
+    for part in after:
+        if skip:
+            skip = False
+            continue
+        if part.startswith("-"):
+            skip = part in _NODE_FLAGS_WITH_A_VALUE
+            continue
+        if re.search(r"[*?\[{]", part):
+            continue
+        if part.endswith("/") or part in {".", ".."}:
+            return part
+        if os.path.splitext(part)[1] or repo_root is None:
+            continue
+        root = Path(repo_root)
+        candidates = [root / part]
+        try:
+            project = (root / ".project-directory").read_text(encoding="utf-8").strip()
+        except OSError:
+            project = ""
+        if project:
+            candidates.append(root / project / part)
+        if any(candidate.is_dir() for candidate in candidates):
+            return part
+    return None
+
+
 def _how_to_serve_the_page_instead(repo_root: str) -> str:
     """What to do with a page in this workspace, given what it has installed.
 
@@ -2239,6 +2336,13 @@ def _starts_a_server(argv: Sequence[str]) -> str | None:
         if part in _SERVER_MODULES and "-m" in parts[:index]:
             return part
         if part not in _SERVER_COMMANDS:
+            continue
+        # A program `_SERVER_SUBCOMMANDS` names is a server only with one of
+        # those subcommands, which the loop above has already checked. Caught
+        # here by its name alone, `rails test`, `ng test` and `flask db
+        # upgrade` were refused as servers - a pack's own unit test command
+        # among them.
+        if part in _SERVER_SUBCOMMANDS:
             continue
         # A generic word is only a server behind something that takes one;
         # `npm run dev` reaches here as `dev` and is caught above, while a
@@ -4225,6 +4329,7 @@ class SandboxExecutor:
                 cwd=run_in or workspace,
                 env=_child_environment(workspace, extra_env),
                 timeout=timeout,
+                data_bytes=_process_memory(workspace),
             )
         except subprocess.TimeoutExpired as expired:
             return {
@@ -4511,8 +4616,8 @@ class SandboxExecutor:
             docker, "run", "--rm",
             "--name", container,
             "--network", "bridge" if category in NETWORK_CATEGORIES else "none",
-            "--memory", MEMORY_LIMIT,
-            "--memory-swap", MEMORY_LIMIT,   # equal to --memory disables swap
+            "--memory", f"{_process_memory(workspace) // 1024**2}m",
+            "--memory-swap", f"{_process_memory(workspace) // 1024**2}m",   # equal to --memory disables swap
             "--cpus", CPU_LIMIT,
             "--pids-limit", PIDS_LIMIT,
             "--cap-drop", "ALL",

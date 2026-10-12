@@ -25,7 +25,7 @@ def _project(tmp_path: Path, name: str, content: str) -> Path:
     app = tmp_path / "app"
     (app / "tests").mkdir(parents=True)
     (app / "package.json").write_text(
-        json.dumps({"type": "module", "scripts": {"test": "node --test tests/"}}), encoding="utf-8"
+        json.dumps({"type": "module", "scripts": {"test": "node --test 'tests/**/*.test.js'"}}), encoding="utf-8"
     )
     (app / "app.js").write_text("export const getState = () => ({});\n", encoding="utf-8")
     (app / "tests" / "app.test.js").write_text(A_TEST, encoding="utf-8")

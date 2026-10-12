@@ -10,6 +10,8 @@ Every case below is taken from a defect that actually shipped.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.analysis.integration_checks import summarise_integration
@@ -60,7 +62,9 @@ def test_setup_file_imported_in_test_command_is_not_stranded(tmp_path):
     root = _workspace(
         tmp_path,
         {
-            "package.json": '{"scripts": {"test": "node --import ./test-setup.mjs --test tests/"}}',
+            "package.json": json.dumps(
+                {"scripts": {"test": "node --import ./test-setup.mjs --test 'tests/**/*.test.js'"}}
+            ),
             "test-setup.mjs": 'import { test } from "node:test";',
             "tests/app.test.js": "import '../test-setup.mjs';"
         },
@@ -1422,19 +1426,21 @@ def test_a_ui_that_already_has_playwright_is_left_alone(tmp_path):
 # all five failed.
 #
 # `_tests_the_project_never_runs` could not see them: it considered only
-# `.js`, `.mjs` and `.cjs`. A `.ts` suite is not stranded by accident -
-# `node --test` cannot parse TypeScript - it is stranded by design, and the
-# design is what needed reporting.
+# `.js`, `.mjs` and `.cjs`. A `.ts` suite the command does not collect is
+# stranded by design, and the design is what needed reporting. (Node 24 runs
+# TypeScript it collects, with the types stripped; JSX it cannot load at all.)
 # ---------------------------------------------------------------------------
+
+#: The unit command as it reads on Node 24, which refuses a directory argument.
+_UNIT_PATTERN = "node --test 'tests/**/*.test.mjs'"
 
 
 def test_a_typescript_suite_the_test_command_cannot_run_is_reported(tmp_path):
     root = _workspace(
         tmp_path,
         {
-            "package.json": '{"name":"a","version":"1.0.0",'
-                            '"scripts":{"test":"node --test tests/",'
-                            '"test:e2e":"npx playwright test"}}',
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {
+                "test": _UNIT_PATTERN, "test:e2e": "npx playwright test"}}),
             "app.js": "export function go() { return 1; }\n",
             "tests/unit.test.mjs": "import {test} from 'node:test';\ntest('x',()=>{});\n",
             "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
@@ -1443,7 +1449,7 @@ def test_a_typescript_suite_the_test_command_cannot_run_is_reported(tmp_path):
 
     report = summarise_integration(root)
 
-    assert "does not parse TypeScript" in report
+    assert "which never runs" in report
     assert "app.test.ts" in report
     assert "test:e2e" in report, "the message must name the script that does run it"
 
@@ -1452,14 +1458,49 @@ def test_it_says_when_nothing_runs_the_suite_at_all(tmp_path):
     root = _workspace(
         tmp_path,
         {
-            "package.json": '{"name":"a","version":"1.0.0",'
-                            '"scripts":{"test":"node --test tests/"}}',
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {"test": _UNIT_PATTERN}}),
             "app.js": "export function go() { return 1; }\n",
             "tests/app.test.ts": "import { test } from '@playwright/test';\ntest('ui', async () => {});\n",
         },
     )
 
     assert "Nothing in the project runs them at all" in summarise_integration(root)
+
+
+def test_typescript_the_command_collects_is_not_reported(tmp_path):
+    """Measured in the run image on Node 24.21: a bare `node --test` ran
+    `tests/f.test.ts` (`# pass 1`), so a suite in TypeScript that the command
+    collects is not stranded."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {"test": "node --test"}}),
+            "app.js": "export function go() { return 1; }\n",
+            "tests/app.test.ts": "import { test } from 'node:test';\nimport assert from 'node:assert';\n"
+                                 "const n: number = 1;\ntest('x', () => assert.equal(n, 1));\n",
+        },
+    )
+
+    from app.analysis.integration_checks import _source_files, _tests_the_project_never_runs
+
+    assert _tests_the_project_never_runs(_source_files(root), root) == []
+
+
+def test_jsx_is_never_run_by_node(tmp_path):
+    """Node 24 stops at ERR_UNKNOWN_FILE_EXTENSION on `.tsx`, however it is named."""
+    root = _workspace(
+        tmp_path,
+        {
+            "package.json": json.dumps({"name": "a", "version": "1.0.0", "scripts": {"test": "node --test"}}),
+            "app.js": "export function go() { return 1; }\n",
+            "tests/view.test.tsx": "import { test } from 'node:test';\ntest('x', () => {});\n",
+        },
+    )
+
+    report = summarise_integration(root)
+
+    assert "view.test.tsx" in report
+    assert "cannot load JSX" in report
 
 
 def test_an_all_javascript_project_is_not_newly_flagged(tmp_path):

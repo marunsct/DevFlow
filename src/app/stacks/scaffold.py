@@ -148,6 +148,10 @@ def scaffold(
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+    # Recorded before the first command, as not yet proven: the sandbox reads
+    # the pack's needs from it (`sandbox._process_memory`), and a toolchain
+    # that needs more than every pack gets failed its own smoke test without.
+    _unproven(root, pack, project, title, package, result)
 
     for argv in pack.commands(project, package)["install"]:
         code = _step(result.steps, argv, run(argv, "install", project))

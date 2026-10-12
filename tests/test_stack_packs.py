@@ -51,7 +51,7 @@ def test_the_pack_fits_the_stack(stack, text, expected) -> None:
     [
         (_stack(language="Kotlin", framework="Ktor"), "A REST API"),  # no Kotlin pack
         (_stack(language="Python", framework="Django"), "A REST API"),  # no Django pack
-        (_stack(language="TypeScript", framework="Angular", frontend_framework="Angular"), ""),
+        (_stack(language="TypeScript", framework="SolidJS", frontend_framework="Solid"), ""),
         (_stack(language="Python", framework="None"), ""),  # nothing says what kind
     ],
 )

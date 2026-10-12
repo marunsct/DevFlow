@@ -5,8 +5,9 @@ from __future__ import annotations
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 
-#: The DOM the unit tests run in. 26 is the last release that supports the
-#: Node the image and the CI file run (20); 27 and later need 22.
+#: The DOM the unit tests run in: the release this pack's unit tests were
+#: proven on. 26 was the last to support Node 20; on the Node the image and the
+#: CI file now run (`_javascript.NODE_MAJOR`), a later one is a change to prove.
 JSDOM = "26.1.0"
 
 #: The unit runner, with a browser's globals installed in every test process

@@ -802,8 +802,20 @@ def _hooks_javascript_reaches_for(files: list[Path], root: Path) -> list[str]:
 
 #: Node's own default patterns, as a basename test. Verified by running Node
 #: over six names rather than read off the documentation: the prefix form takes
-#: a hyphen, so `test-add.mjs` is collected and `test_add.mjs` is not.
-_NODE_COLLECTS = re.compile(r"^(?:.+[.\-_]test|test|test-.+)\.[cm]?js$", re.IGNORECASE)
+#: a hyphen, so `test-add.mjs` is collected and `test_add.mjs` is not. Node 24
+#: collects TypeScript by the same names (`tests/f.test.ts` ran under a bare
+#: `node --test` in the run image), and runs it with the types stripped.
+_NODE_COLLECTS = re.compile(r"^(?:.+[.\-_]test|test|test-.+)\.[cm]?[jt]s$", re.IGNORECASE)
+
+#: What `node --test` cannot load at all, whatever the command: JSX.
+_NODE_CANNOT_LOAD = frozenset({".jsx", ".tsx"})
+
+#: TypeScript, which Node 24 runs only where the command collects it.
+_TYPESCRIPT = frozenset({".ts", ".mts", ".cts"})
+
+#: Characters that make a `node --test` argument a pattern Node expands itself
+#: (Node 21 and later) rather than a path.
+_A_PATTERN = re.compile(r"[*?\[{]")
 
 #: Runners whose discovery is decided by their own configuration file, which
 #: this cannot read. Saying anything about those would be a guess.
@@ -1048,7 +1060,22 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
             continue
         project = manifest.parent
         named = _paths_named_after_the_test_flag(command)
-        searched, listed_files = _what_the_command_searches(named, project)
+        refused = _directories_node_will_not_search(named, project)
+        if refused:
+            # Nothing runs at all, so naming what is stranded would only
+            # repeat it. The command is the problem, and this says so.
+            base = refused[0].rstrip("/").removeprefix("./")
+            pattern = "**/*.test.js" if base in {"", "."} else f"{base}/**/*.test.js"
+            problems.append(
+                f"{manifest.relative_to(root)} runs `{command}`, which gives `node --test` the "
+                f"director{'ies' if len(refused) > 1 else 'y'} {', '.join(refused)}. The Node "
+                "this project runs on loads a directory argument as a module and fails before "
+                "running a single test (\"Could not find\", ERR_UNSUPPORTED_DIR_IMPORT), so "
+                "`npm test` runs nothing. Give it a quoted pattern Node expands itself instead, "
+                f"such as `node --test '{pattern}'`."
+            )
+            continue
+        searched, listed_files = _what_the_command_searches(named, project, files)
         # A named file that imports the suites runs them. One run's
         # `run-tests.mjs` sets up a localStorage mock and then imports four
         # files from `tests/`; without following that, this reported all four
@@ -1119,7 +1146,13 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
         unrunnable = [
             path
             for path in files
-            if path.suffix.lower() in {".ts", ".tsx", ".jsx"}
+            if (
+                path.suffix.lower() in _NODE_CANNOT_LOAD
+                or (
+                    path.suffix.lower() in _TYPESCRIPT
+                    and not _node_runs(path, project, searched, listed_files)
+                )
+            )
             and is_test(str(path.relative_to(root)))
             and _is_within(path, project)
         ]
@@ -1131,22 +1164,36 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
                 if other_scripts
                 else " Nothing in the project runs them at all."
             )
+            cannot_load = (
+                " - `node --test` cannot load JSX"
+                if any(path.suffix.lower() in _NODE_CANNOT_LOAD for path in unrunnable)
+                else ""
+            )
             problems.append(
-                f"{manifest.relative_to(root)} runs `{command}`, which cannot run "
-                f"{names} - `node --test` does not parse TypeScript or JSX."
+                f"{manifest.relative_to(root)} runs `{command}`, which never runs "
+                f"{names}{cannot_load}."
                 + through
                 + " A suite no gate executes is not evidence: make `test` run "
                 "both, so one command proves the whole product."
             )
         if not stranded:
             continue
-        if listed_files:
+        patterns = [word for word in named if _A_PATTERN.search(word)]
+        if patterns:
+            why = (
+                f"which runs only what {', '.join(f'`{p}`' for p in patterns)} "
+                f"match{'' if len(patterns) > 1 else 'es'}. "
+                "Those files have never executed, and a passing suite is being "
+                "read as evidence they did. Widen the pattern or name them too - "
+                "`node --test` with no arguments searches the whole project."
+            )
+        elif listed_files:
             why = (
                 f"which names {', '.join(sorted(listed_files))}. A file given to "
                 "`node --test` is run directly and nothing else is searched. "
                 "Those files have never executed, and a passing suite is being "
-                "read as evidence they did. Name them too, or give a directory "
-                "instead - "
+                "read as evidence they did. Name them too, or give a quoted "
+                "pattern Node expands itself, such as `'tests/**/*.test.js'` - "
                 "`node --test` with no arguments searches the whole project."
             )
         else:
@@ -1176,34 +1223,118 @@ def _tests_the_project_never_runs(files: list[Path], root: Path) -> list[str]:
 
 
 def _what_the_command_searches(
-    named: list[str], project: Path
+    named: list[str], project: Path, files: list[Path] | None = None
 ) -> tuple[list[Path], list[str]]:
     """The directories `node --test` searches, and the files it runs outright.
 
-    Verified in the run image, with `badname.mjs` beside `a.test.js` and the
-    same pair under `sub/`:
+    Verified in the run image on Node 24.21, with `badname.mjs` beside
+    `a.test.js`, the same pair under `sub/`, and `c.test.js` and
+    `deep/d.test.mjs` under `tests/`:
 
-        node --test ./          -> 2   (both name matches, recursively)
-        node --test sub/        -> 1   (the name match under sub only)
-        node --test badname.mjs -> 1   (the file, name notwithstanding)
-        node --test             -> 2   (as `./`)
+        node --test                            -> every name match, recursively
+        node --test badname.mjs                -> 1   (the file, name notwithstanding)
+        node --test 'tests/**/*.test.js'       -> 1   (c.test.js: the pattern's matches)
+        node --test 'tests/**/*.test.{js,mjs}' -> 2   (braces expand)
+        node --test sub/                       -> fails: a directory is loaded as a module
 
-    So a DIRECTORY argument recurses and applies Node's name patterns inside
-    it, and a FILE argument runs that file whatever it is called. An earlier
-    version of this check read every argument as a file, which made
-    `node --test ./` look like it ran one path and stranded the suite.
+    So a FILE argument runs that file whatever it is called, and a PATTERN
+    runs exactly the files it matches - Node expands it itself, so it arrives
+    quoted. Node 20 searched a directory argument; the Node this project runs
+    on does not (`_directories_node_will_not_search`), and those are left out
+    here. An earlier version of this check read every argument as a file,
+    which made `node --test ./` look like it ran one path and stranded the
+    suite.
     """
     if not named:
         return [project], []
-    searched: list[Path] = []
     listed_files: list[str] = []
     for argument in named:
-        target = (project / argument.strip()).resolve()
-        if argument.strip().endswith("/") or target.is_dir():
-            searched.append(target)
+        argument = argument.strip()
+        if _A_PATTERN.search(argument):
+            listed_files.extend(_files_a_pattern_matches(argument, project, files or []))
+        elif not (argument.endswith("/") or (project / argument).resolve().is_dir()):
+            listed_files.append(argument)
+    return [], listed_files
+
+
+def _directories_node_will_not_search(named: list[str], project: Path) -> list[str]:
+    """The arguments of `node --test` that are directories, which Node 24 cannot run.
+
+    Measured in the run image on Node 24.21: `node --test ./` stops at "Could
+    not find './'", and `node --test sub/` loads the directory as a module and
+    reports one failed test, ERR_UNSUPPORTED_DIR_IMPORT - the suite's own tests
+    never run. Node 20 searched it, and the harness's own packs named `tests/`
+    until the image moved on, when every pack built that way failed its smoke
+    test the same way.
+    """
+    refused = []
+    for argument in named:
+        argument = argument.strip()
+        if _A_PATTERN.search(argument):
+            continue
+        if argument.endswith("/") or (project / argument).resolve().is_dir():
+            refused.append(argument)
+    return refused
+
+
+def _brace_expansions(pattern: str) -> list[str]:
+    """`a/{b,c}.{js,mjs}` as the four patterns it stands for, as Node's glob reads it."""
+    match = re.search(r"\{([^{}]*)\}", pattern)
+    if match is None:
+        return [pattern]
+    head, tail = pattern[: match.start()], pattern[match.end() :]
+    return [
+        expanded
+        for option in match.group(1).split(",")
+        for expanded in _brace_expansions(head + option + tail)
+    ]
+
+
+def _pattern_as_regex(pattern: str) -> re.Pattern[str]:
+    """A brace-free glob as a regex over a `/`-separated path; `**` spans directories."""
+    out: list[str] = []
+    i = 0
+    while i < len(pattern):
+        if pattern.startswith("**/", i):
+            out.append("(?:.*/)?")
+            i += 3
+        elif pattern.startswith("**", i):
+            out.append(".*")
+            i += 2
+        elif pattern[i] == "*":
+            out.append("[^/]*")
+            i += 1
+        elif pattern[i] == "?":
+            out.append("[^/]")
+            i += 1
+        elif pattern[i] == "[" and "]" in pattern[i + 1 :]:
+            end = pattern.index("]", i + 1)
+            body = pattern[i + 1 : end]
+            body = "^" + body[1:] if body.startswith("!") else body
+            out.append("[" + body.replace("\\", "\\\\") + "]")
+            i = end + 1
         else:
-            listed_files.append(argument.strip())
-    return searched, listed_files
+            out.append(re.escape(pattern[i]))
+            i += 1
+    return re.compile("".join(out) + r"\Z")
+
+
+def _files_a_pattern_matches(pattern: str, project: Path, files: list[Path]) -> list[str]:
+    """The project files, relative to it, that one `node --test` pattern runs."""
+    expansions = [
+        _pattern_as_regex(expanded.removeprefix("./"))
+        for expanded in _brace_expansions(pattern)
+    ]
+    matched = []
+    for path in files:
+        if not _is_within(path, project):
+            continue
+        relative = path.relative_to(project).as_posix()
+        if "node_modules" in relative.split("/"):
+            continue
+        if any(expansion.match(relative) for expansion in expansions):
+            matched.append(relative)
+    return sorted(matched)
 
 
 def _what_those_files_import(listed_files: list[str], project: Path) -> set[Path]:
@@ -3488,7 +3619,7 @@ _BREAKS_BEHAVIOUR = (
     # untidy at first for want of a phrase in this tuple, which is the stale
     # -marker failure this file is most exposed to - see
     # `test_every_blocking_check_is_classified_as_blocking`.
-    "does not parse TypeScript or JSX",
+    "A suite no gate executes is not evidence",
     # The third way to the same false green, and the one that reached a live
     # review as tidiness. One run shipped a three-file suite in which
     # `task-manager/ui.pw.test.mjs` is a Playwright spec and `scripts.test` is
@@ -3502,6 +3633,9 @@ _BREAKS_BEHAVIOUR = (
     # checks that every marker matches some message, and cannot check that
     # every breaking message matches some marker.
     "has no script that runs",
+    # A directory given to `node --test`, which the Node this harness runs
+    # on loads as a module: the whole unit suite fails before a test runs.
+    "loads a directory argument as a module",
     "starts an HTTP server, and this run's",  # a server a browser-only stack forbids
     "does not exist from",               # a manifest script naming a bad path
     "parses it as a classic script",     # ESM behind a plain <script> tag

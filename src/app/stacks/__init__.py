@@ -187,6 +187,13 @@ class StackPack:
     #: fits only a pack built with that one: "Vue on Vite" fitted the React
     #: pack, which names Vite too.
     frontend_frameworks: tuple[str, ...] = ()
+    #: The data limit each process of this toolchain needs, as the sandbox's
+    #: SANDBOX_MEMORY_LIMIT is written ("2g"), or "" for what every pack gets.
+    #: The limit counts what a runtime reserves, not only what it uses: the
+    #: Angular CLI used 550 MB at most in one process and could not start a
+    #: thread under 1.5 GB. The command's whole tree stays bounded by its real
+    #: use (`sandbox._run_and_watch_the_tree`).
+    process_memory: str = ""
 
     def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""

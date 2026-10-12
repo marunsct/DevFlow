@@ -176,8 +176,8 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `79089ea` is live (deployed 08:40 JST 2026-10-13): wave 2 and 3 packs, Node 24 in the image, Angular, and fix/work-order stages that fall back on exhausted retries. `verify_packs.py` in the live worker: 27 of 27. |
-| current run | the next brief_medium run (parallel) on `79089ea`; see §2.3. |
+| deployed | `79089ea` is live (deployed 08:15 JST 2026-10-13): wave 2 and 3 packs, Node 24 in the image, Angular, and fix/work-order stages that fall back on exhausted retries. `verify_packs.py` in the live worker: 27 of 27. |
+| current run | `run-d1899b44` (brief_medium, parallel), started 08:19 JST 2026-10-13 on `79089ea`. |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |

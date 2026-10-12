@@ -15,6 +15,7 @@ from app.stacks.packs.go_gin_api import PACK as GO_GIN_API
 from app.stacks.packs.go_http_api import PACK as GO_HTTP_API
 from app.stacks.packs.java_spring_api import PACK as JAVA_SPRING_API
 from app.stacks.packs.node_http_api import PACK as NODE_HTTP_API
+from app.stacks.packs.node_nest_api import PACK as NODE_NEST_API
 from app.stacks.packs.php_slim_api import PACK as PHP_SLIM_API
 from app.stacks.packs.python_cli import PACK as PYTHON_CLI
 from app.stacks.packs.python_flask_api import PACK as PYTHON_FLASK_API
@@ -29,6 +30,7 @@ ALL_PACKS = (
     BROWSER_VUE,
     BROWSER_SVELTE,
     NODE_HTTP_API,
+    NODE_NEST_API,
     REACT_EXPRESS,
     VUE_EXPRESS,
     REACT_FASTAPI,

@@ -80,6 +80,7 @@ def service_pack(
     release_files: Mapping[str, str],
     kept_files: tuple[str, ...] = (),
     gitignore: str = "",
+    kept_scripts: dict[str, str] | None = None,
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     return StackPack(
@@ -88,9 +89,12 @@ def service_pack(
         kind="http_api",
         language=language,
         frameworks=frameworks,
+        # A service in JavaScript brings its own manifest, holding the
+        # acceptance runner beside its own dependencies; any other language
+        # gets one that holds only the runner.
         files={
-            **files,
             "package.json": PACKAGE_JSON,
+            **files,
             "playwright.config.js": js.playwright_config(start, "/health", server_timeout_ms=server_timeout_ms),
             ".gitignore": GITIGNORE + gitignore,
         },
@@ -104,7 +108,7 @@ def service_pack(
         acceptance_pattern="*.spec.js",
         unit_pattern=unit_pattern,
         kept_files=("playwright.config.js", *kept_files),
-        kept_scripts={"test:acceptance": "playwright test"},
+        kept_scripts={"test:acceptance": "playwright test", **(kept_scripts or {})},
         smoke_files={smoke_unit[0]: smoke_unit[1], "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE},
         guide=f"{guide}\n{DATA_GUIDE}",
         acceptance_guide=ACCEPTANCE_GUIDE,

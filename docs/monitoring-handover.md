@@ -132,6 +132,7 @@ the container and a redeploy (which wipes the worker's `/tmp`) costs nothing.
 | `redundant_reads.py` | re-reads by (stage, file) and which notice answered them. One pair with many re-reads has twice been a misleading harness message. |
 | `scripts/audit_run.py` | the older whole-run audit (predates this loop): separates *refusals that prevented damage* from *failures that cost the run*, and runs the cross-file checks over the product. Use it on a finished run; see section 5. |
 | `model_ready.py` | `loop.sh ready`: is the model the settings name served at the address they name (and the judgement model, when one is set)? Prints one line per model, never a key; the last line must be `ALL READY` before any `bench`/`start`. |
+| `verify_packs.py` | scaffolds stack packs for real in the worker (`docker compose exec -T worker python - [pack ...] < scripts/loop/verify_packs.py`): install, unit smoke test, acceptance smoke test, through a run's own commands and sandbox. Run it after changing a pack, the image's toolchains or a pinned version; every pack must pass. |
 | `await_resume.sh` | `loop.sh resumed`: after a deploy while a run was live, waits up to 10 minutes for orphan recovery to resume it (the worker making model calls again). |
 
 Records the harness keeps for an audit (from `969d6e6`..`70c50cc`, 2026-10-07):

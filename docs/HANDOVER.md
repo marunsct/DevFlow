@@ -176,7 +176,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `6314d91` (the review fixes) plus the stack packs and the pinned browser below, deployed 13:25 JST between runs. |
+| deployed | `b0c092c` (the lost-reply fix) is live. `d1b664b` (wave 2: packs for every major language, the toolchains in the image) is pushed and **not yet deployed** - deploy it when the current run ends (`loop.sh deploy`; the first build after it downloads the toolchains, ~5 min), then run `docker compose exec -T worker python - < scripts/loop/verify_packs.py` and expect 23 of 23. |
 | current run | `run-c7a1f6cf` (brief_medium, parallel), started 21:19 JST 2026-10-12 on `b0c092c`. |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
@@ -239,6 +239,23 @@ Stack packs and the image:
   - Three of four web-todo runs had their scaffold "left to the agents" over a
     browser that could not start.
   - The browser is now installed in a layer before anything a deploy changes.
+
+**Wave 2 (`d1b664b`, pushed, deploy between runs).** Packs now cover every major language:
+
+| kind | packs |
+|---|---|
+| browser app | `browser-javascript`, `browser-react`, `browser-vue`, `browser-svelte` |
+| full-stack | `fullstack-node`, `fullstack-{react,vue}-{express,fastapi}`, `fullstack-next`, `fullstack-django` |
+| HTTP service | `node-http-api`, `python-http-api` (FastAPI), `python-flask-api`, `go-http-api`, `go-gin-api`, `java-spring-api`, `csharp-aspnet-api`, `rust-axum-api`, `ruby-sinatra-api`, `php-slim-api` |
+| CLI / library | `python-cli`, `python-library` |
+
+- **Services in any language** are accepted through Playwright's `request`
+  fixture against the running service (`packs/_service.py`).
+- **`scripts/loop/verify_packs.py`** scaffolds packs for real. All 23 passed in
+  an image built from `d1b664b`.
+- **Not yet covered** (a stack naming one gets no pack, by design rather than
+  the wrong one): Angular, NestJS, Rails, Laravel, Nuxt, SvelteKit, Remix, Ktor
+  and Quarkus, plus CLI and library packs outside Python.
 
 ### 2.2 Verify on the next run
 

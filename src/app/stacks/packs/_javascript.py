@@ -737,6 +737,83 @@ def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
     return found
 
 
+def code_only(text: str) -> str:
+    """`text` with its comments blanked out, every position and line kept.
+
+    A check that reads a test file reads its code, not what a comment says
+    about it: one measured check refused a correct suite whose comment said
+    "the product keeps nothing in localStorage at first". Strings are kept -
+    a test's title is one - and a `//` inside one is not a comment.
+    """
+    out = list(text)
+    i, n = 0, len(text)
+    quote = ""
+    while i < n:
+        char = text[i]
+        if quote:
+            if char == "\\":
+                i += 2
+                continue
+            if char == quote:
+                quote = ""
+            i += 1
+            continue
+        if char in "'\"`":
+            quote = char
+            i += 1
+            continue
+        if text.startswith("//", i):
+            end = text.find("\n", i)
+            end = n if end < 0 else end
+            for k in range(i, end):
+                out[k] = " "
+            i = end
+            continue
+        if text.startswith("/*", i):
+            end = text.find("*/", i + 2)
+            end = n if end < 0 else end + 2
+            for k in range(i, end):
+                if out[k] != "\n":
+                    out[k] = " "
+            i = end
+            continue
+        i += 1
+    return "".join(out)
+
+
+def _without_the_arguments_of(text: str, callee: str) -> str:
+    """`text` with the arguments of every call to `callee` blanked, positions kept."""
+    out = list(text)
+
+    def blank(k: int) -> None:
+        if text[k] != "\n":
+            out[k] = " "
+
+    for match in re.finditer(rf"\b{callee}\s*\(", text):
+        depth, quote, k = 1, "", match.end()
+        while k < len(text):
+            char = text[k]
+            if quote:
+                if char == "\\" and k + 1 < len(text):
+                    blank(k)
+                    blank(k + 1)
+                    k += 2
+                    continue
+                if char == quote:
+                    quote = ""
+            elif char in "'\"`":
+                quote = char
+            elif char == "(":
+                depth += 1
+            elif char == ")":
+                depth -= 1
+                if not depth:
+                    break
+            blank(k)
+            k += 1
+    return "".join(out)
+
+
 _STORAGE_USAGE = re.compile(r"\b(localStorage|sessionStorage)\b")
 _GOTO = re.compile(r"\bgoto\s*\(")
 
@@ -749,7 +826,13 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
     browser `SecurityError: Access is denied for this document.` in Chromium.
     Storage operations require navigating to the application origin with
     `await page.goto('/')` first.
+
+    What `addInitScript` is given runs in each page as it opens, on the
+    product's own origin - the documented way to give a test stored data
+    before the page loads - so storage named there is not read early. Nor is
+    storage a comment names.
     """
+    text = _without_the_arguments_of(code_only(text), "addInitScript")
     before_each_has_goto = bool(re.search(r"\bbeforeEach\s*\([^)]*\)?[\s\S]{0,600}?\bgoto\s*\(", text))
     starts = [m.start() for m in _A_TEST.finditer(text)]
     first_test = starts[0] if starts else len(text)
@@ -808,6 +891,122 @@ def storage_before_page_open(text: str) -> list[tuple[int, str, str]]:
                             problems.append((line, s_name, f"test `{title}` calling `{h_name}`"))
 
     return problems
+
+
+_A_LOCAL_REQUIRE = re.compile(r"\b(?:const|let|var)\s+require\s*=|\bcreateRequire\b")
+_A_REQUIRE_CALL = re.compile(r"(?<![\w$.])require\s*\(")
+
+
+def module_system_mismatch(project_root: Path, path: Path, text: str) -> list[tuple[int, str]]:
+    """(line, why) where a test calls CommonJS `require` in a file Node loads as an ES module.
+
+    In a package whose manifest says `"type": "module"` - or in an `.mjs` file -
+    `require` is not defined, and the file throws before any of its tests run.
+    A file that makes its own `require` with `createRequire` (Node's documented
+    way to load CommonJS from an ES module) is fine, as is a comment.
+    """
+    if path.suffix not in {".js", ".mjs", ".ts"}:
+        return []
+    is_module = path.suffix == ".mjs"
+    if not is_module:
+        try:
+            import json
+
+            manifest = json.loads((project_root / "package.json").read_text(encoding="utf-8"))
+            is_module = isinstance(manifest, dict) and manifest.get("type") == "module"
+        except (OSError, ValueError):
+            return []
+    code = code_only(text)
+    if not is_module or _A_LOCAL_REQUIRE.search(code):
+        return []
+    match = _A_REQUIRE_CALL.search(code)
+    if not match:
+        return []
+    return [(
+        code.count("\n", 0, match.start()) + 1,
+        "uses CommonJS `require(...)` in a file Node loads as an ES module (`package.json` "
+        "says `\"type\": \"module\"`), so it throws before its tests run. Use `import` "
+        "(`import { test, expect } from '@playwright/test';`).",
+    )]
+
+
+_AN_ASYNC_HELPER = re.compile(
+    r"""(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*async\b|async\s+function\s+([A-Za-z_$][\w$]*)\b"""
+)
+#: What may follow a promise: a method every promise has.
+_PROMISE_METHOD = re.compile(r"\)\s*\.\s*(?:then|catch|finally)\b")
+
+
+def _the_call_s_end(code: str, start: int) -> int:
+    """The index just past the `)` closing the call whose `(` is at or after `start`."""
+    depth, quote, k = 0, "", code.find("(", start)
+    if k < 0:
+        return len(code)
+    while k < len(code):
+        char = code[k]
+        if quote:
+            if char == "\\":
+                k += 2
+                continue
+            if char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if not depth:
+                return k + 1
+        k += 1
+    return len(code)
+
+
+def unawaited_helpers(text: str) -> list[tuple[int, str]]:
+    """(line, helper) where an async helper of the file is used without being awaited.
+
+    An async function returns a Promise; a locator method called on it, or a
+    variable that holds it and is used as the value, throws "is not a
+    function". A call inside an expression that is awaited (`await
+    Promise.all([helper(a), helper(b)])`), one that is returned, and one whose
+    promise is handled with `then`, `catch` or `finally` are all fine.
+    """
+    code = code_only(text)
+    helpers = {m.group(1) or m.group(2) for m in _AN_ASYNC_HELPER.finditer(code) if m.group(1) or m.group(2)}
+    found: list[tuple[int, str]] = []
+    for name in sorted(helpers):
+        for match in re.finditer(rf"(?<![\w$.]){re.escape(name)}\s*\(", code):
+            line_start = code.rfind("\n", 0, match.start()) + 1
+            statement_start = max(code.rfind(";", 0, match.start()), code.rfind("{", 0, match.start()),
+                                  code.rfind("}", 0, match.start()), line_start - 1) + 1
+            before = code[statement_start:match.start()]
+            if re.search(r"\b(?:await|return)\b", before) or re.search(r"\bfunction\s*$", before):
+                continue
+            end = _the_call_s_end(code, match.start())
+            after = code[end - 1:end + 40]
+            if _PROMISE_METHOD.match(after):
+                continue
+            assigned = re.search(r"\b(?:const|let|var)\s+[A-Za-z_$][\w$]*\s*=\s*$", before)
+            chained = re.match(r"\)\s*\.", after)
+            if assigned or chained:
+                found.append((code.count("\n", 0, match.start()) + 1, name))
+    return sorted(set(found))
+
+
+_A_LOCATOR_WITH_A_NAME = re.compile(r"""\blocator\s*\(\s*(['"`])[^'"`]+\1\s*,\s*\{[^}]*\bname\s*:""")
+
+
+def locators_with_a_name_option(text: str) -> list[int]:
+    """Lines where `locator(selector, { name })` is called: Playwright ignores `name` there.
+
+    `locator()` takes only `hasText`, `hasNotText`, `has` and `hasNot`, so the
+    locator matches every element the selector does. Measured on one run: two
+    locked tests counted `locator('button', { name: 'Edit' })` and found both
+    of a page's controls, and specialists spent 102 minutes on a product that
+    was right.
+    """
+    code = code_only(text)
+    return sorted({code.count("\n", 0, m.start()) + 1 for m in _A_LOCATOR_WITH_A_NAME.finditer(code)})
 
 
 #: Something only the test can know: the clock, a random number, a fresh id.

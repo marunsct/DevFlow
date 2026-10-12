@@ -17,7 +17,9 @@ def test_work_order_file_ownership_note_lists_files() -> None:
     note = _work_order_file_ownership_note(order)
     assert "`src/main.js`" in note
     assert "`src/view.js`" in note
-    assert "You may create or edit only these files" in note
+    assert "A file another work order lists is its own, and a change to it is refused" in note
+    # What the write guard leaves open, said as it does: a unit test, a helper.
+    assert "a file no work order lists - a unit test, a helper - you may create" in note
 
 
 def test_work_order_file_ownership_note_empty_when_no_files() -> None:

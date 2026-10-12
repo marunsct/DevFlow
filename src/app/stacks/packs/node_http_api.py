@@ -143,6 +143,9 @@ PACK = StackPack(
     evidence_dir="test-results/evidence",
     test_bugs=js.TEST_BUGS,
     assertion_names=js.playwright_assertions,
+    module_system_mismatch=js.module_system_mismatch,
+    unawaited_helpers=js.unawaited_helpers,
+    locators_with_an_ignored_option=js.locators_with_a_name_option,
     code_runs_in="node",
     ci_setup=js.CI_SETUP,
     # The `request` fixture needs no browser.

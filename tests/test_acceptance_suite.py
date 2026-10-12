@@ -503,5 +503,11 @@ def test_author_request_requires_testing_persistence_of_all_changes():
         brief="## Interface\n- x"
     )
     content = req["messages"][0]["content"]
-    assert "A test for persistence or reloading must check that every kind of change - not just creation, but edits, deletions, and state changes like completion - survives a reload" in content
-    assert "In Playwright, always use `{ exact: true }`" in content
+    assert "checks every kind of change it offers - not only creating a record, but each way one can be changed or removed - survives a reload or a restart" in " ".join(content.split())
+    # A Playwright rule is the JavaScript packs' to give (their guide says to
+    # match names exactly), never the request every stack's QA reads.
+    assert "Playwright" not in content.split("--- What to build them against ---", 1)[1].split("--- Rules ---", 1)[0]
+    rules = content.split("--- Rules ---", 1)[1].lower()
+    import re
+    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox", "completion"):
+        assert not re.search(rf"\b{word}\b", rules.split("- write only inside", 1)[0]), word

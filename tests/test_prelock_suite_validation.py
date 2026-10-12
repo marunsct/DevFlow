@@ -46,6 +46,9 @@ def test_module_system_mismatch_detected_for_require_in_esm(tmp_path: Path) -> N
         encoding="utf-8",
     )
 
+    from app.stacks import contract, pack_named
+
+    contract.write(tmp_path, pack_named("browser-javascript"), "my-app", "My App")
     problems = suite.tests_with_module_system_mismatch(tmp_path)
     assert len(problems) == 1
     assert "require" in problems[0]
@@ -80,6 +83,9 @@ def test_unawaited_async_helpers_detected(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
+    from app.stacks import contract, pack_named
+
+    contract.write(tmp_path, pack_named("browser-javascript"), "my-app", "My App")
     problems = suite.tests_with_unawaited_async_helpers(tmp_path)
     assert len(problems) == 1
     assert "findElement" in problems[0]
@@ -146,3 +152,87 @@ def test_prelock_suite_validation_messages_ban_product_and_interface_words() -> 
 
 
 
+
+
+class TestCorrectCodeIsNotRefused:
+    """Each was a correct suite the checks sent back to QA, reproduced before it was fixed."""
+
+    def test_storage_seeded_through_add_init_script(self) -> None:
+        from app.stacks.packs import _javascript as js
+
+        code = (
+            "import { test, expect } from '@playwright/test';\n"
+            "test('[AC-1] a saved record is shown', async ({ page }) => {\n"
+            "  await page.addInitScript(() => localStorage.setItem('records', '[]'));\n"
+            "  await page.goto('/');\n"
+            "});\n"
+        )
+        assert js.storage_before_page_open(code) == []
+
+    def test_a_comment_that_names_storage(self) -> None:
+        from app.stacks.packs import _javascript as js
+
+        code = (
+            "import { test, expect } from '@playwright/test';\n"
+            "test('[AC-2] starts empty', async ({ page }) => {\n"
+            "  // nothing is in localStorage at first\n"
+            "  await page.goto('/');\n"
+            "});\n"
+        )
+        assert js.storage_before_page_open(code) == []
+
+    def test_helpers_awaited_together(self) -> None:
+        from app.stacks.packs import _javascript as js
+
+        code = (
+            "async function add(page, title) { await page.getByLabel('Title').fill(title); }\n"
+            "test('[AC-3] two', async ({ page }) => {\n"
+            "  const done = await Promise.all([add(page, 'One'), add(page, 'Two')]);\n"
+            "  add(page, 'Three').then(() => {});\n"
+            "  return add(page, 'Four');\n"
+            "});\n"
+        )
+        assert js.unawaited_helpers(code) == []
+
+    def test_a_helper_still_used_unawaited_is_found(self) -> None:
+        from app.stacks.packs import _javascript as js
+
+        code = (
+            "const find = async (page) => page.getByRole('listitem');\n"
+            "test('[AC-3] one', async ({ page }) => {\n"
+            "  const item = find(page);\n"
+            "  find(page).click();\n"
+            "});\n"
+        )
+        assert js.unawaited_helpers(code) == [(3, "find"), (4, "find")]
+
+    def test_require_made_with_create_require(self, tmp_path) -> None:
+        from app.stacks.packs import _javascript as js
+
+        (tmp_path / "package.json").write_text(json.dumps({"type": "module"}))
+        code = (
+            "import { createRequire } from 'node:module';\n"
+            "const require = createRequire(import.meta.url);\n"
+            "const fixtures = require('./fixtures.json');\n"
+        )
+        assert js.module_system_mismatch(tmp_path, tmp_path / "a.spec.js", code) == []
+
+    def test_require_in_a_comment(self, tmp_path) -> None:
+        from app.stacks.packs import _javascript as js
+
+        (tmp_path / "package.json").write_text(json.dumps({"type": "module"}))
+        code = "// require('x') would fail here\nimport { test } from '@playwright/test';\n"
+        assert js.module_system_mismatch(tmp_path, tmp_path / "a.spec.js", code) == []
+
+
+def test_a_project_no_pack_set_up_is_not_checked_by_a_pack_s_rules(tmp_path: Path) -> None:
+    project_dir = tmp_path / "my-app"
+    (project_dir / "acceptance").mkdir(parents=True)
+    (project_dir / "package.json").write_text(json.dumps({"type": "module"}))
+    (project_dir / "acceptance" / "a.spec.js").write_text("const x = require('y');\n")
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".harness" / "acceptance.json").write_text(json.dumps({
+        "project": "my-app", "acceptance_dir": "acceptance", "criteria": [],
+    }))
+
+    assert suite.tests_with_module_system_mismatch(tmp_path) == []

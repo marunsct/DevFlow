@@ -113,5 +113,53 @@ def test_gaps_feedback_suggests_adding_tags(tmp_path):
     problems = suite.gaps(repo)
     assert len(problems) == 1
     # Check that it tells the engineer they can add the tag to an existing test
-    assert "add `[AC-1]` to that test's title" in problems[0]
+    assert "where a test already checks exactly what it says, add its id to that test's name" in problems[0]
 
+
+
+
+def _saved(tmp_path, ran: bool, criteria: dict) -> None:
+    import json
+
+    path = tmp_path / acceptance_suite.RESULT_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"ran": ran, "criteria": criteria}))
+
+
+def _failing(tmp_path, monkeypatch, due):
+    from types import SimpleNamespace
+
+    from app.graph import acceptance_nodes
+
+    monkeypatch.setattr(acceptance_suite, "is_locked", lambda root: True)
+    monkeypatch.setattr(acceptance_nodes, "criteria_due", lambda state: due)
+    return workflow._the_locked_tests_still_failing({"repository": SimpleNamespace(root_path=str(tmp_path))})
+
+
+def test_a_suite_that_did_not_run_shows_no_criterion_missing(tmp_path, monkeypatch):
+    """No report means every criterion reads "untested": the tests are there, the run is not."""
+    _saved(tmp_path, ran=False, criteria={
+        "AC-1": {"status": "untested", "text": "Adds", "tests": []},
+        "AC-2": {"status": "untested", "text": "Removes", "tests": []},
+    })
+
+    assert _failing(tmp_path, monkeypatch, ["AC-1", "AC-2"]) == []
+
+
+def test_a_suite_that_ran_still_shows_a_criterion_with_no_test(tmp_path, monkeypatch):
+    _saved(tmp_path, ran=True, criteria={"AC-1": {"status": "untested", "text": "Adds", "tests": []}})
+
+    assert [name for name, _, _ in _failing(tmp_path, monkeypatch, ["AC-1"])] == ["[AC-1] (missing from locked suite)"]
+
+
+def test_one_test_carrying_two_criteria_is_one_failure_naming_both(tmp_path, monkeypatch):
+    one = {"name": "[AC-1][AC-2] adds then removes", "outcome": "failed", "message": "Timeout waiting for item"}
+    _saved(tmp_path, ran=True, criteria={
+        "AC-1": {"status": "failed", "text": "Adds", "tests": [one]},
+        "AC-2": {"status": "failed", "text": "Removes", "tests": [one]},
+    })
+
+    (name, text, message), = _failing(tmp_path, monkeypatch, ["AC-1", "AC-2"])
+
+    assert message.count("Timeout waiting for item") == 1
+    assert "AC-1: Adds" in text and "AC-2: Removes" in text

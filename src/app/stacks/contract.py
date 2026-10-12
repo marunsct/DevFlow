@@ -30,9 +30,19 @@ CONTRACT_FILE = f"{HARNESS_DIR}/stack-pack.json"
 
 
 def write(
-    repo_root: str | Path, pack: StackPack, project: str, title: str, package: str | None = None
+    repo_root: str | Path,
+    pack: StackPack,
+    project: str,
+    title: str,
+    package: str | None = None,
+    *,
+    scaffolded: bool = True,
 ) -> None:
-    """Record the pack this run's project was scaffolded from."""
+    """Record the pack this run's project was built from.
+
+    `scaffolded` is False when the run chose the pack and its scaffold could
+    not be proven: see `scaffolded()`.
+    """
     from app.stacks import python_package_name
 
     path = Path(repo_root) / CONTRACT_FILE
@@ -50,6 +60,7 @@ def write(
         "unit_pattern": pack.unit_pattern,
         "acceptance_pattern": pack.acceptance_pattern,
         "evidence_dir": pack.evidence_dir,
+        "scaffolded": scaffolded,
     }
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
@@ -66,114 +77,34 @@ def read(repo_root: str | Path | None) -> dict[str, Any] | None:
 
 
 def the_pack(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] | None:
-    """The pack and its recorded contract, or None."""
-    record = read(repo_root)
-    if record is not None:
-        pack = pack_named(record.get("pack"))
-        if pack is not None:
-            return pack, record
-    return _infer_contract(repo_root)
+    """The pack and its recorded contract, or None. Only ever reads.
 
-
-def _infer_contract(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] | None:
-    """Infer the pack and contract when CONTRACT_FILE was not written.
-
-    If a scaffold failed its smoke test or was left to the agents, CONTRACT_FILE
-    was not written. Every later stage (kept-file protections, QA locator and
-    assertion linters, runtime reports, failure pages) relies on the pack.
-    Inferring the pack from decisions or the technology stack document ensures
-    the harness still protects kept files and lints acceptance tests.
+    It once guessed a pack when no contract was written, from the words of the
+    stack decision and the stack document, and wrote its guess down. Measured
+    on two runs whose stack decision said no pack fits: one was given a
+    JavaScript service's contract because its stack document explained why a
+    JavaScript option was rejected, the other a Python service's for a product
+    with a browser interface - and every suite run then wrote that pack's
+    runner configuration into the project. Which pack a run was built from is
+    the stack decision's to say, and only the scaffold writes it down.
     """
-    if not repo_root:
+    record = read(repo_root)
+    if record is None:
         return None
-    root = Path(repo_root)
-    if not root.is_dir():
-        return None
-
-    from app.stacks.packs import ALL_PACKS
-    from app.tools.repository import pinned_project_directory
-
-    pack: StackPack | None = None
-
-    # 1. From .harness/decisions.json (DR-1 or point == "stack")
-    decisions_path = root / HARNESS_DIR / "decisions.json"
-    if decisions_path.is_file():
-        try:
-            decisions_data = json.loads(decisions_path.read_text(encoding="utf-8"))
-            if isinstance(decisions_data, list):
-                for item in decisions_data:
-                    if isinstance(item, dict) and item.get("point") == "stack":
-                        rationale = str(item.get("rationale") or "")
-                        options = [str(o) for o in (item.get("options") or [])]
-                        decision = str(item.get("decision") or "")
-                        for p in ALL_PACKS:
-                            if p.name in rationale or p.title in options or p.title in decision:
-                                pack = p
-                                break
-                    if pack is not None:
-                        break
-        except (OSError, ValueError):
-            pass
-
-    # 2. From docs/technology_stack.md
-    if pack is None:
-        tech_path = root / "docs" / "technology_stack.md"
-        if tech_path.is_file():
-            try:
-                content = tech_path.read_text(encoding="utf-8")
-                for p in ALL_PACKS:
-                    if p.title in content or p.name in content:
-                        pack = p
-                        break
-            except OSError:
-                pass
-
+    pack = pack_named(record.get("pack"))
     if pack is None:
         return None
-
-    project = pinned_project_directory(root) or ""
-    if not project:
-        from app.tools.repository import _NON_PROJECT_DIRECTORIES, IGNORED_DIRECTORIES
-
-        for child in sorted(root.iterdir()):
-            if (
-                child.is_dir()
-                and not child.name.startswith(".")
-                and child.name not in _NON_PROJECT_DIRECTORIES
-                and child.name not in IGNORED_DIRECTORIES
-                and (
-                    (child / "package.json").is_file()
-                    or (child / "pyproject.toml").is_file()
-                    or (child / "go.mod").is_file()
-                )
-            ):
-                project = child.name
-                break
-
-    from app.stacks import python_package_name
-
-    title = project.replace("-", " ").replace("_", " ").title() if project else pack.title
-    package = python_package_name(project) if pack.language == "python" else None
-    record = {
-        "pack": pack.name,
-        "project": project,
-        "title": title,
-        "package": package or (python_package_name(project) if project else None),
-        **pack.commands(project, package),
-        "unit_report": pack.unit_report,
-        "acceptance_report": pack.acceptance_report,
-        "unit_dir": pack.unit_dir,
-        "acceptance_dir": pack.acceptance_dir,
-        "unit_pattern": pack.unit_pattern,
-        "acceptance_pattern": pack.acceptance_pattern,
-        "evidence_dir": pack.evidence_dir,
-    }
-    try:
-        (root / CONTRACT_FILE).parent.mkdir(parents=True, exist_ok=True)
-        (root / CONTRACT_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
-    except OSError:
-        pass
     return pack, record
+
+
+def scaffolded(record: dict[str, Any] | None) -> bool:
+    """Whether the harness set this contract's project up and proved it.
+
+    False for a pack the run chose whose scaffold could not be proven: its
+    linters and commands still apply, but no file is the harness's to keep -
+    a setup that failed its own smoke test is the agents' to repair.
+    """
+    return bool(record) and record.get("scaffolded", True) is not False
 
 
 def the_pack_above(path: str | Path | None) -> tuple[StackPack, dict[str, Any]] | None:
@@ -181,17 +112,15 @@ def the_pack_above(path: str | Path | None) -> tuple[StackPack, dict[str, Any]] 
     if not path:
         return None
     for folder in Path(path).resolve().parents:
-        if (folder / CONTRACT_FILE).is_file() or (folder / "docs" / "technology_stack.md").is_file():
-            found = the_pack(folder)
-            if found is not None:
-                return found
+        if (folder / CONTRACT_FILE).is_file():
+            return the_pack(folder)
     return None
 
 
 def kept_paths(repo_root: str | Path | None) -> frozenset[str]:
     """Workspace-relative paths of the files the harness keeps as set up."""
     found = the_pack(repo_root)
-    if found is None:
+    if found is None or not scaffolded(found[1]):
         return frozenset()
     pack, record = found
     project = str(record.get("project") or "")
@@ -235,10 +164,11 @@ def enforce(repo_root: str | Path) -> list[str]:
     """Put back any runner configuration or manifest script a stage changed.
 
     Returns one line per repair, for the log and for the next stage's brief.
-    A project no pack scaffolded is left alone.
+    A project no pack scaffolded is left alone, and so is one whose scaffold
+    could not be proven: its setup is the agents' to repair.
     """
     found = the_pack(repo_root)
-    if found is None:
+    if found is None or not scaffolded(found[1]):
         return []
     pack, record = found
     project = str(record.get("project") or "")

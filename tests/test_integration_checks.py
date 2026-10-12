@@ -1756,3 +1756,11 @@ class TestABrowserHelperIsNotACopy:
             "test('adds', () => { addTask('a', 'b'); });\n"
         )
         assert len(self._problems(tmp_path)) == 1
+
+
+
+def test_a_setup_file_given_with_an_equals_sign_is_followed() -> None:
+    from app.analysis.integration_checks import _explicitly_imported_in_command
+
+    assert _explicitly_imported_in_command("node --test --import=./tests/setup.mjs tests/") == ["./tests/setup.mjs"]
+    assert _explicitly_imported_in_command("node --test --require=./setup.cjs") == ["./setup.cjs"]

@@ -527,10 +527,26 @@ def _the_acceptance_criteria(criteria: str) -> str:
         "own criteria and earlier sprints' need, and no earlier: work only a later "
         "sprint's criteria need belongs in that sprint's scope - not built ahead as "
         "functions, wiring or placeholders.\n\n"
-        "Keep the plan lean: when the acceptance criteria count is 10 or fewer, plan "
-        "no more than 2 sprints (Sprint 1: Core walking skeleton, Sprint 2: Remaining "
-        "capabilities and polish). For scopes with 5 or fewer criteria, deliver in a "
-        "single sprint. Avoid over-slicing small scopes into many sprints.\n\n"
+        f"{_how_many_sprints(criteria)}"
+    )
+
+
+def _how_many_sprints(criteria: str) -> str:
+    """The most sprints these criteria allow, in the words the plan is cut back by.
+
+    One rule, from `max_sprints_for_criteria_count`: this request, the system
+    prompt and the cut each said something different - one sprint "where
+    possible", one for five criteria or fewer, two for ten - and a plan written
+    to one was cut by another.
+    """
+    count = len(set(re.findall(r"\b(?:AC|CR)-\d+\b", criteria)))
+    if not count:
+        return ""
+    most = max_sprints_for_criteria_count(count)
+    return (
+        f"Plan at most {most} sprint{'s' if most > 1 else ''} for these {count} criteria - fewer "
+        f"when the work is small. A plan with more is cut back to {most}, its later sprints "
+        "folded into the last.\n\n"
     )
 
 
@@ -800,8 +816,8 @@ Constraints:
   either way - and only through that response. Writing it yourself
   produces the same work twice from one understanding, and the two
   copies then disagree.
-- Sprint Sizing: For focused scopes (10 or fewer acceptance criteria), plan a
-  single comprehensive sprint where possible, and never more than 2 sprints.
+- Sprint sizing: plan no more sprints than the request allows for its number
+  of acceptance criteria, and fewer when the work is small.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.

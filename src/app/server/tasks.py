@@ -63,8 +63,8 @@ celery_app.conf.update(
     # Nothing is lost when it fires - the graph checkpoints at every node
     # boundary and the run resumes from the last one - but each cut costs a
     # manual resume, so the ceiling should be reached only by a real hang.
-    task_time_limit=int(os.environ.get("CELERY_TASK_TIME_LIMIT", "21900")),
-    task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "21600")),
+    task_time_limit=int(os.environ.get("CELERY_TASK_TIME_LIMIT", "43500")),
+    task_soft_time_limit=int(os.environ.get("CELERY_TASK_SOFT_TIME_LIMIT", "43200")),
     worker_max_tasks_per_child=int(os.environ.get("CELERY_MAX_TASKS_PER_CHILD", "50")),
     broker_connection_retry_on_startup=True,
 )

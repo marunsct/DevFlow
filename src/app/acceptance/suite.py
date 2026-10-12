@@ -183,7 +183,8 @@ def gaps(repo_root: str | Path) -> list[str]:
     covered = coverage(repo_root)
     problems = [
         f"{c.id} (\"{c.text}\") has no test whose name carries `{c.id}`. "
-        f"Either write a test for it, or if an existing test already proves it, add `[{c.id}]` to that test's title."
+        f"Write a test for it - or, where a test already checks exactly what it says, add its id to that "
+        "test's name as the naming rule says."
         for c in criteria(repo_root)
         if c.id not in covered and c.id not in excused
     ]
@@ -1195,110 +1196,67 @@ def controls_never_found_by_name(repo_root: str | Path, brief_text: str) -> list
 
 
 def tests_with_module_system_mismatch(repo_root: str | Path) -> list[str]:
-    """Where the suite mixes CommonJS require and ES module syntax, causing loader failure.
+    """Suite files that use a module system their runtime will not load them as. See the pack's `module_system_mismatch`.
 
-    In a package with `"type": "module"`, Node treats `.js` files as ES modules and
-    calling `require(...)` throws ReferenceError at module evaluation time before
-    any tests run.
+    Such a file throws as it loads, before any of its tests runs - so before
+    anything is built it fails exactly as an unbuilt product makes it fail, and
+    the suite would be locked with it.
     """
+    found = contract.the_pack(repo_root)
     where = location(repo_root)
-    if where is None:
+    if found is None or found[0].module_system_mismatch is None or where is None:
         return []
-    project, _ = where
-    pkg_path = Path(repo_root) / project / "package.json"
-    if not pkg_path.is_file():
-        return []
-    try:
-        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-    is_esm = pkg.get("type") == "module"
+    project_root = Path(repo_root) / where[0]
     root = Path(repo_root)
     problems = []
     for path in suite_files(repo_root):
-        if path.suffix not in (".js", ".mjs", ".ts"):
-            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        if is_esm or path.suffix == ".mjs":
-            matches = list(re.finditer(r"\brequire\s*\(", text))
-            if matches:
-                line = text.count("\n", 0, matches[0].start()) + 1
-                problems.append(
-                    f"`{path.relative_to(root).as_posix()}` line {line} uses CommonJS `require(...)` syntax in an "
-                    "ES module project (`package.json` specifies `\"type\": \"module\"`). Use ES module `import` syntax "
-                    "(e.g. `import { test, expect } from '@playwright/test';`)."
-                )
-    return problems
+        for line, why in list(found[0].module_system_mismatch(project_root, path, text))[:1]:
+            problems.append(f"`{path.relative_to(root).as_posix()}` line {line} {why}")
+    return problems[:6]
 
 
 def tests_with_unawaited_async_helpers(repo_root: str | Path) -> list[str]:
-    """Where the suite calls an async helper function without `await` before method access.
-
-    An un-awaited async function returns a Promise. Calling locator methods on it
-    throws TypeError: `... is not a function`.
-    """
+    """Where the suite uses one of its async helpers without awaiting it. See the pack's `unawaited_helpers`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].unawaited_helpers is None:
+        return []
     root = Path(repo_root)
     problems = []
-    _ASYNC_FN = re.compile(
-        r"""(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*async\b|async\s+function\s+([a-zA-Z0-9_$]+)\b"""
-    )
     for path in suite_files(repo_root):
-        if path.suffix not in (".js", ".mjs", ".ts", ".jsx", ".tsx"):
-            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        helpers = {
-            m.group(1) or m.group(2)
-            for m in _ASYNC_FN.finditer(text)
-            if m.group(1) or m.group(2)
-        }
-        if not helpers:
-            continue
-        lines = text.splitlines()
-        for idx, line in enumerate(lines, 1):
-            for h in helpers:
-                pattern = rf"\b{re.escape(h)}\s*\("
-                for m in re.finditer(pattern, line):
-                    preceding = line[:m.start()].strip()
-                    if re.search(r"\bawait\s*$", preceding) or re.search(r"\breturn\s*$", preceding):
-                        continue
-                    if re.search(r"\b(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=", preceding) or re.match(r"[^;]*\)\s*\.", line[m.start():]):
-                        problems.append(
-                            f"`{path.relative_to(root).as_posix()}` line {idx}: async helper `{h}` is called without `await`. "
-                            f"An async function returns a Promise; await the result before using it (e.g. `await {h}(...)`)."
-                        )
-                        break
-    return problems
+        for line, helper in list(found[0].unawaited_helpers(text))[:4]:
+            problems.append(
+                f"`{path.relative_to(root).as_posix()}` line {line}: async helper `{helper}` is called "
+                f"without `await`. An async function returns a Promise; await the result before using "
+                f"it (e.g. `await {helper}(...)`)."
+            )
+    return problems[:6]
 
 
 def locators_with_invalid_name_option(repo_root: str | Path) -> list[str]:
-    """Where the suite calls locator(selector, { name: ... }).
-
-    In Playwright, `locator(selector, options)` accepts only `hasText`, `hasNotText`,
-    `has`, and `hasNot`. It does not accept a `name` option; Playwright silently ignores
-    it and matches all elements of that selector. To find an element by accessible name,
-    tests must use `getByRole('role', { name: '...' })` or `locator('...', { hasText: '...' })`.
-    """
+    """Where the suite passes a locator an option it ignores. See the pack's `locators_with_an_ignored_option`."""
+    found = contract.the_pack(repo_root)
+    if found is None or found[0].locators_with_an_ignored_option is None:
+        return []
     root = Path(repo_root)
-    pattern = re.compile(r"""\blocator\s*\(\s*['"`][^'"`]+['"`]\s*,\s*\{[^}]*\bname\s*:""")
     problems = []
     for path in suite_files(repo_root):
-        if path.suffix not in (".js", ".mjs", ".ts", ".jsx", ".tsx"):
-            continue
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        hits = sorted({text.count("\n", 0, m.start()) + 1 for m in pattern.finditer(text)})
+        hits = list(found[0].locators_with_an_ignored_option(text))
         if not hits:
             continue
         lines = text.splitlines()
-        snippet = lines[hits[0] - 1].strip()[:160]
+        snippet = lines[hits[0] - 1].strip()[:160] if 0 < hits[0] <= len(lines) else ""
         where = ", ".join(str(line) for line in hits[:8]) + (" ..." if len(hits) > 8 else "")
         problems.append(
             f"`{path.relative_to(root).as_posix()}` line(s) {where} (`{snippet}`) calls "

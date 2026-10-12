@@ -112,3 +112,55 @@ def test_diagnostics_in_files_touched_ignores_clean_and_scratch_files(tmp_path: 
     finally:
         ls.underlined_any = orig_underlined
 
+
+
+class TestAnImportOfAnotherWorkOrdersFile:
+    """Work orders run side by side, or one after another: an import of a file
+    another work order has yet to write is expected, in either execution mode.
+    Measured on one run: a builder told "Cannot find module ... Fix these errors
+    now" wrote the other work order's file next, and was refused."""
+
+    STORAGE = {"line": 1, "code": 2307, "message": "Cannot find module './storage.js'",
+               "text": "import { load } from './storage.js';"}
+    UNDEFINED = {"line": 2, "code": 2304, "message": "Cannot find name 'render'.", "text": "render(load());"}
+
+    def _diagnostics(self, tmp_path: Path, stage: str) -> list[str]:
+        import json
+
+        from app.graph import workflow
+        import app.analysis.language_service as ls
+
+        (tmp_path / ".project-directory").write_text("app\n")
+        (tmp_path / "app" / "src").mkdir(parents=True)
+        (tmp_path / "app" / "src" / "main.js").write_text("import { load } from './storage.js';\nrender(load());\n")
+        (tmp_path / ".work-order-files.json").write_text(json.dumps({
+            "app/src/main.js": "specialist_ui_ux_0", "app/src/storage.js": "specialist_database_1",
+        }))
+        state = {"repository": SimpleNamespace(root_path=str(tmp_path))}
+        answer = SimpleNamespace(changed_files=["app/src/main.js"])
+        found = SimpleNamespace(here=[self.STORAGE, self.UNDEFINED])
+        original = ls.underlined_any
+        ls.underlined_any = lambda repo_root, target, content, project=None: found
+        try:
+            return workflow._diagnostics_in_files_touched(state, {"messages": []}, answer, stage)
+        finally:
+            ls.underlined_any = original
+
+    def test_is_no_error_of_the_builder_s(self, tmp_path: Path) -> None:
+        diagnostics = self._diagnostics(tmp_path, "specialist_ui_ux_0")
+
+        assert not any("storage.js" in line for line in diagnostics)
+        assert any("render" in line for line in diagnostics)
+
+    def test_is_an_error_once_every_work_order_is_done(self, tmp_path: Path) -> None:
+        diagnostics = self._diagnostics(tmp_path, "defect_fix_1_0")
+
+        assert any("storage.js" in line for line in diagnostics)
+
+
+def test_the_note_on_a_write_says_such_an_import_clears() -> None:
+    from app.analysis.language_service import Underlined
+
+    note = Underlined(here=[{"line": 1, "message": "Cannot find module './b.js'", "text": "import './b.js'"}]).note()
+
+    assert "An import of a file another work order is about to write clears when it does" in note

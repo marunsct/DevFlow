@@ -1,155 +1,124 @@
-"""Tests for batch defect remediation.
+"""One fixer is shown every open defect of its role a measurement can close; only measurement closes them.
 
-When multiple open defects belong to the same specialist role in a test round,
-they are bundled into a single remediation invocation rather than spawning
-independent agent stages for each individual defect.
+Batching cut a round of four defects owned by one role from four fix stages to
+one. But the batch then marked every bundled defect fixed on the strength of
+the first one's answer - whether the stage had touched it or not - and wrote
+"verified by <command>" where a regression test was required.
+
+Now a bundled defect stays open. The fix is measured, as every fix is; when
+the cursor reaches a bundled defect, a measurement showing it resolved closes
+it with no fixer, and one still failing goes to its own fixer. Only defects a
+measurement can show resolved are bundled at all.
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-from app.sprint import Defect, RemediationCycle, mark_defect_fixed
+import re
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
+
+from langgraph.checkpoint.memory import MemorySaver
+
+from app.agents.specialists import SpecialistOutput
+from app.graph.workflow import _bundle_co_defects, build_workflow_graph
+from app.sprint import Defect, RemediationCycle
 
 
-def test_batch_marking_defects_fixed() -> None:
-    d1 = Defect(
-        description="First issue",
-        severity="major",
-        reproduction_steps="step 1",
-        expected_behavior="expect 1",
-        actual_behavior="actual 1",
-        owner="ui_ux",
-        regression_test_required=True,
+def _d(description, owner="ui_ux", **extra) -> Defect:
+    return Defect(
+        description=description, severity="major", reproduction_steps="r",
+        expected_behavior="e", actual_behavior="a", owner=owner, **extra,
     )
-    d2 = Defect(
-        description="Second issue",
-        severity="minor",
-        reproduction_steps="step 2",
-        expected_behavior="expect 2",
-        actual_behavior="actual 2",
-        owner="ui_ux",
-        regression_test_required=False,
+
+
+ROUND = [
+    _d("[AC-3] The view does not update", failing_criteria=["AC-3"]),
+    _d("[AC-4] The count is wrong", failing_criteria=["AC-4"]),
+    _d("Regression: `unit: tests/view.test.js › renders` passed before and fails now."),
+    _d("An accessibility check of the page finds 1 serious rule broken: color-contrast.", source="page check"),
+    _d("The layout feels cramped", source="test round"),
+    _d("[AC-5] The service refuses a valid record", owner="backend", failing_criteria=["AC-5"]),
+]
+
+
+class TestWhatIsBundled:
+    def test_the_role_s_defects_a_measurement_can_close(self):
+        bundled = [position for position, _ in _bundle_co_defects(RemediationCycle(sprint_goal="g", defects=ROUND), 0)]
+
+        assert bundled == [1, 2, 3]
+
+    def test_not_one_no_measurement_can_show_resolved(self):
+        bundled = [d.description for _, d in _bundle_co_defects(RemediationCycle(sprint_goal="g", defects=ROUND), 0)]
+
+        assert "The layout feels cramped" not in bundled
+
+    def test_not_another_role_s(self):
+        bundled = [d.owner for _, d in _bundle_co_defects(RemediationCycle(sprint_goal="g", defects=ROUND), 0)]
+
+        assert "backend" not in bundled
+
+
+def _the_fix_stage_runs(tmp_path, answer: SpecialistOutput) -> tuple[dict, list[str]]:
+    cycle = RemediationCycle(sprint_goal="g", defects=ROUND[:2])
+    state = {
+        "repository": SimpleNamespace(root_path=str(tmp_path)),
+        "remediation": cycle,
+        "defect_cursor": 0,
+        "test_round": 2,
+        "current_sprint_index": 0,
+        "specialist_outputs": {},
+    }
+    asked: list[str] = []
+
+    def gated(state, config, *, initial_request, **kwargs):
+        asked.append(initial_request["messages"][-1]["content"])
+        return {"__fix_result__": answer}
+
+    with patch("app.graph.workflow.create_specialist_agent", return_value=MagicMock()), \
+         patch("app.graph.workflow.build_defect_fix_request", return_value={"messages": [{"role": "user", "content": ""}]}), \
+         patch("app.graph.workflow._what_the_last_failure_printed", return_value=""), \
+         patch("app.graph.workflow._closed_if_an_earlier_fix_resolved_it", return_value=None), \
+         patch("app.graph.workflow._what_the_ledger_confirms", return_value="npm test"), \
+         patch("app.graph.acceptance_nodes.done_by_the_definition", return_value=[]), \
+         patch("app.graph.engineering.before_a_fix", return_value=""), \
+         patch("app.graph.engineering.after_a_fix", return_value=[]), \
+         patch("app.graph.workflow._run_gated_agent", side_effect=gated):
+        graph = build_workflow_graph(checkpointer=MemorySaver(), repo_root=str(tmp_path))
+        update = graph.nodes["defect_remediation"].bound.invoke(
+            state, {"configurable": {"thread_id": "t", "run_id": "r"}}
+        )
+    return update, asked
+
+
+class TestOneFixStage:
+    ANSWER = SpecialistOutput(
+        changed_files=["app/src/view.js"], tests=["tests/view.test.js"],
+        decisions=["Re-rendered the list after each change"],
     )
-    cycle = RemediationCycle(sprint_goal="Fix UI issues", defects=[d1, d2])
-    assert cycle.defects[0].status == "open"
-    assert cycle.defects[1].status == "open"
 
-    cycle = mark_defect_fixed(cycle, 0, regression_test="tests/test_batch.py", resolution="Fixed both")
-    cycle = mark_defect_fixed(cycle, 1, regression_test="tests/test_batch.py", resolution="Fixed both")
-    assert cycle.defects[0].status == "fixed"
-    assert cycle.defects[1].status == "fixed"
+    def test_is_shown_the_bundled_defect(self, tmp_path):
+        _, asked = _the_fix_stage_runs(tmp_path, self.ANSWER)
 
+        assert "[AC-4] The count is wrong" in asked[0]
+        assert "measures each one after your fix" in asked[0]
 
-def test_batch_remediation_prompt_contains_no_forbidden_words() -> None:
-    import re
-    # The template line used when bundling co-defects
-    batch_header = "Related failures owned by your role to resolve in this same fix"
-    forbidden = {"task", "tasks", "to-do", "todo", "button", "click", "checkbox"}
-    words = {w.lower() for w in re.findall(r"\b\w+[\w-]*\b", batch_header)}
-    assert not (words & forbidden), f"Found forbidden words: {words & forbidden}"
+    def test_closes_only_the_defect_it_was_sent(self, tmp_path):
+        update, _ = _the_fix_stage_runs(tmp_path, self.ANSWER)
 
+        statuses = [d.status for d in update["remediation"].defects]
+        assert statuses == ["fixed", "open"]
 
-def test_bundle_co_defects_groups_all_open_defects_for_specialist_role() -> None:
-    from app.graph.workflow import _bundle_co_defects
+    def test_moves_on_to_the_bundled_defect_for_the_measurement_to_judge(self, tmp_path):
+        update, _ = _the_fix_stage_runs(tmp_path, self.ANSWER)
 
-    d1 = Defect(
-        description="First issue",
-        severity="minor",
-        reproduction_steps="step 1",
-        expected_behavior="expect 1",
-        actual_behavior="actual 1",
-        owner="ui_ux",
-        regression_test_required=False,
-    )
-    d2 = Defect(
-        description="Filter view does not update immediately",
-        severity="major",
-        reproduction_steps="step 2",
-        expected_behavior="expect 2",
-        actual_behavior="actual 2",
-        owner="ui_ux",
-        regression_test_required=True,
-    )
-    d3 = Defect(
-        description="Third issue",
-        severity="minor",
-        reproduction_steps="step 3",
-        expected_behavior="expect 3",
-        actual_behavior="actual 3",
-        owner="ui_ux",
-        regression_test_required=False,
-    )
-    d4 = Defect(
-        description="Backend issue",
-        severity="minor",
-        reproduction_steps="step 4",
-        expected_behavior="expect 4",
-        actual_behavior="actual 4",
-        owner="backend",
-        regression_test_required=False,
-    )
-    cycle = RemediationCycle(sprint_goal="Fix UI issues", defects=[d1, d2, d3, d4])
-
-    bundled = _bundle_co_defects(cycle, 0)
-    # Under Pillar 8, all open defects for the same specialist role are bundled together
-    # regardless of regression_test_required. d4 belongs to backend and is not bundled.
-    assert len(bundled) == 2
-    assert bundled[0][0] == 1
-    assert bundled[0][1].description == "Filter view does not update immediately"
-    assert bundled[1][0] == 2
-    assert bundled[1][1].description == "Third issue"
+        assert update["defect_cursor"] == 1
 
 
-def test_apply_batch_co_defect_fixes_leaves_untested_co_defect_open_without_raising() -> None:
-    from app.graph.workflow import _apply_batch_co_defect_fixes
+def test_the_new_words_name_no_product():
+    from pathlib import Path
 
-    d1 = Defect(
-        description="First issue",
-        severity="minor",
-        reproduction_steps="step 1",
-        expected_behavior="expect 1",
-        actual_behavior="actual 1",
-        owner="ui_ux",
-        regression_test_required=False,
-    )
-    d2 = Defect(
-        description="Filter view does not update immediately",
-        severity="major",
-        reproduction_steps="step 2",
-        expected_behavior="expect 2",
-        actual_behavior="actual 2",
-        owner="ui_ux",
-        regression_test_required=True,
-    )
-    cycle = RemediationCycle(sprint_goal="Fix UI issues", defects=[d1, d2])
-
-    # Suppose d2 was bundled as a co-defect, but neither regression test nor verified_by was provided:
-    # it must not raise ValueError, and d2 must remain open.
-    updated = _apply_batch_co_defect_fixes(
-        cycle,
-        [(1, d2)],
-        defect_index=0,
-        regression_test="",
-        verified_by="",
-        resolution="Fixed UI",
-        stage_name="defect_fix_1_0",
-        round_=1,
-        sprint=1,
-    )
-    assert updated.defects[1].status == "open"
-
-    # When verified_by ran and passed, d2 is resolved in batch:
-    verified_update = _apply_batch_co_defect_fixes(
-        cycle,
-        [(1, d2)],
-        defect_index=0,
-        regression_test="",
-        verified_by="npm test",
-        resolution="Fixed UI",
-        stage_name="defect_fix_1_0",
-        round_=1,
-        sprint=1,
-    )
-    assert verified_update.defects[1].status == "fixed"
-
-
+    source = Path("src/app/graph/workflow.py").read_text()
+    start = source.index("Related failures owned by your role")
+    text = source[start:source.index("\n", source.index("one still failing goes to its own fix"))].lower()
+    for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
+        assert not re.search(rf"\b{re.escape(word)}\b", text), word

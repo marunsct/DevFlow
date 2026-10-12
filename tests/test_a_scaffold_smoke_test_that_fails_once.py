@@ -59,4 +59,8 @@ def test_a_smoke_test_that_fails_twice_is_not_a_scaffold(tmp_path: Path) -> None
 
     assert not result.ok
     assert "acceptance smoke test did not pass" in result.problem
-    assert contract.read(tmp_path) is None
+    # Recorded as the pack its files came from, proven by nothing: its checks
+    # apply, and no file of it is the harness's to keep.
+    assert contract.read(tmp_path)["pack"] == pack.name
+    assert not contract.scaffolded(contract.read(tmp_path))
+    assert contract.kept_paths(tmp_path) == frozenset()

@@ -784,17 +784,23 @@ def fixes_to_keep_section(fixes: Sequence[str]) -> str:
 
 
 def _work_order_file_ownership_note(work_order: Any) -> str:
-    """Explicitly remind the specialist which files it is allowed to touch."""
+    """The files this work order owns, and what the write guard does with the rest.
+
+    Said as the guard enforces it (`repository._another_work_order_s_file`): a
+    file another work order lists is refused, and a file no work order lists -
+    a unit test, a helper - is open. Told "only these files", a stage reads a
+    test file of its own as forbidden.
+    """
     files = list(getattr(work_order, "files", None) or [])
     if not files:
         return ""
     listed = ", ".join(f"`{f}`" for f in files)
     return (
         "--- File ownership for this work order ---\n"
-        f"You are assigned to work on: {listed}. "
-        "You may create or edit only these files. Any modification to files assigned "
-        "to other work orders is prohibited and will be rejected. If you need functionality "
-        "from other files, import or invoke their interface, or record a blocker.\n\n"
+        f"Your work order's files: {listed}. A file another work order lists is its own, and "
+        "a change to it is refused; a file no work order lists - a unit test, a helper - you "
+        "may create. If you need something from another work order's file, import or call "
+        "its interface, or say exactly what in `blockers`.\n\n"
     )
 
 

@@ -148,7 +148,8 @@ def test_a_scaffold_whose_smoke_test_fails_is_not_kept(tmp_path) -> None:
 
     assert not result.ok
     assert "unit smoke test did not pass" in result.problem
-    assert contract.read(tmp_path) is None
+    assert not contract.scaffolded(contract.read(tmp_path))
+    assert contract.kept_paths(tmp_path) == frozenset()
 
 
 def test_a_failed_install_is_tried_twice_then_reported(tmp_path) -> None:

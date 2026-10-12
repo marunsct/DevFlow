@@ -92,6 +92,24 @@ def _step(steps: list, argv: Sequence[str], outcome: dict[str, Any]) -> int:
     return code
 
 
+def _unproven(
+    root: Path, pack: StackPack, project: str, title: str, package: str | None, result: ScaffoldResult
+) -> ScaffoldResult:
+    """`result`, after recording the pack its files came from as not proven.
+
+    The files are on disk, written from this pack, and the run's tests will be
+    written for its runners: without a contract the pack's checks of those
+    tests were all off. Recorded as not scaffolded, nothing in it is the
+    harness's to keep or put back - a setup that failed its own smoke test is
+    the agents' to repair. See `contract.scaffolded`.
+    """
+    try:
+        contract.write(root, pack, project, title, package, scaffolded=False)
+    except OSError:
+        logger.debug("Could not record the unproven scaffold", exc_info=True)
+    return result
+
+
 def already_set_up(project_root: Path, pack: StackPack) -> bool:
     """Whether the project already has this pack's manifest - a seeded codebase."""
     manifests = [name for name in pack.files if "/" not in name and name in {
@@ -138,7 +156,7 @@ def scaffold(
             code = _step(result.steps, argv, run(argv, "install", project))
         if code != 0:
             result.problem = f"`{' '.join(argv)}` failed in {project}/."
-            return result
+            return _unproven(root, pack, project, title, package, result)
 
     smoke = pack.rendered_smoke_files(project, title, package)
     for relative, content in smoke.items():
@@ -172,7 +190,7 @@ def scaffold(
                     f"(exit {code}, {parsed.passed} passed, {parsed.failed} failed, "
                     f"report {'found' if parsed.found else 'missing'})."
                 )
-                return result
+                return _unproven(root, pack, project, title, package, result)
     finally:
         for relative in smoke:
             (project_root / relative).unlink(missing_ok=True)

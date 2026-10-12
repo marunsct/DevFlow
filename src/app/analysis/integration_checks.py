@@ -1272,6 +1272,8 @@ def _explicitly_imported_in_command(command: str) -> list[str]:
     for i, word in enumerate(words):
         if word in {"--import", "--require", "-r"} and i + 1 < len(words):
             imports.append(words[i + 1])
+        elif word.startswith(("--import=", "--require=")):
+            imports.append(word.split("=", 1)[1])
     return imports
 
 

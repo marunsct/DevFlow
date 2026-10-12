@@ -210,8 +210,8 @@ services:
       - ${DOCKER_SOCKET:-/dev/null}:/var/run/docker.sock
     environment:
       <<: *app-env
-      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-21900}
-      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-21600}
+      CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-43500}
+      CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-43200}
     command:
       - celery
       - -A

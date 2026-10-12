@@ -2029,14 +2029,78 @@ def _ask_about_high_confidence_diagnostics(
     )
 
 
+#: Language-service findings about an import, by their code: TypeScript's
+#: numbered ones and Pyright's named rules.
+_AN_IMPORT_FINDING = frozenset({2305, 2614, 1192, 2306, 2307, "reportMissingImports",
+                                "reportMissingModuleSource", "reportAttributeAccessIssue"})
+_A_RELATIVE_SPECIFIER = re.compile(r"""['"](\.{1,2}/[^'"]+)['"]""")
+_A_PYTHON_IMPORT = re.compile(r"^\s*(?:from\s+(\.*[\w.]*)\s+import|import\s+([\w.]+))")
+
+
+def _files_an_import_names(importer: str, finding: dict, project: str) -> list[str]:
+    """Workspace-relative paths the import a finding is about could name."""
+    import posixpath
+
+    text = f"{finding.get('text', '')} {finding.get('message', '')}"
+    folder = posixpath.dirname(importer)
+    candidates: list[str] = []
+    for spec in _A_RELATIVE_SPECIFIER.findall(text):
+        base = posixpath.normpath(posixpath.join(folder, spec))
+        candidates.append(base)
+        candidates += [f"{base}{ext}" for ext in (".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx")]
+        candidates += [f"{base}/index{ext}" for ext in (".js", ".ts", ".tsx", ".jsx")]
+    python = _A_PYTHON_IMPORT.match(str(finding.get("text", "")))
+    if python:
+        module = python.group(1) or python.group(2) or ""
+        dots = len(module) - len(module.lstrip("."))
+        parts = [part for part in module.lstrip(".").split(".") if part]
+        if dots:
+            start = folder
+            for _ in range(dots - 1):
+                start = posixpath.dirname(start)
+        else:
+            start = project
+        if parts:
+            base = posixpath.join(start, *parts) if start else posixpath.join(*parts)
+            candidates += [f"{base}.py", f"{base}/__init__.py"]
+    return candidates
+
+
+def _another_work_order_writes_it(root: str, importer: str, finding: dict, stage_name: str, project: str) -> bool:
+    """Whether a finding is an import of a file another work order of this milestone owns.
+
+    That file may not be written yet - work orders run side by side, or one
+    after another - so the import is no error of this stage's. Only a
+    specialist building a work order is told this: by the time a fix stage
+    runs, every work order is done.
+    """
+    if not str(stage_name or "").startswith("specialist_") or finding.get("code") not in _AN_IMPORT_FINDING:
+        return False
+    try:
+        import json
+
+        from app.tools.repository import WORK_ORDER_FILES
+
+        table = json.loads((Path(root) / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(table, dict):
+        return False
+    return any(
+        table.get(candidate) not in (None, stage_name)
+        for candidate in _files_an_import_names(importer, finding, project)
+    )
+
+
 def _diagnostics_in_files_touched(
-    state: Any, result: dict[str, Any], structured_response: Any,
+    state: Any, result: dict[str, Any], structured_response: Any, stage_name: str = "",
 ) -> list[str]:
     """High-confidence syntax or reference diagnostics in files modified by this stage.
 
     Runs what an IDE would underline (via `language_service.underlined_any`) over the
     files touched by this stage. Only certain errors (ReferenceError, missing exports,
-    undeclared names) are reported, bounded to a maximum of 4 items.
+    undeclared names) are reported, bounded to a maximum of 4 items - and not an
+    import of a file another work order owns (`_another_work_order_writes_it`).
     """
     from app.analysis.file_kinds import is_scratch
     from app.analysis.language_service import ALL_SUFFIXES, underlined_any
@@ -2079,6 +2143,8 @@ def _diagnostics_in_files_touched(
             found = underlined_any(root, target, content, project)
             if found and getattr(found, "here", None):
                 for finding in found.here:
+                    if _another_work_order_writes_it(root, relative, finding, stage_name, pinned or ""):
+                        continue
                     line = finding.get("line", "?")
                     msg = finding.get("message", "")
                     diagnostics.append(f"- In `{relative}` line {line}: {msg}")
@@ -2090,10 +2156,12 @@ def _diagnostics_in_files_touched(
     return diagnostics
 
 
-def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool, str]:
-    """Run unit tests procedurally if a contract or test script exists.
+def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
+    """Run the contract's unit test command: (whether it passed, its output).
 
-    Returns (ok, output). If no unit test command is known, returns (True, "").
+    (None, why) when there is no command to run: unknown is not passed. It
+    returned True there, and a test round on a project with no contract was
+    skipped as "all tests passed" with nothing run.
     """
     try:
         from app.stacks import contract
@@ -2101,12 +2169,12 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool, str]:
 
         found = contract.read(repo_root)
         if not found or not found.get("unit_test"):
-            return True, ""
+            return None, "no unit test command is recorded for this project"
 
         cmd = found.get("unit_test")
         project = str(found.get("project") or "")
         if not isinstance(cmd, list) or not cmd:
-            return True, ""
+            return None, "no unit test command is recorded for this project"
 
         runner = sandbox_runner(repo_root)
         outcome = runner(cmd, "test", project)
@@ -2753,7 +2821,7 @@ def _run_gated_agent(
         ]})
 
     if not never_wrote and not _stopped_by_the_budget(result):
-        diagnostics = _diagnostics_in_files_touched(state, result, structured_response)
+        diagnostics = _diagnostics_in_files_touched(state, result, structured_response, stage_name)
         if diagnostics:
             logger.warning(
                 "Stage %s touched files with high-confidence diagnostics: %s; asking once to fix before exit",
@@ -4265,50 +4333,81 @@ def _closed_by_this_round_s_measurement(state: Any, cycle: Any, test_round: int)
     return cycle
 
 
+def _a_measurement_can_close(defect: Any) -> bool:
+    """Whether the measurement taken after every fix can show this defect resolved.
+
+    The kinds `_closed_if_an_earlier_fix_resolved_it` closes without a fixer:
+    criteria failing when it was reported, a regressed test, a page-check
+    finding, what an IDE underlines.
+    """
+    return bool(
+        list(getattr(defect, "failing_criteria", None) or [])
+        or _A_REGRESSED_TEST.match(str(getattr(defect, "description", "") or ""))
+        or str(getattr(defect, "source", "") or "") in {"page check", "language service"}
+    )
+
+
+#: Files that hold neither code nor configuration: prose, styles, images,
+#: fonts. A sprint that changed only these gives a security review, or the
+#: review of how data is kept, nothing to read.
+_HOLDS_NO_CODE = frozenset({
+    ".md", ".markdown", ".txt", ".rst", ".adoc",
+    ".css", ".scss", ".sass", ".less",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot", ".pdf",
+})
+
+
+def _changes_any_code(changed_files: Any) -> bool:
+    """Whether any changed file holds code or configuration, in any language.
+
+    The reviews were skipped unless a JavaScript, Python, HTML or JSON file
+    changed: a product in any other language - or a sprint that changed only a
+    container definition, a shell script or a CI pipeline - was never reviewed
+    at all, and the review of how data is kept ran only when a file's name
+    happened to contain a word like "db" or "store". Only a sprint that changed
+    nothing but prose, styles and images skips them now.
+    """
+    return any(
+        PurePosixPath(str(name).strip()).suffix.lower() not in _HOLDS_NO_CODE
+        for name in changed_files or ()
+        if str(name).strip()
+    )
+
+
 def _bundle_co_defects(cycle: RemediationCycle, defect_index: int) -> list[tuple[int, Any]]:
-    """Return open co-defects owned by the same specialist role."""
+    """The open defects after this one that its fixer is shown too, to fix in the same stage.
+
+    Same owner, and only kinds a measurement can close. Each stays open: the
+    fix is measured (`engineering.after_a_fix`), and when the cursor reaches a
+    bundled defect, `_closed_if_an_earlier_fix_resolved_it` closes it if that
+    measurement shows it resolved - with no fixer - or sends it to its own
+    fixer if not. A batch used to mark every bundled defect fixed on the
+    strength of the first one's answer, whether the stage had touched it or
+    not, and with "verified by <command>" standing in for a regression test.
+    A defect no measurement can show resolved is not bundled: a fixer sent it
+    after a batch had fixed it would find nothing to change and leave it open.
+    """
     defect = cycle.defects[defect_index]
     return [
         (pos, d) for pos, d in enumerate(cycle.defects[defect_index + 1:], start=defect_index + 1)
-        if d.status == "open" and d.owner == defect.owner
+        if d.status == "open" and d.owner == defect.owner and _a_measurement_can_close(d)
     ]
 
 
-def _apply_batch_co_defect_fixes(
-    cycle: RemediationCycle,
-    co_defects: list[tuple[int, Any]],
-    *,
-    defect_index: int,
-    regression_test: str,
-    verified_by: str,
-    resolution: str,
-    stage_name: str,
-    round_: int,
-    sprint: int,
-) -> RemediationCycle:
-    """Mark co-defects fixed if they satisfy regression test requirements, leaving others open."""
+def _note_the_bundled(co_defects: list[tuple[int, Any]], *, defect_index: int, stage_name: str,
+                      round_: int, sprint: int) -> None:
+    """Record, for each bundled defect, which stage worked on it. It stays open."""
     from app.observability import defect_ledger
 
-    current_cycle = cycle
     for pos, co_d in co_defects:
-        if co_d.regression_test_required and not regression_test and not verified_by:
-            defect_ledger.note(
-                "left open", stage_name, defect=co_d, round_=round_, index=pos,
-                sprint=sprint,
-                detail="the batch fix named no regression test for this defect",
-            )
-            continue
-        effective_test = regression_test or (f"verified by {verified_by}" if verified_by else "")
-        current_cycle = mark_defect_fixed(
-            current_cycle, pos, regression_test=effective_test, verified_by=verified_by,
-            resolution=f"Fixed in batch with defect {defect_index}: {resolution}",
-        )
         defect_ledger.note(
-            "fixed", stage_name, defect=co_d, round_=round_, index=pos,
-            sprint=sprint,
-            detail=f"resolved in batch with defect {defect_index}",
+            "bundled", stage_name, defect=co_d, round_=round_, index=pos, sprint=sprint,
+            detail=(
+                f"shown to the fixer of defect {defect_index} too; closed only when a "
+                "measurement shows it resolved"
+            ),
         )
-    return current_cycle
 
 
 def _failing_criteria_it_names(state: Any, reported: Any) -> list[str]:
@@ -5337,6 +5436,11 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
         status = str(criterion.get("status") or "")
         tests = criterion.get("tests") or []
         if status == "untested" or not tests:
+            # Only a suite that ran can show a criterion has no test: when the
+            # runner wrote no report, every criterion reads "untested", and
+            # QA would be sent to add tests that are there.
+            if not saved.get("ran"):
+                continue
             name = f"[{cid}] (missing from locked suite)"
             text = f"{cid}: {criterion.get('text', '')}"
             message = "The locked acceptance suite has no test for this due criterion."
@@ -5350,13 +5454,19 @@ def _the_locked_tests_still_failing(state: Any) -> list[tuple[str, str, str]]:
                     continue
                 text = f"{cid}: {criterion.get('text', '')}"
                 message = str(test.get("message") or "")
-                if name in seen:
-                    idx = seen[name]
-                    old_name, old_text, old_message = failing[idx]
-                    failing[idx] = (old_name, old_text, f"{old_message}\n\n--- Also failed with ---\n\n{message}")
-                else:
+                if name not in seen:
                     seen[name] = len(failing)
                     failing.append((name, text, message))
+                    continue
+                # One test carrying several criteria is listed under each, with
+                # one failure: name every criterion, and its message once. Two
+                # tests of one name (in two files) failing differently keep both.
+                old_name, old_text, old_message = failing[seen[name]]
+                if text not in old_text:
+                    old_text = f"{old_text}; {text}"
+                if message and message not in old_message:
+                    old_message = f"{old_message}\n\n--- Also failed with ---\n\n{message}"
+                failing[seen[name]] = (old_name, old_text, old_message)
     return failing
 
 
@@ -7133,15 +7243,23 @@ def build_workflow_graph(
                     if part
                 )
         failing_due, _ = acceptance_nodes._failing_due(state)
-        unit_ok, _ = _run_unit_tests_procedurally(state["repository"].root_path)
-
+        # The round is the harness's own only on evidence: a locked suite whose
+        # last run happened and passes everything due, the unit tests run and
+        # passed, and nothing else proven wrong. Anything unknown - no locked
+        # suite, a run that wrote no report, no unit command, a check that
+        # failed to answer - is the testing specialist's round, as before.
+        saved_run = acceptance_nodes.suite.last_result(state["repository"].root_path) or {}
         skip_agent = (
             not state.get("pending_inner_thread_id")
+            and acceptance_nodes.suite.is_locked(state["repository"].root_path)
+            and bool(saved_run.get("ran"))
             and not failing_due
             and not cannot_pass
             and not state.get("review_defects")
-            and unit_ok
         )
+        if skip_agent:
+            unit_ok, _ = _run_unit_tests_procedurally(state["repository"].root_path)
+            skip_agent = unit_ok is True
         still_proven: list[str] = []
         if skip_agent:
             try:
@@ -7160,8 +7278,9 @@ def build_workflow_graph(
                     _what_later_sprints_build(state),
                     getattr(state.get("document"), "text", "") or "",
                 )
-            except Exception:
-                still_proven = []
+            except Exception:  # noqa: BLE001 - a check that cannot answer is no evidence
+                logger.debug("Could not read what the files already prove", exc_info=True)
+                skip_agent = False
 
         if skip_agent and not still_proven:
             logger.info(
@@ -7172,7 +7291,10 @@ def build_workflow_graph(
                 "__test_result__": SpecialistOutput(
                     changed_files=[],
                     defects=[],
-                    tests=["Automated test execution: all acceptance criteria due and unit tests passed cleanly with 0 defects."],
+                    decisions=[
+                        "The harness ran this round itself: the locked suite passes every criterion "
+                        "due, and the unit tests pass."
+                    ],
                 )
             }
         else:
@@ -7565,7 +7687,10 @@ def build_workflow_graph(
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
         co_defects = _bundle_co_defects(cycle, defect_index)
         if co_defects:
-            batch_lines = ["\n--- Related failures owned by your role to resolve in this same fix ---"]
+            batch_lines = [
+                "\n--- Related failures owned by your role to resolve in this same fix ---",
+                "The harness measures each one after your fix; one still failing goes to its own fix.",
+            ]
             for pos, co_d in co_defects:
                 batch_lines.append(f"- Failure {pos + 1}: {co_d.description}")
                 batch_lines.append(f"  Expected: {co_d.expected_behavior}")
@@ -7600,6 +7725,10 @@ def build_workflow_graph(
         )
         from app.observability import defect_ledger
 
+        _note_the_bundled(
+            co_defects, defect_index=defect_index, stage_name=stage_name,
+            round_=state.get("test_round", 0), sprint=state.get("current_sprint_index", 0),
+        )
         if broke:
             defect_ledger.note(
                 "reverted", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
@@ -7696,17 +7825,6 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0),
                 detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
             )
-            update["remediation"] = _apply_batch_co_defect_fixes(
-                update["remediation"],
-                co_defects,
-                defect_index=defect_index,
-                regression_test=regression_test,
-                verified_by=verified_by,
-                resolution=resolution,
-                stage_name=stage_name,
-                round_=state.get("test_round", 0),
-                sprint=state.get("current_sprint_index", 0),
-            )
 
         still_open = update["remediation"] is cycle
         if (
@@ -7737,11 +7855,7 @@ def build_workflow_graph(
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
         changed_files = _the_files_this_milestone_changed(state, outputs)
-        from pathlib import Path
-
-        from app.agents.security_reviewer import _WORTH_REVIEWING
-        code_files = [f for f in changed_files if Path(f).suffix.lower() in _WORTH_REVIEWING]
-        if not code_files and not state.get("pending_inner_thread_id"):
+        if not _changes_any_code(changed_files) and not state.get("pending_inner_thread_id"):
             review = SecurityReviewOutput(status="passed", findings=[])
             from app.sprint.record import findings_of
             return _handing_on(
@@ -7862,11 +7976,9 @@ def build_workflow_graph(
             return _handing_on(stage="milestone_review", advice_findings=found, advice_review_cycle=cycle)
         role = pending[0]
         changed_files = _the_files_this_milestone_changed(state, state.get("specialist_outputs", {}))
-        if role == "database" and not state.get("pending_inner_thread_id"):
-            db_indicators = {"db", "sql", "migration", "schema", "storage", "model", "store"}
-            if not any(any(ind in f.lower() for ind in db_indicators) for f in changed_files):
-                found[role] = []
-                return _handing_on(stage="advice_review", advice_findings=found, advice_review_cycle=cycle)
+        if role == "database" and not state.get("pending_inner_thread_id") and not _changes_any_code(changed_files):
+            found[role] = []
+            return _handing_on(stage="advice_review", advice_findings=found, advice_review_cycle=cycle)
         milestone = state.get("milestone_plan")
         request = build_advice_review_request(
             role,

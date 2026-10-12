@@ -262,7 +262,14 @@ class Underlined:
             )
         if not parts:
             return ""
-        return "\n".join(parts)
+        # Work orders run side by side or one after another, so one importing a
+        # file another work order has yet to write is expected, in either
+        # execution mode. Without this a stage told to fix such an import now
+        # wrote the other work order's file and was refused.
+        return "\n".join(parts) + (
+            "\nAn import of a file another work order is about to write clears when it "
+            "does; leave that file to its owner."
+        )
 
 
 def runs_in(repo_root: str | Path) -> str:

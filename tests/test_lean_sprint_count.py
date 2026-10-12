@@ -34,14 +34,25 @@ def test_max_sprints_scale_with_criteria_count() -> None:
     assert max_sprints_for_criteria_count(25) == 4
 
 
-def test_scrum_master_sprint_sizing_rule_has_no_banned_words() -> None:
-    text = (
-        "Sprint Sizing: For focused scopes (10 or fewer acceptance criteria), "
-        "plan a single comprehensive sprint where possible, and never more than 2 sprints."
-    )
-    outside = re.sub(r"`[^`]*`", "", text).lower()
+def test_the_request_states_the_cap_the_plan_is_cut_to() -> None:
+    """One rule: the request, the system prompt and the cut said three different things."""
+    from app.agents.scrum_master import _SYSTEM_PROMPT, build_sprint_planning_request
+
+    criteria = "\n".join(f"- AC-{i}: does thing {i}" for i in range(1, 14))
+    request = build_sprint_planning_request("spec", "/tmp/x", acceptance_criteria=criteria)
+    text = request["messages"][-1]["content"]
+
+    assert f"Plan at most {max_sprints_for_criteria_count(13)} sprints for these 13 criteria" in text
+    assert "single comprehensive sprint" not in _SYSTEM_PROMPT
+    assert "5 or fewer criteria" not in text
+
+
+def test_the_sizing_words_name_no_product() -> None:
+    from app.agents.scrum_master import _SYSTEM_PROMPT, _how_many_sprints
+
+    text = (_how_many_sprints("AC-1 AC-2 AC-3") + _SYSTEM_PROMPT[_SYSTEM_PROMPT.index("Sprint sizing"):][:200]).lower()
     for word in ("task", "tasks", "to-do", "todo", "button", "click", "checkbox"):
-        assert not re.search(rf"\b{word}\b", outside), f"Banned word '{word}' found in prompt rule"
+        assert not re.search(rf"\b{word}\b", text), f"Banned word '{word}' found in prompt rule"
 
 
 def test_with_capped_sprint_count_folds_excess_sprints() -> None:

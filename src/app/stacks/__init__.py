@@ -130,6 +130,15 @@ class StackPack:
     #: A suite file's text -> (line, storage_name, context) where storage is accessed
     #: before the page is opened; it throws a browser SecurityError on about:blank.
     storage_before_page_open: Callable[[str], Sequence[tuple[int, str, str]]] | None = None
+    #: (project root, suite file, its text) -> (line, why) where the file uses a
+    #: module system its runtime will not load it as; it fails before any test runs.
+    module_system_mismatch: Callable[[Path, Path, str], Sequence[tuple[int, str]]] | None = None
+    #: A suite file's text -> (line, helper) where one of its async helpers is
+    #: used without being awaited.
+    unawaited_helpers: Callable[[str], Sequence[tuple[int, str]]] | None = None
+    #: A suite file's text -> lines that pass a locator an option it ignores, so
+    #: it matches more than the test means.
+    locators_with_an_ignored_option: Callable[[str], Sequence[int]] | None = None
     #: A suite file's text -> (line, title, value) of each test that looks on
     #: the page for a value it made at run time and never gave the product.
     expects_what_it_never_gave: Callable[[str], Sequence[tuple[int, str, str]]] | None = None

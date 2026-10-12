@@ -1329,6 +1329,8 @@ def build_settled_answer_middleware(
             # that refuses the request because of it. Set only when thinking is
             # switched off below.
             refused_fallback = None
+            # For `_decide`, which runs after this call and sees no model.
+            self._model = getattr(request, "model", None)
             request = _without_reasoning_after_a_lost_reply(request, stage_name)
             try:
                 messages = getattr(request, "messages", None)
@@ -1562,7 +1564,7 @@ def build_settled_answer_middleware(
                 )
                 return handler(refused_fallback)
 
-        @hook_config(can_jump_to=["end"])
+        @hook_config(can_jump_to=["end", "model"])
         def after_model(self, state: Any, runtime: Any = None) -> dict[str, Any] | None:
             # This runs after every model call of every gated stage. An
             # exception here would end the stage, which is worse than the spin
@@ -1669,6 +1671,28 @@ def build_settled_answer_middleware(
                     ],
                     "jump_to": "end",
                 }
+
+            # A reply lost to reasoning ends nothing: the model is asked again at
+            # once, and the call that asks (`wrap_model_call`) switches thinking
+            # off - for one reply after a first loss, for the rest of the visit
+            # after a second. A lost reply has no tool call, so it used to end
+            # the stage, and the graph's one nudge carried the first loss; the
+            # second ended it for good with thinking never switched off for the
+            # rest of the visit, and the run failed. Measured on one run: the
+            # sprint planner lost a reply, did real work with thinking off, lost
+            # the next one with thinking back on, and the run failed at 54
+            # minutes. Only where thinking can be switched off - elsewhere the
+            # reply would be lost again, and the stage ends as before.
+            if not pending and _the_last_reply_was_all_reasoning(messages):
+                from app.agents.thinking import answering_without_reasoning
+
+                if answering_without_reasoning(getattr(self, "_model", None)):
+                    logger.warning(
+                        "Stage %s lost a reply to reasoning; asking again at once with "
+                        "thinking off rather than ending the stage",
+                        stage_name or "?",
+                    )
+                    return {"jump_to": "model"}
 
             # An answer the model put in a file rather than in the response
             # channel is still an answer, and this turn is about to be refused

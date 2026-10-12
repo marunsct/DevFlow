@@ -176,8 +176,8 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `b0c092c` (the lost-reply fix) is live. `d1b664b` (wave 2: packs for every major language, the toolchains in the image) is pushed and **not yet deployed** - deploy it when the current run ends (`loop.sh deploy`; the first build after it downloads the toolchains, ~5 min), then run `docker compose exec -T worker python - < scripts/loop/verify_packs.py` and expect 23 of 23. |
-| current run | `run-c7a1f6cf` (brief_medium, parallel), started 21:19 JST 2026-10-12 on `b0c092c`. |
+| deployed | `79089ea` is live (deployed 08:40 JST 2026-10-13): wave 2 and 3 packs, Node 24 in the image, Angular, and fix/work-order stages that fall back on exhausted retries. `verify_packs.py` in the live worker: 27 of 27. |
+| current run | the next brief_medium run (parallel) on `79089ea`; see §2.3. |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
@@ -240,22 +240,33 @@ Stack packs and the image:
     browser that could not start.
   - The browser is now installed in a layer before anything a deploy changes.
 
-**Wave 2 (`d1b664b`, pushed, deploy between runs).** Packs now cover every major language:
+**Waves 2 and 3 (`d1b664b`, `79089ea`, deployed).** Packs now cover every major language:
 
 | kind | packs |
 |---|---|
-| browser app | `browser-javascript`, `browser-react`, `browser-vue`, `browser-svelte` |
+| browser app | `browser-javascript`, `browser-react`, `browser-vue`, `browser-svelte`, `browser-angular` |
 | full-stack | `fullstack-node`, `fullstack-{react,vue}-{express,fastapi}`, `fullstack-next`, `fullstack-django` |
-| HTTP service | `node-http-api`, `python-http-api` (FastAPI), `python-flask-api`, `go-http-api`, `go-gin-api`, `java-spring-api`, `csharp-aspnet-api`, `rust-axum-api`, `ruby-sinatra-api`, `php-slim-api` |
+| HTTP service | `node-http-api`, `python-http-api` (FastAPI), `python-flask-api`, `node-nest-api`, `go-http-api`, `go-gin-api`, `java-spring-api`, `csharp-aspnet-api`, `rust-axum-api`, `ruby-sinatra-api`, `ruby-rails-api`, `php-slim-api`, `php-laravel-api` |
 | CLI / library | `python-cli`, `python-library` |
 
 - **Services in any language** are accepted through Playwright's `request`
   fixture against the running service (`packs/_service.py`).
-- **`scripts/loop/verify_packs.py`** scaffolds packs for real. All 23 passed in
-  an image built from `d1b664b`.
+- **`scripts/loop/verify_packs.py`** scaffolds packs for real. All 27 passed in
+  the live worker on `79089ea`.
+- **Node 24** (Node 20 is end-of-life; Angular 22 refuses it). Node 24 loads a
+  directory given to `node --test` as a module and runs nothing, so pack unit
+  scripts name a quoted pattern, the sandbox refuses `node --test <dir>` with
+  the pattern form, and the stranded-tests check reads arguments as Node 24
+  does (files, patterns, TypeScript it collects).
+- **`StackPack.process_memory`**: the per-process data limit counts what V8
+  reserves, not uses. Angular needs 4g (real use 0.4-1.6 GB); the tree
+  watcher still bounds real use. The scaffold writes its contract (unproven)
+  before the first install so its smoke tests get the same limit.
 - **Not yet covered** (a stack naming one gets no pack, by design rather than
-  the wrong one): Angular, NestJS, Rails, Laravel, Nuxt, SvelteKit, Remix, Ktor
-  and Quarkus, plus CLI and library packs outside Python.
+  the wrong one): Nuxt, SvelteKit, Remix, Ktor, Quarkus, Solid, plus CLI and
+  library packs outside Python - the next scaffolding wave (design notes:
+  CLI acceptance through `node:test` running the built program, as services
+  use Playwright's `request`; libraries in each language's own runner).
 
 ### 2.2 Verify on the next run
 
@@ -272,8 +283,18 @@ Stack packs and the image:
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
 
-- **run-c7a1f6cf** (brief_medium, started 21:19 JST 2026-10-12, parallel, on
-  `b0c092c`): in progress.
+- **run-c7a1f6cf** (brief_medium, 21:19 JST 2026-10-12 - 07:11 JST 2026-10-13,
+  parallel, on `b0c092c`): FAILED in sprint 1's defect fixing at 9 h 52 min.
+  - First medium run on a proven pack (`fullstack-react-fastapi`, scaffolded).
+  - `defect_fix_1_3` spent its 40 calls three times over on one defect (login
+    422: email validation); the third attempt found the cause on its last call.
+  - Fixed in `2e4e2ef`: fix and work-order stages out of retries leave their
+    work open (the defect stays open; the blocker carries where the attempt
+    ended) instead of failing the run.
+  - 80% of output tokens were reasoning; verification took 197 min. Lost
+    replies were all recovered by `b0c092c`.
+  - The operator session was paused overnight, so the run was not cancelled
+    for its length; it should have been, around hour 6.
 - **run-c83ee867** (brief_medium, 13:40-14:34 JST 2026-10-12, on `b2f837b`):
   FAILED at sprint planning.
   - The scrum master reasoned through its whole 25,000-token reply twice.

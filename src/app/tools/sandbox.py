@@ -33,6 +33,7 @@ import signal
 import re
 import shutil
 import subprocess
+import functools
 import threading
 import time
 import tomllib
@@ -742,13 +743,38 @@ _MEMORY_BYTES = {"k": 1024, "m": 1024**2, "g": 1024**3}
 
 
 def _memory_limit_bytes() -> int:
-    raw = MEMORY_LIMIT.strip().lower()
+    return _bytes_of(MEMORY_LIMIT, 2 * 1024**3)
+
+
+def _bytes_of(size: str, fallback: int) -> int:
+    """`"1g"`, `"512m"` or a plain number of bytes, as bytes; `fallback` if unreadable."""
+    raw = str(size).strip().lower()
     multiplier = _MEMORY_BYTES.get(raw[-1:], 1)
     digits = raw[:-1] if multiplier > 1 else raw
     try:
         return int(float(digits) * multiplier)
     except ValueError:
-        return 2 * 1024**3
+        return fallback
+
+
+def _process_memory(workspace: str | Path | None) -> int:
+    """The data limit for each process of a command in this workspace, in bytes.
+
+    The configured limit, or more where the project's pack says its toolchain
+    needs more (`StackPack.process_memory`). Read from the pack the contract
+    names, which the scaffold writes before its first install, so the
+    scaffold's own commands get it too.
+    """
+    configured = _memory_limit_bytes()
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(workspace)
+    except Exception:  # noqa: BLE001 - then the configured limit stands
+        return configured
+    if not found or not found[0].process_memory:
+        return configured
+    return max(configured, _bytes_of(found[0].process_memory, 0))
 
 
 MAX_WRITE_BYTES = int(os.environ.get("SANDBOX_MAX_FILE_BYTES", str(2 * 1024**3)))
@@ -864,8 +890,11 @@ def _a_free_port() -> int:
         return probe.getsockname()[1]
 
 
-def _apply_limits() -> None:
+def _apply_limits(data_bytes: int | None = None) -> None:
     """Cap the child before it execs. Runs between fork and exec.
+
+    `data_bytes` is the data limit, by default the configured one; see
+    `_process_memory`.
 
     Nothing here can be relied on the way a container's cgroup can - these are
     per-process rlimits, and a command that forks can multiply its memory use -
@@ -894,7 +923,7 @@ def _apply_limits() -> None:
     # local execution, where there is no cgroup.
     memory_limit = getattr(resource, "RLIMIT_DATA", resource.RLIMIT_AS)
     for limit, value in (
-        (memory_limit, _memory_limit_bytes()),
+        (memory_limit, data_bytes or _memory_limit_bytes()),
         (resource.RLIMIT_FSIZE, MAX_WRITE_BYTES),
     ):
         try:
@@ -972,7 +1001,7 @@ def _kill_the_tree(group: int) -> None:
 
 
 def _run_and_watch_the_tree(
-    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int
+    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int, data_bytes: int | None = None
 ) -> "subprocess.CompletedProcess[str]":
     """`subprocess.run`, bounding the command's whole process tree.
 
@@ -997,7 +1026,7 @@ def _run_and_watch_the_tree(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
-        preexec_fn=_apply_limits,  # noqa: PLW1509 - the point is to limit the child
+        preexec_fn=functools.partial(_apply_limits, data_bytes),  # noqa: PLW1509 - the point is to limit the child
         start_new_session=False,   # _apply_limits calls setsid itself
     )
     budget = _tree_budget_bytes()
@@ -4300,6 +4329,7 @@ class SandboxExecutor:
                 cwd=run_in or workspace,
                 env=_child_environment(workspace, extra_env),
                 timeout=timeout,
+                data_bytes=_process_memory(workspace),
             )
         except subprocess.TimeoutExpired as expired:
             return {
@@ -4586,8 +4616,8 @@ class SandboxExecutor:
             docker, "run", "--rm",
             "--name", container,
             "--network", "bridge" if category in NETWORK_CATEGORIES else "none",
-            "--memory", MEMORY_LIMIT,
-            "--memory-swap", MEMORY_LIMIT,   # equal to --memory disables swap
+            "--memory", f"{_process_memory(workspace) // 1024**2}m",
+            "--memory-swap", f"{_process_memory(workspace) // 1024**2}m",   # equal to --memory disables swap
             "--cpus", CPU_LIMIT,
             "--pids-limit", PIDS_LIMIT,
             "--cap-drop", "ALL",

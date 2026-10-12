@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from app.stacks.packs.browser_angular import PACK as BROWSER_ANGULAR
 from app.stacks.packs.browser_javascript import PACK as BROWSER_JAVASCRIPT
 from app.stacks.packs.browser_react import PACK as BROWSER_REACT
 from app.stacks.packs.browser_svelte import PACK as BROWSER_SVELTE
@@ -31,6 +32,7 @@ ALL_PACKS = (
     BROWSER_REACT,
     BROWSER_VUE,
     BROWSER_SVELTE,
+    BROWSER_ANGULAR,
     NODE_HTTP_API,
     NODE_NEST_API,
     REACT_EXPRESS,

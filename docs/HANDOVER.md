@@ -176,7 +176,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `8df4053` on branch `live-run-23896345` (= `821a750` + suite-repair fix `e985111` + test-file name check `4774f20` + pause/resume `2ea697d` + task-id fix `ff9faab`), deployed at 18:08 JST 2026-10-13 while run-23896345 was paused. The next `loop.sh deploy` from `harness-hardening-session` brings the untried features of `58600ee`..`e02cd84` too. |
+| deployed | `8df4053` on branch `live-run-23896345` (= `821a750` + suite-repair fix `e985111` + test-file name check `4774f20` + pause/resume `2ea697d` + task-id fix `ff9faab`), deployed at 18:04 JST 2026-10-13 while run-23896345 was paused. The next `loop.sh deploy` from `harness-hardening-session` brings the untried features of `58600ee`..`e02cd84` too. |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
 | pushed, not deployed | `d9fd387` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes, compiler checks, page view, docs and MCP, eight CLI/library packs. Deploy when run-23896345 ends, then run `verify_packs.py` in the worker (35 packs). |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |

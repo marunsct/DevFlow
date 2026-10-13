@@ -46,3 +46,15 @@ def test_the_tests_and_the_declaration_are_still_locked(tmp_path):
 
     assert len(suite.restore(tmp_path)) == 2
     assert "[AC-1]" in (acceptance / "notes.test.ts").read_text()
+
+
+def test_a_suite_locked_with_its_report_still_leaves_it_alone(tmp_path, monkeypatch):
+    acceptance = _project(tmp_path)
+    monkeypatch.setattr(suite, "_the_report", lambda root: None)
+    suite.lock(tmp_path)  # as before the report was left out
+    monkeypatch.undo()
+
+    (acceptance / "junit.xml").write_text("<testsuites tests='1' failures='0'/>")
+
+    assert suite.restore(tmp_path) == []
+    assert "failures='0'" in (acceptance / "junit.xml").read_text()

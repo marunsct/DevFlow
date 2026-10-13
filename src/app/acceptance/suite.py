@@ -330,10 +330,12 @@ def restore(repo_root: str | Path) -> list[str]:
     root = Path(repo_root)
     snapshot = root / SNAPSHOT_DIR
     repairs: list[str] = []
+    # A suite locked before its report was left out of it still lists it.
+    report = _the_report(repo_root)
     for relative, wanted in checksums.items():
         target = root / relative
         source = snapshot / relative
-        if target.is_file() and _digest(target) == wanted:
+        if target == report or (target.is_file() and _digest(target) == wanted):
             continue
         if not source.is_file():
             continue

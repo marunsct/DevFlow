@@ -98,3 +98,19 @@ def test_what_it_is_asked_fits_any_product() -> None:
     outside = re.sub(r"`[^`]*`", "", text).lower()
     for word in BANNED:
         assert not re.search(rf"\b{word}\b", outside), word
+
+
+def test_a_report_its_test_commands_wrote_is_not_judged() -> None:
+    """Measured on one run: a test round reporting the JUnit files its test
+    commands wrote, at paths their configuration names, was asked what it had done."""
+    ran = {"messages": [
+        _call("run_terminal_command", "1", command=["npm", "run", "unit"], working_directory="notes-api"),
+        _result("1", {"returncode": "0"}),
+    ]}
+
+    assert _files_it_claims_but_never_wrote(ran, _answer("notes-api/reports/unit.xml", "coverage/lcov.info")) == []
+    assert _files_it_claims_but_never_wrote(ran, _answer("notes-api/src/store.ts")) == ["notes-api/src/store.ts"]
+
+
+def test_without_a_command_a_report_is_judged_like_any_file() -> None:
+    assert _files_it_claims_but_never_wrote({"messages": []}, _answer("notes-api/reports/unit.xml")) == ["notes-api/reports/unit.xml"]

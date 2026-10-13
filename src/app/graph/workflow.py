@@ -2155,6 +2155,19 @@ def _without_a_leading_dot_slash(path: str) -> str:
     return plain.lstrip("/")
 
 
+#: What a test runner or build writes where its own configuration says, so a
+#: command that never names it may still have written it.
+_RUNNER_OUTPUT = re.compile(
+    r"\.(?:xml|log|lcov|tap|tsbuildinfo)$|(?:^|/)(?:reports?|coverage|test-results|junit|logs?)/",
+    re.I,
+)
+
+
+def _a_runner_writes(path: str) -> bool:
+    """Whether `path` is the kind of file a runner writes: a report, a log, coverage."""
+    return bool(_RUNNER_OUTPUT.search(path))
+
+
 def _files_it_claims_but_never_wrote(result: Mapping[str, Any], answer: Any) -> list[str]:
     """The files an answer's `changed_files` names that nothing in its conversation wrote.
 
@@ -2166,7 +2179,10 @@ def _files_it_claims_but_never_wrote(result: Mapping[str, Any], answer: Any) -> 
     record said the work order was delivered.
 
     A file a terminal command names may have been changed by it, and is not
-    judged.
+    judged; nor, once the stage ran a command, is a report, log or coverage
+    file - a runner writes those where its configuration says. Measured on one
+    run: a test round reporting the JUnit files its test commands wrote was
+    asked what it had done.
     """
     claimed = [str(name).strip() for name in (getattr(answer, "changed_files", None) or ()) if str(name).strip()]
     if not claimed:
@@ -2193,6 +2209,8 @@ def _files_it_claims_but_never_wrote(result: Mapping[str, Any], answer: Any) -> 
     def _was_written(name: str) -> bool:
         plain = _without_a_leading_dot_slash(name)
         if any(plain == path or plain.endswith("/" + path) or path.endswith("/" + plain) for path in written):
+            return True
+        if commands and _a_runner_writes(plain):
             return True
         return any(plain.rsplit("/", 1)[-1] in command for command in commands)
 

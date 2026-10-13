@@ -2,10 +2,10 @@
 # One entry point for the harness improvement loop. See docs/monitoring-handover.md
 # section 0 for the loop itself; this script is only the mechanics.
 #
-#   scripts/loop/loop.sh status              state of the current run + anything else running
+#   scripts/loop/loop.sh status [run]        state of the run (default: current) + anything else running
 #   scripts/loop/loop.sh start [brief]       create and start a run (default tests/brief_low.md)
 #   scripts/loop/loop.sh cancel [run-id]     cancel a run (default: the current one); needs LOOP_USER/LOOP_PASSWORD
-#   scripts/loop/loop.sh wait [minutes]      block until the run ends or N minutes pass (default 18),
+#   scripts/loop/loop.sh wait [minutes] [run] block until the run (default: current) ends or N minutes pass (default 18),
 #                                            then print status, key log lines and the audit
 #   scripts/loop/loop.sh audit [run-id]      failure / redundancy audit of a run (audit_live.py)
 #   scripts/loop/loop.sh stage <stage> [HH:MM]  trace one stage (stage_trace.py; HH:MM is UTC)
@@ -70,7 +70,7 @@ jst() { TZ=Asia/Tokyo date "$@"; }
 
 case "${1:-status}" in
 status)
-  run=$(current)
+  run="${2:-$(current)}"
   echo "current run: $run"
   "${DB[@]}" "select status, left(coalesce(error,''),300), updated_at from runs where run_id='$run'"
   echo "live runs:"
@@ -147,7 +147,7 @@ cancel)
   ;;
 wait)
   minutes="${2:-18}"
-  run=$(current)
+  run="${3:-$(current)}"
   echo "waiting on $run; next report by $(jst -d "+$minutes minutes" +%H:%M) JST"
   end=$(( $(date +%s) + minutes * 60 ))
   status=""

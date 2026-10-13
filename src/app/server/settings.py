@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 from app.agents.thinking import thinking_budget_tokens
 
@@ -91,6 +91,10 @@ class SettingsView(BaseModel):
     #: before the judgement model takes over, and whether it also plans.
     escalate_after_attempts: int = 2
     plan_on_judgement_model: bool = True
+    #: Whether the build model's endpoint, and the judgement model's, have a
+    #: key of their own saved (`runtime_settings.endpoint_keys`).
+    endpoint_key_saved: bool = False
+    judgement_endpoint_key_saved: bool = False
 
 
 class SettingsUpdate(BaseModel):
@@ -300,6 +304,17 @@ def _judgement_view() -> dict[str, Any]:
         "judgement_api_key_configured": bool(key),
         "escalate_after_attempts": escalate_after(environment),
         "plan_on_judgement_model": plans_on_the_judgement_model(environment),
+        **_endpoints_with_keys(environment),
+    }
+
+
+def _endpoints_with_keys(environment: Mapping[str, str]) -> dict[str, bool]:
+    keys = runtime_settings.endpoint_keys()
+    provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
+    return {
+        "endpoint_key_saved": runtime_settings.endpoint_id(provider, str(environment.get("OPENAI_BASE_URL") or "")) in keys,
+        "judgement_endpoint_key_saved": bool(str(environment.get("JUDGEMENT_MODEL") or "").strip())
+        and runtime_settings.endpoint_id(*runtime_settings.judgement_endpoint(environment)) in keys,
     }
 
 
@@ -419,6 +434,20 @@ async def update_settings(
     changed_credentials = runtime_settings.save_secrets(
         {k: v for k, v in submitted.items() if v is not None}, actor=user.username
     )
+    # And as the key of the endpoint each was typed for, so every endpoint keeps
+    # its own: switching models no longer sends one server's key to another.
+    provider = (payload.llm_provider or "local").strip().lower()
+    typed = {"anthropic": payload.anthropic_api_key, "gemini": payload.google_api_key,
+             "google": payload.google_api_key}.get(provider, payload.openai_api_key)
+    if typed is not None:
+        runtime_settings.save_endpoint_key(provider, payload.openai_base_url, typed, actor=user.username)
+    if payload.judgement_api_key is not None and payload.judgement_model_name.strip():
+        runtime_settings.save_endpoint_key(*runtime_settings.judgement_endpoint({
+            "LLM_PROVIDER": provider,
+            "OPENAI_BASE_URL": payload.openai_base_url,
+            "JUDGEMENT_PROVIDER": payload.judgement_provider,
+            "JUDGEMENT_BASE_URL": payload.judgement_base_url,
+        }), payload.judgement_api_key, actor=user.username)
 
     record_audit(
         actor=user.username,
@@ -445,8 +474,9 @@ async def update_settings(
 class ModelProfile(BaseModel):
     """A model configuration saved earlier, ready to fill the form again.
 
-    Never a credential: those stay write-only and are shared by every profile
-    for the same provider.
+    Never a credential: those stay write-only. Each endpoint keeps the key last
+    saved for it (`runtime_settings.endpoint_keys`), so picking a profile picks
+    its key too.
     """
 
     id: str

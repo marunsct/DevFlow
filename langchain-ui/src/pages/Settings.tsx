@@ -196,6 +196,18 @@ export const Settings: React.FC = () => {
     }
   };
 
+  // The one key box for the build model: the credential its provider reads.
+  const buildProvider = (settings?.llm_provider ?? 'local').toLowerCase();
+  const buildKeyField: CredentialField =
+    buildProvider === 'anthropic' ? 'anthropic_api_key'
+      : buildProvider === 'gemini' || buildProvider === 'google' ? 'google_api_key'
+        : 'openai_api_key';
+  const buildKeyLabel =
+    buildKeyField === 'anthropic_api_key' ? 'Anthropic key'
+      : buildKeyField === 'google_api_key' ? 'Google key' : 'API key';
+  const buildKeyConfigured = Boolean(settings?.[`${buildKeyField}_configured` as keyof typeof settings]);
+  const buildKeyHint = (settings?.[`${buildKeyField}_hint` as keyof typeof settings] as string | null | undefined) ?? null;
+
   return (
     <div className="max-w-3xl mx-auto mt-4 space-y-6 animate-fade-in pb-12">
       <div>
@@ -499,38 +511,24 @@ export const Settings: React.FC = () => {
                 />
               </div>
 
-              {/* Write-only. The server never returns a key, so these start
-                  empty and only what is typed gets sent. */}
+              {/* Write-only. The server never returns a key, so this starts empty
+                  and only what is typed gets sent. Each endpoint keeps its own. */}
               <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
-                <p className="text-xs font-medium text-text-secondary mb-3 uppercase tracking-wider">API credentials</p>
-                <div className="space-y-3">
-                  <CredentialField
-                    label="OpenAI"
-                    field="openai_api_key"
-                    configured={settings.openai_api_key_configured}
-                    hint={settings.openai_api_key_hint}
-                    placeholder="sk-..."
-                  />
-                  <CredentialField
-                    label="Anthropic"
-                    field="anthropic_api_key"
-                    configured={settings.anthropic_api_key_configured}
-                    hint={settings.anthropic_api_key_hint}
-                    placeholder="sk-ant-..."
-                  />
-                  <CredentialField
-                    label="Google"
-                    field="google_api_key"
-                    configured={settings.google_api_key_configured}
-                    hint={settings.google_api_key_hint}
-                    placeholder="AIza..."
-                  />
-                </div>
-                <p className="text-xs text-text-muted mt-3">
-                  Stored encrypted and never shown again. Leave a box blank to keep the
-                  stored key; type a single space to remove it and fall back to the
-                  deployment&rsquo;s own configuration.
+                <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">API key for this endpoint</p>
+                <p className="text-xs text-text-muted mb-3 leading-relaxed">
+                  Kept for the provider and address above: each endpoint remembers its own key, so
+                  switching to a saved model uses the key saved with it.{' '}
+                  {settings.endpoint_key_saved
+                    ? 'This endpoint has a key saved.'
+                    : 'No key is saved for this endpoint yet.'}
                 </p>
+                <CredentialField
+                  label={buildKeyLabel}
+                  field={buildKeyField}
+                  configured={buildKeyConfigured}
+                  hint={buildKeyHint}
+                  placeholder="leave empty to keep the saved key"
+                />
               </div>
 
               {/* The planning and judgement model. Empty name: every stage uses the model above. */}
@@ -595,12 +593,17 @@ export const Settings: React.FC = () => {
                 </div>
                 <div className="mt-3">
                   <CredentialField
-                    label="Judgement model key"
+                    label="API key for this model's endpoint"
                     field="judgement_api_key"
                     configured={settings.judgement_api_key_configured ?? false}
                     hint={settings.judgement_api_key_hint ?? null}
-                    placeholder="empty: the key above for its provider"
+                    placeholder="leave empty to keep the saved key"
                   />
+                  <p className="text-xs text-text-muted mt-1">
+                    {settings.judgement_endpoint_key_saved
+                      ? 'This endpoint has a key saved.'
+                      : 'No key is saved for this endpoint yet: the key above is used if the endpoint is the same.'}
+                  </p>
                 </div>
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>

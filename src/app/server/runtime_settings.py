@@ -388,8 +388,89 @@ def reset_cache() -> None:
         _secret_cache_expires_at = 0.0
 
 
+#: Where each provider reads its credential from.
+_KEY_VARIABLE = {"anthropic": "ANTHROPIC_API_KEY", "gemini": "GOOGLE_API_KEY", "google": "GOOGLE_API_KEY"}
+
+#: A stored credential that belongs to one endpoint rather than to a provider.
+ENDPOINT_KEY_PREFIX = "endpoint:"
+
+
+def endpoint_id(provider: str, base_url: str) -> str:
+    """The identity of an endpoint: a provider at an address ("" is the provider's own)."""
+    import hashlib
+
+    normal = f"{str(provider or 'local').strip().lower()}|{str(base_url or '').strip().lower().rstrip('/')}"
+    return ENDPOINT_KEY_PREFIX + hashlib.sha256(normal.encode("utf-8")).hexdigest()[:24]
+
+
+def endpoint_keys() -> dict[str, str]:
+    """Every endpoint's own stored key, by `endpoint_id`. Never raises.
+
+    A key used to belong to a provider: one OpenAI-compatible key for every
+    OpenAI-compatible server. Measured on one run's model change: the local
+    server, a hosted preview API and a cloud API were all "OpenAI-compatible",
+    and switching to the cloud API kept sending the preview API's key - every
+    call refused with 401. Each endpoint now keeps its own.
+    """
+    try:
+        from app.server.auth import get_db_connection
+
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
+                cur.execute("SELECT key, ciphertext FROM runtime_secrets WHERE key LIKE %s", (ENDPOINT_KEY_PREFIX + "%",))
+                rows = cur.fetchall()
+            conn.commit()
+    except Exception:  # noqa: BLE001 - the provider's key still applies
+        logger.debug("Could not read the endpoints' keys", exc_info=True)
+        return {}
+    box = _fernet()
+    found: dict[str, str] = {}
+    for key, ciphertext in rows:
+        try:
+            found[key] = box.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        except InvalidToken:
+            logger.error("A stored endpoint key cannot be decrypted; re-enter it in Settings.")
+    return found
+
+
+def save_endpoint_key(provider: str, base_url: str, value: str, *, actor: str = "unknown") -> None:
+    """Store `value` as this endpoint's own key, encrypted; an empty value removes it."""
+    from app.server.auth import get_db_connection
+
+    identity = endpoint_id(provider, base_url)
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            ensure_table(cur, "runtime_secrets", SECRETS_TABLE_SQL)
+            if not value:
+                cur.execute("DELETE FROM runtime_secrets WHERE key = %s", (identity,))
+            else:
+                cur.execute(
+                    """
+                    INSERT INTO runtime_secrets (key, ciphertext, updated_at, updated_by)
+                    VALUES (%s, %s, NOW(), %s)
+                    ON CONFLICT (key) DO UPDATE
+                       SET ciphertext = EXCLUDED.ciphertext,
+                           updated_at = EXCLUDED.updated_at,
+                           updated_by = EXCLUDED.updated_by
+                    """,
+                    (identity, _fernet().encrypt(value.encode("utf-8")).decode("utf-8"), actor),
+                )
+        conn.commit()
+
+
+def judgement_endpoint(environment: Mapping[str, str]) -> tuple[str, str]:
+    """(provider, address) the judgement model is served from, as `app.models.roles` builds it."""
+    default_provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
+    provider = str(environment.get("JUDGEMENT_PROVIDER") or "").strip().lower() or default_provider
+    base = str(environment.get("JUDGEMENT_BASE_URL") or "").strip()
+    if not base and provider == default_provider:
+        base = str(environment.get("OPENAI_BASE_URL") or "")
+    return provider, base
+
+
 def effective_environment(base: Mapping[str, str] | None = None) -> dict[str, str]:
-    """The environment with stored overrides layered on top."""
+    """The environment with stored overrides layered on top, each endpoint with its own key."""
     environment = dict(base if base is not None else os.environ)
     for key, value in overrides().items():
         if value:
@@ -397,6 +478,16 @@ def effective_environment(base: Mapping[str, str] | None = None) -> dict[str, st
     for key, value in secrets().items():
         if value:
             environment[SETTABLE_SECRETS[key]] = value
+    keys = endpoint_keys()
+    if keys:
+        provider = str(environment.get("LLM_PROVIDER") or "local").strip().lower()
+        own = keys.get(endpoint_id(provider, str(environment.get("OPENAI_BASE_URL") or "")))
+        if own:
+            environment[_KEY_VARIABLE.get(provider, "OPENAI_API_KEY")] = own
+        if str(environment.get("JUDGEMENT_MODEL") or "").strip():
+            judge = keys.get(endpoint_id(*judgement_endpoint(environment)))
+            if judge:
+                environment["JUDGEMENT_API_KEY"] = judge
     return environment
 
 
@@ -422,6 +513,10 @@ __all__ = [
     "clear_secrets",
     "effective_environment",
     "effective_settings",
+    "endpoint_id",
+    "endpoint_keys",
+    "judgement_endpoint",
+    "save_endpoint_key",
     "overrides",
     "reset_cache",
     "save",

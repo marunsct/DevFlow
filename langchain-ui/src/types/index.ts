@@ -222,6 +222,9 @@ export interface SettingsView {
   // takes over, and whether the judgement model also plans.
   escalate_after_attempts?: number;
   plan_on_judgement_model?: boolean;
+  // Whether each model's endpoint has its own key saved.
+  endpoint_key_saved?: boolean;
+  judgement_endpoint_key_saved?: boolean;
 }
 
 /** A model configuration saved when it was applied, so it can be picked again.

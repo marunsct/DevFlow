@@ -411,7 +411,7 @@ def product_kind(stack: Any, text: str = "") -> str:
 #: Words in a framework field that name no framework: languages, runtimes,
 #: versions and filler.
 _NOT_A_FRAMEWORK = re.compile(
-    r"(?:javascript|typescript|js|ts|node|node\.?js|nodejs|ecmascript|es\d*|esm|commonjs|"
+    r"(?:javascript|typescript|js|ts|node|node\.?js|nodejs|ecmascript|es\d*\+?|esm|commonjs|"
     r"html5?|css3?|python3?|cpython|go|golang|java|jdk|jvm|kotlin|c#|csharp|\.net|dotnet|rust|"
     r"ruby|php|v?\d+(?:\.\d+)*(?:\+|\.x)?|lts|latest|"
     r"none|n/a|na|no|vanilla|plain|native|pure|standard|library|stdlib|std|built-in|builtin|core|"
@@ -431,8 +431,21 @@ def _framework_fits(pack: StackPack, stack: Any) -> bool:
     ]
     if not named:
         return True
+    # A scoped package names its framework by its scope: "@hono/node-server"
+    # is Hono's, and the "node" in it is not the pack's "node".
+    text = re.sub(r"@([a-z0-9._-]+)/[a-z0-9._-]+", r"\1", text)
     words = set(re.findall(r"[a-z0-9.#+-]+", text))
-    if any(word in words or word in text for word in pack.frameworks):
+    # Only a name of the pack's own counts as the stack choosing it. A
+    # runtime or language the pack lists ("node", "http", "go") is shared by
+    # every framework on it: measured on one run, "Hono 4 served by
+    # @hono/node-server" fitted the Express pack because "node" was found
+    # inside it, and the run was set up on Express against a brief that
+    # required Hono.
+    if any(
+        re.search(rf"(?<![a-z0-9-]){re.escape(name)}(?![a-z0-9-])", text)
+        for name in pack.frameworks
+        if not _NOT_A_FRAMEWORK.fullmatch(name)
+    ):
         return True
     # The stack chose the language and nothing on top only when every word
     # left is a language, a runtime or filler ("javascript", "html5",

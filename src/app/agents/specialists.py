@@ -28,6 +28,7 @@ from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
 from app.agents.specialist_roles import role_slug
 from app.agents.technical_lead import SpecialistRole
+from app.tools.package_registry import lookup_tools
 from app.tools.agent_toolkit import (
     build_journal_read_tool,
     build_terminal_command_tool,
@@ -1269,6 +1270,8 @@ def create_specialist_agent(
         # produce the truncation pointer this reads back. The root is passed so a
         # lost pointer can be answered with this run's own entries.
         build_journal_read_tool(resolved_repo_root),
+        # Versions move faster than any model's training: see `app.tools.package_registry`.
+        *lookup_tools(),
     ]
 
     if role == "testing":

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.role_agent import create_role_agent
+from app.tools.package_registry import lookup_tools
 from app.agents.tools_models import TechnologyStack
 from app.state import RepositoryContext
 
@@ -282,6 +283,8 @@ def create_stack_selector_agent(
         # before the repeat guard stopped it. Taking the tool away settles it;
         # arguing with the model in the prompt did not, twice before.
         can_write=False,
+        # Versions move faster than any model's training: see `app.tools.package_registry`.
+        extra_tools=lookup_tools(),
     )
 
 

@@ -27,6 +27,7 @@ from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
+from app.tools.package_registry import lookup_tools
 from app.state import RepositoryContext
 
 logger = logging.getLogger(__name__)
@@ -479,6 +480,8 @@ def create_principal_architect_agent(
         # Its document is rendered from the structured response, so it needs no
         # write tool - see `app.agents.artifact_document`.
         can_write=False,
+        # Versions move faster than any model's training: see `app.tools.package_registry`.
+        extra_tools=lookup_tools(),
     )
 
 

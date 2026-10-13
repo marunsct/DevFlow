@@ -62,7 +62,7 @@ SAME_ANSWER_MARKER = "returned exactly what it returned"
 #: each time with no note, so nothing counted it.
 QUERY_TOOLS = frozenset({
     "ls", "grep", "glob", "read_repository_file", "inspect_repository",
-    "read_command_output", "changed_since_sprint",
+    "read_command_output", "changed_since_sprint", "look_up_package",
 })
 
 #: Mutating tools, watched only for repeated *failures*. A repeated successful

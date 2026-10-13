@@ -18,6 +18,7 @@ from app.tools.agent_toolkit import (
     build_repository_read_tools,
     build_sprint_history_tool,
 )
+from app.tools.package_registry import build_package_lookup_tool
 
 #: Read-only tools with a repeat note of their own.
 HAS_ITS_OWN = {"read_file"}
@@ -28,6 +29,7 @@ def test_every_read_only_tool_is_covered(tmp_path) -> None:
         *build_repository_read_tools(str(tmp_path)),
         build_sprint_history_tool(str(tmp_path)),
         build_journal_read_tool(str(tmp_path)),
+        build_package_lookup_tool(),
     ]
     names = {tool.name for tool in built}
 

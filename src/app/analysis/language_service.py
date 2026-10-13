@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -186,6 +187,19 @@ process.stdin.on('data', d => content += d).on('end', () => {
     }
     return ranges;
   }
+  // A function handed to the page (`page.evaluate(() => init())`) runs in the
+  // page, where the product's own globals live; what it names is the page's.
+  const PAGE_CALLS = new Set(['evaluate', 'evaluateHandle', 'evaluateAll', 'addInitScript',
+    'waitForFunction', '$eval', '$$eval', 'exposeFunction']);
+  function runsInThePage(sf, pos) {
+    for (let n = nodeAt(sf, pos); n; n = n.parent) {
+      if ((ts.isArrowFunction(n) || ts.isFunctionExpression(n)) && n.parent && ts.isCallExpression(n.parent)) {
+        const callee = n.parent.expression;
+        if (ts.isPropertyAccessExpression(callee) && PAGE_CALLS.has(callee.name.text)) return true;
+      }
+    }
+    return false;
+  }
   function keep(d, sf, names) {
     if (d.start == null) return false;
     const member = names && aMethodNoBuiltInHas(d, sf);
@@ -193,6 +207,7 @@ process.stdin.on('data', d => content += d).on('end', () => {
     if (comments(sf).some(([a, b]) => d.start >= a && d.start < b)) return false;
     const before = sf.text.slice(Math.max(0, d.start - 12), d.start);
     if (NAMES.has(d.code) && /typeof\s*\(?\s*$/.test(before)) return false;
+    if (NAMES.has(d.code) && runsInThePage(sf, d.start)) return false;
     if (d.code === 2307 || d.code === 2306) {
       const at = sf.text.slice(d.start, d.start + (d.length || 0));
       if (!/^['"`]\.{1,2}\//.test(at)) return false;
@@ -272,6 +287,20 @@ class Underlined:
         )
 
 
+#: A test that imports its runner's functions: Playwright's and Node's own
+#: runner define no globals, so every name such a file uses is one it defines
+#: or imports. Measured on one run: QA's repair of a locked suite called
+#: `getTask`, which nothing defined, and the suite was locked with a test that
+#: could never pass - names were checked only in the product's code, because a
+#: Jest or Vitest test may use globals its runner supplies.
+_IMPORTS_ITS_RUNNER = re.compile(r"""(?:\bfrom\s+|\brequire\(\s*)['"](?:@playwright/test|node:test)['"]""")
+
+
+def imports_its_runner(content: str) -> bool:
+    """Whether a test file takes its runner's functions by import, so no name comes from a global."""
+    return bool(_IMPORTS_ITS_RUNNER.search(content or ""))
+
+
 def runs_in(repo_root: str | Path) -> str:
     """Where this run's product code runs, from its stack pack; both when unknown."""
     try:
@@ -314,12 +343,16 @@ def underlined(repo_root: str | Path, target: Path, content: str, project: Path 
 
         if owned_by_the_harness(root, relative):
             return Underlined()
-        check_names = classify_file(relative) == "application"
+        kind = classify_file(relative)
+        check_names = kind == "application" or (kind == "test" and imports_its_runner(content))
     except Exception:  # noqa: BLE001
-        check_names = False
+        kind, check_names = "application", False
+    # A test runs in Node and may reach into the page (`page.evaluate`), so it
+    # may use the globals of both; the product's own code those of where it runs.
+    runtime = runs_in(root) if kind == "application" else BOTH
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [node, "-e", _SCRIPT, compiler, str(project), str(target), runs_in(root), "1" if check_names else "0"],
+            [node, "-e", _SCRIPT, compiler, str(project), str(target), runtime, "1" if check_names else "0"],
             input=content, capture_output=True, text=True, timeout=TIMEOUT_SECONDS,
         )
     except Exception:  # noqa: BLE001 - a check that cannot run says nothing

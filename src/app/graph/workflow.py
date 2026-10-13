@@ -372,6 +372,9 @@ _NODE_NAMES = frozenset(
         # edge map contained it and a resume parked on it had no target.
         "specialist_worker",
         "specialist_gather",
+        # Parallel mode's defect fixes: see `_the_next_fix_batch`.
+        "defect_fix_worker",
+        "defect_fix_gather",
         "ci_gate",
         "code_review",
         "test_and_triage",
@@ -576,6 +579,12 @@ class WorkflowGraphState(TypedDict, total=False):
     # How often this run has reopened its locked suite to repair tests that
     # cannot pass. See `acceptance_nodes.reopen_the_suite_for`.
     suite_repairs: int
+    # Parallel mode's defect fixes (`_the_next_fix_batch`): the batch in
+    # flight, by defect index; the fix stages tried this round; and the ones
+    # whose batch was reverted, to be fixed alone.
+    fix_batch: list[int]
+    fixes_tried: list[str]
+    fixes_one_at_a_time: list[str]
     # The tests each repair was for, so a test never sent for repair is not
     # refused for a budget others spent. See `acceptance_nodes.may_repair`.
     suite_repaired_tests: list[str]
@@ -1080,6 +1089,108 @@ def _specialist_stage_name(task: Any, index: int) -> str:
     return f"specialist_{getattr(task, 'specialist_role', 'unknown')}_{index}"
 
 
+def max_parallel() -> int:
+    """How many agents of one run may work at once in parallel mode (`HARNESS_MAX_PARALLEL`, 6).
+
+    A ceiling on every fan-out - work orders, defect fixes, reviews. A local
+    model server that answers one request at a time gains nothing past one; a
+    hosted API that serves requests side by side gains up to its rate limit.
+    """
+    raw = os.environ.get("HARNESS_MAX_PARALLEL", "").strip()
+    try:
+        return max(1, int(raw)) if raw else 6
+    except ValueError:
+        logger.warning("HARNESS_MAX_PARALLEL is not a number: %r; using 6", raw)
+        return 6
+
+
+def _in_parallel_mode() -> bool:
+    """Whether the owner's execution mode is parallel. See `specialist_dispatch_node`."""
+    try:
+        from app.server.runtime_settings import effective_settings
+
+        return effective_settings().execution_mode == "parallel"
+    except Exception:  # noqa: BLE001 - an unreadable store is the deployed configuration
+        from app.config import load_settings
+
+        try:
+            return load_settings().execution_mode == "parallel"
+        except Exception:  # noqa: BLE001
+            return False
+
+
+def _fixes_run_side_by_side() -> bool:
+    """Whether defects are fixed in batches: parallel mode, with more than one agent allowed."""
+    return max_parallel() > 1 and _in_parallel_mode()
+
+
+def _fix_batch_pending(state: Any) -> list[int]:
+    """The defects of the batch in flight whose fixer has not produced an output yet."""
+    outputs = state.get("specialist_outputs") or {}
+    round_ = state.get("test_round", 0)
+    return [index for index in (state.get("fix_batch") or []) if f"defect_fix_{round_}_{index}" not in outputs]
+
+
+def _with_tried(state: Any, update: dict[str, Any], stage_name: str) -> dict[str, Any]:
+    """`update`, with the defect's fix stage recorded as tried in this round."""
+    tried = list(dict.fromkeys([*(state.get("fixes_tried") or []), stage_name]))
+    alone = [name for name in (state.get("fixes_one_at_a_time") or []) if name != stage_name]
+    return {**update, "fixes_tried": tried, "fixes_one_at_a_time": alone}
+
+
+def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a_batch: bool = False) -> Any:
+    """The cycle with each defect's actual behaviour noting the revert.
+
+    One fix reverted alone is noted in the words `_REVERTED_FOR` reads - two of
+    those against one locked test call for a dispute. A batch reverted whole is
+    noted otherwise: which of its fixes broke the test is not known, and each is
+    fixed alone next.
+    """
+    note = (
+        "A batch of fixes including this one was reverted, because together they broke what "
+        f"passed before them: {'; '.join(broke[:5])}. It is fixed on its own next."
+        if in_a_batch
+        else f"A fix was tried and reverted, because it broke what passed before it: {'; '.join(broke[:5])}."
+    )
+    return cycle.model_copy(update={"defects": [
+        item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}"})
+        if position in indices else item
+        for position, item in enumerate(cycle.defects)
+    ]})
+
+
+def _defects_to_fix_together(cycle: Any, candidates: list[int]) -> list[int]:
+    """As many of `candidates` as can be fixed at once: files apart, bundles apart, at most `max_parallel()`.
+
+    A defect's files are the ones it names and the ones its bundled related
+    failures name, since its fixer is shown those too. Staggered exactly as
+    work orders are (`_that_do_not_share_a_file`): defects naming no file may
+    touch any, so at most one of them goes with the rest.
+    """
+    from types import SimpleNamespace
+
+    as_tasks = []
+    bundles: dict[int, set[int]] = {}
+    for index in candidates:
+        defect = cycle.defects[index]
+        co = _bundle_co_defects(cycle, index)
+        bundles[index] = {index, *(position for position, _ in co)}
+        files = [*(defect.affected_files or []), *(f for _, d in co for f in (d.affected_files or []))]
+        as_tasks.append((index, SimpleNamespace(
+            files=files, task_description=str(defect.description or ""), acceptance_criteria=[],
+        )))
+    chosen: list[int] = []
+    claimed: set[int] = set()
+    for index, _ in _that_do_not_share_a_file(as_tasks):
+        if bundles[index] & claimed:
+            continue
+        chosen.append(index)
+        claimed |= bundles[index]
+        if len(chosen) >= max_parallel():
+            break
+    return chosen or candidates[:1]
+
+
 def _route_from_stage(state: WorkflowGraphState) -> str:
     """Shared conditional-edge router used after every gated node.
 
@@ -1133,10 +1244,21 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         going = _that_do_not_share_a_file(
             pending, already_going=must_go, manifests_present=_manifests_the_project_has(state)
         )
+        # At most `max_parallel()` at once, and never fewer than the paused
+        # workers that must be re-sent to receive their decisions.
+        going = going[: max(max_parallel(), len(must_go))]
         return [
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
             for index, task in going
         ]
+
+    if stage == "defect_fix_parallel":
+        # Every fixer of the batch still without an output: each was sent once
+        # the batch was chosen, so these are the ones paused for a decision.
+        pending = _fix_batch_pending(state)
+        if not pending:
+            return "defect_fix_gather"
+        return [Send("defect_fix_worker", {**state, "__fix_index": index}) for index in pending]
 
     return stage
 
@@ -7752,44 +7874,9 @@ def build_workflow_graph(
             sprint_replan_count=revision_count,
         )
 
-    def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        """Route one open defect to the specialist who owns it, then re-test.
-
-        This is steps 4, 5 and 6 of the plan's loop. Defects are handled one at
-        a time, `defect_cursor` marking progress, so a pause for approval midway
-        resumes on the same defect instead of restarting the whole round.
-
-        A fix is only recorded as fixed when the specialist names a regression
-        test (`mark_defect_fixed` enforces this). A fix with no named test
-        leaves the defect open, which costs a remediation attempt on the next
-        test round rather than silently closing an unverified fix.
-        """
-        cycle = state["remediation"]
-        cursor = state.get("defect_cursor", 0)
-
-        # Scan forward by absolute index rather than indexing into a list of
-        # open defects: marking one fixed changes which defects are open, so a
-        # position in that list would shift under us and skip a defect.
-        defect_index = cursor
-        while defect_index < len(cycle.defects) and cycle.defects[defect_index].status != "open":
-            defect_index += 1
-
-        if defect_index >= len(cycle.defects):
-            # Every defect has been worked this round; go back and re-run tests.
-            return {"stage": "test_and_triage", "defect_cursor": 0}
-
+    def _the_fix_request(state: Any, config: RunnableConfig, cycle: Any, defect_index: int) -> tuple[dict[str, Any], list[tuple[int, Any]]]:
+        """What one defect's fixer is asked, and the related failures bundled with it."""
         defect = cycle.defects[defect_index]
-        stage_name = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
-
-        # Fixed already, by an earlier fix in this round: nothing for a fixer
-        # to do, and a fixer told to fix what works finds other work.
-        closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, defect_index)
-        if closed is not None:
-            return closed
-
-        agent = create_specialist_agent(
-            defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
-        )
         from app.acceptance.junit import tags_in
 
         request = build_defect_fix_request(
@@ -7824,80 +7911,20 @@ def build_workflow_graph(
                 batch_lines.append(f"  Expected: {co_d.expected_behavior}")
                 batch_lines.append(f"  Actual: {co_d.actual_behavior}")
             request["messages"][-1]["content"] += "\n".join(batch_lines) + "\n"
-        # A fix that breaks what passed before it is reverted to exactly where
-        # it started. The commit it starts from is taken on the stage's first
-        # entry and carried across an approval pause. See `app.graph.engineering`.
-        from app.graph import engineering
+        return request, co_defects
 
-        fix_base = (
-            str(state.get("fix_base_commit") or "")
-            if state.get("pending_inner_thread_id")
-            else engineering.before_a_fix(state["repository"].root_path, stage_name)
-        )
-        update = _run_gated_agent(
-            state,
-            config,
-            stage_name=stage_name,
-            agent=agent,
-            initial_request=request,
-            output_key="__fix_result__",
-            next_stage="defect_remediation",
-        )
-        if "__fix_result__" not in update:
-            update["fix_base_commit"] = fix_base
-            return update  # paused waiting for approval on this fix
+    def _settle_the_fix(
+        state: Any, cycle: Any, defect_index: int, stage_name: str, fix_result: Any,
+    ) -> tuple[dict[str, Any], bool]:
+        """What one fix that broke nothing settles: (the update, whether it blames a locked test).
 
-        fix_result: SpecialistOutput = update.pop("__fix_result__")
-        broke = engineering.after_a_fix(
-            state["repository"].root_path, fix_base, stage_name, defect.description
-        )
+        The update carries `remediation` - the defect fixed, or left open with
+        the reason in the ledger - and the fix's output.
+        """
         from app.observability import defect_ledger
 
-        _note_the_bundled(
-            co_defects, defect_index=defect_index, stage_name=stage_name,
-            round_=state.get("test_round", 0), sprint=state.get("current_sprint_index", 0),
-        )
-        if broke:
-            defect_ledger.note(
-                "reverted", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
-                sprint=state.get("current_sprint_index", 0),
-                detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
-            )
-            noted = cycle.model_copy(update={"defects": [
-                item.model_copy(update={
-                    "actual_behavior": (
-                        f"{item.actual_behavior}\nA fix was tried and reverted, because it broke "
-                        f"what passed before it: {'; '.join(broke[:5])}."
-                    )
-                }) if position == defect_index else item
-                for position, item in enumerate(cycle.defects)
-            ]})
-            contested = _a_locked_test_two_fixes_broke(noted)
-            if contested and _a_dispute_may_be_held_now(state):
-                logger.warning(
-                    "Two fixes were reverted for breaking the locked test %s; the QA lead "
-                    "judges the failing locked tests before the round goes on", contested,
-                )
-                return _handing_on(**{
-                    **update,
-                    "remediation": noted,
-                    "defect_cursor": defect_index + 1,
-                    "fix_base_commit": "",
-                    "stage": "acceptance_dispute",
-                    "dispute_returns_to": "test_and_triage",
-                    "dispute_reason": (
-                        f"Fixes for these failures were reverted, twice, because each broke "
-                        f"`{contested}`, which passed before. Two locked tests may ask for "
-                        "opposite things: a test that cannot pass while another one does is "
-                        "one to name."
-                    ),
-                })
-            return _handing_on(**{
-                **update,
-                "remediation": noted,
-                "defect_cursor": defect_index + 1,
-                "fix_base_commit": "",
-            })
+        defect = cycle.defects[defect_index]
+        update: dict[str, Any] = {}
         outputs = dict(state.get("specialist_outputs", {}))
         outputs[stage_name] = fix_result
 
@@ -7955,11 +7982,95 @@ def build_workflow_graph(
             )
 
         still_open = update["remediation"] is cycle
-        if (
-            still_open
-            and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
-            and _a_dispute_may_be_held_now(state)
-        ):
+        blames = still_open and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
+        update["specialist_outputs"] = outputs
+        return update, blames
+
+    def _fix_one(state: Any, config: RunnableConfig, defect_index: int) -> dict[str, Any]:
+        """Route one open defect to its owner, measure the fix, and record what it settled."""
+        cycle = state["remediation"]
+        defect = cycle.defects[defect_index]
+        stage_name = f"defect_fix_{state.get('test_round', 0)}_{defect_index}"
+
+        # Fixed already, by an earlier fix in this round: nothing for a fixer
+        # to do, and a fixer told to fix what works finds other work.
+        closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, defect_index)
+        if closed is not None:
+            return closed
+
+        agent = create_specialist_agent(
+            defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+        )
+        request, co_defects = _the_fix_request(state, config, cycle, defect_index)
+        # A fix that breaks what passed before it is reverted to exactly where
+        # it started. The commit it starts from is taken on the stage's first
+        # entry and carried across an approval pause. See `app.graph.engineering`.
+        from app.graph import engineering
+
+        fix_base = (
+            str(state.get("fix_base_commit") or "")
+            if state.get("pending_inner_thread_id")
+            else engineering.before_a_fix(state["repository"].root_path, stage_name)
+        )
+        update = _run_gated_agent(
+            state,
+            config,
+            stage_name=stage_name,
+            agent=agent,
+            initial_request=request,
+            output_key="__fix_result__",
+            next_stage="defect_remediation",
+        )
+        if "__fix_result__" not in update:
+            update["fix_base_commit"] = fix_base
+            return update  # paused waiting for approval on this fix
+
+        fix_result: SpecialistOutput = update.pop("__fix_result__")
+        broke = engineering.after_a_fix(
+            state["repository"].root_path, fix_base, stage_name, defect.description
+        )
+        from app.observability import defect_ledger
+
+        _note_the_bundled(
+            co_defects, defect_index=defect_index, stage_name=stage_name,
+            round_=state.get("test_round", 0), sprint=state.get("current_sprint_index", 0),
+        )
+        if broke:
+            defect_ledger.note(
+                "reverted", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                sprint=state.get("current_sprint_index", 0),
+                detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
+            )
+            noted = _noted_as_reverted(cycle, [defect_index], broke)
+            contested = _a_locked_test_two_fixes_broke(noted)
+            if contested and _a_dispute_may_be_held_now(state):
+                logger.warning(
+                    "Two fixes were reverted for breaking the locked test %s; the QA lead "
+                    "judges the failing locked tests before the round goes on", contested,
+                )
+                return _handing_on(**{
+                    **update,
+                    "remediation": noted,
+                    "defect_cursor": defect_index + 1,
+                    "fix_base_commit": "",
+                    "stage": "acceptance_dispute",
+                    "dispute_returns_to": "test_and_triage",
+                    "dispute_reason": (
+                        f"Fixes for these failures were reverted, twice, because each broke "
+                        f"`{contested}`, which passed before. Two locked tests may ask for "
+                        "opposite things: a test that cannot pass while another one does is "
+                        "one to name."
+                    ),
+                })
+            return _handing_on(**{
+                **update,
+                "remediation": noted,
+                "defect_cursor": defect_index + 1,
+                "fix_base_commit": "",
+            })
+        settled, blames = _settle_the_fix(state, cycle, defect_index, stage_name, fix_result)
+        update.update(settled)
+        if blames and _a_dispute_may_be_held_now(state):
             # The fix stage left its defect open and says a locked test is
             # what cannot pass - in its blockers, or among its decisions beside
             # a change that did not make it pass. That is the QA lead's to
@@ -7969,16 +8080,195 @@ def build_workflow_graph(
                 "Stage %s left its defect open and blames the locked suite; the QA lead "
                 "judges its failing tests before the round goes on", stage_name,
             )
-            update["specialist_outputs"] = outputs
             update["defect_cursor"] = defect_index + 1
             return _handing_on(**{**update, "stage": "acceptance_dispute", "dispute_returns_to": "test_and_triage"})
-        update["specialist_outputs"] = outputs
         # Advance past this defect whether or not it closed. A defect left open
         # (no regression test named) must not be retried inside this round; the
         # next test round counts it as another failed attempt, keeping the loop
         # bounded by MAX_REMEDIATION_ATTEMPTS.
         update["defect_cursor"] = defect_index + 1
         return update
+
+    def defect_remediation_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        """Route open defects to the specialists who own them, then re-test.
+
+        This is steps 4, 5 and 6 of the plan's loop. In linear mode defects are
+        handled one at a time, `defect_cursor` marking progress, so a pause for
+        approval midway resumes on the same defect instead of restarting the
+        whole round. In parallel mode defects whose files do not meet are fixed
+        side by side, as work orders are built (`_the_next_fix_batch`).
+
+        A fix is only recorded as fixed when the specialist names a regression
+        test (`mark_defect_fixed` enforces this). A fix with no named test
+        leaves the defect open, which costs a remediation attempt on the next
+        test round rather than silently closing an unverified fix.
+        """
+        if _fixes_run_side_by_side():
+            return _the_next_fix_batch(state, config)
+
+        cycle = state["remediation"]
+        cursor = state.get("defect_cursor", 0)
+
+        # Scan forward by absolute index rather than indexing into a list of
+        # open defects: marking one fixed changes which defects are open, so a
+        # position in that list would shift under us and skip a defect.
+        defect_index = cursor
+        while defect_index < len(cycle.defects) and cycle.defects[defect_index].status != "open":
+            defect_index += 1
+
+        if defect_index >= len(cycle.defects):
+            # Every defect has been worked this round; go back and re-run tests.
+            return {"stage": "test_and_triage", "defect_cursor": 0}
+        return _fix_one(state, config, defect_index)
+
+    def _the_next_fix_batch(state: Any, config: RunnableConfig) -> dict[str, Any]:
+        """Parallel mode: the next defects to fix, side by side, or the one to resume or fix alone.
+
+        Sprint 1 of one run spent three hours on eleven fix stages one after
+        another, against a model server that answered several requests at once.
+        Defects whose files do not meet - and whose bundled related failures do
+        not either - are fixed together, at most `max_parallel()`, exactly as
+        work orders are staggered (`_that_do_not_share_a_file`). The workspace
+        is committed once before the batch and measured once after it: a batch
+        that broke what passed before is reverted whole, and its defects are
+        then fixed one at a time in the same round, where a fix that breaks
+        something is told so on its own.
+        """
+        cycle = state["remediation"]
+        if state.get("fix_batch"):
+            # A batch in flight - a resume after one of its fixers paused.
+            return {"stage": "defect_fix_parallel"}
+        paused = _the_stage_that_paused(state)
+        if paused and paused.startswith("defect_fix_"):
+            # A defect being fixed alone paused for approval: it resumes alone.
+            return _with_tried(state, _fix_one(state, config, int(paused.rsplit("_", 1)[1])), paused)
+        tried = set(state.get("fixes_tried") or [])
+        alone = set(state.get("fixes_one_at_a_time") or [])
+
+        def name(index: int) -> str:
+            return f"defect_fix_{state.get('test_round', 0)}_{index}"
+
+        candidates = [
+            index for index, defect in enumerate(cycle.defects)
+            if defect.status == "open" and name(index) not in tried
+        ]
+        if not candidates:
+            return {"stage": "test_and_triage", "defect_cursor": 0, "fixes_tried": [], "fixes_one_at_a_time": []}
+        for index in candidates:
+            closed = _closed_if_an_earlier_fix_resolved_it(state, cycle, index)
+            if closed is not None:
+                return _with_tried(state, closed, name(index))
+        lone = [index for index in candidates if name(index) in alone]
+        if lone:
+            return _with_tried(state, _fix_one(state, config, lone[0]), name(lone[0]))
+        chosen = _defects_to_fix_together(cycle, candidates)
+        if len(chosen) == 1:
+            return _with_tried(state, _fix_one(state, config, chosen[0]), name(chosen[0]))
+        from app.graph import engineering
+
+        base = engineering.before_a_fix(
+            state["repository"].root_path, f"defect_fix_{state.get('test_round', 0)}_batch"
+        )
+        logger.info("Fixing %d defects side by side: %s", len(chosen), ", ".join(map(name, chosen)))
+        return {"stage": "defect_fix_parallel", "fix_batch": chosen, "fix_base_commit": base}
+
+    def defect_fix_worker_node(state: dict, config: RunnableConfig) -> dict[str, Any]:
+        """One defect's fixer, in a batch fixed side by side. See `_the_next_fix_batch`."""
+        index = state["__fix_index"]
+        cycle = state["remediation"]
+        defect = cycle.defects[index]
+        stage_name = f"defect_fix_{state.get('test_round', 0)}_{index}"
+        agent = create_specialist_agent(
+            defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+        )
+        request, _ = _the_fix_request(state, config, cycle, index)
+        temp_state: Any = dict(state)
+        # A worker may only answer its own approval gate: see `specialist_worker_node`.
+        temp_state.update(_only_this_worker_s_pause(state, stage_name))
+        update = _run_gated_agent(
+            temp_state, config, stage_name=stage_name, agent=agent, initial_request=request,
+            output_key="__fix_result__", next_stage="defect_remediation",
+        )
+        answered_in_a_batch = bool((state.get("queued_decisions") or {}).get(stage_name))
+        if "__fix_result__" not in update:
+            # Queued, not returned, for the reason `specialist_worker_node` gives.
+            return {"specialist_pauses": {stage_name: _as_a_queued_pause(
+                state, stage_name, update, answered=answered_in_a_batch
+            )}}
+        finished: dict[str, Any] = {"specialist_outputs": {stage_name: update["__fix_result__"]}}
+        if answered_in_a_batch:
+            finished["specialist_pauses"] = {stage_name: None}
+        return finished
+
+    def defect_fix_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+        """Where a batch of fixes joins: surface a pause, or measure the batch once and settle each fix."""
+        pauses = _queued_pauses(state)
+        if pauses:
+            first = _the_pause_to_surface(pauses)
+            surfaced = {key: value for key, value in pauses[first].items() if key != _QUEUED_AT}
+            return {**surfaced, "specialist_pauses": {first: None}, "queued_decisions": {}}
+        if _fix_batch_pending(state):
+            return {
+                "stage": "defect_fix_parallel",
+                "pending_decision": None,
+                "pending_inner_thread_id": None,
+                "pending_approval": None,
+                "queued_decisions": {},
+            }
+        from app.graph import engineering
+        from app.observability import defect_ledger
+
+        cycle = state["remediation"]
+        batch = list(state.get("fix_batch") or [])
+        round_ = state.get("test_round", 0)
+        names = [f"defect_fix_{round_}_{index}" for index in batch]
+        outputs = state.get("specialist_outputs") or {}
+        broke = engineering.after_a_fix(
+            state["repository"].root_path, str(state.get("fix_base_commit") or ""),
+            f"defect_fix_{round_}_batch",
+            "; ".join(str(cycle.defects[index].description)[:40] for index in batch),
+        )
+        tried = list(dict.fromkeys([*(state.get("fixes_tried") or []), *names]))
+        for index, stage_name in zip(batch, names):
+            _note_the_bundled(
+                _bundle_co_defects(cycle, index), defect_index=index, stage_name=stage_name,
+                round_=round_, sprint=state.get("current_sprint_index", 0),
+            )
+        if broke:
+            for index, stage_name in zip(batch, names):
+                defect_ledger.note(
+                    "reverted", stage_name, defect=cycle.defects[index], round_=round_, index=index,
+                    sprint=state.get("current_sprint_index", 0),
+                    detail=f"its batch broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}; fixed alone next",
+                )
+            logger.warning(
+                "Reverted a batch of %d fixes: it broke %d test(s); fixing them one at a time", len(batch), len(broke),
+            )
+            return _handing_on(
+                stage="defect_remediation",
+                remediation=_noted_as_reverted(cycle, batch, broke, in_a_batch=True),
+                fix_batch=[], fix_base_commit="",
+                fixes_one_at_a_time=sorted({*(state.get("fixes_one_at_a_time") or []), *names}),
+            )
+        settled_cycle = cycle
+        blamed = False
+        update: dict[str, Any] = {}
+        for index, stage_name in zip(batch, names):
+            result = outputs.get(stage_name)
+            if result is None:
+                continue
+            settled, blames = _settle_the_fix(
+                {**state, "specialist_outputs": {**outputs, **update.get("specialist_outputs", {})}},
+                settled_cycle, index, stage_name, result,
+            )
+            settled_cycle = settled["remediation"]
+            update["specialist_outputs"] = settled["specialist_outputs"]
+            blamed = blamed or blames
+        update.update(remediation=settled_cycle, fix_batch=[], fix_base_commit="", fixes_tried=tried)
+        if blamed and _a_dispute_may_be_held_now(state):
+            logger.warning("A fix in the batch blames the locked suite; the QA lead judges its failing tests")
+            return _handing_on(**update, stage="acceptance_dispute", dispute_returns_to="test_and_triage")
+        return _handing_on(**update, stage="defect_remediation")
 
     def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         outputs = state.get("specialist_outputs", {})
@@ -8829,6 +9119,10 @@ def build_workflow_graph(
     graph.add_node("code_review", code_review_node, retry_policy=agent_retry_policy)
     graph.add_node("test_and_triage", test_and_triage_node, retry_policy=agent_retry_policy)
     graph.add_node("defect_remediation", defect_remediation_node, retry_policy=agent_retry_policy)
+    graph.add_node("defect_fix_worker", defect_fix_worker_node, retry_policy=agent_retry_policy)
+    graph.add_node("defect_fix_gather", defect_fix_gather_node)
+    # A static edge, as for `specialist_worker`: one writer of `stage` per batch.
+    graph.add_edge("defect_fix_worker", "defect_fix_gather")
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
     graph.add_node("advice_review", advice_review_node, retry_policy=agent_retry_policy)
     graph.add_node("acceptance_dispute", acceptance_dispute_node, retry_policy=agent_retry_policy)
@@ -8870,6 +9164,7 @@ def build_workflow_graph(
         "code_review",
         "test_and_triage",
         "defect_remediation",
+        "defect_fix_gather",
         "security_review",
         "advice_review",
         "milestone_review",

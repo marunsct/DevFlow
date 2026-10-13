@@ -29,6 +29,7 @@ from app.agents.severity import validator_for as severity_in
 from app.agents.specialist_roles import role_slug
 from app.agents.technical_lead import SpecialistRole
 from app.tools.package_registry import lookup_tools
+from app.tools.page_view import page_view_tools
 from app.tools.runtimes import runtime_tools
 from app.tools.agent_toolkit import (
     build_journal_read_tool,
@@ -1089,12 +1090,31 @@ def build_defect_fix_request(
         f"--- Actual behavior ---\n{actual_behavior}\n\n"
         f"--- Affected files ---\n{files_text}\n\n"
         f"{_observed_output(observed)}"
+        f"{_look_before_changing_the_page(repository_root)}"
         f"{_where_the_product_stands(done_already)}"
         f"{regression_clause}\n\n"
         "Fix only this defect. If you cannot fix it, say why in `blockers` rather than "
         "claiming it is resolved."
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+#: For a fix stage on a product with a page. See `app.tools.page_view`.
+LOOK_BEFORE_CHANGING_THE_PAGE = (
+    "--- See the page before changing it ---\n"
+    "A failing acceptance test names what it looked for; `look_at_page` shows what the "
+    "page has - each element's role and accessible name, the errors it raised, the "
+    "requests that failed. Compare the two before you change anything, and again after.\n\n"
+)
+
+
+def _look_before_changing_the_page(repository_root: str) -> str:
+    try:
+        from app.tools.page_view import available
+
+        return LOOK_BEFORE_CHANGING_THE_PAGE if available(repository_root) else ""
+    except Exception:  # noqa: BLE001 - a brief without it is the brief as it was
+        return ""
 
 
 def _where_the_product_stands(done_already: list[str] | None) -> str:
@@ -1275,6 +1295,8 @@ def create_specialist_agent(
         *lookup_tools(),
         # A runtime version the image lacks, for this project only: see `app.tools.runtimes`.
         *runtime_tools(resolved_repo_root),
+        # The running page as a test sees it, for a product with one: see `app.tools.page_view`.
+        *page_view_tools(resolved_repo_root),
     ]
 
     if role == "testing":

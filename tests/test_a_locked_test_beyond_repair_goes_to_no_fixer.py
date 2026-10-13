@@ -33,8 +33,8 @@ def test_while_the_suite_may_be_repaired_nothing_is_beyond_repair() -> None:
 
 
 def test_once_its_repairs_are_spent_the_tests_criteria_are() -> None:
-    assert nodes.beyond_repair({"suite_repairs": nodes.MAX_SUITE_REPAIRS}, BROKEN) == ["AC-13"]
-    assert nodes.beyond_repair({"suite_repairs": nodes.MAX_SUITE_REPAIRS}, []) == []
+    assert nodes.beyond_repair({"suite_repairs": nodes.MAX_SUITE_REPAIRS_IN_ALL}, BROKEN) == ["AC-13"]
+    assert nodes.beyond_repair({"suite_repairs": nodes.MAX_SUITE_REPAIRS_IN_ALL}, []) == []
 
 
 def test_the_round_is_told_in_words_that_fit_any_product() -> None:

@@ -91,9 +91,9 @@ class TestWhenADisputeMayBeHeld:
         assert not _a_dispute_may_be_held_now(_state(locked, disputed_sprints=["0:0"]))
 
     def test_not_once_the_suite_s_repairs_are_spent(self, locked):
-        from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS
+        from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS_IN_ALL
 
-        assert not _a_dispute_may_be_held_now(_state(locked, suite_repairs=MAX_SUITE_REPAIRS))
+        assert not _a_dispute_may_be_held_now(_state(locked, suite_repairs=MAX_SUITE_REPAIRS_IN_ALL))
 
     def test_not_without_a_failing_locked_test(self, locked, monkeypatch):
         monkeypatch.setattr("app.graph.workflow._the_locked_tests_still_failing", lambda state: [])

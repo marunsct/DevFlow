@@ -322,7 +322,7 @@ def test_a_locked_test_that_cannot_pass_sends_the_suite_back_to_qa_once_built(tm
     assert update["stage"] == "acceptance_author" and update["acceptance_return_to"] == "test_and_triage"
     assert update["acceptance_feedback"][-1] == nodes.REPAIR_RULE and update["suite_repairs"] == 1
     assert update["decisions"][0]["affects"] == ["AC-2"]
-    spent = _state(tmp_path, suite_repairs=nodes.MAX_SUITE_REPAIRS)
+    spent = _state(tmp_path, suite_repairs=nodes.MAX_SUITE_REPAIRS_IN_ALL)
     assert nodes.reopen_the_suite_for(spent, cannot_pass) is None
     assert nodes.reopen_the_suite_for(state, []) is None
 

@@ -94,7 +94,7 @@ class TestWhenADisputeIsDue:
         again["sprint_attempts"] = [*again["sprint_attempts"], {"sprint_index": 4, "status": "Failed"}]
         assert workflow._a_dispute_is_due(again)
         assert not workflow._a_dispute_is_due(
-            self._state(tmp_path, suite_repairs=acceptance_nodes.MAX_SUITE_REPAIRS)
+            self._state(tmp_path, suite_repairs=acceptance_nodes.MAX_SUITE_REPAIRS_IN_ALL)
         )
 
     def test_not_on_a_first_attempt_nor_when_nothing_fails(self, tmp_path, monkeypatch) -> None:

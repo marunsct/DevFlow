@@ -822,6 +822,7 @@ def test_a_defect_only_about_a_locked_test_beyond_repair_goes_to_no_fixer(
     broken = "`acceptance/a.spec.js` line 9: `[AC-1] books` looks for `second`, a value the test made itself"
     monkeypatch.setattr(acceptance_nodes, "acceptance_for_round", lambda state: ("", [broken]))
     monkeypatch.setattr(acceptance_nodes, "MAX_SUITE_REPAIRS", 0)
+    monkeypatch.setattr(acceptance_nodes, "MAX_SUITE_REPAIRS_IN_ALL", 0)
     _script_through_architecture(agents, _approved_review())
     _script_through_sprint(agents)
     unfixable = _defect(owner="testing", description="AC-1 locked test looks for a value it never entered")

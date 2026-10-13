@@ -15,6 +15,7 @@ criteria every sprint can be measured by.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -826,6 +827,38 @@ def acceptance_text_for(state: Any) -> str:
 #: is the problem, and the escalation ladder decides.
 MAX_SUITE_REPAIRS = 2
 
+#: The most repairs in all, counting the ones a test never sent for repair
+#: before earns past `MAX_SUITE_REPAIRS`. The budget is there to stop a QA
+#: stage that cannot fix the same tests going round; it is not a reason to
+#: build against a test nobody was ever asked to fix. Measured on one run: both
+#: repairs went on tests a harness check had wrongly named (since fixed), and
+#: when two login tests then called `.json()` on a plain object - a TypeError
+#: no product can pass - the suite could not be reopened, and two fix stages in
+#: turn answered "a bug in the locked test".
+MAX_SUITE_REPAIRS_IN_ALL = 4
+
+
+def _which_test(item: str) -> str:
+    """The test a "cannot pass" finding is about: its first `quoted` name, else the finding."""
+    found = re.search(r"`([^`]+)`", str(item))
+    return (found.group(1) if found else str(item)).strip()[:300]
+
+
+def may_repair(state: Any, broken: list[str]) -> bool:
+    """Whether the suite may be reopened for `broken`: within the budget, or a test never sent before.
+
+    Every caller asks this one question - the round, the dispute, the
+    beyond-repair note - so they cannot disagree about whether a repair is due.
+    """
+    repairs = int(state.get("suite_repairs") or 0)
+    if not broken:
+        return repairs < MAX_SUITE_REPAIRS
+    if repairs < MAX_SUITE_REPAIRS:
+        return True
+    sent = set(state.get("suite_repaired_tests") or [])
+    fresh = {_which_test(item) for item in broken} - sent
+    return bool(fresh) and repairs < MAX_SUITE_REPAIRS_IN_ALL
+
 #: What QA is held to when it repairs a locked suite.
 REPAIR_RULE = (
     "Change only the tests named above, and only as far as their own code is wrong. "
@@ -876,7 +909,7 @@ def reopen_the_suite_for(
     from app.graph.workflow import _handing_on
 
     repairs = int(state.get("suite_repairs") or 0)
-    if not broken or repairs >= MAX_SUITE_REPAIRS:
+    if not broken or not may_repair(state, broken):
         return None
     update: dict[str, Any] = {}
     _decide(
@@ -895,6 +928,7 @@ def reopen_the_suite_for(
         acceptance_round=0,
         acceptance_feedback=[*broken, REPAIR_RULE],
         suite_repairs=repairs + 1,
+        suite_repaired_tests=sorted({*(state.get("suite_repaired_tests") or []), *map(_which_test, broken)}),
     )
 
 
@@ -909,7 +943,7 @@ def beyond_repair(state: Any, broken: list[str]) -> list[str]:
     """
     from app.acceptance.junit import tags_in
 
-    if not broken or int(state.get("suite_repairs") or 0) < MAX_SUITE_REPAIRS:
+    if not broken or may_repair(state, broken):
         return []
     return sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")})
 

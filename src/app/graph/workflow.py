@@ -575,6 +575,9 @@ class WorkflowGraphState(TypedDict, total=False):
     # How often this run has reopened its locked suite to repair tests that
     # cannot pass. See `acceptance_nodes.reopen_the_suite_for`.
     suite_repairs: int
+    # The tests each repair was for, so a test never sent for repair is not
+    # refused for a budget others spent. See `acceptance_nodes.may_repair`.
+    suite_repaired_tests: list[str]
     release_attempts: int
     # The last rung: a stuck sprint's decision. See `app.graph.escalation`.
     escalation: dict[str, Any] | None
@@ -5560,7 +5563,7 @@ def _this_attempt(state: Any) -> str:
 
 def _a_dispute_is_due(state: Any) -> bool:
     """Whether this re-plan of a failed attempt should first have its failing locked tests judged."""
-    from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS
+    from app.graph.acceptance_nodes import may_repair
 
     if _the_last_failed_attempt_at_this_sprint(state) is None:
         return False
@@ -5568,9 +5571,8 @@ def _a_dispute_is_due(state: Any) -> bool:
         return False
     if _this_attempt(state) in (state.get("disputed_sprints") or []):
         return False
-    if int(state.get("suite_repairs") or 0) >= MAX_SUITE_REPAIRS:
-        return False
-    return bool(_the_locked_tests_still_failing(state))
+    failing = _the_locked_tests_still_failing(state)
+    return bool(failing) and may_repair(state, [f"`{name}`" for name, _, _ in failing])
 
 
 def _blames_a_locked_test(state: Any, blockers: list[str]) -> bool:
@@ -5599,13 +5601,12 @@ def _a_dispute_may_be_held_now(state: Any) -> bool:
     which cost the attempt's remaining rounds first. Once per attempt, as at a
     re-plan, and only while the suite may still be repaired.
     """
-    from app.graph.acceptance_nodes import MAX_SUITE_REPAIRS
+    from app.graph.acceptance_nodes import may_repair
 
     if _this_attempt(state) in (state.get("disputed_sprints") or []):
         return False
-    if int(state.get("suite_repairs") or 0) >= MAX_SUITE_REPAIRS:
-        return False
-    return bool(_the_locked_tests_still_failing(state))
+    failing = _the_locked_tests_still_failing(state)
+    return bool(failing) and may_repair(state, [f"`{name}`" for name, _, _ in failing])
 
 
 #: What a reverted fix leaves on its defect's actual behaviour. See the

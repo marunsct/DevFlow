@@ -176,9 +176,8 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `8df4053` on branch `live-run-23896345` (= `821a750` + suite-repair fix `e985111` + test-file name check `4774f20` + pause/resume `2ea697d` + task-id fix `ff9faab`), deployed at 18:04 JST 2026-10-13 while run-23896345 was paused. The next `loop.sh deploy` from `harness-hardening-session` brings the untried features of `58600ee`..`e02cd84` too. |
+| deployed | `c7dada5` (all of `harness-hardening-session`), deployed 19:27 JST 2026-10-13 into run-23896345, which resumed. The `live-run-23896345` branch is retired. `verify_packs.py` for the 35 packs has NOT been run in the worker yet - run it when no run is live (`loop.sh nightly` does). |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
-| pushed, not deployed | `d9fd387` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes, compiler checks, page view, docs and MCP, eight CLI/library packs. Deploy when run-23896345 ends, then run `verify_packs.py` in the worker (35 packs). |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
@@ -281,6 +280,25 @@ worker`, to stop a run for a model change** - and a cancelled run can now be res
 longer existed: the worker's record, loaded before the API recorded the new task, wrote the old
 task id back on every persist (`COALESCE(EXCLUDED.task_id, runs.task_id)`). `set_task_id` now
 owns the column. The run was stopped by revoking its real task by hand.
+
+**Parallel fixes and reviews, two model tiers, a detailed specification, per-endpoint keys
+(`cdb57b3`..`c7dada5`, deployed 19:27 JST).**
+- Parallel mode fixes file-disjoint defects side by side (`_the_next_fix_batch`,
+  `defect_fix_worker`/`defect_fix_gather`; a batch that broke what passed is reverted whole
+  and its defects fixed alone) and runs the security and advice reviews side by side
+  (`review_worker`/`review_gather`). Every fan-out is capped at `HARNESS_MAX_PARALLEL` (6).
+- Two tiers (`app/models/roles.py`): the judgement model ("Planning & judgement model
+  (frontier)" on the settings page) plans - intake, tools, stack, sprint plan, work orders
+  (`PLAN_ON_JUDGEMENT_MODEL`, on) - and judges; the default ("build") model builds work
+  orders and fixes, and a stage that restarted, or a defect whose fixes failed
+  (`Defect.fix_attempts`), `ESCALATE_AFTER_ATTEMPTS` (2) times goes to the judgement model.
+  With one model configured nothing changes. The owner's plan: build = gpt-oss-20b
+  (local), frontier = qwen3.8-max (Qwen cloud).
+- The specification gains `file_plan`, `function_contracts`, `data_contracts`,
+  `error_catalogue`, `implementation_order`, `test_cases`, `configuration`; each work order
+  is handed the entries for its files (`specification_for_the_work_order`).
+- Each endpoint (provider + address) keeps its own encrypted API key
+  (`runtime_settings.save_endpoint_key`); one provider serving both models shares one.
 
 ### 2.1 What changed on 2026-10-12
 

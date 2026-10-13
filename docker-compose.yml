@@ -25,6 +25,17 @@ x-app-env: &app-env
   DATA_DIR: /app/data
   WORKFLOW_UPLOAD_DIR: /app/data/uploads
   WORKFLOW_WORKSPACE_ROOT: /app/data/workspaces
+  # What the stages may reach beyond the workspace (docs/HANDOVER.md section 2.0):
+  # registries, documentation, runtimes, the running page, a setup stage for a
+  # stack no pack covers. Each is on unless set to false. MCP servers are the
+  # owner's choice and off until configured (app/tools/mcp_tools.py).
+  PACKAGE_LOOKUP_ENABLED: ${PACKAGE_LOOKUP_ENABLED:-true}
+  DOCS_LOOKUP_ENABLED: ${DOCS_LOOKUP_ENABLED:-true}
+  SANDBOX_RUNTIMES_ENABLED: ${SANDBOX_RUNTIMES_ENABLED:-true}
+  PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
+  CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
+  HARNESS_MCP_SERVERS: ${HARNESS_MCP_SERVERS:-}
+  CONTEXT7_API_KEY: "${CONTEXT7_API_KEY:-}"
   # Postgres, so the API and the worker share one checkpoint store. SQLite put a
   # separate database inside each container's ephemeral layer.
   CHECKPOINTER_TYPE: ${CHECKPOINTER_TYPE:-postgres}

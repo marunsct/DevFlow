@@ -28,6 +28,8 @@ from app.agents.role_agent import create_role_agent, default_repo_root
 from app.agents.severity import validator_for as severity_in
 from app.agents.specialist_roles import role_slug
 from app.agents.technical_lead import SpecialistRole
+from app.tools.docs import docs_tools
+from app.tools.mcp_tools import tools_for as mcp_tools_for
 from app.tools.package_registry import lookup_tools
 from app.tools.page_view import page_view_tools
 from app.tools.runtimes import runtime_tools
@@ -1293,6 +1295,10 @@ def create_specialist_agent(
         build_journal_read_tool(resolved_repo_root),
         # Versions move faster than any model's training: see `app.tools.package_registry`.
         *lookup_tools(),
+        # A framework's or package's current documentation, and the owner's MCP
+        # servers: see `app.tools.docs` and `app.tools.mcp_tools`.
+        *docs_tools(),
+        *mcp_tools_for("specialist"),
         # A runtime version the image lacks, for this project only: see `app.tools.runtimes`.
         *runtime_tools(resolved_repo_root),
         # The running page as a test sees it, for a product with one: see `app.tools.page_view`.

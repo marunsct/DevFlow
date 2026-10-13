@@ -62,7 +62,7 @@ SAME_ANSWER_MARKER = "returned exactly what it returned"
 #: each time with no note, so nothing counted it.
 QUERY_TOOLS = frozenset({
     "ls", "grep", "glob", "read_repository_file", "inspect_repository",
-    "read_command_output", "changed_since_sprint", "look_up_package", "look_at_page",
+    "read_command_output", "changed_since_sprint", "look_up_package", "look_at_page", "read_docs",
 })
 
 #: Mutating tools, watched only for repeated *failures*. A repeated successful
@@ -289,7 +289,9 @@ def build_repeated_query_middleware() -> Any:
                 # A write that actually changed the file is left alone.
                 if not _looks_like_a_failure(content) and not _changed_nothing(content):
                     return ""
-            elif name not in QUERY_TOOLS:
+            elif name not in QUERY_TOOLS and not name.startswith("mcp_"):
+                # Every MCP tool a stage holds is one the owner allowed as a query
+                # (`app.tools.mcp_tools`).
                 return ""
 
             args = call.get("args") or {}

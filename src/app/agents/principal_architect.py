@@ -27,6 +27,8 @@ from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
+from app.tools.docs import docs_tools
+from app.tools.mcp_tools import tools_for as mcp_tools_for
 from app.tools.package_registry import lookup_tools
 from app.state import RepositoryContext
 
@@ -481,7 +483,7 @@ def create_principal_architect_agent(
         # write tool - see `app.agents.artifact_document`.
         can_write=False,
         # Versions move faster than any model's training: see `app.tools.package_registry`.
-        extra_tools=lookup_tools(),
+        extra_tools=[*lookup_tools(), *docs_tools(), *mcp_tools_for("principal_architect")],
     )
 
 

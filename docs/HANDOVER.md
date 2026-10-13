@@ -177,7 +177,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
 | deployed | `c7dada5` (all of `harness-hardening-session`), deployed 19:27 JST 2026-10-13 into run-23896345, which resumed. The `live-run-23896345` branch is retired. `verify_packs.py` for the 35 packs has NOT been run in the worker yet - run it when no run is live (`loop.sh nightly` does). |
-| current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`; and `run-63d016f6` (`notes-api-hono`), started 20:34 JST beside it. `loop.sh status|wait` take a run id for the one `current_run.txt` does not name. |
+| current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943` - PAUSED 21:07 JST at the owner's request (one run at a time; resumable). `run-63d016f6` (`notes-api-hono`) cancelled 21:13 JST for the pack bug fixed in `12fef11`; notes-api-hono restarts on the fix. `loop.sh status|wait` take a run id. |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |

@@ -5362,6 +5362,21 @@ def pinned_project_directory(root: Path) -> str | None:
     return name or None
 
 
+def _executable_if_a_script(target: Path, content: str) -> None:
+    """Mark a file that starts with `#!` executable, as whoever wrote it would.
+
+    A stage cannot run `chmod` (it is not on any role's allow-list), so a
+    launcher it wrote stayed unrunnable as `./start.sh`. Measured on one run:
+    a builder whose specification said "chmod +x start.sh" spent a call on
+    the refusal. The interpreter line is the author saying it is a program.
+    """
+    if content.startswith("#!"):
+        import stat
+
+        mode = target.stat().st_mode
+        target.chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+
+
 def _pin_project_directory(root: Path, name: str) -> None:
     """Record the project directory the first time one is written to.
 
@@ -6455,6 +6470,7 @@ def write_approved_artifact(
             try:
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(content, encoding="utf-8")
+                _executable_if_a_script(target, content)
             except OSError as exc:
                 logger.error("Failed to write artifact to %s: %s", target, exc)
                 raise RepositoryToolError(

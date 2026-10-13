@@ -176,7 +176,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `9cd3aa9` on branch `live-run-23896345` (= `821a750` + the suite-repair fix `e985111` + the test-file name check `4774f20`), deployed into run-23896345 at 16:16 JST 2026-10-13 (the first fix at 13:57), which resumed each time. Built from a detached checkout of that branch so the untried features of `58600ee`..`e02cd84` stay out of the live run; the next `loop.sh deploy` from `harness-hardening-session` brings everything. Before it: `5d2676a` (11:56 JST): Node 24 and waves 2-3 packs, unready plans ranked by problems per work order, parallel stagger, page-fixture fix. |
+| deployed | `b5be462` on branch `live-run-23896345` (= `821a750` + the suite-repair fix `e985111` + the test-file name check `4774f20` + pause/resume `2ea697d`), deployed at 16:41 JST 2026-10-13; run-23896345 resumed through the API at 16:42. Built from a detached checkout of that branch so the untried features of `58600ee`..`e02cd84` stay out of the live run; the next `loop.sh deploy` from `harness-hardening-session` brings everything. Before it: `5d2676a` (11:56 JST): Node 24 and waves 2-3 packs, unready plans ranked by problems per work order, parallel stagger, page-fixture fix. |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
 | pushed, not deployed | `d9fd387` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes, compiler checks, page view, docs and MCP, eight CLI/library packs. Deploy when run-23896345 ends, then run `verify_packs.py` in the worker (35 packs). |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
@@ -269,6 +269,13 @@ at once (DR-12, the fourth and last repair). Names were checked only in product 
 importing `@playwright/test` or `node:test` now has its names checked too (browser and Node
 globals; functions handed to the page left to the page). Swept over 1,038 stored test files:
 5 flagged, all real faults, no false alarm.
+
+**Pause and resume from the screen (`2ea697d`, deployed 16:41 JST, on the owner's request).**
+`POST /api/runs/{id}/pause` (operator; a Pause button on the run page and in the run list)
+raises the cancel flag with `stop_reason='pause'` and revokes the task; the worker records
+`paused` and keeps everything. Resume takes `failed`, `waiting_for_budget`, `paused` and
+`cancelled` (`RESUMABLE_STATUSES`) and lowers the flag. **Use Pause, not `docker compose stop
+worker`, to stop a run for a model change** - and a cancelled run can now be resumed too.
 
 ### 2.1 What changed on 2026-10-12
 

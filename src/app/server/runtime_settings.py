@@ -122,6 +122,11 @@ SETTABLE_KEYS: dict[str, str] = {
     "judgement_base_url": "JUDGEMENT_BASE_URL",
     "judgement_model_name": "JUDGEMENT_MODEL",
     "judgement_context_window": "JUDGEMENT_CONTEXT_WINDOW",
+    # Two tiers: the judgement model plans (`PLAN_ON_JUDGEMENT_MODEL`), the
+    # default model builds, and a stage or defect the default model failed this
+    # many times goes to the judgement model. See `app.models.roles`.
+    "escalate_after_attempts": "ESCALATE_AFTER_ATTEMPTS",
+    "plan_on_judgement_model": "PLAN_ON_JUDGEMENT_MODEL",
 }
 
 CACHE_TTL_SECONDS = float(os.environ.get("SETTINGS_CACHE_TTL", "5"))

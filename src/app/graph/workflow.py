@@ -156,6 +156,7 @@ from app.sprint import (
     RemediationLimitExceeded,
     build_defect_report,
     is_sprint_acceptable,
+    failed_fix_tries,
     mark_defect_fixed,
     record_test_run,
     start_remediation,
@@ -1164,6 +1165,14 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
     return cycle.model_copy(update={"defects": [
         item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}"})
         if position in indices else item
+        for position, item in enumerate(cycle.defects)
+    ]})
+
+
+def _one_more_failed_fix(cycle: Any, index: int) -> Any:
+    """The cycle with one more failed fix counted against defect `index`."""
+    return cycle.model_copy(update={"defects": [
+        item.model_copy(update={"fix_attempts": int(item.fix_attempts or 0) + 1}) if position == index else item
         for position, item in enumerate(cycle.defects)
     ]})
 
@@ -6171,6 +6180,33 @@ def build_workflow_graph(
         build_judgement_model(model) if model is None or isinstance(model, BaseChatModel) else model
     )
 
+    from app.models.roles import escalate_after, plans_on_the_judgement_model
+
+    #: The plan and the specification are what every other stage builds from;
+    #: the judgement model writes them unless the owner turned that off.
+    planning_model = judgement_model if plans_on_the_judgement_model() else model
+
+    def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0) -> Any:
+        """The model a stage that builds or fixes runs on: the default one, until it has failed.
+
+        The judgement model takes over once this stage has had to start over on
+        a fresh conversation `escalate_after()` times, once the defect it fixes
+        has failed that many fixes (`failed_fix_tries`), or on a sprint being
+        tried again (`_the_model_for_this_attempt`). If that fails too, the run
+        goes on as it always has.
+        """
+        if judgement_model is model:
+            return model
+        limit = escalate_after()
+        restarts = int((state.get("structured_retries") or {}).get(stage_name, 0))
+        if restarts >= limit or failed_tries >= limit:
+            logger.info(
+                "Stage %s goes to the judgement model: %d restart(s), %d failed fix(es) on the build model",
+                stage_name, restarts, failed_tries,
+            )
+            return judgement_model
+        return _the_model_for_this_attempt(state)
+
     def _the_model_for_this_attempt(state: Any) -> Any:
         """A rung of the escalation ladder: a sprint being tried again after a
         re-plan, a sent-back review, a held release or an escalation is built on
@@ -6184,7 +6220,7 @@ def build_workflow_graph(
         return judgement_model if retried else model
 
     def product_manager_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_product_manager_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_product_manager_agent(model=planning_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_intake_request(state["document"], state["repository"])
         update = _run_gated_agent(
             state,
@@ -6245,7 +6281,7 @@ def build_workflow_graph(
         )
 
     def tools_models_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_tools_models_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_tools_models_agent(model=planning_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         intake = state.get("product_intake")
         if intake is None:
             # Send it back to the stage that owes the output, on a fresh
@@ -6328,7 +6364,7 @@ def build_workflow_graph(
         return update
 
     def stack_selector_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        agent = create_stack_selector_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_stack_selector_agent(model=planning_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         # The brief's own constraints, quoted, not a model's summary of them.
         # This stage was given `product_intake` and `tools_models` and nothing
         # else, and on one run `ProductManagerOutput.constraints` came
@@ -6690,7 +6726,7 @@ def build_workflow_graph(
         missing = _missing_upstream(state, "technical_specification")
         if missing is not None:
             return missing
-        agent = create_scrum_master_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_scrum_master_agent(model=planning_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         spec_text = _as_text(state.get("technical_specification"))
         measures = _what_the_sprints_must_deliver(state.get("product_intake"))
         gaps_already_asked_about = list(state.get("sprint_plan_gaps") or [])
@@ -6870,7 +6906,7 @@ def build_workflow_graph(
         missing = _missing_upstream(state, "sprint_plan")
         if missing is not None:
             return missing
-        agent = create_technical_lead_agent(model=model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
+        agent = create_technical_lead_agent(model=planning_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         plan_text = _as_text(state.get("sprint_plan"))
         sprint_index = state.get("current_sprint_index", 0)
         sprints = state["sprint_plan"].sprints
@@ -7273,7 +7309,7 @@ def build_workflow_graph(
             task = tasks[index]
             stage_name = f"specialist_{task.specialist_role}_{index}"
             agent = create_specialist_agent(
-                task.specialist_role, model=_the_model_for_this_attempt(state), checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+                task.specialist_role, model=_the_build_model(state, stage_name), checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
             )
             selection = state.get("stack_selection")
             request = build_specialist_task_request(
@@ -7326,7 +7362,7 @@ def build_workflow_graph(
         temp_state: Any = dict(state)
         
         agent = create_specialist_agent(
-            task.specialist_role, model=_the_model_for_this_attempt(state), checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            task.specialist_role, model=_the_build_model(state, stage_name), checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
         )
         selection = state.get("stack_selection")
         request = build_specialist_task_request(
@@ -8003,6 +8039,10 @@ def build_workflow_graph(
             )
 
         still_open = update["remediation"] is cycle
+        if still_open:
+            # One more failed try: past `escalate_after()` its next fix runs on
+            # the judgement model (`_the_build_model`).
+            update["remediation"] = _one_more_failed_fix(cycle, defect_index)
         blames = still_open and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
         update["specialist_outputs"] = outputs
         return update, blames
@@ -8020,7 +8060,8 @@ def build_workflow_graph(
             return closed
 
         agent = create_specialist_agent(
-            defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, defect_index)),
+            checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         )
         request, co_defects = _the_fix_request(state, config, cycle, defect_index)
         # A fix that breaks what passed before it is reverted to exactly where
@@ -8062,7 +8103,7 @@ def build_workflow_graph(
                 sprint=state.get("current_sprint_index", 0),
                 detail=f"broke {len(broke)} test(s) that passed before it: {'; '.join(broke[:3])}",
             )
-            noted = _noted_as_reverted(cycle, [defect_index], broke)
+            noted = _one_more_failed_fix(_noted_as_reverted(cycle, [defect_index], broke), defect_index)
             contested = _a_locked_test_two_fixes_broke(noted)
             if contested and _a_dispute_may_be_held_now(state):
                 logger.warning(
@@ -8200,7 +8241,8 @@ def build_workflow_graph(
         defect = cycle.defects[index]
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{index}"
         agent = create_specialist_agent(
-            defect.owner, model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories
+            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, index)),
+            checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         )
         request, _ = _the_fix_request(state, config, cycle, index)
         temp_state: Any = dict(state)

@@ -27,6 +27,8 @@ interface ProviderForm {
   judgement_model_name: string;
   judgement_context_window: number;
   judgement_api_key?: string;
+  escalate_after_attempts: number;
+  plan_on_judgement_model: boolean;
 }
 
 type CredentialField = 'openai_api_key' | 'anthropic_api_key' | 'google_api_key' | 'judgement_api_key';
@@ -171,6 +173,8 @@ export const Settings: React.FC = () => {
         judgement_base_url: settings.judgement_base_url ?? '',
         judgement_model_name: settings.judgement_model_name ?? '',
         judgement_context_window: settings.judgement_context_window ?? 0,
+        escalate_after_attempts: settings.escalate_after_attempts ?? 2,
+        plan_on_judgement_model: settings.plan_on_judgement_model ?? true,
       };
       // Only send a credential the operator actually typed into. An untouched
       // box must not clear a key that is already working.
@@ -529,14 +533,18 @@ export const Settings: React.FC = () => {
                 </p>
               </div>
 
-              {/* The judgement model. Empty name: every stage uses the model above. */}
+              {/* The planning and judgement model. Empty name: every stage uses the model above. */}
               <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
-                <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">Judgement model</p>
+                <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">
+                  Planning &amp; judgement model (frontier)
+                </p>
                 <p className="text-xs text-text-muted mb-3 leading-relaxed">
-                  The stages that judge rather than produce - the architect, QA, the reviews,
-                  the test rounds and the fixes - run on this model. Leave the name empty to
-                  run every stage on the model above. Empty fields below use the model above&rsquo;s,
-                  except the address: on another provider an empty address means that provider&rsquo;s own.
+                  The model above is the <strong>build model</strong>: it writes the code and the fixes.
+                  This one writes the plan and the specification, writes and reviews the acceptance
+                  tests, triages the test rounds and runs the reviews - and takes over any work order
+                  or defect the build model failed. Leave the name empty to run every stage on the
+                  model above. Empty fields below use the model above&rsquo;s, except the address: on
+                  another provider an empty address means that provider&rsquo;s own.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -593,6 +601,40 @@ export const Settings: React.FC = () => {
                     hint={settings.judgement_api_key_hint ?? null}
                     placeholder="empty: the key above for its provider"
                   />
+                </div>
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="escalate-after" className="block text-xs text-text-secondary mb-1">
+                      Escalate after failed tries on the build model
+                    </label>
+                    <input
+                      id="escalate-after"
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={settings.escalate_after_attempts ?? 2}
+                      onChange={(e) => setSettings({ ...settings, escalate_after_attempts: Math.max(1, Number(e.target.value) || 2) })}
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                    />
+                    <p className="text-xs text-text-muted mt-1">
+                      A work order that had to start over, or a defect whose fixes failed, this many
+                      times goes to this model. If it fails here too, the run goes on as before.
+                    </p>
+                  </div>
+                  <label className="flex items-start gap-2 text-sm text-text-secondary sm:mt-5">
+                    <input
+                      type="checkbox"
+                      checked={settings.plan_on_judgement_model ?? true}
+                      onChange={(e) => setSettings({ ...settings, plan_on_judgement_model: e.target.checked })}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Plan on this model
+                      <span className="block text-xs text-text-muted">
+                        Intake, stack choice, sprint plan and work orders. Off: they run on the build model.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               </div>
 

@@ -218,6 +218,10 @@ export interface SettingsView {
   judgement_context_window?: number;
   judgement_api_key_hint?: string | null;
   judgement_api_key_configured?: boolean;
+  // The two tiers: failed tries on the build model before the judgement model
+  // takes over, and whether the judgement model also plans.
+  escalate_after_attempts?: number;
+  plan_on_judgement_model?: boolean;
 }
 
 /** A model configuration saved when it was applied, so it can be picked again.

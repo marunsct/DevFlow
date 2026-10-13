@@ -82,9 +82,10 @@ def test_the_judging_stages_run_on_it() -> None:
         "create_milestone_reviewer_agent",
     ):
         assert f"{factory}(model=judgement_model" in source, factory
-    # The test rounds and the fixes.
+    # The test rounds. The fixes run on the build model until they have
+    # failed, then on this one: see `test_two_model_tiers`.
     assert '"testing", model=judgement_model' in source
-    assert "defect.owner, model=judgement_model" in source
+    assert "defect.owner, model=_the_build_model(" in source
 
 
 @pytest.fixture

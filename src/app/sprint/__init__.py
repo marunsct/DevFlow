@@ -72,6 +72,10 @@ class Defect(BaseModel):
         ),
     )
     status: DefectStatus = Field(default="open")
+    fix_attempts: int = Field(
+        default=0, ge=0,
+        description="Fix stages that ran on this defect and left it open, or were reverted.",
+    )
     verified_by: str = Field(
         default="",
         description=(
@@ -171,6 +175,18 @@ def recurrence_of(defect: Defect, earlier: Sequence[Defect]) -> Defect | None:
         if overlap >= 2 and overlap / smaller >= 0.6:
             return candidate
     return None
+
+
+def failed_fix_tries(cycle: RemediationCycle, index: int) -> int:
+    """How many times fixing this problem has failed: its own fixes, and the fix of the defect it restates.
+
+    A defect marked fixed that comes back is recorded as a new one
+    (`recurrence_of`); the fix that did not hold is a failed try of the same
+    problem, and so is every one before it.
+    """
+    defect = cycle.defects[index]
+    earlier = recurrence_of(defect, cycle.defects[:index])
+    return int(defect.fix_attempts or 0) + (int(earlier.fix_attempts or 0) + 1 if earlier is not None else 0)
 
 
 def recurring_defect_note(cycle: RemediationCycle) -> str:

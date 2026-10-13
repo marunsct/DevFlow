@@ -58,6 +58,47 @@ def judgement_environment(environment: Mapping[str, str]) -> dict[str, str] | No
     return built
 
 
+def escalate_after(environment: Mapping[str, str] | None = None) -> int:
+    """Failed tries on the build model before a stage or a defect goes to the judgement model (2).
+
+    The build model is the fast one that writes the code; a work order whose
+    stage had to start over this many times, or a defect whose fixes failed
+    this many times, is handed to the judgement model - and if that fails too,
+    the run goes on as before: the defect stays open, the attempt is counted.
+    """
+    environment = _the_environment(environment)
+    raw = str(environment.get("ESCALATE_AFTER_ATTEMPTS") or "").strip()
+    try:
+        return max(1, int(raw)) if raw else 2
+    except ValueError:
+        return 2
+
+
+def plans_on_the_judgement_model(environment: Mapping[str, str] | None = None) -> bool:
+    """Whether the planning stages - intake, stack, sprint plan, work orders - run on the judgement model.
+
+    On by default: the plan and the specification are the documents every
+    other stage builds from, and a stronger model writing them in full detail
+    is what lets a faster one build from them. Off puts them back on the
+    default model.
+    """
+    environment = _the_environment(environment)
+    return str(environment.get("PLAN_ON_JUDGEMENT_MODEL") or "true").strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _the_environment(environment: Mapping[str, str] | None) -> Mapping[str, str]:
+    if environment is not None:
+        return environment
+    try:
+        from app.server.runtime_settings import effective_environment
+
+        return effective_environment()
+    except Exception:  # noqa: BLE001 - an unreadable store is the deployed configuration
+        import os
+
+        return os.environ
+
+
 def judgement_model_name(environment: Mapping[str, str]) -> str:
     """The judgement model's name, or "" when the default model judges too."""
     return str(environment.get("JUDGEMENT_MODEL") or "").strip()

@@ -87,6 +87,10 @@ class SettingsView(BaseModel):
     judgement_context_window: int = 0
     judgement_api_key_hint: str | None = None
     judgement_api_key_configured: bool = False
+    #: The two tiers (`app.models.roles`): failed tries on the build model
+    #: before the judgement model takes over, and whether it also plans.
+    escalate_after_attempts: int = 2
+    plan_on_judgement_model: bool = True
 
 
 class SettingsUpdate(BaseModel):
@@ -170,6 +174,14 @@ class SettingsUpdate(BaseModel):
     judgement_model_name: str = Field(default="", max_length=200)
     judgement_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
     judgement_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    escalate_after_attempts: int = Field(
+        default=2, ge=1, le=10,
+        description="Failed tries on the build model before a stage or a defect goes to the judgement model.",
+    )
+    plan_on_judgement_model: bool = Field(
+        default=True,
+        description="Whether intake, stack choice, the sprint plan and the work orders run on the judgement model.",
+    )
 
     @field_validator("openai_api_key", "anthropic_api_key", "google_api_key", "judgement_api_key")
     @classmethod
@@ -271,6 +283,8 @@ def _current_view() -> SettingsView:
 
 
 def _judgement_view() -> dict[str, Any]:
+    from app.models.roles import escalate_after, plans_on_the_judgement_model
+
     environment = runtime_settings.effective_environment()
     try:
         window = int(str(environment.get("JUDGEMENT_CONTEXT_WINDOW") or "0").strip() or 0)
@@ -284,6 +298,8 @@ def _judgement_view() -> dict[str, Any]:
         "judgement_context_window": window,
         "judgement_api_key_hint": _mask(key),
         "judgement_api_key_configured": bool(key),
+        "escalate_after_attempts": escalate_after(environment),
+        "plan_on_judgement_model": plans_on_the_judgement_model(environment),
     }
 
 
@@ -376,6 +392,8 @@ async def update_settings(
             "judgement_context_window": (
                 str(payload.judgement_context_window) if payload.judgement_context_window else ""
             ),
+            "escalate_after_attempts": str(payload.escalate_after_attempts),
+            "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
         },
         actor=user.username,
     )

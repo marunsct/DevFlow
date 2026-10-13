@@ -714,6 +714,11 @@ def a_locator_left_behind(message: str) -> tuple[str, str] | None:
 _A_HELPER = re.compile(r"(?:async\s+)?function\s+(\w+)\s*\(|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\(")
 
 
+#: A test callback that destructures the `page` fixture: `async ({ page }) =>`,
+#: `async ({ page, request }) =>`.
+_TAKES_THE_PAGE = re.compile(r"\(\s*\{[^}]*\bpage\b[^}]*\}")
+
+
 def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
     """(line, title) of each test that acts on `page` with nothing that opens it.
 
@@ -736,7 +741,12 @@ def tests_that_never_open_the_page(text: str) -> list[tuple[int, str]]:
     found = []
     for begin, end in zip(starts, starts[1:] + [len(text)]):
         body = text[begin:end]
-        if "page" not in body or re.search(r"\bgoto\s*\(", body):
+        # The `page` fixture, taken by the test: the only way a test acts on
+        # the page. The word alone was read as one - measured on one run, an
+        # API test of pagination, taking only `request`, was flagged for the
+        # comment "Get next page with offset=2", reopened the locked suite
+        # twice, and its criterion's tests were set aside as unpassable.
+        if not _TAKES_THE_PAGE.search(code_only(body)[:400]) or re.search(r"\bgoto\s*\(", body):
             continue
         if any(re.search(rf"\b{re.escape(name)}\s*\(", body) for name in opening):
             continue

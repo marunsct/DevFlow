@@ -291,6 +291,31 @@ class TestATestThatNeverOpensThePage:
 
         assert tests_that_never_open_the_page(text) == []
 
+    def test_a_test_of_the_service_that_mentions_a_page_is_not_one(self) -> None:
+        """Measured on one run: an API test of pagination, taking only
+        `request`, was flagged for the comment "Get next page with offset=2",
+        reopened the locked suite twice, and its criterion's tests were set
+        aside as unpassable."""
+        from app.stacks.packs._javascript import tests_that_never_open_the_page
+
+        text = (
+            "test('[AC-7] pagination returns correct total and respects limit/offset', async ({ request }) => {\n"
+            "  let result = await getTasks(request, token, { limit: '2', offset: '0' });\n"
+            "  // Get next page with offset=2 - should return different items\n"
+            "  result = await getTasks(request, token, { limit: '2', offset: '2' });\n"
+            "  expect(result.body.offset).toBe(2);\n"
+            "});\n"
+        )
+
+        assert tests_that_never_open_the_page(text) == []
+
+    def test_a_test_taking_the_page_beside_another_fixture_still_counts(self) -> None:
+        from app.stacks.packs._javascript import tests_that_never_open_the_page
+
+        text = "test('[AC-2] lists', async ({ request, page }) => {\n  await page.getByText('x').click();\n});\n"
+
+        assert tests_that_never_open_the_page(text) == [(1, "[AC-2] lists")]
+
     def test_the_review_and_every_round_send_it_back(self, tmp_path) -> None:
         acceptance = _scaffolded(tmp_path)
         (acceptance / "notes.spec.js").write_text(

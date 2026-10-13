@@ -15,11 +15,15 @@ measured. See `docs/redesign-software-company.md`.
 | `fullstack-bookmarks` | page + its own service | JavaScript | 8 | Playwright (page and API) |
 | `web-todo-react` | browser app | TypeScript, React | 10 (`web-todo`'s) | Playwright |
 | `notes-api-js` | HTTP service | JavaScript | 9 (`notes-api`'s) | pytest + httpx |
+| `notes-api-hono` | HTTP service | TypeScript, Hono (no pack) | 9 (`notes-api`'s) | pytest + httpx |
 
 The last two hold the `browser-react` and `node-http-api` stack packs to the
 same hidden tests as their siblings: the briefs differ only in the stack they
 ask for, and the tests reach the product only through the brief's interface.
-They are coverage, not part of the gate below.
+They are coverage, not part of the gate below. `notes-api-hono` asks for a stack no pack covers, so its run goes through
+the setup stage (`app.stacks.custom_setup`): the agents set the project up and
+the harness proves it; its reference (Hono on Node, TypeScript run directly)
+scores 9 of 9.
 
 ## How a benchmark is laid out
 

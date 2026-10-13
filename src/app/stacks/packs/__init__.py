@@ -14,9 +14,11 @@ from app.stacks.packs.fullstack_next import PACK as FULLSTACK_NEXT
 from app.stacks.packs.fullstack_node import PACK as FULLSTACK_NODE
 from app.stacks.packs.go_gin_api import PACK as GO_GIN_API
 from app.stacks.packs.go_http_api import PACK as GO_HTTP_API
+from app.stacks.packs.go_programs import GO_CLI, GO_LIBRARY
 from app.stacks.packs.java_spring_api import PACK as JAVA_SPRING_API
 from app.stacks.packs.node_http_api import PACK as NODE_HTTP_API
 from app.stacks.packs.node_nest_api import PACK as NODE_NEST_API
+from app.stacks.packs.node_programs import NODE_CLI, NODE_LIBRARY, TYPESCRIPT_CLI, TYPESCRIPT_LIBRARY
 from app.stacks.packs.php_laravel_api import PACK as PHP_LARAVEL_API
 from app.stacks.packs.php_slim_api import PACK as PHP_SLIM_API
 from app.stacks.packs.python_cli import PACK as PYTHON_CLI
@@ -26,6 +28,7 @@ from app.stacks.packs.python_library import PACK as PYTHON_LIBRARY
 from app.stacks.packs.ruby_rails_api import PACK as RUBY_RAILS_API
 from app.stacks.packs.ruby_sinatra_api import PACK as RUBY_SINATRA_API
 from app.stacks.packs.rust_axum_api import PACK as RUST_AXUM_API
+from app.stacks.packs.rust_programs import RUST_CLI, RUST_LIBRARY
 
 ALL_PACKS = (
     BROWSER_JAVASCRIPT,
@@ -46,6 +49,14 @@ ALL_PACKS = (
     PYTHON_FLASK_API,
     PYTHON_CLI,
     PYTHON_LIBRARY,
+    NODE_CLI,
+    NODE_LIBRARY,
+    TYPESCRIPT_CLI,
+    TYPESCRIPT_LIBRARY,
+    GO_CLI,
+    GO_LIBRARY,
+    RUST_CLI,
+    RUST_LIBRARY,
     GO_HTTP_API,
     GO_GIN_API,
     JAVA_SPRING_API,

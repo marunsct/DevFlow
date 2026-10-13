@@ -66,6 +66,9 @@ NOT_A_PACKAGE_MANAGER = frozenset({
     # working: `ruby` and `php` are in `TOOLCHAINS` beside their managers and
     # look like managers to anything that does not know the difference.
     "ruby", "php",
+    # PHP's static analyser, which the compiler check runs when a project
+    # installed it (`app.analysis.compiler_check`). It installs nothing.
+    "phpstan",
     # Compilers and build drivers, not package managers.
     "scala", "scalac", "gcc", "clang", "g++", "clang++", "make",
 })

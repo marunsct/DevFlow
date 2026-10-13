@@ -500,6 +500,16 @@ _BECAUSE_UNTESTED = re.compile(
 )
 
 
+#: A decision that hands the item on: to a work order of this sprint, or to a
+#: later sprint whose plan holds it.
+_HANDED_ON = re.compile(
+    r"\btask\s*\d|\bwork order\s*\d|->\s*(?:task|work order)|\u2192\s*(?:task|work order)"
+    r"|\b(?:later|next|following|future) sprint\b|\bsprint\s*\d+'?s?\s+(?:in_scope|scope|plan)"
+    r"|\b(?:defer\w*|left|moved|belongs?|scheduled|planned)\s+(?:\w+\s+){0,3}(?:to|for|in)\s+sprint\s*\d",
+    re.I,
+)
+
+
 def declined_because_untested(decisions: Sequence[str]) -> list[str]:
     """The carried-forward decisions that decline an item because no test requires it.
 
@@ -507,8 +517,18 @@ def declined_because_untested(decisions: Sequence[str]) -> list[str]:
     fifteen adopted interface and data items its specialists found missing, and
     its lead declined every one "not required by current sprint tests" - after
     being told that was no reason. The sprint closed with nothing built.
+
+    A decision that hands the item on - into one of this sprint's work orders,
+    or to the later sprint whose plan holds it - is not a decline for want of
+    a test, whatever tests it mentions. Measured on another run: a lead that
+    deferred validation "on scheduling grounds, not test grounds" to the
+    sprint whose scope names it was sent back for it three times, twelve
+    minutes a time.
     """
-    return [d for d in decisions if _DECLINES.search(d) and _BECAUSE_UNTESTED.search(d)]
+    return [
+        d for d in decisions
+        if _DECLINES.search(d) and _BECAUSE_UNTESTED.search(d) and not _HANDED_ON.search(d)
+    ]
 
 
 def untested_is_no_reason(declined: Sequence[str]) -> str:
@@ -519,8 +539,8 @@ def untested_is_no_reason(declined: Sequence[str]) -> str:
         f"{len(declined)} decision(s) decline carried work because no test requires it ({shown}{more}). "
         "That is not a reason: what the specification adopted is for the person who uses the "
         "product. Take each item that still holds into a work order for the role that owns it, "
-        "or decline it with a reason it no longer holds - built already (say where), or ruled out "
-        "by the brief (say which line)."
+        "or decline it with a reason it no longer holds - built already (say where), ruled out "
+        "by the brief (say which line), or planned for a later sprint (say which)."
     )
 
 

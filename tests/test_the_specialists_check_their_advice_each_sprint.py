@@ -255,6 +255,26 @@ class TestUntestedIsNoReasonToDecline:
 
         assert declined_because_untested(decisions) == decisions[:2]
 
+    def test_work_handed_to_a_work_order_or_a_later_sprint_is_not_declined(self) -> None:
+        """One run's lead deferred validation to the sprint whose scope names it,
+        "on scheduling grounds, not test grounds", and was sent back three times."""
+        from app.analysis.work_orders import declined_because_untested
+
+        decisions = [
+            "Security Review (Medium) - declined for this milestone on scheduling grounds, not test "
+            "grounds: Sprint 4's in_scope names exactly those refusals, which no test of this sprint asks for",
+            "Review finding deferred to Sprint 3, whose acceptance criteria cover persistence",
+            "Milestone Review (Minor, testing) - the guard is executed by no test -> task 4 (testing): add the refusal cases",
+            "UX-3 declined: not required by current sprint tests",
+        ]
+
+        assert declined_because_untested(decisions) == decisions[3:]
+
+    def test_the_send_back_accepts_a_later_sprint_as_a_reason(self) -> None:
+        from app.analysis.work_orders import untested_is_no_reason
+
+        assert "planned for a later sprint (say which)" in untested_is_no_reason(["X-1 declined: not required by tests"])
+
     def test_a_plan_that_declines_so_is_not_ready(self, monkeypatch) -> None:
         from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
         from app.analysis.work_orders import readiness_problems

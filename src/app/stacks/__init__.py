@@ -408,6 +408,19 @@ def product_kind(stack: Any, text: str = "") -> str:
     return ""
 
 
+#: Words in a framework field that name no framework: languages, runtimes,
+#: versions and filler.
+_NOT_A_FRAMEWORK = re.compile(
+    r"(?:javascript|typescript|js|ts|node|node\.?js|nodejs|ecmascript|es\d*|esm|commonjs|"
+    r"html5?|css3?|python3?|cpython|go|golang|java|jdk|jvm|kotlin|c#|csharp|\.net|dotnet|rust|"
+    r"ruby|php|v?\d+(?:\.\d+)*(?:\+|\.x)?|lts|latest|"
+    r"none|n/a|na|no|vanilla|plain|native|pure|standard|library|stdlib|std|built-in|builtin|core|"
+    r"runtime|only|framework|frameworks|with|and|on|the|its|own|of|for|a|an|"
+    r"http|https|net/http|server|web|api|rest|module|modules|package|packages|"
+    r"[-+/.#]+)"
+)
+
+
 def _framework_fits(pack: StackPack, stack: Any) -> bool:
     """Whether the frameworks the stack chose are ones this pack implements."""
     text = _framework_text(stack)
@@ -421,11 +434,13 @@ def _framework_fits(pack: StackPack, stack: Any) -> bool:
     words = set(re.findall(r"[a-z0-9.#+-]+", text))
     if any(word in words or word in text for word in pack.frameworks):
         return True
-    # Only words that are not a framework at all ("javascript", "html5",
-    # "node.js") remain: the stack chose the language and nothing on top.
-    return not (_BACKEND_FRAMEWORKS.search(text) or _FULLSTACK_FRAMEWORKS.search(text) or re.search(
-        r"\b(?:react|vue|svelte|angular|solid|preact|lit|click|typer|commander|yargs|nest)\b", text
-    ))
+    # The stack chose the language and nothing on top only when every word
+    # left is a language, a runtime or filler ("javascript", "html5",
+    # "node.js built-in http module"). A word that is none of those names a
+    # framework - one this harness may never have heard of: Hono read as "no
+    # framework" and was given the Nest pack, because only frameworks on a
+    # list were recognised as frameworks.
+    return all(_NOT_A_FRAMEWORK.fullmatch(word) for word in words)
 
 
 def choose_pack(stack: Any, text: str = "", rationale: str = "") -> StackPack | None:

@@ -1310,7 +1310,7 @@ TOOLCHAINS: dict[str, frozenset[str]] = {
     "kotlin": frozenset({"kotlin", "kotlinc", "gradle"}),
     "csharp": frozenset({"dotnet"}),
     "ruby": frozenset({"ruby", "bundle", "gem", "rake", "rspec"}),
-    "php": frozenset({"php", "composer", "phpunit"}),
+    "php": frozenset({"php", "composer", "phpunit", "phpstan"}),
     "swift": frozenset({"swift", "swiftc"}),
     "dart": frozenset({"dart", "flutter"}),
     "elixir": frozenset({"elixir", "mix"}),

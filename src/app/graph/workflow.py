@@ -2206,7 +2206,49 @@ def _diagnostics_in_files_touched(
         except Exception:  # noqa: BLE001
             continue
 
-    return diagnostics
+    return [*diagnostics, *_what_the_compiler_says_of(root, files_to_check, stage_name, pinned or "")][:4]
+
+
+def _the_milestone_is_unfinished(root: str, stage_name: str) -> bool:
+    """Whether a file another work order of this milestone owns is not written yet.
+
+    A compiler reads the whole project, so a name defined in a file another
+    work order has not written is an error to it - and none of this stage's.
+    Only a specialist building a work order is asked this; by the time a fix
+    stage runs, every work order is done.
+    """
+    if not str(stage_name or "").startswith("specialist_"):
+        return False
+    try:
+        import json
+
+        from app.tools.repository import WORK_ORDER_FILES
+
+        table = json.loads((Path(root) / WORK_ORDER_FILES).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return isinstance(table, dict) and any(
+        owner != stage_name and not (Path(root) / planned).exists() for planned, owner in table.items()
+    )
+
+
+def _what_the_compiler_says_of(root: str, touched: set[str], stage_name: str, project: str) -> list[str]:
+    """The compiler's errors, when this stage changed code in a compiled language; see `compiler_check`.
+
+    Errors in the files the stage touched come first. Not asked while another
+    work order's files are still to be written (`_the_milestone_is_unfinished`).
+    """
+    from app.analysis import compiler_check
+
+    compiled = sorted(name for name in touched if name.lower().endswith(compiler_check.SUFFIXES))
+    if not compiled or _the_milestone_is_unfinished(root, stage_name):
+        return []
+    try:
+        found = compiler_check.findings(root, project, compiled)
+    except Exception:  # noqa: BLE001 - a check that cannot run says nothing
+        return []
+    found.sort(key=lambda finding: finding["file"] not in touched)
+    return [f"- In `{f['file']}` line {f['line']}: {f['message']} (the compiler)" for f in found]
 
 
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:

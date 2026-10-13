@@ -177,6 +177,13 @@ def no_longer_underlined(root: str, description: str) -> str:
             return f"{found.group('file')} no longer exists."
         pinned = pinned_project_directory(Path(root))
         project = Path(root) / pinned if pinned else None
+        from app.analysis import compiler_check
+
+        if target.suffix.lower() in compiler_check.SUFFIXES:
+            errors = compiler_check.findings(root, pinned or "", [found.group("file")])
+            if any(e["file"] == found.group("file") and e["message"] == found.group("message") for e in errors):
+                return ""
+            return f"The compiler no longer reports it in {found.group('file')}."
         now = underlined_any(root, target, target.read_text(encoding="utf-8", errors="replace"), project)
         if now is None:
             return ""
@@ -238,7 +245,41 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 affected_files=[relative],
                 owner=_owner_of(state, ""),
             ))
+    defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))
     return defects[:MOST_UNDERLINED_DEFECTS]
+
+
+def _what_the_compiler_says(state: Any, root: str, since: str, project: str) -> list[Any]:
+    """Defects for what the compiler reports, when the batch changed code in a compiled language.
+
+    The language service covers JavaScript, TypeScript and Python file by file;
+    for a compiled language the compiler is the language service, asked once
+    for the project now that every work order is done. See
+    `app.analysis.compiler_check`.
+    """
+    from app.agents.specialists import ReportedDefect
+    from app.analysis import compiler_check
+
+    changed = [p for p in ci.changed_since(root, since) if p.lower().endswith(compiler_check.SUFFIXES)]
+    if not changed:
+        return []
+    try:
+        found = compiler_check.findings(root, project, changed)
+    except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+        found = []
+    defects = []
+    for finding in found:
+        relative, line, message = finding["file"], finding["line"], finding["message"]
+        defects.append(ReportedDefect(
+            description=f"{relative} line {line}: {message}{FAILS_WHEN_IT_RUNS}",
+            severity="major",
+            reproduction_steps=f"Build the project: the compiler stops at {relative} line {line}.",
+            expected_behavior="The project compiles: every name is defined or imported and every call matches what it calls.",
+            actual_behavior=f"{message} (the compiler, as an IDE would underline it)",
+            affected_files=[relative],
+            owner=_owner_of(state, ""),
+        ))
+    return defects
 
 
 def ci_gate(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:

@@ -31,6 +31,12 @@
 #                                            last line ALL READY, or start nothing (model_ready.py)
 #   scripts/loop/loop.sh resumed             after a deploy while a run was live: wait up to 10 minutes
 #                                            for orphan recovery to resume it (await_resume.sh)
+#   scripts/loop/loop.sh freshness           pins in the stack packs a major version behind their registry
+#                                            (pack_freshness.py, on the host)
+#   scripts/loop/loop.sh lessons [min-runs]  failed-call shapes recurring across runs, by language: candidates
+#                                            for guidance in src/app/plugins/seed.py (lessons.py, in the worker)
+#   scripts/loop/loop.sh nightly             verify every pack in the worker, then the freshness report, into
+#                                            data/loop/nightly-<date>.log - skipped while a run is live
 #
 # LOOP_SHADOW_SCORE=1 makes `wait` also score the product against the benchmark's
 # hidden tests at every check - for the operator only, off by default: a score in
@@ -212,6 +218,16 @@ deploy)
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   ;;
 
+freshness) "$PY" "$HERE/pack_freshness.py" ;;
+lessons) in_worker lessons.py "${2:-3}" ;;
+nightly)
+  # Never beside a live run: scaffolding 27 packs competes for its memory and CPU.
+  live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")
+  if [ "${live:-1}" != "0" ]; then echo "$(jst '+%F %H:%M JST') nightly skipped: a run is live" | tee -a "$STATE/nightly.log"; exit 0; fi
+  log="$STATE/nightly-$(date +%F).log"
+  { echo "== $(jst)"; in_worker verify_packs.py; "$PY" "$HERE/pack_freshness.py"; } > "$log" 2>&1 || true
+  echo "$(jst '+%F %H:%M JST') nightly: $(grep -E 'packs scaffolded' "$log" | tail -1); $(tail -1 "$log") -> $log" | tee -a "$STATE/nightly.log"
+  ;;
 suite)
   log="$STATE/suite.log"
   echo "suite -> $log (about 2.5 minutes)"

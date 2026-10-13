@@ -34,6 +34,9 @@ x-app-env: &app-env
   SANDBOX_RUNTIMES_ENABLED: ${SANDBOX_RUNTIMES_ENABLED:-true}
   PAGE_VIEW_ENABLED: ${PAGE_VIEW_ENABLED:-true}
   CUSTOM_STACK_SETUP: ${CUSTOM_STACK_SETUP:-true}
+  # At most this many agents of one run at once in parallel mode: work orders,
+  # defect fixes and reviews (`workflow.max_parallel`).
+  HARNESS_MAX_PARALLEL: ${HARNESS_MAX_PARALLEL:-6}
   HARNESS_MCP_SERVERS: ${HARNESS_MCP_SERVERS:-}
   CONTEXT7_API_KEY: "${CONTEXT7_API_KEY:-}"
   # Postgres, so the API and the worker share one checkpoint store. SQLite put a

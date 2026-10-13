@@ -856,6 +856,7 @@ def _only_this_worker_s_pause(state: Any, stage_name: str) -> dict[str, Any]:
 def _that_do_not_share_a_file(
     pending: list[tuple[int, Any]],
     already_going: list[tuple[int, Any]] | tuple = (),
+    manifests_present: set[str] | frozenset = frozenset(),
 ) -> list[tuple[int, Any]]:
     """As many pending tasks as can run at once without editing one file.
 
@@ -910,13 +911,13 @@ def _that_do_not_share_a_file(
         # The work order's own `files` first - the structured list the lead is
         # asked for - and whatever its prose names besides.
         declared = {
-            str(path).strip().rstrip("/").rsplit("/", 1)[-1].lower()
+            _as_compared(str(path))
             for path in (getattr(task, "files", None) or ())
             if str(path).strip()
         }
         try:
             return declared | {
-                path.rsplit("/", 1)[-1].lower()
+                _as_compared(path)
                 for path in paths_a_plan_named(
                     [
                         str(getattr(task, "task_description", "") or ""),
@@ -939,8 +940,14 @@ def _that_do_not_share_a_file(
         manifests = {name.lower() for name in PACKAGE_MANIFESTS}
     except Exception:  # noqa: BLE001 - never hold up a dispatch over a hint
         manifests = set()
+    # Only a manifest the project does not have yet: one the scaffold already
+    # wrote is built on, not made. Measured on one run: the service's work
+    # order listed `requirements.txt`, which the scaffold had written, and the
+    # database, interface, tests and documentation all waited for it.
+    missing = manifests - {name.lower() for name in manifests_present}
     first_the_manifest = {
-        index for index, task in pending if (named_by(task) or set()) & manifests
+        index for index, task in pending
+        if {name.rsplit("/", 1)[-1] for name in (named_by(task) or set())} & missing
     }
     if first_the_manifest:
         committed_first = {index for index, _ in already_going}
@@ -978,14 +985,49 @@ def _that_do_not_share_a_file(
                 continue
             if named and unknown_going:
                 continue
-            # Compared by basename: one task writes `app/app.js` and another
-            # `app.js`, and the plan's prose spells the same file both ways.
-            if named & claimed:
+            # A bare name meets any path ending in it: one task writes
+            # `app/app.js` and another `app.js`, and the plan's prose spells the
+            # same file both ways. Paths with directories meet only the same
+            # path - two `__init__.py` in two packages are two files, and one
+            # run's database work order waited the whole of the service's for it.
+            if _any_the_same_file(named, claimed):
                 continue
         going.append((index, task))
         claimed |= named
         unknown_going = unknown_going or not named
     return going or pending
+
+
+def _manifests_the_project_has(state: Any) -> set[str]:
+    """The package manifests already at the top of the run's project directory. Never raises."""
+    try:
+        from app.tools.repository import PACKAGE_MANIFESTS, pinned_project_directory
+
+        root = Path(state["repository"].root_path)
+        project = root / (pinned_project_directory(root) or "")
+        return {name for name in PACKAGE_MANIFESTS if (project / name).is_file()}
+    except Exception:  # noqa: BLE001 - then every manifest counts as missing, as before
+        return set()
+
+
+def _as_compared(path: str) -> str:
+    """A planned path as the stagger compares it: lower case, no leading `./` or `/`."""
+    text = str(path).strip().rstrip("/").lower()
+    while text.startswith(("./", "/")):
+        text = text[2:] if text.startswith("./") else text[1:]
+    return text
+
+
+def _the_same_file(one: str, other: str) -> bool:
+    """Whether two planned paths may be one file: equal, or one a bare name or tail of the other."""
+    if one == other:
+        return True
+    shorter, longer = sorted((one, other), key=len)
+    return longer.endswith("/" + shorter)
+
+
+def _any_the_same_file(named: set[str], claimed: set[str]) -> bool:
+    return any(_the_same_file(one, other) for one in named for other in claimed)
 
 
 def _tasks_without_an_output(state: Any) -> list[tuple[int, Any]]:
@@ -1084,7 +1126,9 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
             for index, task in pending
             if _specialist_stage_name(task, index) in _stages_holding_a_pause(state)
         ]
-        going = _that_do_not_share_a_file(pending, already_going=must_go)
+        going = _that_do_not_share_a_file(
+            pending, already_going=must_go, manifests_present=_manifests_the_project_has(state)
+        )
         return [
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
             for index, task in going

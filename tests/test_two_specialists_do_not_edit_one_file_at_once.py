@@ -300,3 +300,46 @@ class TestTheManifestComesFirst:
         going = _that_do_not_share_a_file([paused, manifest], already_going=[paused])
 
         assert [index for index, _ in going] == [0, 1]
+
+
+class TestWhatAScaffoldAlreadyHasHoldsNobodyBack:
+    """Measured on one run, in parallel mode: the service's work order listed
+    `requirements.txt`, which the scaffold had already written, and its
+    `models/__init__.py` shared a bare name with the database's
+    `db/versions/__init__.py`. The database, interface, tests and documentation
+    all waited for the service, the longest work order of the five."""
+
+    def test_a_manifest_the_project_has_is_not_waited_for(self) -> None:
+        pending = _pending(
+            Order("database", "Create the models.", files=["app/db/models.py"]),
+            Order("backend", "Build the service.", files=["app/requirements.txt", "app/svc/main.py"]),
+            Order("ui_ux", "Build the page.", files=["app/src/App.tsx"]),
+        )
+
+        going = _that_do_not_share_a_file(pending, manifests_present={"requirements.txt"})
+
+        assert _roles(going) == ["database", "backend", "ui_ux"]
+
+    def test_a_manifest_still_to_be_made_goes_first(self) -> None:
+        pending = _pending(
+            Order("database", "Create the models.", files=["app/db/models.py"]),
+            Order("backend", "Build the service.", files=["app/requirements.txt", "app/svc/main.py"]),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending, manifests_present={"package.json"})) == ["backend"]
+
+    def test_two_files_of_one_name_in_two_directories_are_two_files(self) -> None:
+        pending = _pending(
+            Order("backend", "Build the service.", files=["app/svc/models/__init__.py"]),
+            Order("database", "Create the migrations.", files=["app/db/versions/__init__.py"]),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending)) == ["backend", "database"]
+
+    def test_a_path_with_and_without_the_project_directory_is_one_file(self) -> None:
+        pending = _pending(
+            Order("backend", "Build the service.", files=["/app/svc/main.py"]),
+            Order("testing", "Wire it up.", files=["svc/main.py"]),
+        )
+
+        assert _roles(_that_do_not_share_a_file(pending)) == ["backend"]

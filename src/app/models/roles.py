@@ -55,6 +55,9 @@ def judgement_environment(environment: Mapping[str, str]) -> dict[str, str] | No
         built["MODEL_CONTEXT_WINDOW"] = window
         # A reply ceiling pinned for the default model may not fit this one.
         built.pop("MODEL_MAX_OUTPUT_TOKENS", None)
+    reply = str(environment.get("JUDGEMENT_MAX_OUTPUT_TOKENS") or "").strip()
+    if reply and reply != "0":
+        built["MODEL_MAX_OUTPUT_TOKENS"] = reply
     return built
 
 
@@ -135,7 +138,7 @@ def build_judgement_model(default_model: Any, environment: Mapping[str, str] | N
         from app.config import load_settings
         from app.models import build_default_chat_model
 
-        model = build_default_chat_model(load_settings(built))
+        model = build_default_chat_model(load_settings(built), environment=built)
     except Exception as error:  # noqa: BLE001 - a broken second model must not stop the run
         logger.warning(
             "The judgement model %r could not be built; every stage uses the default model",

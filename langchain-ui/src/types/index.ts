@@ -216,6 +216,7 @@ export interface SettingsView {
   judgement_base_url?: string;
   judgement_model_name?: string;
   judgement_context_window?: number;
+  judgement_max_output_tokens?: number;
   judgement_api_key_hint?: string | null;
   judgement_api_key_configured?: boolean;
   // The two tiers: failed tries on the build model before the judgement model

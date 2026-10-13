@@ -85,6 +85,7 @@ class SettingsView(BaseModel):
     judgement_base_url: str = ""
     judgement_model_name: str = ""
     judgement_context_window: int = 0
+    judgement_max_output_tokens: int = 0
     judgement_api_key_hint: str | None = None
     judgement_api_key_configured: bool = False
     #: The two tiers (`app.models.roles`): failed tries on the build model
@@ -177,6 +178,10 @@ class SettingsUpdate(BaseModel):
     judgement_base_url: str = Field(default="", max_length=500)
     judgement_model_name: str = Field(default="", max_length=200)
     judgement_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_max_output_tokens: int = Field(
+        default=0, ge=0, le=MAX_CONTEXT_WINDOW,
+        description="The judgement model's longest single reply, in tokens. 0 derives it from its window.",
+    )
     judgement_api_key: str | None = Field(default=None, max_length=512, repr=False)
     escalate_after_attempts: int = Field(
         default=2, ge=1, le=10,
@@ -294,12 +299,17 @@ def _judgement_view() -> dict[str, Any]:
         window = int(str(environment.get("JUDGEMENT_CONTEXT_WINDOW") or "0").strip() or 0)
     except ValueError:
         window = 0
+    try:
+        reply = int(str(environment.get("JUDGEMENT_MAX_OUTPUT_TOKENS") or "0").strip() or 0)
+    except ValueError:
+        reply = 0
     key = str(environment.get("JUDGEMENT_API_KEY") or "")
     return {
         "judgement_provider": str(environment.get("JUDGEMENT_PROVIDER") or ""),
         "judgement_base_url": str(environment.get("JUDGEMENT_BASE_URL") or ""),
         "judgement_model_name": str(environment.get("JUDGEMENT_MODEL") or ""),
         "judgement_context_window": window,
+        "judgement_max_output_tokens": reply,
         "judgement_api_key_hint": _mask(key),
         "judgement_api_key_configured": bool(key),
         "escalate_after_attempts": escalate_after(environment),
@@ -406,6 +416,9 @@ async def update_settings(
             "judgement_model_name": payload.judgement_model_name.strip(),
             "judgement_context_window": (
                 str(payload.judgement_context_window) if payload.judgement_context_window else ""
+            ),
+            "judgement_max_output_tokens": (
+                str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
             ),
             "escalate_after_attempts": str(payload.escalate_after_attempts),
             "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",

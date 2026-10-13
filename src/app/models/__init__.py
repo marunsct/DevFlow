@@ -15,7 +15,7 @@ import logging
 import threading
 import time
 from collections import deque
-from typing import Any
+from typing import Any, Mapping
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_openai import ChatOpenAI
@@ -212,16 +212,18 @@ def _request_timeout() -> float:
     return max(value, MIN_REQUEST_TIMEOUT_SECONDS, needed)
 
 
-def _max_output_tokens() -> int:
-    """Read `MODEL_MAX_OUTPUT_TOKENS` without ever raising at import time."""
-    import logging
-    import os
+def _max_output_tokens(environment: Mapping[str, str] | None = None) -> int:
+    """Read `MODEL_MAX_OUTPUT_TOKENS` without ever raising at import time.
 
+    `environment` is the one the model is built from. The judgement model's
+    holds its own window and reply ceiling (`roles.judgement_environment`);
+    reading the process environment instead gave it the default model's.
+    """
     from app.agents.context_budget import ContextBudget
 
     # Derived from the configured window, so a bigger model gets a bigger reply
     # allowance and a smaller one is held back, without anybody retuning this.
-    return ContextBudget.resolve().max_output_tokens
+    return ContextBudget.resolve(environment).max_output_tokens
 
 
 logger = logging.getLogger(__name__)
@@ -585,7 +587,9 @@ def _runtime_settings() -> Settings:
         return load_settings()
 
 
-def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
+def build_default_chat_model(
+    settings: Settings | None = None, environment: Mapping[str, str] | None = None,
+) -> BaseChatModel:
     """Construct the chat model role agents use, from validated settings.
 
     Passing a real `ChatOpenAI` instance to `create_deep_agent` (instead of a
@@ -603,10 +607,12 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
     # built. See `app.agents.thinking` for why on/off and effort are separate.
     from app.agents.thinking import ThinkingPolicy
 
+    reply_ceiling = _max_output_tokens(environment)
+
     thinking = ThinkingPolicy.resolve(
         mode=getattr(resolved_settings, "thinking_mode", "default"),
         effort=getattr(resolved_settings, "thinking_effort", None),
-        max_output_tokens=_max_output_tokens(),
+        max_output_tokens=reply_ceiling,
     )
     # `local` is the llama.cpp chat-template switch, which only a self-hosted
     # server reads; a hosted API neither needs it nor reliably accepts it. It
@@ -626,7 +632,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             model=resolved_settings.model_name,
             max_retries=3,
             timeout=_request_timeout(),
-            max_tokens=_max_output_tokens(),
+            max_tokens=reply_ceiling,
             **thinking.anthropic_arguments(),
         )
         if resolved_settings.openai_api_key:
@@ -635,7 +641,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
             timeout=_request_timeout(),
-                max_tokens=_max_output_tokens(),
+                max_tokens=reply_ceiling,
             )
     elif resolved_settings.llm_provider == "gemini":
         primary = ChatGoogleGenerativeAI(
@@ -643,7 +649,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             model=resolved_settings.model_name,
             max_retries=3,
             timeout=_request_timeout(),
-            max_output_tokens=_max_output_tokens(),
+            max_output_tokens=reply_ceiling,
         )
         if resolved_settings.openai_api_key:
             fallback = CompatibleChatOpenAI(
@@ -651,7 +657,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
             timeout=_request_timeout(),
-                max_tokens=_max_output_tokens(),
+                max_tokens=reply_ceiling,
             )
     else:
         # Defaults to OpenAI or Local
@@ -663,7 +669,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
             # after a reply a proxy cut off; the client would resend it whole.
             max_retries=0 if speaks_llama_cpp else 3,
             timeout=_request_timeout(),
-            max_tokens=_max_output_tokens(),
+            max_tokens=reply_ceiling,
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
         # If it's a local model that fails, fallback to Anthropic if available
@@ -673,7 +679,7 @@ def build_default_chat_model(settings: Settings | None = None) -> BaseChatModel:
                 model=_fallback_model("ANTHROPIC_FALLBACK_MODEL", "claude-haiku-4-5-20251001"),
                 max_retries=3,
             timeout=_request_timeout(),
-                max_tokens=_max_output_tokens(),
+                max_tokens=reply_ceiling,
              )
 
     models = [{"name": "primary", "model": primary}]

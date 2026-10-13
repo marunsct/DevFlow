@@ -26,6 +26,7 @@ interface ProviderForm {
   judgement_base_url: string;
   judgement_model_name: string;
   judgement_context_window: number;
+  judgement_max_output_tokens: number;
   judgement_api_key?: string;
   escalate_after_attempts: number;
   plan_on_judgement_model: boolean;
@@ -173,6 +174,7 @@ export const Settings: React.FC = () => {
         judgement_base_url: settings.judgement_base_url ?? '',
         judgement_model_name: settings.judgement_model_name ?? '',
         judgement_context_window: settings.judgement_context_window ?? 0,
+        judgement_max_output_tokens: settings.judgement_max_output_tokens ?? 0,
         escalate_after_attempts: settings.escalate_after_attempts ?? 2,
         plan_on_judgement_model: settings.plan_on_judgement_model ?? true,
       };
@@ -588,6 +590,18 @@ export const Settings: React.FC = () => {
                       value={settings.judgement_context_window ?? 0}
                       onChange={(e) => setSettings({ ...settings, judgement_context_window: Number(e.target.value) || 0 })}
                       className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-text-secondary mb-1">Longest reply (tokens)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1000}
+                      value={settings.judgement_max_output_tokens ?? 0}
+                      onChange={(e) => setSettings({ ...settings, judgement_max_output_tokens: Number(e.target.value) || 0 })}
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                      placeholder="0: derived from its window"
                     />
                   </div>
                 </div>

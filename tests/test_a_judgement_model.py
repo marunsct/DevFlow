@@ -64,7 +64,7 @@ def test_a_model_that_cannot_be_built_falls_back_to_the_default(monkeypatch) -> 
 
 def test_a_configured_model_is_built_from_its_own_settings(monkeypatch) -> None:
     seen = []
-    monkeypatch.setattr("app.models.build_default_chat_model", lambda settings: seen.append(settings) or "built")
+    monkeypatch.setattr("app.models.build_default_chat_model", lambda settings, environment=None: seen.append(settings) or "built")
     assert build_judgement_model(object(), {**BASE, "JUDGEMENT_MODEL": "big-model"}) == "built"
     assert seen[0].model_name == "big-model"
 

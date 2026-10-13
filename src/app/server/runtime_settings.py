@@ -122,6 +122,8 @@ SETTABLE_KEYS: dict[str, str] = {
     "judgement_base_url": "JUDGEMENT_BASE_URL",
     "judgement_model_name": "JUDGEMENT_MODEL",
     "judgement_context_window": "JUDGEMENT_CONTEXT_WINDOW",
+    # Its longest single reply; 0 derives it from its own window.
+    "judgement_max_output_tokens": "JUDGEMENT_MAX_OUTPUT_TOKENS",
     # Two tiers: the judgement model plans (`PLAN_ON_JUDGEMENT_MODEL`), the
     # default model builds, and a stage or defect the default model failed this
     # many times goes to the judgement model. See `app.models.roles`.

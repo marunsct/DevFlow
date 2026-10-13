@@ -178,12 +178,12 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
 | deployed | `5d2676a` is live (deployed into run-23896345 at 11:56 JST 2026-10-13, which resumed): Node 24 and waves 2-3 packs (27 of 27 verified), unready plans ranked by problems per work order, parallel work orders waiting only for a missing manifest or a truly shared file, and a test acting on the page only when it takes the page fixture. LM Studio served overlapping calls at 27 tok/s each against 86 alone, so parallel mode saves little until the server batches requests. |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
-| pushed, not deployed | `58600ee` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes. Deploy when run-23896345 ends. |
+| pushed, not deployed | `d9fd387` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes, compiler checks, page view, docs and MCP, eight CLI/library packs. Deploy when run-23896345 ends, then run `verify_packs.py` in the worker (35 packs). |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
 
-### 2.0 Reach beyond the packs (2026-10-13, `58600ee`, pushed; deploy after run-23896345 ends)
+### 2.0 Reach beyond the packs (2026-10-13, `58600ee` and `d9fd387`, pushed; deploy after run-23896345 ends)
 
 Three features (on the owner's request, after comparing how cloud coding
 agents handle any language): they change what stages are given, so they go
@@ -212,9 +212,47 @@ live between runs, not into one.
   real on the host: Node 22.23.3, Go 1.26.9, JDK 25, Python 3.13 in 1-5 s each.
   Off with `SANDBOX_RUNTIMES_ENABLED=false`.
 
-Not yet seen on a real run: a custom stack under the served model. Run one
-(a brief naming Nuxt, SvelteKit or Ktor) after the parallel/linear medium
-runs, and check §2.2 item 5.
+Then (`d9fd387`, same branch, also to deploy between runs):
+
+- **Compiler checks for compiled languages** (`app/analysis/compiler_check.py`).
+  JS/TS (TypeScript language service) and Python (Pyright) already had an IDE's
+  view on every write; Go, Rust, Java/Kotlin, C#, Swift and PHP had only a parse.
+  Now the project's own build is asked for errors only - `go test -run '^$'`,
+  `cargo check --all-targets`, `mvn test-compile` / `gradle testClasses`,
+  `dotnet build`, `swift build`, PHPStan level 0 when installed - at a stage's
+  exit (not while another work order's files are unwritten) and as defects at
+  the sprint gate. Ruby has no checker that finds an undefined name; its tests
+  are the check. The image has no Gradle, so Kotlin/Gradle projects get none.
+- **`look_at_page`** (`app/tools/page_view.py`): specialists on a product with a
+  page start it through the project's own Playwright configuration and get its
+  accessibility tree, page errors and failed requests (desktop or phone). Fix
+  stages are told to look before changing the page. Verified in the worker
+  image on a scaffolded React page.
+- **`read_docs`** (`app/tools/docs.py`): a framework's own `llms.txt` docs
+  (Svelte, Angular, Vue, Nuxt, React, Next, Vite, Vitest, Solid, Nest, Express,
+  Hono, Prisma, Drizzle, Bun, Deno, Pydantic, Quarkus) or a package's README
+  from npm/PyPI/crates.io/GitHub, cut to the topic.
+- **MCP servers** (`app/tools/mcp_tools.py`, adds `langchain-mcp-adapters`):
+  off until the owner sets `HARNESS_MCP_SERVERS` (example in `.env.example`:
+  Context7). Only listed tools, only the listed roles, answers capped and
+  labelled as data. Verified with Context7 (no key) and a local stdio server.
+- **Eight packs** (35 in all): `node-cli`, `node-library`, `typescript-cli`,
+  `typescript-library`, `go-cli`, `go-library`, `rust-cli`, `rust-library`,
+  each scaffolded and smoke-tested through the sandbox in the worker image.
+- **A framework no pack knows gets no pack** (`e92c5b5`): Hono had been read as
+  "no framework" and given the Nest pack.
+- **`loop.sh freshness`** (pins a major behind: 78 of 194 on first run - e.g.
+  Vitest 3 vs 5, Vite 7 vs 8, TypeScript 5 vs 7, Next 15 vs 16, Spring Boot 3
+  vs 4; update a pack only with `verify_packs.py`), **`loop.sh lessons`**
+  (failure shapes recurring across runs, per language: candidates for
+  `seed.py`), **`loop.sh nightly`** (all packs + freshness, skipped while a run
+  is live; not scheduled - the owner decides whether to add it to cron).
+- **`benchmarks/notes-api-hono`**: notes-api's hidden tests on TypeScript/Hono,
+  which no pack covers; reference 9/9. The first run of the proven setup stage.
+
+Not yet seen on a real run: a custom stack under the served model. Run
+`loop.sh bench notes-api-hono` after the parallel/linear medium runs, and check
+§2.2 item 5.
 
 ### 2.1 What changed on 2026-10-12
 

@@ -97,6 +97,23 @@ def test_any_other_package_is_read_from_its_registry_s_readme(name, ecosystem, u
     assert "Use Depends() to inject." in found["excerpt"]
 
 
+def test_an_npm_package_s_readme_is_read_from_the_published_package():
+    """The registry record of "@hono/node-server" carries no README, and that of
+    a package with thousands of versions runs past the fetch limit; the file the
+    package publishes is read instead, however its name is cased."""
+    readme = "# Node adapter\n## Options\nPass `hostname` and `port` to `serve()`."
+    pages = {
+        "https://cdn.jsdelivr.net/npm/@hono/node-server/Readme.md": readme,
+        "https://registry.npmjs.org/@hono/node-server": json.dumps({"readme": ""}),
+    }
+
+    found = docs.read("@hono/node-server", "serve options hostname port", fetch=_site(pages))
+
+    assert found["source"] == ["https://cdn.jsdelivr.net/npm/@hono/node-server/Readme.md"]
+    assert "Pass `hostname` and `port`" in found["excerpt"]
+    assert docs._allowed("https://cdn.jsdelivr.net/npm/@hono/node-server/README.md")
+
+
 def test_nothing_found_says_what_can_be_read():
     assert "Only frameworks that publish" in docs.read("ktor", "routing", fetch=_site({}))["error"]
 

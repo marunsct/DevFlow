@@ -64,7 +64,14 @@ INDEXES: dict[str, str] = {
 #: Hosts a README is read from.
 _REGISTRY_HOSTS = frozenset({
     "registry.npmjs.org", "pypi.org", "crates.io", "static.crates.io", "raw.githubusercontent.com",
+    "cdn.jsdelivr.net",
 })
+
+#: How an npm package's README file may be spelled. The registry's own record
+#: carries no README for many packages ("@hono/node-server"), and for a package
+#: with thousands of versions it runs past `MAX_DOCUMENT` ("hono", 6 MB), so the
+#: file is read from the published package first.
+_NPM_README_NAMES = ("README.md", "Readme.md", "readme.md")
 
 #: Fetches a URL: (status, text, content type). Injected so tests need no network.
 Fetch = Callable[[str], tuple[int, str, str]]
@@ -200,6 +207,9 @@ def _readme(ecosystem: str, name: str, fetch: Fetch) -> tuple[str, str]:
     ecosystem = ecosystem.lower()
     candidates: list[tuple[str, Callable[[str], str]]] = []
     if ecosystem in {"", "npm", "node", "javascript", "typescript", "js", "ts"}:
+        candidates.extend(
+            (f"https://cdn.jsdelivr.net/npm/{name}/{file}", lambda body: body) for file in _NPM_README_NAMES
+        )
         candidates.append((f"https://registry.npmjs.org/{name}", lambda body: json.loads(body).get("readme") or ""))
     if ecosystem in {"", "pypi", "python", "pip"}:
         candidates.append((f"https://pypi.org/pypi/{quote(name)}/json",

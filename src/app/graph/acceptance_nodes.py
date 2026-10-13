@@ -96,7 +96,94 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
                     "smoke tests." if result.ok else f"The scaffold could not be proven: {result.problem}"
                 ),
             )
+    elif pack is None and not already_done:
+        set_up = _set_up_a_stack_no_pack_covers(state, config, ctx)
+        if set_up is not None:
+            return set_up
     return _handing_on(**update, stage="acceptance_author")
+
+
+def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any] | None:
+    """Have the testing specialist set the project up, and prove it like a pack; None to skip.
+
+    See `app.stacks.custom_setup`. A setup that is not proven after
+    `ATTEMPTS` is left to the agents, as every custom stack was before; so is a
+    stage that ran out of attempts of its own - a setup is worth having, not
+    worth a run.
+    """
+    from app.agents.specialists import create_specialist_agent
+    from app.graph.workflow import _handing_on, _run_gated_agent
+    from app.stacks import custom_setup, product_kind
+    from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
+
+    stack = _stack(state)
+    previous = state.get("scaffold_result") or {}
+    if not custom_setup.enabled() or stack is None or previous.get("left_to_the_agents"):
+        return None
+    root = _root(state)
+    title = str(getattr(state.get("product_intake"), "product_name", "") or "").strip()
+    project = pinned_project_directory(Path(root)) or pin_the_directory_the_product_names(root, title)
+    if not project:
+        return None
+    project_root = Path(root) / project
+    attempt = int(previous.get("setup_attempts") or 0)
+    if attempt == 0 and custom_setup.already_set_up(project_root):
+        return None
+    brief = getattr(state.get("document"), "text", "") or ""
+
+    def left_to_the_agents(update: dict[str, Any], why: str) -> dict[str, Any]:
+        custom_setup.leave_to_the_agents(project_root)
+        update["scaffold_result"] = {
+            "ok": False, "pack": None, "project": project, "problem": why, "left_to_the_agents": True,
+        }
+        _decide(
+            state, update, point="scaffold", question="How is the project set up?",
+            options=["a proven setup", "left to the agents"], decision="left to the agents",
+            rationale=f"No pack covers this stack, and the setup could not be proven: {why}",
+        )
+        logger.warning("The custom stack's setup was not proven; left to the agents: %s", why)
+        return _handing_on(**update, stage="acceptance_author")
+
+    agent = create_specialist_agent(
+        "testing", model=ctx.model, checkpointer=ctx.checkpointer,
+        repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
+    )
+    update = _run_gated_agent(
+        state, config,
+        stage_name=f"stack_setup_{attempt}",
+        agent=agent,
+        initial_request=custom_setup.build_setup_request(
+            project, stack, product_kind(stack, brief), str(previous.get("problem") or "")
+        ),
+        output_key="__stack_setup__",
+        next_stage="acceptance_author",
+    )
+    if "__stack_setup__" not in update:
+        if update.get("stage") == "failed":
+            return left_to_the_agents({}, str(update.get("error") or "the setup stage did not finish"))
+        return update  # paused for approval, or retrying
+    update.pop("__stack_setup__")
+    update.pop("stage", None)
+    result = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
+    if result.ok:
+        update["stack_pack"] = custom_setup.PROVEN_SETUP
+        update["scaffold_result"] = {"ok": True, "pack": custom_setup.PROVEN_SETUP, "project": project, "problem": ""}
+        _decide(
+            state, update, point="scaffold", question="How is the project set up?",
+            options=["a proven setup", "left to the agents"], decision="a proven setup",
+            rationale="No pack covers this stack; the setup stage's project installed and passed "
+            "its own unit and acceptance smoke tests through the commands it declared.",
+        )
+        logger.info("Proved the custom stack's setup in %s/", project)
+        return _handing_on(**update, stage="acceptance_author")
+    if attempt + 1 < custom_setup.ATTEMPTS:
+        update["scaffold_result"] = {
+            "ok": False, "pack": None, "project": project, "problem": result.problem,
+            "setup_attempts": attempt + 1,
+        }
+        logger.warning("The custom stack's setup was not proven; sent back: %s", result.problem)
+        return _handing_on(**update, stage="scaffold")
+    return left_to_the_agents(update, result.problem)
 
 
 # --- acceptance author ---------------------------------------------------------

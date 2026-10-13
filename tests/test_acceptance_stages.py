@@ -100,7 +100,12 @@ def test_a_scaffold_that_cannot_be_proven_drops_the_pack(tmp_path, monkeypatch) 
     assert "no network" in update["decisions"][0]["rationale"]
 
 
-def test_no_pack_means_no_scaffold(tmp_path, monkeypatch) -> None:
+def test_no_pack_and_no_setup_stage_means_no_scaffold(tmp_path, monkeypatch) -> None:
+    """With the setup stage switched off, a stack no pack covers starts as it always did.
+
+    With it on, see `test_a_stack_no_pack_covers_is_set_up_and_proven`.
+    """
+    monkeypatch.setenv("CUSTOM_STACK_SETUP", "false")
     monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
     update = nodes.scaffold(_state(tmp_path), CONFIG, CTX)
     assert update["stage"] == "acceptance_author" and "scaffold_result" not in update

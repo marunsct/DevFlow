@@ -37,11 +37,13 @@ def write(
     package: str | None = None,
     *,
     scaffolded: bool = True,
+    extra: dict[str, Any] | None = None,
 ) -> None:
     """Record the pack this run's project was built from.
 
     `scaffolded` is False when the run chose the pack and its scaffold could
-    not be proven: see `scaffolded()`.
+    not be proven: see `scaffolded()`. `extra` is recorded beside the rest - a
+    proven setup's own description (`app.stacks.custom_setup`).
     """
     from app.stacks import python_package_name
 
@@ -61,6 +63,7 @@ def write(
         "acceptance_pattern": pack.acceptance_pattern,
         "evidence_dir": pack.evidence_dir,
         "scaffolded": scaffolded,
+        **(extra or {}),
     }
     path.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
@@ -92,6 +95,11 @@ def the_pack(repo_root: str | Path | None) -> tuple[StackPack, dict[str, Any]] |
     if record is None:
         return None
     pack = pack_named(record.get("pack"))
+    if pack is None:
+        # A stack no pack covers, set up by an agent and proven like a pack.
+        from app.stacks.custom_setup import pack_from
+
+        pack = pack_from(record)
     if pack is None:
         return None
     return pack, record

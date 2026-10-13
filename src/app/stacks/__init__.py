@@ -520,9 +520,11 @@ def support_tier(pack: StackPack | None) -> str:
             "a service)."
         )
     return (
-        f"Support tier: {CUSTOM_STACK} - no pack fits, so there is no scaffold: the agents "
-        "choose the setup and the test commands, the locked suite runs on those, and the "
-        "release carries no packaged CI or container files."
+        f"Support tier: {CUSTOM_STACK} - no pack fits, so a setup stage creates the project "
+        "with the framework's own generator and declares its test commands; the harness "
+        "proves them with a smoke test of each before building starts (or, if they cannot "
+        "be proven, leaves the setup to the agents), and the release carries no packaged CI "
+        "or container files."
     )
 
 

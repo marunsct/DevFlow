@@ -405,6 +405,7 @@ _ITERATED_STAGE_OWNERS = {
     "test_round_": "test_and_triage",
     "defect_fix_": "defect_remediation",
     "acceptance_author_": "acceptance_author",
+    "stack_setup_": "scaffold",
     "acceptance_review_": "acceptance_review",
     "code_review_": "code_review",
     "consult_": "specialist_consultation",
@@ -8758,7 +8759,7 @@ def build_workflow_graph(
     graph.add_node("principal_architect", principal_architect_node, retry_policy=agent_retry_policy)
     graph.add_node("architecture_review", architecture_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_specification", user_review_specification_node)
-    graph.add_node("scaffold", scaffold_node)
+    graph.add_node("scaffold", scaffold_node, retry_policy=agent_retry_policy)
     graph.add_node("acceptance_author", acceptance_author_node, retry_policy=agent_retry_policy)
     graph.add_node("acceptance_review", acceptance_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_acceptance", user_review_acceptance_node)

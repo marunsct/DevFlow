@@ -9528,6 +9528,10 @@ def rewind_points(graph: Any, thread_id: str) -> list[dict[str, Any]]:
     previous: str | None = None
     for snapshot in reversed(history):
         node = snapshot.next[0] if len(snapshot.next or ()) == 1 else None
+        # Each resume and each answered approval begins with a bookkeeping
+        # checkpoint of its own; the stage it goes back into is the same entry.
+        if node in _SYNTHETIC_NODES or not snapshot.next:
+            continue
         if node is None or _not_a_stage_of_its_own(node):
             previous = None
             continue

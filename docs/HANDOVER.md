@@ -176,11 +176,40 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `c7dada5` (all of `harness-hardening-session`), deployed 19:27 JST 2026-10-13 into run-23896345, which resumed. The `live-run-23896345` branch is retired. `verify_packs.py` for the 35 packs has NOT been run in the worker yet - run it when no run is live (`loop.sh nightly` does). |
-| current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943` - PAUSED 21:07 JST at the owner's request (one run at a time; resumable). `run-63d016f6` (`notes-api-hono`) cancelled 21:13 JST for the pack bug fixed in `12fef11`; notes-api-hono restarts on the fix. `loop.sh status|wait` take a run id. |
-| model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
+| deployed | `d5e6465` deployed 23:24 JST 2026-10-13 into run-c2e62179 (resumed); the rewind-points grouping fix after it is pushed, deploy with the next fix. `verify_packs.py` for the 35 packs has NOT been run in the worker yet - run it when no run is live (`loop.sh nightly` does). |
+| current run | `run-c2e62179` (`notes-api-hono`, parallel), started 21:21 JST 2026-10-13: no pack fits (TypeScript/Hono), so the setup stage path is live. `run-23896345` (brief_medium) is PAUSED since 21:07 JST at the owner's request (one run at a time; resumable). `loop.sh status|wait` take a run id. |
+| model | Two tiers set by the owner: build model `AtomicChat/Ornith-1.5-35B-A3B-GGUF` (`host.docker.internal:8888`), frontier (judgement) `qwen3.8-flash` on `https://token-plan.maas.qwencloudapi.com/compatible-mode/v1` (it refuses a forced tool call while thinking - handled). Qwen cloud's free quota ran out on qwen3.8-max(-0902) on 2026-10-13; a quota refusal now parks a run as `waiting_for_budget`. Execution mode **parallel**, `HARNESS_MAX_PARALLEL=6`. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
+
+### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
+
+- **Rewind** (`d5e6465`): every stage snapshots the workspace as it starts
+  (`version_control.snapshot_workspace`, refs `refs/harness/stages/<ms>-<node>`,
+  about 10 ms; `node_modules`/caches/test output left out, `.harness/` and
+  `.project-*` kept). `GET /api/runs/{id}/rewind-points` lists each stage
+  entered (approval round-trips are one entry); `POST /api/runs/{id}/rewind
+  {"checkpoint_id"}` branches the run from the checkpoint before that stage
+  (`workflow.rewind_to`: `update_state` on the old checkpoint), restores the
+  files (a `before-rewind` snapshot first; branch and `sprint-N` tags moved
+  back) and resumes. Only a stopped run (pause first). UI: **Rewind** beside
+  Resume on the run page. Runs from before `d5e6465` have no snapshots: their
+  state rewinds, their files stay.
+- **Specification for the build model** (`f008ec4`): new `library_usage`
+  section (exact import + call per library, from `read_docs`), handed to every
+  work order; the architect must make the configuration allow what the files
+  do (import extensions, module system, runner config names); the custom-stack
+  setup stage is shown the specification's files/testing/configuration and
+  uses its names.
+- **Fixes the same night**: quota refusal parks the run (`526b5b4`); Express
+  pack no longer fits a Hono stack (`12fef11`); npm READMEs via jsDelivr
+  (`1e0bf09`); the judgement model's reply ceiling is its own
+  (`JUDGEMENT_MAX_OUTPUT_TOKENS`, "Longest reply" in settings, `357131c`);
+  forced tool refused in thinking mode -> offered instead (commit after
+  `b1ed794`); a setup stage resumed after its own approval pause is finished
+  and proven, not skipped (`2915a36`).
+- **Still open**: the context budget (compaction, document budgets) follows
+  the default model's window even on judgement stages.
 
 ### 2.0 Reach beyond the packs (2026-10-13, `58600ee` and `d9fd387`, pushed; deploy after run-23896345 ends)
 

@@ -145,3 +145,26 @@ async def test_a_running_run_is_paused_before_it_is_rewound(runner):
 
     with pytest.raises(RunConflict, match="pause it first"):
         await runner.rewind_run("run-live", "any")
+
+
+def test_a_stage_that_paused_for_approval_is_one_point(agents, tmp_path):
+    """Each answered approval begins with a bookkeeping checkpoint; it is not a new entry.
+
+    Measured on a live run: one acceptance stage answered eleven approvals and
+    was listed as eleven points.
+    """
+    from test_graph_routing import approve_write_decision, pause_for_approval
+
+    from app.graph.workflow import resume_pending_approval, rewind_points, start_workflow
+
+    _script_through_architecture(agents, _approved_review())
+    _script(agents)
+    agents.script("scrum_master", [pause_for_approval(), pause_for_approval(), responds_with(_sprint_plan())])
+    graph = _graph()
+    state = start_workflow(graph, _document(), _repository(tmp_path), "run-paused")
+    while str(state.get("stage", "")).startswith("awaiting_approval:"):
+        state = resume_pending_approval(graph, "run-paused", approve_write_decision())
+
+    assert state["stage"] == "complete", state.get("error")
+    stages = [point["stage"] for point in rewind_points(graph, "run-paused")]
+    assert stages.count("scrum_master") == 1, stages

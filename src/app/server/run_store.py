@@ -104,7 +104,7 @@ _INSERT_SQL = """
         repo_root        = EXCLUDED.repo_root,
         owner            = EXCLUDED.owner,
         tenant_id        = EXCLUDED.tenant_id,
-        task_id          = COALESCE(EXCLUDED.task_id, runs.task_id),
+        task_id          = COALESCE(runs.task_id, EXCLUDED.task_id),
         model_overrides  = EXCLUDED.model_overrides
 """
 
@@ -206,6 +206,12 @@ class RunStore:
         would let a worker's routine persist reset a cancellation that arrived
         while it was mid-step - which is precisely how the previous
         implementation made cancel a no-op.
+
+        ``task_id`` is the same kind of field: ``set_task_id`` owns it, and a
+        save keeps the stored one. A worker's record was loaded before the API
+        recorded the task that worker was running, so its routine persist wrote
+        the previous task's id back - and a pause revoked a task that no longer
+        existed, leaving the run going until its next stage boundary.
         """
         with self.get_connection() as conn:
             with conn.cursor() as cur:

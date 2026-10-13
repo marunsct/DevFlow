@@ -533,6 +533,7 @@ _CONTRACT_SECTIONS = (
     ("error_catalogue", "Error catalogue"),
     ("implementation_order", "Implementation order"),
     ("configuration", "Configuration"),
+    ("library_usage", "Library usage"),
 )
 
 

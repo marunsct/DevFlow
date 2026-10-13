@@ -239,6 +239,15 @@ class TechnicalSpecificationOutput(BaseModel):
             "product reads or needs, one entry each, with its default."
         ),
     )
+    library_usage: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every call the product makes into a third-party library or framework, one entry each: "
+            "the library and the version it is built against, the exact import statement, and the "
+            "exact call with its arguments and what it returns, as that version's documentation "
+            "gives it - read with `read_docs`, not recalled."
+        ),
+    )
     decisions: list[ArchitectureDecisionRecord] = Field(
         default_factory=list, description="Every material decision made while producing this specification."
     )
@@ -498,6 +507,15 @@ Responsibilities:
   for each step, the tests for each acceptance criterion with their exact
   assertions, and every setting the product reads. Where two parts meet, write
   the contract once, exactly, so both sides are built to the same words.
+- Give every call into a library or framework as its documentation gives it
+  for the version you pin: the import statement and the call, word for word,
+  read with `read_docs`. A smaller model recalls these wrongly more often than
+  anything else.
+- Make the configuration allow everything the files do. The module system,
+  the import paths (with or without file extensions), the source and test
+  directories, and the names of the test runners' configuration files are
+  stated once and agree everywhere: a builder copies both the configuration
+  and the files, and where the two disagree the build fails.
 
 {SCOPE_DISCIPLINE}
 
@@ -519,9 +537,9 @@ Constraints:
   `reliability_and_observability`, `testing`, `deployment`,
   `acceptance_criteria`, `open_questions`, and `decisions` for the ADRs - and
   the detail a builder works from: `file_plan`, `function_contracts`,
-  `data_contracts`, `error_catalogue`, `implementation_order`, `test_cases`
-  and `configuration`, one entry per file, function, shape, failure, step,
-  test and setting. A section you leave empty is a section the document says
+  `data_contracts`, `error_catalogue`, `implementation_order`, `test_cases`,
+  `configuration` and `library_usage`, one entry per file, function, shape,
+  failure, step, test, setting and library call. A section you leave empty is a section the document says
   nothing about.
 - Keep each entry precise and complete rather than short: an entry a builder
   has to interpret is one two builders will interpret differently.

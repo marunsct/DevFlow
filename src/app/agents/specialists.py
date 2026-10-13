@@ -911,6 +911,12 @@ def specification_for_the_work_order(specification: Any, work_order: Any) -> str
         ]
         if entries:
             blocks.append(f"{heading}:\n" + "\n".join(f"- {entry}" for entry in entries))
+    # Every library call, whichever file makes it: an entry names the library,
+    # not the file, and a call recalled wrongly is the commonest way a smaller
+    # model's build fails.
+    calls = [str(entry).strip() for entry in getattr(specification, "library_usage", None) or [] if str(entry).strip()]
+    if calls:
+        blocks.append("Library calls, as their documentation gives them:\n" + "\n".join(f"- {entry}" for entry in calls))
     if not blocks:
         return ""
     text = "\n\n".join(blocks)

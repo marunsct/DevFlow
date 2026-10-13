@@ -44,6 +44,7 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ("implementation_order", "Implementation Order"),
     ("test_cases", "Test Cases"),
     ("configuration", "Configuration"),
+    ("library_usage", "Library Usage"),
     ("specialist_advice_decisions", "Specialist Advice and Decisions"),
     ("open_questions", "Open Questions"),
 )

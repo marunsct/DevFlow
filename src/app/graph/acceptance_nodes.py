@@ -160,7 +160,8 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         stage_name=f"stack_setup_{attempt}",
         agent=agent,
         initial_request=custom_setup.build_setup_request(
-            project, stack, product_kind(stack, brief), str(previous.get("problem") or "")
+            project, stack, product_kind(stack, brief), str(previous.get("problem") or ""),
+            specification=state.get("technical_specification"),
         ),
         output_key="__stack_setup__",
         next_stage="acceptance_author",

@@ -82,9 +82,48 @@ def _stack_line(stack: Any) -> str:
     return ", ".join(parts) or "the chosen stack"
 
 
-def build_setup_request(project: str, stack: Any, kind: str, problem: str = "") -> dict[str, Any]:
-    """What the setup stage is asked to do."""
+#: The specification's sections the setup is made to agree with.
+_SPECIFICATION_FOR_THE_SETUP = (
+    ("file_plan", "Files"), ("testing", "Testing"), ("configuration", "Configuration"),
+    ("library_usage", "Library calls"),
+)
+#: The most of the specification the setup request carries.
+MOST_SPECIFICATION_CHARACTERS = 12_000
+
+
+def what_the_specification_sets_up(specification: Any) -> str:
+    """The specification's files, testing, configuration and library calls, as the setup stage reads them."""
+    blocks = []
+    for field, heading in _SPECIFICATION_FOR_THE_SETUP:
+        entries = [str(entry).strip() for entry in getattr(specification, field, None) or [] if str(entry).strip()]
+        if entries:
+            blocks.append(f"{heading}:\n" + "\n".join(f"- {entry}" for entry in entries))
+    text = "\n\n".join(blocks)
+    if len(text) > MOST_SPECIFICATION_CHARACTERS:
+        text = text[:MOST_SPECIFICATION_CHARACTERS] + "\n... (the rest is in /docs/technical_specification.md)"
+    return text
+
+
+def build_setup_request(
+    project: str, stack: Any, kind: str, problem: str = "", specification: Any = None,
+) -> dict[str, Any]:
+    """What the setup stage is asked to do.
+
+    With the specification's files, testing and configuration: the product is
+    built from that document, so the setup uses the names it gives. Measured on
+    one run: the specification planned one test runner configuration file and
+    the setup created two others under names of its own, so every builder was
+    handed a layout that was not the project's.
+    """
     meets = _MEETS.get(kind, "it exercises the product the way its user meets it")
+    planned = what_the_specification_sets_up(specification) if specification is not None else ""
+    planned = (
+        "\n--- What the specification already decided ---\n"
+        "The product is built from this. Where it names a manifest, a runner configuration "
+        "file, a test directory, a test command, a module system or a dependency version, set "
+        "the project up with exactly that; decide only what it leaves open.\n" + planned + "\n"
+        if planned else ""
+    )
     again = (
         f"\n--- The last setup was not proven ---\n{problem}\nFix what failed, keep what works, "
         "run both smoke tests again through the declared commands, and update the declaration.\n"
@@ -126,7 +165,7 @@ product is built, set up `{project}/` so that a unit test and an acceptance test
 Build nothing of the product itself. The harness then runs the install and both smoke tests
 through exactly these commands; a setup whose smoke tests pass is kept as the project's
 test setup for the rest of the run, and the smoke tests are removed.
-{again}"""
+{planned}{again}"""
     return {"messages": [{"role": "user", "content": text}]}
 
 

@@ -113,7 +113,7 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
     worth a run.
     """
     from app.agents.specialists import create_specialist_agent
-    from app.graph.workflow import _handing_on, _run_gated_agent
+    from app.graph.workflow import _handing_on, _run_gated_agent, _the_stage_that_paused
     from app.stacks import custom_setup, product_kind
     from app.tools.repository import pin_the_directory_the_product_names, pinned_project_directory
 
@@ -128,7 +128,13 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         return None
     project_root = Path(root) / project
     attempt = int(previous.get("setup_attempts") or 0)
-    if attempt == 0 and custom_setup.already_set_up(project_root):
+    # A manifest found on the way back from the setup stage's own approval
+    # pause is the one it wrote before pausing. Measured on one run: its
+    # `npm install` waited for approval, the stage was entered again, found
+    # the package.json it had just written, and handed on with nothing
+    # installed and the setup never proven.
+    resuming = str(_the_stage_that_paused(state) or "").startswith("stack_setup_")
+    if attempt == 0 and not resuming and custom_setup.already_set_up(project_root):
         return None
     brief = getattr(state.get("document"), "text", "") or ""
 

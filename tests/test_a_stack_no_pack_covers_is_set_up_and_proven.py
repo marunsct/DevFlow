@@ -287,3 +287,21 @@ def test_a_setup_stage_that_pauses_or_restarts_comes_back_to_the_scaffold():
     from app.graph.workflow import _owning_node
 
     assert _owning_node("stack_setup_1") == "scaffold"
+
+
+def test_coming_back_from_its_own_pause_it_finishes_and_is_proven(stage, tmp_path):
+    """The manifest it wrote before pausing for its install is not a seeded codebase.
+
+    Measured on one run: the setup stage wrote package.json, paused for
+    approval of `npm install`, and on the way back the scaffold found that
+    package.json and handed on - nothing installed, the setup never proven.
+    """
+    (tmp_path / "notes").mkdir()
+    (tmp_path / "notes" / "package.json").write_text("{}")
+    paused = {**_state(tmp_path), "stage": "awaiting_approval:stack_setup_0",
+              "pending_inner_thread_id": "run:stack_setup_0:0a1b2c3d"}
+
+    update = stage.node(paused)
+
+    assert [call["stage"] for call in stage.calls] == ["stack_setup_0"]
+    assert update["stack_pack"] == PROVEN_SETUP

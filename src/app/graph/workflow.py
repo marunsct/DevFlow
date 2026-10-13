@@ -1247,7 +1247,7 @@ def _the_better_plan(
 ) -> tuple[Any, list[str]]:
     """Of this attempt and the best earlier one, the plan to keep, with its problems.
 
-    Fewer readiness problems wins, then more work orders. When the attempts ran
+    Fewer readiness problems per work order wins, then more work orders. When the attempts ran
     out, the last plan was dispatched whatever it was. Measured on one run:
     the second attempt was a six-work-order plan covering the page, the five
     modules of the sprint's scope, the manifest, the tests and the README, with
@@ -1265,8 +1265,16 @@ def _the_better_plan(
     except Exception:  # noqa: BLE001 - an unreadable record is no better plan
         return plan, problems
 
-    def rank(candidate: Any, found: list[str]) -> tuple[int, int]:
-        return (len(found), -len(getattr(candidate, "delegated_tasks", None) or []))
+    # Problems per work order, then more work orders. A count of problems
+    # alone preferred a plan for less: measured on one run, the last attempt
+    # was four work orders - the database, the service and its tests - with two
+    # problems, and an earlier single work order with one problem ("No
+    # `testing` work order") was dispatched instead; the sprint built one.
+    def rank(candidate: Any, found: list[str]) -> tuple[float, int]:
+        orders = len(getattr(candidate, "delegated_tasks", None) or [])
+        if not orders:
+            return (float("inf"), 0)
+        return (len(found) / orders, -orders)
 
     if rank(previous, stored_problems) < rank(plan, problems):
         return previous, stored_problems

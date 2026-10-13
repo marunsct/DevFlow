@@ -351,7 +351,7 @@ class TestTheBestAttemptIsDispatched:
     """One run's second attempt was six work orders with three small problems;
     the third, after a reasoning spiral, was two - and the third was dispatched."""
 
-    def test_fewer_problems_wins_then_more_work_orders(self):
+    def test_fewer_problems_per_work_order_wins_then_more_work_orders(self):
         from app.graph.workflow import _the_better_plan
 
         good = _plan(_order("backend"), _order("ui_ux"), _order("testing"))
@@ -360,8 +360,31 @@ class TestTheBestAttemptIsDispatched:
         kept, problems = _the_better_plan((thin, ["a"]), (good.model_dump_json(), ["b"]))
         assert len(kept.delegated_tasks) == 3 and problems == ["b"]
 
-        kept, problems = _the_better_plan((thin, ["a"]), (good.model_dump_json(), ["b", "c"]))
+        kept, problems = _the_better_plan((thin, ["a"]), (good.model_dump_json(), ["b", "c", "d", "e"]))
         assert kept is thin and problems == ["a"]
+
+    def test_a_fuller_plan_is_not_lost_to_a_thinner_one_with_one_problem_fewer(self):
+        """Measured on one run: four work orders - the database, the service
+        and its tests - with two problems lost to an earlier single work order
+        with one ("No `testing` work order"), and the sprint built one."""
+        from app.graph.workflow import _the_better_plan
+
+        full = _plan(_order("database"), _order("backend"), _order("testing"), _order("testing"))
+        single = _plan(_order("backend"))
+
+        kept, problems = _the_better_plan((full, ["a", "b"]), (single.model_dump_json(), ["no testing"]))
+
+        assert kept is full and problems == ["a", "b"]
+
+    def test_a_plan_with_no_work_orders_never_wins(self):
+        from app.graph.workflow import _the_better_plan
+
+        empty = _plan()
+        some = _plan(_order("backend"))
+
+        kept, _ = _the_better_plan((empty, []), (some.model_dump_json(), ["a", "b", "c"]))
+
+        assert len(kept.delegated_tasks) == 1
 
     def test_with_nothing_earlier_or_nothing_readable_the_current_one_stays(self):
         from app.graph.workflow import _the_better_plan

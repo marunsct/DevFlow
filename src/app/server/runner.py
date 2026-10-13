@@ -1030,6 +1030,58 @@ class WorkflowRunner:
         self.run_store.clear_stop(run_id)
         self._dispatch(run_id, resume=True, decision_payload=None)
 
+    def _graph_for(self, record: RunRecord) -> Any:
+        return build_workflow_graph(
+            model=self.model, repo_root=record.repo_root, checkpointer=self.checkpointer,
+        )
+
+    async def rewind_points(self, run_id: str) -> list[dict[str, Any]]:
+        """Each stage the run started, oldest first, as a point to rewind it to."""
+        from app.graph.workflow import rewind_points
+
+        record = self.run_store.load(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} not found")
+        graph = self._graph_for(record)
+        return await asyncio.to_thread(rewind_points, graph, record.thread_id)
+
+    async def rewind_run(self, run_id: str, checkpoint_id: str) -> dict[str, Any]:
+        """Rewind a stopped run to the start of a stage, with its files as they were, and run it from there.
+
+        Only a run nothing is driving: a running one is paused first. The run's
+        own history is kept - it continues on a branch from that checkpoint.
+        """
+        from app.graph.workflow import rewind_to
+
+        record = self.run_store.load(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} not found")
+        if record.status not in (*RESUMABLE_STATUSES, "completed"):
+            raise RunConflict(
+                f"Run {run_id} is {record.status}; pause it first, then rewind it."
+            )
+        graph = self._graph_for(record)
+        done = await asyncio.to_thread(rewind_to, graph, record.thread_id, checkpoint_id, record.repo_root)
+        now = datetime.now(timezone.utc).isoformat()
+        if record.status == "completed":
+            self.run_store.compare_and_set_status(run_id, "completed", "paused", updated_at=now, clear_error=True)
+        await self.event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await self.event_bus.next_sequence(run_id),
+                stage=done["stage"],
+                event_type="stage_change",
+                message=(
+                    f"Run rewound to {done['stage']}"
+                    + ("; its files are as they were then." if done["files_restored"]
+                       else "; its files were left as they are.")
+                ),
+            ),
+        )
+        await self.resume_run(run_id)
+        return done
+
     async def pause_run(self, run_id: str) -> None:
         """Stop a running run at a stage boundary, keeping it to be resumed.
 

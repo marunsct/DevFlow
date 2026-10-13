@@ -6,6 +6,13 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class RewindRequest(BaseModel):
+    """Which point of a run's history to rewind it to (`GET /runs/{id}/rewind-points`)."""
+    model_config = ConfigDict(extra="forbid")
+
+    checkpoint_id: str = Field(min_length=1, max_length=200, description="The checkpoint before the stage.")
+
+
 class CreateRunResponse(BaseModel):
     """Response returned when a new run is created."""
     model_config = ConfigDict(extra="forbid")

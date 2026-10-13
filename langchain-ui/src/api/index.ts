@@ -161,6 +161,28 @@ export const pauseRun = async (runId: string): Promise<{ message: string }> => {
   return response.data;
 };
 
+/** A point in a run's history: the moment before one of its stages started. */
+export interface RewindPoint {
+  checkpoint_id: string;
+  stage: string;
+  sprint: number | null;
+  at: string;
+}
+
+export const getRewindPoints = async (runId: string): Promise<RewindPoint[]> => {
+  const response = await api.get<{ points: RewindPoint[] }>(`/runs/${runId}/rewind-points`);
+  return response.data.points;
+};
+
+/** Rewind a stopped run to the start of a stage, with its files as they were, and run it from there. */
+export const rewindRun = async (
+  runId: string,
+  checkpointId: string
+): Promise<{ message: string; stage: string; files_restored: boolean }> => {
+  const response = await api.post(`/runs/${runId}/rewind`, { checkpoint_id: checkpointId });
+  return response.data;
+};
+
 export const cancelRun = async (runId: string) => {
   const response = await api.post(`/runs/${runId}/cancel`);
   return response.data;

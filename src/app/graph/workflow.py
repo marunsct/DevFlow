@@ -9242,6 +9242,14 @@ def build_workflow_graph(
         )
 
     graph = StateGraph(WorkflowGraphState)
+    # Every stage snapshots the workspace as it starts, so a run can be
+    # rewound to it with its files as they were (`rewind_to`).
+    _add_node = graph.add_node
+
+    def add_node(name: str, action: Any, **kwargs: Any) -> Any:
+        return _add_node(name, _snapshotting(name, action), **kwargs)
+
+    graph.add_node = add_node  # type: ignore[method-assign]
     from langgraph.types import RetryPolicy, default_retry_on
 
     from app.models.quota import out_of_quota
@@ -9454,6 +9462,127 @@ class WorkflowResumeError(RuntimeError):
 
 # Bookkeeping checkpoints written by `update_state`/input, never a real stage.
 _SYNTHETIC_NODES = frozenset({"__start__", "__input__", "failed"})
+
+#: Nodes a run is never rewound to: the side-by-side workers and the steps that
+#: gather them run only inside the stage that sent them, and the ends of a run
+#: are not stages.
+_NOT_A_REWIND_POINT = frozenset({"complete", "failed", "__start__", "__input__"})
+
+
+def _not_a_stage_of_its_own(node: str) -> bool:
+    return node in _NOT_A_REWIND_POINT or node.endswith(("_worker", "_gather"))
+
+
+def _snapshotting(name: str, action: Any) -> Any:
+    """`action`, after a snapshot of the workspace under its stage's name.
+
+    Not for the side-by-side workers: several run at once, and a run is never
+    rewound to one (`_not_a_stage_of_its_own`).
+    """
+    import inspect
+
+    if _not_a_stage_of_its_own(name) or not callable(action):
+        return action
+    try:
+        parameters = list(inspect.signature(action).parameters.values())
+    except (TypeError, ValueError):
+        return action
+    takes_config = len(parameters) >= 2
+
+    def node(state: Any, config: RunnableConfig) -> Any:
+        root = _repository_root(state) if isinstance(state, dict) else None
+        if root:
+            try:
+                from app.tools.version_control import snapshot_workspace
+
+                snapshot_workspace(root, name)
+            except Exception:  # noqa: BLE001 - a snapshot is never a reason to stop a stage
+                logger.debug("No snapshot before %s", name, exc_info=True)
+        return action(state, config) if takes_config else action(state)
+
+    if parameters and parameters[0].annotation is not inspect.Parameter.empty:
+        node.__annotations__ = {"state": parameters[0].annotation, "config": RunnableConfig}
+    node.__name__ = getattr(action, "__name__", name)
+    return node
+
+
+def _checkpoint_millis(snapshot: Any) -> int | None:
+    created = getattr(snapshot, "created_at", None)
+    if not created:
+        return None
+    try:
+        return int(datetime.fromisoformat(str(created).replace("Z", "+00:00")).timestamp() * 1000)
+    except ValueError:
+        return None
+
+
+def rewind_points(graph: Any, thread_id: str) -> list[dict[str, Any]]:
+    """Each stage this run started, oldest first, as a point it can be rewound to.
+
+    One point per time a stage was entered: the checkpoint just before it ran.
+    A stage entered again straight after itself (an approval answered, a retry)
+    is the same point.
+    """
+    history = list(graph.get_state_history(_run_config(thread_id, DEFAULT_RECURSION_LIMIT)))
+    points: list[dict[str, Any]] = []
+    previous: str | None = None
+    for snapshot in reversed(history):
+        node = snapshot.next[0] if len(snapshot.next or ()) == 1 else None
+        if node is None or _not_a_stage_of_its_own(node):
+            previous = None
+            continue
+        if node == previous:
+            continue
+        previous = node
+        values = snapshot.values or {}
+        points.append({
+            "checkpoint_id": snapshot.config["configurable"]["checkpoint_id"],
+            "stage": node,
+            "sprint": int(values.get("current_sprint_index") or 0) + 1 if values.get("sprint_plan") else None,
+            "at": str(getattr(snapshot, "created_at", "") or ""),
+        })
+    return points
+
+
+class RewindError(ValueError):
+    """A rewind that cannot be made, with the reason a person can act on."""
+
+
+def rewind_to(graph: Any, thread_id: str, checkpoint_id: str, repo_root: str | None = None) -> dict[str, Any]:
+    """Make the checkpoint before a stage the run's latest, with the workspace as it was then.
+
+    The run's history is kept: the rewound run continues on a branch from
+    that checkpoint, and the workspace it leaves is snapshotted first. Returns
+    what was done: the stage, and whether the files were put back.
+    """
+    config = _run_config(thread_id, DEFAULT_RECURSION_LIMIT)
+    target = next(
+        (s for s in graph.get_state_history(config)
+         if s.config["configurable"].get("checkpoint_id") == checkpoint_id),
+        None,
+    )
+    if target is None:
+        raise RewindError(f"This run has no checkpoint {checkpoint_id}.")
+    node = target.next[0] if len(target.next or ()) == 1 else None
+    if node is None or _not_a_stage_of_its_own(node):
+        raise RewindError("A run is rewound only to the start of a stage.")
+    restored = False
+    if repo_root:
+        from app.tools.version_control import restore_snapshot, workspace_snapshots
+
+        since = _checkpoint_millis(target)
+        taken = [
+            commit for millis, stage, commit in workspace_snapshots(repo_root)
+            if stage == node and since is not None and millis >= since - 1000
+        ]
+        if taken:
+            restored = restore_snapshot(repo_root, taken[0])
+    graph.update_state(target.config, {"error": None})
+    logger.info(
+        "Rewound to %s; the workspace %s", node,
+        "was put back as it was then" if restored else "was left as it is (no snapshot of it then)",
+    )
+    return {"stage": node, "files_restored": restored}
 
 _REWIND_TARGETS: dict[str, str] = {
     # A node that failed because it exhausted a bounded budget cannot be

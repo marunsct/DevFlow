@@ -46,6 +46,7 @@ from app.server.models import (
     CreateRunResponse,
     ReviewDecisionRequest,
     ReviewPayload,
+    RewindRequest,
     RunListResponse,
     RunStatusResponse,
     RunSummary,
@@ -360,6 +361,33 @@ def create_runs_router(
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.resume", subject=run_id)
         return {"message": f"Run {run_id} resumed."}
+
+    @runs.get("/{run_id}/rewind-points")
+    async def rewind_points(
+        run_id: str, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Each stage the run started, oldest first, as a point to rewind it to."""
+        _require_run(runner, run_id, user)
+        return {"points": await runner.rewind_points(run_id)}
+
+    @runs.post("/{run_id}/rewind", status_code=202)
+    async def rewind_run(
+        run_id: str, payload: RewindRequest, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, Any]:
+        """Rewind a stopped run to the start of a stage, with its files as they were, and run it from there."""
+        from app.graph.workflow import RewindError
+
+        _require_run(runner, run_id, user)
+        try:
+            done = await runner.rewind_run(run_id, payload.checkpoint_id)
+        except RunConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        except RewindError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.rewind", subject=run_id,
+        )
+        return {"message": f"Run {run_id} rewound to {done['stage']} and resumed.", **done}
 
     @runs.post("/{run_id}/pause", status_code=202)
     async def pause_run(

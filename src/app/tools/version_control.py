@@ -88,11 +88,18 @@ together.
 _TIMEOUT_SECONDS = 30
 
 
-def _git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
-    """Run one git command in `root`, or return None if git cannot run at all."""
+def _git(root: Path, *args: str, index: Path | None = None) -> subprocess.CompletedProcess | None:
+    """Run one git command in `root`, or return None if git cannot run at all.
+
+    `index` is an index file of its own, so a snapshot never disturbs the
+    index the sprint commits are made from.
+    """
     binary = shutil.which("git")
     if binary is None:
         return None
+    env = {"GIT_TERMINAL_PROMPT": "0", "HOME": str(root / ".agent-home"), "PATH": "/usr/bin:/bin:/usr/local/bin"}
+    if index is not None:
+        env["GIT_INDEX_FILE"] = str(index)
     try:
         return subprocess.run(
             [binary, *args],
@@ -101,7 +108,7 @@ def _git(root: Path, *args: str) -> subprocess.CompletedProcess | None:
             text=True,
             timeout=_TIMEOUT_SECONDS,
             check=False,
-            env={"GIT_TERMINAL_PROMPT": "0", "HOME": str(root / ".agent-home"), "PATH": "/usr/bin:/bin:/usr/local/bin"},
+            env=env,
         )
     except (OSError, subprocess.SubprocessError):
         logger.debug("git %s failed in %s", args, root, exc_info=True)
@@ -261,3 +268,116 @@ __all__ = [
     "is_repository",
     "last_good_commit",
 ]
+
+
+# --- stage snapshots, for rewinding a run --------------------------------------
+
+#: Where a snapshot of the workspace is kept, one per stage started: outside
+#: every branch and tag, so the sprint history is untouched.
+SNAPSHOT_REFS = "refs/harness/stages/"
+
+#: What a snapshot leaves out: installed packages, caches and build or test
+#: output, which an install or a build makes again. The harness's own records
+#: (`.harness/`, `.project-*`, stage summaries) are kept, though git ignores
+#: them for commits: a rewound run must not keep the decisions or the locked
+#: suite of the stages it went back before.
+_NOT_SNAPSHOTTED = (
+    "node_modules", ".venv", "venv", ".agent-home", "__pycache__", "dist", "build", "target",
+    ".next", ".gradle", "test-results", "playwright-report", "blob-report", "coverage",
+    ".nyc_output", "htmlcov", ".turbo", ".parcel-cache", ".vite", ".cache", ".pytest_cache",
+)
+
+
+def _pathspec() -> list[str]:
+    return ["--", ".", *(f":(exclude,glob)**/{name}/**" for name in _NOT_SNAPSHOTTED)]
+
+
+def _identity() -> list[str]:
+    return ["-c", f"user.name={AUTHOR_NAME}", "-c", f"user.email={AUTHOR_EMAIL}"]
+
+
+def snapshot_workspace(repo_root: str | Path, label: str) -> str | None:
+    """Record the workspace as it is now under `SNAPSHOT_REFS`; the ref, or None.
+
+    Taken as each stage starts (`workflow._snapshotting`), so a run can be
+    rewound to that stage with its files as they were then. Never raises.
+    """
+    import re
+    import time
+
+    root = Path(repo_root)
+    if not is_repository(root):
+        return None
+    index = root / ".git" / "harness-snapshot-index"
+    added = _git(root, "add", "-A", "-f", *_pathspec(), index=index)
+    tree = _git(root, "write-tree", index=index)
+    if added is None or tree is None or tree.returncode != 0:
+        return None
+    head = _git(root, "rev-parse", "--verify", "-q", "HEAD")
+    parent = ["-p", head.stdout.strip()] if head is not None and head.returncode == 0 and head.stdout.strip() else []
+    commit = _git(root, *_identity(), "commit-tree", tree.stdout.strip(), *parent, "-m", f"Before {label}")
+    if commit is None or commit.returncode != 0:
+        return None
+    name = re.sub(r"[^A-Za-z0-9_.-]", "-", label)[:80] or "stage"
+    ref = f"{SNAPSHOT_REFS}{int(time.time() * 1000):013d}-{name}"
+    updated = _git(root, "update-ref", ref, commit.stdout.strip())
+    return ref if updated is not None and updated.returncode == 0 else None
+
+
+def workspace_snapshots(repo_root: str | Path) -> list[tuple[int, str, str]]:
+    """Every stage snapshot, oldest first: (milliseconds since the epoch, stage, commit)."""
+    root = Path(repo_root)
+    if not is_repository(root):
+        return []
+    listed = _git(root, "for-each-ref", "--format=%(refname) %(objectname)", SNAPSHOT_REFS)
+    found = []
+    for line in (listed.stdout.splitlines() if listed is not None and listed.returncode == 0 else []):
+        ref, _, commit = line.partition(" ")
+        stamp, _, stage = ref[len(SNAPSHOT_REFS):].partition("-")
+        if stamp.isdigit():
+            found.append((int(stamp), stage, commit))
+    return sorted(found)
+
+
+def restore_snapshot(repo_root: str | Path, commit: str) -> bool:
+    """Put the workspace back as `commit` recorded it; whether that was done.
+
+    The files it did not have are removed and the ones it had are written
+    back; installed packages and caches are left alone. The branch and the
+    sprint tags go back to where they were then, so the sprint history does
+    not claim work the rewound run has not done again. What the workspace
+    held before the rewind is itself snapshotted first.
+    """
+    root = Path(repo_root)
+    if not is_repository(root):
+        return False
+    snapshot_workspace(root, "before-rewind")
+    index = root / ".git" / "harness-snapshot-index"
+    now = _git(root, "ls-files", "-z", index=index)
+    then = _git(root, "ls-tree", "-r", "-z", "--name-only", commit)
+    if now is None or then is None or then.returncode != 0:
+        return False
+    kept = {path for path in then.stdout.split("\0") if path}
+    for path in (path for path in now.stdout.split("\0") if path and path not in kept):
+        try:
+            (root / path).unlink()
+        except OSError:
+            pass
+    restore = root / ".git" / "harness-restore-index"
+    if _git(root, "read-tree", commit, index=restore) is None:
+        return False
+    written = _git(root, "checkout-index", "-a", "-f", index=restore)
+    restore.unlink(missing_ok=True)
+    if written is None or written.returncode != 0:
+        return False
+    parent = _git(root, "rev-parse", "--verify", "-q", f"{commit}^")
+    if parent is not None and parent.returncode == 0 and parent.stdout.strip():
+        base = parent.stdout.strip()
+        _git(root, "update-ref", "HEAD", base)
+        _git(root, "read-tree", base)
+        tags = _git(root, "tag", "-l", "sprint-*")
+        for tag in (tags.stdout.split() if tags is not None else []):
+            ancestor = _git(root, "merge-base", "--is-ancestor", tag, base)
+            if ancestor is not None and ancestor.returncode != 0:
+                _git(root, "tag", "-d", tag)
+    return True

@@ -17,8 +17,11 @@ import {
   cancelRun,
   pauseRun,
   resumeRun,
+  getRewindPoints,
+  rewindRun,
   cloneRun,
   startRun,
+  type RewindPoint,
   getStreamTicket,
   getWizard
 } from '../api';
@@ -31,7 +34,7 @@ import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
 import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
 import { DeliveryPanel } from '../components/DeliveryPanel';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid } from 'lucide-react';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 
 
@@ -41,6 +44,8 @@ export const RunDashboard: React.FC = () => {
   const navigate = useNavigate();
 
   const [run, setRun] = useState<RunStatusResponse | null>(null);
+  const [rewindPoints, setRewindPoints] = useState<RewindPoint[] | null>(null);
+  const [rewindTo, setRewindTo] = useState<string>('');
   const [logs, setLogs] = useState<LogEntry[]>([]);
   // The wizard model: the finished phase structure of the run, derived on the
   // server from its event history and graph state. Fetched alongside the run
@@ -329,6 +334,32 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  const openRewind = async () => {
+    if (!runId) return;
+    try {
+      const points = await getRewindPoints(runId);
+      setRewindPoints(points);
+      setRewindTo(points.length ? points[points.length - 1].checkpoint_id : '');
+    } catch (err: any) {
+      alert("Failed to list rewind points: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handleRewind = async () => {
+    if (!runId || !rewindTo) return;
+    const point = rewindPoints?.find((p) => p.checkpoint_id === rewindTo);
+    if (!confirm(`Rewind this run to the start of "${point ? describeStage(point.stage).title : rewindTo}" and run it from there? `
+      + 'Files made after that point are removed (a snapshot of them is kept).')) return;
+    try {
+      const done = await rewindRun(runId, rewindTo);
+      setRewindPoints(null);
+      if (!done.files_restored) alert('Rewound. No snapshot of the files existed for that point, so they were left as they are.');
+      await fetchState();
+    } catch (err: any) {
+      alert("Failed to rewind: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const handleClone = async () => {
     if (!runId) return;
     try {
@@ -466,6 +497,34 @@ export const RunDashboard: React.FC = () => {
               className={`${actionButton} text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               <Play className="h-3.5 w-3.5" /> Resume
             </button>
+          )}
+          {(RESUMABLE.includes(run.status) || run.status === 'completed') && rewindPoints === null && (
+            <button onClick={openRewind}
+              className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}
+              title="Go back to the start of an earlier stage and run from there">
+              <RotateCcw className="h-3.5 w-3.5" /> Rewind
+            </button>
+          )}
+          {rewindPoints !== null && (
+            <span className="flex items-center gap-2 flex-wrap">
+              <select value={rewindTo} onChange={(e) => setRewindTo(e.target.value)}
+                className="bg-surface/50 border border-border/50 rounded-lg px-2 py-1 text-xs text-white max-w-[16rem]">
+                {rewindPoints.map((p) => (
+                  <option key={p.checkpoint_id} value={p.checkpoint_id}>
+                    {describeStage(p.stage).title}{p.sprint ? ` (sprint ${p.sprint})` : ''}
+                    {p.at ? ` - ${new Date(p.at).toLocaleString()}` : ''}
+                  </option>
+                ))}
+              </select>
+              <button onClick={handleRewind} disabled={!rewindTo}
+                className={`${actionButton} text-warning/90 border-warning/30 hover:border-warning/60 hover:bg-warning/5 disabled:opacity-50`}>
+                <RotateCcw className="h-3.5 w-3.5" /> Rewind here
+              </button>
+              <button onClick={() => setRewindPoints(null)}
+                className={`${actionButton} text-white/60 border-white/10 hover:border-white/30`}>
+                Close
+              </button>
+            </span>
           )}
           <button onClick={handleClone}
             className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>

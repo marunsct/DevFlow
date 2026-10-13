@@ -176,7 +176,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `cd9eefc` on branch `live-run-23896345` (= `821a750` + the suite-repair fix `e985111`), deployed into run-23896345 at 13:57 JST 2026-10-13, which resumed. Built from a detached checkout of that branch so the untried features of `58600ee`..`e02cd84` stay out of the live run; the next `loop.sh deploy` from `harness-hardening-session` brings everything. Before it: `5d2676a` (11:56 JST): Node 24 and waves 2-3 packs, unready plans ranked by problems per work order, parallel stagger, page-fixture fix. |
+| deployed | `9cd3aa9` on branch `live-run-23896345` (= `821a750` + the suite-repair fix `e985111` + the test-file name check `4774f20`), deployed into run-23896345 at 16:16 JST 2026-10-13 (the first fix at 13:57), which resumed each time. Built from a detached checkout of that branch so the untried features of `58600ee`..`e02cd84` stay out of the live run; the next `loop.sh deploy` from `harness-hardening-session` brings everything. Before it: `5d2676a` (11:56 JST): Node 24 and waves 2-3 packs, unready plans ranked by problems per work order, parallel stagger, page-fixture fix. |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
 | pushed, not deployed | `d9fd387` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes, compiler checks, page view, docs and MCP, eight CLI/library packs. Deploy when run-23896345 ends, then run `verify_packs.py` in the worker (35 packs). |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
@@ -262,6 +262,13 @@ locked test". `acceptance_nodes.may_repair` now lets a test never sent for repai
 `MAX_SUITE_REPAIRS` (2), up to `MAX_SUITE_REPAIRS_IN_ALL` (4); the state records the tests each
 repair was for (`suite_repaired_tests`). Verify: the run's next test round reopens the suite for
 the two auth tests (decision "QA repairs those tests ...").
+
+**Undefined names in tests (`4774f20`, deployed mid-run 16:16 JST).** QA's repair of the suite
+called `getTask`, which nothing defined, and the suite was locked with it (DR-11) and reopened
+at once (DR-12, the fourth and last repair). Names were checked only in product code. A test
+importing `@playwright/test` or `node:test` now has its names checked too (browser and Node
+globals; functions handed to the page left to the page). Swept over 1,038 stored test files:
+5 flagged, all real faults, no false alarm.
 
 ### 2.1 What changed on 2026-10-12
 

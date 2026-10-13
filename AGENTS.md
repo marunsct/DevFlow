@@ -28,10 +28,13 @@ Rules that are never optional (details and reasons in the handover):
   with `scripts/loop/loop.sh suite`; only the three S3 tests in
   `tests/test_codebase_seeding_api.py` may fail. Do not edit `src/` while it
   runs.
-- **No deploys into a live run.**
+- **Deploy a verified fix into the live run** (owner instruction 2026-10-10;
+  details in `docs/HANDOVER.md`).
   - In a run's first 40 minutes, a bug means: cancel, fix, deploy, restart.
-  - Later, only a major bug cancels a run.
-  - Otherwise batch the fixes and deploy between runs.
+  - Later: fix it in general, prove the test fails on the old code, run the
+    suite, push, then `loop.sh deploy` mid-run and `loop.sh resumed`. Orphan
+    recovery resumes the same run, so it is not held on a defect already fixed.
+  - Only a major bug cancels a run after its first 40 minutes.
 - **Keep the owner's features:**
   - dynamic agent-instruction injection;
   - the parallel/linear toggle;

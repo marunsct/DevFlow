@@ -75,7 +75,12 @@ _TEST = re.compile(
 #: Build, lint and tooling configuration - not the product, not a test.
 _CONFIG = re.compile(
     r"(^|[./])(jest|vite|vitest|webpack|babel|rollup|esbuild|eslint|prettier"
-    r"|cypress|karma|tailwind|playwright|nodemon|tsup)\.config\."
+    r"|cypress|karma|tailwind|playwright|nodemon|tsup)(\.[a-z0-9_-]+)?\.config(\.[a-z0-9_-]+)?\."
+    # A qualifier on either side: a project with one runner configuration per
+    # suite names them `vitest.unit.config.ts` or `vitest.config.unit.ts`. One
+    # run's testing work order was refused its own runner's configuration as
+    # "product code" five times, under a refusal that says test configuration
+    # is its to change.
     # A runner's setup and teardown files: loaded by the runner before the
     # suite, never by the product. One run's testing work order was refused
     # `jest.setup.js` seven times as "product code", while its runner's config

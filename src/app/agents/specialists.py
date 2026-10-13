@@ -29,6 +29,7 @@ from app.agents.severity import validator_for as severity_in
 from app.agents.specialist_roles import role_slug
 from app.agents.technical_lead import SpecialistRole
 from app.tools.package_registry import lookup_tools
+from app.tools.runtimes import runtime_tools
 from app.tools.agent_toolkit import (
     build_journal_read_tool,
     build_terminal_command_tool,
@@ -1272,6 +1273,8 @@ def create_specialist_agent(
         build_journal_read_tool(resolved_repo_root),
         # Versions move faster than any model's training: see `app.tools.package_registry`.
         *lookup_tools(),
+        # A runtime version the image lacks, for this project only: see `app.tools.runtimes`.
+        *runtime_tools(resolved_repo_root),
     ]
 
     if role == "testing":

@@ -836,7 +836,9 @@ TOOLCHAIN_ENVIRONMENT = {
     "NEXT_TELEMETRY_DISABLED": "1",
     # Go fetched a newer toolchain into the run's workspace (some 250 MB)
     # whenever a module asked for one, every run. A module that needs a newer
-    # Go than the image's is now an error the stage can act on.
+    # Go than the image's is now an error the stage can act on - by asking for
+    # that Go with `use_runtime`, downloaded once for every run
+    # (`app.tools.runtimes`).
     "GOTOOLCHAIN": "local",
 }
 
@@ -847,6 +849,11 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
         key: os.environ[key] for key in _ENV_PASSTHROUGH if os.environ.get(key)
     }
     environment.setdefault("PATH", "/usr/local/bin:/usr/bin:/bin")
+    # A runtime version this project asked for, ahead of the image's own.
+    # See `app.tools.runtimes`.
+    from app.tools.runtimes import path_for
+
+    environment["PATH"] = path_for(workspace, environment["PATH"])
     # Tool caches (npm, pip, cargo) land in the workspace rather than in a
     # home directory shared by every run.
     home = os.path.join(workspace, ".agent-home")
@@ -1059,7 +1066,13 @@ def _run_and_watch_the_tree(
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
-def _image_for(executable: str) -> str:
+def _image_for(executable: str, workspace: str | Path | None = None) -> str:
+    """The image a command runs in: the version this workspace pinned, else the configured one."""
+    from app.tools.runtimes import image_tag
+
+    pinned = image_tag(workspace, executable)
+    if pinned:
+        return pinned
     if executable in {"npm", "npx", "node", "yarn", "pnpm"}:
         return os.environ.get("SANDBOX_NODE_IMAGE", "node:24-slim")
     if executable in {"python", "python3", "pip", "pip3", "pytest", "uv", "django-admin", "alembic"}:
@@ -4284,7 +4297,9 @@ class SandboxExecutor:
                     "workspace or one the environment provides, not a path out of it."
                 )
             return candidate if os.access(candidate, os.X_OK) else None
-        return shutil.which(name, path=os.environ.get("PATH", ""))
+        from app.tools.runtimes import path_for
+
+        return shutil.which(name, path=path_for(workspace, os.environ.get("PATH", "")))
 
     @classmethod
     def _execute_here(
@@ -4638,7 +4653,7 @@ class SandboxExecutor:
         ]
         for key, value in (extra_env or {}).items():
             docker_cmd += ["--env", f"{key}={value}"]
-        docker_cmd.append(_image_for(os.path.basename(argv[0])))
+        docker_cmd.append(_image_for(os.path.basename(argv[0]), workspace))
         docker_cmd.extend(argv)
 
         logger.info(

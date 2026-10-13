@@ -96,7 +96,8 @@ product is built, set up `{project}/` so that a unit test and an acceptance test
 
 1. Create the project in `{project}/` with the framework's own project generator where it has
    one, answering its questions with flags so it never waits for input. Before choosing a
-   version, ask `look_up_package` what is current and which runtime it needs.
+   version, ask `look_up_package` what is current and which runtime it needs; where that is
+   not the runtime this environment has, ask for it with `use_runtime` first.
 2. Add a unit test runner and an acceptance test runner, each writing a JUnit XML report.
    An acceptance test meets this product the way its user does: {meets}. Any server the
    acceptance runner needs is started by the runner's own configuration; never start one

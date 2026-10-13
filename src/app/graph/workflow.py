@@ -9532,7 +9532,12 @@ def rewind_points(graph: Any, thread_id: str) -> list[dict[str, Any]]:
         # checkpoint of its own; the stage it goes back into is the same entry.
         if node in _SYNTHETIC_NODES or not snapshot.next:
             continue
-        if node is None or _not_a_stage_of_its_own(node):
+        # The side-by-side workers and the step gathering them belong to the
+        # stage that sent them: a dispatch that goes round its workers forty
+        # times is one stage entered once.
+        if node is None or node.endswith(("_worker", "_gather")):
+            continue
+        if _not_a_stage_of_its_own(node):
             previous = None
             continue
         if node == previous:

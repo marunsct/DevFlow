@@ -168,3 +168,30 @@ def test_a_stage_that_paused_for_approval_is_one_point(agents, tmp_path):
     assert state["stage"] == "complete", state.get("error")
     stages = [point["stage"] for point in rewind_points(graph, "run-paused")]
     assert stages.count("scrum_master") == 1, stages
+
+
+def test_a_stage_whose_work_goes_out_side_by_side_is_one_point(agents, tmp_path, monkeypatch):
+    """Measured on a live run: one sprint's dispatch, going round its paused
+    workers again and again, was listed as forty-one points."""
+    import dataclasses
+
+    from test_defects_are_fixed_side_by_side import THREE
+    from test_defects_are_fixed_side_by_side import _script as _script_defects
+    from test_graph_routing import approve_write_decision, pause_for_approval
+
+    from app import config
+    from app.graph.workflow import resume_pending_approval, rewind_points, start_workflow
+
+    monkeypatch.setattr("app.agents.specialists.what_the_files_already_prove", lambda *a, **k: [])
+    real = config.load_settings()
+    monkeypatch.setattr(config, "load_settings", lambda *a, **k: dataclasses.replace(real, execution_mode="parallel"))
+    _script_defects(agents, THREE)
+    agents.script("specialist_database", [pause_for_approval(), pause_for_approval(), responds_with(_specialist(tests=["t-db"]))])
+    graph = _graph()
+    state = start_workflow(graph, _document(), _repository(tmp_path), "run-side-by-side")
+    while str(state.get("stage", "")).startswith("awaiting_approval:"):
+        state = resume_pending_approval(graph, "run-side-by-side", approve_write_decision())
+    assert state["stage"] == "complete", state.get("error")
+
+    stages = [point["stage"] for point in rewind_points(graph, "run-side-by-side")]
+    assert stages.count("defect_remediation") == 1, stages

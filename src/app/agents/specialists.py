@@ -819,8 +819,12 @@ def build_specialist_task_request(
     interface_design: Sequence[str] = (),
     later_sprints_brief: str = "",
     earlier_fixes: Sequence[str] = (),
+    specification_detail: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input for one delegated specialist task.
+
+    `specification_detail` is the specification's detail about this work
+    order's files and names - see `specification_for_the_work_order`.
 
     `interface_design` is the specification's, given to a task that builds the
     interface: the layout, states, feedback and visual style it is built to.
@@ -855,6 +859,7 @@ def build_specialist_task_request(
         f"{later_sprints_brief}"
         f"{fixes_to_keep_section(earlier_fixes)}"
         f"{order}"
+        f"{specification_detail}"
         f"{_work_order_file_ownership_note(work_order)}"
         f"{_the_interface_design(interface_design)}"
         f"{_task_names_a_workflow_document(task_description, acceptance_criteria)}"
@@ -862,6 +867,60 @@ def build_specialist_task_request(
         f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+#: The specification's sections a builder works from, and how much of them one
+#: work order is handed.
+_DETAIL_SECTIONS = (
+    ("file_plan", "Files"),
+    ("function_contracts", "Function contracts"),
+    ("data_contracts", "Data contracts"),
+    ("error_catalogue", "Errors"),
+    ("implementation_order", "Build order"),
+    ("test_cases", "Tests"),
+    ("configuration", "Configuration"),
+)
+MOST_DETAIL_CHARACTERS = 16_000
+
+_A_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+
+
+def specification_for_the_work_order(specification: Any, work_order: Any) -> str:
+    """The specification's entries about this work order's files and names, or "".
+
+    A faster model builds from the specification; it is handed the entries that
+    name one of its files (by path or file name) or one of the names its
+    interfaces declare - the exact signatures, shapes, messages, steps and
+    tests it would otherwise invent - and the rest stays in the document.
+    """
+    if specification is None or work_order is None:
+        return ""
+    files = {str(path).strip().lstrip("./") for path in (getattr(work_order, "files", None) or []) if str(path).strip()}
+    needles = files | {path.rsplit("/", 1)[-1] for path in files}
+    for interface in getattr(work_order, "interfaces", None) or []:
+        head = str(interface).split("(", 1)[0]
+        needles.update(name for name in _A_NAME.findall(head)[-1:])
+    needles = {needle for needle in needles if len(needle) >= 3}
+    if not needles:
+        return ""
+    blocks: list[str] = []
+    for field, heading in _DETAIL_SECTIONS:
+        entries = [
+            str(entry).strip() for entry in getattr(specification, field, None) or []
+            if str(entry).strip() and any(needle in str(entry) for needle in needles)
+        ]
+        if entries:
+            blocks.append(f"{heading}:\n" + "\n".join(f"- {entry}" for entry in entries))
+    if not blocks:
+        return ""
+    text = "\n\n".join(blocks)
+    if len(text) > MOST_DETAIL_CHARACTERS:
+        text = text[:MOST_DETAIL_CHARACTERS] + "\n... (the rest is in /docs/technical_specification.md)"
+    return (
+        "--- The specification for your files: build exactly to it ---\n"
+        "Names, signatures, data shapes, messages and steps below are decided; use them "
+        "word for word rather than choosing your own.\n" + text + "\n\n"
+    )
 
 
 def build_test_run_request(

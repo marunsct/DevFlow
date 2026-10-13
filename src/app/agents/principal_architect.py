@@ -182,6 +182,63 @@ class TechnicalSpecificationOutput(BaseModel):
             "where, or declined and why."
         ),
     )
+    # The detail a builder works from without guessing. A faster, smaller model
+    # writes the code from this document (`app.models.roles`): every name,
+    # shape, message and step it would otherwise have to invent is here, so
+    # two work orders invent nothing differently.
+    file_plan: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every file the product will have, one entry each: its path, its purpose, what it "
+            "exports (each name with its parameters and return value) and which files it imports from."
+        ),
+    )
+    function_contracts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every public function, method, handler, route and component, one entry each: its "
+            "file, exact name and signature (parameters with types, return type), what it does "
+            "step by step, what it returns for each kind of input, and each error it raises or "
+            "status it answers with, word for word."
+        ),
+    )
+    data_contracts: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every record, request body, response body, stored file and setting, one entry each: "
+            "each field's name, type, whether it is required, its constraints (length, range, "
+            "format), its default, and one literal example of the whole shape."
+        ),
+    )
+    error_catalogue: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every failure a user or caller can cause and every failure of something the product "
+            "depends on, one entry each: the condition, the exact message or status the product "
+            "gives, and what it leaves unchanged."
+        ),
+    )
+    implementation_order: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The order to build in, one step per entry: the file, exactly what to add to it, and "
+            "how to check it works before the next step - a command to run or a test that passes."
+        ),
+    )
+    test_cases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For each acceptance criterion, the tests that prove it: each test's name carrying the "
+            "criterion id, the data it sets up, its steps, and its exact assertions."
+        ),
+    )
+    configuration: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Every environment variable, port, path, command and dependency (with its version) the "
+            "product reads or needs, one entry each, with its default."
+        ),
+    )
     decisions: list[ArchitectureDecisionRecord] = Field(
         default_factory=list, description="Every material decision made while producing this specification."
     )
@@ -433,6 +490,14 @@ Responsibilities:
 - List open questions instead of guessing when evidence is missing.
 - Define acceptance criteria specific enough for an independent reviewer to
   check without asking you follow-up questions.
+- Write the specification down to the smallest detail: a faster, less capable
+  model builds the product from it and must not have to guess anything. Name
+  every file, every exported name with its parameters and return value, every
+  field of every data shape with its type, constraints and an example, every
+  error with its exact message or status, the order to build in with a check
+  for each step, the tests for each acceptance criterion with their exact
+  assertions, and every setting the product reads. Where two parts meet, write
+  the contract once, exactly, so both sides are built to the same words.
 
 {SCOPE_DISCIPLINE}
 
@@ -452,9 +517,14 @@ Constraints:
   document: `product_scope`, `component_boundaries`, `domain_model`,
   `api_and_event_contracts`, `data_flows`, `security_and_privacy`,
   `reliability_and_observability`, `testing`, `deployment`,
-  `acceptance_criteria`, `open_questions`, and `decisions` for the ADRs. A
-  section you leave empty is a section the document says nothing about.
-- Keep the output structured and concise.
+  `acceptance_criteria`, `open_questions`, and `decisions` for the ADRs - and
+  the detail a builder works from: `file_plan`, `function_contracts`,
+  `data_contracts`, `error_catalogue`, `implementation_order`, `test_cases`
+  and `configuration`, one entry per file, function, shape, failure, step,
+  test and setting. A section you leave empty is a section the document says
+  nothing about.
+- Keep each entry precise and complete rather than short: an entry a builder
+  has to interpret is one two builders will interpret differently.
 
 Return the response in the required output schema only.
 

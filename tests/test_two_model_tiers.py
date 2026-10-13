@@ -134,3 +134,34 @@ def test_the_settings_page_saves_both(test_db):
     update = SettingsUpdate(llm_provider="local", openai_base_url="http://x/v1", model_name="m",
                             escalate_after_attempts=3, plan_on_judgement_model=False)
     assert update.escalate_after_attempts == 3 and update.plan_on_judgement_model is False
+
+
+def test_one_model_runs_every_stage_and_escalation_changes_nothing(monkeypatch, agents, tmp_path):
+    """With no judgement model configured (or one that cannot be built), there is one model:
+    planning, building and escalated fixes all run on it, and the settings are inert."""
+    monkeypatch.setenv("ESCALATE_AFTER_ATTEMPTS", "1")
+    monkeypatch.setattr("app.models.roles.build_judgement_model", lambda model, *a, **k: model)
+    seen: list[str] = []
+    original = workflow.create_specialist_agent
+
+    def build(*args, **kwargs):
+        seen.append(getattr(kwargs.get("model"), "name", "?"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(workflow, "create_specialist_agent", build)
+    graph = workflow.build_workflow_graph(model=BUILD, checkpointer=MemorySaver(serde=build_serializer()))
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("backend"))])
+    agents.script("specialist_backend", [
+        responds_with(_specialist()), responds_with(_specialist()), responds_with(_specialist(tests=["t-fixed"])),
+    ])
+    agents.script("specialist_testing", [responds_with(_specialist(defects=[_defect()]))] + [responds_with(_specialist())] * 4)
+    agents.script("milestone_reviewer", [responds_with(_milestone_review())])
+    agents.script("security_reviewer", [responds_with(_security_review())])
+
+    state = workflow.start_workflow(graph, _document(), _repository(tmp_path), "run-one-model")
+
+    assert state["stage"] == "complete", state.get("error")
+    assert set(seen) == {"build"}
+    assert state["remediation"].defects[0].regression_test == "t-fixed"

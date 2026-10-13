@@ -525,6 +525,14 @@ _CONTRACT_SECTIONS = (
     # products shipped the scaffold's stylesheet untouched.
     ("interface_design", "Interface design"),
     ("testing", "Testing"),
+    # The builder's detail (`TechnicalSpecificationOutput.file_plan` and the
+    # sections after it): a work order copies the entries for its files.
+    ("file_plan", "File plan"),
+    ("function_contracts", "Function contracts"),
+    ("data_contracts", "Data contracts"),
+    ("error_catalogue", "Error catalogue"),
+    ("implementation_order", "Implementation order"),
+    ("configuration", "Configuration"),
 )
 
 

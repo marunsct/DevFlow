@@ -132,6 +132,7 @@ from app.agents.specialists import (
     build_test_run_request,
     create_specialist_agent,
     raised_by,
+    specification_for_the_work_order,
 )
 from app.agents.technical_lead import (
     build_milestone_revision_request,
@@ -7324,6 +7325,7 @@ def build_workflow_graph(
                 interface_design=_the_interface_design_for(state, task),
                 later_sprints_brief=_the_later_sprints_brief(state),
                 earlier_fixes=_the_fixes_to_keep(state, task),
+                specification_detail=specification_for_the_work_order(state.get("technical_specification"), task),
             )
             update = _run_gated_agent(
                 state,
@@ -7384,6 +7386,7 @@ def build_workflow_graph(
             interface_design=_the_interface_design_for(state, task),
             later_sprints_brief=_the_later_sprints_brief(state),
             earlier_fixes=_the_fixes_to_keep(state, task),
+            specification_detail=specification_for_the_work_order(state.get("technical_specification"), task),
         )
         
         # A worker may only answer its *own* approval gate.

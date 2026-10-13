@@ -300,6 +300,17 @@ def _reply_tokens(result: Any) -> int:
     return tokens if isinstance(tokens, int) else 0
 
 
+#: (address, model) of servers that refuse a forced tool call while the model reasons.
+_NO_FORCED_TOOL_WHILE_THINKING: set[tuple[str, str]] = set()
+
+
+def refuses_a_forced_tool_while_thinking(error: Exception) -> bool:
+    """Whether `error` is a server refusing a forced tool call because the model is reasoning."""
+    status = getattr(error, "status_code", None)
+    text = str(error).lower()
+    return status == 400 and "tool_choice" in text and ("thinking" in text or "reasoning" in text)
+
+
 def after_a_failed_call(
     error: Exception, elapsed: float, reply_tokens: int | None, quick_failures: int
 ) -> tuple[float, int | None, int] | None:
@@ -430,9 +441,36 @@ class CompatibleChatOpenAI(ChatOpenAI):
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline
+        if (str(self.openai_api_base or ""), str(self.model_name or "")) in _NO_FORCED_TOOL_WHILE_THINKING:
+            if payload.get("tool_choice") not in (None, "auto", "none"):
+                payload["tool_choice"] = "auto"
         return payload
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):  # type: ignore[override]
+        """One call; asked again without forcing a tool where the server refuses that while reasoning.
+
+        A structured answer is asked for by forcing a tool call. Some servers
+        refuse that while the model reasons ("The tool_choice parameter does not
+        support being set to required or object in thinking mode"), and one
+        run failed on its first call to such a model. Rather than switch its
+        reasoning off for every call, the tool is offered instead of forced:
+        a stage that answers in prose is reminded to use its answer tool
+        (`settled_answer`).
+        """
+        server = (str(self.openai_api_base or ""), str(self.model_name or ""))
+        try:
+            return self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+        except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
+            if server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
+                raise
+            _NO_FORCED_TOOL_WHILE_THINKING.add(server)
+            logger.warning(
+                "%s refuses a forced tool call while the model reasons; its tools are "
+                "offered instead of forced from now on", server[1] or server[0],
+            )
+            return self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    def _generate_paced(self, messages, stop=None, run_manager=None, **kwargs):
         """One call, retried by this class when the client is told not to retry.
 
         The client's own retry sends the same request again, which is right for

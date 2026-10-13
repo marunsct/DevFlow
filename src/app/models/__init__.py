@@ -728,7 +728,27 @@ def build_default_chat_model(
     # every agent construction reset: two runs with different provider settings
     # in the same worker used to overwrite each other's models.
     router = ModelRouter.for_configuration(resolved_settings, models)
-    return router.get_healthy_model()
+    chosen = router.get_healthy_model()
+    if environment is not None:
+        _BUILT_FROM[id(chosen)] = (chosen, environment)
+    return chosen
 
 
-__all__ = ["build_default_chat_model"]
+#: The environment a model was built from, where it was not the deployment's
+#: own: the judgement model's carries its window and reply ceiling. Keyed by
+#: identity and holding the model, so an id is never reused while listed.
+_BUILT_FROM: dict[int, tuple[Any, Mapping[str, str]]] = {}
+
+
+def environment_of(model: Any) -> Mapping[str, str] | None:
+    """The environment `model` was built from, or None for the deployment's own.
+
+    A stage's context budget follows its own model's window: the judgement
+    model's may be ten times the default model's, and compacting its
+    conversation at the default model's size throws away what it can hold.
+    """
+    entry = _BUILT_FROM.get(id(model))
+    return entry[1] if entry is not None and entry[0] is model else None
+
+
+__all__ = ["build_default_chat_model", "environment_of"]

@@ -328,7 +328,7 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
     )
 
 
-def _compaction_middleware(agent_name: str) -> list:
+def _compaction_middleware(agent_name: str, model: Any = None) -> list:
     """Summarise this agent's history before it outgrows the model's window.
 
     Returns an empty list when compaction is disabled or cannot be built, so a
@@ -339,8 +339,13 @@ def _compaction_middleware(agent_name: str) -> list:
     stable per role and adequate: the content is scratch space for the
     summariser, not run state.
     """
-    policy = ContextPolicy.from_environment()
-    budget = ContextBudget.resolve()
+    # The stage's own model's window: a judgement model's may be far larger
+    # than the default model's (`app.models.environment_of`).
+    from app.models import environment_of
+
+    own = environment_of(model)
+    policy = ContextPolicy.from_environment(dict(own) if own is not None else None)
+    budget = ContextBudget.resolve(own)
     if not policy.enabled:
         return []
 
@@ -616,7 +621,7 @@ def create_role_agent(
     # takes effect on the next agent, not the next restart. The context
     # directory is keyed by agent name (not thread id), which is stable per
     # role; see `_compaction_middleware` for why that is deliberate.
-    middleware = _compaction_middleware(name)
+    middleware = _compaction_middleware(name, model)
     middleware = [
         *middleware,
         # Ahead of the filesystem middleware so the path is already

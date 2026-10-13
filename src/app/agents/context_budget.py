@@ -216,9 +216,24 @@ def _read_int(environment: Mapping[str, str], name: str) -> int | None:
         return None
 
 
+def _the_deployment_s() -> Mapping[str, str]:
+    """The deployment's environment with the settings page's values over it.
+
+    The process environment alone describes the deployment as it was started:
+    one worker read a 100,000-token window from it while the settings page
+    said 130,000, and every budget followed the former.
+    """
+    try:
+        from app.server.runtime_settings import effective_environment
+
+        return effective_environment()
+    except Exception:  # noqa: BLE001 - the deployed environment still stands
+        return os.environ
+
+
 def context_window(environment: Mapping[str, str] | None = None) -> int:
     """The configured context window, in tokens."""
-    env = environment if environment is not None else os.environ
+    env = environment if environment is not None else _the_deployment_s()
     value = _read_int(env, "MODEL_CONTEXT_WINDOW")
     if value is None:
         return DEFAULT_CONTEXT_WINDOW
@@ -326,7 +341,7 @@ class ContextBudget:
         place knows the full picture - and so `describe` can report a budget
         that is no longer internally consistent.
         """
-        env = environment if environment is not None else os.environ
+        env = environment if environment is not None else _the_deployment_s()
         window = context_window(env)
 
         keep = _read_int(env, "CTX_KEEP_MESSAGES")

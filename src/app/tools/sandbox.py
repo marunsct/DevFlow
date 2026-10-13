@@ -843,6 +843,29 @@ TOOLCHAIN_ENVIRONMENT = {
 }
 
 
+#: The longest path a Unix socket may have (`sun_path`, less its terminator).
+UNIX_SOCKET_PATH_LIMIT = 107
+
+
+def _short_temporary_directory(workspace: str) -> str:
+    """A temporary directory of this workspace's own, at a short path.
+
+    Tools make Unix sockets in it (a TypeScript runner's IPC pipe, a
+    bundler's, a language server's), and a socket path longer than
+    `UNIX_SOCKET_PATH_LIMIT` cannot be listened on. Measured on one run: the
+    temporary directory was the workspace's `.agent-home`, the runner's pipe
+    under it was 112 characters, and every launch of the product failed with
+    `listen EINVAL` - so no acceptance test could start it.
+    """
+    import hashlib
+    import tempfile
+
+    digest = hashlib.sha256(os.path.abspath(workspace).encode()).hexdigest()[:12]
+    path = os.path.join(tempfile.gettempdir(), f"run-{digest}")
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    return path
+
+
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
     """A minimal environment for a directly-executed command."""
     environment = {
@@ -859,7 +882,7 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
     home = os.path.join(workspace, ".agent-home")
     os.makedirs(home, exist_ok=True)
     environment["HOME"] = home
-    environment["TMPDIR"] = home
+    environment["TMPDIR"] = _short_temporary_directory(workspace)
     # Playwright's browsers are large (Chromium alone is ~190MB) and are
     # downloaded by `npx playwright install`, which runs as a child of this
     # function and therefore writes to `home` above - the workspace, not a

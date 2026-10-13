@@ -69,7 +69,7 @@ def test_the_run_home_is_still_inside_the_workspace(tmp_path, monkeypatch):
     environment = _child_environment(str(workspace), None)
 
     assert environment["HOME"] == str(workspace / ".agent-home")
-    assert environment["TMPDIR"] == str(workspace / ".agent-home")
+    assert environment["TMPDIR"] != str(workspace / ".agent-home"), "short, for sockets: see test_a_tool_can_listen_on_a_socket_in_its_temporary_directory"
 
 
 def test_the_image_actually_installs_a_browser():

@@ -68,6 +68,10 @@ _MIGRATIONS = (
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS task_id TEXT",
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS cancel_requested BOOLEAN NOT NULL DEFAULT FALSE",
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS model_overrides TEXT NOT NULL DEFAULT '{}'",
+    # Why the stop flag was raised: 'cancel' (the default) or 'pause'. The
+    # worker stops the same way for both, at a stage boundary; only the status
+    # it records differs, and a paused run is resumed, not ended.
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS stop_reason TEXT",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -276,13 +280,50 @@ class RunStore:
         with self.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "UPDATE runs SET cancel_requested = TRUE, updated_at = %s "
+                    "UPDATE runs SET cancel_requested = TRUE, stop_reason = 'cancel', updated_at = %s "
                     "WHERE run_id = %s AND status NOT IN ('completed','failed','cancelled')",
                     (updated_at, run_id),
                 )
                 changed = cur.rowcount
             conn.commit()
         return changed == 1
+
+    def request_pause(self, run_id: str, updated_at: str) -> bool:
+        """Flag a running run to stop at its next stage boundary and wait to be resumed.
+
+        The same flag a cancel raises, so the worker stops the same way; the
+        reason makes it record `paused` and keep everything (see
+        `WorkflowRunner._finish_stopped`). Only a running run can be paused: a
+        run parked on a person is already waiting.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET cancel_requested = TRUE, stop_reason = 'pause', updated_at = %s "
+                    "WHERE run_id = %s AND status = 'running'",
+                    (updated_at, run_id),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
+    def stop_reason(self, run_id: str) -> str:
+        """Why the run's stop flag was raised: 'pause', or 'cancel' for anything else."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT stop_reason FROM runs WHERE run_id = %s", (run_id,))
+                row = cur.fetchone()
+        return "pause" if row and row[0] == "pause" else "cancel"
+
+    def clear_stop(self, run_id: str) -> None:
+        """Lower the stop flag, for a run being resumed."""
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE runs SET cancel_requested = FALSE, stop_reason = NULL WHERE run_id = %s",
+                    (run_id,),
+                )
+            conn.commit()
 
     def is_cancel_requested(self, run_id: str) -> bool:
         with self.get_connection() as conn:

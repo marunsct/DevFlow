@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { listRuns, deleteRun, cloneRun, resumeRun } from '../api';
+import { listRuns, deleteRun, cloneRun, resumeRun, pauseRun } from '../api';
 import type { RunSummary } from '../types';
-import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy } from 'lucide-react';
-import { describeStage, describeStatus } from '../lib/activity';
+import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy, Pause } from 'lucide-react';
+import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 
 export const RunList: React.FC = () => {
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -48,6 +48,15 @@ export const RunList: React.FC = () => {
       navigate(`/runs/${clonedRun.run_id}`);
     } catch (err: any) {
       alert("Failed to clone: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
+  const handlePause = async (runId: string) => {
+    try {
+      await pauseRun(runId);
+      await fetchRuns();
+    } catch (err: any) {
+      alert("Failed to pause: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -161,7 +170,16 @@ export const RunList: React.FC = () => {
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
-                    {run.status === 'failed' && (
+                    {run.status === 'running' && (
+                      <button
+                        onClick={() => handlePause(run.run_id)}
+                        className="p-2 text-text-muted hover:text-warning hover:bg-warning/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                        title="Pause run"
+                      >
+                        <Pause className="h-4 w-4" />
+                      </button>
+                    )}
+                    {RESUMABLE.includes(run.status) && (
                       <button
                         onClick={() => handleResume(run.run_id)}
                         className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"

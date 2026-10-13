@@ -2484,6 +2484,16 @@ class RunCancelled(RuntimeError):
 _CANCELLED_RUNS: set[str] = set()
 
 
+def forget_the_stop(run_id: str | None) -> None:
+    """Forget, in this process, that `run_id` was asked to stop - it is being resumed.
+
+    `_stop_if_cancelled` remembers a stop per process. A paused run resumed by
+    a task in the same worker process would otherwise stop again at its first
+    stage boundary, whatever the database now says.
+    """
+    _CANCELLED_RUNS.discard(str(run_id or ""))
+
+
 def _stop_if_cancelled(run_id: str | None) -> None:
     """Raise `RunCancelled` when this run has been asked to stop.
 

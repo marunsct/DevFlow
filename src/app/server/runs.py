@@ -60,7 +60,7 @@ from app.server.models import (
     WizardSummary,
 )
 from app.server.runner import (
-    BUDGET_PAUSE_STATUS,
+    RESUMABLE_STATUSES,
     RunRecord,
     WorkflowRunner,
     _api_status,
@@ -339,12 +339,13 @@ def create_runs_router(
     async def resume_run(
         run_id: str, user: UserInDB = Depends(require_operator)
     ) -> dict[str, str]:
-        """Resume a failed or budget-paused run."""
+        """Resume a failed, paused, budget-paused or cancelled run from its last checkpoint."""
         record = _require_run(runner, run_id, user)
         # A run parked at its spending ceiling is not failed - it is waiting for
         # someone to decide whether to keep paying. Refusing to resume it here
         # would leave the only pause in the system with no way out but cancel.
-        resumable = ("failed", BUDGET_PAUSE_STATUS)
+        # A run its owner paused, or cancelled, keeps its checkpoints too.
+        resumable = RESUMABLE_STATUSES
         if record.status not in resumable:
             raise HTTPException(
                 status_code=409,
@@ -359,6 +360,19 @@ def create_runs_router(
             raise HTTPException(status_code=409, detail=str(exc))
         record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.resume", subject=run_id)
         return {"message": f"Run {run_id} resumed."}
+
+    @runs.post("/{run_id}/pause", status_code=202)
+    async def pause_run(
+        run_id: str, user: UserInDB = Depends(require_operator)
+    ) -> dict[str, str]:
+        """Pause a running run at its next stage boundary; resume continues it."""
+        _require_run(runner, run_id, user)
+        try:
+            await runner.pause_run(run_id)
+        except RunConflict as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+        record_audit(actor=user.username, tenant_id=user.tenant_id, action="run.pause", subject=run_id)
+        return {"message": f"Run {run_id} is pausing."}
 
     @runs.post("/{run_id}/clone", status_code=201, response_model=CreateRunResponse)
     async def clone_run(

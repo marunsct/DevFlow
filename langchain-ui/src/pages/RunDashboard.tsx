@@ -15,6 +15,7 @@ import {
   submitReview,
   submitApproval,
   cancelRun,
+  pauseRun,
   resumeRun,
   cloneRun,
   startRun,
@@ -30,8 +31,8 @@ import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
 import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
 import { DeliveryPanel } from '../components/DeliveryPanel';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Copy, ListChecks, LayoutGrid } from 'lucide-react';
-import { describeStage, describeStatus } from '../lib/activity';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid } from 'lucide-react';
+import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 
 
 
@@ -308,6 +309,16 @@ export const RunDashboard: React.FC = () => {
     }
   };
 
+  const handlePause = async () => {
+    if (!runId) return;
+    try {
+      await pauseRun(runId);
+      await fetchState();
+    } catch (err: any) {
+      alert("Failed to pause: " + (err.response?.data?.detail || err.message));
+    }
+  };
+
   const handleResume = async () => {
     if (!runId) return;
     try {
@@ -443,7 +454,14 @@ export const RunDashboard: React.FC = () => {
               <Play className="h-3.5 w-3.5" /> Start
             </button>
           )}
-          {run.status === 'failed' && !run.error?.startsWith('Interrupted:') && (
+          {run.status === 'running' && (
+            <button onClick={handlePause}
+              className={`${actionButton} text-warning/90 border-warning/30 hover:border-warning/60 hover:bg-warning/5`}
+              title="Stop at the next step and keep the run to resume later">
+              <Pause className="h-3.5 w-3.5" /> Pause
+            </button>
+          )}
+          {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && (
             <button onClick={handleResume}
               className={`${actionButton} text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               <Play className="h-3.5 w-3.5" /> Resume

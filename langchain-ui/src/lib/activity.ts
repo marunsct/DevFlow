@@ -366,3 +366,10 @@ export function splitToolMessage(message: string): { tool: string; args: string 
     args: message.slice(separator + 1).trim(),
   };
 }
+
+/**
+ * Statuses a run can be resumed from, from where it stopped. Mirrors
+ * `RESUMABLE_STATUSES` in `app/server/runner.py`; a paused or cancelled run
+ * keeps everything it has done.
+ */
+export const RESUMABLE: string[] = ['failed', 'waiting_for_budget', 'paused', 'cancelled'];

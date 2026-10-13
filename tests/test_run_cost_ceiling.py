@@ -177,16 +177,20 @@ class TestTheParkedRunHasAWayOut:
 
         from app.server import runs as runs_module
 
-        source = inspect.getsource(runs_module)
-        assert "BUDGET_PAUSE_STATUS" in source
+        from app.server.runner import BUDGET_PAUSE_STATUS, RESUMABLE_STATUSES
+
+        assert BUDGET_PAUSE_STATUS in RESUMABLE_STATUSES
+        assert "resumable = RESUMABLE_STATUSES" in inspect.getsource(runs_module)
 
     def test_the_runner_resumes_it_by_the_same_path_as_a_failed_run(self):
         import inspect
 
         from app.server.runner import WorkflowRunner
 
-        source = inspect.getsource(WorkflowRunner.resume_run)
-        assert "BUDGET_PAUSE_STATUS" in source
+        from app.server.runner import BUDGET_PAUSE_STATUS, RESUMABLE_STATUSES
+
+        assert BUDGET_PAUSE_STATUS in RESUMABLE_STATUSES
+        assert "in RESUMABLE_STATUSES" in inspect.getsource(WorkflowRunner.resume_run)
 
 
 class TestTheCostIsVisibleToAnOperator:

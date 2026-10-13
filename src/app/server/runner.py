@@ -209,6 +209,10 @@ def _record_stage_duration(timed: dict[str, object]) -> None:
 BUDGET_PAUSE_STATUS = "waiting_for_budget"
 
 
+#: Statuses a run is resumed from, from its last checkpoint.
+RESUMABLE_STATUSES = ("failed", BUDGET_PAUSE_STATUS, "paused", "cancelled")
+
+
 CANCELLABLE_WHILE_PARKED = (
     "created",
     "waiting_for_approval",
@@ -998,21 +1002,59 @@ class WorkflowRunner:
         self._require_a_reachable_model()
 
         now = datetime.now(timezone.utc).isoformat()
-        # A run parked at its spending ceiling resumes by the same path as a
-        # failed one: both continue from the last checkpoint and neither carries
-        # a decision. They are tried in turn rather than read-then-written so the
-        # status change stays a single compare-and-set, which is what stops two
-        # resumes dispatching two tasks onto one thread.
-        for resumable in ("failed", BUDGET_PAUSE_STATUS):
+        # A run parked at its spending ceiling, paused by its owner or cancelled
+        # resumes by the same path as a failed one: each continues from the last
+        # checkpoint and none carries a decision. They are tried in turn rather
+        # than read-then-written so the status change stays a single
+        # compare-and-set, which is what stops two resumes dispatching two
+        # tasks onto one thread. A cancelled run keeps its checkpoints; a
+        # cancel is final only until its owner says otherwise.
+        for resumable in RESUMABLE_STATUSES:
             if self.run_store.compare_and_set_status(
                 run_id, resumable, "running", updated_at=now, clear_error=True
             ):
                 break
         else:
             raise RunConflict(
-                f"Run {run_id} is not in the 'failed' or '{BUDGET_PAUSE_STATUS}' state."
+                f"Run {run_id} is not in one of the states a run resumes from: {', '.join(RESUMABLE_STATUSES)}."
             )
+        # The stop flag a pause or a cancel raised would stop it again at once.
+        self.run_store.clear_stop(run_id)
         self._dispatch(run_id, resume=True, decision_payload=None)
+
+    async def pause_run(self, run_id: str) -> None:
+        """Stop a running run at a stage boundary, keeping it to be resumed.
+
+        The same two mechanisms as a cancel: the flag stops it cleanly at the
+        next checkpoint, and the revoke stops a task mid-stage now - the stage
+        it was in runs again on resume, as after a redeploy. Only the status
+        recorded differs (`_finish_stopped`), and nothing is cleaned up.
+        """
+        record = self.run_store.load(run_id)
+        if record is None:
+            raise ValueError(f"Run {run_id} not found")
+        now = datetime.now(timezone.utc).isoformat()
+        if not self.run_store.request_pause(run_id, now):
+            raise RunConflict(
+                f"Run {run_id} is {record.status}; only a running run can be paused."
+            )
+        if record.task_id:
+            try:
+                from app.server.tasks import celery_app
+
+                celery_app.control.revoke(record.task_id, terminate=True, signal="SIGTERM")
+            except Exception:  # noqa: BLE001 - the flag still stops it at the next check
+                logger.warning("Could not revoke task %s for run %s", record.task_id, run_id, exc_info=True)
+        await self.event_bus.publish(
+            run_id,
+            RunEvent(
+                run_id=run_id,
+                sequence=await self.event_bus.next_sequence(run_id),
+                stage=record.current_stage,
+                event_type="stage_change",
+                message="Run paused by user; resume it to continue from where it stopped.",
+            ),
+        )
 
     async def submit_approval(self, run_id: str, decision: dict[str, Any]) -> None:
         # Defence in depth against a stale status row. An unattended run answers
@@ -1159,6 +1201,9 @@ class WorkflowRunner:
             if self.run_store.is_cancel_requested(run_id):
                 await self._finish_cancelled(record)
                 return
+            from app.graph.workflow import forget_the_stop
+
+            forget_the_stop(run_id)
 
             graph = build_workflow_graph(
                 model=self.model,
@@ -1691,6 +1736,9 @@ class WorkflowRunner:
         return "failed"
 
     async def _finish_cancelled(self, record: RunRecord) -> None:
+        if self.run_store.stop_reason(record.run_id) == "pause":
+            await self._finish_paused(record)
+            return
         forget_run(record.run_id)
         record.status = "cancelled"
         record.updated_at = datetime.now(timezone.utc).isoformat()
@@ -1701,6 +1749,13 @@ class WorkflowRunner:
         # a deployment where runs are frequently cancelled never pruned at all.
         await asyncio.to_thread(self._prune_scratch)
         await self.event_bus.close(record.run_id)
+
+    async def _finish_paused(self, record: RunRecord) -> None:
+        """Record a run stopped by a pause: waiting to be resumed, with everything kept."""
+        record.status = "paused"
+        record.updated_at = datetime.now(timezone.utc).isoformat()
+        self._persist(record)
+        logger.info("Run %s paused", record.run_id)
 
     def _update_record(self, record: RunRecord, state: dict[str, Any]) -> None:
         """Sync the run record with the latest graph state."""

@@ -155,6 +155,12 @@ export const submitApproval = async (
   return response.data;
 };
 
+/** Stop a running run at its next step and keep it to be resumed. */
+export const pauseRun = async (runId: string): Promise<{ message: string }> => {
+  const response = await api.post<{ message: string }>(`/runs/${runId}/pause`);
+  return response.data;
+};
+
 export const cancelRun = async (runId: string) => {
   const response = await api.post(`/runs/${runId}/cancel`);
   return response.data;

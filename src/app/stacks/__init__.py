@@ -428,11 +428,19 @@ def _framework_fits(pack: StackPack, stack: Any) -> bool:
     ))
 
 
-def choose_pack(stack: Any, text: str = "") -> StackPack | None:
+def choose_pack(stack: Any, text: str = "", rationale: str = "") -> StackPack | None:
     """The pack for this stack and brief, or None when no pack fits.
 
     A pack fits when it is for this kind of product, in the stack's language,
     and implements the framework the stack chose (or the stack chose none).
+
+    `rationale` is the stack selector's own reasoning. Where the stack's
+    fields fit no pack and the rationale names exactly one offered pack by its
+    title - of this kind and language, implementing what the stack did name -
+    that pack is the one chosen: the field left out was an omission, not a
+    choice. Measured on one run: the rationale chose "Browser app in React
+    with its own HTTP service in FastAPI" and the frontend field read "not
+    stated", so no pack fitted and the agents set the project up themselves.
     """
     from app.stacks.packs import ALL_PACKS
 
@@ -447,7 +455,23 @@ def choose_pack(stack: Any, text: str = "") -> StackPack | None:
             continue
         if _framework_fits(pack, stack) and _frontend_fits(pack, stack):
             return pack
-    return None
+    named = [
+        pack for pack in ALL_PACKS
+        if rationale and pack.title.lower() in rationale.lower()
+        and pack.kind == kind
+        and pack.language in languages
+        and _framework_fits(pack, stack)
+        and (not pack.frontend_frameworks or _frontend_fits(pack, stack) or not _names_a_frontend(stack))
+    ]
+    return named[0] if len(named) == 1 else None
+
+
+def _names_a_frontend(stack: Any) -> bool:
+    """Whether the stack names any component framework at all."""
+    frontend = re.sub(r"\.?js\b", "", _framework_text(stack))
+    return any(re.search(rf"(?<![a-z]){word}(?![a-z])", frontend) for word in _COMPONENT_FRAMEWORKS) or any(
+        re.search(rf"(?<![a-z]){re.escape(framework)}(?![a-z])", frontend) for framework in _BUILT_ON
+    )
 
 
 #: Component frameworks an interface is built with. A stack names at most one.

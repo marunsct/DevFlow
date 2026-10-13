@@ -5842,7 +5842,10 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
     if stack is None:
         return {}
     brief = getattr(state.get("document"), "text", "") or ""
-    pack = choose_pack(stack, f"{brief}\n{_as_text(state.get('product_intake'))}")
+    pack = choose_pack(
+        stack, f"{brief}\n{_as_text(state.get('product_intake'))}",
+        rationale=str(getattr(chosen, "rationale", "") or ""),
+    )
     out: dict[str, Any] = {"stack_pack": pack.name if pack else None}
     if pack is not None:
         aligned = aligned_stack(stack, pack)

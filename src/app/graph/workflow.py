@@ -375,6 +375,9 @@ _NODE_NAMES = frozenset(
         # Parallel mode's defect fixes: see `_the_next_fix_batch`.
         "defect_fix_worker",
         "defect_fix_gather",
+        # Parallel mode's reviews: see `security_review_node`.
+        "review_worker",
+        "review_gather",
         "ci_gate",
         "code_review",
         "test_and_triage",
@@ -413,6 +416,8 @@ _ITERATED_STAGE_OWNERS = {
     "code_review_": "code_review",
     "consult_": "specialist_consultation",
     "advice_review_": "advice_review",
+    # A resume inside the reviews' fan-out re-enters the node that started it.
+    "review_parallel": "security_review",
 }
 """Maps an iterated stage-name prefix to the node that owns it.
 
@@ -585,6 +590,10 @@ class WorkflowGraphState(TypedDict, total=False):
     fix_batch: list[int]
     fixes_tried: list[str]
     fixes_one_at_a_time: list[str]
+    # Parallel mode's reviews (`security_review_node`): the reviews in flight -
+    # "security" and each advice role - and the results each has returned.
+    reviews_in_flight: list[str]
+    review_results: Annotated[dict[str, Any], _merge_or_reset]
     # The tests each repair was for, so a test never sent for repair is not
     # refused for a budget others spent. See `acceptance_nodes.may_repair`.
     suite_repaired_tests: list[str]
@@ -1191,6 +1200,12 @@ def _defects_to_fix_together(cycle: Any, candidates: list[int]) -> list[int]:
     return chosen or candidates[:1]
 
 
+def _reviews_pending(state: Any) -> list[str]:
+    """The reviews in flight that have not produced a result yet."""
+    done = state.get("review_results") or {}
+    return [item for item in (state.get("reviews_in_flight") or []) if item not in done]
+
+
 def _route_from_stage(state: WorkflowGraphState) -> str:
     """Shared conditional-edge router used after every gated node.
 
@@ -1251,6 +1266,12 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
             for index, task in going
         ]
+
+    if stage == "review_parallel":
+        pending = _reviews_pending(state)
+        if not pending:
+            return "review_gather"
+        return [Send("review_worker", {**state, "__review_item": item}) for item in pending[: max_parallel()]]
 
     if stage == "defect_fix_parallel":
         # Every fixer of the batch still without an output: each was sent once
@@ -8270,18 +8291,12 @@ def build_workflow_graph(
             return _handing_on(**update, stage="acceptance_dispute", dispute_returns_to="test_and_triage")
         return _handing_on(**update, stage="defect_remediation")
 
-    def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+    def _the_security_review(state: Any, config: RunnableConfig) -> tuple[dict[str, Any] | None, Any]:
+        """(an update to hand back - paused or retrying - and None), or (None, the review)."""
         outputs = state.get("specialist_outputs", {})
         changed_files = _the_files_this_milestone_changed(state, outputs)
         if not _changes_any_code(changed_files) and not state.get("pending_inner_thread_id"):
-            review = SecurityReviewOutput(status="passed", findings=[])
-            from app.sprint.record import findings_of
-            return _handing_on(
-                stage="advice_review",
-                security_review=review,
-                sprint_findings=list(state.get("sprint_findings") or [])
-                + findings_of(review, "security", state.get("milestone_revision_count", 0) + 1),
-            )
+            return None, SecurityReviewOutput(status="passed", findings=[])
         agent = create_security_reviewer_agent(model=judgement_model, checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories)
         request = build_security_review_request(
             changed_files,
@@ -8298,8 +8313,8 @@ def build_workflow_graph(
             next_stage="security_review", # We re-enter to process the output
         )
         if "__security_review__" not in update:
-            return update
-            
+            return update, None
+
         review: SecurityReviewOutput = update.pop("__security_review__")
         review = _without_findings_about_the_harness_s_files(review, state["repository"].root_path)
 
@@ -8316,6 +8331,23 @@ def build_workflow_graph(
             "docs/security_review.md",
             render_security_review(review, shown, not_shown),
         )
+        return None, review
+
+    def security_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        if state.get("reviews_in_flight"):
+            # A resume after a review in the fan-out paused or retried.
+            return {"stage": "review_parallel"}
+        if _in_parallel_mode() and max_parallel() > 1 and not state.get("pending_inner_thread_id"):
+            due = ["security", *_advice_reviews_due(state)]
+            if len(due) > 1:
+                # Each review reads the finished sprint and none reads another's
+                # verdict, so they run side by side; the milestone review, which
+                # reads them all, waits for `review_gather`.
+                logger.info("Running %d reviews side by side: %s", len(due), ", ".join(due))
+                return {"stage": "review_parallel", "reviews_in_flight": due, "review_results": {}}
+        handed_back, review = _the_security_review(state, config)
+        if handed_back is not None:
+            return handed_back
         from app.sprint.record import findings_of
 
         return _handing_on(
@@ -8379,24 +8411,24 @@ def build_workflow_graph(
                 return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
         return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)
 
-    def advice_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
-        """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""
-        from app.agents.advice_review import build_advice_review_request, findings_from, roles_to_review
-        from app.agents.specialist_advice import adopted
+    def _advice_reviews_due(state: Any) -> list[str]:
+        """The consulted specialists whose advice review this sprint and revision has not had."""
+        from app.agents.advice_review import roles_to_review
 
-        # One review per sprint and per milestone revision: a revised sprint is
-        # checked again, from nothing.
         cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
         found = dict(state.get("advice_findings") or {}) if state.get("advice_review_cycle") == cycle else {}
         advice, specification = state.get("specialist_advice"), state.get("technical_specification")
-        pending = [role for role in roles_to_review(advice, specification) if role not in found]
-        if not pending:
-            return _handing_on(stage="milestone_review", advice_findings=found, advice_review_cycle=cycle)
-        role = pending[0]
+        return [role for role in roles_to_review(advice, specification) if role not in found]
+
+    def _one_advice_review(state: Any, config: RunnableConfig, role: str) -> tuple[dict[str, Any] | None, list[Any]]:
+        """(an update to hand back, []) or (None, the role's findings)."""
+        from app.agents.advice_review import build_advice_review_request, findings_from
+        from app.agents.specialist_advice import adopted
+
+        advice, specification = state.get("specialist_advice"), state.get("technical_specification")
         changed_files = _the_files_this_milestone_changed(state, state.get("specialist_outputs", {}))
         if role == "database" and not state.get("pending_inner_thread_id") and not _changes_any_code(changed_files):
-            found[role] = []
-            return _handing_on(stage="advice_review", advice_findings=found, advice_review_cycle=cycle)
+            return None, []
         milestone = state.get("milestone_plan")
         request = build_advice_review_request(
             role,
@@ -8432,20 +8464,100 @@ def build_workflow_graph(
             next_stage="advice_review",
         )
         if _hand_back(update, "__advice_review__"):
-            return update
-        found[role] = findings_from(role, update.pop("__advice_review__"))
-        if found[role]:
-            logger.info("The %s specialist found %d adopted item(s) not built", role, len(found[role]))
+            return update, []
+        found = findings_from(role, update.pop("__advice_review__"))
+        if found:
+            logger.info("The %s specialist found %d adopted item(s) not built", role, len(found))
+        return None, found
+
+    def advice_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
+        """Each consulted specialist checks its adopted advice against this sprint. See `app.agents.advice_review`."""
+        if state.get("reviews_in_flight"):
+            return {"stage": "review_parallel"}
+        # One review per sprint and per milestone revision: a revised sprint is
+        # checked again, from nothing.
+        cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
+        found = dict(state.get("advice_findings") or {}) if state.get("advice_review_cycle") == cycle else {}
+        pending = _advice_reviews_due(state)
+        if not pending:
+            return _handing_on(stage="milestone_review", advice_findings=found, advice_review_cycle=cycle)
+        role = pending[0]
+        handed_back, findings = _one_advice_review(state, config, role)
+        if handed_back is not None:
+            return handed_back
+        found[role] = findings
         from app.agents.advice_review import as_sprint_findings
 
         return _handing_on(**{
-            **update,
             "advice_findings": found,
             "advice_review_cycle": cycle,
             "sprint_findings": list(state.get("sprint_findings") or [])
             + as_sprint_findings(found[role], state.get("milestone_revision_count", 0) + 1),
             "stage": "advice_review" if len(pending) > 1 else "milestone_review",
         })
+
+    def review_worker_node(state: dict, config: RunnableConfig) -> dict[str, Any]:
+        """One review of the finished sprint, beside the others. See `security_review_node`."""
+        item = state["__review_item"]
+        stage_name = "security_review" if item == "security" else f"advice_review_{item}"
+        temp_state: Any = dict(state)
+        # A worker may only answer its own approval gate: see `specialist_worker_node`.
+        temp_state.update(_only_this_worker_s_pause(state, stage_name))
+        if item == "security":
+            handed_back, review = _the_security_review(temp_state, config)
+            result: dict[str, Any] = {"security_review": review}
+        else:
+            handed_back, findings = _one_advice_review(temp_state, config, item)
+            result = {"advice": findings}
+        answered_in_a_batch = bool((state.get("queued_decisions") or {}).get(stage_name))
+        if handed_back is not None:
+            return {"specialist_pauses": {stage_name: _as_a_queued_pause(
+                state, stage_name, handed_back, answered=answered_in_a_batch
+            )}}
+        finished: dict[str, Any] = {"review_results": {item: result}}
+        if answered_in_a_batch:
+            finished["specialist_pauses"] = {stage_name: None}
+        return finished
+
+    def review_gather_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:  # noqa: ARG001
+        """Where the reviews join: surface a pause, send what is left, or record them all for the milestone review."""
+        pauses = _queued_pauses(state)
+        if pauses:
+            first = _the_pause_to_surface(pauses)
+            surfaced = {key: value for key, value in pauses[first].items() if key != _QUEUED_AT}
+            return {**surfaced, "specialist_pauses": {first: None}, "queued_decisions": {}}
+        if _reviews_pending(state):
+            return {
+                "stage": "review_parallel",
+                "pending_decision": None,
+                "pending_inner_thread_id": None,
+                "pending_approval": None,
+                "queued_decisions": {},
+            }
+        from app.agents.advice_review import as_sprint_findings
+        from app.sprint.record import findings_of
+
+        results = state.get("review_results") or {}
+        revision = state.get("milestone_revision_count", 0) + 1
+        findings = list(state.get("sprint_findings") or [])
+        review = (results.get("security") or {}).get("security_review")
+        if review is not None:
+            findings += findings_of(review, "security", revision)
+        cycle = f"{state.get('current_sprint_index', 0)}:{state.get('milestone_revision_count', 0)}"
+        found = dict(state.get("advice_findings") or {}) if state.get("advice_review_cycle") == cycle else {}
+        for item in state.get("reviews_in_flight") or []:
+            if item != "security":
+                found[item] = list((results.get(item) or {}).get("advice") or [])
+                findings += as_sprint_findings(found[item], revision)
+        return _handing_on(
+            stage="milestone_review",
+            security_review=review if review is not None else state.get("security_review"),
+            advice_findings=found,
+            advice_review_cycle=cycle,
+            sprint_findings=findings,
+            reviews_in_flight=[],
+            review_results={},
+        )
 
     def milestone_review_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         """Review the milestone, and keep its findings for the Sprint Record.
@@ -9125,6 +9237,9 @@ def build_workflow_graph(
     graph.add_edge("defect_fix_worker", "defect_fix_gather")
     graph.add_node("security_review", security_review_node, retry_policy=agent_retry_policy)
     graph.add_node("advice_review", advice_review_node, retry_policy=agent_retry_policy)
+    graph.add_node("review_worker", review_worker_node, retry_policy=agent_retry_policy)
+    graph.add_node("review_gather", review_gather_node)
+    graph.add_edge("review_worker", "review_gather")
     graph.add_node("acceptance_dispute", acceptance_dispute_node, retry_policy=agent_retry_policy)
     graph.add_node("milestone_review", milestone_review_node, retry_policy=agent_retry_policy)
     graph.add_node("user_review_sprint", user_review_sprint_node)
@@ -9165,6 +9280,7 @@ def build_workflow_graph(
         "test_and_triage",
         "defect_remediation",
         "defect_fix_gather",
+        "review_gather",
         "security_review",
         "advice_review",
         "milestone_review",

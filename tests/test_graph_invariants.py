@@ -81,7 +81,9 @@ def test_sprint_advance_is_routable():
 #:
 #: Each entry is checked below against the router itself, so an entry here can
 #: only excuse a stage the router demonstrably handles.
-_ROUTER_SENTINELS = frozenset({"specialist_dispatch_parallel"})
+#: `defect_fix_parallel` and `review_parallel` are the same kind: parallel
+#: mode's batch of defect fixes and its reviews of a finished sprint.
+_ROUTER_SENTINELS = frozenset({"specialist_dispatch_parallel", "defect_fix_parallel", "review_parallel"})
 
 
 def test_every_stage_a_node_assigns_is_a_known_target():

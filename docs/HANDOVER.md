@@ -178,9 +178,43 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
 | deployed | `5d2676a` is live (deployed into run-23896345 at 11:56 JST 2026-10-13, which resumed): Node 24 and waves 2-3 packs (27 of 27 verified), unready plans ranked by problems per work order, parallel work orders waiting only for a missing manifest or a truly shared file, and a test acting on the page only when it takes the page fixture. LM Studio served overlapping calls at 27 tok/s each against 86 alone, so parallel mode saves little until the server batches requests. |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
+| pushed, not deployed | `58600ee` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes. Deploy when run-23896345 ends. |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
+
+### 2.0 Reach beyond the packs (2026-10-13, `58600ee`, pushed; deploy after run-23896345 ends)
+
+Three features (on the owner's request, after comparing how cloud coding
+agents handle any language): they change what stages are given, so they go
+live between runs, not into one.
+
+- **`look_up_package`** (`app/tools/package_registry.py`): a stage asks the
+  registry an ecosystem installs from (npm, PyPI, crates.io, Go proxy, Maven
+  Central, RubyGems, Packagist, NuGet) for the latest stable version, the
+  runtime it needs, peer dependencies, and the runtime this environment has.
+  Fixed hosts, checked names. Given to the stack selector, the architect and
+  specialists. Off with `PACKAGE_LOOKUP_ENABLED=false`.
+- **A proven setup for a stack no pack covers** (`app/stacks/custom_setup.py`):
+  the scaffold node runs `stack_setup_<n>` (the testing specialist), which
+  creates the project with the framework's own generator and declares its
+  runners in `<project>/stack-setup.json`. The harness runs the install and
+  both smoke tests through those commands; only a passing setup is recorded,
+  as a contract with `"pack": "proven-setup"` whose runner files and manifest
+  scripts are kept as proven. Unproven: sent back once with what failed, then
+  left to the agents as before. Seeded codebases are skipped. Off with
+  `CUSTOM_STACK_SETUP=false`.
+- **`use_runtime`** (`app/tools/runtimes.py`): Node, Go, Java (Temurin) or
+  Python (through `uv`) at the version a project needs, downloaded from the
+  official distribution, checksum-verified, cached in `/app/data/toolchains`
+  (beside the workspaces, so it survives deploys) and first on that project's
+  PATH only; container mode picks the image of that version. Verified for
+  real on the host: Node 22.23.3, Go 1.26.9, JDK 25, Python 3.13 in 1-5 s each.
+  Off with `SANDBOX_RUNTIMES_ENABLED=false`.
+
+Not yet seen on a real run: a custom stack under the served model. Run one
+(a brief naming Nuxt, SvelteKit or Ktor) after the parallel/linear medium
+runs, and check §2.2 item 5.
 
 ### 2.1 What changed on 2026-10-12
 
@@ -280,6 +314,11 @@ Stack packs and the image:
    only when the locked suite ran green.
 4. **Builders in parallel.** No `belongs to another work order` refusal follows
    an IDE note about an import.
+5. **A custom stack (after `58600ee` is deployed).** The decision record says
+   "a proven setup" or "left to the agents" with the failing smoke test; with a
+   proven one, `.harness/stack-pack.json` has `"pack": "proven-setup"` and QA
+   writes into the declared acceptance directory. `look_up_package` and
+   `use_runtime` calls appear in transcripts without failing.
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
 

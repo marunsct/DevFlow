@@ -187,7 +187,7 @@ def test_only_what_a_build_needs_is_passed(workspace):
     }
     set_deliberately = {
         "NODE_OPTIONS", "VITEST_MAX_THREADS", "VITEST_MIN_THREADS",
-        "VITEST_MAX_FORKS", "UV_THREADPOOL_SIZE",
+        "VITEST_MAX_FORKS", "UV_THREADPOOL_SIZE", "GOMAXPROCS", "GOMEMLIMIT",
         # Playwright downloads Chromium (~190 MB) on first use and would do it
         # again per run with HOME inside the workspace. Pointing it at a shared
         # cache is deliberate, and it carries no credential - it is a path.
@@ -197,6 +197,15 @@ def test_only_what_a_build_needs_is_passed(workspace):
         # A number, not a credential.
         "ACCEPTANCE_PORT",
     }
+
+    from app.tools.sandbox import TOOLCHAIN_ENVIRONMENT, _concurrency_environment
+
+    # The concurrency bounds, whichever tools they name.
+    set_deliberately |= set(_concurrency_environment())
+
+    # Settings a toolchain needs to run in here at all; not secrets, and the
+    # same for every command.
+    set_deliberately |= set(TOOLCHAIN_ENVIRONMENT)
 
     assert set(_child_env(workspace)) <= passed_through | set_deliberately
 

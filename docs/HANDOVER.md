@@ -208,8 +208,15 @@ read every product source file against the brief (monitoring §0.4.1). Check:
   forced tool refused in thinking mode -> offered instead (commit after
   `b1ed794`); a setup stage resumed after its own approval pause is finished
   and proven, not skipped (`2915a36`).
-- **Still open**: the context budget (compaction, document budgets) follows
-  the default model's window even on judgement stages.
+- **Context budgets** follow the settings page (not the process environment,
+  which said 100k while settings said 130k), and a judgement stage compacts at
+  its own model's window (`models.environment_of`). Note: a 1M-token frontier
+  window means long conversations are resent whole on each call - more quota
+  per call on a metered provider.
+- **Gate**: `loop.sh suite` now puts the venv on PATH; ten sandbox tests marked
+  for a bare `python` had been skipped (one had gone stale).
+- **Temporary directory**: each workspace's commands get a short `/tmp/run-<hash>`
+  TMPDIR (a socket under the workspace path exceeded the 107-char limit).
 
 ### 2.0 Reach beyond the packs (2026-10-13, `58600ee` and `d9fd387`, pushed; deploy after run-23896345 ends)
 

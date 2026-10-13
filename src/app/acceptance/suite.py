@@ -97,13 +97,34 @@ def relative_directory(repo_root: str | Path) -> str:
 
 
 def suite_files(repo_root: str | Path) -> list[Path]:
+    """The files the suite is made of: never its runner's report.
+
+    A suite may write its JUnit report beside its tests. Locked with them,
+    every run rewrote a locked file: measured on one run, each run of the
+    suite was followed by "acceptance suite restored", the report put back
+    as it was when the suite was locked.
+    """
     root = directory(repo_root)
     if root is None or not root.is_dir():
         return []
+    report = _the_report(repo_root)
     return sorted(
         path for path in root.rglob("*")
         if path.is_file() and not (set(path.relative_to(root).parts) & _NOT_THE_SUITE)
+        and path != report
     )
+
+
+def _the_report(repo_root: str | Path) -> Path | None:
+    """Where the suite's runner writes its report, or None."""
+    try:
+        command = _command(repo_root)
+    except Exception:  # noqa: BLE001 - an unreadable declaration declares no report
+        return None
+    if command is None:
+        return None
+    _, report, project = command
+    return Path(repo_root) / project / report
 
 
 # --- criteria ---------------------------------------------------------------

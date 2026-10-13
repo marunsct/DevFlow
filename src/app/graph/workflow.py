@@ -9242,13 +9242,18 @@ def build_workflow_graph(
         )
 
     graph = StateGraph(WorkflowGraphState)
-    from langgraph.types import RetryPolicy
-    
+    from langgraph.types import RetryPolicy, default_retry_on
+
+    from app.models.quota import out_of_quota
+
+    # A provider out of quota refuses every attempt alike; the runner parks
+    # the run for a person instead (`runner._explain_failure`).
     agent_retry_policy = RetryPolicy(
         initial_interval=2.0,
         backoff_factor=2.0,
         max_interval=30.0,
         max_attempts=3,
+        retry_on=lambda error: not out_of_quota(error) and default_retry_on(error),
     )
 
     graph.add_node("product_manager", product_manager_node, retry_policy=agent_retry_policy)

@@ -39,6 +39,7 @@ from app.graph.workflow import (
     skip_decision,
     start_workflow,
 )
+from app.models.quota import OUT_OF_QUOTA_PHRASES, out_of_quota
 from app.observability.cost_tracker import RunCost, forget_run, run_cost
 from app.observability.metrics import MetricsTracker
 from app.server.events import EventBus, RunEvent, redact_metadata
@@ -398,6 +399,13 @@ def _applicable_overrides(overrides: dict[str, Any] | None) -> dict[str, Any]:
 #: other failure an operator can act on, applied to the ones that come from the
 #: provider rather than from the conversation.
 _PROVIDER_FAILURE_HINTS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        OUT_OF_QUOTA_PHRASES,
+        "The model provider refused the call because the account's quota or credit "
+        "is used up. Nothing in the run failed: it is paused at its last checkpoint. "
+        "Add funds or change the plan with the provider, or point the model setting "
+        "at another model, then resume.",
+    ),
     (
         ("no model loaded", "inference/load", "model_not_found", "no models loaded",
          "downloaded but not loaded", "switch model by request", "is not loaded"),
@@ -1271,8 +1279,14 @@ class WorkflowRunner:
             # The full traceback goes to the log, keyed by correlation id. Only a
             # short message reaches the API, because run.error is rendered in the
             # browser and a traceback leaks paths, versions and module layout.
-            logger.exception("Run %s failed", run_id)
-            record.status = self._status_after_failure(record)
+            # A provider out of quota is not a failure of the work: the run waits
+            # for a person, as at its spending ceiling, and resumes from here.
+            parked = out_of_quota(exc)
+            if parked:
+                logger.warning("Run %s is waiting: its model provider is out of quota", run_id)
+            else:
+                logger.exception("Run %s failed", run_id)
+            record.status = BUDGET_PAUSE_STATUS if parked else self._status_after_failure(record)
             record.error = _explain_failure(exc)
             record.updated_at = datetime.now(timezone.utc).isoformat()
             self._persist(record)
@@ -1283,7 +1297,7 @@ class WorkflowRunner:
                     sequence=await self.event_bus.next_sequence(run_id),
                     stage=record.current_stage,
                     event_type="error",
-                    message=f"Run failed: {record.error}",
+                    message=f"Run {'paused' if parked else 'failed'}: {record.error}",
                 ),
             )
             await self.event_bus.close(run_id)

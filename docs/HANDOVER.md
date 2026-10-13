@@ -176,7 +176,7 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | | |
 |---|---|
 | branch | `harness-hardening-session`, pushed to `https://github.com/marunsct/DevFlow.git` (remote named `main`). `docs/PRODUCT.md` describes the whole product. |
-| deployed | `b5be462` on branch `live-run-23896345` (= `821a750` + the suite-repair fix `e985111` + the test-file name check `4774f20` + pause/resume `2ea697d`), deployed at 16:41 JST 2026-10-13; run-23896345 resumed through the API at 16:42. Built from a detached checkout of that branch so the untried features of `58600ee`..`e02cd84` stay out of the live run; the next `loop.sh deploy` from `harness-hardening-session` brings everything. Before it: `5d2676a` (11:56 JST): Node 24 and waves 2-3 packs, unready plans ranked by problems per work order, parallel stagger, page-fixture fix. |
+| deployed | `8df4053` on branch `live-run-23896345` (= `821a750` + suite-repair fix `e985111` + test-file name check `4774f20` + pause/resume `2ea697d` + task-id fix `ff9faab`), deployed at 18:08 JST 2026-10-13 while run-23896345 was paused. The next `loop.sh deploy` from `harness-hardening-session` brings the untried features of `58600ee`..`e02cd84` too. |
 | current run | `run-23896345` (brief_medium, parallel), started 09:07 JST 2026-10-13 on `e95d943`. |
 | pushed, not deployed | `d9fd387` (§2.0): package lookup, proven setup for a stack no pack covers, per-project runtimes, compiler checks, page view, docs and MCP, eight CLI/library packs. Deploy when run-23896345 ends, then run `verify_packs.py` in the worker (35 packs). |
 | model | `qwen3.6-35b-a3b-mtp` on LM Studio, `http://host.docker.internal:1234/v1`, thinking effort medium, execution mode **parallel**. |
@@ -276,6 +276,11 @@ raises the cancel flag with `stop_reason='pause'` and revokes the task; the work
 `paused` and keeps everything. Resume takes `failed`, `waiting_for_budget`, `paused` and
 `cancelled` (`RESUMABLE_STATUSES`) and lowers the flag. **Use Pause, not `docker compose stop
 worker`, to stop a run for a model change** - and a cancelled run can now be resumed too.
+
+**A save never writes back a stale task id (`ff9faab`).** The first Pause revoked a task that no
+longer existed: the worker's record, loaded before the API recorded the new task, wrote the old
+task id back on every persist (`COALESCE(EXCLUDED.task_id, runs.task_id)`). `set_task_id` now
+owns the column. The run was stopped by revoking its real task by hand.
 
 ### 2.1 What changed on 2026-10-12
 

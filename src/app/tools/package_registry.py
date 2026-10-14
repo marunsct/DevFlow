@@ -253,13 +253,15 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
     # its current release either way. One stage asked for `typescript@5` and
     # was told the registry had no such package.
     asked = re.match(r"^(@?[^@=<>!~^\s]+)(?:@|==|>=|<=|~=|!=|>|<|\^|~)[\w.*+^~-]*$", name)
+    version_asked = ""
     if asked:
+        version_asked = name[len(asked.group(1)):].lstrip("@=")
         name = asked.group(1)
     if not _A_NAME.match(name) or ".." in name:
         return {"error": f"{name!r} is not a package name."}
     key = (which, name)
     if key in _CACHE:
-        return _CACHE[key]
+        return _with_the_version_asked(_CACHE[key], version_asked)
     try:
         found = _ECOSYSTEMS[which][1](name, fetch or _fetch)
     except Exception as exc:  # noqa: BLE001 - an unreachable registry is an answer, not a crash
@@ -275,7 +277,20 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
     result = {"ecosystem": which, "package": name, **{k: v for k, v in found.items() if v not in (None, "", {}, [])}}
     result["this_environment_runs"] = runtime_here(which)
     _CACHE[key] = result
-    return result
+    return _with_the_version_asked(result, version_asked)
+
+
+def _with_the_version_asked(result: dict[str, Any], version_asked: str) -> dict[str, Any]:
+    """`result`, saying so when the current release is not the version asked for.
+
+    So a stage that asked for one line of releases does not pin the current
+    one thinking it is the line it asked for.
+    """
+    wanted = version_asked.lstrip("^~<>=!")
+    if not wanted or str(result.get("version", "")).lstrip("v").startswith(wanted):
+        return result
+    return {**result, "note": f"{version_asked!r} was asked for; {result.get('version')} is the current "
+                              "release, not one of those."}
 
 
 def build_package_lookup_tool() -> Any:

@@ -153,3 +153,13 @@ def test_a_name_with_the_version_asked_for_is_the_package(ecosystem, asked, url)
     page = {"version": "5.9.3"} if ecosystem == "npm" else {"info": {"version": "5.9.3"}}
 
     assert look_up(ecosystem, asked, fetch=_serving({url: page}))["version"] == "5.9.3"
+
+
+def test_a_version_asked_for_that_is_not_the_current_release_is_said():
+    url = "https://registry.npmjs.org/typescript/latest"
+
+    older = look_up("npm", "typescript@5", fetch=_serving({url: {"version": "7.0.2"}}))
+    same = look_up("npm", "typescript@^7", fetch=_serving({url: {"version": "7.0.2"}}))
+
+    assert "'5' was asked for; 7.0.2 is the current release" in older["note"]
+    assert "note" not in same, "answered from what the first learned, without the first one's note"

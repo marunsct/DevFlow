@@ -160,3 +160,47 @@ def test_a_call_the_client_holds_is_not_added_twice():
     with_every_call_the_server_sent(message, [{"id": "c1", "function": {"name": "T", "arguments": "{}"}}])
 
     assert message.invalid_tool_calls == []
+
+
+CUT = ('{"product_scope": "Notes over HTTP.", "function_contracts": \n[{"file": "notes-api/src/a.ts", '
+       '"name": "errorBody", "signature": "errorBody(code): Body"}], "configuration": ["PORT - default 3000"]\n\n, "file_plan": ')
+
+
+def test_a_cut_off_answer_keeps_what_arrived_and_asks_only_for_the_rest(monkeypatch):
+    import re
+
+    from langchain.agents.structured_output import ToolStrategy
+
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+    from app.agents.role_agent import the_answer_tool
+    from app.models import tool_arguments
+
+    monkeypatch.setattr(tool_arguments, "_HELD", {})
+    monkeypatch.setattr(tool_arguments, "_answer_key", lambda name: ("run-1", "principal_architect", name))
+    tools = [convert_to_openai_tool(TechnicalSpecificationOutput)]
+
+    def reply(**call):
+        message = AIMessage(content="", **call)
+        return tool_arguments.decode_structured_arguments(
+            ChatResult(generations=[ChatGeneration(message=message)]), tools).generations[0].message
+
+    first = reply(invalid_tool_calls=[{"name": "TechnicalSpecificationOutput", "args": CUT, "id": "a",
+                                       "error": "bad", "type": "invalid_tool_call"}])
+
+    (call,) = first.tool_calls
+    assert call["args"][tool_arguments.CUT_OFF] == "file_plan"
+    assert call["args"]["function_contracts"] == ["file: notes-api/src/a.ts; name: errorBody; signature: errorBody(code): Body"]
+    strategy = the_answer_tool(TechnicalSpecificationOutput)
+    assert isinstance(strategy, ToolStrategy)
+    try:
+        TechnicalSpecificationOutput.model_validate(call["args"])
+    except Exception as error:  # noqa: BLE001
+        told = strategy.handle_errors(error)
+    assert "file_plan" in told.split("still to send:")[1] and "configuration" not in told.split("still to send:")[1]
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", told, re.I)
+
+    second = reply(tool_calls=[{"name": "TechnicalSpecificationOutput", "id": "b", "args": {"file_plan": ["notes-api/src/a.ts - errors"]}}])
+
+    answer = TechnicalSpecificationOutput.model_validate(second.tool_calls[0]["args"])
+    assert answer.product_scope == "Notes over HTTP." and answer.file_plan == ["notes-api/src/a.ts - errors"]
+    assert tool_arguments._HELD == {}

@@ -533,7 +533,16 @@ def the_answer_tool(response_format: Any) -> Any:
         return response_format
     from langchain.agents.structured_output import ToolStrategy
 
-    strategy = ToolStrategy(schema=response_format)
+    from langchain.agents.factory import STRUCTURED_OUTPUT_ERROR_TEMPLATE
+
+    from app.models.tool_arguments import cut_off_notice
+
+    def refusal(exception: Exception) -> str:
+        # A cut-off answer is told what was kept and what is still to send
+        # (`app.models.tool_arguments`); any other refusal reads as before.
+        return cut_off_notice(exception, response_format) or STRUCTURED_OUTPUT_ERROR_TEMPLATE.format(error=str(exception))
+
+    strategy = ToolStrategy(schema=response_format, handle_errors=refusal)
     for spec in strategy.schema_specs:
         spec.description = ANSWER_TOOL_DESCRIPTION
     return strategy

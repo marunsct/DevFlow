@@ -96,6 +96,13 @@ def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) 
             value = decoded
         else:
             return value
+    if isinstance(value, dict) and wanted == {"string"}:
+        # An entry written as an object where the schema wants a line of text:
+        # one run's specification sent every function contract as
+        # `{"file": ..., "name": ..., "signature": ...}`. Its fields, in order.
+        return "; ".join(
+            f"{key}: {item if isinstance(item, str) else json.dumps(item)}" for key, item in value.items()
+        )
     if isinstance(value, dict):
         for option in options:
             properties = option.get("properties")
@@ -151,6 +158,77 @@ def _parsed_leniently(arguments: Any) -> dict[str, Any] | None:
     return None
 
 
+#: The argument that marks a call as the part of an answer that arrived before
+#: the reply was cut off. No schema has it, so the answer is refused, and the
+#: refusal (`cut_off_notice`) asks for the fields still to come.
+CUT_OFF = "__cut_off__"
+
+#: The fields of an answer that arrived whole, by (run, stage, tool), until
+#: the rest arrives.
+_HELD: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+_DANGLING_KEY = re.compile(r',\s*"([^"\\]+)"\s*:?\s*$')
+
+
+def _answer_key(name: str) -> tuple[str, str, str] | None:
+    try:
+        from langgraph.config import get_config
+
+        from app.tracing import APP_RUN_ID_KEY, APP_STAGE_KEY
+
+        configurable = (get_config() or {}).get("configurable", {})
+        run, stage = configurable.get(APP_RUN_ID_KEY), configurable.get(APP_STAGE_KEY)
+    except Exception:  # noqa: BLE001 - outside a graph run there is no stage to hold for
+        return None
+    return (str(run), str(stage), name) if run and stage else None
+
+
+def what_arrived_whole(arguments: Any) -> tuple[dict[str, Any], str] | None:
+    """The fields of a cut-off object that arrived whole, and the field it stopped in.
+
+    One run's specification stage lost five answers of about 35,000
+    characters each: the call's arguments simply stopped - `..."example":
+    "..."}]\n\n, "file_plan": ` - with the reply marked finished. Everything
+    before the field it stopped in was whole.
+    """
+    from app.agents.settled_answer import _repair_json
+
+    text = str(arguments or "").rstrip().rstrip(",")
+    dangling = _DANGLING_KEY.search(text)
+    body = text[: dangling.start()] if dangling else text
+    repaired = _repair_json(body)
+    if not repaired:
+        return None
+    try:
+        parsed = json.loads(repaired, strict=False)
+    except ValueError:
+        return None
+    if not isinstance(parsed, dict) or not parsed:
+        return None
+    if dangling:
+        return parsed, dangling.group(1)
+    # Stopped inside the last field's value: what was closed for it is not all of it.
+    stopped_in = list(parsed)[-1]
+    parsed.pop(stopped_in)
+    return (parsed, stopped_in) if parsed else None
+
+
+def cut_off_notice(exception: Exception, schema: Any) -> str | None:
+    """What a refused cut-off answer is told: what was kept, and what to send. None for any other refusal."""
+    if CUT_OFF not in str(exception):
+        return None
+    name = getattr(schema, "__name__", "")
+    held = _HELD.get(_answer_key(name) or ("", "", ""), {})
+    fields = list(getattr(schema, "model_fields", {}) or {})
+    missing = [field for field in fields if field not in held]
+    return (
+        f"Your answer was cut off before it ended; the reply stopped partway through it. "
+        f"These fields arrived whole and are kept: {', '.join(sorted(held)) or 'none'}. "
+        f"Call {name} again with only the fields still to send: {', '.join(missing)}. "
+        f"They are joined to the ones kept. Keep each entry to one line."
+    )
+
+
 def _where_it_fails(arguments: Any) -> str:
     """Why a call's argument text is not an object, and the text around the place, for the log."""
     text = str(arguments or "")
@@ -180,12 +258,26 @@ def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> Non
     for call in invalid:
         name = str(call.get("name") or "")
         parsed = _parsed_leniently(call.get("args")) if name in parameters else None
-        if parsed is None:
-            if name in parameters:
+        if parsed is None and name in parameters:
+            whole = what_arrived_whole(call.get("args"))
+            key = _answer_key(name)
+            if whole and key:
+                arrived, stopped_in = whole
+                _HELD[key] = {**_HELD.get(key, {}), **with_structure_decoded(arrived, parameters[name])}
                 logger.warning(
-                    "A call to %s could not be read even leniently (%d characters): %s",
-                    name, len(str(call.get("args") or "")), _where_it_fails(call.get("args")),
+                    "A call to %s was cut off in `%s` after %d characters; %d whole field(s) kept, "
+                    "the rest asked for", name, stopped_in, len(str(call.get("args") or "")), len(_HELD[key]),
                 )
+                message.tool_calls.append({
+                    "name": name, "args": {**_HELD[key], CUT_OFF: stopped_in},
+                    "id": call.get("id"), "type": "tool_call",
+                })
+                continue
+            logger.warning(
+                "A call to %s could not be read even leniently (%d characters): %s",
+                name, len(str(call.get("args") or "")), _where_it_fails(call.get("args")),
+            )
+        if parsed is None:
             kept.append(call)
             continue
         message.tool_calls.append({"name": name, "args": parsed, "id": call.get("id"), "type": "tool_call"})
@@ -236,4 +328,17 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
             schema = parameters.get(str(call.get("name") or ""))
             if schema is not None:
                 call["args"] = with_structure_decoded(call.get("args"), schema)
+                _joined_to_what_was_kept(call)
     return result
+
+
+def _joined_to_what_was_kept(call: dict[str, Any]) -> None:
+    """The rest of a cut-off answer, joined to the fields kept from it."""
+    args = call.get("args")
+    if not isinstance(args, dict) or CUT_OFF in args:
+        return
+    key = _answer_key(str(call.get("name") or ""))
+    held = _HELD.pop(key, None) if key else None
+    if held:
+        call["args"] = {**held, **args}
+        logger.warning("The rest of a cut-off %s arrived; joined to the %d field(s) kept", call.get("name"), len(held))

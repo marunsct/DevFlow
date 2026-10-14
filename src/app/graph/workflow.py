@@ -7090,6 +7090,28 @@ def build_workflow_graph(
             )
         return update
 
+    def _the_specification_s_work_orders(state: Any, goal: str) -> Any:
+        """Fast delivery's plan for the sprint, made from the specification; None for the lead."""
+        if not _fast_delivery():
+            return None
+        try:
+            from app.graph import acceptance_nodes
+            from app.graph.planned_work import work_orders_from_the_specification
+            from app.stacks import contract
+
+            root = state["repository"].root_path
+            due = set(acceptance_nodes.criteria_due(state) or [])
+            criteria = [
+                f"{c.id}: {c.text}" for c in acceptance_nodes.suite.criteria(root) if not due or c.id in due
+            ]
+            unit = (contract.read(root) or {}).get("unit_test") or []
+            return work_orders_from_the_specification(
+                state.get("technical_specification"), goal, criteria, [" ".join(map(str, unit))] if unit else [],
+            )
+        except Exception:  # noqa: BLE001 - the lead writes the plan
+            logger.warning("Could not make the work orders from the specification", exc_info=True)
+            return None
+
     def technical_lead_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "sprint_plan")
         if missing is not None:
@@ -7186,15 +7208,27 @@ def build_workflow_graph(
                 readiness_feedback(unready)
                 + (f"\n\nThe plan that was sent back:\n{state.get('unready_plan')}" if state.get("unready_plan") else "")
             )
-        update = _run_gated_agent(
-            state,
-            config,
-            stage_name="technical_lead",
-            agent=agent,
-            initial_request=request,
-            output_key="milestone_plan",
-            next_stage="specialist_dispatch",
+        # Fast delivery: the work orders are made from the specification by the
+        # harness, and held to the same definition of ready below. A plan sent
+        # back is the lead's to write. See `app.graph.planned_work`.
+        planned = (
+            _the_specification_s_work_orders(state, current_goal)
+            if not revising and not nothing_else and not unready and not state.get("pending_inner_thread_id")
+            else None
         )
+        if planned is not None:
+            logger.info("Work orders made from the specification by the harness: %d", len(planned.delegated_tasks))
+            update = {"milestone_plan": planned, "stage": "specialist_dispatch", "pending_inner_thread_id": None}
+        else:
+            update = _run_gated_agent(
+                state,
+                config,
+                stage_name="technical_lead",
+                agent=agent,
+                initial_request=request,
+                output_key="milestone_plan",
+                next_stage="specialist_dispatch",
+            )
         if _hand_back(update, "milestone_plan"):
             return update
         if nothing_else and not list(getattr(update["milestone_plan"], "delegated_tasks", None) or []):

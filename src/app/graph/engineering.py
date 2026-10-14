@@ -351,6 +351,15 @@ def code_review(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.graph.workflow import _handing_on, _run_gated_agent
 
     root = _root(state)
+    from app import delivery
+
+    if delivery.fast():
+        # Only a finding a test or a check shows ever became a defect here
+        # (`what_shows_it`), and the test round runs those tests and checks
+        # itself. One run's review took 16 minutes of a frontier model and
+        # raised one finding, advice. See `app.delivery`.
+        logger.info("Code review left to the tests and checks (fast delivery)")
+        return _handing_on(stage="test_and_triage")
     accepted = ci.load(root, "accepted")
     diff = ci.diff_since(root, accepted.commit if accepted else "")
     if not diff.strip():

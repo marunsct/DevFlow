@@ -377,3 +377,23 @@ def test_a_review_finding_nothing_shows_is_advice(workspace, monkeypatch) -> Non
 def test_the_code_review_is_told_not_to_repeat_reads() -> None:
     from app.agents.code_reviewer import _SYSTEM_PROMPT
     assert "do not repeat a tool call" in _SYSTEM_PROMPT.lower()
+
+
+def test_fast_delivery_leaves_the_code_review_to_the_tests(workspace, monkeypatch) -> None:
+    """Only a finding a test or check shows became a defect; one run's review took
+    16 minutes of a frontier model and raised one finding, advice."""
+    from app import delivery
+
+    engineering.accepted_state(str(workspace.root))
+    (workspace.root / "notes" / "src" / "notes.js").write_text("export function remove() { return []; }\n")
+    ci.commit(workspace.root, "batch")
+    reviewed: list[Any] = []
+    monkeypatch.setattr("app.graph.workflow._run_gated_agent", lambda *a, **k: reviewed.append(k) or {})
+    monkeypatch.setattr("app.agents.code_reviewer.create_code_reviewer_agent", lambda *a, **k: object())
+    monkeypatch.setattr(delivery, "fast", lambda environment=None: True)
+    state = {"repository": SimpleNamespace(root_path=str(workspace.root)), "review_defects": []}
+
+    update = engineering.code_review(state, CONFIG, SimpleNamespace(
+        judgement_model=None, checkpointer=None, repo_root=None, allow_subdirectories=True))
+
+    assert update["stage"] == "test_and_triage" and reviewed == []

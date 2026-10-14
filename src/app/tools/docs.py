@@ -240,6 +240,15 @@ def read(name: str, topic: str = "", ecosystem: str = "", *, fetch: Fetch | None
     """The documentation of `name` about `topic`, or {"error": ...}."""
     fetch = fetch or _fetch
     name = str(name or "").strip()
+    # `node:test`, `bun:test`: a module built into a runtime. Its documentation
+    # is the runtime's, read with the module as part of the topic; it was
+    # refused as "not a package name" and no package of that name exists.
+    runtime, colon, module = name.partition(":")
+    if colon and re.match(r"^[a-z][a-z0-9]{1,20}$", runtime) and re.match(r"^[A-Za-z0-9._/-]{1,100}$", module):
+        if runtime not in INDEXES:
+            return {"error": f"{name!r} is built into the {runtime} runtime, not a package with a "
+                             f"README; its reference is {runtime}'s own documentation."}
+        name, topic = runtime, f"{module} {topic}".strip()
     if not re.match(r"^[@A-Za-z0-9][@A-Za-z0-9._/-]{0,200}$", name) or ".." in name:
         return {"error": f"{name!r} is not a framework or package name."}
     wanted = _words(topic)

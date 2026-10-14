@@ -230,3 +230,18 @@ def test_the_stages_that_choose_and_build_are_given_the_documentation(build, tmp
     }[build]()
 
     assert "read_docs" in agent.nodes["tools"].bound._tools_by_name
+
+
+def test_a_module_built_into_a_runtime_is_read_from_the_runtime():
+    """One stage asked for `node:test` and was told it was "not a framework or package name"."""
+    asked: list[str] = []
+
+    unindexed = docs.read("node:test", "running test files", fetch=_site({}, asked))
+
+    assert "built into the node runtime" in unindexed["error"]
+    assert asked == [], "no registry is asked for a package that does not exist"
+    found = docs.read("bun:test", "mocks", fetch=_site({
+        docs.INDEXES["bun"]: "# Bun\n- [Test](https://bun.sh/docs/test/mocks.md): mocks in bun test\n",
+        "https://bun.sh/docs/test/mocks.md": "# Mocks\n## Mock functions\n`mock(() => 1)` from bun:test\n",
+    }))
+    assert "mock(() => 1)" in found.get("excerpt", ""), found

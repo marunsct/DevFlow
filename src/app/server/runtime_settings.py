@@ -111,6 +111,8 @@ SETTABLE_KEYS: dict[str, str] = {
     # the toggle could not be turned on and fourteen settings tests that post
     # a whole payload failed with it.
     "execution_mode": "EXECUTION_MODE",
+    # How much each stage does: `fast` or `thorough`. See `app.delivery`.
+    "delivery_mode": "DELIVERY_MODE",
     # Whether the model can be shown images - "yes", "no" or "auto". The
     # milestone review is given screenshots of the page only when it can. See
     # `app.models.vision`.

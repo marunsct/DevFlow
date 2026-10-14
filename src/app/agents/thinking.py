@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import threading
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -165,6 +165,25 @@ class ThinkingPolicy:
             f"Thinking is on at {self.effort} effort, up to {self.budget_tokens:,} "
             "tokens of the reply budget."
         )
+
+
+def without_reasoning(model: Any) -> Any:
+    """A copy of `model` whose every reply is an answer, with no reasoning first; or `model`.
+
+    For the stages fast delivery (`app.delivery`) runs without reasoning: the
+    ones that build and fix from a specification that has decided what they
+    write. One run's build model spent half of 2.8 million output tokens
+    reasoning, and lost whole replies to it at the start of most stages.
+    The switch is `answering_without_reasoning`'s, measured per endpoint; a
+    client that cannot be switched per call is returned as it is.
+    """
+    switch = answering_without_reasoning(model).get("extra_body")
+    if not switch:
+        return model
+    try:
+        return model.model_copy(update={"extra_body": switch})
+    except Exception:  # noqa: BLE001 - a model that cannot be copied reasons as configured
+        return model
 
 
 def answering_without_reasoning(model: object) -> dict:

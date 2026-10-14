@@ -537,6 +537,9 @@ class WorkflowGraphState(TypedDict, total=False):
     lessons: list[str]
     milestone_plan: MilestonePlanOutput
     specialist_task_index: int
+    # Whether this milestone plan's work orders were drafted from the
+    # specification (fast delivery; `app.graph.drafting`). Cleared with each plan.
+    drafted_for_plan: bool
     specialist_outputs: Annotated[dict[str, SpecialistOutput], _merge_or_reset]
     # A parallel worker that paused, keyed by its stage name. Written by the
     # workers, drained by `specialist_gather`. It exists because `stage` cannot
@@ -2425,6 +2428,32 @@ def _what_the_compiler_says_of(root: str, touched: set[str], stage_name: str, pr
     return [f"- In `{f['file']}` line {f['line']}: {f['message']} (the compiler)" for f in found]
 
 
+#: How much of a failing unit run a defect carries.
+UNIT_FAILURE_TAIL_CHARACTERS = 3_000
+
+
+def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
+    """The defect for a failing unit run, owned by the role that writes the product.
+
+    Not the testing role's: a defect it owns is closed by changing the test,
+    and a failing unit test is first the product's to answer.
+    """
+    from app.agents.specialists import ReportedDefect
+
+    roles = [str(getattr(t, "specialist_role", "")) for t in (getattr(milestone, "delegated_tasks", None) or [])]
+    owner = next((role for role in roles if role and role not in {"testing", "documentation"}), "testing")
+    tail = str(output or "").strip()[-UNIT_FAILURE_TAIL_CHARACTERS:]
+    return ReportedDefect(
+        description="The unit tests fail. The runner's output ends:\n" + (tail or "(no output)"),
+        severity="major",
+        reproduction_steps="Run the project's unit test command.",
+        expected_behavior="Every unit test passes.",
+        actual_behavior="The unit test command exits non-zero.",
+        affected_files=[],
+        owner=owner,
+    )
+
+
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
     """Run the contract's unit test command: (whether it passed, its output).
 
@@ -2706,6 +2735,19 @@ def forget_the_stop(run_id: str | None) -> None:
     stage boundary, whatever the database now says.
     """
     _CANCELLED_RUNS.discard(str(run_id or ""))
+
+
+def _the_run_approves_its_own_writes(run_id: str | None) -> bool:
+    """Whether this run answers its own write approvals (`auto_approve`); False when unknown."""
+    if not run_id:
+        return False
+    try:
+        from app.server.run_store import RunStore
+
+        record = RunStore.shared().load(run_id)
+    except Exception:  # noqa: BLE001 - unknown is not approved
+        return False
+    return bool(getattr(record, "auto_approve", False))
 
 
 def _stop_if_cancelled(run_id: str | None) -> None:
@@ -6231,6 +6273,21 @@ def build_workflow_graph(
     #: the judgement model writes them unless the owner turned that off.
     planning_model = judgement_model if plans_on_the_judgement_model() else model
 
+    # Fast delivery builds and fixes without reasoning: the specification has
+    # decided what each stage writes. See `app.delivery`.
+    from app import delivery
+
+    building_model = model
+    if delivery.fast() and (model is None or isinstance(model, BaseChatModel)):
+        try:
+            from app.agents.thinking import without_reasoning
+            from app.models import build_default_chat_model as _default_model
+
+            building_model = without_reasoning(model if model is not None else _default_model())
+        except Exception:  # noqa: BLE001 - the build model reasons as configured
+            logger.warning("Could not switch reasoning off for building; it runs as configured", exc_info=True)
+            building_model = model
+
     def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0) -> Any:
         """The model a stage that builds or fixes runs on: the default one, until it has failed.
 
@@ -6241,7 +6298,7 @@ def build_workflow_graph(
         goes on as it always has.
         """
         if judgement_model is model:
-            return model
+            return building_model
         limit = escalate_after()
         restarts = int((state.get("structured_retries") or {}).get(stage_name, 0))
         if restarts >= limit or failed_tries >= limit:
@@ -6250,7 +6307,8 @@ def build_workflow_graph(
                 stage_name, restarts, failed_tries,
             )
             return judgement_model
-        return _the_model_for_this_attempt(state)
+        chosen = _the_model_for_this_attempt(state)
+        return building_model if chosen is model else chosen
 
     def _the_model_for_this_attempt(state: Any) -> Any:
         """A rung of the escalation ladder: a sprint being tried again after a
@@ -6827,8 +6885,10 @@ def build_workflow_graph(
                 )
             from app.agents.scrum_master import with_capped_sprint_count
             criteria_count = len(acceptance_suite.criteria(root_path))
+            from app import delivery
+
             update["sprint_plan"], capped_folded = with_capped_sprint_count(
-                update["sprint_plan"], criteria_count
+                update["sprint_plan"], criteria_count, fast=delivery.fast()
             )
             if capped_folded:
                 logger.info(
@@ -7316,13 +7376,60 @@ def build_workflow_graph(
         # where the omission was: its sibling `blocked` branch cleared this and
         # it did not. This is the one place every inbound path passes through.
         update["specialist_outputs"] = {}
+        update["drafted_for_plan"] = False
         update["revision_comments"] = []
+        return update
+
+    def _drafted_from_the_specification(state: Any, config: RunnableConfig) -> dict[str, Any] | None:
+        """Fast delivery's build step, once per milestone plan; None when it does not apply.
+
+        Writes each work order's files from the specification (`app.graph.drafting`)
+        and records the work orders it completed; the rest go to the agent loop
+        as before. Only for a run that approves its own writes: these writes are
+        not put to a person.
+        """
+        from app import delivery
+
+        if state.get("drafted_for_plan") or not delivery.fast():
+            return None
+        if state.get("pending_inner_thread_id") or state.get("specialist_outputs"):
+            return None
+        run_id = config["configurable"].get(APP_RUN_ID_KEY)
+        specification = state.get("technical_specification")
+        if specification is None or not _the_run_approves_its_own_writes(run_id):
+            return {"drafted_for_plan": True, "stage": "specialist_dispatch"}
+        from app.graph.drafting import draft_work_orders, with_tests_the_specification_plans
+
+        milestone = state.get("milestone_plan")
+        if milestone is None:
+            return None
+        tasks, dropped = with_tests_the_specification_plans(list(milestone.delegated_tasks), specification)
+        if dropped:
+            logger.info(
+                "Fast delivery: %d test file(s) the specification does not plan left out: %s",
+                len(dropped), ", ".join(dropped[:6]),
+            )
+        drafted = draft_work_orders(
+            tasks, specification, getattr(state.get("stack_selection"), "technology_stack", None),
+            state["repository"].root_path, _the_build_model(state, "drafting"), workers=max_parallel(),
+        )
+        outputs = {
+            f"specialist_{tasks[index].specialist_role}_{index}": output for index, output in drafted.items()
+        }
+        update: dict[str, Any] = {"drafted_for_plan": True, "stage": "specialist_dispatch"}
+        if outputs:
+            update["specialist_outputs"] = outputs
+        if dropped:
+            update["milestone_plan"] = milestone.model_copy(update={"delegated_tasks": tasks})
         return update
 
     def specialist_dispatch_node(state: WorkflowGraphState, config: RunnableConfig) -> dict[str, Any]:
         missing = _missing_upstream(state, "milestone_plan")
         if missing is not None:
             return missing
+        drafted = _drafted_from_the_specification(state, config)
+        if drafted is not None:
+            return drafted
             
         # `effective_settings`, not `load_settings`. `load_settings` is a pure
         # function of the environment it is handed, and bare it reads this
@@ -7349,6 +7456,12 @@ def build_workflow_graph(
         milestone = state["milestone_plan"]
         tasks = milestone.delegated_tasks
         index = state.get("specialist_task_index", 0)
+        # A work order drafted from the specification is done already.
+        done = state.get("specialist_outputs") or {}
+        while index < len(tasks) and f"specialist_{tasks[index].specialist_role}_{index}" in done:
+            index += 1
+        if index >= len(tasks) and index != state.get("specialist_task_index", 0):
+            return _handing_on(stage="ci_gate", specialist_task_index=index)
 
         if index < len(tasks):
             task = tasks[index]
@@ -7636,7 +7749,33 @@ def build_workflow_graph(
                 logger.debug("Could not read what the files already prove", exc_info=True)
                 skip_agent = False
 
-        if skip_agent and not still_proven:
+        from app import delivery
+
+        harness_round = (
+            delivery.fast()
+            and not state.get("pending_inner_thread_id")
+            and acceptance_nodes.suite.is_locked(state["repository"].root_path)
+            and bool(saved_run.get("ran"))
+            and not cannot_pass
+        )
+        if harness_round and not (skip_agent and not still_proven):
+            # Fast delivery: the harness's measurement is the round. What
+            # fails becomes a defect below, without a model reading it -
+            # the failing criteria, the proven problems, the review's
+            # findings; and the unit tests, here.
+            unit_ok, unit_output = _run_unit_tests_procedurally(state["repository"].root_path)
+            logger.info(
+                "test_round_%d: run by the harness (fast delivery); unit tests %s",
+                test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
+            )
+            update = {
+                "__test_result__": SpecialistOutput(
+                    changed_files=[],
+                    defects=[] if unit_ok is not False else [_the_unit_tests_fail(milestone, unit_output)],
+                    decisions=["The harness ran this round itself (fast delivery)."],
+                )
+            }
+        elif skip_agent and not still_proven:
             logger.info(
                 "test_round_%d: all acceptance criteria due and unit tests passed procedurally with 0 defects; skipping specialist LLM invocation",
                 test_round,

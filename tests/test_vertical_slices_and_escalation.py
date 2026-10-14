@@ -168,7 +168,7 @@ def test_a_retried_sprint_is_built_on_the_judgement_model() -> None:
     # Through `_the_build_model`, which falls back to `_the_model_for_this_attempt`
     # for a stage that has not itself failed: see `test_two_model_tiers`.
     assert source.count("model=_the_build_model(state, stage_name)") == 2
-    assert "return _the_model_for_this_attempt(state)" in source
+    assert "chosen = _the_model_for_this_attempt(state)" in source
     helper = source[source.index("def _the_model_for_this_attempt"):]
     for counter in ("sprint_replan_count", "milestone_revision_count", "release_attempts", "escalation_count"):
         assert counter in helper[:900]

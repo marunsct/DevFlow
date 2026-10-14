@@ -1,0 +1,225 @@
+"""Work orders drafted straight from the specification, one call per file.
+
+Fast delivery's build step (`app.delivery`). The specification names every
+file, its exports, every function's steps and messages, and the library
+calls they make; a work order's builder used to turn that into code through
+an agent loop of about forty tool calls - list, read, write, run, read again
+- each resending the whole conversation. Measured on one run: 296 such calls
+for 549 lines of product.
+
+Here each file a work order owns is written in one call, from the
+specification's entries for it and the files it works with, several files
+at once. A work order all of whose files were written is recorded as done,
+as an agent's would be; the rest are left to the agent loop, which is
+unchanged. Tests are drafted the same way, and only the ones the
+specification plans.
+"""
+
+from __future__ import annotations
+
+import logging
+import re
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
+
+#: The most of the files it works with that one draft is shown.
+MOST_NEIGHBOUR_CHARACTERS = 24_000
+#: The most of one neighbour.
+MOST_ONE_NEIGHBOUR_CHARACTERS = 8_000
+
+_FENCE = re.compile(r"```[^\n`]*\n(.*?)```", re.S)
+_A_PATH = re.compile(r"[\w./@-]+\.[A-Za-z0-9]{1,8}\b")
+
+
+def the_content_in(reply: str) -> str:
+    """The file a reply holds: its longest fenced block, or the whole reply when it has none."""
+    text = str(reply or "")
+    blocks = _FENCE.findall(text)
+    if blocks:
+        return max(blocks, key=len).rstrip() + "\n"
+    stripped = text.strip()
+    return stripped + "\n" if stripped else ""
+
+
+def planned_files(specification: Any) -> list[str]:
+    """The paths the specification's file plan names, in its order."""
+    found: list[str] = []
+    for entry in getattr(specification, "file_plan", None) or []:
+        head = str(entry).strip().split(" ", 1)[0].strip("`*-:")
+        if head and head not in found:
+            found.append(head)
+    return found
+
+
+def _is_planned(path: str, planned: list[str]) -> bool:
+    plain = path.strip().lstrip("./")
+    return any(plain == p or plain.endswith("/" + p) or p.endswith("/" + plain) for p in planned)
+
+
+def with_tests_the_specification_plans(tasks: list[Any], specification: Any) -> tuple[list[Any], list[str]]:
+    """`tasks`, each test file not in the specification's file plan taken out; and what was taken.
+
+    Only when the specification plans files at all. One run's testing work
+    orders wrote 5,058 lines of tests - launcher, integration and contract
+    suites nobody planned - for 549 lines of product.
+    """
+    from app.analysis.file_kinds import classify_file
+
+    planned = planned_files(specification)
+    if not planned:
+        return tasks, []
+    kept_tasks, dropped = [], []
+    for task in tasks:
+        files = list(getattr(task, "files", None) or [])
+        keep = [f for f in files if classify_file(f) != "test" or _is_planned(f, planned)]
+        dropped.extend(f for f in files if f not in keep)
+        kept_tasks.append(task.model_copy(update={"files": keep}) if keep != files else task)
+    return kept_tasks, dropped
+
+
+def _stack_line(stack: Any) -> str:
+    parts = [
+        str(getattr(stack, field, "") or "").strip()
+        for field in ("language", "framework", "frontend_framework", "testing_framework")
+    ]
+    return ", ".join(part for part in parts if part) or "as the specification says"
+
+
+def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
+    """The files this one works with, as they are on disk: the work order's own and any its entries name."""
+    named = [*(getattr(task, "files", None) or []), *_A_PATH.findall(detail)]
+    shown, used = [], 0
+    for other in dict.fromkeys(named):
+        other = other.strip().lstrip("./")
+        if not other or other == path.lstrip("./"):
+            continue
+        candidates = [root / other, *(root.glob(f"*/{other}"))]
+        target = next((c for c in candidates if c.is_file()), None)
+        if target is None:
+            continue
+        try:
+            text = target.read_text(encoding="utf-8")[:MOST_ONE_NEIGHBOUR_CHARACTERS]
+        except (OSError, UnicodeDecodeError):
+            continue
+        if used + len(text) > MOST_NEIGHBOUR_CHARACTERS:
+            break
+        used += len(text)
+        shown.append(f"--- {target.relative_to(root).as_posix()} ---\n{text}")
+    return "\n\n".join(shown)
+
+
+def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any) -> str:
+    """What one file's draft is asked."""
+    from app.agents.specialists import specification_for_the_work_order
+
+    detail = specification_for_the_work_order(
+        specification, SimpleNamespace(files=[path], interfaces=list(getattr(task, "interfaces", None) or [])),
+    )
+    target = root / path
+    now = ""
+    if target.is_file():
+        try:
+            now = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            now = ""
+    criteria = "\n".join(f"- {c}" for c in getattr(task, "acceptance_criteria", None) or [])
+    neighbours = _neighbours(root, path, task, detail)
+    return "\n\n".join(part for part in (
+        f"Write the file `{path}` of this product, exactly as its specification says. "
+        f"The stack: {_stack_line(stack)}.",
+        detail.strip(),
+        f"--- The work order it belongs to ---\n{getattr(task, 'task_description', '')}"
+        + (f"\nDone when:\n{criteria}" if criteria else ""),
+        f"--- The files it works with ---\n{neighbours}" if neighbours else "",
+        f"--- `{path}` as it is now; keep what still holds ---\n{now}" if now.strip() else "",
+        f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
+        "Every name, signature, message, import and library call is the one the specification "
+        "gives; where it gives none, write the plainest code that meets the work order.",
+    ) if part)
+
+
+def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any) -> str:
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    reply = model.invoke([
+        SystemMessage(content="You write source files for a software product from its specification. "
+                              "You reply with one file's complete content in one fenced code block."),
+        HumanMessage(content=draft_request(root, path, task, specification, stack)),
+    ])
+    return the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
+
+
+Write = Callable[[str, str, str], Any]
+
+
+def draft_work_orders(
+    tasks: list[Any],
+    specification: Any,
+    stack: Any,
+    repo_root: str,
+    model: Any,
+    *,
+    write: Write | None = None,
+    workers: int = 1,
+) -> dict[int, Any]:
+    """Each work order whose files were all drafted, by its index, with the output an agent would return.
+
+    A file whose draft is empty or that the workspace refuses (a syntax
+    error, a path outside the project) leaves its work order to the agent
+    loop. Never raises.
+    """
+    from app.agents.specialists import SpecialistOutput
+    from app.analysis.file_kinds import classify_file
+
+    if specification is None:
+        return {}
+    if write is None:
+        from app.tools.repository import write_approved_artifact
+
+        def write(root: str, path: str, content: str) -> Any:
+            return write_approved_artifact(root, path, content)
+
+    root = Path(repo_root)
+    jobs = [
+        (index, path, task)
+        for index, task in enumerate(tasks)
+        for path in (getattr(task, "files", None) or [])
+        if str(path).strip() and not str(path).endswith("/")
+    ]
+    if not jobs:
+        return {}
+
+    def run(job: tuple[int, str, Any]) -> tuple[int, str, bool]:
+        index, path, task = job
+        try:
+            content = _draft_one(model, root, path, task, specification, stack)
+            if not content.strip():
+                return index, path, False
+            write(repo_root, path, content)
+            return index, path, True
+        except Exception as error:  # noqa: BLE001 - the agent loop takes this work order
+            logger.info("Draft of %s left to the agent loop: %s", path, str(error)[:200])
+            return index, path, False
+
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        results = list(pool.map(run, jobs))
+    drafted: dict[int, Any] = {}
+    for index, task in enumerate(tasks):
+        mine = [(path, ok) for i, path, ok in results if i == index]
+        if not mine or not all(ok for _, ok in mine):
+            continue
+        written = [path for path, _ in mine]
+        drafted[index] = SpecialistOutput(
+            changed_files=written,
+            tests=[path for path in written if classify_file(path) == "test"],
+            decisions=["Drafted from the specification, one call per file (fast delivery)."],
+        )
+    logger.info(
+        "Drafted %d of %d work order(s) from the specification (%d of %d files)",
+        len(drafted), len(tasks), sum(ok for _, _, ok in results), len(results),
+    )
+    return drafted

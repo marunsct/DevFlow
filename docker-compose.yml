@@ -37,6 +37,8 @@ x-app-env: &app-env
   # At most this many agents of one run at once in parallel mode: work orders,
   # defect fixes and reviews (`workflow.max_parallel`).
   HARNESS_MAX_PARALLEL: ${HARNESS_MAX_PARALLEL:-6}
+  # fast or thorough (app.delivery); the settings page overrides it.
+  DELIVERY_MODE: ${DELIVERY_MODE:-fast}
   HARNESS_MCP_SERVERS: ${HARNESS_MCP_SERVERS:-}
   CONTEXT7_API_KEY: "${CONTEXT7_API_KEY:-}"
   # Postgres, so the API and the worker share one checkpoint store. SQLite put a

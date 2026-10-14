@@ -320,8 +320,15 @@ def with_setup_folded_into_the_sprint_that_needs_it(
         return plan, folded
 
 
-def max_sprints_for_criteria_count(criteria_count: int) -> int:
-    """The maximum number of sprints permitted for a given number of criteria."""
+def max_sprints_for_criteria_count(criteria_count: int, *, fast: bool = False) -> int:
+    """The maximum number of sprints permitted for a given number of criteria.
+
+    Fast delivery (`app.delivery`) builds a small product in one sprint: each
+    sprint repeats a plan, a build, test rounds and five reviews, and one run
+    spent most of thirteen hours on four of them for eighteen criteria.
+    """
+    if fast:
+        return 1 if criteria_count <= 20 else 2 if criteria_count <= 40 else 3
     if criteria_count <= 10:
         return 2
     if criteria_count <= 15:
@@ -330,13 +337,13 @@ def max_sprints_for_criteria_count(criteria_count: int) -> int:
 
 
 
-def with_capped_sprint_count(plan: Any, criteria_count: int) -> tuple[Any, list[str]]:
+def with_capped_sprint_count(plan: Any, criteria_count: int, *, fast: bool = False) -> tuple[Any, list[str]]:
     """`plan` with sprint count capped according to the scope of criteria.
 
     If the number of sprints exceeds the maximum for the criteria count,
     excess sprints at the end are folded into earlier sprints.
     """
-    max_sprints = max_sprints_for_criteria_count(criteria_count)
+    max_sprints = max_sprints_for_criteria_count(criteria_count, fast=fast)
     sprints = list(getattr(plan, "sprints", None) or [])
     if len(sprints) <= max_sprints:
         return plan, []
@@ -345,7 +352,9 @@ def with_capped_sprint_count(plan: Any, criteria_count: int) -> tuple[Any, list[
     folded = []
     target_idx = max_sprints - 1
     while len(sprints) > max_sprints:
-        excess = sprints.pop()
+        # The sprint right after the target, so the merged sprint lists its
+        # work in the plan's order.
+        excess = sprints.pop(target_idx + 1)
         target = sprints[target_idx]
 
         def both(field: str) -> list[str]:
@@ -355,8 +364,14 @@ def with_capped_sprint_count(plan: Any, criteria_count: int) -> tuple[Any, list[
                     merged.append(item)
             return merged
 
+        # What the target deferred to the sprint now folded into it is its
+        # own work: "PUT and DELETE (Sprint 2)" left in its out_of_scope tells
+        # its builders not to build what it now owns.
+        folded_number = target_idx + 2
+        later = re.compile(rf"\bsprints?\s*#?\s*{folded_number}\b|\blater sprints?\b|\bnext sprint\b", re.I)
         merged_sprint = target.model_copy(update={
             "goal": f"{target.goal.rstrip('.')}; then {excess.goal.rstrip('.')}." if getattr(excess, "goal", "") else target.goal,
+            "out_of_scope": [item for item in getattr(target, "out_of_scope", []) if not later.search(str(item))],
             "in_scope": both("in_scope"),
             "criteria": both("criteria"),
             "acceptance_criteria": both("acceptance_criteria"),

@@ -79,6 +79,7 @@ class SettingsView(BaseModel):
     anthropic_api_key_configured: bool = False
     google_api_key_configured: bool = False
     execution_mode: str = "linear"
+    delivery_mode: str = "thorough"
     #: The judgement model (`app.models.roles`). An empty name means every
     #: stage runs on the model above.
     judgement_provider: str = ""
@@ -163,6 +164,11 @@ class SettingsUpdate(BaseModel):
     openai_api_key: str | None = Field(default=None, max_length=512, repr=False)
     anthropic_api_key: str | None = Field(default=None, max_length=512, repr=False)
     google_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    delivery_mode: Literal["fast", "thorough"] = Field(
+        default="thorough",
+        description="fast: one sprint for a small product, files drafted from the specification, "
+        "harness-run test rounds, building without reasoning. thorough: the full pipeline.",
+    )
     execution_mode: Literal["linear", "parallel"] = Field(
         default="linear",
         description=(
@@ -287,6 +293,7 @@ def _current_view() -> SettingsView:
         anthropic_api_key_configured=bool(s.anthropic_api_key),
         google_api_key_configured=bool(s.google_api_key),
         execution_mode=getattr(s, "execution_mode", "linear") or "linear",
+        delivery_mode=_the_delivery_mode(),
         **_judgement_view(),
     )
 
@@ -316,6 +323,15 @@ def _judgement_view() -> dict[str, Any]:
         "plan_on_judgement_model": plans_on_the_judgement_model(environment),
         **_endpoints_with_keys(environment),
     }
+
+
+def _the_delivery_mode() -> str:
+    from app import delivery
+
+    try:
+        return delivery.mode(runtime_settings.effective_environment())
+    except Exception:  # noqa: BLE001 - the page still loads
+        return delivery.THOROUGH
 
 
 def _endpoints_with_keys(environment: Mapping[str, str]) -> dict[str, bool]:
@@ -409,6 +425,7 @@ async def update_settings(
             "thinking_mode": payload.thinking_mode,
             "thinking_effort": payload.thinking_effort,
             "execution_mode": payload.execution_mode,
+            "delivery_mode": payload.delivery_mode,
             # Empty clears each override, which with an empty name turns the
             # judgement model off.
             "judgement_provider": payload.judgement_provider,

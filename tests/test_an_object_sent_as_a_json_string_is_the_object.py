@@ -83,3 +83,23 @@ def test_prose_where_a_list_of_strings_is_wanted_is_one_item_per_line():
     assert TechnicalSpecificationOutput.model_validate(decoded).product_scope == "Notes."
     objects = {"type": "object", "properties": {"stack": {"type": "array", "items": {"type": "object"}}}}
     assert with_structure_decoded({"stack": "a\nb"}, objects) == {"stack": "a\nb"}, "only lists of strings"
+
+
+def test_an_answer_whose_arguments_are_not_strict_json_is_still_the_answer(monkeypatch):
+    """Two specifications of about 21,000 tokens each ended "tool_calls" and none was recorded."""
+    from langchain_openai import ChatOpenAI
+
+    raw = '{"technology_stack": {"language": "TypeScript", "framework": "Hono", "database": "JSON",\n' \
+          ' "testing_framework": "vitest"}, "open_questions": ["line one\nline two"]'
+    reply = AIMessage(content="", invalid_tool_calls=[
+        {"name": "ToolsAndModelsOutput", "args": raw, "id": "c1", "error": "bad json", "type": "invalid_tool_call"},
+        {"name": "unknown_tool", "args": "{oops", "id": "c2", "error": "bad json", "type": "invalid_tool_call"},
+    ])
+    model = CompatibleChatOpenAI(model="m", base_url="http://localhost:1/v1", api_key="k", max_retries=1)
+    monkeypatch.setattr(ChatOpenAI, "_generate", lambda self, *a, **k: ChatResult(generations=[ChatGeneration(message=reply)]))
+
+    message = model._generate([], tools=[convert_to_openai_tool(ToolsAndModelsOutput)]).generations[0].message
+
+    (call,) = message.tool_calls
+    assert ToolsAndModelsOutput.model_validate(call["args"]).open_questions == ["line one\nline two"]
+    assert [c["id"] for c in message.invalid_tool_calls] == ["c2"], "a call to no known tool stays as it was"

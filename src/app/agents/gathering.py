@@ -45,6 +45,18 @@ MOST_IN_A_ROW = 3
 #: The build model's attempts in one visit; past them the judgement model
 #: takes every turn.
 MOST_BUILD_TURNS = 30
+#: The longest reply a gathering turn may make. A read or a lookup is a few
+#: hundred tokens; measured on one run, a gathering turn ran on for 20,000
+#: tokens - 7 minutes of the build model - and ended with no call at all.
+MOST_GATHERING_TOKENS = 2_000
+
+
+def _briefly(model: Any) -> Any:
+    """`model` with its reply held to `MOST_GATHERING_TOKENS`, or as it is if that cannot be set."""
+    try:
+        return model.model_copy(update={"max_tokens": MOST_GATHERING_TOKENS})
+    except Exception:  # noqa: BLE001 - a model that cannot be copied gathers as it is
+        return model
 
 _GATHERERS: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
 _BY_ID: dict[int, Any] = {}
@@ -89,6 +101,9 @@ def _answers(response: Any, answer_tool: str) -> bool:
     calls = list(getattr(last, "tool_calls", None) or []) + list(getattr(last, "invalid_tool_calls", None) or [])
     if not calls:
         return True
+    metadata = getattr(last, "response_metadata", None) or {}
+    if str(metadata.get("finish_reason") or "") == "length":
+        return True
     return any(str(call.get("name") or "") == answer_tool or str(call.get("name") or "") not in GATHERING_TOOLS
                for call in calls)
 
@@ -98,6 +113,8 @@ def build_gathering_middleware(gathering_model: Any, answer_tool: str) -> Any:
     from langchain.agents.middleware import AgentMiddleware
 
     from app.agents.stage_memory import store
+
+    gathering_model = _briefly(gathering_model)
 
     class GatheringMiddleware(AgentMiddleware):
         def __init__(self) -> None:

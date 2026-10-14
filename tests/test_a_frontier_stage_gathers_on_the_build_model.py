@@ -155,3 +155,26 @@ def test_fast_delivery_is_read_from_the_mode_module_inside_the_graph(monkeypatch
 
     monkeypatch.setattr(delivery, "fast", lambda environment=None: True)
     assert workflow._fast_delivery() is True
+
+
+def test_a_gathering_turn_is_held_to_a_short_reply_and_a_cut_off_one_is_the_frontier_s():
+    """A gathering turn ran on for 20,000 tokens - 7 minutes - and ended with no call."""
+    from langchain_openai import ChatOpenAI
+
+    build = ChatOpenAI(model="m", api_key="k", base_url="http://localhost:1/v1", max_tokens=20_000)
+    frontier = object()
+    used = []
+
+    def handler(request):
+        used.append(request.model)
+        if request.model is frontier:
+            return _reply("read_file")
+        cut = AIMessage(content="", tool_calls=[{"name": "read_file", "args": {}, "id": "r"}],
+                        response_metadata={"finish_reason": "length"})
+        return SimpleNamespace(result=[cut])
+
+    middleware = gathering.build_gathering_middleware(build, "Answer")
+    middleware.wrap_model_call(_Request(model=frontier), handler)
+
+    assert used[0].max_tokens == gathering.MOST_GATHERING_TOKENS and build.max_tokens == 20_000
+    assert used[1] is frontier, "a cut-off gathering turn is the frontier's"

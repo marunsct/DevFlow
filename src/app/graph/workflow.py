@@ -2538,13 +2538,56 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
         if not isinstance(cmd, list) or not cmd:
             return None, "no unit test command is recorded for this project"
 
+        reports = _the_unit_reports(repo_root, found, cmd)
+        from app.acceptance import junit
+
+        for report in reports:
+            junit.clear(report)
         runner = sandbox_runner(repo_root)
         outcome = runner(cmd, "test", project)
         rc = outcome.get("returncode", 1)
         output = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
+        if rc != 0:
+            output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()
         return rc == 0, output
-    except Exception:  # noqa: BLE001 - procedural test failure falls back to agent triage
-        return False, ""
+    except Exception as error:  # noqa: BLE001 - procedural test failure falls back to agent triage
+        return False, f"The harness could not run the unit tests: {error}"
+
+
+def _the_unit_reports(repo_root: str, record: dict[str, Any], command: list[Any]) -> list[Path]:
+    """Where the unit run writes its report: the pack's, and any XML file the command names.
+
+    A runner told to write JUnit to a file prints nothing. Measured on one
+    run: three rounds' defects read "The unit tests fail. The runner's output
+    ends: (no output)" - each fixer had to find out which tests failed, fixed
+    something else, and the sprint was planned again.
+    """
+    from app.stacks import contract
+
+    folder = Path(repo_root) / str(record.get("project") or "")
+    found: list[Path] = []
+    pack = contract.the_pack(repo_root)
+    if pack is not None and getattr(pack[0], "unit_report", ""):
+        found.append(folder / pack[0].unit_report)
+    for word in (str(part) for part in command):
+        named = word.split("=", 1)[-1]
+        if named.lower().endswith(".xml") and "*" not in named:
+            found.append(folder / named)
+    return list(dict.fromkeys(found))
+
+
+def _what_the_unit_reports_say(reports: list[Path]) -> str:
+    """The failing tests in the unit reports, each with its message; "" when none are found."""
+    from app.acceptance import junit
+
+    failed = [test for report in reports for test in junit.read(report).tests if test.outcome == "failed"]
+    if not failed:
+        return ""
+    return "Failing tests, from the runner's report:\n" + "\n".join(
+        f"- {test.within + ' › ' if test.within else ''}{test.name}"
+        f"{' (' + test.file + ')' if test.file else ''}: {test.message[:600]}"
+        for test in failed[:12]
+    ) + (f"\n... and {len(failed) - 12} more" if len(failed) > 12 else "")
 
 
 def _the_reply_was_cut_off_before_it_began(message: Any) -> bool:

@@ -134,6 +134,41 @@ def _words_of(command: str) -> list[str]:
     ]
 
 
+def with_named_tests_given_to_testing(
+    milestone: Any, repo_root: str | Path | None, sprint_scope: str, planned_paths: Sequence[str] = (),
+) -> tuple[Any, list[str]]:
+    """The plan, each test file its sprint names and no work order lists given to its testing work order; and those files.
+
+    Measured on one run: the sprint's scope named the specification's three
+    planned test files, the lead's plan gave them to nobody, and it was sent
+    back three times for it - each time returning the same plan - and then
+    started over. Which work order writes a test file is not a judgement: it
+    is the testing one. The path is the one the specification plans, or the
+    testing work order's own test directory.
+    """
+    from app.analysis.file_kinds import classify_file
+
+    tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+    testing = next((i for i, task in enumerate(tasks) if _role(task) == _TESTING), None)
+    if testing is None or not sprint_scope:
+        return milestone, []
+    project_dir = _pinned_project_directory(repo_root)
+    unassigned = [
+        name for name in _files_the_sprint_names_and_nobody_is_given(sprint_scope, tasks, repo_root, project_dir)
+        if classify_file(name) == "test"
+    ]
+    if not unassigned:
+        return milestone, []
+    own = [str(f) for f in getattr(tasks[testing], "files", None) or [] if classify_file(str(f)) == "test"]
+    beside = str(PurePosixPath(own[0]).parent) if own else ""
+    given: list[str] = []
+    for name in unassigned:
+        planned = next((p for p in planned_paths if PurePosixPath(str(p)).name.lower() == name.lower()), None)
+        given.append(str(planned) if planned else (f"{beside}/{name}" if beside and beside != "." else name))
+    tasks[testing] = tasks[testing].model_copy(update={"files": [*(getattr(tasks[testing], "files", None) or []), *given]})
+    return milestone.model_copy(update={"delegated_tasks": tasks}), given
+
+
 def with_test_cases_from_its_criteria(milestone: Any) -> Any:
     """The plan with each code work order that has no test cases given its
     acceptance criteria as them.

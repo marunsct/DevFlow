@@ -7220,6 +7220,16 @@ def build_workflow_graph(
                 state["repository"].root_path,
             )
         )
+        if not revising:
+            from app.analysis.work_orders import with_named_tests_given_to_testing
+            from app.graph.drafting import planned_files
+
+            update["milestone_plan"], given = with_named_tests_given_to_testing(
+                update["milestone_plan"], state["repository"].root_path, _what_this_sprint_builds(state),
+                planned_files(state.get("technical_specification")),
+            )
+            if given:
+                logger.info("Test files the sprint names and no work order listed, given to testing: %s", ", ".join(given))
         problems = readiness_problems(
             update["milestone_plan"],
             state["repository"].root_path,

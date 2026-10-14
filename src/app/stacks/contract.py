@@ -15,8 +15,9 @@ to mean anything.
 from __future__ import annotations
 
 import json
+import re
 import logging
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from app.stacks import StackPack, pack_named
@@ -166,6 +167,56 @@ def owned_by_the_harness(repo_root: str | Path | None, relative_path: str) -> st
     except Exception:  # noqa: BLE001 - an unreadable lock protects nothing
         logger.debug("Could not read the acceptance lock", exc_info=True)
     return ""
+
+
+def _what_the_last_runs_said(repo_root: Path, record: dict[str, Any]) -> str:
+    """The latest suite result and both test reports, as text."""
+    project = Path(repo_root) / str(record.get("project") or "")
+    texts = []
+    for path in (
+        Path(repo_root) / HARNESS_DIR / "acceptance-result.json",
+        project / str(record.get("acceptance_report") or ""),
+        project / str(record.get("unit_report") or ""),
+    ):
+        try:
+            if path.is_file():
+                texts.append(path.read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+    return "\n".join(texts)
+
+
+def released_because_it_fails(repo_root: str | Path | None, relative_path: str) -> bool:
+    """Releases a proven setup's kept file the latest runs report an error in; whether it did.
+
+    A setup is proven by its smoke tests passing, and a kept file those tests
+    never read is kept unproven. One run's setup kept a `tsconfig.json` whose
+    `lib` was a string where the compiler wants a list; the smoke tests ran
+    without compiling, the build failed on it from then on, and every fix that
+    reached for it was refused as "already works". A kept file the runs name
+    in an error is the setup's defect, and the team's to fix: it is no longer
+    kept, so it is not put back either. A stack pack's own files are verified
+    packs and stay kept.
+    """
+    if not repo_root:
+        return False
+    record = read(repo_root)
+    setup = (record or {}).get("setup")
+    if not record or not isinstance(setup, dict) or not isinstance(setup.get("kept"), dict):
+        return False
+    project = str(record.get("project") or "")
+    path = str(relative_path or "").strip().lstrip("/")
+    name = path[len(project) + 1:] if project and path.startswith(project + "/") else path
+    if name not in setup["kept"]:
+        return False
+    said = _what_the_last_runs_said(Path(repo_root), record)
+    base = re.escape(PurePosixPath(name).name)
+    if not re.search(rf"{base}(?:\(\d+,\d+\)|:\d+(?::\d+)?):?\s*(?:error|Error|ERROR)", said):
+        return False
+    setup["kept"].pop(name)
+    (Path(repo_root) / CONTRACT_FILE).write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    logger.warning("%s is reported in an error by the latest runs; released from the kept setup to be fixed", path)
+    return True
 
 
 def enforce(repo_root: str | Path) -> list[str]:

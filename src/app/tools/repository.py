@@ -1674,6 +1674,8 @@ def _a_file_the_harness_keeps(root: Path, relative: str) -> str | None:
 
         if contract.owned_by_the_harness(root, relative) != contract.KEPT_SETUP:
             return None
+        if contract.released_because_it_fails(root, relative):
+            return None
         record = contract.read(root) or {}
     except Exception:  # noqa: BLE001 - no contract, nothing kept
         return None

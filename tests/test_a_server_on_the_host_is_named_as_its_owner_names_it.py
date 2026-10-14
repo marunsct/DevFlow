@@ -53,6 +53,22 @@ def test_the_model_client_and_the_readiness_check_send_it():
     assert "reached_from_here(base)" in Path("scripts/loop/model_ready.py").read_text()
 
 
+def test_the_framework_instructions_model_reaches_it_the_same_way(monkeypatch):
+    from app.config import load_settings
+    from app.plugins import middleware
+
+    monkeypatch.setattr(endpoints, "_in_a_container", lambda: True)
+    monkeypatch.setattr("app.models._runtime_settings", lambda: load_settings({
+        "LLM_PROVIDER": "local", "OPENAI_BASE_URL": "http://localhost:9090/v1",
+        "OPENAI_MODEL": "m", "OPENAI_API_KEY": "local-placeholder",
+    }))
+
+    model = middleware._extraction_model()
+
+    assert str(model.openai_api_base).startswith("http://host.docker.internal:9090")
+    assert (model.default_headers or {}).get("Host") == "localhost:9090"
+
+
 class _OnlyLocalhost(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802
         allowed = self.headers.get("Host", "").startswith("localhost")

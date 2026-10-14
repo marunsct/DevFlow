@@ -149,11 +149,20 @@ def _extraction_model() -> Any:
     from app.agents.thinking import answering_without_reasoning
     from app.models import _runtime_settings
 
+    from app.models.endpoints import reached_from_here
+
     settings = _runtime_settings()
+    # Reached as every stage's client reaches it: from a container, a server
+    # on the owner's machine is `host.docker.internal`, sent the Host header
+    # its owner names it by. Built from the setting as written, one run's
+    # `http://localhost:9090/v1` reached the container itself and the stack's
+    # instructions were absent for the whole run.
+    reached, naming = reached_from_here(settings.openai_base_url)
     model = ChatOpenAI(
         model=settings.model_name,
         api_key=settings.openai_api_key,
-        base_url=settings.openai_base_url,
+        base_url=reached if settings.openai_base_url else settings.openai_base_url,
+        default_headers=naming or None,
         temperature=0,
         max_tokens=_AUXILIARY_REPLY_TOKENS,
         timeout=_AUXILIARY_TIMEOUT_SECONDS,

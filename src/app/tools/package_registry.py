@@ -248,6 +248,13 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
     if which is None:
         return {"error": f"Unknown ecosystem {ecosystem!r}; use one of: {', '.join(_ECOSYSTEMS)}."}
     name = str(name or "").strip()
+    # A name with the version asked for after it - `typescript@5`,
+    # `fastapi==0.115`, `serde@1` - is the package; the registry answers with
+    # its current release either way. One stage asked for `typescript@5` and
+    # was told the registry had no such package.
+    asked = re.match(r"^(@?[^@=<>!~^\s]+)(?:@|==|>=|<=|~=|!=|>|<|\^|~)[\w.*+^~-]*$", name)
+    if asked:
+        name = asked.group(1)
     if not _A_NAME.match(name) or ".." in name:
         return {"error": f"{name!r} is not a package name."}
     key = (which, name)

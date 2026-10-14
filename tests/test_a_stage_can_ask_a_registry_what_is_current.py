@@ -141,3 +141,15 @@ def test_its_description_names_no_product():
     tool = package_registry.build_package_lookup_tool()
 
     assert not BANNED.search(tool.description)
+
+
+@pytest.mark.parametrize("ecosystem, asked, url", [
+    ("npm", "typescript@5", "https://registry.npmjs.org/typescript/latest"),
+    ("npm", "@hono/node-server@^1.13", "https://registry.npmjs.org/@hono/node-server/latest"),
+    ("python", "fastapi==0.115.0", "https://pypi.org/pypi/fastapi/json"),
+])
+def test_a_name_with_the_version_asked_for_is_the_package(ecosystem, asked, url):
+    """One stage asked for `typescript@5` and was told the registry had no such package."""
+    page = {"version": "5.9.3"} if ecosystem == "npm" else {"info": {"version": "5.9.3"}}
+
+    assert look_up(ecosystem, asked, fetch=_serving({url: page}))["version"] == "5.9.3"

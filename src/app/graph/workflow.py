@@ -3257,11 +3257,16 @@ def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
     """
     if revised is None or previous is None or not hasattr(revised, "model_copy"):
         return revised
+    # Every list section, not only the required ones: a repair of `testing` is
+    # not a reason to lose the interface design, the file plan or the
+    # function contracts either.
+    sections = [
+        name for name, field in type(revised).model_fields.items()
+        if name in _REQUIRED_SPECIFICATION_SECTIONS or getattr(field.annotation, "__origin__", None) is list
+    ]
     kept = {
         section: getattr(previous, section)
-        # And the sections answering the specialists, which only some products
-        # have: a repair of `testing` is not a reason to lose the interface design.
-        for section in (*_REQUIRED_SPECIFICATION_SECTIONS, "interface_design", "specialist_advice_decisions")
+        for section in sections
         if not getattr(revised, section, None) and getattr(previous, section, None)
     }
     if kept:
@@ -6640,7 +6645,12 @@ def build_workflow_graph(
             # a later rerun must not re-apply stale comments.
             update["revision_comments"] = []
 
-            if state.get("specification_repair_count", 0) and previous_specification is not None:
+            # And after a review: a revision sends the sections it changes, and
+            # the rest are the previous specification's. One run's architect,
+            # sent back on a 60,000-character specification, spent its revision
+            # reading that specification out of its own saved conversation to
+            # write all of it again.
+            if (state.get("specification_repair_count", 0) or required_changes) and previous_specification is not None:
                 update["technical_specification"] = _with_the_sections_it_dropped(
                     update.get("technical_specification"), previous_specification
                 )

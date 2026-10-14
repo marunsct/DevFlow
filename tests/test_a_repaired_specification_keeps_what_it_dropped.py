@@ -63,3 +63,33 @@ def test_only_a_repair_merges_and_before_the_document_is_rendered() -> None:
     merge = node.index("_with_the_sections_it_dropped(")
     assert 'state.get("specification_repair_count", 0)' in node[merge - 200:merge]
     assert merge < node.index('"docs/technical_specification.md"')
+
+
+def test_a_revision_after_review_sends_what_it_changes_and_keeps_the_rest() -> None:
+    """One run's architect, sent back on a 60,000-character specification, read it
+    out of its own saved conversation to write all of it again."""
+    import re
+
+    from app.agents.principal_architect import TechnicalSpecificationOutput, build_architecture_revision_request
+    from test_graph_routing import _document, _repository
+
+    previous = TechnicalSpecificationOutput(
+        product_scope="Notes.", file_plan=["notes/src/app.ts - routes"], function_contracts=["createApp(): Hono"],
+        library_usage=["hono - new Hono()"], testing=["node --test"],
+    )
+    revised = TechnicalSpecificationOutput(product_scope="Notes.", testing=["node --test, with a temp DATA_DIR"])
+
+    merged = _with_the_sections_it_dropped(revised, previous)
+
+    assert merged.testing == ["node --test, with a temp DATA_DIR"]
+    assert merged.file_plan == ["notes/src/app.ts - routes"] and merged.library_usage == ["hono - new Hono()"]
+    source = inspect.getsource(workflow)
+    node = source[source.index("def principal_architect_node"):source.index("def architecture_review_node")]
+    assert "or required_changes) and previous_specification is not None" in node
+    request = build_architecture_revision_request(
+        "{}", ["testing: name the data directory"], "intake", "tools", "stack",
+        _repository("/r"), _document(),
+    )["messages"][-1]["content"]
+    rule = request[request.index("Send only the sections you change"):request.index("Address every item")]
+    assert "kept exactly as it is in your previous" in rule
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", rule, re.I)

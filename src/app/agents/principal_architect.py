@@ -468,7 +468,10 @@ def build_architecture_revision_request(
         f"--- Your previous specification ---\n{previous_specification_text}\n\n"
         f"--- Required changes ---\n{changes_text}\n\n"
         + the_sections_a_specification_has(reader="revising")
-        + "Address every item explicitly. Do not silently drop specification "
+        + "Send only the sections you change, each one complete: a section you "
+        "leave out of your answer is kept exactly as it is in your previous "
+        "specification above, so there is no need to write the others again. "
+        "Address every item explicitly. Do not silently drop specification "
         "content or ADRs that were not flagged, and do not add scope that was "
         "not asked for: a revision resolves the listed findings and changes "
         "nothing else. New sections, new features and new behaviours added "

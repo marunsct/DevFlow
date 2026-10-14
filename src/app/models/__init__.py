@@ -457,9 +457,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
         a stage that answers in prose is reminded to use its answer tool
         (`settled_answer`).
         """
+        from app.models.tool_arguments import decode_structured_arguments
+
         server = (str(self.openai_api_base or ""), str(self.model_name or ""))
         try:
-            return self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+            result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
             if server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
                 raise
@@ -468,7 +470,10 @@ class CompatibleChatOpenAI(ChatOpenAI):
                 "%s refuses a forced tool call while the model reasons; its tools are "
                 "offered instead of forced from now on", server[1] or server[0],
             )
-            return self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+            result = self._generate_paced(messages, stop=stop, run_manager=run_manager, **kwargs)
+        # An object sent as a string of JSON is decoded where the tool wants
+        # an object (`app.models.tool_arguments`).
+        return decode_structured_arguments(result, kwargs.get("tools"))
 
     def _generate_paced(self, messages, stop=None, run_manager=None, **kwargs):
         """One call, retried by this class when the client is told not to retry.

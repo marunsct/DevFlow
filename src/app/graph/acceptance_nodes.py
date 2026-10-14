@@ -213,8 +213,12 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
     suite.unlock(root)
     round_ = int(state.get("acceptance_round") or 0)
     feedback = [*(state.get("acceptance_feedback") or []), *(state.get("revision_comments") or [])]
+    # Written by the build model in fast delivery, and reviewed by the
+    # judgement model. See `app.delivery`.
+    from app import delivery
+
     agent = create_specialist_agent(
-        "testing", model=ctx.judgement_model, checkpointer=ctx.checkpointer,
+        "testing", model=ctx.model if delivery.fast() else ctx.judgement_model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,
     )
     request = acceptance_requests.build_author_request(
@@ -382,7 +386,11 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         update.pop("stage", None)
         if not review.approved and review.findings:
             findings = [str(item) for item in review.findings]
-            if rounds < MAX_ACCEPTANCE_ROUNDS:
+            from app import delivery
+
+            # Fast delivery sends a suite back once; what is still open after
+            # that is locked in as an open problem, as after the full count.
+            if rounds < (2 if delivery.fast() else MAX_ACCEPTANCE_ROUNDS):
                 logger.info("QA lead sent the acceptance suite back: %d finding(s)", len(findings))
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
 

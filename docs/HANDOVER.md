@@ -197,7 +197,19 @@ only, agent loop as fallback); harness-run test rounds once the locked suite
 has run (unit failures -> a product-owner defect); tests limited to the
 specification's file plan; building/fixing with reasoning off
 (`thinking.without_reasoning`). Benchmark: notes-api-hono on fast vs the
-13.3 h thorough baseline.
+13.3 h thorough baseline. Owner 2026-10-14 (frontier only where its reasoning is
+needed): in fast delivery the intake, comparison, stack choice,
+consultations, sprint plan, work orders and acceptance-test authoring run
+on the build model; the specification and every review stay on the
+judgement model, and a judgement stage gathers (reads, docs, lookups) on
+the build model with reasoning off and writes on the judgement model
+(`app.agents.gathering`, registered by `gather_with`). One architecture
+revision and one acceptance send-back, then open findings are decided
+risks. Research has a share per stage visit (8 docs, 12 packages;
+`app.tools.research`), carries to a fresh attempt, and package lookups
+batch. A cut-off answer keeps its whole fields and asks for the rest
+(`app.models.tool_arguments`); a specification revision sends only what
+it changes.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

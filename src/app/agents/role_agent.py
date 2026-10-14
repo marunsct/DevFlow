@@ -521,6 +521,15 @@ ANSWER_TOOL_DESCRIPTION = (
 )
 
 
+def _gathering(model: Any, response_format: Any) -> list[Any]:
+    from app.agents.gathering import build_gathering_middleware, gatherer_for
+
+    gatherer = gatherer_for(model)
+    if gatherer is None or not isinstance(response_format, type):
+        return []
+    return [build_gathering_middleware(gatherer, response_format.__name__)]
+
+
 def the_answer_tool(response_format: Any) -> Any:
     """`response_format` as a tool strategy whose tool describes what it is for.
 
@@ -640,6 +649,11 @@ def create_role_agent(
         # `on_tool_end` fires before any of that and sees only what the tool
         # returned. See `app.observability.transcript`.
         build_transcript_middleware(stage),
+        # A stage on the judgement model gathers on the build model and writes
+        # on the judgement model (fast delivery). Outside the text-tool-call
+        # repair, so it judges the reply that repair produced. See
+        # `app.agents.gathering`.
+        *_gathering(model, response_format),
         # Outermost of the model-call wrappers, so a call the server failed to
         # parse becomes a real tool call before anything downstream looks for
         # one. See `app.agents.text_tool_calls`.

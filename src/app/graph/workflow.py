@@ -6218,6 +6218,18 @@ def _the_stack_pack_for(state: Any, update: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _fast_delivery() -> bool:
+    """Whether this deployment delivers fast (`app.delivery`).
+
+    A function rather than the module: inside the graph builder `delivery`
+    is `app.graph.delivery`, the sprint-evidence module, and a node that
+    called `delivery.fast()` there failed on its first review.
+    """
+    from app import delivery
+
+    return delivery.fast()
+
+
 def build_workflow_graph(
     model: str | BaseChatModel | None = None,
     *,
@@ -6275,15 +6287,17 @@ def build_workflow_graph(
     from app.models.roles import escalate_after, plans_on_the_judgement_model
 
     #: The plan and the specification are what every other stage builds from;
-    #: the judgement model writes them unless the owner turned that off.
-    planning_model = judgement_model if plans_on_the_judgement_model() else model
+    #: the judgement model writes them unless the owner turned that off. In
+    #: fast delivery the specification and the reviews stay with it and the
+    #: rest of planning - intake, comparison, stack, consultations, sprint
+    #: plan, work orders, acceptance tests - is the build model's: they turn
+    #: the brief and the specification into records. See `app.delivery`.
+    planning_model = judgement_model if plans_on_the_judgement_model() and not _fast_delivery() else model
 
     # Fast delivery builds and fixes without reasoning: the specification has
     # decided what each stage writes. See `app.delivery`.
-    from app import delivery
-
     building_model = model
-    if delivery.fast() and (model is None or isinstance(model, BaseChatModel)):
+    if _fast_delivery() and (model is None or isinstance(model, BaseChatModel)):
         try:
             from app.agents.thinking import without_reasoning
             from app.models import build_default_chat_model as _default_model
@@ -6292,6 +6306,10 @@ def build_workflow_graph(
         except Exception:  # noqa: BLE001 - the build model reasons as configured
             logger.warning("Could not switch reasoning off for building; it runs as configured", exc_info=True)
             building_model = model
+        # And a stage on the judgement model gathers on it. See `app.agents.gathering`.
+        from app.agents.gathering import gather_with
+
+        gather_with(judgement_model, building_model)
 
     def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0) -> Any:
         """The model a stage that builds or fixes runs on: the default one, until it has failed.
@@ -6572,7 +6590,7 @@ def build_workflow_graph(
             return _handing_on(stage="principal_architect", consultation_roles=roles, specialist_advice=advice)
         role = pending[0]
         agent = create_specialist_advice_agent(
-            role, model=judgement_model, checkpointer=shared_checkpointer,
+            role, model=model if _fast_delivery() else judgement_model, checkpointer=shared_checkpointer,
             repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         )
         update = _run_gated_agent(
@@ -6804,7 +6822,9 @@ def build_workflow_graph(
         else:
             revision_count = state.get("architecture_revision_count", 0) + 1
             update["architecture_revision_count"] = revision_count
-            if revision_count >= MAX_ARCHITECTURE_REVISIONS:
+            # Fast delivery revises once: blocking findings still open after
+            # that are decided as risks, as they are after the full count.
+            if revision_count >= (2 if _fast_delivery() else MAX_ARCHITECTURE_REVISIONS):
                 # Decided, not stopped: see `app.graph.escalation`. The run used
                 # to fail here - one stored run after six revisions - although
                 # the acceptance suite, written from the brief, is what decides

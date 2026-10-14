@@ -69,3 +69,17 @@ def test_only_calls_to_a_tool_with_a_schema_are_changed():
 
     assert isinstance(result.generations[0].message.tool_calls[0]["args"]["technology_stack"], str)
     assert decode_structured_arguments(result, None) is result
+
+
+def test_prose_where_a_list_of_strings_is_wanted_is_one_item_per_line():
+    """One run's specification sent eleven list fields as paragraphs, and every one was refused."""
+    from app.agents.principal_architect import TechnicalSpecificationOutput
+
+    sent = {"product_scope": "Notes.", "component_boundaries": "\nSix modules:\n- notes-api/src/app.ts routes\n2. notes-api/src/store.ts keeps notes\n\n"}
+
+    decoded = with_structure_decoded(sent, _parameters(TechnicalSpecificationOutput))
+
+    assert decoded["component_boundaries"] == ["Six modules:", "notes-api/src/app.ts routes", "notes-api/src/store.ts keeps notes"]
+    assert TechnicalSpecificationOutput.model_validate(decoded).product_scope == "Notes."
+    objects = {"type": "object", "properties": {"stack": {"type": "array", "items": {"type": "object"}}}}
+    assert with_structure_decoded({"stack": "a\nb"}, objects) == {"stack": "a\nb"}, "only lists of strings"

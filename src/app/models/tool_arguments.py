@@ -9,14 +9,16 @@ about 12,000 output tokens and 2.5 minutes per attempt, the stage still going.
 
 The value is not wrong, only wrapped once too often. Where the tool's own
 parameter schema says a field is an object or a list, and the model sent a
-string that parses as exactly that, the string is decoded. A string the schema
-allows, or one that does not parse to the shape wanted, is left alone for the
-schema to judge.
+string that parses as exactly that, the string is decoded; prose where a list
+of strings is wanted is read one item per line. A string the schema allows, or
+one that does not parse to the shape wanted, is left alone for the schema to
+judge.
 """
 
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 #: The deepest a schema is followed: far past any answer this harness asks for.
@@ -55,6 +57,26 @@ def _types(schema: dict[str, Any]) -> set[str]:
     return set()
 
 
+#: A list marker at the start of a line: `-`, `*`, `•`, `1.`, `2)`.
+_MARKER = re.compile(r"^\s*(?:[-*\u2022]|\d{1,3}[.)])\s+")
+
+
+def _as_lines(value: str, options: list[dict[str, Any]], definitions: dict[str, Any]) -> Any:
+    """Prose where a list of strings is wanted: one item per line, list markers taken off.
+
+    One run's specification sent eleven of its list fields as paragraphs of
+    text, one entry to a line, and all were refused - about 40,000 output
+    tokens to write again. Only for a list whose items are plain strings; any
+    other shape is left for the schema to refuse.
+    """
+    for option in options:
+        items = _alternatives(option.get("items"), definitions) if "items" in option else []
+        if items and all(_types(item) == {"string"} for item in items):
+            lines = [_MARKER.sub("", line).strip() for line in value.splitlines()]
+            return [line for line in lines if line]
+    return value
+
+
 def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) -> Any:
     if depth > _MOST_DEPTH:
         return value
@@ -66,7 +88,7 @@ def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) 
         try:
             decoded = json.loads(value)
         except ValueError:
-            return value
+            return _as_lines(value, options, definitions)
         if (isinstance(decoded, dict) and "object" in wanted) or (isinstance(decoded, list) and "array" in wanted):
             value = decoded
         else:

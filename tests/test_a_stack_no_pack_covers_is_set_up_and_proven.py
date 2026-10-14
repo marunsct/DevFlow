@@ -305,3 +305,44 @@ def test_coming_back_from_its_own_pause_it_finishes_and_is_proven(stage, tmp_pat
 
     assert [call["stage"] for call in stage.calls] == ["stack_setup_0"]
     assert update["stack_pack"] == PROVEN_SETUP
+
+
+# --- the build ---------------------------------------------------------------------
+
+def test_a_setup_whose_build_fails_is_not_proven(tmp_path):
+    """One run's kept `tsconfig.json` had `lib` as a string; its smoke tests ran
+    without compiling, so the setup was proven and the product never built."""
+    _set_up(tmp_path, {**DECLARED, "build": ["npm", "run", "build"]})
+    seen: list = []
+    base = _runner(tmp_path, seen=seen)
+
+    def run(argv, category, working_directory):
+        if category == "build":
+            seen.append((list(argv), category))
+            return {"returncode": "2", "stdout": "tsconfig.json(6,12): error TS5024: Compiler option 'lib' requires a value of type Array."}
+        return base(argv, category, working_directory)
+
+    result = prove(tmp_path, "notes", STACK, run=run)
+
+    assert not result.ok
+    assert "npm run build" in result.problem and "TS5024" in result.problem
+    assert (["npm", "run", "build"], "build") in seen
+    assert not any(category == "test" for _, category in seen), "the build is proven before the smoke tests"
+
+
+def test_a_setup_with_nothing_to_build_is_proven_as_before(tmp_path):
+    _set_up(tmp_path)
+    seen: list = []
+
+    assert prove(tmp_path, "notes", STACK, run=_runner(tmp_path, seen=seen)).ok
+    assert not any(category == "build" for _, category in seen)
+
+
+def test_the_setup_request_asks_for_the_build_command():
+    from app.stacks.custom_setup import build_setup_request
+
+    text = build_setup_request("notes", STACK, "fullstack")["messages"][-1]["content"]
+
+    assert '"build": ["<program>"' in text
+    rule = text[text.index("`build` is the command"):text.index("Build nothing of the product")]
+    assert not BANNED.search(rule)

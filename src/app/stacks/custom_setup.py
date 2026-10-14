@@ -148,6 +148,7 @@ product is built, set up `{project}/` so that a unit test and an acceptance test
    {{
      "kind": "{kind or 'one of ' + ', '.join(KINDS)}",
      "install": [["<program>", "<argument>", ...]],
+     "build": ["<program>", "<argument>", ...],
      "unit_test": ["<program>", "<argument>", ...],
      "unit_report": "<where the unit runner writes JUnit XML>",
      "unit_dir": "<directory unit tests live in>",
@@ -162,8 +163,9 @@ product is built, set up `{project}/` so that a unit test and an acceptance test
      "acceptance_guide": "<how an acceptance test drives the product, in a few sentences>"
    }}
 
-Build nothing of the product itself. The harness then runs the install and both smoke tests
-through exactly these commands; a setup whose smoke tests pass is kept as the project's
+`build` is the command that compiles or builds the project before it runs, when it is built
+at all; leave it out when nothing is. Build nothing of the product itself. The harness then
+runs the install, the build and both smoke tests through exactly these commands; a setup whose smoke tests pass is kept as the project's
 test setup for the rest of the run, and the smoke tests are removed.
 {planned}{again}"""
     return {"messages": [{"role": "user", "content": text}]}
@@ -185,6 +187,8 @@ class Declaration:
     smoke_files: tuple[str, ...]
     guide: str
     acceptance_guide: str
+    #: The command that builds the project before it runs, when it has one.
+    build: tuple[str, ...] = ()
 
 
 def _inside(path: Any) -> str | None:
@@ -243,6 +247,9 @@ def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Decla
         kind = fallback_kind
     if kind not in KINDS:
         problems.append(f"`kind` must be one of {', '.join(KINDS)}")
+    build = _argv(data.get("build")) if data.get("build") else ()
+    if build is None:
+        problems.append("`build` must be one command, a list of strings")
     if paths.get("acceptance_dir") and paths.get("acceptance_dir") == paths.get("unit_dir"):
         problems.append("acceptance tests need a directory of their own, apart from the unit tests")
     if problems:
@@ -262,6 +269,7 @@ def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Decla
         smoke_files=tuple(name for name in smoke if name),
         guide=str(data.get("guide") or "")[:MAX_GUIDE],
         acceptance_guide=str(data.get("acceptance_guide") or "")[:MAX_GUIDE],
+        build=build or (),
     ), ""
 
 
@@ -361,6 +369,18 @@ def prove(
             code = _step(result.steps, argv, run(list(argv), "install", project))
         if code != 0:
             result.problem = f"`{' '.join(argv)}` failed in {project}/: {result.steps[-1]['output'][-800:]}"
+            return result
+
+    # The build too: a smoke test can pass without compiling anything, and
+    # the configuration the build reads is then kept unproven. One run's kept
+    # `tsconfig.json` had `lib` as a string where the compiler wants a list,
+    # and the product could not be built from then on.
+    if declared.build:
+        code = _step(result.steps, declared.build, run(list(declared.build), "build", project))
+        if code != 0:
+            result.problem = (
+                f"`{' '.join(declared.build)}` failed in {project}/: {result.steps[-1]['output'][-1200:]}"
+            )
             return result
 
     for label, argv, report in (

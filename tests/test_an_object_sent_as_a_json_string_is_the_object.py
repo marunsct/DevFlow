@@ -103,3 +103,25 @@ def test_an_answer_whose_arguments_are_not_strict_json_is_still_the_answer(monke
     (call,) = message.tool_calls
     assert ToolsAndModelsOutput.model_validate(call["args"]).open_questions == ["line one\nline two"]
     assert [c["id"] for c in message.invalid_tool_calls] == ["c2"], "a call to no known tool stays as it was"
+
+
+def test_a_call_that_cannot_be_read_says_where_and_is_kept_in_the_transcript(monkeypatch, caplog):
+    from types import SimpleNamespace
+
+    from app.models.tool_arguments import decode_structured_arguments
+    from app.observability import transcript
+
+    broken = '{"open_questions": ["a" "b"]}'
+    reply = AIMessage(content="", invalid_tool_calls=[
+        {"name": "ToolsAndModelsOutput", "args": broken, "id": "c1", "error": "bad", "type": "invalid_tool_call"},
+    ])
+    result = ChatResult(generations=[ChatGeneration(message=reply)])
+
+    with caplog.at_level("WARNING"):
+        decode_structured_arguments(result, [convert_to_openai_tool(ToolsAndModelsOutput)])
+
+    assert "could not be read even leniently" in caplog.text and '"a" "b"' in caplog.text
+    recorded = []
+    monkeypatch.setattr(transcript, "record", lambda *a, **k: recorded.append(k))
+    transcript.build_transcript_callback("run-x", "stage").on_llm_end(SimpleNamespace(generations=[[ChatGeneration(message=reply)]]))
+    assert recorded[0]["invalid_tool_calls"][0]["args"] == broken

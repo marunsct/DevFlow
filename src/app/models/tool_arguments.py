@@ -151,6 +151,17 @@ def _parsed_leniently(arguments: Any) -> dict[str, Any] | None:
     return None
 
 
+def _where_it_fails(arguments: Any) -> str:
+    """Why a call's argument text is not an object, and the text around the place, for the log."""
+    text = str(arguments or "")
+    try:
+        json.loads(text, strict=False)
+    except ValueError as error:
+        at = getattr(error, "pos", 0) or 0
+        return f"{error}; around it: {text[max(0, at - 120):at + 120]!r}"
+    return "it parses, but not to an object"
+
+
 def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> None:
     """Calls to a known tool whose arguments were not strict JSON, made calls again.
 
@@ -170,6 +181,11 @@ def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> Non
         name = str(call.get("name") or "")
         parsed = _parsed_leniently(call.get("args")) if name in parameters else None
         if parsed is None:
+            if name in parameters:
+                logger.warning(
+                    "A call to %s could not be read even leniently (%d characters): %s",
+                    name, len(str(call.get("args") or "")), _where_it_fails(call.get("args")),
+                )
             kept.append(call)
             continue
         message.tool_calls.append({"name": name, "args": parsed, "id": call.get("id"), "type": "tool_call"})

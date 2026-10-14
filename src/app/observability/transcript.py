@@ -454,6 +454,15 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                                 for c in (getattr(message, "tool_calls", None) or [])
                                 if isinstance(c, dict)
                             ],
+                            # Kept whole: a call whose arguments did not parse
+                            # is otherwise nowhere, and one run lost three
+                            # specifications of ~20,000 tokens that way with
+                            # nothing to say why.
+                            invalid_tool_calls=[
+                                {"name": c.get("name"), "error": c.get("error"), "args": c.get("args")}
+                                for c in (getattr(message, "invalid_tool_calls", None) or [])
+                                if isinstance(c, dict)
+                            ],
                             usage=getattr(message, "usage_metadata", None),
                             finish_reason=(getattr(generation, "generation_info", None) or {}).get(
                                 "finish_reason"

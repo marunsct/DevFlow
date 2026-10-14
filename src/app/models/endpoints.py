@@ -49,6 +49,32 @@ _SELF_HOSTED = frozenset({"self-hosted", "self_hosted", "selfhosted", "local"})
 _HOSTED = frozenset({"hosted", "cloud", "remote"})
 
 
+#: The names a container has for the machine it runs on.
+_THE_HOST_FROM_A_CONTAINER = frozenset({"host.docker.internal", "gateway.docker.internal"})
+
+
+def host_header_for(base_url: str | None) -> dict[str, str]:
+    """`{"Host": "localhost:<port>"}` for a server reached from a container by the host's name; else {}.
+
+    A model server on the owner's own machine is reached from the harness's
+    container as `host.docker.internal`. A server guarding against DNS
+    rebinding answers only to the names it was told it lives at, and
+    refused that one: measured with one owner's server, every request was
+    403 "Host 'host.docker.internal:9090' is not allowed", while the same
+    server answered the owner's `http://127.0.0.1:9090/`. Each request names
+    the server as the owner does.
+    """
+    try:
+        parsed = urlparse(str(base_url or "").strip())
+        host = (parsed.hostname or "").lower().rstrip(".")
+        port = parsed.port
+    except ValueError:
+        return {}
+    if host not in _THE_HOST_FROM_A_CONTAINER:
+        return {}
+    return {"Host": f"localhost:{port}" if port else "localhost"}
+
+
 def is_self_hosted(base_url: str | None, environment: Mapping[str, str] | None = None) -> bool:
     """Whether `base_url` is a self-hosted model server rather than a hosted API."""
     values = os.environ if environment is None else environment

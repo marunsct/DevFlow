@@ -657,7 +657,7 @@ def build_default_chat_model(
     # was `bool(openai_base_url)` - every address a llama.cpp server - which
     # sent the switch to a hosted judgement model on every call and left it no
     # retry for a rate limit. See `app.models.endpoints`.
-    from app.models.endpoints import is_self_hosted
+    from app.models.endpoints import host_header_for, is_self_hosted
 
     speaks_llama_cpp = is_self_hosted(resolved_settings.openai_base_url)
 
@@ -708,6 +708,7 @@ def build_default_chat_model(
             max_retries=0 if speaks_llama_cpp else 3,
             timeout=_request_timeout(),
             max_tokens=reply_ceiling,
+            default_headers=host_header_for(resolved_settings.openai_base_url) or None,
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
         # If it's a local model that fails, fallback to Anthropic if available

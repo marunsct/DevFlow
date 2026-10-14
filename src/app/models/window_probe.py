@@ -29,6 +29,8 @@ import logging
 import re
 import urllib.error
 import urllib.request
+
+from app.models.endpoints import host_header_for
 from typing import Mapping
 
 logger = logging.getLogger(__name__)
@@ -127,6 +129,7 @@ def _accepts(
         headers={
             "Authorization": f"Bearer {api_key or 'none'}",
             "Content-Type": "application/json",
+            **host_header_for(endpoint),
         },
     )
     try:
@@ -197,7 +200,10 @@ def detect_context_window(
     request = urllib.request.Request(
         endpoint,
         data=body,
-        headers={"Authorization": f"Bearer {api_key or 'none'}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {api_key or 'none'}", "Content-Type": "application/json",
+            **host_header_for(endpoint),
+        },
     )
 
     try:

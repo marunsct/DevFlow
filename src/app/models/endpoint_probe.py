@@ -94,7 +94,9 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
         )
 
     endpoint = f"{base_url.rstrip('/')}/models"
-    request = urllib.request.Request(endpoint, method="GET")
+    from app.models.endpoints import host_header_for
+
+    request = urllib.request.Request(endpoint, method="GET", headers=host_header_for(base_url))
     if api_key:
         request.add_header("Authorization", f"Bearer {api_key}")
     try:

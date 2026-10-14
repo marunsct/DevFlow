@@ -208,15 +208,37 @@ def nothing_is_named(fragment: str, path: Any) -> str:
     )
 
 
+#: Arguments that name a place in the workspace, whichever tool takes them.
+_ANY_PATH_ARGUMENT = frozenset({"relative_path", "destination", "working_directory", "file_path", "path"})
+
+
+def unquoted(value: str) -> str:
+    """`value` without one pair of quotes around the whole of it.
+
+    A path typed as it would be at a shell prompt. Measured on one run: a
+    builder sent `working_directory='"notes-api"'` and `'"/notes-api/src/store.ts"'`
+    - the quotes part of the name - and was told four times that the
+    directory and the file did not exist. No name in a workspace starts and
+    ends with the same quote.
+    """
+    text = value.strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'`":
+        return text[1:-1].strip()
+    return value
+
+
 def rewrite_tool_arguments(
     name: str, arguments: dict[str, Any], repo_root: str
 ) -> dict[str, Any]:
     """A copy of `arguments` with workspace paths, read windows and search output normalised."""
     changed = dict(arguments)
+    for argument in _ANY_PATH_ARGUMENT & set(changed):
+        if isinstance(changed[argument], str):
+            changed[argument] = unquoted(changed[argument])
 
     key = _PATH_ARGUMENTS.get(name)
     if key is not None:
-        value = arguments.get(key)
+        value = changed.get(key)
         if isinstance(value, str):
             # Host path first - that is the spelling the workflow itself hands
             # out - then a root the model invented, which only resolves against
@@ -306,6 +328,7 @@ def build_workspace_path_middleware(repo_root: str) -> Any:
 
 
 __all__ = [
+    "unquoted",
     "DEFAULT_GREP_OUTPUT",
     "DEFAULT_READ_LINES",
     "a_name_fragment",

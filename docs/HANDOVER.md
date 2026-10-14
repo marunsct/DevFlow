@@ -182,6 +182,23 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
 
+### 2.000 Fast delivery (2026-10-14, `e55dd6f`)
+
+The owner judged the harness too slow to be worth using: run-c2e62179
+(notes-api-hono, thorough) took 13.3 h for 1.5 of 4 sprints - 1,081 model
+calls one after another (only one in flight 91% of the time even in
+parallel mode, the local server serves one at a time), 2.84 M output tokens
+of which 48% reasoning, 54 M input tokens, 549 lines of product and 5,058
+lines of tests. `DELIVERY_MODE` (`app.delivery`; settings page "Delivery
+Mode"; compose default `fast`, code default `thorough`) adds a fast path:
+one sprint for <=20 criteria; work-order files drafted from the
+specification one call per file (`app.graph.drafting`, unattended runs
+only, agent loop as fallback); harness-run test rounds once the locked suite
+has run (unit failures -> a product-owner defect); tests limited to the
+specification's file plan; building/fixing with reasoning off
+(`thinking.without_reasoning`). Benchmark: notes-api-hono on fast vs the
+13.3 h thorough baseline.
+
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 
 - **Rewind** (`d5e6465`): every stage snapshots the workspace as it starts

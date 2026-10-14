@@ -164,10 +164,14 @@ class SettingsUpdate(BaseModel):
     openai_api_key: str | None = Field(default=None, max_length=512, repr=False)
     anthropic_api_key: str | None = Field(default=None, max_length=512, repr=False)
     google_api_key: str | None = Field(default=None, max_length=512, repr=False)
-    delivery_mode: Literal["fast", "thorough"] = Field(
-        default="thorough",
+    # None keeps what is stored: a page loaded before this field existed sent
+    # no value, and a default here saved "thorough" over the deployment's
+    # "fast" for one owner who had only changed the model's address.
+    delivery_mode: Literal["fast", "thorough"] | None = Field(
+        default=None,
         description="fast: one sprint for a small product, files drafted from the specification, "
-        "harness-run test rounds, building without reasoning. thorough: the full pipeline.",
+        "harness-run test rounds, building without reasoning. thorough: the full pipeline. "
+        "Left out, the stored choice stands.",
     )
     execution_mode: Literal["linear", "parallel"] = Field(
         default="linear",
@@ -425,7 +429,7 @@ async def update_settings(
             "thinking_mode": payload.thinking_mode,
             "thinking_effort": payload.thinking_effort,
             "execution_mode": payload.execution_mode,
-            "delivery_mode": payload.delivery_mode,
+            **({"delivery_mode": payload.delivery_mode} if payload.delivery_mode else {}),
             # Empty clears each override, which with an empty name turns the
             # judgement model off.
             "judgement_provider": payload.judgement_provider,

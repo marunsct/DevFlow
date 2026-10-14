@@ -329,3 +329,20 @@ def test_an_unknown_field_is_refused(client):
     response = client.put("/api/settings", json=_provider_body(aws_secret_access_key="nope"))
 
     assert response.status_code == 422
+
+
+def test_a_save_without_the_delivery_mode_keeps_the_stored_one(client):
+    """A page loaded before the delivery mode existed sent no value, and a
+    default saved "thorough" over the deployment's "fast" for an owner who had
+    only changed the model's address."""
+    from app.server import runtime_settings
+
+    base = {"llm_provider": "openai", "openai_base_url": "https://api.openai.com/v1", "model_name": "gpt-4o"}
+    assert client.put("/api/settings", json={**base, "delivery_mode": "fast"}).status_code == 200
+    runtime_settings.reset_cache()
+
+    assert client.put("/api/settings", json=base).status_code == 200
+    runtime_settings.reset_cache()
+
+    assert runtime_settings.effective_environment().get("DELIVERY_MODE") == "fast"
+    assert client.get("/api/settings").json()["delivery_mode"] == "fast"

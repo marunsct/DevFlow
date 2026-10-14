@@ -7196,6 +7196,7 @@ def build_workflow_graph(
             unit = (contract.read(root) or {}).get("unit_test") or []
             return work_orders_from_the_specification(
                 state.get("technical_specification"), goal, criteria, [" ".join(map(str, unit))] if unit else [],
+                root,
             )
         except Exception:  # noqa: BLE001 - the lead writes the plan
             logger.warning("Could not make the work orders from the specification", exc_info=True)

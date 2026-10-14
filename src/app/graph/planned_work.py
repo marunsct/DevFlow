@@ -11,10 +11,20 @@ to documentation, the rest to the role that builds the product - and each
 work order carries the specification's own lines for its files. The plan is
 held to the same definition of ready as a lead's; one that is not ready is
 the lead's to write, as before.
+
+Only for building the product, not for changing it. Each planned file is
+drafted whole from the specification, so a plan made once the product
+exists would write it again and lose every fix since. Measured on one run:
+a sprint planned again after its unit tests failed - its acceptance suite
+passing - was given every file in the specification to write again. Files
+the harness keeps (`contract.owned_by_the_harness`) are no work order's: the
+plan that listed `package.json`, `package-lock.json` and `tsconfig.json` was
+sent back three times for them.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 #: The role that builds the product's code, when no file says otherwise.
@@ -40,15 +50,28 @@ def _role_of(path: str, interface_files: set[str]) -> str:
     return _BUILDS
 
 
+#: The share of the planned files that, once they exist, makes the product
+#: built: a setup may write a few of them before any work order runs.
+BUILT_SHARE = 0.5
+
+
 def work_orders_from_the_specification(
     specification: Any, goal: str, criteria: list[str], verification: list[str],
+    repo_root: str | Path | None = None,
 ) -> Any | None:
-    """A milestone plan of one work order per role, made from the specification; None when it plans no files."""
+    """A milestone plan of one work order per role, made from the specification.
+
+    None when it plans no files, or when the product is already built
+    (`BUILT_SHARE` of its planned files exist): changing it is the lead's.
+    """
     from app.agents.technical_lead import MilestonePlanOutput, SpecialistTask
     from app.graph.drafting import planned_files
+    from app.stacks.contract import owned_by_the_harness
 
-    files = planned_files(specification)
+    files = [path for path in planned_files(specification) if not owned_by_the_harness(repo_root, path)]
     if not files:
+        return None
+    if repo_root and sum((Path(repo_root) / path).is_file() for path in files) >= BUILT_SHARE * len(files):
         return None
     interface_lines = getattr(specification, "interface_design", None) or []
     interface_files = {path for path in files if _naming(interface_lines, [path])}

@@ -54,3 +54,33 @@ def test_the_lead_is_asked_only_when_the_harness_has_no_plan():
     assert node.index("_the_specification_s_work_orders(state, current_goal)") < node.index('stage_name="technical_lead"')
     helper = source[source.index("    def _the_specification_s_work_orders("):source.index("    def technical_lead_node(")]
     assert "_fast_delivery()" in helper
+
+
+def test_the_files_the_harness_keeps_are_no_work_order_s(tmp_path, monkeypatch):
+    """One run's plan was sent back three times for package.json, package-lock.json and tsconfig.json."""
+    from app.stacks import contract
+
+    monkeypatch.setenv("WORKFLOW_WORK_ORDER_READINESS", "on")
+    monkeypatch.setattr(contract, "kept_paths", lambda root: frozenset({"notes-api/package.json", "notes-api/tsconfig.json"}))
+    spec = SPEC.model_copy(update={"file_plan": [
+        "notes-api/package.json - scripts", "notes-api/tsconfig.json - compiler", *SPEC.file_plan,
+    ]})
+
+    plan = work_orders_from_the_specification(spec, "Notes", ["AC-1"], ["npm test"], str(tmp_path))
+
+    listed = [f for task in plan.delegated_tasks for f in task.files]
+    assert "notes-api/package.json" not in listed and "notes-api/tsconfig.json" not in listed
+    assert readiness_problems(plan, str(tmp_path), sprint_scope="Build store.ts and app.ts") == []
+
+
+def test_a_product_already_built_is_changed_by_the_lead_not_written_again(tmp_path):
+    """Each planned file is drafted whole: a plan made once the product exists would lose every fix."""
+    for entry in SPEC.file_plan[:3]:
+        path = tmp_path / entry.split(" ", 1)[0]
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("export {}\n")
+
+    assert work_orders_from_the_specification(SPEC, "Notes", ["AC-1"], ["npm test"], str(tmp_path)) is None
+    (tmp_path / "notes-api/src/app.ts").unlink()
+    (tmp_path / "notes-api/tests/store.test.ts").unlink()
+    assert work_orders_from_the_specification(SPEC, "Notes", ["AC-1"], ["npm test"], str(tmp_path)) is not None

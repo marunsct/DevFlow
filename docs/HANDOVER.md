@@ -214,7 +214,9 @@ batch. A cut-off answer keeps its whole fields and asks for the rest
 it changes. 2026-10-15: the harness does what needs no model in fast delivery -
 fixes by rewriting (`app.graph.rewritten_fixes`), compile-and-repair after
 drafting, a silent suite run file by file (`app.acceptance.per_file`), work
-orders from the specification (`app.graph.planned_work`), no model code
+orders from the specification (`app.graph.planned_work`; only to build the
+product - once half its planned files exist the lead plans the change, and
+files the harness keeps are never listed), no model code
 review. Analysis and next steps (project source in memory, parallel
 candidate fixes, type errors refused at the write, specification in parallel
 parts): https://claude.ai/artifact/SBZagb9VAP9P5Q4bHMsVgJ. Built the same night: the project memory

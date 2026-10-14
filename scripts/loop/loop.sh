@@ -79,6 +79,13 @@ status)
 
 start)
   brief="${2:-tests/brief_low.md}"
+  # Never a run on a model that does not answer: the readiness check is part
+  # of starting, so a pipeline around `ready` cannot swallow its verdict.
+  if ! in_worker model_ready.py | grep -q "ALL READY"; then
+    in_worker model_ready.py | grep -v "^READY" >&2 || true
+    echo "not starting: the models are not all ready" >&2
+    exit 1
+  fi
   : "${LOOP_USER:?set LOOP_USER to the loop operator account}"
   : "${LOOP_PASSWORD:?set LOOP_PASSWORD for that account}"
   token=$(curl -s -X POST "$API/api/auth/token" --data-urlencode "username=$LOOP_USER" \

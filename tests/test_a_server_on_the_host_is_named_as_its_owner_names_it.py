@@ -14,7 +14,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import httpx
 
-from app.models.endpoints import host_header_for
+from app.models import endpoints
+from app.models.endpoints import host_header_for, reached_from_here
 
 
 def test_the_host_s_own_name_is_sent_for_a_server_reached_from_a_container():
@@ -23,6 +24,19 @@ def test_the_host_s_own_name_is_sent_for_a_server_reached_from_a_container():
     assert host_header_for("http://localhost:1234/v1") == {}
     assert host_header_for("https://api.example.com/v1") == {}
     assert host_header_for(None) == {}
+
+
+def test_an_address_on_this_machine_is_reached_through_the_host_s_name_from_a_container(monkeypatch):
+    """One owner's setting of `http://localhost:9090/v1` reached the container
+    itself - "connection refused" on every call."""
+    monkeypatch.setattr(endpoints, "_in_a_container", lambda: True)
+    assert reached_from_here("http://localhost:9090/v1") == (
+        "http://host.docker.internal:9090/v1", {"Host": "localhost:9090"}
+    )
+    assert reached_from_here("http://127.0.0.1:9090/v1")[0] == "http://host.docker.internal:9090/v1"
+    assert reached_from_here("https://api.example.com/v1") == ("https://api.example.com/v1", {})
+    monkeypatch.setattr(endpoints, "_in_a_container", lambda: False)
+    assert reached_from_here("http://localhost:9090/v1") == ("http://localhost:9090/v1", {})
 
 
 def test_the_model_client_and_the_readiness_check_send_it():
@@ -36,7 +50,7 @@ def test_the_model_client_and_the_readiness_check_send_it():
         "OPENAI_MODEL": "m", "OPENAI_API_KEY": "local-placeholder",
     }))
     assert (model.default_headers or {}).get("Host") == "localhost:9090"
-    assert "host_header_for(base)" in Path("scripts/loop/model_ready.py").read_text()
+    assert "reached_from_here(base)" in Path("scripts/loop/model_ready.py").read_text()
 
 
 class _OnlyLocalhost(BaseHTTPRequestHandler):

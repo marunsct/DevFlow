@@ -188,7 +188,9 @@ def detect_context_window(
     if not base_url or not model:
         return None, "No model server is configured."
 
-    endpoint = f"{base_url.rstrip('/')}/chat/completions"
+    from app.models.endpoints import reached_from_here
+
+    endpoint = f"{reached_from_here(base_url)[0].rstrip('/')}/chat/completions"
     body = json.dumps(
         {
             "model": model,

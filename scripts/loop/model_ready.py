@@ -27,11 +27,12 @@ def check(label, s):
         return True, f"READY {head} (hosted provider; not probed)"
     if not base:
         return False, f"NOTREADY {head} (no base url configured)"
-    from app.models.endpoints import host_header_for
+    from app.models.endpoints import reached_from_here
 
+    reached, naming = reached_from_here(base)
     request = urllib.request.Request(
-        base + "/models",
-        headers={**({"Authorization": f"Bearer {key}"} if key else {}), **host_header_for(base)},
+        reached + "/models",
+        headers={**({"Authorization": f"Bearer {key}"} if key else {}), **naming},
     )
     try:
         with urllib.request.urlopen(request, timeout=10) as reply:

@@ -51,28 +51,53 @@ _HOSTED = frozenset({"hosted", "cloud", "remote"})
 
 #: The names a container has for the machine it runs on.
 _THE_HOST_FROM_A_CONTAINER = frozenset({"host.docker.internal", "gateway.docker.internal"})
+#: The names the owner's machine has for itself.
+_THIS_MACHINE = frozenset({"localhost", "127.0.0.1", "::1"})
 
 
-def host_header_for(base_url: str | None) -> dict[str, str]:
-    """`{"Host": "localhost:<port>"}` for a server reached from a container by the host's name; else {}.
+def _in_a_container() -> bool:
+    """Whether this process runs in a container (`/.dockerenv`), unless told otherwise."""
+    told = str(os.environ.get("MODEL_LOCALHOST_IS_THIS_CONTAINER") or "").strip().lower()
+    if told in {"1", "true", "yes", "on"}:
+        return False
+    return os.path.exists("/.dockerenv")
 
-    A model server on the owner's own machine is reached from the harness's
-    container as `host.docker.internal`. A server guarding against DNS
-    rebinding answers only to the names it was told it lives at, and
-    refused that one: measured with one owner's server, every request was
-    403 "Host 'host.docker.internal:9090' is not allowed", while the same
-    server answered the owner's `http://127.0.0.1:9090/`. Each request names
-    the server as the owner does.
+
+def reached_from_here(base_url: str | None) -> tuple[str, dict[str, str]]:
+    """(the address to connect to, the headers to send) for a model server at `base_url`.
+
+    A server on the owner's machine is reached from the harness's container as
+    `host.docker.internal`, and an address the owner writes as `localhost`
+    reaches the container itself there - one owner's setting of
+    `http://localhost:9090/v1` was "connection refused" on every call. Such an
+    address is reached through the host's name. And a server guarding against
+    DNS rebinding answers only to the names it was told it lives at:
+    measured with that owner's server, every request by the host's name was
+    403 "Host 'host.docker.internal:9090' is not allowed", while it answered
+    `http://127.0.0.1:9090/`. So each request names the server as its owner
+    does.
     """
+    text = str(base_url or "").strip()
     try:
-        parsed = urlparse(str(base_url or "").strip())
+        parsed = urlparse(text)
         host = (parsed.hostname or "").lower().rstrip(".")
         port = parsed.port
     except ValueError:
-        return {}
-    if host not in _THE_HOST_FROM_A_CONTAINER:
-        return {}
-    return {"Host": f"localhost:{port}" if port else "localhost"}
+        return text, {}
+    named = f"{host}:{port}" if port else host
+    if host in _THIS_MACHINE and _in_a_container():
+        netloc = parsed.netloc.replace(parsed.hostname or host, "host.docker.internal", 1)
+        if host == "::1":
+            netloc = f"host.docker.internal:{port}" if port else "host.docker.internal"
+        return parsed._replace(netloc=netloc).geturl(), {"Host": named if host != "::1" else (f"localhost:{port}" if port else "localhost")}
+    if host in _THE_HOST_FROM_A_CONTAINER:
+        return text, {"Host": f"localhost:{port}" if port else "localhost"}
+    return text, {}
+
+
+def host_header_for(base_url: str | None) -> dict[str, str]:
+    """The headers `reached_from_here` sends for `base_url`."""
+    return reached_from_here(base_url)[1]
 
 
 def is_self_hosted(base_url: str | None, environment: Mapping[str, str] | None = None) -> bool:

@@ -71,6 +71,9 @@ def probe_endpoint(base_url: str, api_key: str = "", *, timeout: int = PROBE_TIM
     there is nothing local to check and refusing to start would be worse than
     the problem this exists to catch.
     """
+    from app.models.endpoints import reached_from_here
+
+    base_url = reached_from_here(base_url)[0] if base_url else base_url
     if not base_url:
         return EndpointStatus(True, "No base URL is set, so there is nothing local to check.")
 

@@ -7280,6 +7280,16 @@ def build_workflow_graph(
                     len(best_problems), len(best_plan.delegated_tasks or []),
                 )
                 update["milestone_plan"], problems = best_plan, best_problems
+                if not revising:
+                    # Kept from before: it gets the test files the scope names
+                    # as the plan just checked did. One run dispatched an
+                    # earlier plan that had never had them assigned.
+                    update["milestone_plan"], given = with_named_tests_given_to_testing(
+                        update["milestone_plan"], state["repository"].root_path, _what_this_sprint_builds(state),
+                        planned_files(state.get("technical_specification")),
+                    )
+                    if given:
+                        problems = [p for p in problems if not p.startswith("The sprint's scope names")]
             logger.warning(
                 "Milestone plan still not ready after %d attempts; dispatching it with "
                 "the problems noted: %s", attempted + 1, "; ".join(p[:80] for p in problems[:3]),

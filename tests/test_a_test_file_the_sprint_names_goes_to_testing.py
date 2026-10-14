@@ -56,3 +56,10 @@ def test_the_workflow_gives_them_before_it_checks_the_plan():
     source = inspect.getsource(workflow)
     node = source[source.index("with_named_tests_given_to_testing("):]
     assert node.index("with_named_tests_given_to_testing(") < node.index("problems = readiness_problems(")
+
+
+def test_an_earlier_plan_dispatched_instead_gets_them_too():
+    """One run dispatched an earlier, better plan that had never had them assigned."""
+    source = inspect.getsource(workflow)
+    earlier = source[source.index("dispatching the earlier plan"):source.index("Milestone plan still not ready after")]
+    assert "with_named_tests_given_to_testing(" in earlier

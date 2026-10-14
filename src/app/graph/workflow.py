@@ -4822,6 +4822,32 @@ def _the_fixes_to_keep(state: Any, task: Any = None) -> list[str]:
         return []
 
 
+def _the_specification_for_the_fix(state: Any, defect: Any, co_defects: list[tuple[int, Any]]) -> str:
+    """The specification's entries for a defect's files and criteria, as a work order is given them.
+
+    A fix is built by the faster model too, and was handed none of it.
+    Measured on one run: the specification gave the store's load rule as
+    "nextId = max(stored nextId, max(existing id)+1)" and the route
+    handlers' body parsing inside a try/catch; the builder wrote neither, and
+    the fixers sent to repair both were shown only the defect.
+    """
+    from types import SimpleNamespace
+
+    from app.acceptance.junit import tags_in
+    from app.agents.specialists import specification_for_the_work_order
+
+    named = [*(defect.affected_files or [])]
+    for _, other in co_defects:
+        named.extend(other.affected_files or [])
+    # A failing criterion names no file; the specification's tests name it.
+    named.extend(t for t in tags_in(str(defect.description or "")) if t.startswith(("AC-", "CR-")))
+    if not named:
+        return ""
+    return "\n" + specification_for_the_work_order(
+        state.get("technical_specification"), SimpleNamespace(files=list(dict.fromkeys(named)), interfaces=[]),
+    )
+
+
 def _what_a_fix_stage_must_leave_alone(state: Any, defect: Any) -> str:
     """What later sprints build, and the fixes earlier ones made in the defect's files, for a fix stage.
 
@@ -7979,6 +8005,7 @@ def build_workflow_graph(
         )
         request["messages"][-1]["content"] += _what_a_fix_stage_must_leave_alone(state, defect)
         co_defects = _bundle_co_defects(cycle, defect_index)
+        request["messages"][-1]["content"] += _the_specification_for_the_fix(state, defect, co_defects)
         if co_defects:
             batch_lines = [
                 "\n--- Related failures owned by your role to resolve in this same fix ---",

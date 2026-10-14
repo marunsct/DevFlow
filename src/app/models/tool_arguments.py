@@ -193,6 +193,34 @@ def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> Non
     message.invalid_tool_calls = kept
 
 
+def with_every_call_the_server_sent(message: Any, raw_calls: Any) -> None:
+    """Each tool call in the server's reply that the message holds neither as a call nor as an invalid one, added as invalid.
+
+    One run's specification stage had three replies end with `finish_reason`
+    "tool_calls" and about 15,000 tokens written after the reasoning, and
+    recorded no call and no invalid call for any of them. A call the client
+    drops is filed here as an invalid call, so it is logged and recorded and
+    read leniently (`_recovered_calls`) like any other that did not parse.
+    """
+    if not isinstance(raw_calls, list) or message is None:
+        return
+    held = {c.get("id") for c in [*(message.tool_calls or []), *(message.invalid_tool_calls or [])]}
+    for raw in raw_calls:
+        if not isinstance(raw, dict) or raw.get("id") in held:
+            continue
+        function = raw.get("function") if isinstance(raw.get("function"), dict) else {}
+        arguments = function.get("arguments")
+        logger.warning(
+            "The server sent a call to %s (%s, %d characters) that the client kept nowhere",
+            function.get("name") or "?", type(arguments).__name__, len(str(arguments or "")),
+        )
+        message.invalid_tool_calls.append({
+            "name": function.get("name"), "id": raw.get("id"), "type": "invalid_tool_call",
+            "args": arguments if isinstance(arguments, str) else json.dumps(arguments),
+            "error": "the client kept this call nowhere",
+        })
+
+
 def decode_structured_arguments(result: Any, tools: Any) -> Any:
     """Each tool call in a chat result, its arguments decoded where its tool's schema wants structure."""
     parameters = _parameters_by_tool(tools)

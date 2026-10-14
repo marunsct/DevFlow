@@ -537,6 +537,9 @@ class CompatibleChatOpenAI(ChatOpenAI):
                     generation.message.additional_kwargs[REASONING_FIELD] = (
                         reasoning.strip()[-REASONING_CARRIED_CHARS:]
                     )
+                from app.models.tool_arguments import with_every_call_the_server_sent
+
+                with_every_call_the_server_sent(generation.message, message.get("tool_calls"))
         except Exception:  # noqa: BLE001 - keeping reasoning is an aid, never a failure
             pass
         return result

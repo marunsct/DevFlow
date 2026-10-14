@@ -125,3 +125,38 @@ def test_a_call_that_cannot_be_read_says_where_and_is_kept_in_the_transcript(mon
     monkeypatch.setattr(transcript, "record", lambda *a, **k: recorded.append(k))
     transcript.build_transcript_callback("run-x", "stage").on_llm_end(SimpleNamespace(generations=[[ChatGeneration(message=reply)]]))
     assert recorded[0]["invalid_tool_calls"][0]["args"] == broken
+
+
+def test_a_call_the_server_sent_that_the_client_kept_nowhere_is_read(monkeypatch, caplog):
+    from langchain_openai.chat_models import base
+
+    model = CompatibleChatOpenAI(model="m", base_url="http://localhost:1/v1", api_key="k", max_retries=1)
+    raw_call = {"id": "c9", "type": "function", "function": {
+        "name": "ToolsAndModelsOutput", "arguments": '{"open_questions": ["kept"]}'}}
+    response = {"choices": [{"index": 0, "finish_reason": "tool_calls",
+                             "message": {"role": "assistant", "content": "", "tool_calls": [raw_call]}}],
+                "model": "m", "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
+    lose_it = base._convert_dict_to_message
+    monkeypatch.setattr(base, "_convert_dict_to_message",
+                        lambda d: lose_it({**d, "tool_calls": None}) if d.get("role") == "assistant" else lose_it(d))
+
+    with caplog.at_level("WARNING"):
+        message = model._create_chat_result(response).generations[0].message
+
+    assert "kept nowhere" in caplog.text
+    assert message.invalid_tool_calls[0]["id"] == "c9"
+    from app.models.tool_arguments import decode_structured_arguments
+
+    result = ChatResult(generations=[ChatGeneration(message=message)])
+    decode_structured_arguments(result, [convert_to_openai_tool(ToolsAndModelsOutput)])
+    assert message.tool_calls[0]["args"] == {"open_questions": ["kept"]}
+
+
+def test_a_call_the_client_holds_is_not_added_twice():
+    from app.models.tool_arguments import with_every_call_the_server_sent
+
+    message = AIMessage(content="", tool_calls=[{"name": "T", "args": {}, "id": "c1"}])
+
+    with_every_call_the_server_sent(message, [{"id": "c1", "function": {"name": "T", "arguments": "{}"}}])
+
+    assert message.invalid_tool_calls == []

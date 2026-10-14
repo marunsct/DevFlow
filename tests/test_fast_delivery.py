@@ -276,3 +276,19 @@ def test_a_draft_the_compiler_reports_an_error_in_is_drafted_again_with_it(tmp_p
 
     assert written["notes/src/store.ts"] == "export const a = 1;\n"
     assert "Cannot redeclare block-scoped variable 'a'" in model.asked[1]
+
+
+def test_a_draft_refused_for_its_errors_is_drafted_once_more_with_them(tmp_path):
+    model = _Model({"notes/src/store.ts": "```ts\nexport const a = 1;\n```"})
+    attempts = []
+
+    def write(root, path, content):
+        attempts.append(content)
+        if len(attempts) == 1:
+            raise ValueError("Refusing to write 'notes/src/store.ts': it would add errors the language service "
+                             "is sure of - line 2: Cannot redeclare block-scoped variable 'a'.")
+
+    drafted = drafting.draft_work_orders([_order("backend", "notes/src/store.ts")], SPEC, None, str(tmp_path), model, write=write)
+
+    assert list(drafted) == [0] and len(attempts) == 2
+    assert "Cannot redeclare block-scoped variable 'a'" in model.asked[1]

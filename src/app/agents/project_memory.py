@@ -1,0 +1,244 @@
+"""The project held in memory and handed to a stage, instead of read call by call.
+
+Measured on one run: 204 `read_file` calls, 55 listings and 37 searches,
+most of them a stage finding again what an earlier one had read - the
+specification, the sprint plan, the product's own files. Each is a model turn
+carrying the whole conversation, and for a local model one in ten was
+malformed. The harness already holds every one of those files.
+
+So a stage is handed them at its start: the workflow's documents first - the
+specification, the sprint plan, the acceptance criteria, the intake, the stack
+- then the project's files, the ones its request names first, product before
+tests, up to a share of its model's window (`MEMORY_SHARE`). What does not
+fit is named, to be read when needed.
+
+Always current. Each file is kept with its modification time and size, and
+both are checked on every use: a file changed by a write tool, by a command a
+stage ran, or by the harness is read again before it is handed on; one that
+was deleted is dropped. Nothing has to remember to update it.
+
+A read of a file the memory already handed over, unchanged, is answered with
+a pointer to it rather than the same text a second time.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import re
+import threading
+from pathlib import Path
+from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
+
+#: The share of a model's window the memory may take.
+MEMORY_SHARE = 0.3
+#: The most it takes on any model, in characters.
+MOST_CHARACTERS = 240_000
+#: A file larger than this is named, not handed over.
+LARGEST_FILE_CHARACTERS = 60_000
+#: Characters per token, as the context budget counts them.
+CHARS_PER_TOKEN = 3
+
+#: The workflow's documents, most useful first; any other is after these.
+DOCUMENT_ORDER = (
+    "docs/technical_specification.md", "docs/sprint_plan.md", "docs/acceptance_criteria.md",
+    "docs/acceptance_tests.md", "docs/milestone_plan.md", "docs/product_intake.md",
+    "docs/technology_stack.md",
+)
+#: Documents that are records of the run rather than inputs to its work.
+_RECORDS = re.compile(r"^docs/(?:decision_log|.*_summary|stage_summaries/|architecture_review|tools_and_models)")
+_TEXT_SUFFIXES = (
+    ".md", ".txt", ".json", ".yaml", ".yml", ".toml", ".ini", ".cfg", ".env.example", ".sh",
+    ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts", ".py", ".go", ".rs", ".java", ".kt", ".cs",
+    ".rb", ".php", ".swift", ".html", ".css", ".scss", ".vue", ".svelte", ".sql", ".graphql",
+)
+_SKIPPED_NAMES = {"package-lock.json", "yarn.lock", "pnpm-lock.yaml", "poetry.lock", "Cargo.lock", "go.sum"}
+
+_LOCK = threading.Lock()
+#: (root, relative path) -> (modification time, size, content).
+_FILES: dict[tuple[str, str], tuple[int, int, str]] = {}
+
+
+def _ignored(parts: tuple[str, ...]) -> bool:
+    from app.tools.repository import IGNORED_DIRECTORIES
+
+    return any(part in IGNORED_DIRECTORIES or part in (".harness", ".agent-home", "test-results") for part in parts)
+
+
+def _candidates(root: Path) -> list[str]:
+    found: list[str] = []
+    for folder, directories, files in os.walk(root):
+        relative_folder = Path(folder).relative_to(root)
+        directories[:] = [d for d in directories if not _ignored((*relative_folder.parts, d))]
+        for name in files:
+            if name in _SKIPPED_NAMES or not name.endswith(_TEXT_SUFFIXES) or name.startswith(".project-"):
+                continue
+            found.append((relative_folder / name).as_posix())
+    return found
+
+
+def current(repo_root: str | Path) -> dict[str, str]:
+    """Every text file of the workspace as it is now, by workspace-relative path."""
+    root = Path(repo_root)
+    if not root.is_dir():
+        return {}
+    key = str(root.resolve())
+    files: dict[str, str] = {}
+    present = set()
+    for relative in _candidates(root):
+        path = root / relative
+        try:
+            stat = path.stat()
+        except OSError:
+            continue
+        present.add(relative)
+        with _LOCK:
+            held = _FILES.get((key, relative))
+        if held and held[0] == stat.st_mtime_ns and held[1] == stat.st_size:
+            files[relative] = held[2]
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        with _LOCK:
+            _FILES[(key, relative)] = (stat.st_mtime_ns, stat.st_size, text)
+        files[relative] = text
+    with _LOCK:
+        for gone in [k for k in _FILES if k[0] == key and k[1] not in present]:
+            _FILES.pop(gone, None)
+    return files
+
+
+def _ranked(files: dict[str, str], focus: str) -> list[str]:
+    from app.analysis.file_kinds import classify_file
+
+    def rank(path: str) -> tuple[int, int, str]:
+        name = path.rsplit("/", 1)[-1]
+        named = path in focus or (len(name) > 4 and name in focus)
+        if named and not path.startswith("docs/"):
+            return (-1, 0, path)
+        if path in DOCUMENT_ORDER:
+            return (0, DOCUMENT_ORDER.index(path), path)
+        if path.startswith("docs/"):
+            return (5 if _RECORDS.match(path) else 3, 0, path)
+        kind = classify_file(path)
+        return (2 if kind in ("application", "config") else 4, 0, path)
+
+    return sorted(files, key=rank)
+
+
+def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tuple[str, dict[str, str]]:
+    """The memory as text within `budget_characters`, and the files it holds by path."""
+    files = current(repo_root)
+    if not files or budget_characters <= 0:
+        return "", {}
+    held: dict[str, str] = {}
+    parts: list[str] = []
+    left_out: list[str] = []
+    used = 0
+    for path in _ranked(files, focus):
+        text = files[path]
+        if _RECORDS.match(path):
+            left_out.append(path)
+            continue
+        block = f"=== {path} ===\n{text.rstrip()}\n"
+        if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > budget_characters:
+            left_out.append(path)
+            continue
+        parts.append(block)
+        held[path] = text
+        used += len(block)
+    if not parts:
+        return "", {}
+    head = (
+        "[Project memory: the workflow's documents and the project's files as they are now, kept current "
+        "by the harness. Use them as they are here; read a file only if it is named at the end as not "
+        "included.]\n\n"
+    )
+    tail = ("\nNot included here (read when needed): " + ", ".join(left_out) + "\n") if left_out else ""
+    return head + "\n".join(parts) + tail, held
+
+
+def budget_for(model: Any) -> int:
+    """The memory's share of `model`'s window, in characters."""
+    try:
+        from app.agents.context_budget import ContextBudget
+        from app.models import environment_of
+
+        window = ContextBudget.resolve(environment_of(model)).window_tokens
+    except Exception:  # noqa: BLE001 - the deployment's own window
+        window = 32_000
+    return int(min(MOST_CHARACTERS, window * MEMORY_SHARE * CHARS_PER_TOKEN))
+
+
+def enabled() -> bool:
+    """On in fast delivery unless `PROJECT_MEMORY` says otherwise."""
+    setting = str(os.environ.get("PROJECT_MEMORY") or "").strip().lower()
+    if setting in ("0", "off", "false", "no"):
+        return False
+    if setting in ("1", "on", "true", "yes"):
+        return True
+    from app import delivery
+
+    return delivery.fast()
+
+
+def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:
+    """`messages` with `memory` at the start of the opening request, or None if there is none to put it in."""
+    from langchain_core.messages import HumanMessage
+
+    for index, message in enumerate(messages):
+        if getattr(message, "type", None) == "human" and isinstance(getattr(message, "content", None), str):
+            return [*messages[:index], HumanMessage(content=memory + "\n\n" + message.content), *messages[index + 1:]]
+        if isinstance(message, dict) and message.get("role") == "user" and isinstance(message.get("content"), str):
+            return [*messages[:index], {**message, "content": memory + "\n\n" + message["content"]}, *messages[index + 1:]]
+    return None
+
+
+def build_project_memory_middleware(repo_root: str) -> Any:
+    """Middleware that hands each call the project memory, and answers a read of what it already holds."""
+    from langchain.agents.middleware import AgentMiddleware
+
+    class ProjectMemoryMiddleware(AgentMiddleware):
+        name = "ProjectMemoryMiddleware"
+
+        def __init__(self) -> None:
+            super().__init__()
+            self._held: dict[str, str] = {}
+
+        def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+            messages = getattr(request, "messages", None)
+            if not isinstance(messages, list) or not messages or not enabled():
+                return handler(request)
+            try:
+                opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
+                                for m in messages), "")
+                memory, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                changed = _with_memory(messages, memory) if memory else None
+                if changed is not None:
+                    request = request.override(messages=changed)
+            except Exception:  # noqa: BLE001 - the stage reads for itself
+                logger.debug("Could not hand the project memory to a call", exc_info=True)
+            return handler(request)
+
+        def wrap_tool_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+            call = getattr(request, "tool_call", None) or {}
+            args = call.get("args") or {}
+            if call.get("name") == "read_file" and self._held and not args.get("offset") and not args.get("limit"):
+                path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
+                held = self._held.get(path)
+                if held is not None and current(repo_root).get(path) == held:
+                    from langchain_core.messages import ToolMessage
+
+                    return ToolMessage(
+                        content=f"`{path}` is in the project memory at the start of this conversation, as it is "
+                                "now; it has not changed since. Use it from there.",
+                        tool_call_id=call.get("id") or "",
+                        name="read_file",
+                    )
+            return handler(request)
+
+    return ProjectMemoryMiddleware()

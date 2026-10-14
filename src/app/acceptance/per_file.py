@@ -34,8 +34,11 @@ def _the_command_for(argv: Sequence[str], file: str, directory: str, pattern: st
     return command
 
 
-def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner) -> list[dict[str, str]]:
-    """Each acceptance file's own run: its path, `finished`/`failed`/`hung`, and the end of its output."""
+def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner, *, naming: set[str] | None = None) -> list[dict[str, str]]:
+    """Each acceptance file's own run: its path, `finished`/`failed`/`hung`, and the end of its output.
+
+    `naming`: only the files whose text names one of these (criterion ids, for one defect's check).
+    """
     project = str(record.get("project") or "")
     directory = str(record.get("acceptance_dir") or "")
     pattern = str(record.get("acceptance_pattern") or "*")
@@ -46,6 +49,13 @@ def each_file(repo_root: str | Path, record: dict[str, Any], run: Runner) -> lis
     found: list[dict[str, str]] = []
     for path in sorted(p for p in base.rglob("*") if p.is_file() and fnmatch.fnmatch(p.name, pattern)):
         relative = path.relative_to(Path(repo_root) / project).as_posix()
+        if naming is not None:
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if not any(name in text for name in naming):
+                continue
         outcome = run(_the_command_for(argv, relative, directory, pattern), "probe", project) or {}
         output = (str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "") + str(outcome.get("error") or ""))
         code = str(outcome.get("returncode", ""))

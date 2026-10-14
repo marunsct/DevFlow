@@ -40,6 +40,7 @@ from app.agents.task_list import build_task_list_middleware
 from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
+from app.agents.project_memory import build_project_memory_middleware
 from app.plugins.middleware import build_plugin_instructions_middleware
 from app.agents.line_batches import build_line_batch_middleware
 from app.agents.workspace_paths import build_workspace_path_middleware
@@ -664,6 +665,11 @@ def create_role_agent(
         build_line_batch_middleware(resolved_repo_root),
         # After the path rewrite so both see the same request the model will.
         build_workspace_digest_middleware(resolved_repo_root),
+        # The project's documents and files, current, at the start of every
+        # call; a read of one it already holds is answered with a pointer.
+        # After the path rewrite, so it sees the path the tool will resolve.
+        # See `app.agents.project_memory`.
+        build_project_memory_middleware(resolved_repo_root),
         build_plugin_instructions_middleware(resolved_repo_root),
         _workspace_filesystem_middleware(resolved_repo_root),
         # After the filesystem middleware, so it sees the tool results the

@@ -3902,6 +3902,52 @@ def _javascript_parse_error(target: Path, relative_path: str, content: str) -> s
         return ""
 
 
+#: A finding about another file's exports: that file may simply not be written yet.
+_ABOUT_ANOTHER_FILE = re.compile(r"has no exported member|Cannot find module|is not a module|has no default export", re.I)
+
+
+def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, previous: str, *, editing: bool = False) -> None:
+    """Fast delivery: refuse a product file write that adds errors the language service is sure of.
+
+    SWE-agent's lesson, measured there at about ten points: an edit that
+    breaks the file is refused as it is made, not found later. One run's
+    drafts declared a variable twice and named a type that did not exist; a
+    test round found it half an hour later, through a model. Only errors new
+    to this write, and only ones about this file - an import of an export
+    another file has not written yet is not one.
+    """
+    from app import delivery
+
+    if not delivery.fast():
+        return
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.analysis.language_service import ALL_SUFFIXES, underlined_any
+
+        if classify_file(relative_path) != "application" or not relative_path.lower().endswith(ALL_SUFFIXES):
+            return
+        root = next((folder for folder in target.parents if (folder / ".harness").is_dir()), None)
+        if root is None:
+            return
+        pinned = pinned_project_directory(root)
+        project = root / pinned if pinned else None
+        before = underlined_any(root, target, previous, project) if previous else None
+        after = underlined_any(root, target, content, project)
+    except Exception:  # noqa: BLE001 - a check that cannot run refuses nothing
+        return
+    known = {f.get("message") for f in getattr(before, "here", None) or []}
+    new = [
+        f for f in getattr(after, "here", None) or []
+        if f.get("message") not in known and not _ABOUT_ANOTHER_FILE.search(str(f.get("message") or ""))
+    ]
+    if new:
+        found = "; ".join(f"line {f.get('line', '?')}: {f.get('message', '')}" for f in new[:6])
+        raise RepositoryToolError(
+            f"Refusing to {'change' if editing else 'write'} '{relative_path}': it would add errors the "
+            f"language service is sure of - {found}. Nothing was written. Send it again with those fixed."
+        )
+
+
 def _refuse_if_node_cannot_parse(
     target: Path, relative_path: str, content: str, *, editing: bool = False
 ) -> None:
@@ -4990,6 +5036,7 @@ def _write_unless_it_changes_nothing(
         _refuse_a_hand_built_dom_again(relative_path, updated, target)
         _refuse_rewriting_the_platform(relative_path, updated, original)
         _refuse_to_switch_a_suite_off(relative_path, original, updated)
+        _refuse_if_it_adds_errors(target, relative_path, updated, original, editing=True)
         try:
             _refuse_if_broken(relative_path, updated, editing=True)
             _refuse_if_node_cannot_parse(target, relative_path, updated, editing=True)
@@ -6366,6 +6413,10 @@ def write_approved_artifact(
         if not _sent_again_past_a_grammar(relative_path, content):
             raise
     _refuse_if_node_cannot_parse(target, relative_path, content)
+    _refuse_if_it_adds_errors(
+        target, relative_path, content,
+        target.read_text(encoding="utf-8", errors="replace") if target.is_file() else "",
+    )
     _refuse_a_hand_built_dom_again(relative_path, content, target)
     _refuse_rewriting_the_platform(
         relative_path, content, target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""

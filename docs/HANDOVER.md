@@ -215,7 +215,9 @@ drafting, a silent suite run file by file (`app.acceptance.per_file`), work
 orders from the specification (`app.graph.planned_work`), no model code
 review. Analysis and next steps (project source in memory, parallel
 candidate fixes, type errors refused at the write, specification in parallel
-parts): https://claude.ai/artifact/SBZagb9VAP9P5Q4bHMsVgJ
+parts): https://claude.ai/artifact/SBZagb9VAP9P5Q4bHMsVgJ. Built the same night: the project memory
+(`app.agents.project_memory`, `PROJECT_MEMORY` on/off, default on in fast),
+candidate fixes, errors refused at the write, the specification in parts.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

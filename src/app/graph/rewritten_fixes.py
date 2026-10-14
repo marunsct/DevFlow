@@ -30,6 +30,8 @@ MOST_FILES = 4
 #: Passes over the written files: the first, and one more for each set of
 #: diagnostics the compiler still reports.
 MOST_PASSES = 3
+#: Characters of the project memory one rewrite is shown.
+MEMORY_CHARACTERS = 60_000
 #: Characters of failure output shown.
 MOST_FAILURE_CHARACTERS = 6_000
 
@@ -93,7 +95,14 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
 
     detail = specification_for_the_work_order(specification, SimpleNamespace(files=[path], interfaces=[])) if specification else ""
     now = (root / path).read_text(encoding="utf-8", errors="replace")
-    neighbours = _neighbours(root, path, SimpleNamespace(files=others), detail)
+    from app.agents import project_memory
+
+    if project_memory.enabled():
+        # The whole project as it is now, the files the failure names first,
+        # rather than only the files this one imports. See `app.agents.project_memory`.
+        neighbours, _ = project_memory.render(root, MEMORY_CHARACTERS, focus=f"{path}\n{failure}")
+    else:
+        neighbours = _neighbours(root, path, SimpleNamespace(files=others), detail)
     return "\n\n".join(part for part in (
         f"Correct the file `{path}` of this product so the failure below no longer happens. "
         f"The stack: {_stack_line(stack)}.",
@@ -102,7 +111,7 @@ def fix_request(root: Path, path: str, defect: Any, failure: str, specification:
         f"--- What failed ---\n{failure}" if failure.strip() else "",
         ("--- The compiler still reports, in the files just written ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         detail.strip(),
-        f"--- The files it works with ---\n{neighbours}" if neighbours else "",
+        f"--- The project ---\n{neighbours}" if neighbours else "",
         f"--- `{path}` as it is now ---\n{now}",
         f"Reply with the complete corrected content of `{path}` and nothing else, in one fenced "
         "code block. Change only what the failure needs; keep every name, signature and "
@@ -150,14 +159,21 @@ def fix_by_rewriting(
                 if not content.strip():
                     continue
                 if content != (root / path).read_text(encoding="utf-8", errors="replace"):
-                    write(str(root), path, content)
+                    try:
+                        write(str(root), path, content)
+                    except Exception as refused:  # noqa: BLE001 - the next pass is told what was refused
+                        if "language service is sure of" not in str(refused):
+                            raise
+                        diagnostics = [*diagnostics, f"- In `{path}`: {refused}"]
+                        continue
                     if path not in changed:
                         changed.append(path)
             except Exception as error:  # noqa: BLE001 - the agent loop takes what this could not
                 logger.info("Rewrite of %s for a fix failed: %s", path, str(error)[:200])
                 if not changed:
                     return None
-        diagnostics = diagnose(changed) if diagnose and changed else []
+        refused = [line for line in diagnostics if "language service is sure of" in line]
+        diagnostics = [*refused, *(diagnose(changed) if diagnose and changed else [])]
         if not diagnostics:
             break
     if not changed:
@@ -171,3 +187,94 @@ def fix_by_rewriting(
             + (f" The compiler still reports: {'; '.join(diagnostics)[:400]}" if diagnostics else "")
         ],
     )
+
+
+#: Candidate fixes asked for at once, when a defect has failed a fix already.
+CANDIDATES = 3
+
+
+def fix_by_candidates(
+    defect: Any, repo_root: str | Path, model: Any, check: Callable[[], bool | None], *,
+    specification: Any = None, stack: Any = None, last_failure: Any = None,
+    may_write: Callable[[str], bool] | None = None, write: Callable[[str, str, str], Any] | None = None,
+    candidates: int = CANDIDATES,
+) -> Any | None:
+    """A defect fixed by several candidate rewrites asked for at once, the first its tests pass kept; or None.
+
+    Agentless's repair and validation: one run's defect failed fix after fix
+    on the build model, each an agent loop of half an hour. Here the
+    judgement model writes `candidates` versions of the files in parallel -
+    a cloud model serves them side by side - and the harness applies each in
+    turn, runs the defect's own tests (`check`), and keeps the first that
+    passes, putting the files back between tries. None when no candidate
+    passes, or nothing could be written: the agent loop takes the defect.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from app.agents.specialists import SpecialistOutput
+    from app.graph.drafting import the_content_in
+
+    root = Path(repo_root)
+    if write is None:
+        from app.tools.repository import write_approved_artifact
+
+        def write(base: str, path: str, content: str) -> Any:
+            return write_approved_artifact(base, path, content)
+
+    failure = what_failed(defect, root, last_failure)
+    files = files_to_fix(defect, failure, root, may_write or (lambda _: True))
+    if not files:
+        return None
+    originals = {path: (root / path).read_text(encoding="utf-8", errors="replace") for path in files}
+
+    def one(path_and_index: tuple[str, int]) -> tuple[int, str, str]:
+        path, index = path_and_index
+        try:
+            reply = model.invoke([
+                SystemMessage(content="You correct source files of a software product. You reply with "
+                                      "one file's complete content in one fenced code block."),
+                HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
+                                                 [f for f in files if f != path], [])),
+            ])
+            return index, path, the_content_in(getattr(reply, "content", reply) if not isinstance(reply, str) else reply)
+        except Exception as error:  # noqa: BLE001 - one candidate fewer
+            logger.info("A candidate rewrite of %s failed: %s", path, str(error)[:200])
+            return index, path, ""
+
+    with ThreadPoolExecutor(max_workers=max(1, candidates * len(files))) as pool:
+        written = list(pool.map(one, [(path, index) for index in range(candidates) for path in files]))
+    versions: list[dict[str, str]] = [{} for _ in range(candidates)]
+    for index, path, content in written:
+        if content.strip():
+            versions[index][path] = content
+
+    def put_back() -> None:
+        for path, text in originals.items():
+            (root / path).write_text(text, encoding="utf-8")
+
+    for number, version in enumerate(versions, 1):
+        changed = [path for path, content in version.items() if content != originals[path]]
+        if not changed:
+            continue
+        try:
+            for path in changed:
+                write(str(root), path, version[path])
+        except Exception as error:  # noqa: BLE001 - this candidate is refused; the next is tried
+            logger.info("Candidate %d refused: %s", number, str(error)[:200])
+            put_back()
+            continue
+        passed = check()
+        if passed is not False:
+            logger.info("Candidate fix %d of %d kept%s: %s", number, candidates,
+                        "" if passed else " (nothing to check it against)", ", ".join(changed))
+            return SpecialistOutput(
+                changed_files=changed,
+                tests=["the defect's own acceptance and unit tests, run by the harness"],
+                decisions=[f"Candidate {number} of {candidates} rewrites; its tests pass (fast delivery)."
+                           if passed else f"Candidate {number} of {candidates}; no test of its own to check it."],
+            )
+        put_back()
+    logger.info("No candidate fix of %d passed its tests; the agent loop takes the defect", candidates)
+    return None

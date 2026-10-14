@@ -84,6 +84,57 @@ def test_a_defect_with_no_file_to_rewrite_goes_to_the_agent_loop(tmp_path):
 def test_the_fix_step_tries_rewriting_before_the_agent_loop():
     source = inspect.getsource(workflow)
     fix_one = source[source.index("    def _fix_one("):source.index("    def defect_remediation_node(")]
-    assert fix_one.index("_fixed_by_rewriting(state, config, defect, fix_model)") < fix_one.index("create_specialist_agent(")
+    assert fix_one.index("_fixed_by_rewriting(") < fix_one.index("create_specialist_agent(")
     helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
     assert "_fast_delivery()" in helper and "_the_run_approves_its_own_writes" in helper
+
+
+class _Numbered:
+    """Each call answers with the next numbered version of the file."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def invoke(self, messages):
+        self.calls += 1
+        return SimpleNamespace(content=f"```ts\nexport const store = {self.calls};\n```")
+
+
+def test_candidates_are_asked_at_once_and_the_first_its_tests_pass_is_kept(tmp_path):
+    root = _workspace(tmp_path)
+    store = root / "notes-api" / "src" / "store.ts"
+    defect = SimpleNamespace(description="[AC-3] notes survive", expected_behavior="", affected_files=["notes-api/src/store.ts"],
+                             actual_behavior="", reproduction_steps=[])
+    seen = []
+
+    def check():
+        seen.append(store.read_text())
+        return len(seen) == 2
+
+    kept = rewritten_fixes.fix_by_candidates(
+        defect, root, _Numbered(), check, write=lambda base, path, content: (root / path).write_text(content),
+    )
+
+    assert kept.changed_files == ["notes-api/src/store.ts"]
+    assert len(seen) == 2 and store.read_text() == seen[1], "the second candidate, the one that passed, stays"
+    assert seen[0] != seen[1]
+
+
+def test_no_candidate_passing_puts_the_files_back_for_the_agent_loop(tmp_path):
+    root = _workspace(tmp_path)
+    store = root / "notes-api" / "src" / "store.ts"
+    before = store.read_text()
+
+    kept = rewritten_fixes.fix_by_candidates(
+        DEFECT, root, _Numbered(), lambda: False, may_write=lambda path: "locked" not in path,
+        write=lambda base, path, content: (root / path).write_text(content),
+    )
+
+    assert kept is None and store.read_text() == before
+
+
+def test_the_fix_step_asks_for_candidates_after_a_failed_fix():
+    source = inspect.getsource(workflow)
+    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
+    assert "failed_tries >= 1" in helper and "fix_by_candidates(" in helper
+    assert "_the_defect_s_tests_pass(root, defect)" in helper

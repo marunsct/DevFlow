@@ -2500,6 +2500,25 @@ def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: An
     )
 
 
+def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
+    """Whether the acceptance files naming the defect's criteria now pass - or the unit tests, when it names none; None when neither can say."""
+    try:
+        from app.acceptance.junit import tags_in
+        from app.acceptance.per_file import each_file
+        from app.stacks import contract
+        from app.stacks.scaffold import sandbox_runner
+
+        tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
+        if tags:
+            runs = each_file(root, contract.read(root) or {}, sandbox_runner(root), naming=tags)
+            if runs:
+                return all(run["outcome"] == "finished" for run in runs)
+        ok, _ = _run_unit_tests_procedurally(str(root))
+        return ok
+    except Exception:  # noqa: BLE001 - a check that cannot answer says nothing
+        return None
+
+
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
     """Run the contract's unit test command: (whether it passed, its output).
 
@@ -6702,6 +6721,13 @@ def build_workflow_graph(
                 advice=state.get("specialist_advice"),
             )
 
+        # Fast delivery: the architect writes the core and the other sections
+        # are written from it at once. See `app.graph.specification_parts`.
+        in_parts = _fast_delivery() and not (required_changes and previous_specification is not None)
+        if in_parts:
+            from app.graph.specification_parts import CORE_NOTE
+
+            request["messages"][-1]["content"] += CORE_NOTE
         update = _run_gated_agent(
             state,
             config,
@@ -6711,6 +6737,18 @@ def build_workflow_graph(
             output_key="technical_specification",
             next_stage="architecture_review",
         )
+        if not _hand_back(update, "technical_specification") and in_parts:
+            from app.graph.specification_parts import with_the_parts_written
+
+            update["technical_specification"] = with_the_parts_written(
+                update["technical_specification"], judgement_model,
+                "\n\n".join(
+                    f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
+                    for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
+                                       ("Specialists' advice", "specialist_advice"))
+                    if state.get(key)
+                ),
+            )
         if not _hand_back(update, "technical_specification"):
             # Consumed: the revision request above already delivered them, so
             # a later rerun must not re-apply stale comments.
@@ -8377,16 +8415,34 @@ def build_workflow_graph(
         update["specialist_outputs"] = outputs
         return update, blames
 
-    def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any) -> Any:
-        """A fast-delivery fix by rewriting the defect's files, or None for the agent loop."""
+    def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:
+        """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
+
+        After a failed fix, and with a judgement model of its own, several
+        candidates are asked of the judgement model at once and the first the
+        defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
+        """
         if not _fast_delivery() or not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
             return None
         from types import SimpleNamespace
 
-        from app.graph.rewritten_fixes import fix_by_rewriting
+        from app.graph.rewritten_fixes import fix_by_candidates, fix_by_rewriting
         from app.tools.repository import _the_harness_s_own_or_the_locked_suite
 
         root = Path(state["repository"].root_path)
+        if failed_tries >= 1 and judgement_model is not model and judgement_model is not None:
+            try:
+                kept = fix_by_candidates(
+                    defect, root, judgement_model, lambda: _the_defect_s_tests_pass(root, defect),
+                    specification=state.get("technical_specification"),
+                    stack=getattr(state.get("stack_selection"), "technology_stack", None),
+                    last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
+                    may_write=lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None,
+                )
+                if kept is not None:
+                    return kept
+            except Exception:  # noqa: BLE001 - one rewrite, or the agent loop, takes the defect
+                logger.warning("Candidate fixes failed to run", exc_info=True)
         try:
             return fix_by_rewriting(
                 defect, root, fix_model,
@@ -8428,7 +8484,9 @@ def build_workflow_graph(
         # Fast delivery: the harness gathers what failed and the files it points
         # at, and the model rewrites each file in one call. See
         # `app.graph.rewritten_fixes`; a defect it cannot place goes to the agent loop.
-        rewritten = None if state.get("pending_inner_thread_id") else _fixed_by_rewriting(state, config, defect, fix_model)
+        rewritten = None if state.get("pending_inner_thread_id") else _fixed_by_rewriting(
+            state, config, defect, fix_model, failed_fix_tries(cycle, defect_index),
+        )
         if rewritten is not None:
             update: dict[str, Any] = {}
             co_defects: list[tuple[int, Any]] = []

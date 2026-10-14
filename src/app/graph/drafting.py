@@ -234,7 +234,13 @@ def draft_work_orders(
             content = _draft_one(model, root, path, task, specification, stack)
             if not content.strip():
                 return index, path, False
-            write(repo_root, path, content)
+            try:
+                write(repo_root, path, content)
+            except Exception as refused:  # noqa: BLE001 - drafted once more with what was refused
+                if "language service is sure of" not in str(refused):
+                    raise
+                content = _draft_one(model, root, path, task, specification, stack, [str(refused)])
+                write(repo_root, path, content)
             return index, path, True
         except Exception as error:  # noqa: BLE001 - the agent loop takes this work order
             logger.info("Draft of %s left to the agent loop: %s", path, str(error)[:200])

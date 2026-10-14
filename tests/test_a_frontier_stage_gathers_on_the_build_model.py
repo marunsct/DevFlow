@@ -32,7 +32,7 @@ def _reply(*calls):
 
 def test_gathering_turns_run_on_the_build_model_and_the_answer_on_the_frontier():
     build, frontier = object(), object()
-    scripted = {build: [_reply("ls"), _reply("read_docs"), _reply("Answer")], frontier: [_reply("Answer"), _reply("ls")]}
+    scripted = {build: [_reply("ls"), _reply("read_docs"), _reply("Answer")], frontier: [_reply("Answer")]}
     asked = []
 
     def handler(request):
@@ -42,11 +42,45 @@ def test_gathering_turns_run_on_the_build_model_and_the_answer_on_the_frontier()
     middleware = gathering.build_gathering_middleware(build, "Answer")
     request = _Request(model=frontier)
 
-    replies = [middleware.wrap_model_call(request, handler) for _ in range(4)]
+    replies = [middleware.wrap_model_call(request, handler) for _ in range(3)]
 
-    assert asked == ["build", "build", "build", "frontier", "frontier"]
+    assert asked == ["build", "build", "build", "frontier"]
     assert replies[2].result[-1].tool_calls[0]["name"] == "Answer", "the frontier's answer, not the build model's"
-    assert replies[3].result[-1].tool_calls[0]["name"] == "ls", "the rest of the visit stays with the frontier"
+
+
+def test_after_the_frontier_s_turn_a_read_is_the_build_model_s_again_a_few_in_a_row():
+    """A building stage on the frontier spent 40 minutes, half its turns reading."""
+    build, frontier = object(), object()
+    asked = []
+
+    def handler(request):
+        asked.append("build" if request.model is build else "frontier")
+        if request.model is frontier:
+            return _reply("write_artifact")
+        return _reply("read_file") if len(asked) > 1 else _reply("edit_file")
+
+    middleware = gathering.build_gathering_middleware(build, "Answer")
+    replies = [middleware.wrap_model_call(_Request(model=frontier), handler) for _ in range(6)]
+
+    names = [r.result[-1].tool_calls[0]["name"] for r in replies]
+    assert names == ["write_artifact", *["read_file"] * gathering.MOST_IN_A_ROW, "write_artifact", "read_file"][:6]
+    assert asked[:2] == ["build", "frontier"], "the build model's edit is never made"
+
+
+def test_the_build_model_s_attempts_in_a_visit_are_bounded(monkeypatch):
+    monkeypatch.setattr(gathering, "MOST_BUILD_TURNS", 4)
+    build, frontier = object(), object()
+    asked = []
+
+    def handler(request):
+        asked.append("build" if request.model is build else "frontier")
+        return _reply("read_file")
+
+    middleware = gathering.build_gathering_middleware(build, "Answer")
+    for _ in range(8):
+        middleware.wrap_model_call(_Request(model=frontier), handler)
+
+    assert asked.count("build") == 4 and asked[-4:] == ["frontier"] * 4
 
 
 def test_a_build_model_that_cannot_answer_hands_the_turn_to_the_frontier():
@@ -57,7 +91,9 @@ def test_a_build_model_that_cannot_answer_hands_the_turn_to_the_frontier():
             raise RuntimeError("the build model server is down")
         return _reply("Answer")
 
-    reply = gathering.build_gathering_middleware(build, "Answer").wrap_model_call(_Request(model=frontier), handler)
+    middleware = gathering.build_gathering_middleware(build, "Answer")
+    reply = middleware.wrap_model_call(_Request(model=frontier), handler)
+    middleware.wrap_model_call(_Request(model=frontier), lambda request: (_ for _ in ()).throw(AssertionError("asked the build model again")) if request.model is build else _reply("ls"))
 
     assert reply.result[-1].tool_calls[0]["name"] == "Answer"
 

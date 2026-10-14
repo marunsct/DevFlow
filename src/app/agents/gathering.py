@@ -6,14 +6,22 @@ page of documentation, looked a package up - and each one reasoned for 2 to
 5 minutes before asking (77 minutes in all). The reasoning a stage needs is
 in what it writes, not in deciding which file to read next.
 
-So in fast delivery (`app.delivery`) a stage running on the judgement model
-makes its gathering turns on the build model, with reasoning off. The moment
-the build model would do more than gather (`GATHERING_TOOLS`) - calls the
-stage's answer tool or any tool that writes or runs, replies without a tool
-call, or has used `MOST_GATHERING_TURNS` - that turn is asked of the
-judgement model instead, with everything gathered in front of it, and the
-rest of the visit stays with the judgement model. Its answer is the judgement
-model's own; the build model's attempt at it is discarded.
+So a stage running on the judgement model makes its gathering turns on the
+build model, with reasoning off. The moment the build model would do more than
+gather (`GATHERING_TOOLS`) - calls the stage's answer tool or any tool that
+writes or runs, replies without a tool call, or has used
+`MOST_GATHERING_TURNS` - that turn is asked of the judgement model instead,
+with everything gathered in front of it. Its answer is the judgement model's
+own; the build model's attempt at it is discarded.
+
+After the judgement model's first turn the build model is offered each next
+turn again, up to `MOST_IN_A_ROW` gathering turns between two of the judgement
+model's: every change is still the judgement model's to make, but a read it
+would have spent 2 to 3 minutes reasoning towards is made in seconds.
+Measured on one run: a building stage on the judgement model spent 40
+minutes, half its turns reading a file or a passage of one.
+`MOST_BUILD_TURNS` bounds the build model's attempts in a visit, after which
+the judgement model takes every turn.
 
 The pair is registered by the workflow (`gather_with`), keyed by the
 judgement model, so every agent built on that model gets it without each
@@ -29,8 +37,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 #: Gathering turns one visit makes on the build model before the judgement
-#: model takes over whatever it is doing.
+#: model's first turn.
 MOST_GATHERING_TURNS = 12
+#: Gathering turns on the build model between two of the judgement model's,
+#: once the judgement model has taken a turn.
+MOST_IN_A_ROW = 3
+#: The build model's attempts in one visit; past them the judgement model
+#: takes every turn.
+MOST_BUILD_TURNS = 30
 
 _GATHERERS: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
 _BY_ID: dict[int, Any] = {}
@@ -94,19 +108,30 @@ def build_gathering_middleware(gathering_model: Any, answer_tool: str) -> Any:
 
         def wrap_model_call(self, request: Any, handler: Any) -> Any:
             visit = store("gathering", self._visit)
-            if visit.get("writing"):
+            written = bool(visit.get("writing"))
+            streak = int(visit.get("streak", 0))
+            attempts = int(visit.get("attempts", 0))
+            if visit.get("done") or attempts >= MOST_BUILD_TURNS or (written and streak >= MOST_IN_A_ROW):
+                visit["streak"] = 0
                 return handler(request)
+            visit["attempts"] = attempts + 1
             try:
                 gathered = handler(request.override(model=gathering_model))
-            except Exception:  # noqa: BLE001 - the judgement model takes the turn
+            except Exception:  # noqa: BLE001 - the judgement model takes the turn, and the rest
                 logger.info("A gathering turn failed on the build model; the judgement model takes it", exc_info=True)
+                visit["done"] = True
                 gathered = None
-            turns = visit.get("turns", 0) + 1
-            visit["turns"] = turns
-            if gathered is not None and not _answers(gathered, answer_tool) and turns < MOST_GATHERING_TURNS:
+            limit = MOST_IN_A_ROW if written else MOST_GATHERING_TURNS
+            if gathered is not None and not _answers(gathered, answer_tool) and streak + 1 <= limit:
+                visit["streak"] = streak + 1
+                if not written and streak + 1 >= MOST_GATHERING_TURNS:
+                    visit["writing"] = True
+                    visit["streak"] = MOST_IN_A_ROW
                 return gathered
+            if not written:
+                logger.info("Gathered in %d turn(s) on the build model; the judgement model writes", streak + 1)
             visit["writing"] = True
-            logger.info("Gathered in %d turn(s) on the build model; the judgement model writes", turns)
+            visit["streak"] = 0
             return handler(request)
 
     return GatheringMiddleware()

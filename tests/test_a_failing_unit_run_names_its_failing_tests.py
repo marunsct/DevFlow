@@ -73,3 +73,17 @@ def test_a_run_the_harness_cannot_make_says_why(tmp_path) -> None:
         passed, output = _run_unit_tests_procedurally(str(tmp_path))
 
     assert passed is False and "the sandbox is not available" in output
+
+
+def test_a_run_the_sandbox_answers_as_text_passes(tmp_path) -> None:
+    """The sandbox gives the exit code as text; every harness round had said the unit tests failed."""
+    _project(tmp_path)
+
+    with patch("app.stacks.scaffold.sandbox_runner",
+               return_value=lambda *a: {"returncode": "0", "stdout": "", "stderr": ""}):
+        passed, _ = _run_unit_tests_procedurally(str(tmp_path))
+    with patch("app.stacks.scaffold.sandbox_runner",
+               return_value=lambda *a: {"returncode": "1", "stdout": "x", "stderr": ""}):
+        failed, _ = _run_unit_tests_procedurally(str(tmp_path))
+
+    assert passed is True and failed is False

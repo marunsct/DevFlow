@@ -2545,7 +2545,12 @@ def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
             junit.clear(report)
         runner = sandbox_runner(repo_root)
         outcome = runner(cmd, "test", project)
-        rc = outcome.get("returncode", 1)
+        # The sandbox answers as its tool does, the code as text: "0" is not 0.
+        # Measured on one run: every harness test round said the unit tests
+        # failed while all 109 passed, and the sprint was planned again three times.
+        from app.stacks.scaffold import _exit_code
+
+        rc = _exit_code(outcome)
         output = str(outcome.get("stdout") or "") + str(outcome.get("stderr") or "")
         if rc != 0:
             output = (output.rstrip() + "\n" + _what_the_unit_reports_say(reports)).strip()

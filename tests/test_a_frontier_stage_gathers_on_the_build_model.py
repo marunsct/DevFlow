@@ -62,6 +62,24 @@ def test_a_build_model_that_cannot_answer_hands_the_turn_to_the_frontier():
     assert reply.result[-1].tool_calls[0]["name"] == "Answer"
 
 
+def test_a_write_or_a_command_is_the_frontier_s_to_make():
+    """Only reading is gathering: a stage on the frontier writes and runs on it."""
+    for work in ("write_artifact", "edit_file", "run_validation", "run_terminal_command"):
+        build, frontier = object(), object()
+        scripted = {build: [_reply("read_file"), _reply("ls", work)], frontier: [_reply(work)]}
+        asked = []
+
+        def handler(request):
+            asked.append("build" if request.model is build else "frontier")
+            return scripted[request.model].pop(0)
+
+        middleware = gathering.build_gathering_middleware(build, "Answer")
+        replies = [middleware.wrap_model_call(_Request(model=frontier), handler) for _ in range(2)]
+
+        assert asked == ["build", "build", "frontier"], work
+        assert [c["name"] for c in replies[1].result[-1].tool_calls] == [work], "the frontier's call, not the build model's"
+
+
 def test_only_agents_on_a_registered_judgement_model_gather():
     class Model:
         pass

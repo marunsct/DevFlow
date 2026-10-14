@@ -243,3 +243,18 @@ def test_a_failing_unit_run_is_the_product_s_defect():
 
     assert defect.owner == "backend"
     assert "FAIL store.test.ts > keeps ids" in defect.description
+
+
+def test_a_fix_reasons_as_configured_and_a_build_does_not():
+    """One run's fixes without reasoning broke 62 passing tests in one fix and
+    reported edits they never made."""
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    chooser = source[source.index("def _the_build_model("):source.index("def _the_model_for_this_attempt(")]
+    assert "quiet = model if reasons else building_model" in chooser
+    assert source.count("failed_fix_tries(cycle, defect_index), reasons=True)") == 1
+    assert source.count("failed_fix_tries(cycle, index), reasons=True)") == 1
+    assert "_the_build_model(state, stage_name)," in source, "a work order still builds without reasoning"

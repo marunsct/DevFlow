@@ -6311,7 +6311,7 @@ def build_workflow_graph(
 
         gather_with(judgement_model, building_model)
 
-    def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0) -> Any:
+    def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0, *, reasons: bool = False) -> Any:
         """The model a stage that builds or fixes runs on: the default one, until it has failed.
 
         The judgement model takes over once this stage has had to start over on
@@ -6319,9 +6319,16 @@ def build_workflow_graph(
         has failed that many fixes (`failed_fix_tries`), or on a sprint being
         tried again (`_the_model_for_this_attempt`). If that fails too, the run
         goes on as it always has.
+
+        `reasons`: a fix reasons as the owner configured the model. Fast
+        delivery switches reasoning off to write what the specification has
+        decided; a fix has to find out why something fails first. One run's
+        fixes without it broke 62 passing tests in one fix and reported edits
+        they never made.
         """
+        quiet = model if reasons else building_model
         if judgement_model is model:
-            return building_model
+            return quiet
         limit = escalate_after()
         restarts = int((state.get("structured_retries") or {}).get(stage_name, 0))
         if restarts >= limit or failed_tries >= limit:
@@ -6331,7 +6338,7 @@ def build_workflow_graph(
             )
             return judgement_model
         chosen = _the_model_for_this_attempt(state)
-        return building_model if chosen is model else chosen
+        return quiet if chosen is model else chosen
 
     def _the_model_for_this_attempt(state: Any) -> Any:
         """A rung of the escalation ladder: a sprint being tried again after a
@@ -8297,7 +8304,7 @@ def build_workflow_graph(
             return closed
 
         agent = create_specialist_agent(
-            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, defect_index)),
+            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, defect_index), reasons=True),
             checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         )
         request, co_defects = _the_fix_request(state, config, cycle, defect_index)
@@ -8478,7 +8485,7 @@ def build_workflow_graph(
         defect = cycle.defects[index]
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{index}"
         agent = create_specialist_agent(
-            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, index)),
+            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, index), reasons=True),
             checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         )
         request, _ = _the_fix_request(state, config, cycle, index)

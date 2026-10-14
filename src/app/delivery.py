@@ -15,8 +15,9 @@ Fast delivery keeps every stage and record and changes how much each does:
 - a test round is the harness's own: the locked suite and the unit tests
   run, and what fails becomes a defect without a model reading it;
 - tests are the ones the specification plans;
-- the stages that build and fix run with reasoning off: the specification
-  has decided what they write.
+- the stages that build run with reasoning off: the specification has
+  decided what they write. A fix reasons as configured - it has to find out
+  why something fails first.
 
 Thorough is the pipeline as it was. The code's default is thorough; a
 deployment chooses fast with `DELIVERY_MODE=fast`, and the settings page

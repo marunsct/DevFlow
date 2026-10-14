@@ -209,7 +209,13 @@ risks. Research has a share per stage visit (8 docs, 12 packages;
 `app.tools.research`), carries to a fresh attempt, and package lookups
 batch. A cut-off answer keeps its whole fields and asks for the rest
 (`app.models.tool_arguments`); a specification revision sends only what
-it changes.
+it changes. 2026-10-15: the harness does what needs no model in fast delivery -
+fixes by rewriting (`app.graph.rewritten_fixes`), compile-and-repair after
+drafting, a silent suite run file by file (`app.acceptance.per_file`), work
+orders from the specification (`app.graph.planned_work`), no model code
+review. Analysis and next steps (project source in memory, parallel
+candidate fixes, type errors refused at the write, specification in parallel
+parts): https://claude.ai/artifact/SBZagb9VAP9P5Q4bHMsVgJ
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

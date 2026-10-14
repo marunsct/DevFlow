@@ -204,3 +204,14 @@ def test_a_cut_off_answer_keeps_what_arrived_and_asks_only_for_the_rest(monkeypa
     answer = TechnicalSpecificationOutput.model_validate(second.tool_calls[0]["args"])
     assert answer.product_scope == "Notes over HTTP." and answer.file_plan == ["notes-api/src/a.ts - errors"]
     assert tool_arguments._HELD == {}
+
+
+def test_a_command_list_leaked_into_one_string_is_the_list():
+    """One run's fixer sent `["npm\\", \\"run\\", \\"build\\"],category:"]` and was refused it, again and again."""
+    command = {"type": "object", "properties": {
+        "command": {"type": "array", "items": {"type": "string"}}, "category": {"type": "string"}}}
+
+    assert with_structure_decoded({"command": ['npm", "run", "build"],category:']}, command)["command"] == ["npm", "run", "build"]
+    assert with_structure_decoded({"command": ['["node", "--test"]']}, command)["command"] == ["node", "--test"]
+    assert with_structure_decoded({"command": ['echo "a, b"']}, command)["command"] == ['echo "a, b"']
+    assert with_structure_decoded({"command": ["npm"]}, command)["command"] == ["npm"]

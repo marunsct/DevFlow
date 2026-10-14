@@ -80,6 +80,30 @@ def _as_lines(value: str, options: list[dict[str, Any]], definitions: dict[str, 
     return value
 
 
+_LEAKED_LIST = re.compile(r'^\s*\[?\s*"?(?P<inside>[^\]]*?"\s*,\s*"[^\]]*?)"?\s*\]')
+
+
+def _the_list_it_held(value: list[Any], items: Any, definitions: dict[str, Any]) -> list[Any]:
+    """A list of strings sent as one string holding the list's own text, as that list.
+
+    One run's fixer sent `["npm\\", \\"run\\", \\"build\\"],category:"]` - the
+    command's three words and the next argument's name inside one string -
+    and was refused it as a program named all of that, again and again.
+    """
+    if len(value) != 1 or not isinstance(value[0], str):
+        return value
+    if not all(_types(item) == {"string"} for item in _alternatives(items, definitions)):
+        return value
+    match = _LEAKED_LIST.match(value[0] if value[0].lstrip().startswith(("[", '"')) else '"' + value[0])
+    if not match:
+        return value
+    try:
+        words = json.loads('["' + match.group("inside").strip().lstrip('"') + '"]')
+    except ValueError:
+        return value
+    return words if words and all(isinstance(word, str) and word for word in words) else value
+
+
 def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) -> Any:
     if depth > _MOST_DEPTH:
         return value
@@ -115,6 +139,7 @@ def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) 
     if isinstance(value, list):
         for option in options:
             if "items" in option:
+                value = _the_list_it_held(value, option["items"], definitions)
                 return [_repaired(item, option["items"], definitions, depth + 1) for item in value]
         return value
     return value

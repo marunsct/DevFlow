@@ -145,10 +145,31 @@ def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) 
     return value
 
 
+#: Names a model wraps a call's arguments in.
+_WRAPPERS = ("args", "arguments", "kwargs", "parameters", "input", "params")
+
+
+def _unwrapped(arguments: dict[str, Any], parameters: dict[str, Any]) -> dict[str, Any]:
+    """A call's arguments sent inside one wrapper key - `{"args": {...}}` - as the arguments.
+
+    One run's fixer sent `run_terminal_command {"args": {"category": "test",
+    "command": [...]}}` and was refused it as an unexpected argument. Only when
+    the one key is no parameter of the tool and everything inside it is.
+    """
+    properties = parameters.get("properties") if isinstance(parameters.get("properties"), dict) else {}
+    if len(arguments) != 1 or not properties:
+        return arguments
+    (key, inner), = arguments.items()
+    if key in properties or key not in _WRAPPERS or not isinstance(inner, dict) or not inner:
+        return arguments
+    return inner if set(inner) <= set(properties) else arguments
+
+
 def with_structure_decoded(arguments: Any, parameters: Any) -> Any:
     """`arguments` with each JSON string decoded where `parameters` wants an object or a list."""
     if not isinstance(arguments, dict) or not isinstance(parameters, dict):
         return arguments
+    arguments = _unwrapped(arguments, parameters)
     definitions = {**(parameters.get("definitions") or {}), **(parameters.get("$defs") or {})}
     try:
         return _repaired(arguments, parameters, definitions, 0)

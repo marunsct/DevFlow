@@ -215,3 +215,17 @@ def test_a_command_list_leaked_into_one_string_is_the_list():
     assert with_structure_decoded({"command": ['["node", "--test"]']}, command)["command"] == ["node", "--test"]
     assert with_structure_decoded({"command": ['echo "a, b"']}, command)["command"] == ['echo "a, b"']
     assert with_structure_decoded({"command": ["npm"]}, command)["command"] == ["npm"]
+
+
+def test_arguments_sent_inside_a_wrapper_are_the_arguments():
+    """One run's fixer sent `run_terminal_command {"args": {"category": "test", "command": [...]}}`."""
+    command = {"type": "object", "properties": {
+        "command": {"type": "array", "items": {"type": "string"}}, "category": {"type": "string"},
+        "working_directory": {"type": "string"}}}
+
+    sent = {"args": {"category": "test", "command": ["node", "--test"]}}
+    assert with_structure_decoded(sent, command) == {"category": "test", "command": ["node", "--test"]}
+    assert with_structure_decoded({"args": ["a.test.ts"]}, command) == {"args": ["a.test.ts"]}
+    assert with_structure_decoded({"args": {"other": 1}}, command) == {"args": {"other": 1}}
+    own = {"type": "object", "properties": {"args": {"type": "object"}}}
+    assert with_structure_decoded({"args": {"x": 1}}, own) == {"args": {"x": 1}}, "a tool's own `args` stays"

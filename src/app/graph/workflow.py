@@ -7326,6 +7326,8 @@ def build_workflow_graph(
             )
         if _hand_back(update, "milestone_plan"):
             return update
+        if not str(getattr(update["milestone_plan"], "selected_sprint_goal", "") or "").strip() and current_goal:
+            update["milestone_plan"] = update["milestone_plan"].model_copy(update={"selected_sprint_goal": current_goal})
         if nothing_else and not list(getattr(update["milestone_plan"], "delegated_tasks", None) or []):
             decisions = [
                 str(line) for line in getattr(update["milestone_plan"], "carried_forward_decisions", None) or []

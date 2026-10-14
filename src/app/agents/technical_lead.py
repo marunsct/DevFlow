@@ -285,7 +285,13 @@ class MilestonePlanOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    selected_sprint_goal: str = Field(..., description="The single sprint goal this milestone covers.")
+    # Not required: the harness knows the sprint's goal. Measured on one run:
+    # a lead's every answer left this one field out and was refused, eight
+    # times in 12 minutes, each the whole plan again.
+    selected_sprint_goal: str = Field(
+        default="",
+        description="The single sprint goal this milestone covers. Left out, it is the sprint's own goal.",
+    )
     milestone_scope: list[str] = Field(default_factory=list, description="What this milestone will actually deliver.")
     delegated_tasks: list[SpecialistTask] = Field(default_factory=list)
     integration_notes: list[str] = Field(

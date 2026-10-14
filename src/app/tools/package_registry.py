@@ -298,7 +298,7 @@ def build_package_lookup_tool() -> Any:
 
     @tool
     def look_up_package(ecosystem: str, name: str) -> dict[str, Any]:
-        """Ask a package registry for the current release of one package.
+        """Ask a package registry for the current release of one or more packages.
 
         Returns its latest stable version, the runtime version it needs, its
         peer dependencies where the registry lists them, and the version of
@@ -311,9 +311,21 @@ def build_package_lookup_tool() -> Any:
                 (a language name such as python or rust works too).
             name: the package as that registry names it - `@angular/core`,
                 `fastapi`, `github.com/gin-gonic/gin`, `io.ktor:ktor-server-core-jvm`,
-                `laravel/framework`.
+                `laravel/framework`. Several at once, separated by commas -
+                `hono, @hono/node-server, typescript` - in one call.
         """
-        return look_up(ecosystem, name)
+        from app.tools.research import found, over_its_share
+
+        names = [part.strip() for part in str(name or "").split(",") if part.strip()] or [str(name or "")]
+        refusal = over_its_share("packages", len(names))
+        if refusal:
+            return {"error": refusal}
+        answers = []
+        for one in names:
+            answer = look_up(ecosystem, one)
+            found(f"look_up_package {ecosystem} {one}", answer)
+            answers.append(answer)
+        return answers[0] if len(answers) == 1 else {"packages": answers}
 
     return look_up_package
 

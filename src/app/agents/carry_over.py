@@ -98,10 +98,13 @@ def carry_over_note(thread_id: str, repo_root: str | None) -> str:
     try:
         files = _files_already_read(thread_id, repo_root)
         commands = _commands_already_run(repo_root)
+        from app.tools.research import what_was_found
+
+        looked_up = what_was_found(thread_id)
     except Exception:  # noqa: BLE001 - never fail a restart over a hint
         logger.debug("Could not build a carry-over note", exc_info=True)
         return ""
-    if not files and not commands:
+    if not files and not commands and not looked_up:
         return ""
 
     lines = [
@@ -125,6 +128,13 @@ def carry_over_note(thread_id: str, repo_root: str | None) -> str:
                 f"  {command}  -> exit {code}" if code is not None else f"  {command}"
                 for command, code in shown
             )
+        )
+    if looked_up:
+        # The documentation and registry answers too: one specification stage
+        # looked the same packages and pages up again on each of four attempts.
+        lines.append(
+            "\nDocumentation and registry answers you already have:\n"
+            + "\n".join(f"  {label} -> {answer}" for label, answer in looked_up.items())
         )
     lines.append(
         "\nRe-reading a file listed above or re-running a command listed above "

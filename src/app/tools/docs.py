@@ -293,7 +293,14 @@ def build_docs_tool() -> Any:
                 "signals", "dependency injection testing".
             ecosystem: npm, pypi, crates or go, when the name alone is ambiguous.
         """
-        return read(name, topic, ecosystem)
+        from app.tools.research import found, over_its_share
+
+        refusal = over_its_share("documentation")
+        if refusal:
+            return {"error": refusal}
+        answer = read(name, topic, ecosystem)
+        found(f"read_docs {name}: {topic}", answer)
+        return answer
 
     return read_docs
 

@@ -258,3 +258,21 @@ def test_a_fix_reasons_as_configured_and_a_build_does_not():
     assert source.count("failed_fix_tries(cycle, defect_index), reasons=True)") == 1
     assert source.count("failed_fix_tries(cycle, index), reasons=True)") == 1
     assert "_the_build_model(state, stage_name)," in source, "a work order still builds without reasoning"
+
+
+def test_a_draft_the_compiler_reports_an_error_in_is_drafted_again_with_it(tmp_path):
+    """One run's drafts declared a variable twice; a test round found it half an hour later."""
+    model = _Model({"notes/src/store.ts": "```ts\nexport const a = 1;\nexport const a = 2;\n```"})
+    written, reported = {}, [["- In `notes/src/store.ts` line 2: Cannot redeclare block-scoped variable 'a'."], []]
+
+    def write(root, path, content):
+        written[path] = content
+        model.replies[path] = "```ts\nexport const a = 1;\n```"
+
+    drafting.draft_work_orders(
+        [_order("backend", "notes/src/store.ts")], SPEC, None, str(tmp_path), model,
+        write=write, diagnose=lambda files: reported.pop(0),
+    )
+
+    assert written["notes/src/store.ts"] == "export const a = 1;\n"
+    assert "Cannot redeclare block-scoped variable 'a'" in model.asked[1]

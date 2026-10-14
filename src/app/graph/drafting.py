@@ -112,8 +112,9 @@ def _neighbours(root: Path, path: str, task: Any, detail: str) -> str:
     return "\n\n".join(shown)
 
 
-def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any) -> str:
-    """What one file's draft is asked."""
+def draft_request(root: Path, path: str, task: Any, specification: Any, stack: Any,
+                  diagnostics: list[str] | None = None) -> str:
+    """What one file's draft is asked; `diagnostics` are what the compiler reported on its last draft."""
     from app.agents.specialists import specification_for_the_work_order
 
     detail = specification_for_the_work_order(
@@ -136,24 +137,57 @@ def draft_request(root: Path, path: str, task: Any, specification: Any, stack: A
         + (f"\nDone when:\n{criteria}" if criteria else ""),
         f"--- The files it works with ---\n{neighbours}" if neighbours else "",
         f"--- `{path}` as it is now; keep what still holds ---\n{now}" if now.strip() else "",
+        ("--- The compiler reports, in the draft above ---\n" + "\n".join(diagnostics)) if diagnostics else "",
         f"Reply with the complete content of `{path}` and nothing else, in one fenced code block. "
         "Every name, signature, message, import and library call is the one the specification "
         "gives; where it gives none, write the plainest code that meets the work order.",
     ) if part)
 
 
-def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any) -> str:
+def _draft_one(model: Any, root: Path, path: str, task: Any, specification: Any, stack: Any,
+               diagnostics: list[str] | None = None) -> str:
     from langchain_core.messages import HumanMessage, SystemMessage
 
     reply = model.invoke([
         SystemMessage(content="You write source files for a software product from its specification. "
                               "You reply with one file's complete content in one fenced code block."),
-        HumanMessage(content=draft_request(root, path, task, specification, stack)),
+        HumanMessage(content=draft_request(root, path, task, specification, stack, diagnostics)),
     ])
     return the_content_in(getattr(reply, "content", "") if not isinstance(reply, str) else reply)
 
 
 Write = Callable[[str, str, str], Any]
+
+#: Passes over drafted files the compiler still reports errors in.
+MOST_REPAIR_PASSES = 2
+
+
+def _repaired_where_the_compiler_says(
+    results: list[tuple[int, str, bool]], jobs: list[tuple[int, str, Any]], diagnose: Callable[[list[str]], list[str]],
+    model: Any, root: Path, repo_root: str, specification: Any, stack: Any, write: Write,
+) -> None:
+    """Each drafted file the compiler reports an error in, drafted again with what it reported.
+
+    One run's drafts were written in a minute and did not compile - a
+    variable declared twice, a type that did not exist - and the test round
+    found it half an hour later, through a model. The compiler says it at once.
+    """
+    written = [path for _, path, ok in results if ok]
+    tasks = {path: task for _, path, task in jobs}
+    for _pass in range(MOST_REPAIR_PASSES):
+        reported = diagnose(written) if written else []
+        if not reported:
+            return
+        failing = [path for path in written if any(f"`{path}`" in line for line in reported)]
+        logger.info("Drafts the compiler reports errors in, drafted again: %s", ", ".join(failing))
+        for path in failing:
+            mine = [line for line in reported if f"`{path}`" in line]
+            try:
+                content = _draft_one(model, root, path, tasks[path], specification, stack, mine)
+                if content.strip():
+                    write(repo_root, path, content)
+            except Exception as error:  # noqa: BLE001 - the next stage meets what is there
+                logger.info("Repair of draft %s failed: %s", path, str(error)[:200])
 
 
 def draft_work_orders(
@@ -165,6 +199,7 @@ def draft_work_orders(
     *,
     write: Write | None = None,
     workers: int = 1,
+    diagnose: Callable[[list[str]], list[str]] | None = None,
 ) -> dict[int, Any]:
     """Each work order whose files were all drafted, by its index, with the output an agent would return.
 
@@ -207,6 +242,8 @@ def draft_work_orders(
 
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         results = list(pool.map(run, jobs))
+    if diagnose is not None:
+        _repaired_where_the_compiler_says(results, jobs, diagnose, model, root, repo_root, specification, stack, write)
     drafted: dict[int, Any] = {}
     for index, task in enumerate(tasks):
         mine = [(path, ok) for i, path, ok in results if i == index]

@@ -593,7 +593,7 @@ def _max_output_size() -> int:
 
 MAX_OUTPUT_SIZE = _max_output_size()
 
-TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120}
+TIMEOUTS = {"install": 300, "build": 180, "test": 300, "default": 120, "probe": 60}
 
 #: How much longer than the JavaScript baseline each toolchain needs.
 #:

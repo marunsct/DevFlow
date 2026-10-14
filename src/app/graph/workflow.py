@@ -2454,6 +2454,52 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     )
 
 
+def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: Any, test_round: int) -> Any:
+    """Fast delivery: a locked suite that gave no answer, run one file at a time by the harness; or None.
+
+    See `app.acceptance.per_file`. None when this is not fast delivery, the
+    suite did answer, or nothing could be run file by file - the testing
+    specialist's round, as before.
+    """
+    from app import delivery
+    from app.graph import acceptance_nodes
+
+    root = state["repository"].root_path
+    if (
+        not delivery.fast()
+        or state.get("pending_inner_thread_id")
+        or saved_run.get("ran")
+        or not acceptance_nodes.suite.is_locked(root)
+    ):
+        return None
+    try:
+        from app.acceptance.per_file import defects_from, each_file
+        from app.agents.specialists import SpecialistOutput
+        from app.stacks import contract
+        from app.stacks.scaffold import sandbox_runner
+        from app.tools.sandbox import timeout_for
+
+        runs = each_file(root, contract.read(root) or {}, sandbox_runner(root))
+        if not runs:
+            return None
+        owner = _the_unit_tests_fail(milestone, "").owner
+        defects = defects_from(runs, owner, timeout_for("probe", root))
+        unit_ok, unit_output = _run_unit_tests_procedurally(root)
+        if unit_ok is False:
+            defects.append(_the_unit_tests_fail(milestone, unit_output))
+    except Exception:  # noqa: BLE001 - the testing specialist's round, as before
+        logger.warning("Could not run the acceptance suite file by file", exc_info=True)
+        return None
+    logger.info(
+        "test_round_%d: the suite gave no answer; the harness ran its %d file(s) one at a time: %s",
+        test_round, len(runs), ", ".join(f"{r['file']} {r['outcome']}" for r in runs),
+    )
+    return SpecialistOutput(
+        changed_files=[], defects=defects,
+        decisions=["The suite gave no answer as a whole; the harness ran each acceptance file alone (fast delivery)."],
+    )
+
+
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
     """Run the contract's unit test command: (whether it passed, its output).
 
@@ -7469,6 +7515,10 @@ def build_workflow_graph(
         drafted = draft_work_orders(
             tasks, specification, getattr(state.get("stack_selection"), "technology_stack", None),
             state["repository"].root_path, _the_build_model(state, "drafting"), workers=max_parallel(),
+            # The compiler's word on each draft, at once. See `drafting._repaired_where_the_compiler_says`.
+            diagnose=lambda files: _diagnostics_in_files_touched(
+                state, {"messages": []}, __import__("types").SimpleNamespace(changed_files=files), "drafting",
+            ),
         )
         outputs = {
             f"specialist_{tasks[index].specialist_role}_{index}": output for index, output in drafted.items()
@@ -7832,6 +7882,8 @@ def build_workflow_graph(
                     decisions=["The harness ran this round itself (fast delivery)."],
                 )
             }
+        elif (diagnosed := _diagnosed_file_by_file(state, saved_run, milestone, test_round)) is not None:
+            update = {"__test_result__": diagnosed}
         elif skip_agent and not still_proven:
             logger.info(
                 "test_round_%d: all acceptance criteria due and unit tests passed procedurally with 0 defects; skipping specialist LLM invocation",
@@ -8291,6 +8343,31 @@ def build_workflow_graph(
         update["specialist_outputs"] = outputs
         return update, blames
 
+    def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any) -> Any:
+        """A fast-delivery fix by rewriting the defect's files, or None for the agent loop."""
+        if not _fast_delivery() or not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
+            return None
+        from types import SimpleNamespace
+
+        from app.graph.rewritten_fixes import fix_by_rewriting
+        from app.tools.repository import _the_harness_s_own_or_the_locked_suite
+
+        root = Path(state["repository"].root_path)
+        try:
+            return fix_by_rewriting(
+                defect, root, fix_model,
+                specification=state.get("technical_specification"),
+                stack=getattr(state.get("stack_selection"), "technology_stack", None),
+                last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),
+                may_write=lambda path: _the_harness_s_own_or_the_locked_suite(root, root / path) is None,
+                diagnose=lambda files: _diagnostics_in_files_touched(
+                    state, {"messages": []}, SimpleNamespace(changed_files=files),
+                ),
+            )
+        except Exception:  # noqa: BLE001 - the agent loop takes the defect
+            logger.warning("Fixing by rewriting failed; the agent loop takes the defect", exc_info=True)
+            return None
+
     def _fix_one(state: Any, config: RunnableConfig, defect_index: int) -> dict[str, Any]:
         """Route one open defect to its owner, measure the fix, and record what it settled."""
         cycle = state["remediation"]
@@ -8303,11 +8380,7 @@ def build_workflow_graph(
         if closed is not None:
             return closed
 
-        agent = create_specialist_agent(
-            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, defect_index), reasons=True),
-            checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
-        )
-        request, co_defects = _the_fix_request(state, config, cycle, defect_index)
+        fix_model = _the_build_model(state, stage_name, failed_fix_tries(cycle, defect_index), reasons=True)
         # A fix that breaks what passed before it is reverted to exactly where
         # it started. The commit it starts from is taken on the stage's first
         # entry and carried across an approval pause. See `app.graph.engineering`.
@@ -8318,20 +8391,34 @@ def build_workflow_graph(
             if state.get("pending_inner_thread_id")
             else engineering.before_a_fix(state["repository"].root_path, stage_name)
         )
-        update = _run_gated_agent(
-            state,
-            config,
-            stage_name=stage_name,
-            agent=agent,
-            initial_request=request,
-            output_key="__fix_result__",
-            next_stage="defect_remediation",
-        )
-        if "__fix_result__" not in update:
-            update["fix_base_commit"] = fix_base
-            return update  # paused waiting for approval on this fix
+        # Fast delivery: the harness gathers what failed and the files it points
+        # at, and the model rewrites each file in one call. See
+        # `app.graph.rewritten_fixes`; a defect it cannot place goes to the agent loop.
+        rewritten = None if state.get("pending_inner_thread_id") else _fixed_by_rewriting(state, config, defect, fix_model)
+        if rewritten is not None:
+            update: dict[str, Any] = {}
+            co_defects: list[tuple[int, Any]] = []
+            fix_result: SpecialistOutput = rewritten
+        else:
+            agent = create_specialist_agent(
+                defect.owner, model=fix_model,
+                checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
+            )
+            request, co_defects = _the_fix_request(state, config, cycle, defect_index)
+            update = _run_gated_agent(
+                state,
+                config,
+                stage_name=stage_name,
+                agent=agent,
+                initial_request=request,
+                output_key="__fix_result__",
+                next_stage="defect_remediation",
+            )
+            if "__fix_result__" not in update:
+                update["fix_base_commit"] = fix_base
+                return update  # paused waiting for approval on this fix
 
-        fix_result: SpecialistOutput = update.pop("__fix_result__")
+            fix_result = update.pop("__fix_result__")
         broke = engineering.after_a_fix(
             state["repository"].root_path, fix_base, stage_name, defect.description
         )

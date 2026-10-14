@@ -52,6 +52,21 @@ def test_the_files_are_the_named_ones_and_the_ones_the_failure_points_at(tmp_pat
     assert files == ["notes-api/src/store.ts", "notes-api/src/validate.ts"]
 
 
+def test_a_file_the_failure_names_without_a_line_is_rewritten_first(tmp_path):
+    """Every failing test said what the README lacked; the stack pointed at the entry point."""
+    root = _workspace(tmp_path)
+    (root / "notes-api" / "README.md").write_text("# Notes\n")
+    failure = (
+        "- readme › AC-15 (tests/readme.test.ts): AC-15: README.md must give PORT a default value\n"
+        "    at start (src/store.ts:12:5)\n"
+    )
+    defect = SimpleNamespace(**{**DEFECT.__dict__, "affected_files": []})
+
+    files = rewritten_fixes.files_to_fix(defect, failure, root, lambda path: "test" not in path)
+
+    assert files == ["notes-api/README.md", "notes-api/src/store.ts"]
+
+
 def test_each_file_is_rewritten_in_one_call_and_the_compiler_is_given_back(tmp_path):
     root = _workspace(tmp_path)
     model = _Model(["```ts\nexport const store = 2;\n```", "```ts\nexport const MAX_SAFE_ID = 1;\n```",

@@ -36,6 +36,11 @@ MEMORY_CHARACTERS = 60_000
 MOST_FAILURE_CHARACTERS = 6_000
 
 _AN_ERROR_LOCATION = re.compile(r"([\w./@-]+\.[A-Za-z0-9]{1,8})(?:\((\d+),\d+\)|:(\d+)(?::\d+)?)")
+#: A file named in a failure's text without a line: "README.md must give PORT a
+#: default". Measured on one run: every failing test said what the README
+#: lacked, the stack traces pointed at the entry point, and the rewrite fixed
+#: the entry point - the same failure twice.
+_A_FILE_NAMED = re.compile(r"(?<![\w/.@-])((?:[\w@-]+/)*[\w@-]+\.[A-Za-z][A-Za-z0-9]{0,7})(?![\w/-])")
 
 
 def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) -> str:
@@ -71,7 +76,12 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
 
     root = Path(repo_root)
     named = [str(f).strip().lstrip("./") for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
-    named += [match.group(1).lstrip("./") for match in _AN_ERROR_LOCATION.finditer(failure)]
+    # In the order the failure names them, with a line or without.
+    mentioned = sorted(
+        [(m.start(), m.group(1)) for m in _AN_ERROR_LOCATION.finditer(failure)]
+        + [(m.start(), m.group(1)) for m in _A_FILE_NAMED.finditer(failure)],
+    )
+    named += [name.lstrip("./") for _, name in mentioned]
     found: list[str] = []
     for name in dict.fromkeys(named):
         candidates = [root / name, *root.glob(f"*/{name}")]

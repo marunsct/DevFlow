@@ -19,7 +19,6 @@ interface ProviderForm {
   thinking_mode: 'default' | 'on' | 'off';
   thinking_effort: 'low' | 'medium' | 'high';
   execution_mode: 'linear' | 'parallel';
-  delivery_mode: 'fast' | 'thorough';
   openai_api_key?: string;
   anthropic_api_key?: string;
   google_api_key?: string;
@@ -171,7 +170,6 @@ export const Settings: React.FC = () => {
         thinking_mode: settings.thinking_mode ?? 'default',
         thinking_effort: settings.thinking_effort ?? 'medium',
         execution_mode: settings.execution_mode ?? 'linear',
-        delivery_mode: settings.delivery_mode ?? 'thorough',
         judgement_provider: settings.judgement_provider ?? '',
         judgement_base_url: settings.judgement_base_url ?? '',
         judgement_model_name: settings.judgement_model_name ?? '',
@@ -469,35 +467,6 @@ export const Settings: React.FC = () => {
                 )}
               </div>
 
-              {/* Delivery Mode */}
-              <div className="mt-4 rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
-                <label className="block text-sm font-medium text-text-secondary mb-1">Delivery Mode</label>
-                <div className="flex items-center gap-3">
-                  {(['fast', 'thorough'] as const).map((choice) => (
-                    <button
-                      key={choice}
-                      type="button"
-                      onClick={() => setSettings({ ...settings, delivery_mode: choice })}
-                      className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
-                        (settings.delivery_mode ?? 'thorough') === choice
-                          ? 'border-primary bg-primary/15 text-primary'
-                          : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
-                      }`}
-                    >
-                      {choice === 'fast' ? '🚀 Fast' : '🔍 Thorough'}
-                      <span className="block text-[11px] font-normal mt-0.5 opacity-70">
-                        {choice === 'fast'
-                          ? 'Files drafted from the specification; one sprint for small products'
-                          : 'Every sprint planned, built, test-rounded and reviewed in full'}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-text-muted leading-relaxed">
-                  Fast keeps the same stages and records but has each do less: harness-run test
-                  rounds, tests limited to the specification&apos;s plan, building without reasoning.
-                </p>
-              </div>
 
               {/* Execution Mode */}
               <div className="mt-4 rounded-lg border border-border/50 bg-surface/30 px-3 py-3">

@@ -319,6 +319,7 @@ def create_runs_router(
                     "openai_base_url": body.openai_base_url,
                     "model_name": body.model_name,
                 },
+                delivery_mode=body.delivery_mode,
             )
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
@@ -1689,6 +1690,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         remediation=remediation,
         error=record.error,
         auto_approve=bool(record.auto_approve),
+        delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         cost=_cost_summary(record.run_id),
     )
 

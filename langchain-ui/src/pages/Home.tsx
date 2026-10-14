@@ -14,6 +14,8 @@ export const Home: React.FC = () => {
   // Approval mode asks at decisions, not at every file: the review gates below
   // are where a person decides, so per-action prompts start switched off.
   const [autoApprove, setAutoApprove] = useState<boolean>(true);
+  // How this run delivers. Chosen per run: it is not a setting of the models.
+  const [deliveryMode, setDeliveryMode] = useState<'fast' | 'thorough'>('fast');
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
   const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
@@ -72,6 +74,7 @@ export const Home: React.FC = () => {
         workspace_label: workspaceLabel || undefined,
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,
+        delivery_mode: deliveryMode,
         review_policy: unattended
           ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false, escalation: false }
           : {
@@ -262,6 +265,37 @@ export const Home: React.FC = () => {
                   label="Grant subdirectory access"
                   description="Let agents work in subdirectories of this run's workspace, not just its root."
                 />
+              </div>
+
+              <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-3">
+                <h3 className="text-sm font-semibold text-text-primary">Delivery</h3>
+                <div className="flex flex-col sm:flex-row gap-3" role="radiogroup" aria-label="Delivery">
+                  {(['fast', 'thorough'] as const).map((choice) => (
+                    <button
+                      key={choice}
+                      id={`delivery-${choice}`}
+                      type="button"
+                      role="radio"
+                      aria-checked={deliveryMode === choice}
+                      onClick={() => setDeliveryMode(choice)}
+                      className={`flex-1 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-all ${
+                        deliveryMode === choice
+                          ? 'border-primary bg-primary/15 text-primary'
+                          : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
+                      }`}
+                    >
+                      {choice === 'fast' ? 'Fast' : 'Thorough'}
+                      <span className="block text-[11px] font-normal mt-0.5 opacity-70">
+                        {choice === 'fast'
+                          ? 'One sprint for a small product, files written from the specification, harness-run checks'
+                          : 'Every sprint planned, built, tested and reviewed in full'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  Both keep the project in memory for every stage and check each edit as it is written.
+                </p>
               </div>
 
               {/* Only meaningful when the run is supervised */}

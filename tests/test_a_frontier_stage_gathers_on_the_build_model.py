@@ -78,7 +78,9 @@ def test_only_agents_on_a_registered_judgement_model_gather():
 def test_fast_delivery_keeps_the_specification_and_reviews_on_the_frontier_and_moves_the_rest():
     source = inspect.getsource(workflow)
     assert "planning_model = judgement_model if plans_on_the_judgement_model() and not _fast_delivery() else model" in source
-    assert "gather_with(judgement_model, building_model)" in source
+    assert "gather_with(judgement_model, building_model if building_model is not model" in source
+    gathering_setup = source[source.index("# In every delivery mode, a stage on the judgement model gathers"):]
+    assert gathering_setup.index("gather_with(") < gathering_setup.index("def _the_build_model(")
     consult = source[source.index("def specialist_consultation_node"):source.index("def principal_architect_node")]
     assert "model=model if _fast_delivery() else judgement_model" in consult
     assert "create_principal_architect_agent(model=judgement_model" in source

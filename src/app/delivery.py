@@ -19,23 +19,51 @@ Fast delivery keeps every stage and record and changes how much each does:
   decided what they write. A fix reasons as configured - it has to find out
   why something fails first.
 
-Thorough is the pipeline as it was. The code's default is thorough; a
-deployment chooses fast with `DELIVERY_MODE=fast`, and the settings page
-changes it.
+Thorough is the pipeline as it was. Each run is started in one or the other
+(`for_the_run`, kept on the run's record); a run started without a choice
+takes the deployment's `DELIVERY_MODE`, and the code's default is thorough.
+
+What makes a run faster without taking anything out - the project memory,
+errors refused at the write, a silent suite run file by file, gathering on
+the build model, candidate fixes - is on in both.
 """
 
 from __future__ import annotations
 
+import contextvars
 import os
-from typing import Mapping
+from contextlib import contextmanager
+from typing import Iterator, Mapping
 
 FAST = "fast"
 THOROUGH = "thorough"
 MODES = (FAST, THOROUGH)
 
 
+#: The mode the run being executed was started with; see `for_the_run`.
+_THIS_RUN: contextvars.ContextVar[str | None] = contextvars.ContextVar("delivery_mode_of_the_run", default=None)
+
+
+@contextmanager
+def for_the_run(chosen: str | None) -> Iterator[None]:
+    """Everything inside runs in the mode its run was started with.
+
+    A run's mode is its own, chosen when it starts and kept on its record: it
+    used to be a deployment setting beside the models, so changing it for
+    one run changed it for every run, including ones already going.
+    """
+    value = str(chosen or "").strip().lower()
+    token = _THIS_RUN.set(value if value in MODES else None)
+    try:
+        yield
+    finally:
+        _THIS_RUN.reset(token)
+
+
 def mode(environment: Mapping[str, str] | None = None) -> str:
-    """The delivery mode in force: `fast` or `thorough`."""
+    """The delivery mode in force: the running run's own, else `fast` or `thorough` as deployed."""
+    if environment is None and _THIS_RUN.get():
+        return str(_THIS_RUN.get())
     if environment is None:
         try:
             from app.server.runtime_settings import effective_environment

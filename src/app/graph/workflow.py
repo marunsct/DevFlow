@@ -2455,19 +2455,18 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
 
 
 def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: Any, test_round: int) -> Any:
-    """Fast delivery: a locked suite that gave no answer, run one file at a time by the harness; or None.
+    """A locked suite that gave no answer, run one file at a time by the harness; or None.
 
-    See `app.acceptance.per_file`. None when this is not fast delivery, the
-    suite did answer, or nothing could be run file by file - the testing
-    specialist's round, as before.
+    In every delivery mode: it finds what a test round would, without a model
+    looking for it. See `app.acceptance.per_file`. None when the suite did
+    answer, or nothing could be run file by file - the testing specialist's
+    round, as before.
     """
-    from app import delivery
     from app.graph import acceptance_nodes
 
     root = state["repository"].root_path
     if (
-        not delivery.fast()
-        or state.get("pending_inner_thread_id")
+        state.get("pending_inner_thread_id")
         or saved_run.get("ran")
         or not acceptance_nodes.suite.is_locked(root)
     ):
@@ -6371,10 +6370,19 @@ def build_workflow_graph(
         except Exception:  # noqa: BLE001 - the build model reasons as configured
             logger.warning("Could not switch reasoning off for building; it runs as configured", exc_info=True)
             building_model = model
-        # And a stage on the judgement model gathers on it. See `app.agents.gathering`.
-        from app.agents.gathering import gather_with
+    # In every delivery mode, a stage on the judgement model gathers on the
+    # build model with reasoning off and writes on the judgement model: what
+    # it writes is the judgement model's as before. See `app.agents.gathering`.
+    if isinstance(judgement_model, BaseChatModel) and judgement_model is not model:
+        try:
+            from app.agents.gathering import gather_with
+            from app.agents.thinking import without_reasoning
+            from app.models import build_default_chat_model as _gathering_default
 
-        gather_with(judgement_model, building_model)
+            gather_with(judgement_model, building_model if building_model is not model
+                        else without_reasoning(model if model is not None else _gathering_default()))
+        except Exception:  # noqa: BLE001 - the judgement model gathers for itself
+            logger.warning("Could not set up gathering on the build model", exc_info=True)
 
     def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0, *, reasons: bool = False) -> Any:
         """The model a stage that builds or fixes runs on: the default one, until it has failed.
@@ -8422,7 +8430,7 @@ def build_workflow_graph(
         candidates are asked of the judgement model at once and the first the
         defect's tests pass is kept (`rewritten_fixes.fix_by_candidates`).
         """
-        if not _fast_delivery() or not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
+        if not _the_run_approves_its_own_writes(config["configurable"].get(APP_RUN_ID_KEY)):
             return None
         from types import SimpleNamespace
 
@@ -8443,6 +8451,11 @@ def build_workflow_graph(
                     return kept
             except Exception:  # noqa: BLE001 - one rewrite, or the agent loop, takes the defect
                 logger.warning("Candidate fixes failed to run", exc_info=True)
+        # Candidates are in every delivery mode: they are kept only when the
+        # defect's tests pass. A single rewrite in place of the agent loop is
+        # fast delivery's.
+        if not _fast_delivery():
+            return None
         try:
             return fix_by_rewriting(
                 defect, root, fix_model,

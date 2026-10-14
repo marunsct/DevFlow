@@ -3907,7 +3907,7 @@ _ABOUT_ANOTHER_FILE = re.compile(r"has no exported member|Cannot find module|is 
 
 
 def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, previous: str, *, editing: bool = False) -> None:
-    """Fast delivery: refuse a product file write that adds errors the language service is sure of.
+    """Refuse a product file write that adds errors the language service is sure of, in every delivery mode.
 
     SWE-agent's lesson, measured there at about ten points: an edit that
     breaks the file is refused as it is made, not found later. One run's
@@ -3916,10 +3916,6 @@ def _refuse_if_it_adds_errors(target: Path, relative_path: str, content: str, pr
     to this write, and only ones about this file - an import of an export
     another file has not written yet is not one.
     """
-    from app import delivery
-
-    if not delivery.fast():
-        return
     try:
         from app.analysis.file_kinds import classify_file
         from app.analysis.language_service import ALL_SUFFIXES, underlined_any

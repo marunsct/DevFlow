@@ -175,15 +175,8 @@ def budget_for(model: Any) -> int:
 
 
 def enabled() -> bool:
-    """On in fast delivery unless `PROJECT_MEMORY` says otherwise."""
-    setting = str(os.environ.get("PROJECT_MEMORY") or "").strip().lower()
-    if setting in ("0", "off", "false", "no"):
-        return False
-    if setting in ("1", "on", "true", "yes"):
-        return True
-    from app import delivery
-
-    return delivery.fast()
+    """On in every delivery mode unless `PROJECT_MEMORY` is off: it saves calls and takes nothing out."""
+    return str(os.environ.get("PROJECT_MEMORY") or "").strip().lower() not in ("0", "off", "false", "no")
 
 
 def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:

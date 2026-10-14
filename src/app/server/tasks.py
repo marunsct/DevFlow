@@ -464,7 +464,11 @@ def execute_workflow_run(
         # asyncio.run gives each task its own loop and closes it afterwards.
         # get_event_loop() was deprecated in this position and raises outright
         # under the threads and gevent worker pools.
-        asyncio.run(runner._run_loop(record, document, repository, resume=resume))
+        # In the run's own delivery mode, whatever the deployment's is now.
+        from app import delivery
+
+        with delivery.for_the_run(getattr(record, "delivery_mode", "")):
+            asyncio.run(runner._run_loop(record, document, repository, resume=resume))
     except _RETRYABLE as exc:
         if self.request.retries < self.max_retries:
             countdown = 5 * (2**self.request.retries)

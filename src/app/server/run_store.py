@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS runs (
     tenant_id       TEXT NOT NULL DEFAULT 'default',
     task_id         TEXT,
     cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
-    model_overrides TEXT NOT NULL DEFAULT '{}'
+    model_overrides TEXT NOT NULL DEFAULT '{}',
+    delivery_mode   TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -72,6 +73,8 @@ _MIGRATIONS = (
     # worker stops the same way for both, at a stage boundary; only the status
     # it records differs, and a paused run is resumed, not ended.
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS stop_reason TEXT",
+    # The run's own delivery mode, chosen when it starts (`app.delivery`).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS delivery_mode TEXT NOT NULL DEFAULT ''",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -87,8 +90,8 @@ _MIGRATIONS = (
 # here is built from a value that reaches the process at runtime; every such
 # value is passed as a bound parameter.
 _INSERT_SQL = """
-    INSERT INTO runs (run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    INSERT INTO runs (run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (run_id) DO UPDATE SET
         thread_id        = EXCLUDED.thread_id,
         status           = EXCLUDED.status,
@@ -105,13 +108,14 @@ _INSERT_SQL = """
         owner            = EXCLUDED.owner,
         tenant_id        = EXCLUDED.tenant_id,
         task_id          = COALESCE(runs.task_id, EXCLUDED.task_id),
-        model_overrides  = EXCLUDED.model_overrides
+        model_overrides  = EXCLUDED.model_overrides,
+        delivery_mode    = EXCLUDED.delivery_mode
 """
 
-_SELECT_ONE_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides FROM runs WHERE run_id = %s"
-_LIST_ALL_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides FROM runs ORDER BY created_at DESC LIMIT %s OFFSET %s"
+_SELECT_ONE_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode FROM runs WHERE run_id = %s"
+_LIST_ALL_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode FROM runs ORDER BY created_at DESC LIMIT %s OFFSET %s"
 _LIST_TENANT_SQL = (
-    "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides FROM runs WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
+    "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode FROM runs WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
 )
 _COUNT_ALL_SQL = "SELECT COUNT(*) FROM runs"
 _COUNT_TENANT_SQL = "SELECT COUNT(*) FROM runs WHERE tenant_id = %s"
@@ -237,6 +241,7 @@ class RunStore:
                         record.task_id,
                         bool(record.cancel_requested),
                         json.dumps(record.model_overrides or {}),
+                        str(record.delivery_mode or ""),
                     ),
                 )
             conn.commit()
@@ -448,6 +453,7 @@ class RunStore:
             task_id=row.get("task_id"),
             cancel_requested=bool(row.get("cancel_requested")),
             model_overrides=_json(row.get("model_overrides"), {}),
+            delivery_mode=str(row.get("delivery_mode") or ""),
         )
 
     def close(self) -> None:

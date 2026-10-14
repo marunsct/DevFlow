@@ -108,6 +108,13 @@ class StartRunRequest(BaseModel):
         default=None,
         description="Seed the workspace from an existing codebase. Omit for a greenfield run.",
     )
+    delivery_mode: Literal["fast", "thorough"] | None = Field(
+        default=None,
+        description=(
+            "Fast: fewer, leaner stages. Thorough: every stage in full. Omit to keep what the "
+            "run was registered with, else the deployment's default."
+        ),
+    )
     auto_approve: bool | None = Field(
         default=None,
         description=(
@@ -253,6 +260,9 @@ class RunStatusResponse(BaseModel):
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
     error: str | None = Field(default=None, description="Error message if the run failed.")
+    delivery_mode: str = Field(
+        default="", description="`fast` or `thorough`: how this run delivers, chosen when it started.",
+    )
     auto_approve: bool = Field(
         default=False,
         description=(

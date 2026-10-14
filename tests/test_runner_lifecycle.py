@@ -1105,3 +1105,34 @@ def test_the_repeat_guard_still_distinguishes_writes_from_commands():
 
     assert _repeat_is_a_loop(_Approval("write"))
     assert not _repeat_is_a_loop(_Approval("command"))
+
+
+async def test_a_run_keeps_the_delivery_mode_it_was_started_with(runner, dispatched, tmp_path, monkeypatch):
+    """Chosen per run, not a setting beside the models: a later change of the
+    deployment's default does not move a run already going."""
+    from app import delivery
+    from app.state import RepositoryContext
+
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository, delivery_mode="thorough")
+
+    record = runner.run_store.load("run-1")
+    assert record.delivery_mode == "thorough"
+    with delivery.for_the_run(record.delivery_mode):
+        assert delivery.mode() == "thorough" and not delivery.fast()
+    assert delivery.mode() == "fast", "outside the run, the deployment's default"
+
+
+async def test_a_run_started_without_a_choice_takes_the_deployment_s(runner, dispatched, tmp_path, monkeypatch):
+    from app.state import RepositoryContext
+
+    monkeypatch.setenv("DELIVERY_MODE", "fast")
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository)
+
+    assert runner.run_store.load("run-1").delivery_mode == "fast"

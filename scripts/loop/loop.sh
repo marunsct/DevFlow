@@ -94,7 +94,7 @@ start)
   run=$(curl -s -X POST "$API/api/runs" -H "Authorization: Bearer $token" -F "files=@$brief" |
         "$PY" -c "import sys,json; d=json.load(sys.stdin); print(d.get('run_id') or d.get('id'))")
   curl -s -X POST "$API/api/runs/$run/start" -H "Authorization: Bearer $token" \
-       -H "Content-Type: application/json" -d '{"auto_approve": true}'
+       -H "Content-Type: application/json" -d "{\"auto_approve\": true${DELIVERY:+, \"delivery_mode\": \"$DELIVERY\"}}"
   echo
   echo "$run" > "$STATE/current_run.txt"
   echo "$brief" > "$STATE/current_brief.txt"

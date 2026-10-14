@@ -298,6 +298,7 @@ export interface StartRunRequest {
   workspace_label?: string;
   allow_subdirectories?: boolean;
   auto_approve?: boolean;
+  delivery_mode?: 'fast' | 'thorough';
   llm_provider?: string;
   openai_base_url?: string;
   model_name?: string;

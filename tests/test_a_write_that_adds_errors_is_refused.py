@@ -1,4 +1,4 @@
-"""Fast delivery refuses a product file write that adds errors the language service is sure of.
+"""Every delivery mode refuses a product file write that adds errors the language service is sure of.
 
 One run's drafts declared a variable twice and named a type that did not
 exist; a test round found it half an hour later, through a model.
@@ -56,9 +56,10 @@ def test_an_error_that_was_there_already_or_is_about_another_file_is_not(project
     _refuse_if_it_adds_errors(target, "notes-api/src/app.ts", "after", "before")
 
 
-def test_a_test_file_or_a_thorough_run_is_left_alone(project, monkeypatch):
+def test_a_test_file_is_left_alone_and_a_thorough_run_is_checked_too(project, monkeypatch):
     monkeypatch.setattr(language_service, "underlined_any", _service({"after": [{"line": 1, "message": "bad"}]}))
 
     _refuse_if_it_adds_errors(project / "notes-api" / "tests" / "a.test.ts", "notes-api/tests/a.test.ts", "after", "")
     monkeypatch.setattr(delivery, "fast", lambda environment=None: False)
-    _refuse_if_it_adds_errors(project / "notes-api" / "src" / "a.ts", "notes-api/src/a.ts", "after", "")
+    with pytest.raises(RepositoryToolError):
+        _refuse_if_it_adds_errors(project / "notes-api" / "src" / "a.ts", "notes-api/src/a.ts", "after", "")

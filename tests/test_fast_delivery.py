@@ -292,3 +292,11 @@ def test_a_draft_refused_for_its_errors_is_drafted_once_more_with_them(tmp_path)
 
     assert list(drafted) == [0] and len(attempts) == 2
     assert "Cannot redeclare block-scoped variable 'a'" in model.asked[1]
+
+
+def test_the_worker_runs_a_run_in_its_own_delivery_mode():
+    from pathlib import Path
+
+    source = Path("src/app/server/tasks.py").read_text()
+    assert 'with delivery.for_the_run(getattr(record, "delivery_mode", "")):' in source
+    assert "delivery_mode" in Path("src/app/server/run_store.py").read_text()

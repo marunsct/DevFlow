@@ -92,3 +92,13 @@ def test_each_call_gets_it_and_a_read_of_what_it_holds_is_a_pointer(workspace):
 def test_every_role_agent_has_it():
     source = inspect.getsource(role_agent.create_role_agent)
     assert "build_project_memory_middleware(resolved_repo_root)" in source
+
+
+def test_it_is_on_in_every_delivery_mode_unless_switched_off(monkeypatch):
+    from app import delivery
+
+    monkeypatch.delenv("PROJECT_MEMORY", raising=False)
+    monkeypatch.setattr(delivery, "fast", lambda environment=None: False)
+    assert project_memory.enabled()
+    monkeypatch.setenv("PROJECT_MEMORY", "off")
+    assert not project_memory.enabled()

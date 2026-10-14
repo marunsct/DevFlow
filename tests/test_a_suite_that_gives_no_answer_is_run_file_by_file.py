@@ -60,4 +60,5 @@ def test_the_test_round_tries_it_before_the_testing_specialist():
     assert round_.index("_diagnosed_file_by_file(state, saved_run, milestone, test_round)") < round_.index(
         'create_specialist_agent(\n                "testing", model=judgement_model')
     helper = inspect.getsource(workflow._diagnosed_file_by_file)
-    assert "delivery.fast()" in helper and 'saved_run.get("ran")' in helper
+    assert 'saved_run.get("ran")' in helper
+    assert "delivery.fast()" not in helper, "in every delivery mode"

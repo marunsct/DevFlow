@@ -218,6 +218,17 @@ candidate fixes, type errors refused at the write, specification in parallel
 parts): https://claude.ai/artifact/SBZagb9VAP9P5Q4bHMsVgJ. Built the same night: the project memory
 (`app.agents.project_memory`, `PROJECT_MEMORY` on/off, default on in fast),
 candidate fixes, errors refused at the write, the specification in parts.
+Owner 2026-10-15: the delivery mode is each run's own - chosen on the start
+form (`StartRunRequest.delivery_mode`), kept in `runs.delivery_mode`, applied by
+the worker with `delivery.for_the_run`; a run started without one takes
+`DELIVERY_MODE` (`loop.sh start` passes `DELIVERY=fast|thorough` if set). The
+settings page no longer has it. On in BOTH modes: project memory, errors
+refused at the write, a silent suite run file by file, gathering on the build
+model, candidate fixes. Fast only: one sprint, drafting, harness work orders
+and test rounds, rewrite fixes, no code review, one revision/send-back,
+planning on the build model, the specification in parts. The harness-run test
+round stays fast-only: it measures existing tests, while the model round also
+writes tests for what the sprint built.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

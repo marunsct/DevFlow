@@ -34,6 +34,25 @@ MOST_LIBRARIES = 12
 _NOT_A_LIBRARY = re.compile(
     r"^(?:none|n/?a|-|vanilla.*|plain.*|native.*|built-?in.*|html.*|css.*|localstorage|no .*)$", re.I
 )
+#: Runtimes, languages and package managers: named in a stack, never a package to look up.
+_RUNTIMES = {
+    "node", "node.js", "nodejs", "deno", "bun", "python", "python3", "cpython", "typescript", "javascript",
+    "ecmascript", "npm", "pnpm", "yarn", "pip", "poetry", "uv", "go", "golang", "rust", "cargo", "java",
+    "jvm", "kotlin", "ruby", "php", "dotnet", ".net", "c#", "swift", "sql",
+}
+#: What a package's name can look like in any registry: `hono`, `@hono/node-server`, `better-sqlite3`.
+_A_PACKAGE_NAME = re.compile(r"^(?:@[a-z0-9][\w.-]*/)?[a-z0-9][\w.-]*$", re.I)
+#: A file (`package.json`), a built-in module (`node:test`), or an option (`--watch`).
+_NOT_A_PACKAGE = re.compile(r"\.(?:json|md|ts|js|mjs|cjs|py|toml|ya?ml|txt|lock)$|:|^-|^v?\d", re.I)
+#: A segment between commas of more words than this is a sentence about the stack, not a name.
+MOST_WORDS_IN_A_NAME = 4
+#: Words of a build or a sentence that are also package names in a registry.
+_GENERIC_WORDS = {
+    "build", "run", "test", "tests", "start", "dev", "serve", "watch", "lint", "format", "scripts", "script",
+    "already", "only", "both", "layers", "app", "server", "client", "api", "cli", "compiler", "runner",
+    "adapter", "module", "modules", "library", "framework", "tooling", "tools", "config", "entrypoint",
+}
+_SCOPED_NAME = re.compile(r"@[a-z0-9][\w.-]*/[\w.-]*[\w-]", re.I)
 
 
 def libraries_of(stack: Any) -> list[str]:
@@ -50,14 +69,24 @@ def libraries_of(stack: Any) -> list[str]:
         # "Hono (on @hono/node-server)": the name, and the one in brackets.
         pieces.append(re.sub(r"\(.*?\)", " ", entry))
         pieces.extend(re.findall(r"\((.*?)\)", entry))
+        # Names written as code or scoped, wherever they stand in a sentence.
+        pieces.extend(re.findall(r"`([^`]+)`", entry))
+        pieces.extend(_SCOPED_NAME.findall(entry))
     for entry in pieces:
-        for part in re.split(r"\s*(?:,|\+|;|\band\b|\bwith\b|\bon\b|\bvia\b|\bfor\b)\s*", entry):
-            name = part.strip().strip(".")
-            name = re.sub(r"\s+v?\d[\w.]*$", "", name).strip()
-            if " " in name:
+        # A sentence about the stack split on its connectives left its words
+        # as names: one run looked up `already`, `build` and `pairs`.
+        for segment in re.split(r"\s*(?:,|;|\+|\s[-\u2014]\s)\s*", entry):
+            if len(segment.split()) > MOST_WORDS_IN_A_NAME:
                 continue
-            if name and not _NOT_A_LIBRARY.match(name) and name.lower() not in (f.lower() for f in found):
-                found.append(name)
+            for part in re.split(r"\s*(?:\band\b|\bwith\b|\bon\b|\bvia\b|\bfor\b)\s*", segment):
+                name = part.strip().strip(".`")
+                name = re.sub(r"\s+v?\d[\w.]*$", "", name).strip()
+                if " " in name or not _A_PACKAGE_NAME.match(name) or _NOT_A_PACKAGE.search(name):
+                    continue
+                if name.lower() in _RUNTIMES or name.lower() in _GENERIC_WORDS:
+                    continue
+                if name and not _NOT_A_LIBRARY.match(name) and name.lower() not in (f.lower() for f in found):
+                    found.append(name)
     return found[:MOST_LIBRARIES]
 
 
@@ -111,7 +140,11 @@ def research_notes(stack: Any, brief: str, model: Any, *, workers: int = 6) -> s
                         f"{key}: {value}" for key, value in answer.items() if key not in ("description",)
                     )[:400])
         if docs.enabled():
-            topics = _topics(libraries, brief, model)
+            # Only libraries the registry knows, when it was asked: one run
+            # read six topics for `Node.js`, each trying three spellings of a
+            # README that does not exist.
+            known = [name for name in libraries if any(line.startswith(f"- {name}:") for line in looked_up)]
+            topics = _topics(known if package_registry.enabled() and ecosystem and looked_up else libraries, brief, model)
             pages = pool.map(lambda pair: _safely(docs.read, pair[0], pair[1], ecosystem), topics)
             for (name, topic), answer in zip(topics, pages):
                 excerpt = str((answer or {}).get("excerpt") or "") if isinstance(answer, dict) else ""

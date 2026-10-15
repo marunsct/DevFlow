@@ -25,8 +25,34 @@ STACK = TechnologyStack(
 
 def test_the_stack_s_libraries_are_named_once_each():
     assert research_brief.libraries_of(STACK) == [
-        "Hono", "@hono/node-server", "SQLite", "better-sqlite3", "node:test", "Playwright", "TypeScript",
+        "Hono", "@hono/node-server", "SQLite", "better-sqlite3", "Playwright",
     ]
+
+
+def test_words_of_a_sentence_runtimes_files_and_built_ins_are_not_looked_up():
+    """One run looked up `already`, `build`, `package.json`, `node:test` and `Node.js` in the registry."""
+    stack = TechnologyStack(
+        language="TypeScript",
+        framework="Hono (v4, npm `hono` 4.13.13) mounted with @hono/node-server (2.1.5) on Node.js (this "
+                  "environment runs v24.22.0; the adapter needs >=20 and pairs with hono ^4)",
+        frontend_framework="not stated", database="None - a JSON file read and written with node:fs.",
+        testing_framework="node:test (Node's built-in runner) for both layers",
+        additional_tools=["TypeScript compiler (`tsc`, already on the environment's command list) building src/",
+                          "package.json with npm scripts (build + run)", "zod"],
+    )
+    assert sorted(research_brief.libraries_of(stack)) == ["@hono/node-server", "hono", "tsc", "zod"]
+
+
+def test_no_documentation_is_read_for_a_name_the_registry_does_not_know(monkeypatch):
+    monkeypatch.setattr(docs, "enabled", lambda: True)
+    monkeypatch.setattr(package_registry, "enabled", lambda: True)
+    monkeypatch.setattr(package_registry, "look_up", lambda eco, name: {"error": "404"} if name == "SQLite" else {"latest": "1"})
+    read = []
+    monkeypatch.setattr(docs, "read", lambda name, topic, eco="": read.append(name) or {"excerpt": "text"})
+
+    research_brief.research_notes(STACK, "Notes.", None)
+
+    assert "SQLite" not in read and "Hono" in read
 
 
 def test_a_stack_of_the_platform_s_own_parts_names_only_its_libraries():

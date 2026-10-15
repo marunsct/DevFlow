@@ -254,6 +254,8 @@ A withheld tool that a model keeps calling (a 1-bit model did, 23 times)
 takes every looking tool away (`settled_answer._a_withheld_tool_still_called`);
 the stall rule counts distinct calls, so one tool asked about one thing after
 another with nothing new is a stall too.
+A call to a tool name not offered that plainly means one offered tool
+(`Read` for `read_file`) is taken as that tool (`tool_arguments`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

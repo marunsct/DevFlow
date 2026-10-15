@@ -402,6 +402,33 @@ def with_every_call_the_server_sent(message: Any, raw_calls: Any) -> None:
         })
 
 
+def _bare(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", name.lower())
+
+
+def _the_offered_tool_meant(name: str, parameters: dict[str, Any]) -> str | None:
+    """The one offered tool a call to `name`, which is not offered, plainly means; None if none or unclear.
+
+    Measured on one run: a 1-bit build model called `Read` with `file_path`
+    for `read_file`, over and over, each refused as "not a valid tool". The
+    same name in another spelling, or the one offered tool whose name starts
+    with it (`Read` for `read_file`, `Grep` for `grep`), is what was meant.
+    """
+    if not name or name in parameters:
+        return None
+    bare = _bare(name)
+    if not bare:
+        return None
+    same = [tool for tool in parameters if _bare(tool) == bare]
+    if len(same) == 1:
+        return same[0]
+    starting = [tool for tool in parameters if _bare(tool).startswith(bare)]
+    if len(starting) == 1:
+        return starting[0]
+    filed = [tool for tool in starting if _bare(tool) == bare + "file"]
+    return filed[0] if len(filed) == 1 else None
+
+
 def decode_structured_arguments(result: Any, tools: Any) -> Any:
     """Each tool call in a chat result, its arguments decoded where its tool's schema wants structure."""
     parameters = _parameters_by_tool(tools)
@@ -414,6 +441,10 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
             logger.info("Invalid tool calls could not be recovered", exc_info=True)
         for call in getattr(message, "tool_calls", None) or []:
+            offered = _the_offered_tool_meant(str(call.get("name") or ""), parameters)
+            if offered is not None:
+                logger.info("A call to `%s`, which is not offered, taken as `%s`", call.get("name"), offered)
+                call["name"] = offered
             schema = parameters.get(str(call.get("name") or ""))
             if schema is not None:
                 call["args"] = with_structure_decoded(call.get("args"), schema)

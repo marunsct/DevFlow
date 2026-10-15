@@ -262,6 +262,8 @@ Fast delivery's milestone review sends a sprint back once
 sets `/app/data/loop/gate/hold` (new calls wait), waits for
 `gate/inflight/` to empty (`GATE_WAIT`, default 1800 s), restarts, lifts the
 hold (`app.models.call_gate`).
+A call to a tool the model call withheld is refused, not run
+(`SettledAnswerMiddleware.wrap_tool_call`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

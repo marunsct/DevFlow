@@ -1406,6 +1406,8 @@ def build_settled_answer_middleware(
             refused_fallback = None
             # For `_decide`, which runs after this call and sees no model.
             self._model = getattr(request, "model", None)
+            # Tools this call withholds, refused if called anyway (`wrap_tool_call`).
+            self._withheld = set()
             request = _without_reasoning_after_a_lost_reply(request, stage_name)
             try:
                 messages = getattr(request, "messages", None)
@@ -1644,6 +1646,9 @@ def build_settled_answer_middleware(
                 corrected = [*messages, {"role": "user", "content": correction}]
                 if refused_fallback is not None:
                     refused_fallback = request.override(messages=corrected, **refused_fallback)
+                if "tools" in overrides:
+                    sent = {_named(tool) for tool in overrides["tools"]}
+                    self._withheld = {_named(tool) for tool in getattr(request, "tools", None) or []} - sent - {""}
                 request = request.override(messages=corrected, **overrides)
             except Exception:  # noqa: BLE001 - never fail the call over a hint
                 return handler(request)
@@ -1665,6 +1670,30 @@ def build_settled_answer_middleware(
                     stage_name or "?", type(error).__name__, " ".join(str(error).split())[:300],
                 )
                 return handler(refused_fallback)
+
+        def wrap_tool_call(self, request: Any, handler: Any) -> Any:
+            """A call to a tool this call withheld is refused, not run.
+
+            Withholding takes a tool off the list the model is offered; a weak
+            model calls it anyway, and the call still ran. Measured on one run:
+            a planning stage on a 1-bit model sent one withheld query 23 times,
+            each answered as if it had been offered.
+            """
+            call = getattr(request, "tool_call", None) or {}
+            name = str(call.get("name") or "")
+            if name and name in getattr(self, "_withheld", set()):
+                from langchain_core.messages import ToolMessage
+
+                return ToolMessage(
+                    content=(
+                        f"`{name}` is withheld at this point of the stage and was not run. Use what this "
+                        "conversation already holds, and the tools you were offered on this call."
+                    ),
+                    tool_call_id=str(call.get("id") or ""),
+                    name=name,
+                    status="error",
+                )
+            return handler(request)
 
         @hook_config(can_jump_to=["end", "model"])
         def after_model(self, state: Any, runtime: Any = None) -> dict[str, Any] | None:

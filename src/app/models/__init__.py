@@ -489,7 +489,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         from app.models.call_gate import a_model_call
 
         # A deploy waits for this call to return (`app.models.call_gate`).
-        with a_model_call():
+        with a_model_call(str(self.openai_api_base or "")):
             return self._generate_once(messages, stop=stop, run_manager=run_manager, **kwargs)
 
     def _generate_once(self, messages, stop=None, run_manager=None, **kwargs):

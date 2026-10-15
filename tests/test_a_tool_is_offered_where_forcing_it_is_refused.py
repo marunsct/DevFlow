@@ -69,3 +69,12 @@ def test_another_model_still_has_its_tool_forced(monkeypatch):
     request = payload.bound._get_request_payload([HumanMessage(content="x")], **payload.kwargs)
 
     assert request["tool_choice"] == "required"
+
+
+def test_the_refusal_is_remembered_across_a_restart(monkeypatch, tmp_path):
+    """Learned once per process, it was learned again after every deploy: one failed request each time."""
+    monkeypatch.setenv("FORCED_TOOL_REFUSALS_FILE", str(tmp_path / "refusals.json"))
+    monkeypatch.setattr(models, "_NO_FORCED_TOOL_WHILE_THINKING", set())
+    models._remember_the_refusal(("https://frontier.example/v1", "thinks-by-default"))
+
+    assert models._refusals_remembered() == {("https://frontier.example/v1", "thinks-by-default")}

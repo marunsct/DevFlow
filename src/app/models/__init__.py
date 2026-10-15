@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -300,8 +301,36 @@ def _reply_tokens(result: Any) -> int:
     return tokens if isinstance(tokens, int) else 0
 
 
+def _refusals_file():
+    from pathlib import Path
+
+    return Path(os.environ.get("FORCED_TOOL_REFUSALS_FILE") or "/app/data/loop/no-forced-tool.json")
+
+
+def _refusals_remembered() -> set[tuple[str, str]]:
+    """Servers found refusing a forced tool call, kept across restarts.
+
+    Learned once per process, it was learned again after every deploy and
+    restart: one failed request to the frontier model each time.
+    """
+    try:
+        return {(str(a), str(b)) for a, b in json.loads(_refusals_file().read_text(encoding="utf-8"))}
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def _remember_the_refusal(server: tuple[str, str]) -> None:
+    _NO_FORCED_TOOL_WHILE_THINKING.add(server)
+    try:
+        path = _refusals_file()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(sorted(_refusals_remembered() | {server})), encoding="utf-8")
+    except OSError:
+        pass
+
+
 #: (address, model) of servers that refuse a forced tool call while the model reasons.
-_NO_FORCED_TOOL_WHILE_THINKING: set[tuple[str, str]] = set()
+_NO_FORCED_TOOL_WHILE_THINKING: set[tuple[str, str]] = _refusals_remembered()
 
 
 def refuses_a_forced_tool_while_thinking(error: Exception) -> bool:
@@ -472,7 +501,7 @@ class CompatibleChatOpenAI(ChatOpenAI):
         except Exception as error:  # noqa: BLE001 - re-raised unless this is the refusal
             if server in _NO_FORCED_TOOL_WHILE_THINKING or not refuses_a_forced_tool_while_thinking(error):
                 raise
-            _NO_FORCED_TOOL_WHILE_THINKING.add(server)
+            _remember_the_refusal(server)
             logger.warning(
                 "%s refuses a forced tool call while the model reasons; its tools are "
                 "offered instead of forced from now on", server[1] or server[0],

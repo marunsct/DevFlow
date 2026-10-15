@@ -65,3 +65,36 @@ def test_a_fresh_attempt_is_handed_what_the_last_one_looked_up():
 
     assert "read_docs hono: serve options -> hono serve options" in note
     assert "look_up_package npm hono -> package: hono, version: 1.0.0" in note
+
+
+def test_a_lookup_the_stage_has_used_its_share_of_is_no_longer_offered():
+    """Told it had had its share, a specification stage asked again eight times, a frontier turn each."""
+    from types import SimpleNamespace
+
+    from app.agents.stage_memory import remembering
+    from app.tools import research
+
+    class _Request(SimpleNamespace):
+        def override(self, **changes):
+            return _Request(**{**self.__dict__, **changes})
+
+    tools = [SimpleNamespace(name="read_docs"), SimpleNamespace(name="look_up_package"), {"name": "read_file"}]
+    middleware = research.build_research_share_middleware()
+    offered = []
+
+    with remembering("thread-share"):
+        middleware.wrap_model_call(_Request(tools=tools), lambda r: offered.append([research._named(t) for t in r.tools]))
+        for _ in range(research.MOST_DOCUMENTATION_READS):
+            assert research.over_its_share("documentation") is None
+        middleware.wrap_model_call(_Request(tools=tools), lambda r: offered.append([research._named(t) for t in r.tools]))
+
+    assert offered == [["read_docs", "look_up_package", "read_file"], ["look_up_package", "read_file"]]
+
+
+def test_every_role_agent_has_it_outside_gathering():
+    import inspect
+
+    from app.agents import role_agent
+
+    source = inspect.getsource(role_agent.create_role_agent)
+    assert source.index("build_research_share_middleware()") < source.index("*_gathering(model, response_format)")

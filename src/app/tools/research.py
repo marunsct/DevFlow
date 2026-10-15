@@ -48,6 +48,48 @@ def over_its_share(kind: str, count: int = 1) -> str | None:
     return None
 
 
+#: The tool that spends each share, by the share it spends.
+_TOOL_OF = {"documentation": "read_docs", "packages": "look_up_package"}
+
+
+def spent(kind: str) -> bool:
+    """Whether the running stage has used its whole share of `kind`."""
+    return _ledger().get(kind, 0) >= _SHARES[kind]
+
+
+def build_research_share_middleware() -> Any:
+    """Middleware that stops offering a lookup tool once the stage has used its share of it.
+
+    Told it had had its share, one run's specification stage asked again eight
+    times - each a frontier turn of 2 to 5 minutes for a refusal. A tool that
+    is not offered is not asked for.
+    """
+    from langchain.agents.middleware import AgentMiddleware
+
+    class ResearchShareMiddleware(AgentMiddleware):
+        name = "ResearchShareMiddleware"
+
+        def wrap_model_call(self, request: Any, handler: Any) -> Any:
+            try:
+                gone = {tool for kind, tool in _TOOL_OF.items() if spent(kind)}
+                tools = list(getattr(request, "tools", None) or [])
+                if gone and tools:
+                    kept = [t for t in tools if _named(t) not in gone]
+                    if len(kept) != len(tools):
+                        request = request.override(tools=kept)
+            except Exception:  # noqa: BLE001 - the refusal still answers an extra lookup
+                pass
+            return handler(request)
+
+    return ResearchShareMiddleware()
+
+
+def _named(tool: Any) -> str:
+    if isinstance(tool, dict):
+        return str(tool.get("name") or (tool.get("function") or {}).get("name") or "")
+    return str(getattr(tool, "name", "") or "")
+
+
 def found(label: str, answer: Any) -> None:
     """Remembers what one lookup answered, for an attempt that starts again."""
     if isinstance(answer, dict) and "error" in answer:

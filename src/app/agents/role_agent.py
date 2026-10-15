@@ -522,6 +522,12 @@ ANSWER_TOOL_DESCRIPTION = (
 )
 
 
+def build_research_share_middleware() -> Any:
+    from app.tools.research import build_research_share_middleware as built
+
+    return built()
+
+
 def _gathering(model: Any, response_format: Any) -> list[Any]:
     from app.agents.gathering import build_gathering_middleware, gatherer_for
 
@@ -654,6 +660,9 @@ def create_role_agent(
         # on the judgement model (fast delivery). Outside the text-tool-call
         # repair, so it judges the reply that repair produced. See
         # `app.agents.gathering`.
+        # Outside gathering, so neither model is offered a lookup the stage
+        # has used its share of. See `app.tools.research`.
+        build_research_share_middleware(),
         *_gathering(model, response_format),
         # Outermost of the model-call wrappers, so a call the server failed to
         # parse becomes a real tool call before anything downstream looks for

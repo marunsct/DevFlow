@@ -125,6 +125,9 @@ score)
   docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status"
   mkdir -p data/bench
   docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
+  # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
+  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score")}))' "data/bench/$run.json" \
+    | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
   # The hidden tests and the copy they ran against leave the worker at once:
   # it is the container the harness's agents work in.
   docker compose exec -T -u root worker rm -rf /tmp/bench-src /tmp/bench-work "/tmp/bench-$run.json" || true

@@ -4,6 +4,7 @@ import { listRuns, deleteRun, cloneRun, resumeRun, pauseRun } from '../api';
 import type { RunSummary } from '../types';
 import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy, Pause } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
+import { OutcomesPanel } from '../components/OutcomesPanel';
 
 export const RunList: React.FC = () => {
   const [runs, setRuns] = useState<RunSummary[]>([]);
@@ -98,6 +99,8 @@ export const RunList: React.FC = () => {
           New Run
         </Link>
       </div>
+
+      <OutcomesPanel />
 
       {loading ? (
         <div className="flex items-center justify-center min-h-[40vh]">

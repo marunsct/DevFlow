@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, PlayCircle, FolderOpen, ShieldCheck, CheckSquare } from 'lucide-react';
-import { createRun, startRun } from '../api';
+import { createRun, startRun, getOutcomes, type RunForecast } from '../api';
 
 export const Home: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -22,6 +22,11 @@ export const Home: React.FC = () => {
   // Minutes a review gate waits for a person before approving itself; blank
   // waits however long it takes.
   const [approvalTimeout, setApprovalTimeout] = useState<string>('');
+  // What a run of each delivery mode has typically taken here.
+  const [forecast, setForecast] = useState<Record<string, RunForecast | null>>({});
+  useEffect(() => {
+    getOutcomes().then((data) => setForecast(data.forecast)).catch(() => setForecast({}));
+  }, []);
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
   const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
@@ -339,6 +344,13 @@ export const Home: React.FC = () => {
                     </button>
                   ))}
                 </div>
+                {forecast[deliveryMode] && (
+                  <p className="text-xs text-text-secondary">
+                    A completed {deliveryMode} run here has typically taken {forecast[deliveryMode]!.typical_hours} h
+                    ({forecast[deliveryMode]!.shortest_hours}-{forecast[deliveryMode]!.longest_hours} h over{' '}
+                    {forecast[deliveryMode]!.runs} runs).
+                  </p>
+                )}
                 <p className="text-xs text-text-muted leading-relaxed">
                   Both keep the project in memory for every stage and check each edit as it is written.
                 </p>

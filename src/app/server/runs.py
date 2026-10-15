@@ -473,6 +473,20 @@ def create_runs_router(
             total=runner.run_store.count(tenant),
         )
 
+    @runs.get("/outcomes")
+    async def run_outcomes(user: UserInDB = Depends(get_current_active_user)) -> dict[str, Any]:
+        """Finished runs with their time and score, and the typical time per delivery mode."""
+        from app.server.outcomes import forecast, outcomes
+
+        records = runner.run_store.list_all(
+            tenant_id=None if user.role == "admin" else user.tenant_id, limit=500,
+        )
+        rows = outcomes(records)
+        return {
+            "runs": rows,
+            "forecast": {mode: forecast(rows, mode) for mode in ("fast", "thorough")},
+        }
+
     @runs.get("/{run_id}", response_model=RunStatusResponse)
     async def get_run(
         run_id: str, user: UserInDB = Depends(get_current_active_user)

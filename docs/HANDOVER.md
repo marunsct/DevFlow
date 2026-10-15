@@ -291,6 +291,10 @@ API sweeps every 60 s and approves a gate that waited past it
 (`app.server.approval_timeouts`).
 `GET /api/runs/{id}/handover` (run page: "Handover pack") zips docs/, the
 acceptance suite and `.harness/decisions.json` (`app.sprint.handover`).
+`GET /api/runs/outcomes` lists finished runs with hours and hidden-test score
+(`loop.sh score` also leaves a summary in `/app/data/outcomes/`) and a typical
+time per delivery mode; the runs list shows the table, the start form the
+forecast (`app.server.outcomes`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

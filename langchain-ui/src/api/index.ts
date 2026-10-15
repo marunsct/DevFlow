@@ -80,6 +80,30 @@ export const listRuns = async (): Promise<RunListResponse> => {
   return response.data;
 };
 
+export interface RunOutcome {
+  run_id: string;
+  status: string;
+  delivery_mode: string;
+  use_frontier_model: boolean;
+  started_at: string | null;
+  hours: number | null;
+  score: { benchmark?: string; passed?: number; total?: number; score?: number } | null;
+}
+
+export interface RunForecast {
+  delivery_mode: string;
+  typical_hours: number;
+  shortest_hours: number;
+  longest_hours: number;
+  runs: number;
+}
+
+/** Finished runs with their time and score, and the typical time per delivery mode. */
+export const getOutcomes = async (): Promise<{ runs: RunOutcome[]; forecast: Record<string, RunForecast | null> }> => {
+  const response = await api.get('/runs/outcomes');
+  return response.data;
+};
+
 export const getRun = async (runId: string): Promise<RunStatusResponse> => {
   const response = await api.get<RunStatusResponse>(`/runs/${runId}`);
   return response.data;

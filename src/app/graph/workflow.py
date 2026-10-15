@@ -492,6 +492,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # fresh one and then cleared. See `app.agents.carry_over`.
     stage_carry_over: dict[str, str]
     milestone_revision_count: int
+    # The registry releases and documentation read for the architect before
+    # it writes, kept so a retry or a revision is not read again.
+    # See `app.agents.research_brief`.
+    architect_research: str
     # How often this sprint was planned again because its tests could not be
     # made to pass. Counted apart from `milestone_revision_count`, which is the
     # milestone review's: see `_replan_or_escalate`.
@@ -6784,15 +6788,38 @@ def build_workflow_graph(
             from app.graph.specification_parts import CORE_NOTE
 
             request["messages"][-1]["content"] += CORE_NOTE
-        update = _run_gated_agent(
-            state,
-            config,
-            stage_name="principal_architect",
-            agent=agent,
-            initial_request=request,
-            output_key="technical_specification",
-            next_stage="architecture_review",
-        )
+        # The reading done first, by the harness and the build model, and
+        # handed over: the architect's reasoning goes on the specification,
+        # not on which page to read next. See `app.agents.research_brief`.
+        research = str(state.get("architect_research") or "")
+        if not research:
+            try:
+                from app.agents.research_brief import research_notes
+
+                research = research_notes(
+                    getattr(state.get("stack_selection"), "technology_stack", None),
+                    getattr(state.get("document"), "text", "") or "",
+                    building_model if isinstance(building_model, BaseChatModel) else None,
+                )
+            except Exception:  # noqa: BLE001 - the architect reads for itself, as before
+                logger.warning("Could not do the architect's reading before it began", exc_info=True)
+                research = ""
+        if research:
+            request["messages"][-1]["content"] += "\n\n" + research
+        from app.tools.research import researched
+
+        with researched(bool(research)):
+            update = _run_gated_agent(
+                state,
+                config,
+                stage_name="principal_architect",
+                agent=agent,
+                initial_request=request,
+                output_key="technical_specification",
+                next_stage="architecture_review",
+            )
+        if research and isinstance(update, dict):
+            update["architect_research"] = research
         if not _hand_back(update, "technical_specification") and in_parts:
             from app.graph.specification_parts import with_the_parts_written
 

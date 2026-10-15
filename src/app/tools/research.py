@@ -14,7 +14,9 @@ was 2-5 minutes of a frontier model reasoning. Two things follow:
 
 from __future__ import annotations
 
-from typing import Any
+import contextvars
+from contextlib import contextmanager
+from typing import Any, Iterator
 
 #: Documentation reads one stage visit may make.
 MOST_DOCUMENTATION_READS = 8
@@ -48,13 +50,28 @@ def over_its_share(kind: str, count: int = 1) -> str | None:
     return None
 
 
+#: True while a stage runs whose reading was done for it before it began
+#: (`app.agents.research_brief`): no lookup is offered to it.
+_RESEARCHED: contextvars.ContextVar[bool] = contextvars.ContextVar("researched_for_the_stage", default=False)
+
+
+@contextmanager
+def researched(done: bool = True) -> Iterator[None]:
+    """Within it, the stage's documentation and registry reading was done for it: neither is offered."""
+    token = _RESEARCHED.set(bool(done))
+    try:
+        yield
+    finally:
+        _RESEARCHED.reset(token)
+
+
 #: The tool that spends each share, by the share it spends.
 _TOOL_OF = {"documentation": "read_docs", "packages": "look_up_package"}
 
 
 def spent(kind: str) -> bool:
-    """Whether the running stage has used its whole share of `kind`."""
-    return _ledger().get(kind, 0) >= _SHARES[kind]
+    """Whether the running stage has used its whole share of `kind`, or had its reading done for it."""
+    return _RESEARCHED.get() or _ledger().get(kind, 0) >= _SHARES[kind]
 
 
 def build_research_share_middleware() -> Any:

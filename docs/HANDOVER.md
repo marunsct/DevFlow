@@ -203,7 +203,13 @@ consultations, sprint plan, work orders and acceptance-test authoring run
 on the build model; the specification and every review stay on the
 judgement model, and a judgement stage gathers (reads, docs, lookups) on
 the build model with reasoning off and writes on the judgement model
-(`app.agents.gathering`, registered by `gather_with`); only read-only calls
+(`app.agents.gathering`, registered by `gather_with`). Owner 2026-10-15: the
+architect's reading is done before it starts - the harness looks up every
+library of the stack in its registry, the build model names the documentation
+topics once, the harness reads them, and the notes go into the architect's
+request (`app.agents.research_brief`, kept in `architect_research`); the
+architect is then offered no documentation or registry lookups
+(`research.researched`). Only read-only calls
 (`GATHERING_TOOLS`) are gathering - a write or a command, as in a building
 stage escalated to the judgement model, is the judgement model's. One architecture
 revision and one acceptance send-back, then open findings are decided

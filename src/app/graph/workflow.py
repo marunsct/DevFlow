@@ -3049,20 +3049,16 @@ def _run_gated_agent(
             # concurrent specialists shared one slot - and that memory holds
             # which lines of which files a stage has been given.
             with remembering(inner_thread_id):
-                if cut_off and cut_off[1]:
-                    # It had finished; only the stage after it was cut off.
-                    result = dict(agent.get_state({"configurable": {"thread_id": inner_thread_id}}).values)
-                else:
-                    result = agent.invoke(
-                        None if cut_off else initial_request,
-                        config=_inner_agent_config(
-                            inner_thread_id,
-                            config["configurable"].get(APP_RUN_ID_KEY),
-                            activity,
-                            stage=stage_name,
-                            recursion_limit=INNER_AGENT_RECURSION_LIMIT,
-                        ),
-                    )
+                result = agent.invoke(
+                    None if cut_off else initial_request,
+                    config=_inner_agent_config(
+                        inner_thread_id,
+                        config["configurable"].get(APP_RUN_ID_KEY),
+                        activity,
+                        stage=stage_name,
+                        recursion_limit=INNER_AGENT_RECURSION_LIMIT,
+                    ),
+                )
             abandoned_threads.forget(visit_root, outer_thread_id, stage_name)
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
             abandoned_threads.forget(visit_root, outer_thread_id, stage_name)

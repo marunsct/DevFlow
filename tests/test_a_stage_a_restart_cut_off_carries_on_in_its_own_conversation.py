@@ -56,13 +56,15 @@ def test_a_visit_a_stopped_worker_cut_off_carries_on_from_its_last_step(tmp_path
     assert abandoned_threads._read(tmp_path) == {}
 
 
-def test_a_conversation_that_had_finished_is_taken_as_it_ended(tmp_path):
+def test_a_note_for_a_conversation_that_had_finished_starts_the_visit_fresh(tmp_path):
+    """A note left behind for a finished conversation would hand a later visit the old answer."""
     abandoned_threads.remember(tmp_path, "outer", "principal_architect", "outer:principal_architect:cut")
     agent = _Agent(saved="outer:principal_architect:cut", pending=())
 
     update = _visit(tmp_path, agent)
 
-    assert agent.calls == [] and update["out"] == "done"
+    assert agent.calls[0][0] is not None and agent.calls[0][1] != "outer:principal_architect:cut"
+    assert update["out"] == "answer"
 
 
 def test_a_note_with_no_saved_steps_starts_fresh(tmp_path):

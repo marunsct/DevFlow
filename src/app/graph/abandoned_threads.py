@@ -90,4 +90,9 @@ def cut_off(root: str | Path | None, outer_thread_id: str, stage_name: str, agen
     values = getattr(snapshot, "values", None) or {}
     if len(values.get("messages") or []) < 2:
         return None
-    return inner, not getattr(snapshot, "next", None)
+    # Only a conversation with a step still to take. One that had finished is
+    # an answer already given - and a note left behind by a path that never
+    # crossed it out would hand a later visit the old answer.
+    if not getattr(snapshot, "next", None):
+        return None
+    return inner, False

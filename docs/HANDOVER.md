@@ -264,6 +264,11 @@ sets `/app/data/loop/gate/hold` (new calls wait), waits for
 hold (`app.models.call_gate`).
 A call to a tool the model call withheld is refused, not run
 (`SettledAnswerMiddleware.wrap_tool_call`).
+`loop.sh fitness` probes the build model with five scripted tool calls
+(`app.models.fitness`: FIT/USABLE/UNFIT + advice); run it after `ready`,
+before a run, never beside a live one. While every test command passes, a
+milestone finding that names no criterion or test case (AC-n, TC-...) is
+recorded as minor (`_findings_no_measure_holds`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

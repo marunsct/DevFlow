@@ -20,6 +20,8 @@ other half: whichever spelling arrives, it means the same file.
 from __future__ import annotations
 
 import posixpath
+import shlex
+import re
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -227,6 +229,89 @@ def unquoted(value: str) -> str:
     return value
 
 
+#: The tools that run a command: `command` an argv list, `working_directory` relative to the workspace.
+_COMMAND_TOOLS = frozenset({"run_terminal_command", "run_validation"})
+_CD_THEN = re.compile(r"^\s*cd\s+(\S+)\s*&&\s*(.+)$", re.S)
+_TRIMMING = re.compile(r"\s*(?:2>&1|\|\s*(?:head|tail)(?:\s+-n)?\s+-?\d+)\s*$")
+_A_SHELL = re.compile(r"&&|\|\||[|;<>`]|\$\(")
+
+
+def as_a_command(arguments: dict[str, Any], repo_root: str) -> dict[str, Any]:
+    """A command line sent as one string, as the argv and working directory it means.
+
+    There is no shell: `"cd /workspace/notes-api && node --test x 2>&1 | head -80"`
+    is refused. Measured on one run on a local model: 53 of its failed calls
+    were command lines like that. `cd DIR &&` is the working directory, and
+    `2>&1`, `| head -N` and `| tail -N` only trim the output, which comes back
+    whole anyway. A line with any other shell construct is left as it was, to
+    be refused with the reason.
+    """
+    command = arguments.get("command")
+    if isinstance(command, str):
+        text = command
+    elif isinstance(command, list) and len(command) == 1 and isinstance(command[0], str):
+        text = command[0]
+    else:
+        return arguments
+    if not re.search(r"\s", text.strip()):
+        return arguments
+    directory = arguments.get("working_directory")
+    moved = _CD_THEN.match(text)
+    if moved:
+        directory, text = moved.group(1), moved.group(2)
+    before = None
+    while before != text:
+        before, text = text, _TRIMMING.sub("", text)
+    if _A_SHELL.search(text):
+        return arguments
+    try:
+        argv = shlex.split(text)
+    except ValueError:
+        return arguments
+    if not argv:
+        return arguments
+    rewritten = {**arguments, "command": argv}
+    if moved:
+        rewritten["working_directory"] = _a_directory_here(str(directory), repo_root)
+    return rewritten
+
+
+def _a_directory_here(directory: str, repo_root: str) -> str | None:
+    """`directory` as a workspace-relative directory, an invented root taken off; None for the root."""
+    cleaned = unquoted(directory).strip().replace("\\", "/")
+    relative = workspace_relative(cleaned, repo_root).strip("/") if repo_root else cleaned.strip("/")
+    if not relative or relative == ".":
+        return None
+    root = Path(repo_root) if repo_root else None
+    if root is None or (root / relative).is_dir():
+        return relative
+    rest = relative.split("/", 1)[1] if "/" in relative else ""
+    if not rest:
+        return None
+    return rest if (root / rest).is_dir() else relative
+
+
+def without_an_invented_root_for_a_new_file(path: str, repo_root: str) -> str:
+    """`without_an_invented_root` for a file that may not exist yet: its directory decides.
+
+    One run's acceptance author wrote `/workspace/notes-api/acceptance/api.spec.ts`
+    25 times and was told each time the file was not part of the suite.
+    """
+    if not path or not repo_root or not path.startswith("/"):
+        return path
+    segments = [part for part in posixpath.normpath(path).split("/") if part]
+    if len(segments) < 2:
+        return path
+    root = Path(repo_root)
+    try:
+        if (root / segments[0]).exists():
+            return path
+        parent = root.joinpath(*segments[1:-1]) if len(segments) > 2 else root
+        return "/" + "/".join(segments[1:]) if parent.is_dir() else path
+    except OSError:
+        return path
+
+
 def rewrite_tool_arguments(
     name: str, arguments: dict[str, Any], repo_root: str
 ) -> dict[str, Any]:
@@ -235,6 +320,11 @@ def rewrite_tool_arguments(
     for argument in _ANY_PATH_ARGUMENT & set(changed):
         if isinstance(changed[argument], str):
             changed[argument] = unquoted(changed[argument])
+
+    if name in _COMMAND_TOOLS:
+        changed = as_a_command(changed, repo_root)
+    if isinstance(changed.get("relative_path"), str):
+        changed["relative_path"] = without_an_invented_root_for_a_new_file(changed["relative_path"], repo_root)
 
     key = _PATH_ARGUMENTS.get(name)
     if key is not None:

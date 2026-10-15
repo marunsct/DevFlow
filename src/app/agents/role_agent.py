@@ -326,6 +326,14 @@ def _workspace_filesystem_middleware(repo_root: str) -> FilesystemMiddleware:
         # written into it shifts every line - see `held_read_note`.
         backend=WorkspaceBackend(root_dir=repo_root, virtual_mode=True, hold_notes=True),
         tools=list(_WORKSPACE_READ_TOOLS),
+        # Never the harness's own request. Over 50,000 tokens, deepagents moves
+        # a human message to `conversation_history/<uuid>.md` and leaves a
+        # pointer. Measured on three runs: every architect visit's opening
+        # request - the brief, the research, the project memory - was moved,
+        # and the architect read its own instructions back window by window
+        # (one visit went from 35k to 72k tokens of context doing it). The
+        # harness sizes these requests to the model's window itself.
+        human_message_token_limit_before_evict=None,
     )
 
 

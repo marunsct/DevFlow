@@ -6434,6 +6434,17 @@ def write_approved_artifact(
     if target.name == "package.json":
         _refuse_a_script_path_that_repeats_its_own_directory(target, content)
         _refuse_a_test_script_that_strands_suites(target, content)
+    if target.name == "stack-setup.json":
+        # Checked as it is written: a stage that learned only after answering
+        # had no conversation left to fix it in (`custom_setup.problems_with`).
+        from app.stacks.custom_setup import problems_with
+
+        problem = problems_with(content, target.parent)
+        if problem:
+            raise RepositoryToolError(
+                f"Refusing to write '{relative_path}': {problem} Nothing was changed; "
+                "write it again with those fixed."
+            )
 
     forked = _the_same_module_already_here(target, content)
     if forked is not None:

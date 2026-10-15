@@ -249,9 +249,27 @@ def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Decla
     """The declaration, or (None, what is wrong with it)."""
     where = project_root / DECLARATION_FILE
     try:
-        data = json.loads(where.read_text(encoding="utf-8"))
+        text = where.read_text(encoding="utf-8")
     except OSError:
         return None, f"`{DECLARATION_FILE}` was not written in `{project_root.name}/`."
+    return _declared(text, project_root, fallback_kind, files_written=True)
+
+
+def problems_with(text: str, project_root: Path) -> str:
+    """What makes a declaration about to be written unusable; "" if nothing.
+
+    Checked as it is written, so the stage fixes it in the conversation it is
+    in. Measured on one run: the setup stage's second attempt declared one
+    directory for both kinds of test, learned so only after it had answered,
+    and the setup was left to the agents. The files it names may come after
+    it, so they are not required to exist yet.
+    """
+    return _declared(text, project_root, "", files_written=False)[1]
+
+
+def _declared(text: str, project_root: Path, fallback_kind: str, *, files_written: bool) -> tuple[Declaration | None, str]:
+    try:
+        data = json.loads(text)
     except ValueError as exc:
         return None, f"`{DECLARATION_FILE}` is not valid JSON: {exc}."
     if not isinstance(data, dict):
@@ -278,13 +296,13 @@ def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Decla
         problems.append("every `kept_files` entry must be a path inside the project")
     if len(smoke) < 2 or any(name is None for name in smoke):
         problems.append("`smoke_files` must list the unit and the acceptance smoke test")
-    missing = [name for name in [*kept, *smoke] if name and not (project_root / name).is_file()]
+    missing = [name for name in [*kept, *smoke] if name and not (project_root / name).is_file()] if files_written else []
     if missing:
         problems.append("these declared files do not exist: " + ", ".join(f"`{name}`" for name in missing))
     kind = str(data.get("kind") or "").strip().lower().replace("-", "_")
     if kind not in KINDS:
         kind = fallback_kind
-    if kind not in KINDS:
+    if kind not in KINDS and (files_written or data.get("kind")):
         problems.append(f"`kind` must be one of {', '.join(KINDS)}")
     build = _argv(data.get("build")) if data.get("build") else ()
     if build is None:
@@ -558,5 +576,6 @@ def leave_to_the_agents(project_root: Path) -> None:
 
 __all__ = [
     "ATTEMPTS", "DECLARATION_FILE", "PROVEN_SETUP", "already_set_up", "leave_to_the_agents",
-    "build_setup_request", "enabled", "library_key", "pack_from", "prove", "read_declaration", "remember", "replay",
+    "build_setup_request", "enabled", "library_key", "pack_from", "problems_with", "prove", "read_declaration",
+    "remember", "replay",
 ]

@@ -311,6 +311,9 @@ instructions back in windows): `human_message_token_limit_before_evict=None`.
 Fast revisions are made in place: one call names the sections the required
 changes touch, they are rewritten at once, the rest kept
 (`specification_parts.revised_in_place`); the architect agent only if that fails.
+`stack-setup.json` is checked as it is written (`custom_setup.problems_with`,
+from `write_artifact`): the files it names may come later; every other rule
+refuses the write with why.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

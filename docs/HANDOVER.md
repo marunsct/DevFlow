@@ -246,6 +246,10 @@ and test rounds, rewrite fixes, no code review, one revision/send-back,
 planning on the build model, the specification in parts. The harness-run test
 round stays fast-only: it measures existing tests, while the model round also
 writes tests for what the sprint built.
+A read of a file the project memory holds, unchanged, is answered with a
+pointer to it - a window (`offset`/`limit`) too: a third of all reads were
+windows. Files over `LARGEST_FILE_CHARACTERS` (60k; the specification is often
+~200k) are not held and are still read from disk.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

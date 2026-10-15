@@ -220,19 +220,18 @@ def build_project_memory_middleware(repo_root: str) -> Any:
         def wrap_tool_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             call = getattr(request, "tool_call", None) or {}
             args = call.get("args") or {}
-            # From the top, and as far as the file goes: the path middleware
-            # outside this one gives every read a default `limit`, so "no
-            # limit" never arrived - and no read was ever answered from memory.
-            if call.get("name") == "read_file" and self._held and not args.get("offset"):
+            # Any read of a file the memory holds, a window of it included: a
+            # third of all reads were windows (`offset`), and every one went
+            # to disk for lines already in the conversation.
+            if call.get("name") == "read_file" and self._held:
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
                 held = self._held.get(path)
-                whole = not args.get("limit") or int(args.get("limit") or 0) >= held.count("\n") + 1 if held is not None else False
-                if held is not None and whole and current(repo_root).get(path) == held:
+                if held is not None and current(repo_root).get(path) == held:
                     from langchain_core.messages import ToolMessage
 
                     return ToolMessage(
-                        content=f"`{path}` is in the project memory at the start of this conversation, as it is "
-                                "now; it has not changed since. Use it from there.",
+                        content=f"`{path}` is in the project memory at the start of this conversation, whole and as "
+                                "it is now; it has not changed since. Use it, and any lines of it, from there.",
                         tool_call_id=call.get("id") or "",
                         name="read_file",
                     )

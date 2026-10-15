@@ -406,7 +406,7 @@ def _bare(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-def _the_offered_tool_meant(name: str, parameters: dict[str, Any]) -> str | None:
+def _the_offered_tool_meant(name: str, parameters: dict[str, Any], args: Any = None) -> str | None:
     """The one offered tool a call to `name`, which is not offered, plainly means; None if none or unclear.
 
     Measured on one run: a 1-bit build model called `Read` with `file_path`
@@ -426,7 +426,30 @@ def _the_offered_tool_meant(name: str, parameters: dict[str, Any]) -> str | None
     if len(starting) == 1:
         return starting[0]
     filed = [tool for tool in starting if _bare(tool) == bare + "file"]
-    return filed[0] if len(filed) == 1 else None
+    if len(filed) == 1:
+        return filed[0]
+    return _the_one_its_arguments_fit(args, parameters)
+
+
+def _the_one_its_arguments_fit(args: Any, parameters: dict[str, Any]) -> str | None:
+    """The one offered tool that takes every argument given and is given all it requires; None if not one.
+
+    By the arguments when the name says nothing: one run's 1-bit planner
+    called `global_99` sixteen times with `pattern`, `path` and
+    `output_mode` - only `grep` takes all three - and each was refused.
+    """
+    if not isinstance(args, dict) or not args:
+        return None
+    given = set(args)
+    # Never a stage's answer tool, named after its schema's class: a stray
+    # call is not taken as the stage's answer.
+    fitting = [
+        tool for tool, schema in parameters.items()
+        if tool == tool.lower()
+        and given <= set((schema or {}).get("properties") or {})
+        and set((schema or {}).get("required") or []) <= given
+    ]
+    return fitting[0] if len(fitting) == 1 else None
 
 
 def decode_structured_arguments(result: Any, tools: Any) -> Any:
@@ -441,7 +464,7 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
         except Exception:  # noqa: BLE001 - a recovery that cannot run changes nothing
             logger.info("Invalid tool calls could not be recovered", exc_info=True)
         for call in getattr(message, "tool_calls", None) or []:
-            offered = _the_offered_tool_meant(str(call.get("name") or ""), parameters)
+            offered = _the_offered_tool_meant(str(call.get("name") or ""), parameters, call.get("args"))
             if offered is not None:
                 logger.info("A call to `%s`, which is not offered, taken as `%s`", call.get("name"), offered)
                 call["name"] = offered

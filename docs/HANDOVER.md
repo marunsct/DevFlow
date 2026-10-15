@@ -314,6 +314,9 @@ changes touch, they are rewritten at once, the rest kept
 `stack-setup.json` is checked as it is written (`custom_setup.problems_with`,
 from `write_artifact`): the files it names may come later; every other rule
 refuses the write with why.
+A call to an unknown tool name with arguments only one offered working tool
+takes (all given accepted, all required given) is taken as that tool; never
+an answer tool (`tool_arguments._the_one_its_arguments_fit`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

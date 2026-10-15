@@ -35,3 +35,31 @@ def test_a_name_that_could_mean_two_tools_or_none_is_left_alone():
     assert _decoded("read", ("read_command_output", "read_docs")) == "read"
     assert _decoded("SearchBugs", ("ls", "read_file")) == "SearchBugs"
     assert _decoded("read", ("read_file", "read_command_output")) == "read_file"
+
+
+def _schema(name, properties, required):
+    return {"type": "function", "function": {"name": name, "parameters": {
+        "type": "object", "properties": {p: {"type": "string"} for p in properties}, "required": required}}}
+
+
+def _called(name, args, tools):
+    message = AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": "c1"}])
+    decode_structured_arguments(SimpleNamespace(generations=[SimpleNamespace(message=message)]), tools)
+    return message.tool_calls[0]["name"]
+
+
+TOOLS = [_schema("glob", ["pattern", "path"], ["pattern"]),
+         _schema("grep", ["pattern", "path", "output_mode", "glob"], ["pattern"]),
+         _schema("read_file", ["file_path", "offset", "limit"], ["file_path"])]
+
+
+def test_a_name_that_says_nothing_is_taken_as_the_one_tool_its_arguments_fit():
+    """A 1-bit planner called `global_99` sixteen times with grep's arguments; each was refused."""
+    assert _called("global_99", {"pattern": "File Plan", "path": "/docs/spec.md", "output_mode": "content"}, TOOLS) == "grep"
+    assert _called("open_it", {"file_path": "docs/a.md", "limit": 10}, TOOLS) == "read_file"
+
+
+def test_arguments_that_fit_two_tools_or_none_leave_the_call_as_it_was():
+    assert _called("global_99", {"pattern": "x", "path": "/tmp"}, TOOLS) == "global_99"
+    assert _called("global_99", {"query": "x"}, TOOLS) == "global_99"
+    assert _called("global_99", {"path": "/tmp"}, TOOLS) == "global_99"

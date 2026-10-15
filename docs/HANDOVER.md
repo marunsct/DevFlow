@@ -276,6 +276,11 @@ define something (`map_of`, a repo map without a parser per language).
 Proven setups are kept in `/app/data/proven-setups/<stack>.json`
 (`PROVEN_SETUP_LIBRARY`); a later run on the same stack replays and re-proves
 one before asking the setup stage (`custom_setup.replay`).
+Research before the architect looks up only package-shaped names: no runtimes,
+files, built-ins, versions or words of a sentence, and reads documentation
+only for names the registry knows. A server's refusal of a forced tool call
+is kept in `/app/data/loop/no-forced-tool.json` across restarts. Project
+memory states the workspace top level and an empty project directory.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

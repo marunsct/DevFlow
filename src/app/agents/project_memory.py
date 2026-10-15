@@ -217,6 +217,37 @@ def map_of(files: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
+def where_things_stand(repo_root: str | Path, files: dict[str, str]) -> str:
+    """The workspace's top level, and the project's directory said to be empty when it is.
+
+    Measured on one run: the architect's gathering turns, before any of the
+    product existed, listed `.`, `docs`, `notes-api` and `.harness` and
+    globbed for `**/package.json` six to eight times a visit - each answer the
+    empty project it could have been told about.
+    """
+    root = Path(repo_root)
+    try:
+        top = sorted(
+            entry.name + ("/" if entry.is_dir() else "") for entry in root.iterdir()
+            if not entry.name.startswith(".")
+        )
+    except OSError:
+        return ""
+    line = f"Workspace top level: {', '.join(top) or 'nothing'}.\n"
+    try:
+        from app.tools.repository import pinned_project_directory
+
+        project = pinned_project_directory(root)
+    except Exception:  # noqa: BLE001 - the listing alone
+        project = None
+    if project and not any(path.startswith(f"{project}/") for path in files):
+        line += (
+            f"The project directory `{project}/` holds no files yet: nothing of the product has been written, "
+            "so listing or searching it finds nothing.\n"
+        )
+    return line + "\n"
+
+
 def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path."""
     files = current(repo_root)
@@ -253,7 +284,7 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         "[Project memory: the workflow's documents and the project's files as they are now, kept current "
         "by the harness. Use them as they are here; read a file only if it is named at the end as not "
         "included.]\n\n"
-    )
+    ) + where_things_stand(repo_root, files)
     tail = ("\nNot included here (read when needed): " + ", ".join(left_out) + "\n") if left_out else ""
     shapes = map_of({path: files[path] for path in left_out if not path.startswith("docs/")})
     if shapes:

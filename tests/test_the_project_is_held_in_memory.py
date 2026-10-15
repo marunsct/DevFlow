@@ -172,3 +172,20 @@ def test_a_file_left_out_is_named_with_what_it_defines(workspace):
 
     assert "notes-api/src/big.ts: export function createStore(dir: string) | export class NoteStore" in memory
     assert "notes-api/src/util.py: def slug(text) | class Thing" in memory
+
+
+def test_an_empty_project_directory_is_said_to_be_empty(tmp_path, monkeypatch):
+    """An architect listed an empty project 6-8 times a visit before anything was written."""
+    monkeypatch.setenv("PROJECT_MEMORY", "on")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "product_intake.md").write_text("# Intake\n")
+    (tmp_path / "notes-api").mkdir()
+    (tmp_path / ".project-directory").write_text("notes-api\n")
+
+    memory, _ = project_memory.render(tmp_path, 100_000, "")
+    assert "Workspace top level: docs/, notes-api/." in memory
+    assert "`notes-api/` holds no files yet" in memory
+    assert not BANNED.search(memory)
+
+    (tmp_path / "notes-api" / "app.ts").write_text("export {}\n")
+    assert "holds no files yet" not in project_memory.render(tmp_path, 100_000, "")[0]

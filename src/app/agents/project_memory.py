@@ -130,6 +130,93 @@ def _ranked(files: dict[str, str], focus: str) -> list[str]:
     return sorted(files, key=rank)
 
 
+_HEADING = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
+_MEASURE = re.compile(r"\b(?:AC|TC|ADR|DR|SM)-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\b")
+_WORD = re.compile(r"[a-z][a-z0-9_]{3,}")
+
+
+def digest_of(text: str, focus: str, budget: int) -> str:
+    """`text`'s heading outline with line numbers, then its sections that `focus` points at, within `budget`.
+
+    Measured on one run: a 205 KB specification was over the size a file may
+    be held whole, so it was never in memory, and the most-read document of
+    the run was read in windows 18 times. A section scores by the criterion
+    and record ids (`AC-3`, `TC-AC-3-01`) it shares with the request, then by
+    the words of its heading the request uses.
+    """
+    if budget <= 0:
+        return ""
+    lines = text.splitlines()
+    starts = [(index, match.group(2)) for index, line in enumerate(lines) if (match := _HEADING.match(line))]
+    if not starts:
+        return ""
+    sections = [
+        (heading, start, (starts[n + 1][0] if n + 1 < len(starts) else len(lines)))
+        for n, (start, heading) in enumerate(starts)
+    ]
+    outline = "\n".join(f"- lines {start + 1}-{end}: {heading}" for heading, start, end in sections[:300])
+    wanted_ids = set(_MEASURE.findall(focus))
+    wanted_words = set(_WORD.findall(focus.lower()))
+
+    def score(section: tuple[str, int, int]) -> int:
+        heading, start, end = section
+        body = "\n".join(lines[start:end])
+        return 5 * len(wanted_ids & set(_MEASURE.findall(body))) + len(wanted_words & set(_WORD.findall(heading.lower())))
+
+    room = budget - len(outline) - 200
+    chosen: list[tuple[int, int, str]] = []
+    for section in sorted(sections, key=score, reverse=True):
+        if score(section) <= 0 or room <= 0:
+            break
+        heading, start, end = section
+        body = "\n".join(lines[start:end]).rstrip()
+        if len(body) > room:
+            body = body[:room].rsplit("\n", 1)[0] + "\n[... the rest of this section: read it by line]"
+        chosen.append((start, end, body))
+        room -= len(body) + 40
+    shown = "\n\n".join(f"[lines {start + 1}-{end}]\n{body}" for start, end, body in sorted(chosen))
+    return f"Outline:\n{outline}" + (f"\n\nSections this request points at:\n{shown}" if shown else "")
+
+
+#: A line that defines something, in the languages the packs cover.
+_DEFINES = re.compile(
+    r"^\s*(?:export\s+(?:default\s+)?)?(?:pub(?:\([a-z]+\))?\s+)?(?:async\s+)?"
+    r"(?:function\*?|class|interface|type|enum|struct|trait|def|func|fn|module|impl|"
+    r"(?:const|let|var)\s+\w+\s*(?::[^=]+)?=\s*(?:async\s*)?(?:\([^)]*\)|\w+)\s*=>)\b.*"
+)
+#: The most a map of the files left out may take, in characters.
+MOST_MAP_CHARACTERS = 20_000
+MOST_DEFINITIONS_PER_FILE = 12
+
+
+def map_of(files: dict[str, str]) -> str:
+    """For each file, the lines that define something - its functions, classes and types - one file a line.
+
+    A large project's files do not all fit; naming the ones left out told a
+    stage nothing about what they hold, so it read them to find out. The
+    lines that define something are most of what a reader needs to know
+    which one to open (the idea of Aider's repository map, without a parser
+    per language).
+    """
+    lines: list[str] = []
+    used = 0
+    for path in sorted(files):
+        found = []
+        for line in files[path].splitlines():
+            if _DEFINES.match(line):
+                found.append(" ".join(line.strip().rstrip("{:").split())[:120])
+                if len(found) >= MOST_DEFINITIONS_PER_FILE:
+                    break
+        if not found:
+            continue
+        entry = f"- {path}: " + " | ".join(found)
+        if used + len(entry) > MOST_MAP_CHARACTERS:
+            break
+        lines.append(entry)
+        used += len(entry)
+    return "\n".join(lines)
+
+
 def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tuple[str, dict[str, str]]:
     """The memory as text within `budget_characters`, and the files it holds by path."""
     files = current(repo_root)
@@ -145,6 +232,15 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
             left_out.append(path)
             continue
         block = f"=== {path} ===\n{text.rstrip()}\n"
+        if len(text) > LARGEST_FILE_CHARACTERS and path.endswith(".md"):
+            # Too large to hold whole: its outline and the sections this
+            # stage's request points at, so it is not read window by window.
+            digest = digest_of(text, focus, min(LARGEST_FILE_CHARACTERS, budget_characters - used))
+            if digest:
+                block = f"=== {path} (outline and the sections this request points at; read others by line) ===\n{digest}\n"
+                parts.append(block)
+                used += len(block)
+                continue
         if len(text) > LARGEST_FILE_CHARACTERS or used + len(block) > budget_characters:
             left_out.append(path)
             continue
@@ -159,6 +255,9 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
         "included.]\n\n"
     )
     tail = ("\nNot included here (read when needed): " + ", ".join(left_out) + "\n") if left_out else ""
+    shapes = map_of({path: files[path] for path in left_out if not path.startswith("docs/")})
+    if shapes:
+        tail += "\nWhat those files define (read one when you need its body):\n" + shapes + "\n"
     return head + "\n".join(parts) + tail, held
 
 

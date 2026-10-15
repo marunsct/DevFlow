@@ -144,3 +144,31 @@ def test_a_window_of_a_held_file_is_a_pointer_and_of_any_other_file_is_read(work
     assert middleware.wrap_tool_call(window("docs/huge.md"), lambda request: "lines 40-60") == "lines 40-60"
     (workspace / "notes-api" / "tests" / "store.test.ts").write_text("// changed\n")
     assert middleware.wrap_tool_call(window("notes-api/tests/store.test.ts"), lambda request: "fresh") == "fresh"
+
+
+def test_a_document_too_large_to_hold_whole_is_held_as_its_outline_and_the_sections_asked_about(workspace):
+    """A 205 KB specification was never in memory and was read in windows 18 times."""
+    filler = ("A line of the specification that says little. " * 3 + "\n") * 40
+    sections = [f"## Section {n}\n{filler}" for n in range(60)]
+    sections[41] = "## Deleting notes\nAC-5: DELETE /notes/{id} answers 204, or 404.\n" + filler
+    (workspace / "docs" / "technical_specification.md").write_text("# Spec\n\n" + "\n".join(sections))
+    assert len((workspace / "docs" / "technical_specification.md").read_text()) > project_memory.LARGEST_FILE_CHARACTERS
+
+    memory, held = project_memory.render(workspace, 400_000, "Make AC-5 pass: deleting notes")
+
+    assert "docs/technical_specification.md (outline" in memory
+    assert "lines " in memory and ": Section 59" in memory
+    assert "AC-5: DELETE /notes/{id} answers 204" in memory
+    assert "docs/technical_specification.md" not in held
+    assert not BANNED.search(memory.split("=== docs/technical_specification.md")[1].split("\n", 1)[0])
+
+
+def test_a_file_left_out_is_named_with_what_it_defines(workspace):
+    big = "export function createStore(dir: string) {\n" + ("  // body\n" * 9000) + "}\nexport class NoteStore {\n}\n"
+    (workspace / "notes-api" / "src" / "big.ts").write_text(big)
+    (workspace / "notes-api" / "src" / "util.py").write_text("def slug(text):\n    return text\n\nclass Thing:\n    pass\n")
+
+    memory, _held = project_memory.render(workspace, 200, "")
+
+    assert "notes-api/src/big.ts: export function createStore(dir: string) | export class NoteStore" in memory
+    assert "notes-api/src/util.py: def slug(text) | class Thing" in memory

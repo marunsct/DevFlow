@@ -269,6 +269,10 @@ A call to a tool the model call withheld is refused, not run
 before a run, never beside a live one. While every test command passes, a
 milestone finding that names no criterion or test case (AC-n, TC-...) is
 recorded as minor (`_findings_no_measure_holds`).
+Project memory: a markdown document over 60k is held as its outline (line
+ranges) plus the sections the request's ids and words point at
+(`project_memory.digest_of`); files left out are listed with the lines that
+define something (`map_of`, a repo map without a parser per language).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

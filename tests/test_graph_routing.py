@@ -1616,3 +1616,41 @@ def test_the_structured_retry_targets_a_routable_node():
             next_stage="complete",
         )
         assert update["stage"] in _NODE_NAMES, f"retry from {stage} routes nowhere"
+
+
+def _review_asking_for_changes() -> MilestoneReviewOutput:
+    return MilestoneReviewOutput(
+        status="changes_required",
+        findings=[MilestoneReviewFinding(
+            severity="major", category="correctness",
+            description="Two concurrent deletes of one note both answer 204.",
+            affected_files=["src/app.py"], required_remediation="Answer 404 to the second.",
+        )],
+        acceptance_evidence="The tests pass; one defect no test checks.",
+        documentation_reviewed=True, tests_reviewed=True,
+    )
+
+
+@pytest.mark.parametrize("fast", [True, False])
+def test_a_review_still_asking_for_changes_at_the_limit(agents: ScriptedAgents, tmp_path: Any, monkeypatch: pytest.MonkeyPatch, fast: bool) -> None:
+    """Owner, 2026-10-15: in fast delivery the findings become recorded risks and the run goes on.
+
+    One run's reviews found new, different findings each round while every
+    test passed; the third would have stopped the run for a person.
+    """
+    monkeypatch.setattr(workflow_module, "_fast_delivery", lambda: fast)
+    _script_through_architecture(agents, _approved_review())
+    agents.script("scrum_master", [responds_with(_sprint_plan())])
+    agents.script("technical_lead", [responds_with(_milestone("testing"))] * 6)
+    agents.script("specialist_testing", [responds_with(_specialist())] * 20)
+    agents.script("milestone_reviewer", [responds_with(_review_asking_for_changes())] * 6)
+    agents.script("security_reviewer", [responds_with(_security_review())] * 6)
+
+    state = start_workflow(_graph(), _document(), _repository(tmp_path), f"run-review-limit-{fast}")
+
+    if fast:
+        assert state["stage"] == "complete", state.get("error")
+        assert any("record the findings as risks" in str(d.get("decision")) for d in state.get("decisions") or [])
+    else:
+        assert state["stage"] != "complete"
+        assert "still required changes" in str(state.get("error") or "")

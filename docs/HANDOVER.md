@@ -207,7 +207,10 @@ the build model with reasoning off and writes on the judgement model
 (`GATHERING_TOOLS`) are gathering - a write or a command, as in a building
 stage escalated to the judgement model, is the judgement model's. One architecture
 revision and one acceptance send-back, then open findings are decided
-risks. Research has a share per stage visit (8 docs, 12 packages;
+risks. Owner 2026-10-15: a milestone review still asking for changes after
+`MAX_MILESTONE_REVISIONS` records its findings as risks (a decision, carried to
+the next sprint) and goes on to the checks - a red suite, a criterion due that
+fails or a sprint not done still stop it; thorough still escalates. Research has a share per stage visit (8 docs, 12 packages;
 `app.tools.research`), carries to a fresh attempt, and package lookups
 batch. A cut-off answer keeps its whole fields and asks for the rest
 (`app.models.tool_arguments`); a specification revision sends only what

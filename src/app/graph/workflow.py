@@ -9323,7 +9323,32 @@ def build_workflow_graph(
                         "recorded evidence"
                     )
             revision_count = state.get("milestone_revision_count", 0) + 1
-            if revision_count >= MAX_MILESTONE_REVISIONS:
+            if revision_count >= MAX_MILESTONE_REVISIONS and _fast_delivery():
+                # Fast delivery (owner, 2026-10-15): the review's findings
+                # become the sprint's recorded risks, carried to the next
+                # sprint with the rest of its findings, and the sprint goes on
+                # to the checks below - a red suite, a criterion due that
+                # fails or a sprint not done still stop it. One run's reviews
+                # found new, different findings each round while every test
+                # passed; the third would have stopped the run for a person.
+                from app.decisions import record_decision
+
+                risked: dict[str, Any] = {}
+                record_decision(
+                    state, risked, point="milestone_review",
+                    question=f"The review still asks for changes after {MAX_MILESTONE_REVISIONS} revisions: stop or go on?",
+                    options=["stop for a person", "record the findings as risks and go on"],
+                    decision="record the findings as risks and go on",
+                    rationale="Fast delivery. Every test the sprint is measured by is checked next; the "
+                    "open findings are carried to the next sprint:\n" + findings_text[:3000],
+                )
+                logger.warning(
+                    "Milestone review still asks for changes after %d revisions; fast delivery records "
+                    "its %d finding(s) as risks and goes on to the checks",
+                    MAX_MILESTONE_REVISIONS, len(review.findings or []),
+                )
+                state = {**state, **risked, "milestone_revision_count": revision_count}
+            elif revision_count >= MAX_MILESTONE_REVISIONS:
                 # This sprint ends here, so it gets a summary like every other
                 # ending. Measured on one run, which failed exactly here:
                 # `docs/` held the plan, the review and the specification, and no
@@ -9350,12 +9375,13 @@ def build_workflow_graph(
                     milestone_review=review,
                     **summary,
                 )
-            return _handing_on(
-                stage="technical_lead",
-                revision_comments=state.get("revision_comments", []) + [findings_text],
-                milestone_revision_count=revision_count,
-                milestone_review=review,
-            )
+            else:
+                return _handing_on(
+                    stage="technical_lead",
+                    revision_comments=state.get("revision_comments", []) + [findings_text],
+                    milestone_revision_count=revision_count,
+                    milestone_review=review,
+                )
         
         if review.status != "accepted" and review.findings:
             logger.info(

@@ -273,6 +273,9 @@ Project memory: a markdown document over 60k is held as its outline (line
 ranges) plus the sections the request's ids and words point at
 (`project_memory.digest_of`); files left out are listed with the lines that
 define something (`map_of`, a repo map without a parser per language).
+Proven setups are kept in `/app/data/proven-setups/<stack>.json`
+(`PROVEN_SETUP_LIBRARY`); a later run on the same stack replays and re-proves
+one before asking the setup stage (`custom_setup.replay`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

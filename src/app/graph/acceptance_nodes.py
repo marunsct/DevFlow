@@ -151,6 +151,27 @@ def _set_up_a_stack_no_pack_covers(state: Any, config: RunnableConfig, ctx: Cont
         logger.warning("The custom stack's setup was not proven; left to the agents: %s", why)
         return _handing_on(**update, stage="acceptance_author")
 
+    if attempt == 0 and not resuming:
+        replayed = custom_setup.replay(project_root, stack)
+        if replayed:
+            proven = custom_setup.prove(root, project, stack, brief=brief, title=title or project)
+            if proven.ok:
+                update = {
+                    "stack_pack": custom_setup.PROVEN_SETUP,
+                    "scaffold_result": {"ok": True, "pack": custom_setup.PROVEN_SETUP, "project": project, "problem": ""},
+                }
+                _decide(
+                    state, update, point="scaffold", question="How is the project set up?",
+                    options=["a proven setup", "left to the agents"], decision="a proven setup",
+                    rationale="No pack covers this stack; a setup proven in an earlier run on the same stack "
+                    "was replayed and passed its unit and acceptance smoke tests again.",
+                )
+                logger.info("Replayed a setup proven in an earlier run on this stack in %s/", project)
+                return _handing_on(**update, stage="acceptance_author")
+            logger.warning("A setup proven in an earlier run did not prove here; asking the setup stage: %s", proven.problem)
+            for relative in replayed:
+                (project_root / relative).unlink(missing_ok=True)
+
     agent = create_specialist_agent(
         "testing", model=ctx.model, checkpointer=ctx.checkpointer,
         repo_root=ctx.repo_root, allow_subdirectories=ctx.allow_subdirectories,

@@ -48,6 +48,11 @@ DECLARED = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _a_library_of_its_own(tmp_path_factory, monkeypatch):
+    monkeypatch.setenv("PROVEN_SETUP_LIBRARY", str(tmp_path_factory.mktemp("library")))
+
+
 def _set_up(root: Path, declared: dict | None = None) -> Path:
     project = root / "notes"
     for name in ("vitest.config.ts", "playwright.config.ts", "tests/smoke.test.ts", "acceptance/smoke.spec.ts"):
@@ -368,3 +373,39 @@ def test_the_setup_request_asks_for_the_build_command():
     assert '"build": ["<program>"' in text
     rule = text[text.index("`build` is the command"):text.index("Build nothing of the product")]
     assert not BANNED.search(rule)
+
+
+# --- the library of proven setups ----------------------------------------------
+
+def test_a_proven_setup_is_kept_and_replayed_whole_on_the_same_stack(tmp_path):
+    first = tmp_path / "first"
+    _set_up(first)
+    assert prove(first, "notes", STACK, run=_runner(first)).ok
+
+    later = tmp_path / "later" / "notes"
+    written = custom_setup.replay(later, STACK)
+
+    assert DECLARATION_FILE in written and "tests/smoke.test.ts" in written and "vitest.config.ts" in written
+    assert json.loads((later / DECLARATION_FILE).read_text())["unit_test"] == ["npm", "test"]
+    assert prove(tmp_path / "later", "notes", STACK, run=_runner(tmp_path / "later")).ok
+    other = SimpleNamespace(**{**STACK.__dict__, "framework": "Remix"})
+    assert custom_setup.replay(tmp_path / "other", other) == []
+
+
+def test_a_replayed_setup_that_proves_asks_no_agent(stage, tmp_path):
+    custom_setup.remember(STACK, {"declaration": json.dumps(DECLARED), "files": {"tests/smoke.test.ts": "//"}})
+
+    update = stage.node(_state(tmp_path))
+
+    assert stage.calls == []
+    assert update["stage"] == "acceptance_author" and update["stack_pack"] == PROVEN_SETUP
+
+
+def test_a_replayed_setup_that_does_not_prove_is_cleared_and_the_stage_asked(stage, tmp_path):
+    custom_setup.remember(STACK, {"declaration": json.dumps(DECLARED), "files": {"tests/smoke.test.ts": "//"}})
+    stage.outcome["proven"] = False
+
+    stage.node(_state(tmp_path))
+
+    assert [call["stage"] for call in stage.calls] == ["stack_setup_0"]
+    assert not (tmp_path / "notes" / "tests" / "smoke.test.ts").exists()

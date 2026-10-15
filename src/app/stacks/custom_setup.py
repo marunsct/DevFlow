@@ -20,6 +20,7 @@ failed, and then left to the agents as before.
 from __future__ import annotations
 
 import json
+import os
 import shlex
 import logging
 import re
@@ -441,6 +442,15 @@ def prove(
             return result
 
     kept = {name: (project_root / name).read_text(encoding="utf-8", errors="replace") for name in declared.kept_files}
+    # What a later run on the same stack replays instead of asking an agent
+    # (`replay`): the declaration and every file it names, as proven.
+    replayable = {
+        "declaration": (project_root / DECLARATION_FILE).read_text(encoding="utf-8", errors="replace"),
+        "files": {
+            name: (project_root / name).read_text(encoding="utf-8", errors="replace")
+            for name in (*declared.kept_files, *declared.smoke_files)
+        },
+    }
     for relative in declared.smoke_files:
         (project_root / relative).unlink(missing_ok=True)
     for report in (declared.unit_report, declared.acceptance_report):
@@ -481,8 +491,57 @@ def prove(
         commit_all(root, f"Scaffold: {pack.title}")
     except Exception:  # noqa: BLE001 - history is a convenience, not the setup
         logger.debug("Could not commit the proven setup", exc_info=True)
+    remember(stack, replayable)
     result.ok = True
     return result
+
+
+# --- the library of proven setups ----------------------------------------------
+#
+# Measured on one run: the setup stage took 37 minutes and was not proven
+# twice, and the run went on without a proven setup - for a stack an earlier
+# run had already set up and proven. A setup that passes is kept, keyed by its
+# stack, and a later run on the same stack replays it and proves it again
+# before any agent is asked.
+
+
+def library_directory() -> Path:
+    return Path(os.environ.get("PROVEN_SETUP_LIBRARY") or "/app/data/proven-setups")
+
+
+def library_key(stack: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", _stack_line(stack).lower()).strip("-")[:120] or "stack"
+
+
+def remember(stack: Any, replayable: dict[str, Any]) -> None:
+    """Keep a proven setup for later runs on the same stack."""
+    try:
+        directory = library_directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / f"{library_key(stack)}.json").write_text(json.dumps(replayable), encoding="utf-8")
+    except (OSError, TypeError, ValueError):
+        logger.debug("Could not keep the proven setup", exc_info=True)
+
+
+def replay(project_root: Path, stack: Any) -> list[str]:
+    """Write a setup proven in an earlier run for this stack into `project_root`; the paths written, or []."""
+    try:
+        record = json.loads((library_directory() / f"{library_key(stack)}.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    files = record.get("files") if isinstance(record, dict) else None
+    if not isinstance(files, dict) or not isinstance(record.get("declaration"), str):
+        return []
+    written: list[str] = []
+    for name, text in {**files, DECLARATION_FILE: record["declaration"]}.items():
+        relative = _in_this_project(name, project_root)
+        if relative is None or not isinstance(text, str):
+            continue
+        target = project_root / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+        written.append(relative)
+    return written
 
 
 def leave_to_the_agents(project_root: Path) -> None:
@@ -492,5 +551,5 @@ def leave_to_the_agents(project_root: Path) -> None:
 
 __all__ = [
     "ATTEMPTS", "DECLARATION_FILE", "PROVEN_SETUP", "already_set_up", "leave_to_the_agents",
-    "build_setup_request", "enabled", "pack_from", "prove", "read_declaration",
+    "build_setup_request", "enabled", "library_key", "pack_from", "prove", "read_declaration", "remember", "replay",
 ]

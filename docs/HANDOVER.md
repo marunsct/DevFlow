@@ -301,6 +301,10 @@ copy (`requests._a_test_that_ran_here`). Grammar-constrained tool calls: the
 owner's llama.cpp-style server (1 slot) returns an invented tool name even
 with `tool_choice: required`, so it is not available there; names are mapped
 after the fact (`tool_arguments._the_offered_tool_meant`).
+A stage a stopped worker cut off carries on in its own conversation from its
+last saved step (`app.graph.abandoned_threads`, `.harness/stage-threads.json`):
+the gate alone was not enough - a deploy that waited for a 10-minute frontier
+call restarted the architect from nothing 50 s later.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

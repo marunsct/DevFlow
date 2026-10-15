@@ -3000,7 +3000,18 @@ def _run_gated_agent(
     else:
         # Append a UUID to force a fresh context window for new attempts.
         # This prevents the LLM from drowning in the message history of previous failed attempts.
-        inner_thread_id = f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
+        # Unless a stopped worker cut the last visit off mid-conversation: that
+        # is not a new attempt, and it carries on (`app.graph.abandoned_threads`).
+        from app.graph import abandoned_threads
+
+        visit_root = getattr(state.get("repository"), "root_path", None)
+        cut_off = abandoned_threads.cut_off(visit_root, outer_thread_id, stage_name, agent)
+        inner_thread_id = cut_off[0] if cut_off else f"{outer_thread_id}:{stage_name}:{uuid.uuid4().hex[:8]}"
+        if cut_off:
+            logger.warning(
+                "Stage %s was cut off by a stopped worker; carrying on in its own conversation", stage_name,
+            )
+        abandoned_threads.remember(visit_root, outer_thread_id, stage_name, inner_thread_id)
         # A previous attempt at this stage left what it established. The
         # conversation is deliberately gone; the facts are worth keeping, and
         # without them each attempt re-read the same files and re-ran the same
@@ -3038,17 +3049,23 @@ def _run_gated_agent(
             # concurrent specialists shared one slot - and that memory holds
             # which lines of which files a stage has been given.
             with remembering(inner_thread_id):
-                result = agent.invoke(
-                    initial_request,
-                    config=_inner_agent_config(
-                        inner_thread_id,
-                        config["configurable"].get(APP_RUN_ID_KEY),
-                        activity,
-                        stage=stage_name,
-                        recursion_limit=INNER_AGENT_RECURSION_LIMIT,
-                    ),
-                )
+                if cut_off and cut_off[1]:
+                    # It had finished; only the stage after it was cut off.
+                    result = dict(agent.get_state({"configurable": {"thread_id": inner_thread_id}}).values)
+                else:
+                    result = agent.invoke(
+                        None if cut_off else initial_request,
+                        config=_inner_agent_config(
+                            inner_thread_id,
+                            config["configurable"].get(APP_RUN_ID_KEY),
+                            activity,
+                            stage=stage_name,
+                            recursion_limit=INNER_AGENT_RECURSION_LIMIT,
+                        ),
+                    )
+            abandoned_threads.forget(visit_root, outer_thread_id, stage_name)
         except Exception as exc:  # noqa: BLE001 - re-raised unless handled below
+            abandoned_threads.forget(visit_root, outer_thread_id, stage_name)
             if _is_context_overflow(exc):
                 return _context_overflow_update(stage_name, exc)
             spun = _spun_without_finishing(stage_name, exc)

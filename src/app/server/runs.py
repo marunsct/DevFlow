@@ -587,6 +587,26 @@ def create_runs_router(
             media_type="application/octet-stream",
         )
 
+    @runs.get("/{run_id}/handover")
+    async def download_handover(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> Any:
+        """The run's handover pack: its documents, decisions and acceptance suite, as one zip."""
+        from app.sprint.handover import build
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or not Path(record.repo_root).is_dir():
+            raise HTTPException(status_code=404, detail="This run has no workspace.")
+        record_audit(
+            actor=user.username, tenant_id=user.tenant_id, action="run.handover.download",
+            subject=run_id, detail={},
+        )
+        return Response(
+            content=build(record.repo_root, run_id),
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{run_id}-handover.zip"'},
+        )
+
     @runs.get("/{run_id}/logs")
     async def get_logs(
         run_id: str,

@@ -20,6 +20,7 @@ import {
   getRewindPoints,
   rewindRun,
   cloneRun,
+  downloadHandover,
   startRun,
   type RewindPoint,
   getStreamTicket,
@@ -34,7 +35,7 @@ import { ApprovalGate } from '../components/ApprovalGate';
 import { WizardDashboard } from '../components/WizardDashboard';
 import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
 import { DeliveryPanel } from '../components/DeliveryPanel';
-import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw } from 'lucide-react';
+import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw, Download } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 
 
@@ -529,6 +530,11 @@ export const RunDashboard: React.FC = () => {
           <button onClick={handleClone}
             className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>
             <Copy className="h-3.5 w-3.5" /> Clone
+          </button>
+          <button onClick={() => void downloadHandover(runId!)}
+            title="The run's documents, decisions and acceptance suite, as one zip"
+            className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>
+            <Download className="h-3.5 w-3.5" /> Handover pack
           </button>
           {!isTerminal && (
             <button onClick={handleCancel}

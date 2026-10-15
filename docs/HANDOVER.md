@@ -289,6 +289,8 @@ Per run, `approval_timeout_minutes` (start form: "Approve a waiting gate
 automatically after N minutes"; column `runs.approval_timeout_minutes`): the
 API sweeps every 60 s and approves a gate that waited past it
 (`app.server.approval_timeouts`).
+`GET /api/runs/{id}/handover` (run page: "Handover pack") zips docs/, the
+acceptance suite and `.harness/decisions.json` (`app.sprint.handover`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

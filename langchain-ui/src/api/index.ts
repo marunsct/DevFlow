@@ -218,6 +218,22 @@ export const getStreamTicket = async (runId: string): Promise<string> => {
  * Fetching the bytes with the client and handing the browser a blob keeps the
  * header on the request, which is the only part that was ever missing.
  */
+/** The run's handover pack: its documents, decisions and acceptance suite, as one zip. */
+export const downloadHandover = async (runId: string): Promise<void> => {
+  const response = await api.get(`/runs/${runId}/handover`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data as Blob);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${runId}-handover.zip`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+};
+
 export const downloadArtifact = async (runId: string, path: string): Promise<void> => {
   const response = await api.get(`/runs/${runId}/artifacts/download`, {
     params: { path },

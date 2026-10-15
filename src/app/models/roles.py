@@ -15,8 +15,9 @@ empty is the default model's.
 from __future__ import annotations
 
 import contextvars
+from contextlib import contextmanager
 import logging
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
 
 logger = logging.getLogger(__name__)
 
@@ -119,9 +120,32 @@ def judgement_downgrade() -> str | None:
     return _DOWNGRADE.get()
 
 
+#: True while a run started not to use the frontier model is being worked:
+#: every stage, the specification and the reviews too, is on the build model.
+_BUILD_MODEL_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("build_model_only", default=False)
+
+
+@contextmanager
+def on_the_build_model_only(only: bool) -> Iterator[None]:
+    """Within it, a run chosen not to use the frontier model has no judgement model: see `build_judgement_model`."""
+    token = _BUILD_MODEL_ONLY.set(bool(only))
+    try:
+        yield
+    finally:
+        _BUILD_MODEL_ONLY.reset(token)
+
+
+def build_model_only() -> bool:
+    """Whether the run being worked was started not to use the frontier model."""
+    return _BUILD_MODEL_ONLY.get()
+
+
 def build_judgement_model(default_model: Any, environment: Mapping[str, str] | None = None) -> Any:
-    """The judgement model, or `default_model` when none is configured or it cannot be built."""
+    """The judgement model, or `default_model` when none is configured, it cannot be built, or the run chose not to use it."""
     _DOWNGRADE.set(None)
+    if build_model_only():
+        logger.info("This run was started not to use the frontier model: every stage runs on the build model")
+        return default_model
     if environment is None:
         try:
             from app.server.runtime_settings import effective_environment

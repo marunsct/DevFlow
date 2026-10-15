@@ -669,7 +669,7 @@ export const RunDashboard: React.FC = () => {
       {viewMode === 'wizard' ? (
         <WizardDashboard run={run} model={wizard} />
       ) : (
-      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] xl:flex-1 xl:min-h-[28rem]">
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] 2xl:grid-cols-[22rem_minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)_34rem] xl:flex-1 xl:min-h-[28rem]">
         <div className="min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
           <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
         </div>

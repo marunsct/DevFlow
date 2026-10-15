@@ -115,6 +115,14 @@ class StartRunRequest(BaseModel):
             "run was registered with, else the deployment's default."
         ),
     )
+    use_frontier_model: bool | None = Field(
+        default=None,
+        description=(
+            "Whether stages that need judgement (specification, reviews, escalated fixes) use the "
+            "frontier model. False keeps every stage on the build model. Omit for the frontier "
+            "model as configured."
+        ),
+    )
     auto_approve: bool | None = Field(
         default=None,
         description=(
@@ -262,6 +270,9 @@ class RunStatusResponse(BaseModel):
     error: str | None = Field(default=None, description="Error message if the run failed.")
     delivery_mode: str = Field(
         default="", description="`fast` or `thorough`: how this run delivers, chosen when it started.",
+    )
+    use_frontier_model: bool = Field(
+        default=True, description="Whether this run uses the frontier model; False is the build model only.",
     )
     auto_approve: bool = Field(
         default=False,

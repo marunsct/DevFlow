@@ -298,5 +298,5 @@ def test_the_worker_runs_a_run_in_its_own_delivery_mode():
     from pathlib import Path
 
     source = Path("src/app/server/tasks.py").read_text()
-    assert 'with delivery.for_the_run(getattr(record, "delivery_mode", "")):' in source
+    assert 'with delivery.for_the_run(getattr(record, "delivery_mode", "")), \\' in source
     assert "delivery_mode" in Path("src/app/server/run_store.py").read_text()

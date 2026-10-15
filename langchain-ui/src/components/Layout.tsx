@@ -25,7 +25,7 @@ export const Header: React.FC = () => {
 
   return (
     <header className="sticky top-0 z-50 glass-card-strong border-b border-border">
-      <div className="mx-auto w-full max-w-[120rem] 2xl:max-w-[140rem] px-4 sm:px-6 lg:px-8">
+      <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <Link to="/" className="flex items-center gap-2.5 group">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 transition-shadow">
@@ -68,10 +68,11 @@ export const Layout: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-[#020617]">
       <Header />
-      {/* The run dashboard is a three-column workspace, so the shell has to be
-          wide enough to hold one. At max-w-7xl the rails were squeezed into
-          ~18rem each on a 1080p display and a third of the screen sat empty. */}
-      <main className="flex-1 w-full max-w-[120rem] 2xl:max-w-[140rem] mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      {/* The run dashboard is a three-column workspace, so the shell takes the
+          whole window. At max-w-7xl the rails were squeezed into ~18rem each on
+          a 1080p display; capped at 120-140rem, a wider screen still sat empty
+          on both sides. */}
+      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
         <Outlet />
       </main>
       <footer className="border-t border-border/50 py-6 text-center text-xs text-text-muted">

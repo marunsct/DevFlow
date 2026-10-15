@@ -299,6 +299,8 @@ export interface StartRunRequest {
   allow_subdirectories?: boolean;
   auto_approve?: boolean;
   delivery_mode?: 'fast' | 'thorough';
+  /** False keeps every stage of the run on the local build model. */
+  use_frontier_model?: boolean;
   llm_provider?: string;
   openai_base_url?: string;
   model_name?: string;

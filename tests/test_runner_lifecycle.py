@@ -1136,3 +1136,45 @@ async def test_a_run_started_without_a_choice_takes_the_deployment_s(runner, dis
     await runner.start_run("run-1", document=None, repository=repository)
 
     assert runner.run_store.load("run-1").delivery_mode == "fast"
+
+
+async def test_a_run_started_without_the_frontier_model_keeps_every_stage_on_the_build_model(runner, dispatched, tmp_path, monkeypatch):
+    """Owner, 2026-10-15: a choice on the run - unchecked, all the work happens on the local model."""
+    from app.models.roles import build_judgement_model, on_the_build_model_only
+    from app.state import RepositoryContext
+
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository, use_frontier_model=False)
+
+    record = runner.run_store.load("run-1")
+    assert record.local_only is True
+    local = object()
+    frontier_settings = {
+        "LLM_PROVIDER": "local", "OPENAI_MODEL": "local-y", "OPENAI_BASE_URL": "http://localhost:1/v1",
+        "OPENAI_API_KEY": "k", "JUDGEMENT_MODEL": "frontier-x",
+    }
+    assert getattr(build_judgement_model(local, frontier_settings), "model_name", None) == "frontier-x"
+    with on_the_build_model_only(record.local_only):
+        assert build_judgement_model(local, frontier_settings) is local
+
+
+async def test_a_run_started_without_saying_uses_the_frontier_model(runner, dispatched, tmp_path):
+    from app.state import RepositoryContext
+
+    _register(runner)
+    repository = RepositoryContext(root_path=str(tmp_path), branch="main", commit="abc", status="clean")
+
+    await runner.start_run("run-1", document=None, repository=repository)
+
+    assert runner.run_store.load("run-1").local_only is False
+
+
+def test_the_worker_works_a_run_on_the_models_it_was_started_with():
+    from pathlib import Path
+
+    source = Path("src/app/server/tasks.py").read_text()
+    assert 'on_the_build_model_only(bool(getattr(record, "local_only", False)))' in source
+    store = Path("src/app/server/run_store.py").read_text()
+    assert "ADD COLUMN IF NOT EXISTS local_only" in store and store.count("delivery_mode, local_only FROM runs") == 3

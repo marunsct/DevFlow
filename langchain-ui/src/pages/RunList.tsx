@@ -84,7 +84,7 @@ export const RunList: React.FC = () => {
   };
 
   return (
-    <div className="max-w-[90rem] mx-auto space-y-6 animate-fade-in">
+    <div className="w-full space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-2xl font-bold text-white">Workflow Runs</h1>

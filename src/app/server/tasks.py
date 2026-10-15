@@ -465,9 +465,12 @@ def execute_workflow_run(
         # get_event_loop() was deprecated in this position and raises outright
         # under the threads and gevent worker pools.
         # In the run's own delivery mode, whatever the deployment's is now.
+        # And on the models it was started with: the frontier model or not.
         from app import delivery
+        from app.models.roles import on_the_build_model_only
 
-        with delivery.for_the_run(getattr(record, "delivery_mode", "")):
+        with delivery.for_the_run(getattr(record, "delivery_mode", "")), \
+                on_the_build_model_only(bool(getattr(record, "local_only", False))):
             asyncio.run(runner._run_loop(record, document, repository, resume=resume))
     except _RETRYABLE as exc:
         if self.request.retries < self.max_retries:

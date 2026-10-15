@@ -696,6 +696,9 @@ class RunRecord:
     model_overrides: dict[str, Any] = field(default_factory=dict)
     #: `fast` or `thorough`, chosen when the run starts (`app.delivery`).
     delivery_mode: str = ""
+    #: True when the run was started not to use the frontier model: every
+    #: stage on the build model (`app.models.roles.on_the_build_model_only`).
+    local_only: bool = False
 
     # Execution bookkeeping.
     task_id: str | None = None
@@ -949,6 +952,7 @@ class WorkflowRunner:
         auto_approve: bool = False,
         model_overrides: dict[str, str | None] | None = None,
         delivery_mode: str | None = None,
+        use_frontier_model: bool | None = None,
     ) -> None:
         """Persist start settings and dispatch the run to a worker.
 
@@ -973,6 +977,9 @@ class WorkflowRunner:
 
         chosen = str(delivery_mode or record.delivery_mode or "").strip().lower()
         record.delivery_mode = chosen if chosen in delivery.MODES else delivery.mode()
+        # Unsaid is the frontier model as configured; only an explicit no
+        # keeps every stage on the build model.
+        record.local_only = use_frontier_model is False
         # Overrides are persisted so the worker can apply them. They were
         # previously built here and then dropped, so choosing a model in the UI
         # had no effect at all. Secrets are filtered out: they must not travel

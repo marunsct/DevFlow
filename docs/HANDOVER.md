@@ -207,7 +207,11 @@ the build model with reasoning off and writes on the judgement model
 (`GATHERING_TOOLS`) are gathering - a write or a command, as in a building
 stage escalated to the judgement model, is the judgement model's. One architecture
 revision and one acceptance send-back, then open findings are decided
-risks. Owner 2026-10-15: a milestone review still asking for changes after
+risks. Owner 2026-10-15: each run chooses whether to use the frontier model ('Use the
+frontier model' on the start form; `use_frontier_model` in the start request,
+`runs.local_only`, `app.models.roles.on_the_build_model_only`); unchecked, every
+stage runs on the build model. `loop.sh start` takes `FRONTIER=false`. Owner
+2026-10-15: a milestone review still asking for changes after
 `MAX_MILESTONE_REVISIONS` records its findings as risks (a decision, carried to
 the next sprint) and goes on to the checks - a red suite, a criterion due that
 fails or a sprint not done still stop it; thorough still escalates. Research has a share per stage visit (8 docs, 12 packages;

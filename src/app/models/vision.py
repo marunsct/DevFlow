@@ -46,11 +46,11 @@ def the_reviewer_reads_images() -> bool:
     """
     try:
         from app.config import load_settings
-        from app.models.roles import judgement_environment
+        from app.models.roles import build_model_only, judgement_environment
         from app.server.runtime_settings import effective_environment
 
         environment = effective_environment()
-        judging = judgement_environment(environment)
+        judging = None if build_model_only() else judgement_environment(environment)
         return reads_images(load_settings(judging if judging is not None else environment))
     except Exception:  # noqa: BLE001
         return False

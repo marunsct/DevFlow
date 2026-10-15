@@ -211,25 +211,15 @@ export const Settings: React.FC = () => {
   const buildKeyHint = (settings?.[`${buildKeyField}_hint` as keyof typeof settings] as string | null | undefined) ?? null;
 
   return (
-    <div className="max-w-3xl mx-auto mt-4 space-y-6 animate-fade-in pb-12">
+    <div className="w-full mt-4 space-y-6 animate-fade-in pb-12">
       <div>
         <h1 className="text-2xl font-bold text-white mb-1">Settings</h1>
         <p className="text-text-secondary text-sm">View system configuration and account details.</p>
       </div>
 
-      {/* Account */}
-      <div className="glass-card rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
-          <User className="h-5 w-5 text-primary" />
-          <h2 className="font-semibold text-white">Account</h2>
-        </div>
-        <div className="px-6 py-2">
-          <InfoRow label="Username" value={user?.username || 'Loading...'} />
-          <InfoRow label="Role" value={user?.role ?? "-"} />
-          <InfoRow label="Session" value="Active" />
-        </div>
-      </div>
-
+      {/* Wide screens: the models on the left, the account and the rest beside them. */}
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6 items-start">
+      <div className="space-y-6 min-w-0">
       {/* Server Configuration */}
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
@@ -672,6 +662,21 @@ export const Settings: React.FC = () => {
         </div>
       </div>
 
+      </div>
+      <div className="space-y-6 min-w-0">
+      {/* Account */}
+      <div className="glass-card rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
+          <User className="h-5 w-5 text-primary" />
+          <h2 className="font-semibold text-white">Account</h2>
+        </div>
+        <div className="px-6 py-2">
+          <InfoRow label="Username" value={user?.username || 'Loading...'} />
+          <InfoRow label="Role" value={user?.role ?? "-"} />
+          <InfoRow label="Session" value="Active" />
+        </div>
+      </div>
+
       {/* Security */}
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
@@ -697,6 +702,8 @@ export const Settings: React.FC = () => {
           <InfoRow label="Backend" value="FastAPI + LangGraph" />
           <InfoRow label="Frontend" value="React + Vite + Tailwind" />
         </div>
+      </div>
+      </div>
       </div>
     </div>
   );

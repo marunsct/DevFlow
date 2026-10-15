@@ -320,6 +320,7 @@ def create_runs_router(
                     "model_name": body.model_name,
                 },
                 delivery_mode=body.delivery_mode,
+                use_frontier_model=body.use_frontier_model,
             )
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))
@@ -1691,6 +1692,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         error=record.error,
         auto_approve=bool(record.auto_approve),
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
+        use_frontier_model=not bool(getattr(record, "local_only", False)),
         cost=_cost_summary(record.run_id),
     )
 

@@ -16,6 +16,9 @@ export const Home: React.FC = () => {
   const [autoApprove, setAutoApprove] = useState<boolean>(true);
   // How this run delivers. Chosen per run: it is not a setting of the models.
   const [deliveryMode, setDeliveryMode] = useState<'fast' | 'thorough'>('fast');
+  // Whether the stages that need judgement use the frontier model. Off, every
+  // stage runs on the local build model.
+  const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
   const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
@@ -75,6 +78,7 @@ export const Home: React.FC = () => {
         allow_subdirectories: allowSubdirectories,
         auto_approve: unattended || autoApprove,
         delivery_mode: deliveryMode,
+        use_frontier_model: useFrontierModel,
         review_policy: unattended
           ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false, escalation: false }
           : {
@@ -141,7 +145,7 @@ export const Home: React.FC = () => {
   );
 
   return (
-    <div className="max-w-3xl mx-auto mt-4 animate-fade-in">
+    <div className="w-full mt-4 animate-fade-in">
       <div className="glass-card-strong rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-8 text-center border-b border-border/50 bg-gradient-to-b from-primary/5 to-transparent">
@@ -157,6 +161,9 @@ export const Home: React.FC = () => {
         {/* Form */}
         <div className="p-8">
           <form onSubmit={handleSubmit}>
+            {/* Two columns on a wide screen: what the run is built from, and how it runs. */}
+            <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-8 items-start">
+            <div className="space-y-6">
             {/* Upload Area */}
             <div
               className={`border-2 border-dashed rounded-xl p-10 text-center transition-all duration-300 cursor-pointer ${
@@ -220,8 +227,6 @@ export const Home: React.FC = () => {
               )}
             </div>
 
-            {/* Configuration */}
-            <div className="mt-8 space-y-6">
               {/* Workspace label */}
               <div>
                 <label htmlFor="workspace-label" className="flex items-center gap-2 text-sm font-semibold text-text-primary mb-2">
@@ -245,6 +250,42 @@ export const Home: React.FC = () => {
                 </p>
               </div>
 
+            {/* Error */}
+            {error && (
+              <div className="p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
+                <div className="h-2 w-2 rounded-full bg-danger animate-pulse shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* Submit */}
+            <div>
+              <button
+                type="submit"
+                disabled={files.length === 0 || isUploading}
+                className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-white transition-all ${
+                  files.length === 0 || isUploading
+                    ? 'bg-surface-overlay text-text-muted cursor-not-allowed'
+                    : 'gradient-btn'
+                }`}
+              >
+                {isUploading ? (
+                  <>
+                    <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Starting Workflow...
+                  </>
+                ) : (
+                  <>
+                    <PlayCircle className="h-5 w-5" />
+                    Start Workflow Run
+                  </>
+                )}
+              </button>
+            </div>
+            </div>
+
+            {/* Configuration */}
+            <div className="space-y-6 xl:mt-0">
               {/* How much the run should stop for you */}
               <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
                 <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
@@ -296,6 +337,17 @@ export const Home: React.FC = () => {
                 <p className="text-xs text-text-muted leading-relaxed">
                   Both keep the project in memory for every stage and check each edit as it is written.
                 </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-3">
+                <h3 className="text-sm font-semibold text-text-primary">Models</h3>
+                <Checkbox
+                  id="useFrontierModel"
+                  checked={useFrontierModel}
+                  onChange={setUseFrontierModel}
+                  label="Use the frontier model"
+                  description="The specification, the reviews and escalated fixes run on the frontier model set in Settings. Unchecked, every stage of this run - planning, building, testing and reviews - runs on the local model only."
+                />
               </div>
 
               {/* Only meaningful when the run is supervised */}
@@ -365,37 +417,6 @@ export const Home: React.FC = () => {
               )}
             </div>
 
-            {/* Error */}
-            {error && (
-              <div className="mt-6 p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-danger animate-pulse shrink-0" />
-                {error}
-              </div>
-            )}
-
-            {/* Submit */}
-            <div className="mt-8">
-              <button
-                type="submit"
-                disabled={files.length === 0 || isUploading}
-                className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-white transition-all ${
-                  files.length === 0 || isUploading
-                    ? 'bg-surface-overlay text-text-muted cursor-not-allowed'
-                    : 'gradient-btn'
-                }`}
-              >
-                {isUploading ? (
-                  <>
-                    <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Starting Workflow...
-                  </>
-                ) : (
-                  <>
-                    <PlayCircle className="h-5 w-5" />
-                    Start Workflow Run
-                  </>
-                )}
-              </button>
             </div>
           </form>
         </div>

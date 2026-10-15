@@ -5437,6 +5437,48 @@ def _findings_the_command_record_contradicts(review: Any, repo_root: str) -> Any
         return review
 
 
+#: A criterion or test case a finding can be held to: `AC-12`, `TC-AC-3-01`.
+_A_MEASURE_NAMED = re.compile(r"\b(?:AC|TC)-[A-Z0-9]+(?:-[A-Z0-9]+)*\b", re.I)
+
+
+def _findings_no_measure_holds(review: Any, repo_root: str) -> Any:
+    """`review` with each gating finding that names no criterion or test case made minor, while every test passes.
+
+    A send-back costs a full round - one run spent 35 minutes a round, twice,
+    on a sprint whose every acceptance and unit test passed, over findings
+    about how a test was worded. With every measure green, a finding that
+    cannot name the criterion or test case it says is not met is a risk to
+    record, not a reason to rebuild. Kept in the review and the Sprint Record.
+    """
+    try:
+        tests = _where_each_test_command_stands(repo_root)
+        if not tests or not all(tests.values()):
+            return review
+        findings, moved = [], 0
+        for finding in getattr(review, "findings", None) or []:
+            text = " ".join(str(getattr(finding, key, "") or "") for key in (
+                "description", "required_remediation", "evidence"))
+            if _severity_gates(getattr(finding, "severity", "")) and not _A_MEASURE_NAMED.search(text):
+                moved += 1
+                finding = finding.model_copy(update={
+                    "severity": "minor",
+                    "description": (
+                        "Every test command's most recent run passed and this names no criterion or test "
+                        f"case it holds the sprint to, so it is recorded as a risk: {finding.description}"
+                    ),
+                })
+            findings.append(finding)
+        if not moved:
+            return review
+        logger.warning(
+            "Milestone review raised %d gating finding(s) naming no criterion or test case while every "
+            "test passes; recorded as minor", moved,
+        )
+        return review.model_copy(update={"findings": findings})
+    except Exception:  # noqa: BLE001 - the review as written stands
+        return review
+
+
 #: A finding that the product's packages break the brief.
 _SAYS_A_DEPENDENCY_BREAKS_THE_BRIEF = re.compile(
     r"\b(?:dev)?dependenc(?:y|ies)\b[^.\n]{0,160}\b(?:violat\w*|forbid\w*|not allowed|prohibit\w*"
@@ -9224,7 +9266,7 @@ def build_workflow_graph(
             return update
             
         review: MilestoneReviewOutput = _a_pass_over_its_own_findings(
-            _findings_the_command_record_contradicts(
+            _findings_no_measure_holds(_findings_the_command_record_contradicts(
                 _findings_about_a_server_only_the_tests_start(
                     _findings_the_dependency_check_contradicts(
                         _security_graded_by_its_own_review(
@@ -9236,7 +9278,7 @@ def build_workflow_graph(
                     state["repository"].root_path,
                 ),
                 state["repository"].root_path,
-            ),
+            ), state["repository"].root_path),
             state["repository"].root_path,
             "accepted",
             "milestone_review",

@@ -35,7 +35,11 @@ class MilestoneReviewFinding(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     severity: Literal["blocking", "major", "minor", "suggestion"] = Field(
-        ..., description="How serious this finding is."
+        ..., description=(
+            "How serious this finding is. While every test passes, a blocking or major finding names "
+            "the acceptance criterion or test case (AC-n, TC-...) it holds the sprint to; one that "
+            "names none is recorded as minor."
+        )
     )
 
     # Four schemas in this harness name severity and no two agree, so the word

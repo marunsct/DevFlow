@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 
 import argparse
 import json
@@ -332,9 +333,56 @@ def resume_runs_a_restart_abandoned(run_ids: list[str]) -> int:
                 record(run_id, "", "resumed", why="the worker that ran it stopped (a deploy or a crash)")
             except Exception:  # noqa: BLE001 - the resume stands without its note
                 pass
-        except Exception:  # noqa: BLE001 - one bad run must not block the rest
+        except Exception as error:  # noqa: BLE001 - one bad run must not block the rest
+            if _the_model_is_not_up_yet(error):
+                _resume_when_the_model_answers(run_id)
+                queued += 1
+                continue
             logger.warning("Could not resume run %s", run_id, exc_info=True)
     return queued
+
+
+#: How long, and how often, a recovered run waits for its model server.
+MODEL_WAIT_SECONDS = 15 * 60
+MODEL_RETRY_SECONDS = 30
+
+
+def _the_model_is_not_up_yet(error: Exception) -> bool:
+    """Whether a resume was refused only because the model server did not answer."""
+    return type(error).__name__ == "RunConflict" and "No model server answered" in str(error)
+
+
+def _resume_when_the_model_answers(run_id: str, *, wait: float = MODEL_WAIT_SECONDS,
+                                   every: float = MODEL_RETRY_SECONDS, sleep: Any = None) -> threading.Thread:
+    """Resume `run_id` once its model server answers, trying again every `every` seconds for `wait`.
+
+    Measured on one run: the whole stack restarted while the owner switched
+    the local model server; the recovered run's resume found no server yet
+    and the run was left failed until a person resumed it.
+    """
+    import time
+
+    pause = sleep or time.sleep
+    logger.warning("Run %s waits for its model server before it resumes (up to %d min)", run_id, int(wait // 60))
+
+    def attempt() -> None:
+        waited = 0.0
+        while waited < wait:
+            pause(every)
+            waited += every
+            try:
+                _resume_one(run_id)
+                logger.info("Resumed run %s once its model server answered", run_id)
+                return
+            except Exception as error:  # noqa: BLE001 - tried again until the wait is over
+                if not _the_model_is_not_up_yet(error):
+                    logger.warning("Could not resume run %s", run_id, exc_info=True)
+                    return
+        logger.warning("Run %s was not resumed: its model server did not answer in %d min", run_id, int(wait // 60))
+
+    worker = threading.Thread(target=attempt, name=f"resume-{run_id[:12]}", daemon=True)
+    worker.start()
+    return worker
 
 
 def _resume_one(run_id: str) -> None:

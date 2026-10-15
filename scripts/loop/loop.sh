@@ -209,7 +209,23 @@ deploy)
   echo "live runs before deploy (they will be resumed by orphan recovery):"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   docker compose build --progress=plain app worker >/dev/null 2>&1
+  # Between model calls (owner, 2026-10-15): hold new calls, wait for the ones
+  # in flight to return, then restart (app.models.call_gate). GATE_WAIT caps the
+  # wait in seconds; a call still running then is restarted with its stage.
+  gate=/app/data/loop/gate
+  docker compose exec -T worker sh -c "mkdir -p $gate/inflight && touch $gate/hold"
+  waited=0
+  while :; do
+    n=$(docker compose exec -T worker sh -c "ls $gate/inflight 2>/dev/null | wc -l" | tr -d '[:space:]')
+    [ "${n:-0}" = 0 ] && break
+    [ "$waited" -ge "${GATE_WAIT:-1800}" ] && { echo "still $n model call(s) in flight after ${waited}s; deploying anyway"; break; }
+    [ "$waited" = 0 ] && echo "waiting for $n model call(s) in flight to finish ($(jst '+%H:%M JST'))"
+    sleep 5; waited=$((waited + 5))
+  done
+  [ "$waited" -gt 0 ] && echo "model calls finished after ${waited}s; deploying ($(jst '+%H:%M JST'))"
   docker compose up -d app worker
+  # The old processes are gone: their markers mean nothing now. Lift the hold.
+  docker compose exec -T worker sh -c "rm -f $gate/inflight/* $gate/hold"
   sleep 10
   # The image bakes src/ in; a restart without a build deploys nothing. Prove it.
   pkg=$(docker compose exec -T worker python -c "import app,os;print(os.path.dirname(app.__file__))")

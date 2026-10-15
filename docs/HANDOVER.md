@@ -258,6 +258,10 @@ A call to a tool name not offered that plainly means one offered tool
 (`Read` for `read_file`) is taken as that tool (`tool_arguments`).
 Fast delivery's milestone review sends a sprint back once
 (`FAST_MILESTONE_REVISIONS`), then records the findings as risks.
+`loop.sh deploy` deploys between model calls (owner 2026-10-15): it builds,
+sets `/app/data/loop/gate/hold` (new calls wait), waits for
+`gate/inflight/` to empty (`GATE_WAIT`, default 1800 s), restarts, lifts the
+hold (`app.models.call_gate`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

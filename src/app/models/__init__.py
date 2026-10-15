@@ -457,6 +457,13 @@ class CompatibleChatOpenAI(ChatOpenAI):
         a stage that answers in prose is reminded to use its answer tool
         (`settled_answer`).
         """
+        from app.models.call_gate import a_model_call
+
+        # A deploy waits for this call to return (`app.models.call_gate`).
+        with a_model_call():
+            return self._generate_once(messages, stop=stop, run_manager=run_manager, **kwargs)
+
+    def _generate_once(self, messages, stop=None, run_manager=None, **kwargs):
         from app.models.tool_arguments import decode_structured_arguments
 
         server = (str(self.openai_api_base or ""), str(self.model_name or ""))

@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -27,21 +29,29 @@ logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 FILE = ".harness/stage-threads.json"
+#: This worker process. A note written by this process is never a cut-off: the
+#: process is alive. Measured on one run: a plan sent back to the same stage
+#: in the same process found its note still there - a reminder path re-entered
+#: the conversation without crossing it out - and carried on the old
+#: conversation instead of starting the new attempt fresh.
+PROCESS = f"{os.getpid()}-{uuid.uuid4().hex[:12]}"
 
 
 def _path(root: str | Path) -> Path:
     return Path(root) / FILE
 
 
-def _read(root: str | Path) -> dict[str, str]:
+def _read(root: str | Path) -> dict[str, dict[str, str]]:
     try:
         data = json.loads(_path(root).read_text(encoding="utf-8"))
-        return {str(k): str(v) for k, v in data.items()} if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+    if not isinstance(data, dict):
+        return {}
+    return {str(k): v for k, v in data.items() if isinstance(v, dict) and v.get("thread")}
 
 
-def _write(root: str | Path, data: dict[str, str]) -> None:
+def _write(root: str | Path, data: dict[str, dict[str, str]]) -> None:
     try:
         path = _path(root)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -59,7 +69,7 @@ def remember(root: str | Path | None, outer_thread_id: str, stage_name: str, inn
         return
     with _LOCK:
         data = _read(root)
-        data[_key(outer_thread_id, stage_name)] = inner_thread_id
+        data[_key(outer_thread_id, stage_name)] = {"thread": inner_thread_id, "process": PROCESS}
         _write(root, data)
 
 
@@ -80,9 +90,10 @@ def cut_off(root: str | Path | None, outer_thread_id: str, stage_name: str, agen
     """
     if not root:
         return None
-    inner = _read(root).get(_key(outer_thread_id, stage_name))
-    if not inner:
+    note = _read(root).get(_key(outer_thread_id, stage_name))
+    if not note or note.get("process") == PROCESS:
         return None
+    inner = str(note["thread"])
     try:
         snapshot = agent.get_state({"configurable": {"thread_id": inner}})
     except Exception:  # noqa: BLE001 - no saved conversation to carry on

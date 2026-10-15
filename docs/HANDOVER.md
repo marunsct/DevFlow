@@ -305,6 +305,9 @@ A stage a stopped worker cut off carries on in its own conversation from its
 last saved step (`app.graph.abandoned_threads`, `.harness/stage-threads.json`):
 the gate alone was not enough - a deploy that waited for a 10-minute frontier
 call restarted the architect from nothing 50 s later.
+A note carries the worker process that wrote it; only a note from a process
+that has stopped is a cut-off (a send-back in the same process once carried
+on the old conversation because a reminder path never crossed its note out).
 The harness's own request is never moved to `conversation_history/` (deepagents
 evicted every architect request over 50k tokens; the architect read its own
 instructions back in windows): `human_message_token_limit_before_evict=None`.

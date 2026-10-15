@@ -1156,6 +1156,85 @@ def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None
     return name, count
 
 
+#: Identical failing test runs, with edits between them, before the stage is told
+#: its edits are not moving the result, and before it is left only its answer.
+SAME_FAILURE_BEFORE_SAYING_SO = 3
+SAME_FAILURE_BEFORE_THE_ANSWER = 5
+_A_TEST_COMMAND = re.compile(r"test|spec|pytest|jest|vitest|playwright|mocha", re.I)
+_A_FAILURE_LINE = re.compile(r"fail|✖|not ok|error|assert", re.I)
+_TIMINGS = re.compile(r"\d+(?:\.\d+)?\s*(?:ms|s|m)\b|\(\d+(?:\.\d+)?ms\)")
+
+
+def _failure_signature(argv: Any, content: str) -> str | None:
+    """A failing test run reduced to what failed, timings aside; None if it is not a failing test run."""
+    command = " ".join(str(part) for part in argv) if isinstance(argv, list) else str(argv or "")
+    if not _A_TEST_COMMAND.search(command):
+        return None
+    try:
+        result = json.loads(content)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(result, dict) or str(result.get("returncode", "0")) in ("0", "None", ""):
+        return None
+    output = f"{result.get('stdout') or ''}\n{result.get('stderr') or ''}"
+    lines = sorted({_TIMINGS.sub("", line).strip() for line in output.splitlines() if _A_FAILURE_LINE.search(line)})
+    return f"{command}|{result.get('returncode')}|" + "\n".join(lines[:40])
+
+
+def _the_same_failure_running(messages: list[Any]) -> tuple[str, int] | None:
+    """The test command whose last runs failed identically with edits between them, and how many runs.
+
+    The stuck-loop shape a step count misses: a stage edits, runs the tests,
+    gets the same failure, and edits again - every call new, every result new
+    to a repeat check, and nothing moving. The measure that should move is the
+    failure itself.
+    """
+    from app.agents.repeated_queries import MUTATING_TOOLS
+
+    asked: dict[str, tuple[str, Any]] = {}
+    runs: list[tuple[str, str, bool]] = []
+    edited = False
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            asked[str(call.get("id") or "")] = (str(call.get("name") or ""), (call.get("args") or {}).get("command"))
+        if getattr(message, "type", None) != "tool":
+            continue
+        name, argv = asked.get(str(getattr(message, "tool_call_id", "") or ""), ("", None))
+        if name in MUTATING_TOOLS or name in ("write_file", "edit_file", "replace_lines"):
+            edited = True
+            continue
+        if argv is None:
+            continue
+        signature = _failure_signature(argv, str(getattr(message, "content", "") or ""))
+        if signature is None:
+            continue
+        command = " ".join(str(part) for part in argv) if isinstance(argv, list) else str(argv)
+        runs.append((command, signature, edited))
+        edited = False
+    if not runs:
+        return None
+    command, last, _ = runs[-1]
+    count = 1
+    for _command, signature, edited_before in reversed(runs[:-1]):
+        if signature != last:
+            break
+        count += 1
+    # Edits between them: the same failure run twice in a row with nothing
+    # changed is the repeat rung's, not this one's.
+    if count < 2 or not any(edited_before for _c, _s, edited_before in runs[-count + 1:]):
+        return None
+    return command, count
+
+
+def _the_same_failure_notice(command: str, count: int) -> str:
+    return (
+        f"Your last {count} runs of `{command}` failed in exactly the same way, and the edits between them "
+        "did not change the result. Stop editing on the same idea: read the first failure in full, decide "
+        "what it says is actually wrong, and change your approach. If it cannot be fixed from here, return "
+        "your structured response saying what still fails and why."
+    )
+
+
 #: Calls of a withheld tool after which the stage is left only its answer.
 #: Withholding a tool takes it off the list the model is offered; a weak model
 #: calls it anyway, and the call still runs. Measured on one run: a planning
@@ -1497,12 +1576,24 @@ def build_settled_answer_middleware(
                         )
                 stalled = schema is not None and _nothing_new_lately(messages)
                 ignored = schema is not None and _a_withheld_tool_still_called(messages)
+                same_failure = _the_same_failure_running(messages)
+                if same_failure is not None and same_failure[1] >= SAME_FAILURE_BEFORE_SAYING_SO:
+                    notice = _the_same_failure_notice(*same_failure)
+                    correction = f"{correction}\n\n{notice}" if correction else notice
+                    logger.warning(
+                        "Stage %s: %d runs of `%s` failed the same way with edits between them",
+                        stage_name or "?", same_failure[1], same_failure[0],
+                    )
+                stuck_on_a_failure = (
+                    schema is not None and same_failure is not None
+                    and same_failure[1] >= SAME_FAILURE_BEFORE_THE_ANSWER
+                )
                 # Every tool that only looks goes; a stage that also writes
                 # keeps its writers, and one that only looks has its answer left.
                 writers = _without_the_looking_tools_in(list(getattr(request, "tools", None) or [])) if ignored else []
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, step_limit, schema
-                ) or stalled or (ignored and not writers)
+                ) or stalled or (ignored and not writers) or stuck_on_a_failure
                 if ignored:
                     # Named as well: the model is told which call it kept
                     # sending, not only that its tools are gone.

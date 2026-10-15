@@ -281,6 +281,8 @@ files, built-ins, versions or words of a sentence, and reads documentation
 only for names the registry knows. A server's refusal of a forced tool call
 is kept in `/app/data/loop/no-forced-tool.json` across restarts. Project
 memory states the workspace top level and an empty project directory.
+A stage whose test runs fail identically with edits between them is told so
+at 3 and left only its answer at 5 (`settled_answer._the_same_failure_running`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

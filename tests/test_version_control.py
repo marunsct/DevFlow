@@ -221,7 +221,7 @@ def test_asking_about_a_sprint_that_has_not_happened_is_not_an_error(workspace: 
     result = build_sprint_history_tool(str(workspace)).invoke({"sprint": 3})
 
     assert result["changed"] == []
-    assert "not been accepted yet" in result["note"]
+    assert "has not been accepted in this run" in result["note"]
 
 
 def test_a_workspace_without_history_says_so(tmp_path: Path) -> None:

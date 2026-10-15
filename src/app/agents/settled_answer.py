@@ -813,7 +813,8 @@ NOTHING_NEW_BEFORE_THE_ANSWER = 5
 _NOTHING_NEW = re.compile(
     r"returned exactly what it returned|the same bytes|Refusing to read .{0,200}? again|"
     r"You have already read|nothing you did not already have|nothing you have not already been given|"
-    r"is in the project memory at the start of this conversation|has had its share of",
+    r"is in the project memory at the start of this conversation|has had its share of|"
+    r"There is nothing to compare against",
     re.S,
 )
 
@@ -827,24 +828,28 @@ def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE
     said so; the read and listing tools were withheld one by one and it found
     another. With nothing new coming back, the answer is the only move left.
     """
+    # Distinct calls, not tool names: one tool asked about one thing after
+    # another, each answered with nothing new, is as stuck as several tools.
     called = {
-        str(call.get("id") or ""): str(call.get("name") or "")
+        str(call.get("id") or ""): (
+            str(call.get("name") or ""), json.dumps(call.get("args") or {}, sort_keys=True, default=str)
+        )
         for message in messages if getattr(message, "type", None) == "ai"
         for call in getattr(message, "tool_calls", None) or []
     }
     seen = 0
-    tools: set[str] = set()
+    tools: set[tuple[str, str]] = set()
     for message in reversed(messages):
         if getattr(message, "type", None) != "tool":
             continue
         if not _NOTHING_NEW.search(str(getattr(message, "content", "") or "")):
             return False
         seen += 1
-        tools.add(str(getattr(message, "name", "") or called.get(str(getattr(message, "tool_call_id", "") or ""), "")))
+        tools.add(called.get(str(getattr(message, "tool_call_id", "") or ""), (str(getattr(message, "name", "") or ""), "")))
         if seen >= count:
-            # One tool repeating is the repeat rung's: it withholds that tool
+            # One call repeating is the repeat rung's: it withholds that tool
             # and leaves the rest. Several, and withholding one did not help.
-            return len(tools - {""}) >= 2
+            return len(tools - {("", "")}) >= 2
     return False
 
 
@@ -1151,6 +1156,25 @@ def _a_query_answered_identically(messages: list[Any]) -> tuple[str, int] | None
     return name, count
 
 
+#: Calls of a withheld tool after which the stage is left only its answer.
+#: Withholding a tool takes it off the list the model is offered; a weak model
+#: calls it anyway, and the call still runs. Measured on one run: a planning
+#: stage on a 1-bit build model sent one identical `changed_since_sprint` 27
+#: times, 23 of them after the tool was withheld, each answered the same.
+WITHHELD_CALLS_BEFORE_THE_ANSWER = 2
+
+
+def _a_withheld_tool_still_called(messages: list[Any]) -> bool:
+    """Whether a tool withheld for repeating itself has been called again since, more than once."""
+    for repeated, threshold in (
+        (_a_tool_refused_identically(messages), IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL),
+        (_a_query_answered_identically(messages), IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL),
+    ):
+        if repeated is not None and repeated[1] >= threshold + WITHHELD_CALLS_BEFORE_THE_ANSWER:
+            return True
+    return False
+
+
 #: With thinking off, the same call this many times running is a loop. The
 #: rungs above were measured on stages that think, and wait for a refusal or a
 #: "nothing changed" note to repeat: a stage that lost a reply to reasoning and
@@ -1281,6 +1305,13 @@ def _without_that_tool_in(tools: list[Any], name: str) -> list[Any] | None:
     if len(kept) == len(tools) or not kept:
         return None
     return kept
+
+
+def _without_the_looking_tools_in(tools: list[Any]) -> list[Any]:
+    """`tools` without any that only read, list, search or look something up."""
+    from app.agents.repeated_queries import QUERY_TOOLS
+
+    return [tool for tool in tools if _named(tool) not in QUERY_TOOLS | _READ_TOOLS]
 
 
 def _without_the_read_tools_in(tools: list[Any]) -> list[Any] | None:
@@ -1463,9 +1494,26 @@ def build_settled_answer_middleware(
                             stage_name or "?",
                         )
                 stalled = schema is not None and _nothing_new_lately(messages)
+                ignored = schema is not None and _a_withheld_tool_still_called(messages)
+                # Every tool that only looks goes; a stage that also writes
+                # keeps its writers, and one that only looks has its answer left.
+                writers = _without_the_looking_tools_in(list(getattr(request, "tools", None) or [])) if ignored else []
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, step_limit, schema
-                ) or stalled
+                ) or stalled or (ignored and not writers)
+                if ignored:
+                    # Named as well: the model is told which call it kept
+                    # sending, not only that its tools are gone.
+                    refused = _a_tool_refused_identically(messages)
+                    named = (_a_tool_withheld_notice(*refused) if refused is not None
+                             else _a_query_withheld_notice(*_a_query_answered_identically(messages)))
+                    if not writers:
+                        # With writers kept, the repeat rung below names it.
+                        correction = f"{correction}\n\n{named}" if correction else named
+                    logger.warning(
+                        "Stage %s kept calling a tool after it was withheld; withholding %s",
+                        stage_name or "?", "every tool that only looks" if writers else "its tools so the only move left is the answer",
+                    )
                 if stalled:
                     logger.warning(
                         "Stage %s had nothing new from its last %d tool calls; withholding its "
@@ -1581,6 +1629,8 @@ def build_settled_answer_middleware(
                                 "of it",
                                 stage_name or "?", repeated[0], repeated[1],
                             )
+                    if ignored and writers:
+                        kept, narrowed = writers, True
                     if narrowed:
                         overrides["tools"] = kept
                     elif repeated is not None and not correction.strip():

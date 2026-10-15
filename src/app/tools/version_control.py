@@ -259,8 +259,18 @@ def changed_since(repo_root: str | Path, reference: str) -> list[str]:
     return ordered
 
 
+def accepted_sprints(repo_root: str | Path) -> list[int]:
+    """The sprint numbers this workspace has a `sprint-<n>` tag for, in order."""
+    result = _git(Path(repo_root), "tag", "--list", "sprint-*")
+    if result is None or result.returncode != 0:
+        return []
+    numbers = {int(name[len("sprint-"):]) for name in result.stdout.split() if name[len("sprint-"):].isdigit()}
+    return sorted(numbers)
+
+
 __all__ = [
     "AUTHOR_EMAIL",
+    "accepted_sprints",
     "AUTHOR_NAME",
     "changed_since",
     "commit_milestone",

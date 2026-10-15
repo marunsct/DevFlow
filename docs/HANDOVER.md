@@ -250,6 +250,10 @@ A read of a file the project memory holds, unchanged, is answered with a
 pointer to it - a window (`offset`/`limit`) too: a third of all reads were
 windows. Files over `LARGEST_FILE_CHARACTERS` (60k; the specification is often
 ~200k) are not held and are still read from disk.
+A withheld tool that a model keeps calling (a 1-bit model did, 23 times)
+takes every looking tool away (`settled_answer._a_withheld_tool_still_called`);
+the stall rule counts distinct calls, so one tool asked about one thing after
+another with nothing new is a stall too.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

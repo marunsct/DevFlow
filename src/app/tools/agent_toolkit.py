@@ -117,12 +117,25 @@ def build_sprint_history_tool(repo_root: str) -> BaseTool:
         Returns `{"changed": [...]}`, or `{"error": "..."}` when that sprint
         has no recorded state - which is normal in the first sprint of a run.
         """
-        from app.tools.version_control import changed_since, is_repository
+        from app.tools.version_control import accepted_sprints, changed_since, is_repository
 
         if not is_repository(repo_root):
             return {"error": "This workspace has no sprint history to compare against."}
         if sprint < 1:
             return {"error": "Sprint numbers start at 1."}
+        # Said outright. "Nothing has changed since sprint N, or sprint N has
+        # not been accepted yet" let a planning stage that no sprint had been
+        # accepted for ask about sprints 1, 2, 3, 4 and 5 in turn, and again.
+        accepted = accepted_sprints(repo_root)
+        if sprint not in accepted:
+            return {
+                "changed": [],
+                "note": (
+                    f"Sprint {sprint} has not been accepted in this run. Accepted so far: "
+                    f"{', '.join(map(str, accepted)) or 'none'}. There is nothing to compare against "
+                    "for any other sprint number; asking again about another one returns this same answer."
+                ),
+            }
 
         changed = changed_since(repo_root, f"sprint-{sprint}")
         if not changed:

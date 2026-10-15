@@ -220,10 +220,14 @@ def build_project_memory_middleware(repo_root: str) -> Any:
         def wrap_tool_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             call = getattr(request, "tool_call", None) or {}
             args = call.get("args") or {}
-            if call.get("name") == "read_file" and self._held and not args.get("offset") and not args.get("limit"):
+            # From the top, and as far as the file goes: the path middleware
+            # outside this one gives every read a default `limit`, so "no
+            # limit" never arrived - and no read was ever answered from memory.
+            if call.get("name") == "read_file" and self._held and not args.get("offset"):
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
                 held = self._held.get(path)
-                if held is not None and current(repo_root).get(path) == held:
+                whole = not args.get("limit") or int(args.get("limit") or 0) >= held.count("\n") + 1 if held is not None else False
+                if held is not None and whole and current(repo_root).get(path) == held:
                     from langchain_core.messages import ToolMessage
 
                     return ToolMessage(

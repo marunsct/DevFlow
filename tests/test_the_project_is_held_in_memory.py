@@ -102,3 +102,23 @@ def test_it_is_on_in_every_delivery_mode_unless_switched_off(monkeypatch):
     assert project_memory.enabled()
     monkeypatch.setenv("PROJECT_MEMORY", "off")
     assert not project_memory.enabled()
+
+
+def test_a_read_with_the_path_middleware_s_default_limit_is_a_pointer_too(workspace):
+    """The path middleware gives every read a default `limit`; not one read was ever answered from memory."""
+    from app.agents.workspace_paths import DEFAULT_READ_LINES
+
+    middleware = project_memory.build_project_memory_middleware(str(workspace))
+
+    class Request(SimpleNamespace):
+        def override(self, **changes):
+            return Request(**{**self.__dict__, **changes})
+
+    middleware.wrap_model_call(Request(messages=[HumanMessage(content="Build it")], model=None), lambda r: None)
+    whole = SimpleNamespace(tool_call={"name": "read_file", "id": "r1",
+                                       "args": {"file_path": "notes-api/src/store.ts", "limit": DEFAULT_READ_LINES}})
+    part = SimpleNamespace(tool_call={"name": "read_file", "id": "r2",
+                                      "args": {"file_path": "notes-api/src/store.ts", "offset": 1, "limit": 1}})
+
+    assert isinstance(middleware.wrap_tool_call(whole, lambda request: "the file again"), ToolMessage)
+    assert middleware.wrap_tool_call(part, lambda request: "a window") == "a window"

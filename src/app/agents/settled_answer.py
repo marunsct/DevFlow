@@ -804,6 +804,50 @@ def _running_out_of_room(messages: list[Any], limit: int, schema: Any = None) ->
     )
 
 
+#: Tool results in a row that gave the stage nothing new before its tools are
+#: withheld and the answer is the only move left.
+NOTHING_NEW_BEFORE_THE_ANSWER = 5
+
+#: How a tool result says it gave nothing new: a repeat refused or answered
+#: with a pointer, the same bytes or listing again.
+_NOTHING_NEW = re.compile(
+    r"returned exactly what it returned|the same bytes|Refusing to read .{0,200}? again|"
+    r"You have already read|nothing you did not already have|nothing you have not already been given|"
+    r"is in the project memory at the start of this conversation|has had its share of",
+    re.S,
+)
+
+
+def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE_ANSWER) -> bool:
+    """True when the stage's last `count` tool results all gave it nothing new.
+
+    One run's architect on a local model began twenty replies with "I have
+    everything I need; I'll write the specification now" and each time called
+    `glob` or `ls` for a file it had already read, for 20 minutes. Each result
+    said so; the read and listing tools were withheld one by one and it found
+    another. With nothing new coming back, the answer is the only move left.
+    """
+    called = {
+        str(call.get("id") or ""): str(call.get("name") or "")
+        for message in messages if getattr(message, "type", None) == "ai"
+        for call in getattr(message, "tool_calls", None) or []
+    }
+    seen = 0
+    tools: set[str] = set()
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "tool":
+            continue
+        if not _NOTHING_NEW.search(str(getattr(message, "content", "") or "")):
+            return False
+        seen += 1
+        tools.add(str(getattr(message, "name", "") or called.get(str(getattr(message, "tool_call_id", "") or ""), "")))
+        if seen >= count:
+            # One tool repeating is the repeat rung's: it withholds that tool
+            # and leaves the rest. Several, and withholding one did not help.
+            return len(tools - {""}) >= 2
+    return False
+
+
 def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -> bool:
     """True on the last calls of the budget with no answer written yet.
 
@@ -1418,22 +1462,30 @@ def build_settled_answer_middleware(
                             "answer from what it has",
                             stage_name or "?",
                         )
+                stalled = schema is not None and _nothing_new_lately(messages)
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, step_limit, schema
-                )
+                ) or stalled
+                if stalled:
+                    logger.warning(
+                        "Stage %s had nothing new from its last %d tool calls; withholding its "
+                        "tools so the only move left is the answer",
+                        stage_name or "?", NOTHING_NEW_BEFORE_THE_ANSWER,
+                    )
                 if answer_only and not (spiralled and not spiral_quiet):
                     correction = (
                         f"{correction}\n\n{TOOLS_WITHHELD_NOTICE}"
                         if correction
                         else TOOLS_WITHHELD_NOTICE
                     )
-                    logger.warning(
-                        "Stage %s is %d calls from its budget with nothing "
-                        "written; withholding its tools so the only move left "
-                        "is the answer",
-                        stage_name or "?",
-                        step_limit - _model_calls_used(messages),
-                    )
+                    if not stalled:
+                        logger.warning(
+                            "Stage %s is %d calls from its budget with nothing "
+                            "written; withholding its tools so the only move left "
+                            "is the answer",
+                            stage_name or "?",
+                            step_limit - _model_calls_used(messages),
+                        )
                 # The two withholding rungs are independent. `repeated` used to
                 # be computed only when nothing else had produced a correction,
                 # and the read rung above produces one constantly - 114 times in

@@ -87,9 +87,31 @@ def test_a_declaration_is_read_as_the_commands_and_places_it_names(tmp_path):
     assert declared.kept_files == ("vitest.config.ts", "playwright.config.ts")
 
 
+def test_the_slips_a_local_model_makes_are_read_as_meant(tmp_path):
+    """One local model's setup wrote each command as one string, paths under the project's own
+    name, and patterns among the kept files; every one was refused and the stage sent back."""
+    declared, problem = read_declaration(_set_up(tmp_path, {
+        **DECLARED,
+        "install": ["npm install", "npx playwright install chromium"],
+        "unit_test": ["node --test 'tests/**/*.test.ts'"],
+        "acceptance_test": "npm run test:acceptance",
+        "unit_report": "notes/test-results/unit.xml",
+        "kept_files": ["vitest.config.ts", "src/**/*.ts", "notes/playwright.config.ts"],
+        "smoke_files": ["notes/tests/smoke.test.ts", "acceptance/smoke.spec.ts"],
+    }))
+
+    assert problem == ""
+    assert declared.install == (("npm", "install"), ("npx", "playwright", "install", "chromium"))
+    assert declared.unit_test == ("node", "--test", "tests/**/*.test.ts")
+    assert declared.acceptance_test == ("npm", "run", "test:acceptance")
+    assert declared.unit_report == "test-results/unit.xml"
+    assert declared.kept_files == ("vitest.config.ts", "playwright.config.ts")
+    assert declared.smoke_files == ("tests/smoke.test.ts", "acceptance/smoke.spec.ts")
+
+
 @pytest.mark.parametrize("change, said", [
     ({"unit_report": "../../etc/x.xml"}, "`unit_report` must be a path inside the project"),
-    ({"unit_test": "npm test"}, "`unit_test` must be a command"),
+    ({"unit_test": ""}, "`unit_test` must be a command"),
     ({"acceptance_dir": "tests"}, "a directory of their own"),
     ({"kept_files": ["missing.config.ts"]}, "do not exist: `missing.config.ts`"),
     ({"smoke_files": ["tests/smoke.test.ts"]}, "`smoke_files` must list"),

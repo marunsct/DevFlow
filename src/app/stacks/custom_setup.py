@@ -20,6 +20,7 @@ failed, and then left to the agents as before.
 from __future__ import annotations
 
 import json
+import shlex
 import logging
 import re
 from dataclasses import dataclass
@@ -203,9 +204,41 @@ def _inside(path: Any) -> str | None:
 
 
 def _argv(value: Any) -> tuple[str, ...] | None:
+    # A command written as one string - `"npm test"`, `["node --test 'tests/*.test.ts'"]` -
+    # is that command's words. One local model's setup declared every command so.
+    if isinstance(value, str) and value.strip():
+        value = [value]
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], str) and " " in value[0].strip():
+        try:
+            value = shlex.split(value[0])
+        except ValueError:
+            return None
     if isinstance(value, list) and value and all(isinstance(part, str) and part for part in value):
         return tuple(value)
     return None
+
+
+def _commands(value: Any) -> tuple[tuple[str, ...] | None, ...]:
+    """`install` as commands: a list of commands, or one command, or each string one command."""
+    if isinstance(value, str):
+        return (_argv(value),)
+    if not isinstance(value, list):
+        return (None,)
+    if value and all(isinstance(item, str) for item in value):
+        if any(" " in item.strip() for item in value):
+            return tuple(_argv(item) for item in value)
+        return (_argv(value),)
+    return tuple(_argv(item) for item in value)
+
+
+def _in_this_project(path: Any, project_root: Path) -> str | None:
+    """`path` relative to the project, a leading project directory name taken off."""
+    if isinstance(path, str):
+        cleaned = path.strip().replace("\\", "/").lstrip("./")
+        prefix = project_root.name + "/"
+        if cleaned.startswith(prefix):
+            path = cleaned[len(prefix):]
+    return _inside(path)
 
 
 def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Declaration | None, str]:
@@ -220,21 +253,23 @@ def read_declaration(project_root: Path, fallback_kind: str = "") -> tuple[Decla
     if not isinstance(data, dict):
         return None, f"`{DECLARATION_FILE}` must hold one JSON object."
     problems: list[str] = []
-    install_raw = data.get("install") or []
-    install = tuple(_argv(argv) for argv in install_raw) if isinstance(install_raw, list) else (None,)
+    install = _commands(data.get("install") or [])
     if any(argv is None for argv in install):
         problems.append("`install` must be a list of commands, each a list of strings")
     commands = {key: _argv(data.get(key)) for key in ("unit_test", "acceptance_test")}
     problems += [f"`{key}` must be a command: a list of strings" for key, argv in commands.items() if argv is None]
     paths = {
-        key: _inside(data.get(key))
+        key: _in_this_project(data.get(key), project_root)
         for key in ("unit_report", "unit_dir", "acceptance_report", "acceptance_dir")
     }
     problems += [f"`{key}` must be a path inside the project" for key, path in paths.items() if path is None]
     patterns = {key: str(data.get(key) or "").strip() for key in ("unit_pattern", "acceptance_pattern")}
     problems += [f"`{key}` must name a file pattern" for key, value in patterns.items() if not value or "/" in value]
-    kept = [_inside(name) for name in data.get("kept_files") or []]
-    smoke = [_inside(name) for name in data.get("smoke_files") or []]
+    # A pattern is not a file the harness can keep - and `src/**/*.ts` would
+    # keep the product's own code from every stage after this one.
+    kept = [_in_this_project(name, project_root) for name in data.get("kept_files") or []
+            if not (isinstance(name, str) and any(mark in name for mark in "*?["))]
+    smoke = [_in_this_project(name, project_root) for name in data.get("smoke_files") or []]
     if any(name is None for name in kept):
         problems.append("every `kept_files` entry must be a path inside the project")
     if len(smoke) < 2 or any(name is None for name in smoke):

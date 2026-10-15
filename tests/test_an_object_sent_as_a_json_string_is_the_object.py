@@ -229,3 +229,36 @@ def test_arguments_sent_inside_a_wrapper_are_the_arguments():
     assert with_structure_decoded({"args": {"other": 1}}, command) == {"args": {"other": 1}}
     own = {"type": "object", "properties": {"args": {"type": "object"}}}
     assert with_structure_decoded({"args": {"x": 1}}, own) == {"args": {"x": 1}}, "a tool's own `args` stays"
+
+
+_LINES = {"type": "object", "properties": {
+    "component_boundaries": {"type": "array", "items": {"type": "string"}},
+    "api_and_event_contracts": {"type": "array", "items": {"type": "string"}},
+    "decisions": {"type": "array", "items": {"type": "object", "properties": {"title": {"type": "string"}}}},
+}}
+
+
+def test_an_object_where_a_list_of_lines_is_wanted_is_one_line_per_key():
+    """A local model sent each list section of a specification as one object; every answer was refused."""
+    from app.models.tool_arguments import with_structure_decoded
+
+    sent = {"component_boundaries": json.dumps({"ui_shell": {"file": "index.html", "role": "page"}, "store": "app.js"})}
+
+    assert with_structure_decoded(sent, _LINES)["component_boundaries"] == [
+        "ui_shell: file: index.html; role: page", "store: app.js",
+    ]
+
+
+def test_an_object_holding_one_list_is_that_list():
+    from app.models.tool_arguments import with_structure_decoded
+
+    sent = {"api_and_event_contracts": json.dumps({"functions": [{"name": "addTask", "signature": "addTask(t)"}]})}
+
+    assert with_structure_decoded(sent, _LINES)["api_and_event_contracts"] == ["name: addTask; signature: addTask(t)"]
+
+
+def test_a_list_cut_off_partway_keeps_its_whole_entries():
+    from app.models.tool_arguments import with_structure_decoded
+
+    sent = {"decisions": '[{"title": "one"}, {"title": "two"}, {"title": "thr'}
+    assert with_structure_decoded(sent, _LINES)["decisions"] == [{"title": "one"}, {"title": "two"}]

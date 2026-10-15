@@ -90,6 +90,13 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
     wanted = [part for part in wanted if part]
     if not wanted:
         return specification
+    if model is None:
+        # No model named: the stages build the deployment's own, and so does
+        # this. One run on the build model only handed `None` here and every
+        # part failed on `None.invoke`, so the architect wrote them all again.
+        from app.models import build_default_chat_model
+
+        model = build_default_chat_model()
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
 
     def write(names: tuple[str, ...]) -> dict[str, Any]:
@@ -100,7 +107,15 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
             ])
             found = _the_object_in(reply) or {}
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
-            return {k: v for k, v in decoded.items() if isinstance(v, list) and v}
+            written = {k: v for k, v in decoded.items() if isinstance(v, list) and v}
+            if len(written) < len(names):
+                text = str(getattr(reply, "content", reply) or "")
+                logger.info(
+                    "A part of the specification (%s) came back without %s: %d characters of reply, beginning %r",
+                    ", ".join(names), ", ".join(n for n in names if n not in written) or "nothing",
+                    len(text), text[:160],
+                )
+            return written
         except Exception as error:  # noqa: BLE001 - the empty-section check sends them back
             logger.info("A part of the specification (%s) could not be written: %s", ", ".join(names), str(error)[:200])
             return {}

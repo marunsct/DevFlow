@@ -104,6 +104,46 @@ def _the_list_it_held(value: list[Any], items: Any, definitions: dict[str, Any])
     return words if words and all(isinstance(word, str) and word for word in words) else value
 
 
+def _decoded(text: str) -> Any:
+    """`text` as JSON, or as JSON with its open brackets closed when it was cut off; None when it is neither."""
+    try:
+        return json.loads(text)
+    except ValueError:
+        pass
+    if text.lstrip()[:1] not in ("{", "["):
+        return None
+    from app.agents.settled_answer import _repair_json
+
+    repaired = _repair_json(text)
+    try:
+        parsed = json.loads(repaired, strict=False) if repaired else None
+    except ValueError:
+        return None
+    # A list cut off partway ends in the entry the cut ran through: that one
+    # is not whole, and its absent fields would refuse the answer.
+    if isinstance(parsed, list) and parsed:
+        parsed = parsed[:-1]
+    return parsed
+
+
+def _as_entries(value: dict[str, Any]) -> list[Any]:
+    """An object where a list is wanted, as that list.
+
+    One local model sent each list section of a specification as one object -
+    `{"functions": [...]}`, `{"ui_shell": {...}, "task_store": {...}}` - and
+    every answer was refused. An object holding one list is that list; any
+    other is one entry per key, its value after it.
+    """
+    if len(value) == 1 and isinstance(next(iter(value.values())), list):
+        return list(next(iter(value.values())))
+    return [
+        f"{key}: " + (item if isinstance(item, str) else "; ".join(
+            f"{k}: {v if isinstance(v, str) else json.dumps(v)}" for k, v in item.items()
+        ) if isinstance(item, dict) else json.dumps(item))
+        for key, item in value.items()
+    ]
+
+
 def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) -> Any:
     if depth > _MOST_DEPTH:
         return value
@@ -112,14 +152,17 @@ def _repaired(value: Any, schema: Any, definitions: dict[str, Any], depth: int) 
         return value
     wanted = set().union(*(_types(option) for option in options))
     if isinstance(value, str) and "string" not in wanted and wanted & {"object", "array"}:
-        try:
-            decoded = json.loads(value)
-        except ValueError:
+        decoded = _decoded(value)
+        if decoded is None:
             return _as_lines(value, options, definitions)
         if (isinstance(decoded, dict) and "object" in wanted) or (isinstance(decoded, list) and "array" in wanted):
             value = decoded
+        elif isinstance(decoded, dict) and "array" in wanted:
+            value = _as_entries(decoded)
         else:
             return value
+    if isinstance(value, dict) and "array" in wanted and "object" not in wanted:
+        value = _as_entries(value)
     if isinstance(value, dict) and wanted == {"string"}:
         # An entry written as an object where the schema wants a line of text:
         # one run's specification sent every function contract as

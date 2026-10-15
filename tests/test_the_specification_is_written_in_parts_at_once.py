@@ -58,3 +58,15 @@ def test_the_architect_is_asked_for_the_core_only_in_fast_delivery_and_not_in_a_
     node = source[source.index("    def principal_architect_node("):source.index("    def architecture_review_node(")]
     assert "in_parts = _fast_delivery() and not (required_changes and previous_specification is not None)" in node
     assert node.index("with_the_parts_written(") < node.index("_incomplete_specification_sections(")
+
+
+def test_with_no_model_named_the_parts_are_written_on_the_deployment_s_own(monkeypatch):
+    """A run on the build model only handed `None` here; every part failed on `None.invoke`."""
+    import app.models as models
+
+    built = _Parts()
+    monkeypatch.setattr(models, "build_default_chat_model", lambda *a, **k: built)
+
+    spec = specification_parts.with_the_parts_written(CORE, None, "--- Product intake ---\nNotes.")
+
+    assert spec.function_contracts == ["function_contracts line"] and len(built.asked) == 3

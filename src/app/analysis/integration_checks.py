@@ -5312,6 +5312,8 @@ def _actions_required_in(text: str, required: dict[str, str]) -> dict[str, str]:
             in_requirements = bool(_A_REQUIREMENT_SECTION.match(line))
             continue
         lowered = line.lower()
+        if _NOT_A_REQUIREMENT.search(lowered):
+            continue
         if not in_requirements:
             if "acceptance" not in lowered and "criteria" not in lowered:
                 if not _LOOKS_LIKE_A_CRITERION.search(lowered):
@@ -5428,6 +5430,17 @@ def _actions_the_brief_requires(brief: str) -> dict[str, str]:
 
 #: A bullet that reads as a delivered-capability claim even without the word
 #: "acceptance" on it - the intake writes these as plain list items.
+#: A line that names actions only to say they are not required now: when to
+#: replace a tool, or what is out of scope. Measured on one run, whose release
+#: was held as "the brief is not delivered" for `search` and `filter`, read
+#: from "Replacement criteria: Move to SQLite when ... or search/filter/pagination
+#: enters scope. None of these is in the current acceptance criteria."
+_NOT_A_REQUIREMENT = re.compile(
+    r"replacement criteri|out of (?:this |the )?(?:release|scope)|not in (?:the )?(?:current )?scope|"
+    r"enters? (?:the )?scope|none of these (?:is|are) in|not (?:in|part of) (?:the |this )?(?:current )?"
+    r"(?:release|mvp|acceptance criteria)"
+)
+
 _LOOKS_LIKE_A_CRITERION = re.compile(
     r"users? can|must be able|delivered|supports?\b|able to"
 )

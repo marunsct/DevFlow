@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS runs (
     cancel_requested BOOLEAN NOT NULL DEFAULT FALSE,
     model_overrides TEXT NOT NULL DEFAULT '{}',
     delivery_mode   TEXT NOT NULL DEFAULT '',
-    local_only      BOOLEAN NOT NULL DEFAULT FALSE
+    local_only      BOOLEAN NOT NULL DEFAULT FALSE,
+    approval_timeout_minutes INTEGER
 );
 """
 
@@ -79,6 +80,9 @@ _MIGRATIONS = (
     # Whether the run was started to use the build model only, no frontier
     # model for any stage (`app.models.roles.on_the_build_model_only`).
     "ALTER TABLE runs ADD COLUMN IF NOT EXISTS local_only BOOLEAN NOT NULL DEFAULT FALSE",
+    # Minutes a gate waits for a person before it approves itself; NULL waits
+    # for ever (`app.server.approval_timeouts`).
+    "ALTER TABLE runs ADD COLUMN IF NOT EXISTS approval_timeout_minutes INTEGER",
     "CREATE INDEX IF NOT EXISTS runs_tenant_created_idx ON runs (tenant_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS runs_owner_idx ON runs (owner)",
 )
@@ -94,8 +98,8 @@ _MIGRATIONS = (
 # here is built from a value that reaches the process at runtime; every such
 # value is passed as a bound parameter.
 _INSERT_SQL = """
-    INSERT INTO runs (run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    INSERT INTO runs (run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
     ON CONFLICT (run_id) DO UPDATE SET
         thread_id        = EXCLUDED.thread_id,
         status           = EXCLUDED.status,
@@ -114,13 +118,14 @@ _INSERT_SQL = """
         task_id          = COALESCE(runs.task_id, EXCLUDED.task_id),
         model_overrides  = EXCLUDED.model_overrides,
         delivery_mode    = EXCLUDED.delivery_mode,
-        local_only       = EXCLUDED.local_only
+        local_only       = EXCLUDED.local_only,
+        approval_timeout_minutes = EXCLUDED.approval_timeout_minutes
 """
 
-_SELECT_ONE_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only FROM runs WHERE run_id = %s"
-_LIST_ALL_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only FROM runs ORDER BY created_at DESC LIMIT %s OFFSET %s"
+_SELECT_ONE_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes FROM runs WHERE run_id = %s"
+_LIST_ALL_SQL = "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes FROM runs ORDER BY created_at DESC LIMIT %s OFFSET %s"
 _LIST_TENANT_SQL = (
-    "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only FROM runs WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
+    "SELECT run_id, thread_id, status, current_stage, stage_meaning, created_at, updated_at, error, review_policy, reviewer, auto_approve, document_names, document_paths, repo_root, owner, tenant_id, task_id, cancel_requested, model_overrides, delivery_mode, local_only, approval_timeout_minutes FROM runs WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s OFFSET %s"
 )
 _COUNT_ALL_SQL = "SELECT COUNT(*) FROM runs"
 _COUNT_TENANT_SQL = "SELECT COUNT(*) FROM runs WHERE tenant_id = %s"
@@ -248,6 +253,7 @@ class RunStore:
                         json.dumps(record.model_overrides or {}),
                         str(record.delivery_mode or ""),
                         bool(getattr(record, "local_only", False)),
+                        getattr(record, "approval_timeout_minutes", None),
                     ),
                 )
             conn.commit()
@@ -461,6 +467,7 @@ class RunStore:
             model_overrides=_json(row.get("model_overrides"), {}),
             delivery_mode=str(row.get("delivery_mode") or ""),
             local_only=bool(row.get("local_only")),
+            approval_timeout_minutes=row.get("approval_timeout_minutes"),
         )
 
     def close(self) -> None:

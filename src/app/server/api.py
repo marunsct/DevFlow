@@ -84,9 +84,17 @@ def create_app(
         # environment is fully assembled, and so a failure stops startup.
         init_db_pool()
         init_db()
+        # Gates that approve themselves after the run's timeout
+        # (`app.server.approval_timeouts`).
+        import asyncio
+
+        from app.server.approval_timeouts import sweep_for_ever
+
+        sweeper = asyncio.create_task(sweep_for_ever(runner))
         try:
             yield
         finally:
+            sweeper.cancel()
             close_db_pool()
             RunStore.reset_shared()
             from app.server.redis_client import close_async_redis, close_redis_pool

@@ -123,6 +123,13 @@ class StartRunRequest(BaseModel):
             "model as configured."
         ),
     )
+    approval_timeout_minutes: int | None = Field(
+        default=None, ge=1, le=10_080,
+        description=(
+            "Minutes a gate that asks a person (an approval or a review) waits before it is approved "
+            "automatically. Omit to wait for the person however long it takes."
+        ),
+    )
     auto_approve: bool | None = Field(
         default=None,
         description=(

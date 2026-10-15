@@ -301,6 +301,8 @@ export interface StartRunRequest {
   delivery_mode?: 'fast' | 'thorough';
   /** False keeps every stage of the run on the local build model. */
   use_frontier_model?: boolean;
+  /** Minutes a gate waits for a person before approving itself. */
+  approval_timeout_minutes?: number;
   llm_provider?: string;
   openai_base_url?: string;
   model_name?: string;

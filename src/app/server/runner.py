@@ -699,6 +699,8 @@ class RunRecord:
     #: True when the run was started not to use the frontier model: every
     #: stage on the build model (`app.models.roles.on_the_build_model_only`).
     local_only: bool = False
+    #: Minutes a gate waits for a person before approving itself; None waits for ever.
+    approval_timeout_minutes: int | None = None
 
     # Execution bookkeeping.
     task_id: str | None = None
@@ -953,6 +955,7 @@ class WorkflowRunner:
         model_overrides: dict[str, str | None] | None = None,
         delivery_mode: str | None = None,
         use_frontier_model: bool | None = None,
+        approval_timeout_minutes: int | None = None,
     ) -> None:
         """Persist start settings and dispatch the run to a worker.
 
@@ -980,6 +983,7 @@ class WorkflowRunner:
         # Unsaid is the frontier model as configured; only an explicit no
         # keeps every stage on the build model.
         record.local_only = use_frontier_model is False
+        record.approval_timeout_minutes = approval_timeout_minutes
         # Overrides are persisted so the worker can apply them. They were
         # previously built here and then dropped, so choosing a model in the UI
         # had no effect at all. Secrets are filtered out: they must not travel

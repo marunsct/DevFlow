@@ -19,6 +19,9 @@ export const Home: React.FC = () => {
   // Whether the stages that need judgement use the frontier model. Off, every
   // stage runs on the local build model.
   const [useFrontierModel, setUseFrontierModel] = useState<boolean>(true);
+  // Minutes a review gate waits for a person before approving itself; blank
+  // waits however long it takes.
+  const [approvalTimeout, setApprovalTimeout] = useState<string>('');
   const [reviewIntake, setReviewIntake] = useState<boolean>(true);
   const [reviewTechSpec, setReviewTechSpec] = useState<boolean>(true);
   const [reviewAcceptance, setReviewAcceptance] = useState<boolean>(true);
@@ -79,6 +82,8 @@ export const Home: React.FC = () => {
         auto_approve: unattended || autoApprove,
         delivery_mode: deliveryMode,
         use_frontier_model: useFrontierModel,
+        approval_timeout_minutes:
+          !unattended && parseInt(approvalTimeout, 10) > 0 ? parseInt(approvalTimeout, 10) : undefined,
         review_policy: unattended
           ? { product_intake: false, technical_specification: false, acceptance_tests: false, sprint: false, release: false, escalation: false }
           : {
@@ -372,6 +377,23 @@ export const Home: React.FC = () => {
                       <CheckSquare className="h-4 w-4 text-primary" />
                       Review Gates
                     </h3>
+                    <label htmlFor="approvalTimeout" className="block text-sm text-text-primary">
+                      Approve a waiting gate automatically after
+                      <input
+                        id="approvalTimeout"
+                        type="number"
+                        min={1}
+                        max={10080}
+                        value={approvalTimeout}
+                        onChange={(e) => setApprovalTimeout(e.target.value)}
+                        placeholder="never"
+                        className="mx-2 w-20 rounded-md border border-border bg-surface px-2 py-1 text-sm"
+                      />
+                      minutes
+                      <span className="block text-xs text-text-muted mt-1">
+                        Leave blank to wait for you however long it takes.
+                      </span>
+                    </label>
                     <Checkbox
                       id="reviewIntake"
                       checked={reviewIntake}

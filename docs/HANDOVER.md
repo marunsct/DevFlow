@@ -285,6 +285,10 @@ A stage whose test runs fail identically with edits between them is told so
 at 3 and left only its answer at 5 (`settled_answer._the_same_failure_running`).
 A model call over 60 s on a server another run was also using is reported on
 the run page (`call_gate`: in-flight markers carry run and server).
+Per run, `approval_timeout_minutes` (start form: "Approve a waiting gate
+automatically after N minutes"; column `runs.approval_timeout_minutes`): the
+API sweeps every 60 s and approves a gate that waited past it
+(`app.server.approval_timeouts`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

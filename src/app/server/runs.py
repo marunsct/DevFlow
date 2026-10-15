@@ -321,6 +321,7 @@ def create_runs_router(
                 },
                 delivery_mode=body.delivery_mode,
                 use_frontier_model=body.use_frontier_model,
+                approval_timeout_minutes=body.approval_timeout_minutes,
             )
         except RunConflict as exc:
             raise HTTPException(status_code=409, detail=str(exc))

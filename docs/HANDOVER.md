@@ -305,6 +305,12 @@ A stage a stopped worker cut off carries on in its own conversation from its
 last saved step (`app.graph.abandoned_threads`, `.harness/stage-threads.json`):
 the gate alone was not enough - a deploy that waited for a 10-minute frontier
 call restarted the architect from nothing 50 s later.
+The harness's own request is never moved to `conversation_history/` (deepagents
+evicted every architect request over 50k tokens; the architect read its own
+instructions back in windows): `human_message_token_limit_before_evict=None`.
+Fast revisions are made in place: one call names the sections the required
+changes touch, they are rewritten at once, the rest kept
+(`specification_parts.revised_in_place`); the architect agent only if that fails.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

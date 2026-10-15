@@ -6870,16 +6870,40 @@ def build_workflow_graph(
             request["messages"][-1]["content"] += "\n\n" + research
         from app.tools.research import researched
 
-        with researched(bool(research)):
-            update = _run_gated_agent(
-                state,
-                config,
-                stage_name="principal_architect",
-                agent=agent,
-                initial_request=request,
-                output_key="technical_specification",
-                next_stage="architecture_review",
+        def parts_context() -> str:
+            return "\n\n".join(
+                f"--- {title} ---\n{_as_text(state.get(key))[:20_000]}"
+                for title, key in (("Product intake", "product_intake"), ("Stack", "stack_selection"),
+                                   ("Specialists' advice", "specialist_advice"))
+                if state.get(key)
             )
+
+        update = None
+        # Fast delivery revises in place: only the sections the review's
+        # changes touch are rewritten. See `specification_parts.revised_in_place`.
+        if (
+            _fast_delivery() and required_changes and previous_specification is not None
+            and hasattr(previous_specification, "model_dump") and isinstance(judgement_model, BaseChatModel)
+        ):
+            from app.graph.specification_parts import revised_in_place
+
+            revised = revised_in_place(
+                previous_specification, "\n".join(f"- {change}" for change in required_changes),
+                judgement_model, parts_context(),
+            )
+            if revised is not None:
+                update = {"technical_specification": revised, "stage": "architecture_review"}
+        if update is None:
+            with researched(bool(research)):
+                update = _run_gated_agent(
+                    state,
+                    config,
+                    stage_name="principal_architect",
+                    agent=agent,
+                    initial_request=request,
+                    output_key="technical_specification",
+                    next_stage="architecture_review",
+                )
         if research and isinstance(update, dict):
             update["architect_research"] = research
         if not _hand_back(update, "technical_specification") and in_parts:

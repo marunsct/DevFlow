@@ -130,3 +130,102 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
         return specification
     logger.info("Specification parts written at once: %s", ", ".join(sorted(update)) or "none")
     return joined
+
+
+# --- a revision, made in place ----------------------------------------------------
+#
+# Measured on one run: sent back once, the architect was handed its previous
+# specification - 144,000 of the request's 230,000 characters - and wrote all
+# of it again: one reply of 47,669 tokens over 10 minutes, and on the next
+# visit one cut off after 103,080 characters. The review named a handful of
+# sections. So in fast delivery a revision asks which sections the required
+# changes touch and rewrites only those, at once, keeping the rest as they were.
+
+#: Sections one revising call rewrites.
+SECTIONS_PER_REVISION = 3
+
+
+def _names(specification: Any) -> list[str]:
+    return list(getattr(type(specification), "model_fields", {}) or {})
+
+
+def sections_to_revise(specification: Any, required_changes: str, model: Any) -> list[str]:
+    """The sections the required changes touch, asked of `model` once; [] if it cannot say."""
+    from langchain_core.messages import HumanMessage
+
+    names = _names(specification)
+    request = (
+        "A software product's technical specification was reviewed and must change as below. Name every "
+        "section that has to be rewritten to make these changes - and any other section that repeats "
+        "a name, path, signature or message being changed, so the specification stays consistent.\n\n"
+        f"--- Required changes ---\n{required_changes.strip()[:20_000]}\n\n"
+        f"--- The sections ---\n{_described(type(specification), tuple(names))}\n\n"
+        'Reply with one JSON object and nothing else: {"sections": ["<section name>", ...]}'
+    )
+    try:
+        found = _the_object_in(model.invoke([HumanMessage(content=request)])) or {}
+    except Exception as error:  # noqa: BLE001 - the architect revises as before
+        logger.info("Could not tell which sections a revision touches: %s", str(error)[:200])
+        return []
+    chosen = [str(name) for name in found.get("sections") or [] if str(name) in names]
+    return list(dict.fromkeys(chosen))
+
+
+def revised_in_place(specification: Any, required_changes: str, model: Any, context: str) -> Any | None:
+    """`specification` with only the sections the changes touch rewritten, or None to revise as before."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_core.utils.function_calling import convert_to_openai_tool
+
+    from app.models.tool_arguments import with_structure_decoded
+
+    if model is None or not required_changes.strip():
+        return None
+    chosen = sections_to_revise(specification, required_changes, model)
+    if not chosen:
+        return None
+    groups = [tuple(chosen[n:n + SECTIONS_PER_REVISION]) for n in range(0, len(chosen), SECTIONS_PER_REVISION)]
+    parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
+    core = {name: getattr(specification, name, None) for name in CORE}
+
+    def revise(names: tuple[str, ...]) -> dict[str, Any] | None:
+        current = {name: getattr(specification, name, None) for name in names}
+        request = "\n\n".join(part for part in (
+            "A software product's technical specification was reviewed. Rewrite the sections below so "
+            "they make the required changes, change nothing else in them, and agree with the rest of "
+            "the specification exactly - every path, name, signature and message.",
+            context.strip(),
+            f"--- Required changes ---\n{required_changes.strip()[:20_000]}",
+            "--- The specification's core, as it stands ---\n" + json.dumps(core, indent=1, default=str),
+            "--- The sections to rewrite, as they stand ---\n" + json.dumps(current, indent=1, default=str),
+            "Reply with one JSON object and nothing else. Its keys are exactly: " + ", ".join(names)
+            + ". Each value has the same form as the section's current value.",
+        ) if part)
+        try:
+            reply = model.invoke([
+                SystemMessage(content="You revise sections of software technical specifications as JSON."),
+                HumanMessage(content=request),
+            ])
+            found = _the_object_in(reply) or {}
+            decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
+            written = {k: v for k, v in decoded.items() if v not in (None, "", [], {})}
+            if len(written) < len(names):
+                logger.info("A revision of %s came back without %s", ", ".join(names),
+                            ", ".join(n for n in names if n not in written))
+                return None
+            return written
+        except Exception as error:  # noqa: BLE001 - the architect revises as before
+            logger.info("A revision of %s could not be written: %s", ", ".join(names), str(error)[:200])
+            return None
+
+    with ThreadPoolExecutor(max_workers=len(groups)) as pool:
+        written = list(pool.map(revise, groups))
+    if any(part is None for part in written):
+        return None
+    update = {k: v for part in written for k, v in part.items()}
+    try:
+        revised = type(specification).model_validate({**specification.model_dump(), **update})
+    except Exception as error:  # noqa: BLE001 - the architect revises as before
+        logger.warning("A revision made in place could not be joined: %s", str(error)[:300])
+        return None
+    logger.info("Specification revised in place: %s", ", ".join(chosen))
+    return revised

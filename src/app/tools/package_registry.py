@@ -268,6 +268,13 @@ def look_up(ecosystem: str, name: str, *, fetch: Fetch | None = None) -> dict[st
         logger.info("Package lookup %s %s failed: %s", which, name, exc)
         return {"error": f"The {which} registry could not be read ({type(exc).__name__}); "
                          "go on with what the project already pins."}
+    if found.get("status") == 404 and name != name.lower():
+        # Asked by the name a person writes - `Hono`, `Playwright`,
+        # `TypeScript` - where the registry's is lowercase. One run's research
+        # found 1 of 7 libraries in its stack this way.
+        lowered = look_up(which, name.lower() + (f"@{version_asked}" if version_asked else ""), fetch=fetch)
+        if "error" not in lowered:
+            return lowered
     if "status" in found:
         status = found["status"]
         return {"error": f"The {which} registry has no package {name!r}." if status == 404

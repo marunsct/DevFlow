@@ -163,3 +163,11 @@ def test_a_version_asked_for_that_is_not_the_current_release_is_said():
 
     assert "'5' was asked for; 7.0.2 is the current release" in older["note"]
     assert "note" not in same, "answered from what the first learned, without the first one's note"
+
+
+def test_a_name_written_as_a_person_writes_it_is_found_lowercase():
+    """One run's research found 1 of 7 libraries: `Hono`, `Playwright`, `TypeScript` were asked as written."""
+    fetch = _serving({"https://registry.npmjs.org/hono/latest": {"version": "4.13.13"}})
+
+    assert look_up("npm", "Hono", fetch=fetch)["version"] == "4.13.13"
+    assert "no package" in look_up("npm", "SQLite", fetch=fetch)["error"]

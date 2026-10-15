@@ -2898,6 +2898,25 @@ def _stop_if_cancelled(run_id: str | None) -> None:
         raise RunCancelled(f"Run {run_id} was cancelled.")
 
 
+def _name_the_stage_on_the_run(run_id: str | None, stage_name: str) -> None:
+    """Show the stage just entered on the run's row, so its page names where the run is now.
+
+    Never fails a stage: the row is a display, and the next pause writes it anyway.
+    """
+    if not run_id:
+        return
+    try:
+        from datetime import datetime, timezone
+
+        from app.server.run_store import RunStore
+        from app.server.runner import _stage_narration
+
+        meaning, _status = _stage_narration(stage_name, auto_approve=False)
+        RunStore.shared().record_stage(run_id, stage_name, meaning, datetime.now(timezone.utc).isoformat())
+    except Exception:  # noqa: BLE001 - a display must never stop a run
+        logger.debug("Could not name the stage on the run's row", exc_info=True)
+
+
 def _run_gated_agent(
     state: WorkflowGraphState,
     config: RunnableConfig,
@@ -2920,6 +2939,7 @@ def _run_gated_agent(
     # has just checkpointed the previous stage, so stopping here costs nothing
     # that was not already saved.
     _stop_if_cancelled(config["configurable"].get(APP_RUN_ID_KEY))
+    _name_the_stage_on_the_run(config["configurable"].get(APP_RUN_ID_KEY), stage_name)
 
     # Narration only. `build_activity_callbacks` returns [] when the run id is
     # unknown or the feature is switched off, and the handler never raises.

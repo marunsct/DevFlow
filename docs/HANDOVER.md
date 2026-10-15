@@ -317,6 +317,8 @@ refuses the write with why.
 A call to an unknown tool name with arguments only one offered working tool
 takes (all given accepted, all required given) is taken as that tool; never
 an answer tool (`tool_arguments._the_one_its_arguments_fit`).
+Each stage names itself on the run's row as it starts (`RunStore.record_stage`,
+only while `running`): the row used to change only at a pause or the end.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

@@ -293,6 +293,27 @@ class RunStore:
             conn.commit()
         return changed == 1
 
+    def record_stage(self, run_id: str, stage: str, meaning: str, updated_at: str) -> bool:
+        """Name the stage a running run has entered; nothing changes unless it is `running`.
+
+        The row was written only when the graph handed control back - at a
+        pause or the end - so a run that went through five stages without a
+        pause showed the last one that paused for over an hour.
+        """
+        with self.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE runs
+                       SET current_stage = %s, stage_meaning = %s, updated_at = %s
+                     WHERE run_id = %s AND status = 'running'
+                    """,
+                    (stage, meaning, updated_at, run_id),
+                )
+                changed = cur.rowcount
+            conn.commit()
+        return changed == 1
+
     def request_cancel(self, run_id: str, updated_at: str) -> bool:
         """Flag a run for cancellation without clobbering the worker's status.
 

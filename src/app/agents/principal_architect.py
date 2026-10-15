@@ -25,6 +25,7 @@ from app.agents.scope_discipline import SCOPE_DISCIPLINE
 from app.agents.project_layout import PROJECT_LAYOUT
 from app.agents.testability import TESTABILITY_RULE
 from app.agents.testing_dependency_rule import TESTING_DEPENDENCY_RULE
+from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 from app.tools.docs import docs_tools
@@ -403,7 +404,7 @@ def build_architecture_request(
         + _the_specialists_advice(advice)
         + f"--- Original uploaded documents ---\n"
         f"{_document_excerpt(document, INITIAL_DOCUMENT_BUDGET) if INITIAL_DOCUMENT_BUDGET else document.text}\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 
@@ -480,7 +481,7 @@ def build_architecture_revision_request(
         "changes_required with 5, then 4, then 6, then 8 findings, escalating "
         "from minor to blocking, each round raising subjects the round before "
         "had not mentioned.\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

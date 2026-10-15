@@ -73,3 +73,19 @@ WORKSPACE_ROOT_NOTE = (
 )
 
 __all__ = ["PROJECT_LAYOUT", "WORKSPACE_ROOT_NOTE"]
+
+
+#: Where the product lives, as a stage that plans it is told. The code-writing
+#: stages' version says to run `ls` and write into the directory; told that,
+#: one run's architect on a local model took itself to be writing the product
+#: and spent its attempts listing an empty directory. A stage that plans
+#: writes no file of the product: every path it names is inside the directory.
+PLANNED_PROJECT_DIRECTORY = (
+    "**CRITICAL INSTRUCTION**: The product's code lives in ONE project directory at the workspace "
+    "root: the one that already exists, spelled exactly as it is, or - if none does - one named "
+    "after this product in lowercase-with-hyphens. Every path you plan is inside it: never the "
+    "workspace root, never a generic name like 'nest-app', never a second project directory. "
+    "Documentation that ships with the product goes inside it beside the code it describes; "
+    "`docs/` is the workflow's own directory. This stage writes none of the product's files: "
+    "its result is its answer.\n"
+)

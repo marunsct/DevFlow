@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.agents.project_layout import PROJECT_LAYOUT, WORKSPACE_ROOT_NOTE
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -665,7 +666,7 @@ def build_milestone_planning_request(
         + _what_the_last_attempt_left(last_attempt)
         + f"You are now planning the milestone for this sprint: '{selected_sprint_goal}'.\n"
         "Draft the specialized tasks necessary to complete this specific sprint.\n\n"
-        f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

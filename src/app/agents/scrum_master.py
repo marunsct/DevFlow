@@ -20,6 +20,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.agents.scope_discipline import SCOPE_DISCIPLINE
+from app.agents.project_layout import PLANNED_PROJECT_DIRECTORY
 from app.agents.structured_response import STRUCTURED_RESPONSE_RULE
 from app.agents.role_agent import create_role_agent
 
@@ -521,7 +522,7 @@ def build_sprint_planning_request(
         + _the_success_measures(list(success_measures or []), list(gaps or []))
         + _the_acceptance_criteria(acceptance_criteria)
         + _built_ahead(list(built_ahead or []))
-        + f"**CRITICAL INSTRUCTION**: All application code lives in ONE project directory at the workspace root. Run `ls` FIRST: if a project directory already exists, write into that exact directory, spelled exactly as it already is. Only create one if none exists, naming it after this product in lowercase-with-hyphens. Never scaffold directly in the workspace root, never use a generic name like 'nest-app', and never create a second project directory. Documentation that ships with the product goes inside that project directory beside the code it describes. `docs/` is the workflow's own directory and writing anything into it is refused.\n"
+        + PLANNED_PROJECT_DIRECTORY
     )
     return {"messages": [{"role": "user", "content": brief}]}
 

@@ -94,7 +94,7 @@ def test_the_slips_a_local_model_makes_are_read_as_meant(tmp_path):
         **DECLARED,
         "install": ["npm install", "npx playwright install chromium"],
         "unit_test": ["node --test 'tests/**/*.test.ts'"],
-        "acceptance_test": "npm run test:acceptance",
+        "acceptance_test": [["npm", "run", "test:acceptance"]],
         "unit_report": "notes/test-results/unit.xml",
         "kept_files": ["vitest.config.ts", "src/**/*.ts", "notes/playwright.config.ts"],
         "smoke_files": ["notes/tests/smoke.test.ts", "acceptance/smoke.spec.ts"],

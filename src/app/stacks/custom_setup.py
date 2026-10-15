@@ -208,6 +208,9 @@ def _argv(value: Any) -> tuple[str, ...] | None:
     # is that command's words. One local model's setup declared every command so.
     if isinstance(value, str) and value.strip():
         value = [value]
+    # One command wrapped as a list of commands: `[["node", "--test", ...]]`.
+    if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+        value = value[0]
     if isinstance(value, list) and len(value) == 1 and isinstance(value[0], str) and " " in value[0].strip():
         try:
             value = shlex.split(value[0])

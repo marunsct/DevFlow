@@ -5640,11 +5640,22 @@ def files_named_in(prose: str, also: "set[str] | frozenset[str]" = frozenset()) 
     """
     from app.analysis.file_kinds import names_a_file
 
-    return {
-        PurePosixPath(match).name
-        for match in _A_FILE_NAMED.findall(prose or "")
-        if names_a_file(match, also)
-    }
+    text = prose or ""
+    found = set()
+    for match in _A_FILE_NAMED.finditer(text):
+        name = match.group(0)
+        if not names_a_file(name, also):
+            continue
+        # Code, not a file: `process.env.PORT`, `config.json()`, `env.ts[0]`.
+        # One run's lead plan was sent back twice for "the sprint's scope names
+        # process.env and no work order lists it".
+        if re.match(r"\.[A-Za-z_]|\(|\[", text[match.end():match.end() + 2]):
+            continue
+        stem, _, extension = PurePosixPath(name).name.rpartition(".")
+        if extension.lower() == "env" and stem:
+            continue  # an environment file is `.env` or `.env.<name>`, never `<name>.env`
+        found.add(PurePosixPath(name).name)
+    return found
 
 
 def later_sprint_files_in(finding: str, this_sprint: str, later_sprints: str) -> list[str]:

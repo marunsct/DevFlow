@@ -322,6 +322,10 @@ takes (all given accepted, all required given) is taken as that tool; never
 an answer tool (`tool_arguments._the_one_its_arguments_fit`).
 Each stage names itself on the run's row as it starts (`RunStore.record_stage`,
 only while `running`): the row used to change only at a pause or the end.
+Files a sprint names: `<stem>.env` and a name followed by `.member`, `(` or
+`[` are code, not files; `x.js` is the planned `x.ts` compiled
+(`work_orders._COMPILED_TO`). `test_the_other_sections_are_written_at_once_from_the_core`
+is timing-flaky under suite load (2 of 3 parts overlapping).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

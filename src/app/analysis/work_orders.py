@@ -362,6 +362,10 @@ def _pinned_project_directory(repo_root: str | Path | None) -> str:
         return ""
 
 
+#: A source file's extension -> the extension it compiles to.
+_COMPILED_TO = {"ts": "js", "tsx": "jsx", "mts": "mjs", "cts": "cjs", "coffee": "js", "elm": "js"}
+
+
 def _another_spelling_of(name: str, known: set[str]) -> bool:
     """Whether `name` is a file the project already has, or a work order lists, spelled otherwise.
 
@@ -380,7 +384,13 @@ def _another_spelling_of(name: str, known: set[str]) -> bool:
         return False
     for other in known:
         other_stem, other_dot, other_extension = other.rpartition(".")
-        if not other_dot or other_extension != extension or not other_stem:
+        if not other_dot or not other_stem:
+            continue
+        # The name a source file compiles to: one run's scope said `server.js`
+        # for the planned `server.ts`, and the plan was sent back for it.
+        if stem == other_stem and _COMPILED_TO.get(other_extension) == extension:
+            return True
+        if other_extension != extension:
             continue
         if stem.rstrip("s") == other_stem.rstrip("s"):
             return True

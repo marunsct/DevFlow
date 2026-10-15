@@ -178,3 +178,22 @@ def test_a_gathering_turn_is_held_to_a_short_reply_and_a_cut_off_one_is_the_fron
 
     assert used[0].max_tokens == gathering.MOST_GATHERING_TOKENS and build.max_tokens == 20_000
     assert used[1] is frontier, "a cut-off gathering turn is the frontier's"
+
+
+def test_a_build_model_that_keeps_not_gathering_is_offered_no_more_turns():
+    """A specification stage's build model began the answer before nearly every judgement turn."""
+    build, frontier = object(), object()
+    asked = []
+
+    def handler(request):
+        asked.append("build" if request.model is build else "frontier")
+        if request.model is frontier:
+            return _reply("read_docs")
+        return _reply("read_file") if asked.count("build") == 1 else _reply("Answer")
+
+    middleware = gathering.build_gathering_middleware(build, "Answer")
+    for _ in range(7):
+        middleware.wrap_model_call(_Request(model=frontier), handler)
+
+    # A read; then the frontier's turn after each of two misses; then the frontier alone.
+    assert asked == ["build", "build", "frontier", "build", "frontier", "frontier", "frontier", "frontier", "frontier"]

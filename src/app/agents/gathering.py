@@ -49,6 +49,12 @@ MOST_BUILD_TURNS = 30
 #: hundred tokens; measured on one run, a gathering turn ran on for 20,000
 #: tokens - 7 minutes of the build model - and ended with no call at all.
 MOST_GATHERING_TOKENS = 2_000
+#: Attempts in a row, after the judgement model's first turn, that the build
+#: model spends on something other than gathering before it is offered no more
+#: turns this visit. Measured on one run: a specification stage's build model
+#: began the answer itself before nearly every judgement turn, 25 seconds and
+#: 2,000 tokens discarded each time.
+MOST_MISSES = 2
 
 
 def _briefly(model: Any) -> Any:
@@ -141,12 +147,18 @@ def build_gathering_middleware(gathering_model: Any, answer_tool: str) -> Any:
             limit = MOST_IN_A_ROW if written else MOST_GATHERING_TURNS
             if gathered is not None and not _answers(gathered, answer_tool) and streak + 1 <= limit:
                 visit["streak"] = streak + 1
+                visit["misses"] = 0
                 if not written and streak + 1 >= MOST_GATHERING_TURNS:
                     visit["writing"] = True
                     visit["streak"] = MOST_IN_A_ROW
                 return gathered
             if not written:
                 logger.info("Gathered in %d turn(s) on the build model; the judgement model writes", streak + 1)
+            if gathered is not None:
+                visit["misses"] = int(visit.get("misses", 0)) + 1
+                if visit["misses"] >= MOST_MISSES:
+                    visit["done"] = True
+                    logger.info("The build model did not gather %d times in a row; the judgement model takes this visit's turns", MOST_MISSES)
             visit["writing"] = True
             visit["streak"] = 0
             return handler(request)

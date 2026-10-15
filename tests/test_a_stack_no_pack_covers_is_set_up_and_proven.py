@@ -409,3 +409,12 @@ def test_a_replayed_setup_that_does_not_prove_is_cleared_and_the_stage_asked(sta
 
     assert [call["stage"] for call in stage.calls] == ["stack_setup_0"]
     assert not (tmp_path / "notes" / "tests" / "smoke.test.ts").exists()
+
+
+def test_the_acceptance_smoke_test_is_kept_as_the_example_qa_copies(tmp_path):
+    project = _set_up(tmp_path)
+    (project / "acceptance" / "smoke.spec.ts").write_text("test('[AC-0] the page opens', () => {})\n")
+    assert prove(tmp_path, "notes", STACK, run=_runner(tmp_path)).ok
+
+    _pack, record = contract.the_pack(tmp_path)
+    assert record["setup"]["acceptance_example"] == "test('[AC-0] the page opens', () => {})\n"

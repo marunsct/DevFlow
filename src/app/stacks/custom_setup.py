@@ -479,6 +479,13 @@ def prove(
         "kept_scripts": _scripts_the_commands_run(project_root, [declared.unit_test, declared.acceptance_test]),
         "guide": declared.guide,
         "acceptance_guide": declared.acceptance_guide,
+        # The acceptance smoke test that passed: the shape QA's tests copy
+        # (`app.acceptance.requests`), kept though the file itself is removed.
+        "acceptance_example": next(
+            (text for name, text in replayable["files"].items()
+             if name in declared.smoke_files and name.startswith(f"{declared.acceptance_dir}/")),
+            "",
+        ),
     }
     pack = pack_from({"pack": PROVEN_SETUP, "setup": setup})
     if pack is None:

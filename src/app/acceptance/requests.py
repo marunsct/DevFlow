@@ -81,6 +81,45 @@ def _the_names_the_brief_gives(brief: str) -> str:
     )
 
 
+#: The most of the example test the request carries.
+MOST_EXAMPLE_CHARACTERS = 4_000
+
+
+def _a_test_that_ran_here(repo_root: str | Path, acceptance_dir: str) -> str:
+    """The acceptance smoke test that passed when the project was set up, as the shape to copy.
+
+    Measured on one run: QA spent 149 minutes and 182 calls on its suite, a
+    third of them malformed or refused, writing every file from nothing. The
+    setup had already proven one acceptance test in this project's own runner -
+    its imports, how it starts the product, how it names a test - and removed it.
+    """
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(repo_root)
+    except Exception:  # noqa: BLE001 - the request without an example
+        return ""
+    if not found:
+        return ""
+    pack, record = found
+    example = str(((record or {}).get("setup") or {}).get("acceptance_example") or "")
+    if not example:
+        example = next(
+            (str(text) for name, text in (getattr(pack, "smoke_files", None) or {}).items()
+             if str(name).startswith(f"{acceptance_dir}/")),
+            "",
+        )
+    if not example.strip():
+        return ""
+    return (
+        "--- A test that ran and passed in this project's own runner ---\n"
+        "It proved the setup and was then removed. Copy its shape - its imports, how it starts "
+        "the product, how it names and structures a test - and replace what it checks with "
+        "the criteria:\n"
+        f"```\n{example.strip()[:MOST_EXAMPLE_CHARACTERS]}\n```\n\n"
+    )
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -141,6 +180,7 @@ def build_author_request(
         f"{requests_text}"
         f"{feedback_text}"
         f"--- How to write them ---\n{_how_to_write_them(repo_root, project, acceptance_dir, stack)}\n\n"
+        f"{_a_test_that_ran_here(repo_root, acceptance_dir)}"
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:BRIEF_CHARS]}\n\n" if brief.strip() else "")
         + _the_names_the_brief_gives(brief)
         + "--- What to build them against ---\n"

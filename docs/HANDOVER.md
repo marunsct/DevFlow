@@ -295,6 +295,12 @@ acceptance suite and `.harness/decisions.json` (`app.sprint.handover`).
 (`loop.sh score` also leaves a summary in `/app/data/outcomes/`) and a typical
 time per delivery mode; the runs list shows the table, the start form the
 forecast (`app.server.outcomes`).
+QA's request shows the acceptance smoke test that passed at setup (a pack's
+`smoke_files`, or a proven setup's kept `acceptance_example`) as the shape to
+copy (`requests._a_test_that_ran_here`). Grammar-constrained tool calls: the
+owner's llama.cpp-style server (1 slot) returns an invented tool name even
+with `tool_choice: required`, so it is not available there; names are mapped
+after the fact (`tool_arguments._the_offered_tool_meant`).
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

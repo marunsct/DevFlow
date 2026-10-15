@@ -256,6 +256,8 @@ the stall rule counts distinct calls, so one tool asked about one thing after
 another with nothing new is a stall too.
 A call to a tool name not offered that plainly means one offered tool
 (`Read` for `read_file`) is taken as that tool (`tool_arguments`).
+Fast delivery's milestone review sends a sprint back once
+(`FAST_MILESTONE_REVISIONS`), then records the findings as risks.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

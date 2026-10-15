@@ -1650,7 +1650,10 @@ def test_a_review_still_asking_for_changes_at_the_limit(agents: ScriptedAgents, 
 
     if fast:
         assert state["stage"] == "complete", state.get("error")
-        assert any("record the findings as risks" in str(d.get("decision")) for d in state.get("decisions") or [])
+        risked = [d for d in state.get("decisions") or [] if "record the findings as risks" in str(d.get("decision"))]
+        assert risked
+        # One send-back, as the architecture review allows in fast delivery.
+        assert "after 1 revision(s)" in str(risked[0].get("question")), risked[0]
     else:
         assert state["stage"] != "complete"
         assert "still required changes" in str(state.get("error") or "")

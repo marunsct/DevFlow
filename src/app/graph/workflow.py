@@ -216,6 +216,9 @@ MAX_MILESTONE_REVISIONS = 3
 """Bound how many times milestone review can send work back to the Technical
 Lead before the run falls back to a human review instead of looping forever."""
 
+FAST_MILESTONE_REVISIONS = 2
+"""The same bound in fast delivery: one send-back, then the findings are recorded as risks."""
+
 MAX_REMEDIATION_ATTEMPTS = 3
 """Bound one test-fix-retest passes one milestone gets; see `app.sprint`."""
 
@@ -9189,7 +9192,7 @@ def build_workflow_graph(
                 else None
             ),
             revisions_used=state.get("milestone_revision_count", 0),
-            revisions_allowed=MAX_MILESTONE_REVISIONS,
+            revisions_allowed=FAST_MILESTONE_REVISIONS if _fast_delivery() else MAX_MILESTONE_REVISIONS,
             sprint_scope=_this_sprint_s_scope_for_review(state),
             acceptance=acceptance_text,
             specialist_findings=_this_review_s_advice_findings(state),
@@ -9350,7 +9353,10 @@ def build_workflow_graph(
                         "recorded evidence"
                     )
             revision_count = state.get("milestone_revision_count", 0) + 1
-            if revision_count >= MAX_MILESTONE_REVISIONS and _fast_delivery():
+            # Fast sends a sprint back once, as the architecture review does:
+            # one run's milestone review sent a sprint whose every acceptance
+            # test passed back twice, 35 minutes a round.
+            if revision_count >= FAST_MILESTONE_REVISIONS and _fast_delivery():
                 # Fast delivery (owner, 2026-10-15): the review's findings
                 # become the sprint's recorded risks, carried to the next
                 # sprint with the rest of its findings, and the sprint goes on
@@ -9363,16 +9369,16 @@ def build_workflow_graph(
                 risked: dict[str, Any] = {}
                 record_decision(
                     state, risked, point="milestone_review",
-                    question=f"The review still asks for changes after {MAX_MILESTONE_REVISIONS} revisions: stop or go on?",
+                    question=f"The review still asks for changes after {revision_count - 1} revision(s): stop or go on?",
                     options=["stop for a person", "record the findings as risks and go on"],
                     decision="record the findings as risks and go on",
                     rationale="Fast delivery. Every test the sprint is measured by is checked next; the "
                     "open findings are carried to the next sprint:\n" + findings_text[:3000],
                 )
                 logger.warning(
-                    "Milestone review still asks for changes after %d revisions; fast delivery records "
+                    "Milestone review still asks for changes after %d revision(s); fast delivery records "
                     "its %d finding(s) as risks and goes on to the checks",
-                    MAX_MILESTONE_REVISIONS, len(review.findings or []),
+                    revision_count - 1, len(review.findings or []),
                 )
                 state = {**state, **risked, "milestone_revision_count": revision_count}
             elif revision_count >= MAX_MILESTONE_REVISIONS:

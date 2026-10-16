@@ -70,3 +70,16 @@ def test_with_no_model_named_the_parts_are_written_on_the_deployment_s_own(monke
     spec = specification_parts.with_the_parts_written(CORE, None, "--- Product intake ---\nNotes.")
 
     assert spec.function_contracts == ["function_contracts line"] and len(built.asked) == 3
+
+
+def test_specification_parts_reads_from_reasoning_content_when_content_empty():
+    reply = SimpleNamespace(
+        content="",
+        additional_kwargs={
+            "reasoning_content": "I will output JSON:\n```json\n{\"domain_model\": [\"Item\"], \"data_flows\": [\"a -> b\"]}\n```"
+        },
+    )
+    obj = specification_parts._the_object_in(reply)
+    assert obj is not None
+    assert obj.get("domain_model") == ["Item"]
+

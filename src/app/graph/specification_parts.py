@@ -71,6 +71,10 @@ def _the_object_in(reply: Any) -> dict[str, Any] | None:
     from app.models.tool_arguments import _parsed_leniently
 
     text = str(getattr(reply, "content", reply) or "")
+    if not text.strip():
+        reasoning = (getattr(reply, "additional_kwargs", {}) or {}).get("reasoning_content") or ""
+        if isinstance(reasoning, str) and reasoning.strip():
+            text = reasoning
     candidate = _first_json_object(text) or text
     try:
         parsed = json.loads(candidate, strict=False)
@@ -97,14 +101,18 @@ def with_the_parts_written(specification: Any, model: Any, context: str) -> Any:
         from app.models import build_default_chat_model
 
         model = build_default_chat_model()
+    from app.agents.thinking import without_reasoning
+
+    call_model = without_reasoning(model)
     parameters = convert_to_openai_tool(type(specification))["function"]["parameters"]
 
     def write(names: tuple[str, ...]) -> dict[str, Any]:
         try:
-            reply = model.invoke([
+            messages = [
                 SystemMessage(content="You write sections of software technical specifications as JSON."),
                 HumanMessage(content=part_request(specification, names, context)),
-            ])
+            ]
+            reply = call_model.invoke(messages)
             found = _the_object_in(reply) or {}
             decoded = with_structure_decoded({k: v for k, v in found.items() if k in names}, parameters)
             written = {k: v for k, v in decoded.items() if isinstance(v, list) and v}

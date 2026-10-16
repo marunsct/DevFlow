@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-16 19:35 JST**.
+of the previous sessions' context. Last updated **2026-10-16 20:25 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -346,6 +346,8 @@ instruct the model not to regenerate the whole specification from the beginning,
 with `_with_the_sections_it_dropped` preserving all existing sections from the previous specification and `TechnicalSpecificationOutput.product_scope` defaulting cleanly.
 Infinite jump-to-model loop break, uncapped output tokens & focused revision context (`settled_answer`, `context_budget`, `models`, `principal_architect`):
 When a model call truncates due to token limits or server cutoffs (`finish_reason == "length"`), `settled_answer.py` prevents infinite model invocation loops by tracking consecutive lost reasoning replies (`_is_lost_reasoning_message`, `_consecutive_lost_reasoning_replies`) and breaking after 2 retries, returning `jump_to: "end"` with `BUDGET_STOP_MARKER`. Output token caps are made optional for local inference: when `model_max_output_tokens <= 0` (or empty), `ContextBudget` sets `output = 0` (uncapped), and `CompatibleChatOpenAI._get_request_payload` removes `max_tokens` and `max_completion_tokens` from request payloads so local servers (LM Studio, llama.cpp) can naturally use full context headroom without artificial premature cutoffs. Revision context bloat is eliminated: `build_architecture_revision_request` caps previous specification text to `REVISION_SPECIFICATION_BUDGET` (25,000 chars), pointing to the full specification stored in project memory and instructing the model to return only revised sections, proven clean of banned words (`tests/test_uncapped_output_and_loop_break.py`).
+Specification parts without reasoning & fallback (`specification_parts`):
+When writing remaining specification sections in parts in fast delivery, `with_the_parts_written` calls the model with `without_reasoning(model)` so local reasoning models answer directly with structured JSON rather than spending 15+ minutes in chain-of-thought, and `_the_object_in` falls back to `reasoning_content` if `reply.content` is empty (`tests/test_the_specification_is_written_in_parts_at_once.py`).
 
 
 

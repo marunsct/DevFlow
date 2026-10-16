@@ -132,7 +132,7 @@ def look(repo_root: str | Path, path: str = "/", viewport: str = "desktop", *, r
     width, height = _VIEWPORTS.get(str(viewport).lower(), _VIEWPORTS["desktop"])
     overlay = project_root / OVERLAY_DIR
     shutil.rmtree(overlay, ignore_errors=True)
-    overlay.mkdir(parents=True)
+    overlay.mkdir(parents=True, exist_ok=True)
     try:
         (overlay / "playwright.config.mjs").write_text(OVERLAY_CONFIG % {"config": config}, encoding="utf-8")
         (overlay / "look.spec.mjs").write_text(LOOK_SPEC, encoding="utf-8")

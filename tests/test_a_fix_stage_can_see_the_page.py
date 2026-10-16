@@ -132,3 +132,17 @@ def test_specialists_on_a_page_product_are_given_it(tmp_path):
     agent = create_specialist_agent("ui_ux", model=model, repo_root=tmp_path)
 
     assert "look_at_page" in agent.nodes["tools"].bound._tools_by_name
+
+
+def test_look_at_page_tolerates_overlay_dir_already_existing(tmp_path, monkeypatch):
+    import shutil
+
+    project = _scaffolded(tmp_path)
+    overlay = project / page_view.OVERLAY_DIR
+    overlay.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(shutil, "rmtree", lambda *a, **kw: None)
+
+    seen = {"status": 200, "title": "Notes", "tree": "main", "errors": [], "failed": []}
+    found = page_view.look(tmp_path, run=_browser(project, seen, []))
+    assert found["accessibility_tree"] == "main"
+

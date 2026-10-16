@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-16 22:30 JST**.
+of the previous sessions' context. Last updated **2026-10-17 00:32 JST**.
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
 the full gate history), §0.4.1 (the product audit checklist), §0.7 (how a
@@ -350,6 +350,10 @@ Specification parts without reasoning & fallback (`specification_parts`):
 When writing remaining specification sections in parts in fast delivery, `with_the_parts_written` calls the model with `without_reasoning(model)` so local reasoning models answer directly with structured JSON rather than spending 15+ minutes in chain-of-thought, and `_the_object_in` falls back to `reasoning_content` if `reply.content` is empty (`tests/test_the_specification_is_written_in_parts_at_once.py`).
 Architecture reviewer write prompt contradiction removed (`architecture_reviewer`):
 `architecture_reviewer._SYSTEM_PROMPT` had contradictory `write_artifact` and edit instructions despite `can_write=False`, causing models to attempt failed `edit_file` calls when reviewing; removed contradictory write instructions from the reviewer prompt and verified with banned words test (`tests/test_architecture_reviewer_agent.py`).
+Page view overlay directory tolerance (`page_view`):
+`look_at_page` prepares an overlay directory (`test-results/page-view`) for Playwright inspection of the running web page. `overlay.mkdir(parents=True, exist_ok=True)` now permits the directory to already exist if an earlier inspection or `shutil.rmtree` left it intact, avoiding `FileExistsError` during specialist inspection (`tests/test_a_fix_stage_can_see_the_page.py`).
+Acceptance suite negative assertion matchers detection (`suite`):
+`assertions_that_do_not_exist` previously checked `_ASSERTION_CALL` with `r"\.(to[A-Z][A-Za-z]*)\s*\("`, missing negative matchers written directly like `notToHaveAttribute` or `notToBeVisible`. Updated regex to `r"\.((?:not[A-Z]|to[A-Z])[A-Za-z]*)\s*\("` to flag nonexistent runner methods and prompt for `not.` before the matcher (`tests/test_a_suite_finds_controls_the_way_a_person_does.py`).
 
 
 

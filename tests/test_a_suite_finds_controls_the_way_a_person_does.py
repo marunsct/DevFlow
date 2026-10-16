@@ -203,3 +203,21 @@ def test_a_method_of_an_ordinary_value_is_not_an_assertion(tmp_path) -> None:
     problems = suite.assertions_that_do_not_exist(tmp_path)
 
     assert len(problems) == 1 and "line 7" in problems[0] and "toBeUnchecked" in problems[0]
+
+
+def test_assertions_that_do_not_exist_catches_negative_matchers(tmp_path: Path) -> None:
+    acceptance = _scaffolded(tmp_path)
+    types = tmp_path / "notes" / "node_modules" / "playwright" / "types"
+    types.mkdir(parents=True, exist_ok=True)
+    (types / "test.d.ts").write_text("interface Matchers {\n  toHaveAttribute(name: string, value: string): Promise<void>;\n}\n")
+    acceptance.mkdir(parents=True, exist_ok=True)
+    (acceptance / "notes.spec.js").write_text(
+        "test('[AC-1] checks', async ({ page }) => {\n"
+        "  await expect(page.locator('#item')).notToHaveAttribute('hidden', '');\n"
+        "});\n"
+    )
+
+    problems = suite.assertions_that_do_not_exist(tmp_path)
+
+    assert len(problems) == 1 and "notToHaveAttribute" in problems[0]
+

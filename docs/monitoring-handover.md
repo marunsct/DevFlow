@@ -3,7 +3,7 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-10-17 03:05 JST (stage 1 gate: 2 of 2 clean runs — STAGE 1 GATE PASSED!; start at
+**As of:** 2026-10-17 07:25 JST (stage 1 gate: 2 of 2 clean runs — STAGE 1 GATE PASSED!; start at
 `docs/HANDOVER.md` §0), branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
 kept current by whoever runs the loop - **in the same commit as any change to
@@ -91,6 +91,10 @@ A new agent, session or account starts at `docs/HANDOVER.md`: the first ten minu
 |---|---|
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
 
+  - **2026-10-17 07:25 JST:** Page view concurrent overlay isolation and serialization (`tools.page_view`).
+    When an agent calls `look_at_page` multiple times in a single turn (e.g. evaluating `desktop` and `phone` viewports concurrently), or when multiple specialists run side-by-side, the calls previously shared a static directory (`OVERLAY_DIR = "test-results/page-view"`). The first call to finish removed the directory via `shutil.rmtree` in its `finally` block while the other was executing, causing `FileNotFoundError: [Errno 2] No such file or directory: '.../test-results/page-view/playwright.config.mjs'` and file collision in `look.json`/`seen.json`.
+    Added per-workspace serialization via `_LOOK_LOCKS` and `_get_look_lock(repo_root)` so concurrent `look_at_page` invocations on the same product safely serialize without race conditions or directory stomping.
+    Proven to fail on old code (corrupted `look.json` JSONDecodeError); unit test added in `tests/test_a_fix_stage_can_see_the_page.py::test_concurrent_look_calls_do_not_collide`. Full suite passed (10,890 passed).
   - **2026-10-17 05:48 JST:** Namespace-prefixed function tool name resolution (`models.tool_arguments`).
     When models call structured output tools or function calls with namespace prefixes (e.g. `functions.SprintPlanOutput`, `tools.SprintPlanOutput`, `functions.read_file`), `_bare` previously kept `functions` attached (`functionssprintplanoutput`), failing to match the registered tool name (`SprintPlanOutput`) and causing tool refusal errors. Added `_NAMESPACE_PREFIX` regex to strip `functions?`, `tools?`, or `default_api` prefixes in `_bare` and `_the_offered_tool_meant`, and checked `unprefixed in parameters`.
     Proven to fail on old code; unit tests passed in `tests/test_a_call_to_a_tool_by_another_name_is_taken_as_meant.py`. Full suite verified (10,889 passed).

@@ -146,3 +146,31 @@ def test_look_at_page_tolerates_overlay_dir_already_existing(tmp_path, monkeypat
     found = page_view.look(tmp_path, run=_browser(project, seen, []))
     assert found["accessibility_tree"] == "main"
 
+
+def test_concurrent_look_calls_do_not_collide(tmp_path):
+    project = _scaffolded(tmp_path)
+    import concurrent.futures
+    import time
+
+    seen_desktop = {"status": 200, "title": "Notes", "tree": "desktop view", "errors": [], "failed": []}
+    seen_phone = {"status": 200, "title": "Notes", "tree": "phone view", "errors": [], "failed": []}
+
+    def slow_run(argv, category, where):
+        overlay = project / page_view.OVERLAY_DIR
+        asked = json.loads((overlay / "look.json").read_text(encoding="utf-8"))
+        time.sleep(0.05)
+        seen = seen_phone if asked["width"] == 390 else seen_desktop
+        (overlay / "seen.json").write_text(json.dumps(seen), encoding="utf-8")
+        return {"returncode": "0"}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(page_view.look, tmp_path, "/", "desktop", run=slow_run)
+        f2 = executor.submit(page_view.look, tmp_path, "/", "phone", run=slow_run)
+        res1 = f1.result()
+        res2 = f2.result()
+
+    assert "error" not in res1, res1.get("error")
+    assert "error" not in res2, res2.get("error")
+    assert res1["accessibility_tree"] == "desktop view"
+    assert res2["accessibility_tree"] == "phone view"
+

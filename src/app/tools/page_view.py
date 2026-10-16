@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import threading
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
@@ -114,52 +115,65 @@ def available(repo_root: str | Path) -> bool:
     return _the_config(root) is not None and (root / "node_modules" / "@playwright" / "test").is_dir()
 
 
+_LOOK_LOCKS: dict[Path, threading.Lock] = {}
+_LOOK_LOCKS_GUARD = threading.Lock()
+
+
+def _get_look_lock(repo_root: Path) -> threading.Lock:
+    resolved = repo_root.resolve()
+    with _LOOK_LOCKS_GUARD:
+        if resolved not in _LOOK_LOCKS:
+            _LOOK_LOCKS[resolved] = threading.Lock()
+        return _LOOK_LOCKS[resolved]
+
+
 def look(repo_root: str | Path, path: str = "/", viewport: str = "desktop", *, run: Runner | None = None) -> dict[str, Any]:
     """Start the product as the suite does, open `path`, and say what is on the page."""
-    from app.stacks import contract
+    with _get_look_lock(Path(repo_root)):
+        from app.stacks import contract
 
-    found = contract.the_pack(repo_root)
-    if found is None:
-        return {"error": "This project has no test setup that starts its page."}
-    project = str(found[1].get("project") or "")
-    project_root = Path(repo_root) / project
-    config = _the_config(project_root)
-    if config is None:
-        return {"error": "The project has no Playwright configuration to start its page with."}
-    path = "/" + str(path or "/").strip().lstrip("/")
-    if "://" in path or ".." in path:
-        return {"error": "Give a path on the product's own server, such as / or /settings."}
-    width, height = _VIEWPORTS.get(str(viewport).lower(), _VIEWPORTS["desktop"])
-    overlay = project_root / OVERLAY_DIR
-    shutil.rmtree(overlay, ignore_errors=True)
-    overlay.mkdir(parents=True, exist_ok=True)
-    try:
-        (overlay / "playwright.config.mjs").write_text(OVERLAY_CONFIG % {"config": config}, encoding="utf-8")
-        (overlay / "look.spec.mjs").write_text(LOOK_SPEC, encoding="utf-8")
-        (overlay / "look.json").write_text(json.dumps({"path": path, "width": width, "height": height}), encoding="utf-8")
-        if run is None:
-            from app.stacks.scaffold import sandbox_runner
-
-            run = sandbox_runner(repo_root)
-        outcome = run(["npx", "playwright", "test", "--config", f"{OVERLAY_DIR}/playwright.config.mjs"], "test", project)
-        try:
-            seen = json.loads((overlay / "seen.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            output = f"{outcome.get('error') or ''}\n{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}".strip()
-            return {"error": "The page could not be opened. The browser run ended:\n" + output[-2_000:]}
-    finally:
+        found = contract.the_pack(repo_root)
+        if found is None:
+            return {"error": "This project has no test setup that starts its page."}
+        project = str(found[1].get("project") or "")
+        project_root = Path(repo_root) / project
+        config = _the_config(project_root)
+        if config is None:
+            return {"error": "The project has no Playwright configuration to start its page with."}
+        path = "/" + str(path or "/").strip().lstrip("/")
+        if "://" in path or ".." in path:
+            return {"error": "Give a path on the product's own server, such as / or /settings."}
+        width, height = _VIEWPORTS.get(str(viewport).lower(), _VIEWPORTS["desktop"])
+        overlay = project_root / OVERLAY_DIR
         shutil.rmtree(overlay, ignore_errors=True)
-    tree = str(seen.get("tree") or "")
-    return {
-        "path": path,
-        "viewport": f"{width}x{height}",
-        "status": seen.get("status"),
-        "title": seen.get("title"),
-        "accessibility_tree": tree if len(tree) <= MAX_TREE else tree[:MAX_TREE] + "\n... (cut short)",
-        "page_errors": list(dict.fromkeys(seen.get("errors") or []))[:MOST_LISTED],
-        "failed_requests": list(dict.fromkeys(seen.get("failed") or []))[:MOST_LISTED],
-        "wider_than_the_screen": bool(seen.get("wider_than_the_screen")),
-    }
+        overlay.mkdir(parents=True, exist_ok=True)
+        try:
+            (overlay / "playwright.config.mjs").write_text(OVERLAY_CONFIG % {"config": config}, encoding="utf-8")
+            (overlay / "look.spec.mjs").write_text(LOOK_SPEC, encoding="utf-8")
+            (overlay / "look.json").write_text(json.dumps({"path": path, "width": width, "height": height}), encoding="utf-8")
+            if run is None:
+                from app.stacks.scaffold import sandbox_runner
+
+                run = sandbox_runner(repo_root)
+            outcome = run(["npx", "playwright", "test", "--config", f"{OVERLAY_DIR}/playwright.config.mjs"], "test", project)
+            try:
+                seen = json.loads((overlay / "seen.json").read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                output = f"{outcome.get('error') or ''}\n{outcome.get('stdout') or ''}\n{outcome.get('stderr') or ''}".strip()
+                return {"error": "The page could not be opened. The browser run ended:\n" + output[-2_000:]}
+        finally:
+            shutil.rmtree(overlay, ignore_errors=True)
+        tree = str(seen.get("tree") or "")
+        return {
+            "path": path,
+            "viewport": f"{width}x{height}",
+            "status": seen.get("status"),
+            "title": seen.get("title"),
+            "accessibility_tree": tree if len(tree) <= MAX_TREE else tree[:MAX_TREE] + "\n... (cut short)",
+            "page_errors": list(dict.fromkeys(seen.get("errors") or []))[:MOST_LISTED],
+            "failed_requests": list(dict.fromkeys(seen.get("failed") or []))[:MOST_LISTED],
+            "wider_than_the_screen": bool(seen.get("wider_than_the_screen")),
+        }
 
 
 def build_page_view_tool(repo_root: str) -> Any:

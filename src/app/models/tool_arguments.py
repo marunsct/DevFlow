@@ -259,17 +259,28 @@ _HELD: dict[tuple[str, str, str], dict[str, Any]] = {}
 _DANGLING_KEY = re.compile(r',\s*"([^"\\]+)"\s*:?\s*$')
 
 
-def _answer_key(name: str) -> tuple[str, str, str] | None:
+def _answer_key(name: str) -> tuple[str, str, str]:
+    run = ""
+    stage = ""
     try:
         from langgraph.config import get_config
 
         from app.tracing import APP_RUN_ID_KEY, APP_STAGE_KEY
 
         configurable = (get_config() or {}).get("configurable", {})
-        run, stage = configurable.get(APP_RUN_ID_KEY), configurable.get(APP_STAGE_KEY)
+        run = str(configurable.get(APP_RUN_ID_KEY) or "")
+        stage = str(configurable.get(APP_STAGE_KEY) or "")
     except Exception:  # noqa: BLE001 - outside a graph run there is no stage to hold for
-        return None
-    return (str(run), str(stage), name) if run and stage else None
+        pass
+    if not run or not stage:
+        try:
+            from app.observability.log_context import current_run_id, current_stage
+
+            run = run or str(current_run_id() or "")
+            stage = stage or str(current_stage() or "")
+        except Exception:  # noqa: BLE001
+            pass
+    return (run, stage, name)
 
 
 def what_arrived_whole(arguments: Any) -> tuple[dict[str, Any], str] | None:
@@ -281,6 +292,12 @@ def what_arrived_whole(arguments: Any) -> tuple[dict[str, Any], str] | None:
     before the field it stopped in was whole.
     """
     from app.agents.settled_answer import _repair_json
+
+    if isinstance(arguments, dict):
+        parsed = dict(arguments)
+        stopped_in = list(parsed)[-1] if parsed else ""
+        parsed.pop(stopped_in, None)
+        return (parsed, stopped_in)
 
     text = str(arguments or "").rstrip().rstrip(",")
     dangling = _DANGLING_KEY.search(text)
@@ -299,21 +316,30 @@ def what_arrived_whole(arguments: Any) -> tuple[dict[str, Any], str] | None:
     # Stopped inside the last field's value: what was closed for it is not all of it.
     stopped_in = list(parsed)[-1]
     parsed.pop(stopped_in)
-    return (parsed, stopped_in) if parsed else None
+    return (parsed, stopped_in)
 
 
-def cut_off_notice(exception: Exception, schema: Any) -> str | None:
+def cut_off_notice(
+    exception: Exception,
+    schema: Any,
+    stopped_in: str | None = None,
+    key: tuple[str, str, str] | None = None,
+) -> str | None:
     """What a refused cut-off answer is told: what was kept, and what to send. None for any other refusal."""
     if CUT_OFF not in str(exception):
         return None
     name = getattr(schema, "__name__", "")
-    held = _HELD.get(_answer_key(name) or ("", "", ""), {})
+    target_key = key or _answer_key(name)
+    held = _HELD.get(target_key, {})
     fields = list(getattr(schema, "model_fields", {}) or {})
     missing = [field for field in fields if field not in held]
+    stopped_text = f" in `{stopped_in}`" if stopped_in else ""
     return (
-        f"Your answer was cut off before it ended; the reply stopped partway through it. "
+        f"Your answer was cut off at the output limit before it ended{stopped_text}. "
         f"These fields arrived whole and are kept: {', '.join(sorted(held)) or 'none'}. "
+        f"Do not start over or repeat the fields already kept. "
         f"Call {name} again with only the fields still to send: {', '.join(missing)}. "
+        f"Continue directly from where the reply stopped. "
         f"They are joined to the ones kept. Keep each entry to one line."
     )
 
@@ -346,11 +372,16 @@ def _recovered_calls(message: Any, parameters: dict[str, dict[str, Any]]) -> Non
     kept = []
     for call in invalid:
         name = str(call.get("name") or "")
+        if name not in parameters:
+            for tool_name in parameters:
+                if tool_name.lower() == name.lower() or (not name and tool_name[0].isupper()):
+                    name = tool_name
+                    break
         parsed = _parsed_leniently(call.get("args")) if name in parameters else None
         if parsed is None and name in parameters:
             whole = what_arrived_whole(call.get("args"))
             key = _answer_key(name)
-            if whole and key:
+            if whole:
                 arrived, stopped_in = whole
                 _HELD[key] = {**_HELD.get(key, {}), **with_structure_decoded(arrived, parameters[name])}
                 logger.warning(
@@ -475,13 +506,21 @@ def decode_structured_arguments(result: Any, tools: Any) -> Any:
     return result
 
 
-def _joined_to_what_was_kept(call: dict[str, Any]) -> None:
+def _joined_to_what_was_kept(call: dict[str, Any], key: tuple[str, str, str] | None = None) -> None:
     """The rest of a cut-off answer, joined to the fields kept from it."""
     args = call.get("args")
     if not isinstance(args, dict) or CUT_OFF in args:
         return
-    key = _answer_key(str(call.get("name") or ""))
-    held = _HELD.pop(key, None) if key else None
+    target_key = key or _answer_key(str(call.get("name") or ""))
+    held = _HELD.pop(target_key, None)
     if held:
-        call["args"] = {**held, **args}
+        merged = dict(held)
+        for k, v in args.items():
+            if k in merged and isinstance(merged[k], list) and isinstance(v, list):
+                merged[k] = [*merged[k], *v]
+            elif k in merged and isinstance(merged[k], str) and isinstance(v, str) and not merged[k].endswith(v):
+                merged[k] = f"{merged[k]} {v}".strip()
+            else:
+                merged[k] = v
+        call["args"] = merged
         logger.warning("The rest of a cut-off %s arrived; joined to the %d field(s) kept", call.get("name"), len(held))

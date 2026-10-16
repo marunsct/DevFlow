@@ -331,9 +331,14 @@ Separate save mode and profiles for local build model and frontier model:
 `PUT /api/settings/frontier` saves and remembers frontier profiles (`target='frontier'`).
 An explicit "No model" option (`no_model=true`) clears all frontier model configuration
 and disables all frontier model calls so the entire workflow executes purely on the local model.
-Filtered profile retrieval via `GET /api/settings/models?target=build` and `?target=frontier`.
 Settings UI provides separate "Save Local Model" and "Save Frontier Model" controls,
 dedicated saved profile pickers, and a one-click "Select No Model" action with status indicator.
+Truncated structured tool call recovery (`tool_arguments`, `settled_answer`, `workflow`):
+a tool call cut off at `max_tokens` with incomplete JSON is preserved via `invalid_tool_calls`
+instead of being misdiagnosed as all-reasoning. Whole fields are retained in memory (`_HELD`),
+`cut_off_notice` explicitly commands the model not to restart from the beginning but continue
+only with the missing fields, and partial list fields are concatenated across continuation calls.
+
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

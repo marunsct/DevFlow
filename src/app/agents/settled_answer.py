@@ -900,6 +900,8 @@ def _the_last_reply_was_all_reasoning(messages: list[Any]) -> bool:
             return False
         if str(getattr(message, "content", "") or "").strip():
             return False
+        if getattr(message, "invalid_tool_calls", None):
+            return False
         return not (getattr(message, "tool_calls", None) or ())
     return False
 
@@ -961,8 +963,11 @@ def _replies_that_were_all_reasoning(messages: list[Any]) -> int:
                 getattr(message, "additional_kwargs", None),
             )
         )
-        if truncated and not str(getattr(message, "content", "") or "").strip() and not (
-            getattr(message, "tool_calls", None) or ()
+        if (
+            truncated
+            and not str(getattr(message, "content", "") or "").strip()
+            and not (getattr(message, "tool_calls", None) or ())
+            and not (getattr(message, "invalid_tool_calls", None) or ())
         ):
             count += 1
     return count

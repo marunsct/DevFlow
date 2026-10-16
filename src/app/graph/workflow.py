@@ -2761,6 +2761,8 @@ def _nothing_but_reasoning(message: Any) -> bool:
         return False
     if str(getattr(message, "content", "") or "").strip():
         return False
+    if getattr(message, "invalid_tool_calls", None):
+        return False
     return not (getattr(message, "tool_calls", None) or ())
 
 

@@ -1314,7 +1314,7 @@ class WorkflowRunner:
                         resume_pending_review, graph, record.thread_id, decision["decision"],
                         metadata=trace_meta, run_id=run_id,
                     )
-                elif self._resume_means_answering_own_gate(record):
+                elif self._resume_means_answering_own_gate(record, graph):
                     state = await asyncio.to_thread(
                         resume_pending_approval, graph, record.thread_id,
                         approve_write_decision(), metadata=trace_meta, run_id=run_id,
@@ -1769,7 +1769,9 @@ class WorkflowRunner:
         except Exception:  # noqa: BLE001 - cleanup is never load-bearing
             logger.warning("Could not prune scratch storage", exc_info=True)
 
-    def _resume_means_answering_own_gate(self, record: RunRecord) -> bool:
+    def _resume_means_answering_own_gate(
+        self, record: RunRecord, graph: Any = None
+    ) -> bool:
         """Whether resuming this run should answer its approval gate itself.
 
         An unattended run that stopped while parked on its own gate has nobody
@@ -1782,13 +1784,23 @@ class WorkflowRunner:
         time it reaches one. Doing it here too is not a special case so much as
         the absence of one.
 
-        Read from `current_stage` rather than the checkpoint deliberately: it is
-        the same field `_status_after_failure` uses to decide which route the UI
-        offers, so the route offered and the route taken cannot disagree.
+        Read from `current_stage` or the checkpoint state if current_stage
+        was updated to a non-prefixed stage name before the restart.
         """
-        return bool(record.auto_approve) and (record.current_stage or "").startswith(
-            APPROVAL_PAUSE_PREFIX
-        )
+        if not record.auto_approve:
+            return False
+        if (record.current_stage or "").startswith(APPROVAL_PAUSE_PREFIX):
+            return True
+        if graph is not None:
+            try:
+                from app.graph.workflow import _run_config
+
+                snap = graph.get_state(_run_config(record.thread_id, 100))
+                if snap and str(snap.values.get("stage", "")).startswith(APPROVAL_PAUSE_PREFIX):
+                    return True
+            except Exception:
+                pass
+        return False
 
     def _status_after_failure(self, record: RunRecord) -> str:
         """The status to record when an invoke raised.

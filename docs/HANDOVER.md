@@ -353,7 +353,7 @@ Architecture reviewer write prompt contradiction removed (`architecture_reviewer
 Page view overlay directory tolerance (`page_view`):
 `look_at_page` prepares an overlay directory (`test-results/page-view`) for Playwright inspection of the running web page. `overlay.mkdir(parents=True, exist_ok=True)` now permits the directory to already exist if an earlier inspection or `shutil.rmtree` left it intact, avoiding `FileExistsError` during specialist inspection (`tests/test_a_fix_stage_can_see_the_page.py`).
 Acceptance suite negative assertion matchers detection (`suite`):
-`assertions_that_do_not_exist` previously checked `_ASSERTION_CALL` with `r"\.(to[A-Z][A-Za-z]*)\s*\("`, missing negative matchers written directly like `notToHaveAttribute` or `notToBeVisible`. Updated regex to `r"\.((?:not[A-Z]|to[A-Z])[A-Za-z]*)\s*\("` to flag nonexistent runner methods and prompt for `not.` before the matcher (`tests/test_a_suite_finds_controls_the_way_a_person_does.py`).
+`assertions_that_do_not_exist` previously checked `_ASSERTION_CALL` with `r"\.(to[A-Z][A-Za-z]*)\s*\("`, missing negative matchers written directly like `notToHaveAttribute` or `notToBeVisible` as well as callable `.not()` invocations. Updated regex to `r"\.((?:not[A-Z]|to[A-Z])[A-Za-z]*|not)\s*\("` to flag nonexistent runner methods and invalid `.not()` calls with instructions to use `.not.` as a property before the matcher (`tests/test_a_suite_finds_controls_the_way_a_person_does.py`).
 
 
 

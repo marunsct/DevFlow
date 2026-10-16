@@ -825,8 +825,8 @@ def tests_that_need_what_they_never_made(repo_root: str | Path, result: Acceptan
     ]
 
 
-#: An assertion call in a test: `.toBeVisible(`, `.not.toHaveText(`, `.notToHaveAttribute(`.
-_ASSERTION_CALL = re.compile(r"\.((?:not[A-Z]|to[A-Z])[A-Za-z]*)\s*\(")
+#: An assertion call in a test: `.toBeVisible(`, `.not.toHaveText(`, `.notToHaveAttribute(`, `.not(`.
+_ASSERTION_CALL = re.compile(r"\.((?:not[A-Z]|to[A-Z])[A-Za-z]*|not)\s*\(")
 
 
 def _ends_an_expectation(text: str, at: int) -> bool:

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 import re
 from typing import Any
 
@@ -255,6 +256,67 @@ CUT_OFF = "__cut_off__"
 #: The fields of an answer that arrived whole, by (run, stage, tool), until
 #: the rest arrives.
 _HELD: dict[tuple[str, str, str], dict[str, Any]] = {}
+_HELD_DOCS: dict[tuple[str, str, str], str] = {}
+
+_SCHEMA_DOCUMENTS: dict[str, tuple[str, str]] = {
+    "TechnicalSpecificationOutput": ("technical_specification", "docs/technical_specification.md"),
+    "SprintPlanOutput": ("sprint_plan", "docs/sprint_plan.md"),
+    "MilestonePlanOutput": ("milestone_plan", "docs/milestone_plan.md"),
+}
+
+
+def _find_workspace_path(run_id: str) -> Path | None:
+    if not run_id:
+        return None
+    try:
+        from app.server.workspaces import workspace_root
+
+        root = workspace_root()
+        matches = list(root.glob(f"**/workspace-{run_id}")) + list(root.glob(f"workspace-{run_id}"))
+        if matches and matches[0].is_dir():
+            return matches[0]
+    except Exception:
+        pass
+    for base in (Path("/app/data/workspaces"), Path("data/workspaces"), Path("/app/data"), Path("data")):
+        try:
+            matches = list(base.glob(f"**/workspace-{run_id}"))
+            if matches and matches[0].is_dir():
+                return matches[0]
+        except Exception:
+            pass
+    return None
+
+
+def _sync_partial_document(
+    key: tuple[str, str, str],
+    held: dict[str, Any],
+    workspace_override: Path | None = None,
+) -> str | None:
+    """Render and write the partial fields to the document on disk, returning the relative path."""
+    run, stage, name = key
+    if name not in _SCHEMA_DOCUMENTS or not held:
+        return None
+    template_name, rel_path = _SCHEMA_DOCUMENTS[name]
+    workspace = workspace_override or _find_workspace_path(run)
+    if not workspace or not workspace.is_dir():
+        return None
+    try:
+        if name == "TechnicalSpecificationOutput":
+            from app.agents.specification_document import render_specification
+
+            content = render_specification(held)
+        else:
+            from app.doc_templates import render_document
+
+            content = render_document(template_name, o=held)
+        target = workspace / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+        _HELD_DOCS[key] = rel_path
+        return rel_path
+    except Exception:
+        logger.warning("Could not sync partial document %s", rel_path, exc_info=True)
+        return None
 
 _DANGLING_KEY = re.compile(r',\s*"([^"\\]+)"\s*:?\s*$')
 
@@ -334,9 +396,13 @@ def cut_off_notice(
     fields = list(getattr(schema, "model_fields", {}) or {})
     missing = [field for field in fields if field not in held]
     stopped_text = f" in `{stopped_in}`" if stopped_in else ""
+    doc_note = ""
+    doc_written = _sync_partial_document(target_key, held) or _HELD_DOCS.get(target_key)
+    if doc_written:
+        doc_note = f" The document `{doc_written}` has been filled with the sections generated so far."
     return (
         f"Your answer was cut off at the output limit before it ended{stopped_text}. "
-        f"These fields arrived whole and are kept: {', '.join(sorted(held)) or 'none'}. "
+        f"These fields arrived whole and are kept: {', '.join(sorted(held)) or 'none'}.{doc_note} "
         f"Do not start over or repeat the fields already kept. "
         f"Call {name} again with only the fields still to send: {', '.join(missing)}. "
         f"Continue directly from where the reply stopped. "

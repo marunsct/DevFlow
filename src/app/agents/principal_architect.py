@@ -153,7 +153,7 @@ class TechnicalSpecificationOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    product_scope: str = Field(..., description="What this release covers and explicitly defers.")
+    product_scope: str = Field(default="", description="What this release covers and explicitly defers.")
     component_boundaries: list[str] = Field(default_factory=list)
     domain_model: list[str] = Field(default_factory=list)
     api_and_event_contracts: list[str] = Field(default_factory=list)

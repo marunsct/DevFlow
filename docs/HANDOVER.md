@@ -338,6 +338,13 @@ a tool call cut off at `max_tokens` with incomplete JSON is preserved via `inval
 instead of being misdiagnosed as all-reasoning. Whole fields are retained in memory (`_HELD`),
 `cut_off_notice` explicitly commands the model not to restart from the beginning but continue
 only with the missing fields, and partial list fields are concatenated across continuation calls.
+Incremental document filling & targeted repair continuation (`tool_arguments`, `workflow`, `principal_architect`):
+when whole fields arrive from a cut-off tool call, the partial document (`docs/technical_specification.md`, `docs/sprint_plan.md`)
+is immediately rendered and synced to disk (`_sync_partial_document`), and `cut_off_notice` informs the model that the document has been populated
+with the sections received so far so it continues only with the remaining fields. Furthermore, specification repair comments
+instruct the model not to regenerate the whole specification from the beginning, but return only the missing or corrected sections,
+with `_with_the_sections_it_dropped` preserving all existing sections from the previous specification and `TechnicalSpecificationOutput.product_scope` defaulting cleanly.
+
 
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)

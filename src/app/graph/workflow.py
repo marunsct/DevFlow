@@ -3415,8 +3415,7 @@ def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
     # not a reason to lose the interface design, the file plan or the
     # function contracts either.
     sections = [
-        name for name, field in type(revised).model_fields.items()
-        if name in _REQUIRED_SPECIFICATION_SECTIONS or getattr(field.annotation, "__origin__", None) is list
+        name for name in getattr(type(revised), "model_fields", {}).keys()
     ]
     kept = {
         section: getattr(previous, section)
@@ -6973,10 +6972,11 @@ def build_workflow_graph(
                 update["revision_comments"] = [
                     "Your structured response left these required sections empty: "
                     + ", ".join(missing)
-                    + ". The document you wrote may already cover them - the problem is the "
-                    "structured output, not the prose. Return the specification again with "
-                    "every one of those fields populated from the document; do not drop the "
-                    "sections that are already filled in."
+                    + ". The document `docs/technical_specification.md` on disk already holds the completed sections. "
+                    "Do not repeat the existing sections or return the whole document. "
+                    "Return only the missing fields: "
+                    + ", ".join(missing)
+                    + ". Unchanged sections are automatically preserved."
                 ]
             elif not missing:
                 # Testing nobody here can carry out: a person's check, or an
@@ -6999,8 +6999,9 @@ def build_workflow_graph(
                     update["revision_comments"] = [
                         "The specification does not answer the specialists' advice:\n"
                         + "\n".join(f"- {problem}" for problem in owed)
-                        + "\nReturn the whole specification with those sections completed; "
-                        "change nothing else."
+                        + "\nThe document `docs/technical_specification.md` on disk already holds the completed sections. "
+                        "Do not return the whole specification from the beginning or repeat unchanged sections. "
+                        "Return only `specialist_advice_decisions` answering those items; unchanged sections are automatically preserved."
                     ]
                 elif unrunnable and repairs < MAX_SPECIFICATION_REPAIRS:
                     update["specification_repair_count"] = repairs + 1
@@ -7013,8 +7014,10 @@ def build_workflow_graph(
                         "manual or visual check never happens, and an assertion written "
                         "to a console or log exits 0 whatever it finds. Every check must be "
                         "an automated test run by the runner the technology stack names, "
-                        "which fails the command when a test fails. Return the whole "
-                        "specification with `testing` corrected; change nothing else."
+                        "which fails the command when a test fails. "
+                        "The document `docs/technical_specification.md` on disk already holds the completed sections. "
+                        "Do not return the whole specification from the beginning. "
+                        "Return only `testing` with those checks corrected; unchanged sections are automatically preserved."
                     ]
                 else:
                     update["specification_repair_count"] = 0

@@ -159,7 +159,20 @@ def fix_by_rewriting(
         targets = files if not diagnostics else [f for f in files if any(f"`{f}`" in d for d in diagnostics)] or files
         for path in targets:
             try:
-                reply = model.invoke([
+                active_model = model
+                if active_model is None:
+                    try:
+                        from app.models import build_default_chat_model
+
+                        active_model = build_default_chat_model()
+                    except Exception:  # noqa: BLE001 - a model that cannot be built leaves the defect for the loop
+                        active_model = None
+                if active_model is None or not hasattr(active_model, "invoke"):
+                    logger.info("Rewrite of %s skipped: no chat model available for rewriting", path)
+                    if not changed:
+                        return None
+                    break
+                reply = active_model.invoke([
                     SystemMessage(content="You correct source files of a software product. You reply with "
                                           "one file's complete content in one fenced code block."),
                     HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,
@@ -242,7 +255,17 @@ def fix_by_candidates(
     def one(path_and_index: tuple[str, int]) -> tuple[int, str, str]:
         path, index = path_and_index
         try:
-            reply = model.invoke([
+            active_model = model
+            if active_model is None:
+                try:
+                    from app.models import build_default_chat_model
+
+                    active_model = build_default_chat_model()
+                except Exception:  # noqa: BLE001
+                    active_model = None
+            if active_model is None or not hasattr(active_model, "invoke"):
+                return index, path, ""
+            reply = active_model.invoke([
                 SystemMessage(content="You correct source files of a software product. You reply with "
                                       "one file's complete content in one fenced code block."),
                 HumanMessage(content=fix_request(root, path, defect, failure, specification, stack,

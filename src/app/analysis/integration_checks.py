@@ -42,7 +42,8 @@ _HARNESS_BOOKKEEPING = frozenset({
 
 _SKIP = {
     "node_modules", ".git", "dist", "build", "coverage", ".agent-home",
-    "large_tool_results", "__pycache__", ".venv", "vendor",
+    "large_tool_results", "__pycache__", ".venv", "vendor", ".harness",
+    "test-results",
 }
 
 #: Files whose job is configuration or testing, not application source.
@@ -1536,7 +1537,14 @@ def _without_comments(text: str) -> str:
     and blanking both to `innerHTML = ;` loses exactly the difference the
     caller is asking about.
     """
-    return _A_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
+    def _blank(m: re.Match[str]) -> str:
+        tok = m.group(0)
+        if tok.startswith("//") or tok.startswith("/*"):
+            return re.sub(r"[^\n]", " ", tok)
+        return tok
+
+    return _NOT_CODE.sub(_blank, text)
+
 
 
 def _only_the_code(text: str) -> str:
@@ -4453,7 +4461,7 @@ def _a_browser_test_that_opens_a_module_page_from_disk(files: list[Path], root: 
         text = _read(path)
         if not _IMPORTS_A_BROWSER_DRIVER.search(text):
             continue
-        opened = _OPENS_A_FILE.search(text)
+        opened = _OPENS_A_FILE.search(_without_comments(text))
         if not opened:
             continue
         line = text.count("\n", 0, opened.start()) + 1

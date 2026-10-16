@@ -153,3 +153,24 @@ def test_the_fix_step_asks_for_candidates_after_a_failed_fix():
     helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
     assert "failed_tries >= 1" in helper and "fix_by_candidates(" in helper
     assert "_the_defect_s_tests_pass(root, defect)" in helper
+
+
+def test_fix_by_rewriting_when_model_is_none_falls_back_or_returns_none(tmp_path, monkeypatch):
+    root = _workspace(tmp_path)
+    calls = []
+
+    class _Fallback:
+        def invoke(self, msgs):
+            calls.append(msgs)
+            return SimpleNamespace(content="```ts\nexport const store = 99;\n```")
+
+    monkeypatch.setattr("app.models.build_default_chat_model", lambda *a, **k: _Fallback())
+    output = rewritten_fixes.fix_by_rewriting(DEFECT, root, None, write=lambda b, p, c: None)
+    assert len(calls) > 0, "fallback model was invoked when model argument is None"
+
+
+def test_the_fix_step_supplies_fallback_model_when_building_model_is_none():
+    source = inspect.getsource(workflow)
+    helper = source[source.index("    def _fixed_by_rewriting("):source.index("    def _fix_one(")]
+    assert "fix_model or model or building_model" in helper
+

@@ -109,3 +109,32 @@ def test_an_inline_module_that_imports_nothing_runs_from_disk(tmp_path: Path) ->
     _project(tmp_path, {"app/index.html": page, "app/tests/e2e.spec.js": AS_THE_RUN_WROTE_IT})
 
     assert _found(tmp_path) == []
+
+
+def test_a_comment_mentioning_file_url_is_not_opening_from_disk(tmp_path: Path) -> None:
+    commented = (
+        "// Acceptance: Persistence\n"
+        "// A file:// page would block module scripts, so we open the served root.\n"
+        "import { test, expect } from '@playwright/test';\n\n"
+        "test('persists', async ({ page }) => {\n"
+        "  await page.goto('/');\n"
+        "});\n"
+    )
+    _project(tmp_path, {
+        "app/index.html": MODULE_PAGE,
+        "app/tests/persistence.spec.js": commented,
+        "app/playwright.config.cjs": CONFIG,
+    })
+
+    assert _found(tmp_path) == []
+
+
+def test_harness_directories_are_not_scanned_for_module_page_from_disk(tmp_path: Path) -> None:
+    _project(tmp_path, {
+        "app/index.html": MODULE_PAGE,
+        "app/tests/clean.spec.js": "import { test } from '@playwright/test';\ntest('x', async ({page}) => { await page.goto('/'); });\n",
+        ".harness/acceptance-locks/v1/app/tests/old.spec.js": AS_THE_RUN_WROTE_IT,
+    })
+
+    assert _found(tmp_path) == []
+

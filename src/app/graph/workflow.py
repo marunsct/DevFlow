@@ -8643,7 +8643,7 @@ def build_workflow_graph(
             return None
         try:
             return fix_by_rewriting(
-                defect, root, fix_model,
+                defect, root, fix_model or model or building_model,
                 specification=state.get("technical_specification"),
                 stack=getattr(state.get("stack_selection"), "technology_stack", None),
                 last_failure=_what_the_last_failure_printed(config["configurable"].get(APP_RUN_ID_KEY)),

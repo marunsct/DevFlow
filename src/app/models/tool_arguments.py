@@ -499,8 +499,12 @@ def with_every_call_the_server_sent(message: Any, raw_calls: Any) -> None:
         })
 
 
+_NAMESPACE_PREFIX = re.compile(r"^(?:functions?|tools?|default_api)[._:]", re.IGNORECASE)
+
+
 def _bare(name: str) -> str:
-    return re.sub(r"[^a-z0-9]", "", name.lower())
+    cleaned = _NAMESPACE_PREFIX.sub("", name)
+    return re.sub(r"[^a-z0-9]", "", cleaned.lower())
 
 
 def _the_offered_tool_meant(name: str, parameters: dict[str, Any], args: Any = None) -> str | None:
@@ -513,6 +517,9 @@ def _the_offered_tool_meant(name: str, parameters: dict[str, Any], args: Any = N
     """
     if not name or name in parameters:
         return None
+    unprefixed = _NAMESPACE_PREFIX.sub("", name)
+    if unprefixed in parameters:
+        return unprefixed
     bare = _bare(name)
     if not bare:
         return None

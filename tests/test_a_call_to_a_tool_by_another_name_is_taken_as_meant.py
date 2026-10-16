@@ -31,6 +31,14 @@ def test_another_spelling_or_the_start_of_an_offered_name_is_that_tool():
     assert _decoded("LS", offered) == "ls"
 
 
+def test_a_namespace_or_function_prefix_is_stripped_to_match_the_tool():
+    offered = ("SprintPlanOutput", "read_file", "ls")
+    assert _decoded("functions.SprintPlanOutput", offered) == "SprintPlanOutput"
+    assert _decoded("functions.read_file", offered) == "read_file"
+    assert _decoded("functions.Read", offered) == "read_file"
+    assert _decoded("tools.SprintPlanOutput", offered) == "SprintPlanOutput"
+
+
 def test_a_name_that_could_mean_two_tools_or_none_is_left_alone():
     assert _decoded("read", ("read_command_output", "read_docs")) == "read"
     assert _decoded("SearchBugs", ("ls", "read_file")) == "SearchBugs"

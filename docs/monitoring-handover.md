@@ -91,6 +91,9 @@ A new agent, session or account starts at `docs/HANDOVER.md`: the first ten minu
 |---|---|
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
 
+  - **2026-10-17 05:48 JST:** Namespace-prefixed function tool name resolution (`models.tool_arguments`).
+    When models call structured output tools or function calls with namespace prefixes (e.g. `functions.SprintPlanOutput`, `tools.SprintPlanOutput`, `functions.read_file`), `_bare` previously kept `functions` attached (`functionssprintplanoutput`), failing to match the registered tool name (`SprintPlanOutput`) and causing tool refusal errors. Added `_NAMESPACE_PREFIX` regex to strip `functions?`, `tools?`, or `default_api` prefixes in `_bare` and `_the_offered_tool_meant`, and checked `unprefixed in parameters`.
+    Proven to fail on old code; unit tests passed in `tests/test_a_call_to_a_tool_by_another_name_is_taken_as_meant.py`. Full suite verified (10,889 passed).
   - **2026-10-17 04:30 JST:** Specification/non-test artifact mock DOM refusal prevention (`test_discovery`, `repository`).
     1) In `test_discovery.py`, `a_dom_built_by_hand` was analyzing content for `from 'node:test'` and `global.document` without verifying `is_test(relative_path)`. When a specification or documentation file contained example unit test snippets, `a_dom_built_by_hand` flagged the markdown file, accumulating mock DOM warnings on `docs/technical_specification.md`.
     2) In `repository.py`, `_refuse_a_hand_built_dom_again` now checks `if not is_test(relative_path): return`, and `write_approved_artifact` skips `_refuse_a_hand_built_dom_again` when `by_the_workflow=True`. This prevents `_record_document` from throwing `RepositoryToolError` when saving the approved technical specification or other workflow documents to disk.

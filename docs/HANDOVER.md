@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-17 02:25 JST**.
+of the previous sessions' context. Last updated **2026-10-17 03:05 JST**.
 
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
@@ -359,6 +359,8 @@ Fast-delivery rewrite fallback model when model is None (`rewritten_fixes`, `wor
 `fix_by_rewriting` in fast delivery attempted to call `model.invoke(...)` when `model` was `None`, throwing `'NoneType' object has no attribute 'invoke'` and forfeiting single-file defect rewrites. Added safe fallback to `build_default_chat_model()` and checked `hasattr(active_model, "invoke")`, and updated `_fixed_by_rewriting` in workflow to pass `fix_model or model or building_model` (`tests/test_a_defect_is_fixed_by_rewriting_its_files.py`).
 False-positive file URL detection in comments & .harness exclusion (`integration_checks`):
 `_a_browser_test_that_opens_a_module_page_from_disk` previously scanned raw file text without stripping comments, causing comments explaining why HTTP was used instead of `file://` to trigger false positive "opens the page from disk" defects graded as BREAKS. Updated `_without_comments` to preserve string literals using tokenization (`_NOT_CODE`) while blanking comments, passed `_without_comments(text)` to `_OPENS_A_FILE`, and added `.harness` and `test-results` to `_SKIP` so locked acceptance snapshots and test logs are not cross-checked as project source files (`tests/test_a_browser_test_opens_the_page_the_way_a_browser_can_run_it.py`).
+Milestone review output extra fields tolerance (`milestone_reviewer`):
+`MilestoneReviewOutput` and `MilestoneReviewFinding` had `model_config = ConfigDict(extra="forbid")`, causing Pydantic to reject structured outputs when local models output valid fields alongside harmless extra commentary keys (such as `changes_required_note`, `notes`, `summary`), resulting in failed tool call parsing, repeated failed attempts, and stage retries. Set `model_config = ConfigDict(extra="ignore")` so harmless extra keys are safely discarded while all required fields are validated (`tests/test_milestone_review_accepts_extra_fields.py`).
 
 
 

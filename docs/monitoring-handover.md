@@ -3,7 +3,7 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-10-17 00:32 JST (stage 1 gate: 2 of 2 clean runs — STAGE 1 GATE PASSED!; start at
+**As of:** 2026-10-17 03:05 JST (stage 1 gate: 2 of 2 clean runs — STAGE 1 GATE PASSED!; start at
 `docs/HANDOVER.md` §0), branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
 kept current by whoever runs the loop - **in the same commit as any change to
@@ -90,6 +90,8 @@ A new agent, session or account starts at `docs/HANDOVER.md`: the first ten minu
 | | |
 |---|---|
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
+  - **2026-10-17 03:05 JST:** Milestone review output extra fields tolerance (`milestone_reviewer`).
+    `MilestoneReviewOutput` and `MilestoneReviewFinding` had `model_config = ConfigDict(extra="forbid")`, causing Pydantic validation to reject structured reviews when the local model produced all required fields alongside extra commentary fields (such as `changes_required_note`, `notes`, `summary`), leading to failed structured tool call parsing, repeated identical refused answers, and stage retries. Set `model_config = ConfigDict(extra="ignore")` so harmless extra keys are safely discarded while all required fields are validated. Proven to fail on old code; 2 unit tests passed in `tests/test_milestone_review_accepts_extra_fields.py`.
   - **2026-10-17 02:25 JST:** Fast-delivery rewrite fallback model (`rewritten_fixes`, `workflow`), comment-aware file URL detection & `.harness` exclusion (`integration_checks`).
     1) In `rewritten_fixes.py` (`fix_by_rewriting` and `fix_by_candidates`), added fallback to `build_default_chat_model()` and checked `hasattr(active_model, "invoke")` when `model is None`, preventing `'NoneType' object has no attribute 'invoke'` crashes during fast-delivery rewrites. In `workflow.py`, passed `fix_model or model or building_model` in `_fixed_by_rewriting`. Proven to fail on old code; 2 unit tests passed in `tests/test_a_defect_is_fixed_by_rewriting_its_files.py`.
     2) In `integration_checks.py`, `_a_browser_test_that_opens_a_module_page_from_disk` previously scanned raw file text, causing comments explaining why HTTP was used instead of `file://` to trigger false positive "opens the page from disk" defects graded as BREAKS. Updated `_without_comments` to preserve string literals using tokenization (`_NOT_CODE`) while blanking comments, passed `_without_comments(text)` to `_OPENS_A_FILE`, and added `.harness` and `test-results` to `_SKIP` so locked acceptance snapshots and test logs are not cross-checked as project source files. Proven to fail on old code; 2 unit tests passed in `tests/test_a_browser_test_opens_the_page_the_way_a_browser_can_run_it.py`. Full suite passed (10,879 passed).

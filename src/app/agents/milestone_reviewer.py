@@ -32,7 +32,7 @@ _NAME = "milestone_reviewer"
 class MilestoneReviewFinding(BaseModel):
     """One specific issue found while reviewing the milestone."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     severity: Literal["blocking", "major", "minor", "suggestion"] = Field(
         ..., description=(
@@ -91,7 +91,7 @@ class MilestoneReviewFinding(BaseModel):
 class MilestoneReviewOutput(BaseModel):
     """Structured review decision produced by the Milestone Reviewer."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="ignore")
 
     status: Literal["accepted", "changes_required", "blocked"] = Field(
         ...,

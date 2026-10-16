@@ -6015,8 +6015,9 @@ def _refuse_a_blind_overwrite_of_another_stage_s_file(
         f"Refusing to write '{relative_path}': it already exists, '{writer}' wrote "
         f"the version there now ({_line_count(existing)} lines), and you have not "
         "seen it - writing the whole file would replace that work unread. Nothing "
-        "was written. Read it first; then change your part with `edit_artifact`, or "
-        "write the whole file again if replacing it is what you mean."
+        "was written. Read it first with `read_file`; then change your part with "
+        "`edit_artifact` or `replace_lines`, or write the whole file if replacing it "
+        "is what you mean."
     )
 
 

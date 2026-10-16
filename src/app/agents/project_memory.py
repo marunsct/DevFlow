@@ -340,6 +340,11 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                 opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
                                 for m in messages), "")
                 memory, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                if self._held:
+                    from app.tools.seen_content import remember
+
+                    for held_path, held_content in self._held.items():
+                        remember(held_path, held_content)
                 changed = _with_memory(messages, memory) if memory else None
                 if changed is not None:
                     request = request.override(messages=changed)
@@ -357,6 +362,9 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
                 held = self._held.get(path)
                 if held is not None and current(repo_root).get(path) == held:
+                    from app.tools.seen_content import remember
+
+                    remember(path, held)
                     from langchain_core.messages import ToolMessage
 
                     return ToolMessage(

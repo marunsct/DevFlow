@@ -1745,8 +1745,8 @@ def build_settled_answer_middleware(
                                 "of it",
                                 stage_name or "?", repeated[0], repeated[1],
                             )
-                    if ignored and writers:
-                        kept, narrowed = writers, True
+                    if ignored:
+                        kept, narrowed = _without_the_looking_tools_in(kept), True
                     if narrowed:
                         overrides["tools"] = kept
                     elif repeated is not None and not correction.strip():

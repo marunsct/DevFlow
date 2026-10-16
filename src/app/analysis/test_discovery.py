@@ -231,6 +231,10 @@ def a_dom_built_by_hand(relative_path: str, content: str, dom_given: str = "") -
     rejects them ("parameter 1 is not of type 'Event'"). Four runs spent their
     first sprint on hand-made DOM setups before the pack gave them one.
     """
+    from app.analysis.file_kinds import is_test
+
+    if not is_test(relative_path):
+        return None
     if not _DECLARES_TESTS.search(content or ""):
         return None
     if dom_given:

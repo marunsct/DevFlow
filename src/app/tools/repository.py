@@ -1171,6 +1171,10 @@ def _refuse_a_hand_built_dom_again(relative_path: str, content: str, target: Pat
     rather than taking one more step into a browser it is writing itself.
     """
     try:
+        from app.analysis.file_kinds import is_test
+
+        if not is_test(relative_path):
+            return
         from app.analysis.test_discovery import a_dom_built_by_hand
         from app.tools.seen_content import (
             MOCK_DOM_WARNINGS_BEFORE_REFUSING,
@@ -6414,7 +6418,8 @@ def write_approved_artifact(
         target, relative_path, content,
         target.read_text(encoding="utf-8", errors="replace") if target.is_file() else "",
     )
-    _refuse_a_hand_built_dom_again(relative_path, content, target)
+    if not by_the_workflow:
+        _refuse_a_hand_built_dom_again(relative_path, content, target)
     _refuse_rewriting_the_platform(
         relative_path, content, target.read_text(encoding="utf-8", errors="replace") if target.is_file() else ""
     )

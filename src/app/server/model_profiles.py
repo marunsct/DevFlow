@@ -30,15 +30,14 @@ PROFILES_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS model_profiles (
     id         TEXT PRIMARY KEY,
     label      TEXT NOT NULL,
+    target     TEXT NOT NULL DEFAULT 'build',
     settings   TEXT NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_by TEXT
 )
 """
 
-#: What a profile holds: the model and what has to match it. Execution mode is
-#: a property of how a run is scheduled, not of a model, and is left out.
-PROFILE_FIELDS = (
+BUILD_PROFILE_FIELDS = (
     "llm_provider",
     "openai_base_url",
     "model_name",
@@ -48,86 +47,166 @@ PROFILE_FIELDS = (
     "thinking_effort",
 )
 
-#: How many profiles are kept. Past this the least recently saved is dropped,
-#: so a long-lived deployment's list stays short enough to choose from.
+FRONTIER_PROFILE_FIELDS = (
+    "judgement_provider",
+    "judgement_base_url",
+    "judgement_model_name",
+    "judgement_context_window",
+    "judgement_max_output_tokens",
+    "escalate_after_attempts",
+    "plan_on_judgement_model",
+)
+
+PROFILE_FIELDS = BUILD_PROFILE_FIELDS
+
+#: How many profiles are kept per target. Past this the least recently saved is dropped.
 MOST_PROFILES = 50
 
 
-def profile_id(llm_provider: str, openai_base_url: str, model_name: str) -> str:
+def _ensure_profiles_schema(cur: Any) -> None:
+    ensure_table(cur, "model_profiles", PROFILES_TABLE_SQL)
+    cur.execute("ALTER TABLE model_profiles ADD COLUMN IF NOT EXISTS target TEXT NOT NULL DEFAULT 'build'")
+    cur.execute("CREATE INDEX IF NOT EXISTS model_profiles_target_idx ON model_profiles (target, updated_at DESC)")
+
+
+def profile_id(
+    llm_provider: str,
+    openai_base_url: str,
+    model_name: str,
+    *,
+    target: str = "build",
+) -> str:
     """The identity of a model configuration: the same model at the same endpoint."""
+    parts = (llm_provider, openai_base_url, model_name) if target == "build" else (target, llm_provider, openai_base_url, model_name)
     key = "|".join(
         str(part or "").strip().lower().rstrip("/")
-        for part in (llm_provider, openai_base_url, model_name)
+        for part in parts
     )
     return hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
 
-def _label(values: Mapping[str, Any]) -> str:
-    model = str(values.get("model_name") or "").strip() or "unnamed model"
-    provider = str(values.get("llm_provider") or "").strip()
+def _label(values: Mapping[str, Any], *, target: str = "build") -> str:
+    if target == "frontier":
+        model = str(values.get("judgement_model_name") or values.get("model_name") or "").strip()
+        provider = str(values.get("judgement_provider") or values.get("llm_provider") or "").strip()
+    else:
+        model = str(values.get("model_name") or "").strip()
+        provider = str(values.get("llm_provider") or "").strip()
+    model = model or "unnamed model"
     return f"{model} ({provider})" if provider else model
 
 
-def remember(values: Mapping[str, Any], *, actor: str = "unknown") -> dict[str, Any]:
+def remember(
+    values: Mapping[str, Any],
+    *,
+    target: str = "build",
+    actor: str = "unknown",
+) -> dict[str, Any] | None:
     """Store the configuration just applied, replacing any entry for the same model."""
     from app.server.auth import get_db_connection
 
-    kept = {field: values.get(field) for field in PROFILE_FIELDS}
-    identity = profile_id(kept["llm_provider"], kept["openai_base_url"], kept["model_name"])
-    label = _label(kept)
+    if target == "frontier":
+        model = str(values.get("judgement_model_name") or values.get("model_name") or "").strip()
+        if not model:
+            return None
+        provider = str(values.get("judgement_provider") or values.get("llm_provider") or "").strip()
+        base_url = str(values.get("judgement_base_url") or values.get("openai_base_url") or "").strip()
+        ctx = int(values.get("judgement_context_window") or values.get("model_context_window") or 0)
+        reply = int(values.get("judgement_max_output_tokens") or values.get("model_max_output_tokens") or 0)
+        escalate = int(values.get("escalate_after_attempts") or 2)
+        plan = bool(values.get("plan_on_judgement_model", True))
+        kept: dict[str, Any] = {
+            "target": "frontier",
+            "judgement_provider": provider,
+            "judgement_base_url": base_url,
+            "judgement_model_name": model,
+            "judgement_context_window": ctx,
+            "judgement_max_output_tokens": reply,
+            "escalate_after_attempts": escalate,
+            "plan_on_judgement_model": plan,
+            # Mirrors standard build keys for generic profile consumers
+            "llm_provider": provider,
+            "openai_base_url": base_url,
+            "model_name": model,
+            "model_context_window": ctx,
+            "model_max_output_tokens": reply,
+        }
+        identity = profile_id(provider, base_url, model, target="frontier")
+        label = _label(kept, target="frontier")
+    else:
+        model = str(values.get("model_name") or "").strip()
+        provider = str(values.get("llm_provider") or "").strip()
+        base_url = str(values.get("openai_base_url") or "").strip()
+        kept = {
+            "target": "build",
+            **{field: values.get(field) for field in BUILD_PROFILE_FIELDS},
+        }
+        identity = profile_id(provider, base_url, model, target="build")
+        label = _label(kept, target="build")
+
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            ensure_table(cur, "model_profiles", PROFILES_TABLE_SQL)
+            _ensure_profiles_schema(cur)
             cur.execute(
                 """
-                INSERT INTO model_profiles (id, label, settings, updated_at, updated_by)
-                VALUES (%s, %s, %s, NOW(), %s)
+                INSERT INTO model_profiles (id, label, target, settings, updated_at, updated_by)
+                VALUES (%s, %s, %s, %s, NOW(), %s)
                 ON CONFLICT (id) DO UPDATE
                    SET label = EXCLUDED.label,
+                       target = EXCLUDED.target,
                        settings = EXCLUDED.settings,
                        updated_at = EXCLUDED.updated_at,
                        updated_by = EXCLUDED.updated_by
                 """,
-                (identity, label, json.dumps(kept, sort_keys=True), actor),
+                (identity, label, target, json.dumps(kept, sort_keys=True), actor),
             )
             cur.execute(
                 """
                 DELETE FROM model_profiles WHERE id IN (
-                    SELECT id FROM model_profiles ORDER BY updated_at DESC OFFSET %s
+                    SELECT id FROM model_profiles WHERE target = %s ORDER BY updated_at DESC OFFSET %s
                 )
                 """,
-                (MOST_PROFILES,),
+                (target, MOST_PROFILES),
             )
         conn.commit()
     return {"id": identity, "label": label, **kept}
 
 
-def list_profiles() -> list[dict[str, Any]]:
-    """Every saved configuration, most recently saved first."""
+def list_profiles(target: str | None = None) -> list[dict[str, Any]]:
+    """Every saved configuration, most recently saved first, optionally filtered by target."""
     from app.server.auth import get_db_connection
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            ensure_table(cur, "model_profiles", PROFILES_TABLE_SQL)
-            cur.execute(
-                "SELECT id, label, settings, updated_at, updated_by FROM model_profiles "
-                "ORDER BY updated_at DESC"
-            )
+            _ensure_profiles_schema(cur)
+            if target and target in ("build", "frontier"):
+                cur.execute(
+                    "SELECT id, label, target, settings, updated_at, updated_by FROM model_profiles "
+                    "WHERE target = %s ORDER BY updated_at DESC",
+                    (target,),
+                )
+            else:
+                cur.execute(
+                    "SELECT id, label, target, settings, updated_at, updated_by FROM model_profiles "
+                    "ORDER BY updated_at DESC"
+                )
             rows = cur.fetchall()
     profiles: list[dict[str, Any]] = []
-    for identity, label, settings, updated_at, updated_by in rows:
+    for identity, label, row_target, settings, updated_at, updated_by in rows:
         try:
             stored = json.loads(settings or "{}")
         except ValueError:
             logger.warning("Model profile %s is unreadable; skipping it", identity)
             continue
-        profiles.append({
+        item = {
             "id": identity,
             "label": label,
-            **{field: stored.get(field) for field in PROFILE_FIELDS},
+            "target": row_target or stored.get("target", "build"),
             "updated_at": updated_at.isoformat() if updated_at else None,
             "updated_by": updated_by,
-        })
+        }
+        item.update(stored)
+        profiles.append(item)
     return profiles
 
 
@@ -137,11 +216,20 @@ def forget(identity: str) -> bool:
 
     with get_db_connection() as conn:
         with conn.cursor() as cur:
-            ensure_table(cur, "model_profiles", PROFILES_TABLE_SQL)
+            _ensure_profiles_schema(cur)
             cur.execute("DELETE FROM model_profiles WHERE id = %s", (identity,))
             deleted = cur.rowcount > 0
         conn.commit()
     return deleted
 
 
-__all__ = ["MOST_PROFILES", "PROFILE_FIELDS", "forget", "list_profiles", "profile_id", "remember"]
+__all__ = [
+    "BUILD_PROFILE_FIELDS",
+    "FRONTIER_PROFILE_FIELDS",
+    "MOST_PROFILES",
+    "PROFILE_FIELDS",
+    "forget",
+    "list_profiles",
+    "profile_id",
+    "remember",
+]

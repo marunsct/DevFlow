@@ -103,3 +103,85 @@ def test_only_an_admin_can_forget_one(authed_app, client) -> None:
     with TestClient(authed_app) as as_operator:
         assert as_operator.get("/api/settings/models").status_code == 200
         assert as_operator.delete(f"/api/settings/models/{saved['id']}").status_code == 403
+
+
+def test_saving_local_model_separately(client) -> None:
+    payload = {
+        "llm_provider": "local",
+        "openai_base_url": "http://host.docker.internal:9090/v1",
+        "model_name": "qwen3.8-flash-next-iq3_s",
+        "model_context_window": 128000,
+        "model_max_output_tokens": 20000,
+        "thinking_mode": "default",
+        "thinking_effort": "medium",
+    }
+    resp = client.put("/api/settings/local", json=payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["model_name"] == "qwen3.8-flash-next-iq3_s"
+
+    saved = client.get("/api/settings/models?target=build").json()
+    assert len(saved) == 1
+    assert saved[0]["model_name"] == "qwen3.8-flash-next-iq3_s"
+    assert saved[0]["target"] == "build"
+
+
+def test_saving_frontier_model_separately_and_listing_by_target(client) -> None:
+    # Save a build model
+    client.put("/api/settings/local", json={
+        "llm_provider": "local",
+        "openai_base_url": "http://host.docker.internal:9090/v1",
+        "model_name": "qwen3.8-local",
+        "model_context_window": 128000,
+        "model_max_output_tokens": 20000,
+    })
+
+    # Save a frontier model
+    frontier_payload = {
+        "judgement_provider": "openai",
+        "judgement_base_url": "https://api.openai.com/v1",
+        "judgement_model_name": "gpt-4o",
+        "judgement_context_window": 128000,
+        "judgement_max_output_tokens": 16000,
+        "escalate_after_attempts": 3,
+        "plan_on_judgement_model": True,
+    }
+    resp = client.put("/api/settings/frontier", json=frontier_payload)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["judgement_model_name"] == "gpt-4o"
+    assert data["model_name"] == "qwen3.8-local"  # build model untouched
+
+    # List build models only
+    build_models = client.get("/api/settings/models?target=build").json()
+    assert len(build_models) == 1
+    assert build_models[0]["model_name"] == "qwen3.8-local"
+
+    # List frontier models only
+    frontier_models = client.get("/api/settings/models?target=frontier").json()
+    assert len(frontier_models) == 1
+    assert frontier_models[0]["judgement_model_name"] == "gpt-4o"
+    assert frontier_models[0]["target"] == "frontier"
+
+
+def test_selecting_no_model_for_frontier_disables_it(client) -> None:
+    # First configure a frontier model
+    client.put("/api/settings/frontier", json={
+        "judgement_provider": "local",
+        "judgement_base_url": "http://host.docker.internal:9090/v1",
+        "judgement_model_name": "qwen-frontier",
+    })
+    view = client.get("/api/settings").json()
+    assert view["judgement_model_name"] == "qwen-frontier"
+
+    # Now select No Model
+    resp = client.put("/api/settings/frontier", json={
+        "no_model": True,
+        "judgement_model_name": "",
+    })
+    assert resp.status_code == 200
+    view2 = resp.json()
+    assert view2["judgement_model_name"] == ""
+    assert view2["judgement_provider"] == ""
+    assert view2["judgement_base_url"] == ""
+

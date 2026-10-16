@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Server, User, Shield, Info, Save, Trash2 } from 'lucide-react';
-import { api } from '../api';
+import { api, saveLocalModelSettings, saveFrontierModelSettings } from '../api';
 
 import type { ModelProfile, SettingsView } from '../types';
 
@@ -48,13 +48,18 @@ export const Settings: React.FC = () => {
   const [user, setUser] = useState<{ username: string; role?: string } | null>(null);
   const [settings, setSettings] = useState<SettingsView | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingLocal, setSavingLocal] = useState(false);
+  const [savingFrontier, setSavingFrontier] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [detectNote, setDetectNote] = useState('');
   const [message, setMessage] = useState('');
-  // Every configuration applied before, so switching back to a model is a pick
-  // from this list rather than six fields typed again.
-  const [profiles, setProfiles] = useState<ModelProfile[]>([]);
-  const [chosenProfile, setChosenProfile] = useState('');
+
+  // Separated saved model profiles for build (local) and frontier models
+  const [localProfiles, setLocalProfiles] = useState<ModelProfile[]>([]);
+  const [frontierProfiles, setFrontierProfiles] = useState<ModelProfile[]>([]);
+  const [chosenLocalProfile, setChosenLocalProfile] = useState('');
+  const [chosenFrontierProfile, setChosenFrontierProfile] = useState('');
+
   // Held apart from `settings` because these are never read back from the
   // server: an empty box means "leave it alone", not "there is no key".
   const [credentials, setCredentials] = useState<Record<CredentialField, string>>({
@@ -71,13 +76,18 @@ export const Settings: React.FC = () => {
   }, []);
 
   const loadProfiles = () => {
-    api.get('/settings/models').then(res => setProfiles(res.data)).catch(() => {});
+    api.get<ModelProfile[]>('/settings/models?target=build')
+      .then(res => setLocalProfiles(res.data))
+      .catch(() => {});
+    api.get<ModelProfile[]>('/settings/models?target=frontier')
+      .then(res => setFrontierProfiles(res.data))
+      .catch(() => {});
   };
 
-  /** Fill the form from a saved model. Nothing changes until Save Settings. */
-  const applyProfile = (id: string) => {
-    setChosenProfile(id);
-    const profile = profiles.find(p => p.id === id);
+  /** Fill the build model form from a saved local model. */
+  const applyLocalProfile = (id: string) => {
+    setChosenLocalProfile(id);
+    const profile = localProfiles.find(p => p.id === id);
     if (!profile || !settings) return;
     setSettings({
       ...settings,
@@ -89,16 +99,74 @@ export const Settings: React.FC = () => {
       thinking_mode: profile.thinking_mode ?? 'default',
       thinking_effort: profile.thinking_effort ?? 'medium',
     });
-    setMessage('Filled from a saved model. Save Settings to apply it.');
+    setMessage('Filled local model fields from saved profile. Click "Save Local Model" to apply.');
   };
 
-  const forgetProfile = async () => {
-    if (!chosenProfile) return;
+  /** Fill or clear the frontier model form from a saved frontier profile or No Model. */
+  const applyFrontierProfile = (id: string) => {
+    setChosenFrontierProfile(id);
+    if (!settings) return;
+    if (id === '__none__') {
+      setSettings({
+        ...settings,
+        judgement_provider: '',
+        judgement_base_url: '',
+        judgement_model_name: '',
+        judgement_context_window: 0,
+        judgement_max_output_tokens: 0,
+      });
+      setMessage('Selected "No model" for frontier. Click "Save Frontier Model" to apply.');
+      return;
+    }
+    const profile = frontierProfiles.find(p => p.id === id);
+    if (!profile) return;
+    setSettings({
+      ...settings,
+      judgement_provider: profile.judgement_provider ?? settings.judgement_provider,
+      judgement_base_url: profile.judgement_base_url ?? settings.judgement_base_url,
+      judgement_model_name: profile.judgement_model_name ?? settings.judgement_model_name,
+      judgement_context_window: profile.judgement_context_window ?? settings.judgement_context_window,
+      judgement_max_output_tokens: profile.judgement_max_output_tokens ?? settings.judgement_max_output_tokens,
+      escalate_after_attempts: profile.escalate_after_attempts ?? settings.escalate_after_attempts,
+      plan_on_judgement_model: profile.plan_on_judgement_model ?? settings.plan_on_judgement_model,
+    });
+    setMessage('Filled frontier model fields from saved profile. Click "Save Frontier Model" to apply.');
+  };
+
+  /** Explicitly set Frontier Model to No Model (clearing its settings). */
+  const selectNoFrontierModel = () => {
+    if (!settings) return;
+    setChosenFrontierProfile('__none__');
+    setSettings({
+      ...settings,
+      judgement_provider: '',
+      judgement_base_url: '',
+      judgement_model_name: '',
+      judgement_context_window: 0,
+      judgement_max_output_tokens: 0,
+    });
+    setMessage('Frontier model cleared (No model selected). Click "Save Frontier Model" to apply.');
+  };
+
+  const forgetLocalProfile = async () => {
+    if (!chosenLocalProfile) return;
     try {
-      await api.delete(`/settings/models/${chosenProfile}`);
-      setChosenProfile('');
+      await api.delete(`/settings/models/${chosenLocalProfile}`);
+      setChosenLocalProfile('');
       loadProfiles();
-      setMessage('Saved model removed.');
+      setMessage('Saved local model removed.');
+    } catch (err: any) {
+      setMessage(err.response?.data?.detail ?? 'Could not remove the saved model.');
+    }
+  };
+
+  const forgetFrontierProfile = async () => {
+    if (!chosenFrontierProfile || chosenFrontierProfile === '__none__') return;
+    try {
+      await api.delete(`/settings/models/${chosenFrontierProfile}`);
+      setChosenFrontierProfile('');
+      loadProfiles();
+      setMessage('Saved frontier model removed.');
     } catch (err: any) {
       setMessage(err.response?.data?.detail ?? 'Could not remove the saved model.');
     }
@@ -187,14 +255,80 @@ export const Settings: React.FC = () => {
       const res = await api.put('/settings', form);
       setSettings(res.data);
       setCredentials({ openai_api_key: '', anthropic_api_key: '', google_api_key: '', judgement_api_key: '' });
-      setMessage('Settings saved. This model is now in Saved models.');
-      setChosenProfile('');
+      setMessage('Settings saved.');
+      setChosenLocalProfile('');
+      setChosenFrontierProfile('');
       loadProfiles();
     } catch (err: any) {
       setMessage(err.response?.data?.detail ?? 'Could not save settings.');
     } finally {
       setSaving(false);
       setTimeout(() => setMessage(''), 3000);
+    }
+  };
+
+  /** Save only the local build model settings and add to saved local models. */
+  const handleSaveLocal = async () => {
+    if (!settings) return;
+    setSavingLocal(true);
+    setMessage('');
+    try {
+      const payload = {
+        llm_provider: settings.llm_provider,
+        openai_base_url: settings.openai_base_url,
+        model_name: settings.model_name,
+        model_context_window: settings.model_context_window,
+        model_max_output_tokens: settings.model_max_output_tokens ?? 0,
+        thinking_mode: settings.thinking_mode ?? 'default',
+        thinking_effort: settings.thinking_effort ?? 'medium',
+        ...(credentials[buildKeyField] !== '' ? { api_key: credentials[buildKeyField] } : {}),
+      };
+      const res = await saveLocalModelSettings(payload);
+      setSettings(res);
+      setCredentials(prev => ({ ...prev, [buildKeyField]: '' }));
+      setMessage('Local build model saved and added to saved local models.');
+      setChosenLocalProfile('');
+      loadProfiles();
+    } catch (err: any) {
+      setMessage(err.response?.data?.detail ?? 'Could not save local model settings.');
+    } finally {
+      setSavingLocal(false);
+      setTimeout(() => setMessage(''), 4000);
+    }
+  };
+
+  /** Save only the frontier model settings, or explicitly disable it with No Model. */
+  const handleSaveFrontier = async () => {
+    if (!settings) return;
+    setSavingFrontier(true);
+    setMessage('');
+    try {
+      const isNoModel = chosenFrontierProfile === '__none__' || !settings.judgement_model_name?.trim();
+      const payload = {
+        judgement_provider: settings.judgement_provider ?? '',
+        judgement_base_url: settings.judgement_base_url ?? '',
+        judgement_model_name: settings.judgement_model_name ?? '',
+        judgement_context_window: settings.judgement_context_window ?? 0,
+        judgement_max_output_tokens: settings.judgement_max_output_tokens ?? 0,
+        escalate_after_attempts: settings.escalate_after_attempts ?? 2,
+        plan_on_judgement_model: settings.plan_on_judgement_model ?? true,
+        no_model: isNoModel,
+        ...(credentials.judgement_api_key !== '' ? { judgement_api_key: credentials.judgement_api_key } : {}),
+      };
+      const res = await saveFrontierModelSettings(payload);
+      setSettings(res);
+      setCredentials(prev => ({ ...prev, judgement_api_key: '' }));
+      if (isNoModel) {
+        setMessage('Frontier model disabled. All operations will use local build model.');
+      } else {
+        setMessage('Frontier model saved and added to saved frontier models.');
+      }
+      loadProfiles();
+    } catch (err: any) {
+      setMessage(err.response?.data?.detail ?? 'Could not save frontier model settings.');
+    } finally {
+      setSavingFrontier(false);
+      setTimeout(() => setMessage(''), 4000);
     }
   };
 
@@ -231,47 +365,55 @@ export const Settings: React.FC = () => {
             <p className="text-sm text-text-muted">Loading settings...</p>
           ) : (
             <form onSubmit={handleSave} className="space-y-4">
-              {profiles.length > 0 && (
-                <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+              <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
+                <div className="flex items-center justify-between mb-1">
                   <label
-                    htmlFor="saved-models"
-                    className="block text-sm font-medium text-text-secondary mb-1"
+                    htmlFor="saved-local-models"
+                    className="block text-sm font-medium text-text-secondary"
                   >
-                    Saved models
+                    Saved Local (Build) Models
                   </label>
-                  <div className="flex items-center gap-2">
-                    <select
-                      id="saved-models"
-                      value={chosenProfile}
-                      onChange={(e) => applyProfile(e.target.value)}
-                      className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
-                    >
-                      <option value="">Choose a model you have used before...</option>
-                      {profiles.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                          {p.model_context_window ? ` - ${p.model_context_window.toLocaleString()} tokens` : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={forgetProfile}
-                      disabled={!chosenProfile}
-                      title="Remove this saved model"
-                      aria-label="Remove this saved model"
-                      className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-40 transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
-                    Every model you save is kept here with its endpoint, context window,
-                    reply limit and thinking settings. Picking one fills the form below;
-                    API keys are never stored with it.
-                  </p>
+                  <button
+                    type="button"
+                    onClick={handleSaveLocal}
+                    disabled={savingLocal}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    {savingLocal ? 'Saving Local...' : 'Save Local Model'}
+                  </button>
                 </div>
-              )}
+                <div className="flex items-center gap-2 mt-2">
+                  <select
+                    id="saved-local-models"
+                    value={chosenLocalProfile}
+                    onChange={(e) => applyLocalProfile(e.target.value)}
+                    className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                  >
+                    <option value="">Choose a saved local model...</option>
+                    {localProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                        {p.model_context_window ? ` - ${p.model_context_window.toLocaleString()} tokens` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={forgetLocalProfile}
+                    disabled={!chosenLocalProfile}
+                    title="Remove this saved local model"
+                    aria-label="Remove this saved local model"
+                    className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-40 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
+                  Saved configurations for your local build model (LM Studio / Ollama / local endpoints).
+                  Click &ldquo;Save Local Model&rdquo; to persist current build model settings separately.
+                </p>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Provider</label>
@@ -526,17 +668,77 @@ export const Settings: React.FC = () => {
 
               {/* The planning and judgement model. Empty name: every stage uses the model above. */}
               <div className="rounded-lg border border-border/50 bg-surface/30 px-3 py-3">
-                <p className="text-xs font-medium text-text-secondary mb-1 uppercase tracking-wider">
-                  Planning &amp; judgement model (frontier)
-                </p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Planning &amp; judgement model (frontier)
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={selectNoFrontierModel}
+                      className="px-2.5 py-1 bg-surface/60 hover:bg-surface border border-border/70 rounded-lg text-xs font-medium text-text-secondary hover:text-white transition-colors"
+                    >
+                      Select No Model
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveFrontier}
+                      disabled={savingFrontier}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    >
+                      <Save className="h-3.5 w-3.5" />
+                      {savingFrontier ? 'Saving Frontier...' : 'Save Frontier Model'}
+                    </button>
+                  </div>
+                </div>
                 <p className="text-xs text-text-muted mb-3 leading-relaxed">
                   The model above is the <strong>build model</strong>: it writes the code and the fixes.
                   This one writes the plan and the specification, writes and reviews the acceptance
                   tests, triages the test rounds and runs the reviews - and takes over any work order
-                  or defect the build model failed. Leave the name empty to run every stage on the
-                  model above. Empty fields below use the model above&rsquo;s, except the address: on
-                  another provider an empty address means that provider&rsquo;s own.
+                  or defect the build model failed. <strong>Select &ldquo;No model&rdquo;</strong> to disable all
+                  frontier calls and run every stage on the build model above.
                 </p>
+
+                {/* Saved frontier models dropdown */}
+                <div className="mb-4 p-2.5 rounded-lg border border-border/40 bg-surface/20">
+                  <div className="flex items-center justify-between mb-1">
+                    <label htmlFor="saved-frontier-models" className="block text-xs font-medium text-text-secondary">
+                      Saved Frontier Models
+                    </label>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <select
+                      id="saved-frontier-models"
+                      value={chosenFrontierProfile}
+                      onChange={(e) => applyFrontierProfile(e.target.value)}
+                      className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                    >
+                      <option value="">Choose a saved frontier model...</option>
+                      <option value="__none__">🚫 No model (use local model only)</option>
+                      {frontierProfiles.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label} {p.judgement_model_name ? `(${p.judgement_model_name})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={forgetFrontierProfile}
+                      disabled={!chosenFrontierProfile || chosenFrontierProfile === '__none__'}
+                      title="Remove this saved frontier model"
+                      aria-label="Remove this saved frontier model"
+                      className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-40 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+
+                {(!settings.judgement_model_name?.trim() || chosenFrontierProfile === '__none__') && (
+                  <div className="mb-3 px-3 py-2 rounded-lg bg-surface/40 border border-border/40 text-xs text-primary flex items-center gap-2">
+                    <span>⚡ Frontier model is currently <strong>disabled</strong>: all tasks run on the local build model only.</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-text-secondary mb-1">Model name</label>

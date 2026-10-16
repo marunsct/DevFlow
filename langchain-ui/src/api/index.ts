@@ -3,8 +3,10 @@ import type {
   ApprovalDecisionRequest,
   CreateRunResponse,
   EventResponse,
+  ModelProfile,
   RunListResponse,
   RunStatusResponse,
+  SettingsView,
   StartRunRequest,
   WizardModel,
 } from '../types';
@@ -319,4 +321,43 @@ export const fetchArtifactContent = async (
     // not an error.
     return null;
   }
+};
+
+/** Get saved model profiles, optionally filtered by target ('build' or 'frontier'). */
+export const getModelProfiles = async (target?: 'build' | 'frontier'): Promise<ModelProfile[]> => {
+  const response = await api.get<ModelProfile[]>('/settings/models', {
+    params: target ? { target } : {},
+  });
+  return response.data;
+};
+
+/** Save only the local build model configuration and remember its profile. */
+export const saveLocalModelSettings = async (payload: {
+  llm_provider: string;
+  openai_base_url: string;
+  model_name: string;
+  model_context_window: number;
+  model_max_output_tokens: number;
+  thinking_mode: 'default' | 'on' | 'off';
+  thinking_effort: 'low' | 'medium' | 'high';
+  api_key?: string;
+}): Promise<SettingsView> => {
+  const response = await api.put<SettingsView>('/settings/local', payload);
+  return response.data;
+};
+
+/** Save only the frontier model configuration, or disable it with no_model=true. */
+export const saveFrontierModelSettings = async (payload: {
+  judgement_provider: string;
+  judgement_base_url: string;
+  judgement_model_name: string;
+  judgement_context_window: number;
+  judgement_max_output_tokens: number;
+  judgement_api_key?: string;
+  escalate_after_attempts: number;
+  plan_on_judgement_model: boolean;
+  no_model?: boolean;
+}): Promise<SettingsView> => {
+  const response = await api.put<SettingsView>('/settings/frontier', payload);
+  return response.data;
 };

@@ -389,6 +389,15 @@ async def detect_context_window_endpoint(
     return DetectedWindow(detected=detected, explanation=explanation)
 
 
+def _check_read_only() -> None:
+    if os.environ.get("SETTINGS_READ_ONLY", "").strip().lower() in {"1", "true", "yes"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Provider settings are managed by deployment configuration and cannot be "
+                   "changed through the API in this environment.",
+        )
+
+
 @settings_router.put("", response_model=SettingsView)
 async def update_settings(
     payload: SettingsUpdate, user: UserInDB = Depends(require_admin)
@@ -400,12 +409,7 @@ async def update_settings(
     handler (the version before that) mutated a file the deployment also reads at
     startup, which made runtime state and deployed configuration diverge.
     """
-    if os.environ.get("SETTINGS_READ_ONLY", "").strip().lower() in {"1", "true", "yes"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Provider settings are managed by deployment configuration and cannot be "
-                   "changed through the API in this environment.",
-        )
+    _check_read_only()
 
     # Persisted, not written to this process's environment. The agents do not
     # even run in this container - they run in the Celery worker, which has its
@@ -453,7 +457,9 @@ async def update_settings(
     try:
         from app.server import model_profiles
 
-        model_profiles.remember(payload.model_dump(), actor=user.username)
+        model_profiles.remember(payload.model_dump(), target="build", actor=user.username)
+        if payload.judgement_model_name and payload.judgement_model_name.strip():
+            model_profiles.remember(payload.model_dump(), target="frontier", actor=user.username)
     except Exception:  # noqa: BLE001 - the applied settings stand either way
         logger.warning("Could not remember the model configuration", exc_info=True)
 
@@ -515,6 +521,7 @@ class ModelProfile(BaseModel):
 
     id: str
     label: str
+    target: str = "build"
     llm_provider: str | None = None
     openai_base_url: str | None = None
     model_name: str | None = None
@@ -522,16 +529,200 @@ class ModelProfile(BaseModel):
     model_max_output_tokens: int | None = None
     thinking_mode: str | None = None
     thinking_effort: str | None = None
+    judgement_provider: str | None = None
+    judgement_base_url: str | None = None
+    judgement_model_name: str | None = None
+    judgement_context_window: int | None = None
+    judgement_max_output_tokens: int | None = None
+    escalate_after_attempts: int | None = None
+    plan_on_judgement_model: bool | None = None
     updated_at: str | None = None
     updated_by: str | None = None
 
 
+class LocalModelSettingsPayload(BaseModel):
+    """Save the local build model configuration specifically."""
+
+    llm_provider: str = Field(default="local")
+    openai_base_url: str = Field(default="")
+    model_name: str = Field(default="")
+    model_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    model_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    thinking_mode: Literal["default", "on", "off"] = Field(default="default")
+    thinking_effort: Literal["low", "medium", "high"] = Field(default="medium")
+    api_key: str | None = Field(default=None, max_length=512, repr=False)
+
+    @field_validator("api_key")
+    @classmethod
+    def _clean_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if cleaned.startswith("****") or any(c in cleaned for c in "\n\r\x00"):
+            return None
+        return cleaned
+
+
+class FrontierModelSettingsPayload(BaseModel):
+    """Save the frontier judgement model configuration specifically, or select No Model."""
+
+    judgement_provider: str = Field(default="")
+    judgement_base_url: str = Field(default="")
+    judgement_model_name: str = Field(default="")
+    judgement_context_window: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_max_output_tokens: int = Field(default=0, ge=0, le=MAX_CONTEXT_WINDOW)
+    judgement_api_key: str | None = Field(default=None, max_length=512, repr=False)
+    escalate_after_attempts: int = Field(default=2, ge=1, le=10)
+    plan_on_judgement_model: bool = Field(default=True)
+    no_model: bool = Field(default=False, description="Explicitly select no frontier model (local only).")
+
+    @field_validator("judgement_api_key")
+    @classmethod
+    def _clean_key(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if cleaned.startswith("****") or any(c in cleaned for c in "\n\r\x00"):
+            return None
+        return cleaned
+
+
+@settings_router.put("/local", response_model=SettingsView)
+async def update_local_model_settings(
+    payload: LocalModelSettingsPayload,
+    user: UserInDB = Depends(require_admin),
+) -> SettingsView:
+    """Save only the local build model settings and remember its profile."""
+    _check_read_only()
+    runtime_settings.save(
+        {
+            "llm_provider": payload.llm_provider,
+            "openai_base_url": payload.openai_base_url,
+            "model_name": payload.model_name,
+            "model_context_window": str(payload.model_context_window) if payload.model_context_window else "",
+            "model_max_output_tokens": str(payload.model_max_output_tokens) if payload.model_max_output_tokens else "",
+            "thinking_mode": payload.thinking_mode,
+            "thinking_effort": payload.thinking_effort,
+        },
+        actor=user.username,
+    )
+    if payload.api_key is not None:
+        provider = (payload.llm_provider or "local").strip().lower()
+        runtime_settings.save_endpoint_key(provider, payload.openai_base_url, payload.api_key, actor=user.username)
+        key_var = {"anthropic": "anthropic_api_key", "gemini": "google_api_key", "google": "google_api_key"}.get(
+            provider, "openai_api_key"
+        )
+        runtime_settings.save_secrets({key_var: payload.api_key}, actor=user.username)
+
+    try:
+        from app.server import model_profiles
+
+        model_profiles.remember(payload.model_dump(), target="build", actor=user.username)
+    except Exception:
+        logger.warning("Could not remember the local model profile", exc_info=True)
+
+    record_audit(
+        actor=user.username,
+        tenant_id=user.tenant_id,
+        action="settings.local_model.update",
+        subject="local-model-configuration",
+        detail={
+            "llm_provider": payload.llm_provider,
+            "openai_base_url": payload.openai_base_url,
+            "model_name": payload.model_name,
+        },
+    )
+    return _current_view()
+
+
+@settings_router.put("/frontier", response_model=SettingsView)
+async def update_frontier_model_settings(
+    payload: FrontierModelSettingsPayload,
+    user: UserInDB = Depends(require_admin),
+) -> SettingsView:
+    """Save only the frontier judgement model settings, or select No Model to turn it off."""
+    _check_read_only()
+    if payload.no_model or not payload.judgement_model_name.strip():
+        runtime_settings.save(
+            {
+                "judgement_provider": "",
+                "judgement_base_url": "",
+                "judgement_model_name": "",
+                "judgement_context_window": "0",
+                "judgement_max_output_tokens": "",
+            },
+            actor=user.username,
+        )
+        record_audit(
+            actor=user.username,
+            tenant_id=user.tenant_id,
+            action="settings.frontier_model.update",
+            subject="frontier-model-configuration",
+            detail={"no_model": True, "selected_model": "none"},
+        )
+        return _current_view()
+
+    runtime_settings.save(
+        {
+            "judgement_provider": payload.judgement_provider,
+            "judgement_base_url": payload.judgement_base_url,
+            "judgement_model_name": payload.judgement_model_name.strip(),
+            "judgement_context_window": (
+                str(payload.judgement_context_window) if payload.judgement_context_window else ""
+            ),
+            "judgement_max_output_tokens": (
+                str(payload.judgement_max_output_tokens) if payload.judgement_max_output_tokens else ""
+            ),
+            "escalate_after_attempts": str(payload.escalate_after_attempts),
+            "plan_on_judgement_model": "true" if payload.plan_on_judgement_model else "false",
+        },
+        actor=user.username,
+    )
+    if payload.judgement_api_key is not None:
+        effective = runtime_settings.effective_environment()
+        runtime_settings.save_endpoint_key(
+            *runtime_settings.judgement_endpoint({
+                "LLM_PROVIDER": effective.get("LLM_PROVIDER", "local"),
+                "OPENAI_BASE_URL": effective.get("OPENAI_BASE_URL", ""),
+                "JUDGEMENT_PROVIDER": payload.judgement_provider,
+                "JUDGEMENT_BASE_URL": payload.judgement_base_url,
+            }),
+            payload.judgement_api_key,
+            actor=user.username,
+        )
+        runtime_settings.save_secrets({"judgement_api_key": payload.judgement_api_key}, actor=user.username)
+
+    try:
+        from app.server import model_profiles
+
+        model_profiles.remember(payload.model_dump(), target="frontier", actor=user.username)
+    except Exception:
+        logger.warning("Could not remember the frontier model profile", exc_info=True)
+
+    record_audit(
+        actor=user.username,
+        tenant_id=user.tenant_id,
+        action="settings.frontier_model.update",
+        subject="frontier-model-configuration",
+        detail={
+            "judgement_provider": payload.judgement_provider,
+            "judgement_base_url": payload.judgement_base_url,
+            "judgement_model_name": payload.judgement_model_name.strip(),
+            "no_model": False,
+        },
+    )
+    return _current_view()
+
+
 @settings_router.get("/models", response_model=list[ModelProfile])
-async def list_model_profiles(user: UserInDB = Depends(get_current_active_user)) -> list[ModelProfile]:
+async def list_model_profiles(
+    target: str | None = None,
+    user: UserInDB = Depends(get_current_active_user),
+) -> list[ModelProfile]:
     """Every model configuration saved so far, most recently saved first."""
     from app.server import model_profiles
 
-    return [ModelProfile(**profile) for profile in model_profiles.list_profiles()]
+    return [ModelProfile(**profile) for profile in model_profiles.list_profiles(target=target)]
 
 
 @settings_router.delete("/models/{profile_id}", status_code=204)

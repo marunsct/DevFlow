@@ -123,36 +123,42 @@ export const Home: React.FC = () => {
     }
   };
 
-  const Checkbox = ({ id, checked, onChange, label, description }: {
-    id: string; checked: boolean; onChange: (v: boolean) => void; label: string; description?: string;
-  }) => (
-    <label htmlFor={id} className="flex items-start gap-3 cursor-pointer group">
-      <div className="relative mt-0.5">
-        <input
-          id={id}
-          type="checkbox"
-          checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
-          className="sr-only"
-        />
-        <div className={`h-5 w-5 rounded-md border-2 transition-all duration-200 flex items-center justify-center ${
-          checked
-            ? 'bg-primary border-primary shadow-lg shadow-primary/20'
-            : 'border-border bg-surface hover:border-text-muted'
-        }`}>
-          {checked && (
-            <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </div>
+interface CheckboxProps {
+  id: string;
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  description?: string;
+}
+
+const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, description }) => (
+  <label className="flex items-start gap-3 cursor-pointer group">
+    <div className="relative mt-0.5">
+      <input
+        id={id}
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="sr-only"
+      />
+      <div className={`h-5 w-5 rounded-md border-2 transition-all duration-200 flex items-center justify-center ${
+        checked
+          ? 'bg-primary border-primary shadow-lg shadow-primary/20'
+          : 'border-border bg-surface hover:border-text-muted'
+      }`}>
+        {checked && (
+          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        )}
       </div>
-      <div>
-        <span className="text-sm font-medium text-text-primary group-hover:text-white transition-colors">{label}</span>
-        {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
-      </div>
-    </label>
-  );
+    </div>
+    <div>
+      <span className="text-sm font-medium text-text-primary group-hover:text-white transition-colors">{label}</span>
+      {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
+    </div>
+  </label>
+);
 
   return (
     <div className="w-full mt-4 animate-fade-in">

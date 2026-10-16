@@ -326,6 +326,14 @@ Files a sprint names: `<stem>.env` and a name followed by `.member`, `(` or
 `[` are code, not files; `x.js` is the planned `x.ts` compiled
 (`work_orders._COMPILED_TO`). `test_the_other_sections_are_written_at_once_from_the_core`
 is timing-flaky under suite load (2 of 3 parts overlapping).
+Separate save mode and profiles for local build model and frontier model:
+`PUT /api/settings/local` saves and remembers local build profiles (`target='build'`),
+`PUT /api/settings/frontier` saves and remembers frontier profiles (`target='frontier'`).
+An explicit "No model" option (`no_model=true`) clears all frontier model configuration
+and disables all frontier model calls so the entire workflow executes purely on the local model.
+Filtered profile retrieval via `GET /api/settings/models?target=build` and `?target=frontier`.
+Settings UI provides separate "Save Local Model" and "Save Frontier Model" controls,
+dedicated saved profile pickers, and a one-click "Select No Model" action with status indicator.
 
 ### 2.00 Rewind, a specification a local model builds from, two tiers that hold (2026-10-13 night)
 

@@ -234,6 +234,7 @@ export interface SettingsView {
 export interface ModelProfile {
   id: string;
   label: string;
+  target?: string;
   llm_provider: string | null;
   openai_base_url: string | null;
   model_name: string | null;
@@ -241,6 +242,13 @@ export interface ModelProfile {
   model_max_output_tokens: number | null;
   thinking_mode: 'default' | 'on' | 'off' | null;
   thinking_effort: 'low' | 'medium' | 'high' | null;
+  judgement_provider?: string | null;
+  judgement_base_url?: string | null;
+  judgement_model_name?: string | null;
+  judgement_context_window?: number | null;
+  judgement_max_output_tokens?: number | null;
+  escalate_after_attempts?: number | null;
+  plan_on_judgement_model?: boolean | null;
   updated_at: string | null;
   updated_by: string | null;
 }

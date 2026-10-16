@@ -867,6 +867,38 @@ def _nothing_left_but_the_answer(messages: list[Any], limit: int, schema: Any) -
     return _most_recent_answer(messages, schema) is None
 
 
+def _is_lost_reasoning_message(message: Any) -> bool:
+    if getattr(message, "type", None) != "ai":
+        return False
+    truncated = any(
+        isinstance(holder, dict)
+        and str(holder.get("finish_reason") or "") == "length"
+        for holder in (
+            getattr(message, "response_metadata", None),
+            getattr(message, "additional_kwargs", None),
+        )
+    )
+    if not truncated:
+        return False
+    if str(getattr(message, "content", "") or "").strip():
+        return False
+    if getattr(message, "invalid_tool_calls", None):
+        return False
+    return not (getattr(message, "tool_calls", None) or ())
+
+
+def _consecutive_lost_reasoning_replies(messages: list[Any]) -> int:
+    """How many trailing AI messages in a row were truncated with nothing surviving."""
+    count = 0
+    for message in reversed(messages):
+        if getattr(message, "type", None) != "ai":
+            break
+        if not _is_lost_reasoning_message(message):
+            break
+        count += 1
+    return count
+
+
 def _the_last_reply_was_all_reasoning(messages: list[Any]) -> bool:
     """True when the previous reply spent the whole output budget on nothing.
 
@@ -888,21 +920,7 @@ def _the_last_reply_was_all_reasoning(messages: list[Any]) -> bool:
     for message in reversed(messages):
         if getattr(message, "type", None) != "ai":
             continue
-        truncated = any(
-            isinstance(holder, dict)
-            and str(holder.get("finish_reason") or "") == "length"
-            for holder in (
-                getattr(message, "response_metadata", None),
-                getattr(message, "additional_kwargs", None),
-            )
-        )
-        if not truncated:
-            return False
-        if str(getattr(message, "content", "") or "").strip():
-            return False
-        if getattr(message, "invalid_tool_calls", None):
-            return False
-        return not (getattr(message, "tool_calls", None) or ())
+        return _is_lost_reasoning_message(message)
     return False
 
 
@@ -1911,13 +1929,32 @@ def build_settled_answer_middleware(
             # minutes. Only where thinking can be switched off - elsewhere the
             # reply would be lost again, and the stage ends as before.
             if not pending and _the_last_reply_was_all_reasoning(messages):
+                losses = _consecutive_lost_reasoning_replies(messages)
+                if losses > 2:
+                    logger.warning(
+                        "Stage %s lost %d replies in a row to the output limit; ending the jump loop so "
+                        "recovery can proceed on a fresh conversation",
+                        stage_name or "?",
+                        losses,
+                    )
+                    return {
+                        "messages": [
+                            AIMessage(
+                                content="",
+                                id=getattr(last, "id", None),
+                                additional_kwargs={BUDGET_STOP_MARKER: True},
+                            )
+                        ],
+                        "jump_to": "end",
+                    }
                 from app.agents.thinking import answering_without_reasoning
 
                 if answering_without_reasoning(getattr(self, "_model", None)):
                     logger.warning(
-                        "Stage %s lost a reply to reasoning; asking again at once with "
+                        "Stage %s lost a reply to reasoning (%d in a row); asking again at once with "
                         "thinking off rather than ending the stage",
                         stage_name or "?",
+                        losses,
                     )
                     return {"jump_to": "model"}
 

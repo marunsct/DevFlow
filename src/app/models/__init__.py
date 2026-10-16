@@ -462,11 +462,16 @@ class CompatibleChatOpenAI(ChatOpenAI):
             without_cut_off_tool_calls(payload.get("messages") or [])
         except Exception:  # noqa: BLE001 - a repair that cannot run changes nothing
             pass
+        if not self.max_tokens or self.max_tokens <= 0:
+            payload.pop("max_tokens", None)
+            payload.pop("max_completion_tokens", None)
         cap = getattr(_REPLY_CAP, "tokens", None)
-        if cap:
+        if cap and cap > 0:
             for key in ("max_tokens", "max_completion_tokens"):
                 if isinstance(payload.get(key), int):
                     payload[key] = min(payload[key], cap)
+            if "max_tokens" not in payload and "max_completion_tokens" not in payload:
+                payload["max_tokens"] = cap
         deadline = getattr(_REPLY_CAP, "deadline", None)
         if deadline:
             payload["timeout"] = deadline
@@ -714,7 +719,7 @@ def build_default_chat_model(
             model=resolved_settings.model_name,
             max_retries=3,
             timeout=_request_timeout(),
-            max_tokens=reply_ceiling,
+            max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
             **thinking.anthropic_arguments(),
         )
         if resolved_settings.openai_api_key:
@@ -723,7 +728,7 @@ def build_default_chat_model(
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
             timeout=_request_timeout(),
-                max_tokens=reply_ceiling,
+                max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
             )
     elif resolved_settings.llm_provider == "gemini":
         primary = ChatGoogleGenerativeAI(
@@ -731,7 +736,7 @@ def build_default_chat_model(
             model=resolved_settings.model_name,
             max_retries=3,
             timeout=_request_timeout(),
-            max_output_tokens=reply_ceiling,
+            max_output_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
         )
         if resolved_settings.openai_api_key:
             fallback = CompatibleChatOpenAI(
@@ -739,7 +744,7 @@ def build_default_chat_model(
                 model=_fallback_model("OPENAI_FALLBACK_MODEL", "gpt-4o-mini"),
                 max_retries=3,
             timeout=_request_timeout(),
-                max_tokens=reply_ceiling,
+                max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
             )
     else:
         # Defaults to OpenAI or Local
@@ -752,7 +757,7 @@ def build_default_chat_model(
             # after a reply a proxy cut off; the client would resend it whole.
             max_retries=0 if speaks_llama_cpp else 3,
             timeout=_request_timeout(),
-            max_tokens=reply_ceiling,
+            max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
             default_headers=naming or None,
             **thinking.openai_arguments(local=speaks_llama_cpp),
         )
@@ -763,7 +768,7 @@ def build_default_chat_model(
                 model=_fallback_model("ANTHROPIC_FALLBACK_MODEL", "claude-haiku-4-5-20251001"),
                 max_retries=3,
             timeout=_request_timeout(),
-                max_tokens=reply_ceiling,
+                max_tokens=reply_ceiling if reply_ceiling and reply_ceiling > 0 else None,
              )
 
     models = [{"name": "primary", "model": primary}]

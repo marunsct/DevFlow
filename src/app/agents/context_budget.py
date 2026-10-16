@@ -290,6 +290,9 @@ class ContextBudget:
         if max_output_tokens is None:
             output = int(window_tokens * OUTPUT_FRACTION)
             output = max(MIN_OUTPUT_TOKENS, min(MAX_OUTPUT_TOKENS, output))
+        elif int(max_output_tokens) <= 0:
+            # 0 or negative means uncapped: no artificial ceiling on model output tokens.
+            output = 0
         else:
             # A chosen reply ceiling still has to leave a usable conversation
             # behind it. Reply, conversation and framing share one window, so
@@ -301,7 +304,7 @@ class ContextBudget:
             spare = window_tokens - FRAMING_TOKENS - MIN_INPUT_CEILING_TOKENS
             output = max(MIN_OUTPUT_TOKENS, min(int(max_output_tokens), spare))
 
-        ceiling = window_tokens - output - FRAMING_TOKENS
+        ceiling = window_tokens - (output or (window_tokens // 4)) - FRAMING_TOKENS
 
         document_chars = int(ceiling * DOCUMENT_FRACTION) * CHARS_PER_TOKEN
         tool_bytes = max(

@@ -274,6 +274,37 @@ def _revision_budget() -> int:
 
 
 REVISION_DOCUMENT_BUDGET = _revision_budget()
+
+
+def _revision_specification_budget() -> int:
+    """Characters of the previous specification carried into a revision request.
+
+    The previous specification is already stored in project memory and written
+    to `docs/technical_specification.md`. Dumping an enormous (e.g. 150k+ char)
+    document verbatim leaves no room for the model to generate the revision.
+    """
+    raw = os.environ.get("CTX_REVISION_SPECIFICATION_BUDGET", "25000").strip()
+    if raw:
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning("Malformed CTX_REVISION_SPECIFICATION_BUDGET=%r; using default 25000", raw)
+    return 25_000
+
+
+REVISION_SPECIFICATION_BUDGET = _revision_specification_budget()
+
+
+def _specification_excerpt(text: str, budget: int) -> str:
+    """The previous specification, trimmed to a budget if overly large."""
+    if budget <= 0 or len(text) <= budget:
+        return text
+    return (
+        text[:budget]
+        + f"\n\n[Excerpt: {len(text):,} characters of the previous specification were trimmed to "
+        f"{budget:,} for this revision. The full document is recorded in project memory at "
+        "`docs/technical_specification.md`. Only return the sections you are revising.]"
+    )
 """Characters of the original upload to carry into a *revision* request.
 
 A revision is a targeted edit, not a fresh reading of the brief. It already
@@ -466,7 +497,7 @@ def build_architecture_revision_request(
         f"{_document_excerpt(document, REVISION_DOCUMENT_BUDGET)}\n\n"
         "Your previous technical specification was NOT accepted. Produce a new "
         "revision that resolves every required change listed below.\n\n"
-        f"--- Your previous specification ---\n{previous_specification_text}\n\n"
+        f"--- Your previous specification ---\n{_specification_excerpt(previous_specification_text, REVISION_SPECIFICATION_BUDGET)}\n\n"
         f"--- Required changes ---\n{changes_text}\n\n"
         + the_sections_a_specification_has(reader="revising")
         + "Send only the sections you change, each one complete: a section you "

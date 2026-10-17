@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-17 14:50 JST**.
+of the previous sessions' context. Last updated **2026-10-18 03:40 JST**.
 
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
@@ -11,6 +11,12 @@ points here.
 
 The previous agent's private notes (Claude Code's memory) do not travel.
 Everything they held that is not a secret is in this file.
+
+**2026-10-18:** the implementation phase for the deep-review appendix of
+`docs/improvement-plan.md` (Initiatives J–V + addenda, P0→P3) has started.
+Per-item status lives in the *Implementation Progress Ledger* at the end of
+that document and is updated in the same commit as every implementation
+change. Evidence archive for the review: `docs/review-findings-wip.md`.
 
 ## 0. Your first ten minutes
 

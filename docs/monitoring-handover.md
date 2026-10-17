@@ -12,6 +12,12 @@ tests are set up and run, what the healthy numbers are; owner, 2026-10-04).
 Sections 1-10 are the method and history written on 2026-09-24 and still hold
 unless section 0 says otherwise.
 
+**Update 2026-10-18 03:40 JST:** implementation of the improvement-plan
+appendix (Initiatives J–V) has begun; the *Implementation Progress Ledger* at
+the end of `docs/improvement-plan.md` is the authoritative per-item status and
+moves with every implementation commit. Section 0's mechanics are unchanged
+until a ledger row says otherwise.
+
 **What this document is not.** It is not a list of what to change. That lives
 in `docs/harness-improvement-plan.md` (the current plan) and in the git
 log of this branch, where every fix's commit message says what a run did and

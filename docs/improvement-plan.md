@@ -209,6 +209,11 @@ flowchart TD
 
 ## Appendix (2026-10-18): Deep Review — Release Integrity, Local-Model Quality, Throughput, UI/UX
 
+> **Implementation status** of every item below is tracked in the
+> [Implementation Progress Ledger](#implementation-progress-ledger) at the end
+> of this document. The ledger is updated in the same commit as every
+> implementation change; a DONE row carries its commit hash.
+
 **Method and evidence base.** This appendix follows a full review of the harness
 (core modules read end-to-end; 255 worker transcripts and 9 analyzed in depth;
 postgres run/bench data; the live medium-brief run `run-bf43c7e2` observed from
@@ -1019,3 +1024,357 @@ Cross-cutting rule honored throughout: every mechanism is expressed at the
 contract/pack/profile level; stack-specific data (parsers, sampling presets,
 services, smoke shapes) lives in packs/profiles/seed, never in core prompts
 or code paths.
+
+### Coverage check and addenda (appended same day, post-opinion review)
+
+The review opinion named eight structural gaps. Mapping to this appendix:
+
+| Gap (as stated in the opinion) | Where addressed | Status |
+|---|---|---|
+| Release path gameable by the measured (false acceptances, vacuous green, reclassify-to-ship) | J.1–J.4 | Covered |
+| No single source of environmental truth (architect uninformed, sandbox/venv seam, stub entrypoint) | K.1–K.5 | Covered |
+| Catches failure but terminates it badly (whole-stage reverts, stale queues, loops surviving withholding, late escalation) | L.1–L.5, Q | Covered, with one addendum below (L.6) |
+| Mitigations fighting each other; complexity accretion without marginal-value accounting | M (repair layers → profile data), O (leaks), R (root causes), U.2 (measurement) | **Was partial — addendum V below** |
+| Budgets context like a frontier harness (prefill economics) | O, R, S, T | Covered |
+| Model report treated as primary where deterministic measurement exists | Q.2, L.3 | Covered |
+| The loop's audits depend on manual forensics | U.1–U.3 | Covered |
+| The plan's own records can log a false acceptance as a verified success | J.4 gives the status; record-keeping rule was missing | **Addendum J.5 below** |
+
+#### Initiative V: Layer-economics audit — every mitigation proves its marginal value or goes
+- **Reasoning**: The repair layers, middlewares and guards each earned their
+  place individually, but nothing ever measures them *in aggregate*: project
+  memory cut redundant reads and grew average requests 44k→95k tokens on a
+  prefill-bound server; tool withholding changes the tool list mid-stage,
+  invalidating prefix cache and confusing weak models; pointer-answers to
+  repeated reads still cost a full model turn each. The opinion review called
+  this "mitigations fighting each other"; the honest fix is a periodic
+  delete-or-keep verdict per layer, with the same evidence standard the
+  codebase already applies to fixes. The same audit should address
+  maintainability seams: `graph/workflow.py` is ~10.5k lines and the
+  middleware×graph interactions are becoming a bug surface of their own.
+- **Empirical evidence**: B2 (avg request growth after project_memory), B1
+  (duplicate rates despite three anti-duplicate layers), A5 (loops surviving
+  withholding, live tally 16), O/R reasoning above; task_list.py's own
+  docstring is the model to follow ("no measurement supports it yet, and this
+  module says so").
+- **Harness mechanism**: (1) once U.2's KPIs land, produce a per-layer
+  ledger: token cost added to average requests, calls saved, errors
+  prevented, cache-hit delta — one table, regenerated each loop cycle from
+  transcripts; (2) any layer whose measured marginal value is negative or
+  indistinguishable from noise gets simplified, profile-gated, or removed
+  (the task_list `HARNESS_TASK_LIST` opt-in pattern is the template); (3) a
+  bounded refactor track for workflow.py seams (module extraction along the
+  existing `graph/` package lines — no behavior change, suite-proven).
+- **Impact**: Stops the ratchet where every fix adds context and every added
+  context slows the prefill-bound loop; keeps the codebase's evidence culture
+  applied to the harness itself, not only to generated products.
+- **Effort**: M, recurring (the ledger is the deliverable; the refactor track
+  is separately scoped).
+
+#### Addendum J.5: Records cite the verdict, not just the suite
+- Every durable record of a run's outcome — this plan's phase notes, the
+  handovers, the delivery panel, the bench export — must state the
+  *independent* verdict alongside the suite state: hidden-test score where
+  one exists, `completed_with_gaps` markers where not, and reclassification /
+  deferral counts always. A green suite alone is never recorded as
+  "verified" again. (Process rule, zero code beyond J.4's status plumbing;
+  the corrected 94d2c449 entry above is the worked example.)
+
+#### Addendum L.6: The last attempt changes strategy, not just model
+- L.4/L.5 change *who* fixes (judgement model) and *when the loop stops*, but
+  the opinion review's sharper point was "terminate with a different
+  strategy." So: when a defect reaches its final permitted attempt (post-
+  revert, post-escalation), its work order must also change *shape* — e.g.,
+  whole-file rewrite of the implicated files instead of a patch (P's rewrite
+  path), or the cluster is handed to sprint re-planning with the two failed
+  attempts attached as evidence — instead of a third variation of the same
+  instruction. Frontier parallel: Magentic-One re-plans from its progress
+  ledger on error rather than retrying; Claude Code's documented human
+  heuristic is "corrected twice → restart," not "correct a third time."
+- **Effort**: S (work-order shaping at the dispatch site L.3 already touches).
+
+Sequencing for the addenda: J.5 and L.6 join P0/P1 with their parents; V
+starts as soon as U.2's KPIs exist (P2), with the ledger published each loop
+cycle thereafter.
+
+### Coverage completion pass (second addendum, same day)
+
+The first addendum closed the three gaps from the opinion review. This pass
+sweeps the *full* evidence inventory — the forensics report (A1–A9 failure
+modes, B1–B8 waste patterns, C1–C8 local-model issues, D1–D7 infra, E1–E8
+quality compromises), the review findings ledger (F1–F18), and both research
+reports' recommendation lists — against every initiative in this document
+(A–I pre-existing, J–U + V from this appendix). Result: 12 residual items,
+closed below as new sub-items or explicit amendments. Everything else maps to
+an existing initiative, was already fixed in code, or is accepted design
+(table at the end).
+
+#### J.6: Terminal-state hygiene — the workspace must tell the truth after the run ends
+- **Gap (E8, parked items)**: failed runs' workspaces are not marked
+  non-deliverable (monitoring-handover §8.3); release evidence (suite report,
+  ci.json, decision log) is uncommitted in every finished run; stage notes
+  (`blocker.txt`, `verification.log`) shipped inside stored products (4 files
+  across 199 products, parked).
+- **Mechanism**: (1) any terminal state other than a clean release writes a
+  machine-readable non-deliverable marker into the workspace root, surfaced
+  in the UI run card and the handover zip; (2) at release, commit the
+  evidence bundle (final suite report, ci state, decisions.json, gap markers
+  from J.4) into the repository so the handover is self-proving; (3) extend
+  `_clear_the_throwaways` to the parked stage-note patterns so scratch files
+  never ride along in a delivery.
+- **Why it belongs to J**: a `completed_with_gaps` status that lives only in
+  the database is half an honesty mechanism; the artifacts themselves must
+  carry it. Effort: S.
+
+#### J.1 amendment: the vacuous-green gate covers the scaffold setup proof too
+- **Gap (E5, C6)**: `run-3642baf8`'s setup proof caught the zero-test smoke
+  (`exit 0, 0 passed`) and then continued "left to the agents"; the run
+  released at 1/10. Unproven setups also lose kept-file protection (parked
+  §0.5.1).
+- **Amendment**: J.1's executed-tests ≥ locked-tests rule applies at *every*
+  gate including the scaffold/setup proof, and a zero-test or count-mismatch
+  smoke fails closed (retry the proof, then escalate/stop) — never "left to
+  the agents". Stack-specific runner pitfalls that cause silent zero-test
+  runs (e.g., a glob the runner's runtime does not expand) are pack data per
+  K.6, detected at proof time by the count rule itself. Effort: S (folds
+  into J.1's implementation).
+
+#### K.6: Stack-shaped checks become pack data — every stack gets the visual/interface guarantees
+- **Gap (F11, C6)**: `analysis/interface_checks.py` and the integration
+  checks are JS/browser-shaped; products on other stacks get no equivalent
+  of the unstyled-page, overflow, or console-error checks, so Initiatives
+  A/B's visual guarantees silently apply to one ecosystem. Runner-quirk
+  knowledge (glob expansion, test discovery paths) likewise lives in nobody's
+  head until a run dies on it.
+- **Mechanism**: extend the pack contract with (a) per-stack check
+  declarations — the observable failure signatures the pack's surface can
+  exhibit (unstyled rendering, layout overflow, console/runtime errors,
+  failed requests) and how to detect them for that stack — and (b) runner
+  notes consumed by the acceptance author and the setup proof. Core stays
+  agnostic; the JS implementations become the browser packs' data.
+- **Impact**: makes the existing visual/interface loop language-agnostic, as
+  the product requires. Effort: M (contract + port existing checks to data).
+
+#### L.7: Plan-validator-first repair — stop the ping-pong before it starts
+- **Gap (B7, E3)**: `Milestone plan is not ready… sending it back to the
+  lead` ×5 in one day with the *same* structural cause across three runs
+  ("No testing work order"); history: a lead sent back 3× returning the same
+  plan (~40 min); plans then dispatch "with the problems noted" and the
+  problems go nowhere.
+- **Mechanism**: (1) the deterministic readiness validator's exact failing
+  rules ride along in the *first* planning request (rules as prompt data,
+  byte-stable — cache-friendly), so the common structural failures never
+  happen; (2) on a send-back, the validator auto-repairs what is
+  deterministically repairable (a missing standard work order it can itself
+  construct — fast mode's harness-made work orders already prove the
+  pattern) and records the repair; only semantic problems go back to the
+  model; (3) a plan still dispatched "with problems noted" writes those
+  problems into known_issues and the delivery evidence (J.6), so a shipped
+  plan's known holes are visible at release instead of lost.
+- **Impact**: removes ~10-minute round-trips that recur identically across
+  runs; the validator, not the model, owns what the validator can decide.
+  Effort: S–M.
+
+#### P.4: Lookup-tool hygiene — no more 404 round-trips for deterministic mistakes
+- **Gap (B8)**: 29 registry 404s in one day: capitalized package names
+  (`Playwright` ×9), README casing ladders (`README.md|Readme.md|readme.md`
+  ×12), concept lookups as package names (`pypi.org/pypi/PostgreSQL` ×2);
+  history: lookups of `already`, `build`, `package.json`, `Node.js`.
+- **Mechanism**: in `look_up_package` (and registry lookups generally):
+  normalize case before querying; run one casing fallback ladder internally
+  instead of returning intermediate 404s to the model; when the term is not
+  a plausible package name (a technology or concept word — data lives in the
+  pack's ecosystem vocabulary), return guidance ("no package by this name;
+  the driver for <technology> in this stack is typically …" from pack data)
+  rather than a 404 the model will retry. Each 404 avoided is a saved model
+  turn, since the tool result is what the model reacts to.
+- **Effort**: S.
+
+#### Q.4: Write-receipt reconciliation — phantom claims answered deterministically, not with a model call
+- **Gap (A8)**: ×11/day `Stage X reported changing <files>, which nothing in
+  it wrote; asking it once to make the change or say what it did` — the
+  clarification itself is a full model call, and two stages doubled down
+  anyway (`still reports changing…, recorded without them`).
+- **Mechanism**: the harness already knows the ground truth (write receipts
+  from the sandbox/edit tools). Reconcile the stage's claimed changed-files
+  against receipts *deterministically*: claims with receipts pass silently;
+  claims without receipts are dropped and recorded as "claimed, not written"
+  with no model call; a stage whose claim rate is pathological gets the
+  discrepancy stated in its next request (one line, not a turn). The pattern
+  count joins U.2's KPI ledger as a per-model honesty signal — relevant to
+  profile selection (M) and routing (Q).
+- **Effort**: S (replaces an existing model-call path with code).
+
+#### Q amendment: optional judgement-model diff review in fast mode
+- **Gap (E1)**: fast mode skips model code review entirely (`Code review left
+  to the tests and checks (fast delivery)`), and the tests are exactly what
+  A1 showed can be weak. Thorough mode's reviews exist but are the local
+  model's — the measured weak link (C8).
+- **Amendment**: an owner-tunable flag (default off, benchmarked before any
+  default change) adds one judgement-model review pass per milestone over
+  the *diff since the last accepted state* — bounded cost, fresh context,
+  findings anchored per the Q rubric refinement (correctness gaps only, each
+  naming a criterion/test/check). This is the cheapest place to spend
+  judgement-model tokens in fast runs, and U's KPIs will show whether it
+  moves hidden-test scores.
+
+#### O.1 amendment: section-scoped spec revisions, and file bodies never inside grammar-enforced JSON
+- **Gap (A9, B7-history)**: spec *revisions* regenerate whole documents and
+  blank entire sections ×10/day (`error_catalogue, implementation_order,
+  test_cases, configuration, library_usage, decisions` — restored from the
+  previous answer, at full generation cost); history: revisions cut at
+  103k chars costing ~1h49m. Separately, research (aider, vLLM docs) says
+  code wrapped in schema-enforced JSON loses 10–15% quality.
+- **Amendment**: (1) a revision request carries only the sections the review
+  flagged plus their dependencies, and the response is per-section — smaller
+  generations, no whole-document blanking, byte-stable unchanged sections
+  (helps the O.3 cache rule); (2) wherever the harness generates file bodies
+  (drafting, redrafts, whole-file rewrites from P), the body travels as a
+  plain-text field outside any grammar enforcement — enforcement stays on
+  the control plane per M.
+
+#### M amendment: drafting excluded from enforcement (explicit)
+- Recorded here so M's refinement (a) is unambiguous at implementation time:
+  grammar/structural-tag enforcement applies to tool-call envelopes and
+  structured control-plane schemas only; code-generation calls are
+  unconstrained plain text (see O.1 amendment, research §8.1/8.7 item 5).
+
+#### S amendment: mid-run endpoint health telemetry
+- **Gap (D3)**: connection errors, a model server serving a different model
+  than the run expects (LM Studio 404 "downloaded but not loaded" ×6), and a
+  wedged 1800 s call were all discovered by failures, not monitoring.
+- **Amendment**: the call layer already sees every error class; emit a
+  health signal (consecutive connection errors, latency-vs-prediction drift,
+  model-identity mismatch from the endpoint probe re-run) into the run's
+  event stream, where the UI's notification path (Part 4 Phase 1 item 6) can
+  alert the operator instead of the run silently burning retries. Effort: S.
+
+#### U.4: Retention policy for transcripts and run data
+- **Gap (D7)**: transcripts reach 181 MB/run; `data/postgres` is at 4.0 GB
+  and growing with every run's events — unbounded on a single machine.
+- **Mechanism**: after a run reaches a terminal state and its KPI extract
+  (U.2) is written, compress the transcript (or keep head+tail+KPI extract
+  per a retention tier the owner sets); prune/aggregate the events table on
+  the same tier; never prune bench-scored runs' evidence bundles (J.6
+  commits them into workspaces, which have their own lifecycle). Effort: S.
+
+#### Part 4 enabler amendment: stalled-gate visibility
+- **Gap (D5)**: runs parked 12–13 h in `awaiting_approval` with
+  `approval_timeout_minutes` NULL — no UI surface distinguishes "waiting for
+  you indefinitely" from "auto-approves in 4 minutes".
+- **Amendment**: the gate-deadline enabler already listed gains: NULL
+  timeouts render as "waits indefinitely — nobody will be notified" with the
+  notification path (Phase 1 item 6) firing once on entry; an optional
+  per-run default timeout becomes an intake setting (Phase 2 item 14). This
+  also protects against the paused-run resurrection competing for worker slots
+  noted in the forensics (D5).
+
+#### Sweep table — every remaining evidence item and its disposition
+
+| Evidence item | Disposition |
+|---|---|
+| A1 false acceptances | J.1–J.4, J.5 (+ J.1 amendment) |
+| A2 replace_lines | P.1–P.3 |
+| A3 hallucinated tool names | M (profile + arg-fit map as data) |
+| A4/B3 reasoning exhaustion | N |
+| A5/B1/B5/B6 loops, duplicates, re-reads, budget exhaustion | R, L.5 |
+| A6 stale defect queues | L.3, Q.2 |
+| A7 suite churn, reverts | L.2, J.2 (reopen mechanism itself is accepted design — it is the correction path working) |
+| A8 phantom write claims | **Q.4 (new)** |
+| A9 structured-output degradation | M, N, **O.1 amendment (new)**; section-restore mitigation already in code |
+| B2/B4 prefill dominance, model wait | O, S, T |
+| B7/E3 plan ping-pong, dispatch-with-problems | **L.7 (new)** |
+| B8 lookup 404s | **P.4 (new)** |
+| C1–C5, C7 | M, N, P, existing compiler-check/redraft loop (working as designed — bf43c7e2's redrafts succeeded) |
+| C6 framework/runner mixes | J.1 amendment + K.6 (runner notes); existing Initiatives D/F cover suite strength |
+| C8 quality cliff | Q (+ Q amendment) |
+| D1/D2 shared server, prefill latency | S (+ S amendment) |
+| D3 connection/wedge failures | T (watchdog), S amendment, existing probes/call-gate |
+| D4 Celery limit kill | Already fixed in code (limits raised to 12 h) — no action |
+| D5 approval stalls | Part 4 Phase 1/3 notifications + **enabler amendment (new)** |
+| D6 msgpack serialization | Already fixed in code (`_StorableSerializer`, 0 recurrences) — no action |
+| D7 disk growth | **U.4 (new)** |
+| E1 fast-mode review skip | **Q amendment (new)** — owner-tunable, benchmarked |
+| E2 review caps → risks | Q rubric refinement + J.4 (demoted findings count toward gaps) — caps themselves are accepted design (bounded revision loops) |
+| E4 reclassify-to-ship | J.2 |
+| E5 unproven setups | J.1 amendment, K.3 |
+| E6 auto-decisions unattended | Accepted design (unattended mode is the product); transparency via J.4/J.5 + decision log |
+| E7 defects left open at completion | J.4 (`completed_with_gaps`), J.6 (marker in workspace) |
+| E8 notes shipped, evidence uncommitted, failed-workspace marking | **J.6 (new)** |
+| F1–F6, F8–F10, F12–F13, F15, F17–F18 | K, O, L, S, T, U (as mapped in the first addendum's table) |
+| F7 reasoning exhaustion (live) | N |
+| F11 JS-shaped checks | **K.6 (new)** |
+| F16 visual-loop depth | Pre-existing Initiatives A/B (not duplicated, per mandate); K.6 extends them to all stacks |
+| Local-LLM research recs 1–12 | M(1,3,5,11), N(2), Q(4,12), O(6,7), S(8,10), existing graph determinism(9) |
+| Frontier top-15 #1–#15 | #1 M, #2 M bash-mode, #3/#4 P (+P.4), #5/#6 O(.4 + amendment), #7 existing CI/compiler gates, #8 R (task_list experiment noted), #9 existing single-writer work orders, #10 Q/M, #11 existing work-order flow, #12 pre-existing Tier 2 repo-map item in docs/harness-improvement-plan.md (reinforced, not duplicated), #13 existing locked-suite/dispute, #14 O.3, #15 existing sandbox (stricter than bash) |
+| UI audit B1–B7, C1–C12 | Part 4 Phases 1–3 (complete by construction — the roadmap was built from the audit) |
+
+With this pass, every item in the review's evidence inventory is either an
+initiative, an amendment, an explicit "already fixed in code", or an explicit
+"accepted design with a transparency mechanism". Nothing observed is left
+unmapped.
+
+---
+
+### Implementation Progress Ledger
+
+Started 2026-10-18 (JST). Rules: update this ledger in the same commit as
+every implementation change; DONE rows carry the commit hash; BLOCKED rows
+carry the reason. Priorities are from the sequencing table; the Antigravity
+cautions (recorded inline on Initiatives J/K/L/M/O above) are binding
+implementation constraints and are restated in the Notes column.
+
+| Item | Priority | Status | Notes |
+|---|---|---|---|
+| J.1 vacuous-green hard gate | P0 | NOT STARTED | Applies at every gate: lock, test rounds, CI, release, and the scaffold setup proof (amendment: zero-test smoke fails closed, never "left to the agents") |
+| J.4 `completed_with_gaps` status | P0 | NOT STARTED | Includes deferred+failing criteria, reclassification counts, demoted review findings |
+| J.5 records cite the verdict | P0 | NOT STARTED | Process rule + delivery-panel/bench-export fields; a green suite alone is never "verified" |
+| K.1 environment contract to architect/QA | P0 | NOT STARTED | `describe_execution_environment()` reaches architect, acceptance author, QA prompts — not only the stack selector |
+| L.3 dispatch-time re-measure | P0 | NOT STARTED | Defect queue re-verified against current suite state at dispatch, not from the stale report |
+| L.5 identical-call hard stop | P0 | NOT STARTED | Deterministic stop when the same call shape repeats under withholding; ends the stage, not another refusal turn |
+| L.6 final attempt changes strategy | P0 | NOT STARTED | Last permitted attempt gets a different work-order shape (whole-file rewrite or re-plan with failed attempts attached) |
+| Q.4 write-receipt reconciliation | P1 | NOT STARTED | Deterministic; replaces the "asking it once" model call; claim-rate joins U.2 KPIs |
+| J.2 reclassification cap + second opinion | P1 | NOT STARTED | Judgement-model review of any reclassification after repairs are spent |
+| J.3 release-time per-criterion probe | P1 | NOT STARTED | **Antigravity constraint**: probes compiled from the formal ui_contract/API specification, never raw brief text |
+| J.6 terminal-state hygiene | P1 | NOT STARTED | Non-deliverable marker, committed release evidence, throwaway cleanup extension |
+| K.3 entrypoint wiring proof | P1 | NOT STARTED | Setup proof must show the served app is the drafted app (stub detection) |
+| K.4 dependency-drift gate | P1 | NOT STARTED | Manifest vs installed vs imported reconciliation |
+| K.5 sandbox install coherence | P1 | NOT STARTED | Sandbox installs visible to the acceptance server's interpreter |
+| K.6 stack-shaped checks as pack data | P1 | NOT STARTED | JS-shaped interface/integration checks become per-pack declarations; runner notes for acceptance author + setup proof |
+| L.1 root-cause clustering | P1 | NOT STARTED | Cluster defects by failing import/endpoint/root error before queueing |
+| L.2 file-granular revert | P1 | NOT STARTED | **Antigravity constraint**: AST/import coherence check across touched files before accepting a partial revert; fall back to the atomic stage snapshot otherwise |
+| L.4 judgement escalation after revert | P1 | NOT STARTED | Post-revert attempts route to the judgement model |
+| L.7 validator-first plan repair | P1 | NOT STARTED | Validator rules ride in the first planning request; deterministic auto-repair of structural gaps; noted problems flow to known_issues |
+| M model-profile contract | P1 | NOT STARTED | Per-family serving metadata probed at startup; control-plane-only enforcement |
+| M-bash bash-first degraded mode | P3 | NOT STARTED | **Antigravity constraint**: strictly for models with zero native tool-calling; never Qwen/Hermes profiles; executes through the argv-only sandbox |
+| N reasoning-budget guardrails | P1 | NOT STARTED | Budget before the loss; retry path conditioned on exhaustion events |
+| P.1 demote `replace_lines` | P1 | NOT STARTED | Default to edit_artifact/whole-file; replace_lines opt-in per profile |
+| P.2/P.3 parser-refusal escape | P1 | NOT STARTED | Escape the refusal trap into a whole-file rewrite path |
+| P.4 lookup-tool hygiene | P1 | NOT STARTED | Case normalization, internal casing ladder, concept-vs-package guidance from pack vocabulary |
+| Q.1 route fixes to judgement model | P1 | NOT STARTED | Post-revert / second-attempt fixes |
+| Q.2 procedural test-round reports | P1 | NOT STARTED | Defect queue from JUnit XML; model report demoted to narrative |
+| Q.3 dispute routing + rubric anchoring | P1 | NOT STARTED | Every review finding anchors to a criterion/test/check |
+| Q-amend fast-mode diff review flag | P2 | NOT STARTED | Owner-tunable, default off, benchmark before any default change |
+| O.1 section-aware spec distribution | P2 | NOT STARTED | Includes section-scoped revision requests (amendment) |
+| O.2 effective context ceiling | P2 | NOT STARTED | 32–64k effective cap as profile data |
+| O.3 cache-stability rule | P2 | NOT STARTED | Byte-stable prefixes; volatile context last; KPI in U.2 |
+| O.4 compaction profile knob + re-injection | P2 | NOT STARTED | **Antigravity constraint**: keep default trigger 0.75–0.80; knob is per-profile and A/B-verified; prefer O.1 so requests never bloat near the trigger; add disk re-injection + tool-output offload |
+| O.5 stale budget constants | P2 | NOT STARTED | Fix `DEFAULT_SPECIFICATION_BUDGET` + docstring while touching text_budget |
+| R duplicate-call elimination | P2 | NOT STARTED | Digest "already known" block + work-order recitation at request tail; harness-side, not the opt-in write_todos tool |
+| S server checklist + health telemetry | P2 | NOT STARTED | Owner-operated; harness probes, verifies and advises; mid-run endpoint health into the event stream |
+| T streaming re-test spike | P2 | NOT STARTED | Timeboxed; watchdog for wedged calls |
+| U.2 KPI plumbing | P2 | NOT STARTED | Duplicate-call rate, per-tool error rates, cache-hit %, exhaustion events, stale dispatches, vacuous-green detections, reverts, reclassifications, prefill:decode — into scripts/loop reports |
+| U.4 retention policy | P2 | NOT STARTED | Transcript compression/pruning after terminal state + KPI extract; never prune bench-scored evidence |
+| UI Phase 1 harm removal | P2 | NOT STARTED | aria-live regions, contrast, labels, poll-failure resilience, gate visibility, notifications |
+| UI Phase 2 structural | P2 | NOT STARTED | Design tokens, virtualization, URL state, diff viewer, intake wizard |
+| UI Phase 3 differentiators | P3 | NOT STARTED | Steering, timeline scrubbing, agent lanes, Insights panel, PWA, i18n/light theme |
+| Part 4 backend enablers | P2/P3 | NOT STARTED | `completed_with_gaps` in payload (with J.4), gate-deadline timestamp + NULL-timeout stall alerting (amendment), steering endpoint, per-stage token rollups |
+| U.1 bench corpus additions | P3 | NOT STARTED | Fullstack-python bench + service-backed bench |
+| U.3 A/B wiring | P3 | NOT STARTED | KPIs into evaluation/evaluate.py datasets |
+| V layer-economics ledger | P3 | NOT STARTED | Depends on U.2; delete-or-keep verdicts + workflow.py refactor track |
+| K.2 services provisioning | P3 | NOT STARTED | **Antigravity constraint**: prefer embedded/in-process adapters or one persistent shared service with per-run schema isolation over dynamic per-run sidecars |
+
+Committed plan artifacts: appendix + addenda + this ledger live in
+`docs/improvement-plan.md`; the evidence archive is `docs/review-findings-wip.md`;
+the frontier research report is `.langchain/research/frontier-harness-report.md`
+(git-ignored, local only).

@@ -660,6 +660,15 @@ know about its testing, and what changed most recently.
   `<data>/outcomes/<run>.json` both carry `completion_gaps`; the score script
   takes them as its fifth argument, so an old database answers empty). A
   completed run with gaps is never plain "completed" on any surface.
+- **Every stage is told the environment it runs in (2026-10-18, Initiative
+  K.1).** The sandbox truth - the commands the allowlist permits, the browser
+  facts, no network, nothing running, containers written-but-not-built,
+  installs must land where the product's own commands read - used to reach
+  only the stack selector. It is now one derived, byte-stable block
+  (`app.agents.environment_contract`) appended to every role agent's calls
+  ahead of the workspace digest, so the architect cannot specify a database
+  server that does not exist and a fixer cannot loop on installs that land
+  nowhere. `ENVIRONMENT_CONTRACT=0` switches it off.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

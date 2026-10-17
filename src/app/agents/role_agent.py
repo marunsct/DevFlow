@@ -39,6 +39,7 @@ from app.agents.repeated_queries import build_repeated_query_middleware
 from app.agents.task_list import build_task_list_middleware
 from app.agents.text_tool_calls import build_text_tool_call_middleware
 from app.observability.transcript import build_transcript_middleware
+from app.agents.environment_contract import build_environment_contract_middleware
 from app.agents.workspace_digest import build_workspace_digest_middleware
 from app.agents.project_memory import build_project_memory_middleware
 from app.plugins.middleware import build_plugin_instructions_middleware
@@ -685,6 +686,11 @@ def create_role_agent(
         # tool will resolve. See `app.agents.line_batches`.
         build_line_batch_middleware(resolved_repo_root),
         # After the path rewrite so both see the same request the model will.
+        # The environment contract: the same derived, byte-stable facts on
+        # every call, ahead of the listing that changes. Thirteen request
+        # builders reach twelve of thirteen - middleware reaches all of them.
+        # See `app.agents.environment_contract` (Initiative K.1).
+        build_environment_contract_middleware(),
         build_workspace_digest_middleware(resolved_repo_root),
         # The project's documents and files, current, at the start of every
         # call; a read of one it already holds is answered with a pointer.

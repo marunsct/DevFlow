@@ -58,8 +58,8 @@ def _at(defect: Any, *files: str) -> Any:
 
 THREE = [
     _at(_defect(owner="backend", description="API 500"), "src/api.py"),
-    _at(_defect(owner="database", description="Missing index"), "src/db.py"),
-    _at(_defect(owner="ui_ux", description="Broken layout"), "src/page.tsx"),
+    _at(_defect(owner="database", description="Missing index"), "src/db.py").model_copy(update={"actual_behavior": "Query took 1200ms without index"}),
+    _at(_defect(owner="ui_ux", description="Broken layout"), "src/page.tsx").model_copy(update={"actual_behavior": "Text clipped at small viewport"}),
 ]
 
 

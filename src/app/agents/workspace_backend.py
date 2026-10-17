@@ -1114,7 +1114,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             result = super().read(file_path, *args, **kwargs)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import ReadResult
                 return ReadResult(error=str(e))
             raise
@@ -1130,7 +1130,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
                 try:
                     corrected = super().read(instead, *args, **kwargs)
                 except ValueError as e:
-                    if "Path traversal" in str(e):
+                    if "Path traversal" in str(e) or "outside root directory" in str(e):
                         from deepagents.backends.filesystem import ReadResult
                         corrected = ReadResult(error=str(e))
                     else:
@@ -1212,7 +1212,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             result = super().ls(path)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import LsResult
                 return LsResult(error=str(e))
             raise
@@ -1240,7 +1240,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             result = super().glob(pattern, path)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import GlobResult
                 return GlobResult(error=str(e))
             raise
@@ -1253,7 +1253,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             result = super().grep(*args, **kwargs)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import GrepResult
                 return GrepResult(error=str(e))
             raise
@@ -1307,7 +1307,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             return super().write(file_path, *args, **kwargs)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import WriteResult
                 return WriteResult(path=file_path, error=str(e))
             raise
@@ -1316,7 +1316,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             return super().edit(file_path, *args, **kwargs)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import EditResult
                 return EditResult(path=file_path, error=str(e))
             raise
@@ -1325,7 +1325,7 @@ class WorkspaceBackend(_Suggesting, _NoticingRepeats, FilesystemBackend):
         try:
             return super().delete(file_path, *args, **kwargs)
         except ValueError as e:
-            if "Path traversal" in str(e):
+            if "Path traversal" in str(e) or "outside root directory" in str(e):
                 from deepagents.backends.filesystem import DeleteResult
                 return DeleteResult(path=file_path, error=str(e))
             raise

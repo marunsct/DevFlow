@@ -4197,6 +4197,140 @@ def _one_defect_per_cause(reported: list[Any]) -> list[Any]:
     return merged
 
 
+_FAILING_LAYERS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # The layer a failure was met at, read from its text. Deliberately the
+    # layers where one cause fails many criteria - a server that does not
+    # start, a route nobody serves, a middleware that refuses everything -
+    # and deliberately not assertion outcomes, which are each criterion's own
+    # symptom (Initiative L.1).
+    ("connection-refused", re.compile(r"ECONNREFUSED|ECONNRESET|ERR_CONNECTION_REFUSED|ERR_CONNECTION_RESET")),
+    ("not-found", re.compile(r"\b404\b|\bNot Found\b")),
+    ("unauthorized", re.compile(r"\b40[13]\b|\bUnauthorized\b|\bForbidden\b")),
+    ("server-error", re.compile(r"\b50[023]\b|\bInternal Server Error\b|\bBad Gateway\b|\bService Unavailable\b")),
+    ("timeout", re.compile(r"Timeout \d+m?s exceeded|\bTimed out\b|\bETIMEDOUT\b|\bexceeded while waiting\b")),
+)
+
+_A_ROUTE = re.compile(r"(?:GET|POST|PUT|PATCH|DELETE)\s+(/[^\s\"'`;,)\]]+)|https?://[^\s\"'`]+?(/[^\s\"'`?]+)")
+
+
+def _the_first_failing_layer(text: str) -> str:
+    """The name of the layer this failure text meets, or "" when it names none.
+
+    An assertion that a criterion's own expectation was not met is not a
+    layer: two criteria failing their assertions are two symptoms, whatever
+    else they share. A connection nobody accepted, a status nobody served,
+    a wait that ran out - those fail many criteria from one cause.
+    """
+    text = str(text or "")
+    for name, pattern in _FAILING_LAYERS:
+        if pattern.search(text):
+            return name
+    return ""
+
+
+def _the_text_of_a_defect(item: Any) -> str:
+    return " ".join(
+        str(getattr(item, name, "") or "")
+        for name in ("description", "actual_behavior", "reproduction_steps")
+    )
+
+
+def _share_a_failing_surface(one: Any, other: Any) -> bool:
+    """Whether two defects fail at one surface: a file in common, or a route in common."""
+    files = {PurePosixPath(str(f)).name.lower() for f in getattr(one, "affected_files", None) or []}
+    theirs = {PurePosixPath(str(f)).name.lower() for f in getattr(other, "affected_files", None) or []}
+    if files & theirs:
+        return True
+    mine = {m for groups in _A_ROUTE.findall(_the_text_of_a_defect(one)) for m in groups if m}
+    theirs = {m for groups in _A_ROUTE.findall(_the_text_of_a_defect(other)) for m in groups if m}
+    return bool(mine & theirs)
+
+
+def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
+    """`reported` with the defects that fail at one layer behind one cause merged, in order.
+
+    One run queued 13 defects from one root cause - every acceptance
+    criterion failing behind a server that did not serve - and the fixers
+    worked them one by one while the cause was one thing (Initiative L.1).
+    Bundling by identical description (`_one_defect_per_cause`) cannot see
+    it: the criteria share no words but the layer they fail at.
+
+    A layer the whole product meets - three defects or more failing at it,
+    whatever their surfaces - is one root cause and clusters wholesale: one
+    auth middleware behind every API criterion, one server behind every
+    page. A layer two criteria meet clusters only when they share a failing
+    surface, so two independently missing routes stay two repairs. The
+    merged defect keeps the first member's place and owner and carries every
+    member's failure as evidence, all of their files, and the worst severity
+    among them - the same shape as the identical-description merge beside it.
+    """
+    if len(reported) < 2:
+        return list(reported)
+    layers: dict[str, list[int]] = {}
+    for index, item in enumerate(reported):
+        layer = _the_first_failing_layer(_the_text_of_a_defect(item))
+        if layer:
+            layers.setdefault(layer, []).append(index)
+    if not layers:
+        return list(reported)
+
+    parent = list(range(len(reported)))
+
+    def root(index: int) -> int:
+        while parent[index] != index:
+            parent[index] = parent[parent[index]]
+            index = parent[index]
+        return index
+
+    for layer, indices in layers.items():
+        if len(indices) >= 3:
+            for other in indices[1:]:
+                if root(other) != root(indices[0]):
+                    parent[root(other)] = root(indices[0])
+        elif len(indices) == 2:
+            i, j = indices
+            if root(i) != root(j) and _share_a_failing_surface(reported[i], reported[j]):
+                parent[root(j)] = root(i)
+
+    groups: dict[int, list[int]] = {}
+    for index in range(len(reported)):
+        groups.setdefault(root(index), []).append(index)
+    merged: list[Any] = []
+    for index, item in enumerate(reported):
+        group = groups[root(index)]
+        if group[0] != index:
+            continue
+        if len(group) == 1:
+            merged.append(item)
+            continue
+        others = [reported[i] for i in group[1:]]
+        layer = _the_first_failing_layer(_the_text_of_a_defect(item))
+        files = list(dict.fromkeys(
+            str(f) for member in (item, *others) for f in getattr(member, "affected_files", None) or []
+        ))
+        severity = min(
+            (str(getattr(member, "severity", "major") or "major") for member in (item, *others)),
+            key=lambda value: _SEVERITY_RANK.get(value, 1),
+        )
+        also = "\n".join(
+            f"- {' '.join(str(other.description).split())[:400]}"
+            for other in others
+        )
+        merged.append(item.model_copy(update={
+            "description": (
+                f"{item.description}\n\n{len(others)} other criteria meet the same first failure "
+                f"({layer}); one cause is behind them, so one repair answers all of them:\n{also}"
+            ),
+            "affected_files": files,
+            "severity": severity,
+        }))
+        logger.warning(
+            "%d defects fail at one layer (%s); one fixer gets them all: %s",
+            len(group), layer, " ".join(str(item.description).split())[:100],
+        )
+    return merged
+
+
 def _proven_problems_the_round_left_out(
     proven: list[str], reported: list[Any], milestone: Any
 ) -> list[Any]:
@@ -8423,6 +8557,10 @@ def build_workflow_graph(
             reported = reported + raised_by("acceptance suite", unreported_criteria)
         # One problem, one fixer. See `_one_defect_per_cause`.
         reported = _one_defect_per_cause(reported)
+        # One root cause, one fixer: criteria that meet the same first
+        # failure share no words to bundle by, only the layer they fail at.
+        # See `_one_defect_per_root_error` (Initiative L.1).
+        reported = _one_defect_per_root_error(reported)
         if not reported:
             unreported = _a_suite_failure_the_round_did_not_report(
                 state["repository"].root_path, f"test_round_{test_round}",

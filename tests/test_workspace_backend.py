@@ -575,3 +575,37 @@ def test_path_traversal_is_caught(tmp_path: Path) -> None:
     
     delete = backend.delete("../outside.txt")
     assert getattr(delete, "error", None) and "Path traversal" in getattr(delete, "error")
+
+
+def test_outside_root_directory_is_caught(tmp_path: Path) -> None:
+    """A path resolving outside the workspace (e.g. via symlinks created by a venv)
+    must return an error result, never crash the process with an unhandled ValueError.
+    """
+    outside_dir = tmp_path.parent / "external_dir"
+    outside_dir.mkdir(exist_ok=True)
+    (outside_dir / "file.txt").write_text("hello", encoding="utf-8")
+    (tmp_path / "ext_link").symlink_to(outside_dir)
+
+    backend = WorkspaceBackend(str(tmp_path), virtual_mode=True)
+
+    read = backend.read("/ext_link/file.txt")
+    assert getattr(read, "error", None) and "outside root directory" in getattr(read, "error")
+
+    ls = backend.ls("/ext_link")
+    assert getattr(ls, "error", None) and "outside root directory" in getattr(ls, "error")
+
+    glob = backend.glob("*.txt", "/ext_link")
+    assert getattr(glob, "error", None) and "outside root directory" in getattr(glob, "error")
+
+    grep = backend.grep("hello", path="/ext_link")
+    assert grep.matches == []
+
+    write = backend.write("/ext_link/file.txt", "content")
+    assert getattr(write, "error", None) and "outside root directory" in getattr(write, "error")
+
+    edit = backend.edit("/ext_link/file.txt", "hello", "world")
+    assert getattr(edit, "error", None) and "outside root directory" in getattr(edit, "error")
+
+    delete = backend.delete("/ext_link/file.txt")
+    assert getattr(delete, "error", None) and "outside root directory" in getattr(delete, "error")
+

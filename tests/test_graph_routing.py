@@ -1477,8 +1477,8 @@ def test_multiple_defects_are_each_routed_to_their_own_owner(agents: ScriptedAge
                 _specialist(
                     defects=[
                         _defect(owner="backend", description="API 500"),
-                        _defect(owner="database", description="Missing index"),
-                        _defect(owner="ui_ux", description="Broken layout"),
+                        _defect(owner="database", description="Missing index").model_copy(update={"actual_behavior": "Query took 1200ms without index"}),
+                        _defect(owner="ui_ux", description="Broken layout").model_copy(update={"actual_behavior": "Text clipped at small viewport"}),
                     ]
                 )
             ),

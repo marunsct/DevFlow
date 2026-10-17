@@ -172,6 +172,61 @@ def was_stopped_by_the_budget(result: Any) -> bool:
     return False
 
 
+#: Set beside `BUDGET_STOP_MARKER` on the message a no-progress stop leaves
+#: behind: the stage ended because its conversation shows it circling the same
+#: calls, not because it ran out of budget. Recovery treats the two alike - no
+#: nudge, straight to the fresh conversation - and the marker tells the log and
+#: the routing of a defect stage which of the two happened.
+NO_PROGRESS_MARKER = "settled_answer_no_progress_stop"
+
+#: How many identical calls that returned nothing new end a stage. Every
+#: softer rung has fired by then: the second repeat gets a note, the read
+#: refusal escalates to withholding, a withheld tool called again takes the
+#: exploring tools away - and measured on one run the repeated-read tally
+#: still climbed, 9 to 16, while the withholding did its work, and a sprint
+#: planner's `changed_since_sprint` went from 3 to 27 calls in an evening.
+#: Budget-exhaustion warnings ran 47 in a day, concentrated in the defect-fix
+#: stages: the soft landing still costs most of the stage's calls. Twelve
+#: matches the top of the existing rung ladder; the stop is the rung after it.
+SAME_CALLS_BEFORE_ENDING_THE_STAGE = 12
+
+
+def was_stopped_for_no_progress(result: Any) -> bool:
+    """Did `settled_answer` end this thread for circling identical calls?"""
+    if not isinstance(result, dict):
+        return False
+    for message in reversed(result.get("messages") or []):
+        kwargs = getattr(message, "additional_kwargs", None)
+        if isinstance(kwargs, dict) and kwargs.get(NO_PROGRESS_MARKER):
+            return True
+        if getattr(message, "type", None) == "ai":
+            break
+    return False
+
+
+def _identical_calls_so_far(messages: list[Any]) -> int:
+    """The largest count of one identical, nothing-new call this conversation shows.
+
+    Counted from the conversation rather than the shared stage tally, for the
+    reason `_refused_reads` gives: the shared `repeated_reads` counter was
+    measured counting the run, not the stage. Three guards write the markers
+    counted here - the read refusal, the same-answer note on a listing or
+    search, and the identical-failure pairing - so a loop ends whichever
+    guard is describing it. Across a pause and resume this undercounts; the
+    safe direction, as everywhere in this ladder.
+    """
+    from app.agents.repeated_queries import SAME_ANSWER_MARKER
+
+    same_answers = 0
+    for message in messages:
+        if getattr(message, "type", None) != "tool":
+            continue
+        if SAME_ANSWER_MARKER in str(getattr(message, "content", "") or ""):
+            same_answers += 1
+    identically = _a_tool_refused_identically(messages)
+    return max(_refused_reads(messages), same_answers, identically[1] if identically else 0)
+
+
 def _without_repeats(payload: Any) -> Any:
     """`payload` with every list's repeated entries dropped, at any depth.
 
@@ -1854,6 +1909,32 @@ def build_settled_answer_middleware(
                     }
                 return None
             pending = list(getattr(last, "tool_calls", None) or [])
+            # The deterministic no-progress stop (Initiative L.5): the
+            # conversation shows the stage circling the same calls, every one
+            # answered that nothing changed, and no answer was ever written.
+            # Notes, refusals and withheld tools have all fired and been
+            # ignored; what is left to fire is the budget, and spending it on
+            # pointer-answer turns is exactly the waste this removes. Ending
+            # here hands the stage to the run's recovery - a fresh
+            # conversation, then the routing a failed stage gets - instead of
+            # another refusal turn.
+            tally = _identical_calls_so_far(messages)
+            if tally >= SAME_CALLS_BEFORE_ENDING_THE_STAGE and _most_recent_answer(messages, schema) is None:
+                logger.warning(
+                    "Stage %s made %d identical calls with nothing new coming back and no "
+                    "answer written; ending it so the run can retry on a fresh conversation",
+                    stage_name or "?", tally,
+                )
+                return {
+                    "messages": [
+                        AIMessage(
+                            content=getattr(last, "content", "") or "",
+                            id=getattr(last, "id", None),
+                            additional_kwargs={BUDGET_STOP_MARKER: True, NO_PROGRESS_MARKER: True},
+                        )
+                    ],
+                    "jump_to": "end",
+                }
             # The answer need not be in the LAST message. One run's
             # `scrum_master` wrote a valid sprint plan at 15:23:30 and then
             # spent eleven minutes writing prose about creating files it has
@@ -2049,5 +2130,8 @@ __all__ = [
     "MUTATING_TOOLS",
     "TOOLS_WITHHELD_NOTICE",
     "build_settled_answer_middleware",
+    "NO_PROGRESS_MARKER",
+    "SAME_CALLS_BEFORE_ENDING_THE_STAGE",
     "was_stopped_by_the_budget",
+    "was_stopped_for_no_progress",
 ]

@@ -669,6 +669,29 @@ know about its testing, and what changed most recently.
   ahead of the workspace digest, so the architect cannot specify a database
   server that does not exist and a fixer cannot loop on installs that land
   nowhere. `ENVIRONMENT_CONTRACT=0` switches it off.
+- **A defect is re-measured before a fixer is spawned (2026-10-18, Initiative
+  L.3).** The queue a test round writes is stale by dispatch time - sixteen
+  defects a day were closed "already fixed" from stored measurements, and nine
+  fixer stages were named and stood down. When no stored measurement settles a
+  defect, dispatch now runs its own tests (`_the_defect_s_tests_pass`, the same
+  per-file acceptance probe the post-fix check uses); a green probe closes the
+  defect with a `closed without a fixer` ledger note and no model call, a probe
+  that cannot answer dispatches the fixer as before. The cheaper stored answers
+  still come first.
+- **A stage circling identical calls ends deterministically (2026-10-18,
+  Initiative L.5).** Twelve identical calls that returned nothing new - counted
+  from the read-refusal, same-answer and identical-failure markers in the stage's
+  own conversation - end the stage with no answer written, instead of spending
+  the rest of its budget on refusal turns (budget warnings ran 47 in a day). The
+  stop is marked `NO_PROGRESS_MARKER` beside the budget marker, so recovery
+  skips the nudge and retries on a fresh conversation; a stage that already
+  wrote its answer is left to finish.
+- **The last permitted fix attempt changes strategy (2026-10-18, Initiative
+  L.6).** Once a defect has failed `escalate_after()` fixes, its work order says
+  so and changes shape: rewrite the implicated files whole rather than patching
+  lines, with a named blocker as the way out when the specification itself
+  cannot produce a passing file - not a third variation of the instruction that
+  failed twice.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

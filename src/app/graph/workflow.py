@@ -1193,6 +1193,44 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
     ]})
 
 
+def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
+    """The differently-shaped work order for a defect's last permitted attempt, or "".
+
+    L.4/L.5 change who fixes and when the loop stops; this changes what is
+    asked. A defect that has failed `escalate_after()` fixes is on its last
+    rung - after this one the defect is left open and the round counts it -
+    and every attempt so far had the same shape: patch the lines the failure
+    names. A third variation of the instruction that failed twice is the
+    measured treadmill: two whole-stage reverts in one run destroyed unrelated
+    work with them. So the last attempt asks for a different shape of work -
+    the implicated files rewritten whole, where a half-applied earlier state
+    cannot survive, and a named blocker as the way out when the specification
+    itself cannot produce a passing file. See Initiative L.6 in
+    docs/improvement-plan.md.
+    """
+    from app.models.roles import escalate_after
+    from app.sprint import failed_fix_tries
+
+    tries = failed_fix_tries(cycle, defect_index)
+    if tries < escalate_after():
+        return ""
+    defect = cycle.defects[defect_index]
+    files = ", ".join(f"`{f}`" for f in (defect.affected_files or [])) or "each file the failure names"
+    return (
+        f"\n--- This is the attempt after {tries} that failed ---\n"
+        "Every earlier attempt at this exact failure was measured, and was reverted or "
+        "left it failing; what each one broke is in the notes above. Another attempt of "
+        "the same shape - the same lines patched the same way - will be measured the "
+        "same way, so this one changes shape:\n"
+        f"- Rewrite {files} whole, from the specification and the failing output, rather "
+        "than patching lines inside them: a whole file cannot carry the half-applied "
+        "state an earlier attempt left behind.\n"
+        "- If the specification itself cannot produce a file that passes, do not guess "
+        "past it: report that as a blocker and say exactly what the specification is "
+        "missing.\n"
+    )
+
+
 def _one_more_failed_fix(cycle: Any, index: int) -> Any:
     """The cycle with one more failed fix counted against defect `index`."""
     return cycle.model_copy(update={"defects": [
@@ -4728,6 +4766,39 @@ def _closed_if_an_earlier_fix_resolved_it(
 
             why = no_longer_underlined(root, defect.description)
             if not why:
+                # Nothing stored can settle it, and the queue this defect came
+                # from may be an hour old and many fixes deep: re-measure its
+                # own tests now, at dispatch. Seconds of probe against a fixer
+                # stage of minutes, and a green probe closes the defect with
+                # no model call at all. A probe that cannot answer (None)
+                # dispatches the fixer exactly as before (Initiative L.3).
+                if _the_defect_s_tests_pass(Path(root), defect):
+                    logger.warning(
+                        "Defect '%s' is already fixed: its own tests pass in a re-measure taken at "
+                        "dispatch; closed without a fixer", defect.description[:80],
+                    )
+                    from app.observability import defect_ledger
+
+                    defect_ledger.note(
+                        "closed without a fixer", f"defect_fix_{state.get('test_round', 0)}_{defect_index}",
+                        defect=defect, round_=state.get("test_round", 0), index=defect_index,
+                        detail="its own tests passed in a re-measure taken at dispatch",
+                        sprint=state.get("current_sprint_index", 0),
+                    )
+                    return _handing_on(
+                        stage="defect_remediation",
+                        defect_cursor=defect_index + 1,
+                        fix_base_commit="",
+                        remediation=mark_defect_fixed(
+                            cycle, defect_index,
+                            regression_test="a re-measure of its own tests at dispatch",
+                            verified_by="the harness's probe before a fixer was spawned",
+                            resolution=(
+                                "Already fixed when it came up for dispatch: its own tests "
+                                "passed in a re-measure taken now."
+                            ),
+                        ),
+                    )
                 return None
             logger.warning("Defect '%s' is already fixed: %s Closed without a fixer", defect.description[:80], why)
             from app.observability import defect_ledger
@@ -8542,6 +8613,10 @@ def build_workflow_graph(
                 batch_lines.append(f"  Expected: {co_d.expected_behavior}")
                 batch_lines.append(f"  Actual: {co_d.actual_behavior}")
             request["messages"][-1]["content"] += "\n".join(batch_lines) + "\n"
+        # A defect on its last permitted attempt gets a different shape of
+        # work, not a third variation of the instruction that failed twice.
+        # See `_the_last_attempt_section`.
+        request["messages"][-1]["content"] += _the_last_attempt_section(cycle, defect_index)
         return request, co_defects
 
     def _settle_the_fix(

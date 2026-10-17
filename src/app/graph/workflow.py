@@ -2126,7 +2126,7 @@ def _nudge_for_the_structured_response(
     """Ask the same conversation for the answer it already worked out.
 
     `text`, when given, is what to ask instead of the reminder of the schema -
-    see `_ask_about_the_files_it_never_wrote`.
+    see `_ask_about_high_confidence_diagnostics`.
 
     The retry below starts the stage over on a clean conversation, which works
     but throws away everything the stage learned. Measured on one run:
@@ -2278,27 +2278,20 @@ def _files_it_claims_but_never_wrote(result: Mapping[str, Any], answer: Any) -> 
     return [name for name in claimed if not _was_written(name)]
 
 
-def _ask_about_the_files_it_never_wrote(
-    agent: Any, inner_thread_id: str, callbacks: Any, files: list[str], run_id: str | None, stage: str,
-    schema: Any = None,
-) -> dict[str, Any] | None:
-    """Ask the same conversation once to make the change it reported, or to report what it did.
+def _claims_dropped_from_the_record(structured_response: Any, never_wrote: list[str]) -> Any:
+    """The answer with the claims nothing wrote dropped from `changed_files`.
 
-    Returns the new result when it produced an answer or an approval pause,
-    and None when the follow-up failed - the first answer then stands.
+    The record keeps only what changed: a phantom claim left standing says a
+    work order was delivered while the file is untouched, and the milestone
+    review then blocks on the same evidence twice (Initiative Q.4). An answer
+    that cannot be copied comes back as it is - the caller's warning has
+    already said what was claimed.
     """
-    named = ", ".join(f"`{name}`" for name in files)
-    text = (
-        f"Your answer lists {named} under `changed_files`, but nothing in this conversation "
-        f"wrote {'it' if len(files) == 1 else 'them'}: no write, edit, move or delete of "
-        f"{'that file' if len(files) == 1 else 'those files'} succeeded. Work is done when the "
-        "files hold it. Make the changes your work order asks for now, then answer again. If you "
-        "made no change, answer with `changed_files` naming only what you wrote, and say under "
-        "`blockers` what was not done and why."
-    )
-    return _nudge_for_the_structured_response(
-        agent, inner_thread_id, callbacks, None, schema, run_id, stage, text=text,
-    )
+    if not never_wrote or not hasattr(structured_response, "model_copy"):
+        return structured_response
+    return structured_response.model_copy(update={"changed_files": [
+        name for name in structured_response.changed_files if str(name).strip() not in never_wrote
+    ]})
 
 
 def _ask_about_high_confidence_diagnostics(
@@ -3322,48 +3315,24 @@ def _run_gated_agent(
 
     structured_response = answer_without_leaked_turns(structured_response)
 
-    # Reported changes nothing made: asked once, on the stage's own thread,
-    # while it still holds what it read. See `_files_it_claims_but_never_wrote`.
+    # Reported changes nothing made: dropped from the record, deterministically
+    # (Initiative Q.4). The clarification this used to send was a full model
+    # call on the stage's own thread - eleven a day - and the two stages
+    # measured receiving it doubled down anyway: one call from its budget, its
+    # tools withheld, it named the same file again. The harness already holds
+    # the ground truth (write receipts), so the drop costs nothing and the
+    # record keeps only what changed. The warning is the counting line for the
+    # per-model claim rate; see `_files_it_claims_but_never_wrote` for what
+    # counts as a receipt.
     from app.agents.settled_answer import was_stopped_by_the_budget as _stopped_by_the_budget
 
     never_wrote = _files_it_claims_but_never_wrote(result, structured_response)
-    if never_wrote and not _stopped_by_the_budget(result):
+    if never_wrote:
         logger.warning(
-            "Stage %s reported changing %s, which nothing in it wrote; asking it once to make "
-            "the change or say what it did", stage_name, ", ".join(never_wrote),
+            "Stage %s claimed %d file(s) nothing in it wrote: %s; dropped from the record, "
+            "no model call", stage_name, len(never_wrote), ", ".join(never_wrote),
         )
-        followed = _ask_about_the_files_it_never_wrote(
-            agent, inner_thread_id, activity, never_wrote,
-            config["configurable"].get(APP_RUN_ID_KEY), stage_name,
-            getattr(agent, "workflow_response_format", None),
-        )
-        if followed is not None and followed.get("__interrupt__"):
-            approval = extract_pending_approval(
-                followed, state["repository"].root_path, requested_by=stage_name, stage=stage_name,
-            )
-            return {
-                "stage": f"{APPROVAL_PAUSE_PREFIX}{stage_name}",
-                "pending_approval": approval,
-                "pending_inner_thread_id": inner_thread_id,
-                "pending_decision": None,
-                "inner_thread_ids": [*state.get("inner_thread_ids", []), inner_thread_id],
-            }
-        if followed is not None:
-            result = followed
-            structured_response = answer_without_leaked_turns(followed["structured_response"])
-            never_wrote = _files_it_claims_but_never_wrote(result, structured_response)
-    # Asked and still claimed, or not asked because the stage was out of
-    # calls: the record keeps only what changed. Measured on the first stage
-    # asked: one call from its budget, its tools withheld, it named the same
-    # file again.
-    if never_wrote and hasattr(structured_response, "model_copy"):
-        logger.warning(
-            "Stage %s still reports changing %s, which nothing in it wrote; recorded without them",
-            stage_name, ", ".join(never_wrote),
-        )
-        structured_response = structured_response.model_copy(update={"changed_files": [
-            name for name in structured_response.changed_files if str(name).strip() not in never_wrote
-        ]})
+        structured_response = _claims_dropped_from_the_record(structured_response, never_wrote)
 
     if not never_wrote and not _stopped_by_the_budget(result):
         diagnostics = _diagnostics_in_files_touched(state, result, structured_response, stage_name)

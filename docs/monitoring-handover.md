@@ -692,6 +692,13 @@ know about its testing, and what changed most recently.
   lines, with a named blocker as the way out when the specification itself
   cannot produce a passing file - not a third variation of the instruction that
   failed twice.
+- **A phantom write claim costs no model call (2026-10-18, Initiative Q.4).** A
+  stage answer naming files nothing in it wrote used to be sent one full model
+  call of clarification (×11/day) - and two measured stages named the same file
+  again. The claim is now dropped from the record deterministically against the
+  conversation's write receipts; the warning "claimed N file(s) nothing in it
+  wrote ... dropped from the record" is the line to count for the per-model
+  claim rate when U.2's KPI ledger lands.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

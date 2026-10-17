@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-18 05:05 JST**.
+of the previous sessions' context. Last updated **2026-10-18 05:14 JST**.
 
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and

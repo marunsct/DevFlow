@@ -1727,10 +1727,26 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         error=record.error,
         auto_approve=bool(record.auto_approve),
         completion_gaps=[str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+        non_deliverable=_what_the_marker_says(record),
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         cost=_cost_summary(record.run_id),
     )
+
+
+def _what_the_marker_says(record: Any) -> str:
+    """The workspace's non-deliverable marker in one sentence, or "" (Initiative J.6)."""
+    try:
+        from app.graph import terminal_state
+
+        found = terminal_state.read(getattr(record, "repo_root", "") or "")
+    except Exception:  # noqa: BLE001 - a status response is never failed by the marker
+        return ""
+    if not found:
+        return ""
+    reason = str(found.get("reason") or "")
+    status = str(found.get("status") or "")
+    return f"{status}: {reason}" if reason else status
 
 
 def _cost_summary(run_id: str) -> RunCostSummary | None:

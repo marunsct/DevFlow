@@ -80,6 +80,10 @@ export interface RunStatusResponse {
    *  suite was locked with, an unproven setup (Initiative J.4). A completed
    *  run with gaps is never plain "completed" on any surface that shows it. */
   completion_gaps?: string[];
+  /** What the workspace's NON-DELIVERABLE marker says, or '' when the
+   *  workspace is deliverable: every terminal state but a clean release
+   *  writes it into the workspace root (Initiative J.6). */
+  non_deliverable?: string;
   // Absent when this run's accounting lives in another worker process, which is
   // not the same as zero - see RunCostSummary on the API side.
   cost?: RunCostSummary | null;

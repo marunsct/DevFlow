@@ -1458,6 +1458,23 @@ class WorkflowRunner:
                     "stage and its transcript are what remain to go on."
                 )
                 record.updated_at = datetime.now(timezone.utc).isoformat()
+                # The workspace tells the truth after the run ends (Initiative
+                # J.6): every terminal state but a clean release leaves a
+                # machine-readable marker in its root, and a clean release
+                # clears whatever an earlier attempt left there.
+                if record.repo_root:
+                    from app.graph import terminal_state
+
+                    if stage == "complete" and not record.completion_gaps:
+                        terminal_state.clear(record.repo_root)
+                    else:
+                        terminal_state.mark(
+                            record.repo_root,
+                            status=record.status,
+                            reason=str(record.error or "completed with gaps it did not prove"),
+                            stage=str(state.get("stage") or stage),
+                            gaps=record.completion_gaps,
+                        )
                 self._persist(record)
                 await asyncio.to_thread(self._archive_artifacts, record)
                 await asyncio.to_thread(self._prune_scratch)
@@ -1849,6 +1866,14 @@ class WorkflowRunner:
         forget_run(record.run_id)
         record.status = "cancelled"
         record.updated_at = datetime.now(timezone.utc).isoformat()
+        # A cancelled run is no delivery either; its workspace says so
+        # (Initiative J.6).
+        if record.repo_root:
+            from app.graph import terminal_state
+
+            terminal_state.mark(
+                record.repo_root, status="cancelled", reason="The run was cancelled before it finished."
+            )
         self._persist(record)
         logger.info("Run %s cancelled", record.run_id)
         # Cancellation is a terminal outcome like any other, and leaves the same

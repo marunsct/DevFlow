@@ -179,7 +179,13 @@ SCRATCH_NAME = re.compile(
     r"|^test\d+\.[cm]?js$"
     # The suffix the delete guard tells a stage to rename a throwaway probe to
     # on its way out - see `repository._somewhere_this_rule_will_let_go_of`.
-    r"|\.probe$",
+    r"|\.probe$"
+    # The stage notes measured shipping inside stored products (4 files across
+    # 199 products, parked in monitoring-handover §8.3): a blocker's own note
+    # and a verification log are a stage's paperwork, not the product. Narrow
+    # - exactly these names - because the sweeper deletes what matches
+    # (Initiative J.6).
+    r"|^blockers?\.txt$|^verification\.log$",
     re.I,
 )
 

@@ -275,6 +275,14 @@ class RunStatusResponse(BaseModel):
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
     error: str | None = Field(default=None, description="Error message if the run failed.")
+    non_deliverable: str = Field(
+        default="",
+        description=(
+            "What the workspace's NON-DELIVERABLE marker says, or '' when the "
+            "workspace is marked deliverable. A terminal state other than a "
+            "clean release writes it into the workspace root (Initiative J.6)."
+        ),
+    )
     completion_gaps: list[str] = Field(
         default_factory=list,
         description=(

@@ -708,6 +708,14 @@ know about its testing, and what changed most recently.
   suite) tests through its disputes - past the cap the tests stay failing
   ("past this run's reclassification cap"). Every reclassification is tracked
   (`suite_reclassified_tests`) and named in the release's completion gaps.
+- **The workspace says so when a run did not deliver (2026-10-18, Initiative
+  J.6).** Every terminal state but a clean release - failed, cancelled,
+  completed with gaps - writes `NON-DELIVERABLE.json` into the workspace root
+  (status, reason, gaps, timestamp), and a clean release clears it. The run
+  status API reports what it says (`non_deliverable`) and the run dashboard
+  shows it in a red panel beside the badge. The sweeper also learned the two
+  stage-note names measured shipping inside stored products: `blocker.txt`
+  and `verification.log` are throwaways now.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

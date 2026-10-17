@@ -587,6 +587,14 @@ export const RunDashboard: React.FC = () => {
                 </ul>
               </div>
             )}
+            {/* The workspace tells the truth after the run ends: what the
+                NON-DELIVERABLE marker says, on the run card (Initiative J.6). */}
+            {run.non_deliverable && (
+              <div className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2">
+                <p className="text-xs font-semibold text-danger">Marked non-deliverable</p>
+                <p className="mt-0.5 text-xs text-text-secondary leading-relaxed">{run.non_deliverable}</p>
+              </div>
+            )}
           </div>
 
           <dl className="flex flex-wrap items-start gap-x-5 sm:gap-x-7 gap-y-3">

@@ -406,30 +406,40 @@ def test_happy_path_runs_every_stage_in_order_and_completes(agents: ScriptedAgen
     assert "specialist_testing_0" in state["specialist_outputs"]
 
 
-def test_a_stage_reporting_a_change_nothing_made_is_asked_once(agents: ScriptedAgents, tmp_path: Any) -> None:
+def test_a_stage_reporting_a_change_nothing_made_is_recorded_without_it(
+    agents: ScriptedAgents, tmp_path: Any
+) -> None:
     """A work order answered with `changed_files` that nothing in the stage
-    wrote is asked, on the same thread, to make the change or say what it did;
-    the answer it gives then is the one kept."""
+    wrote has them dropped from the record - deterministically, with no model
+    call asking about them (Initiative Q.4: the clarification was itself a
+    full model call, eleven a day, and two measured stages doubled down)."""
     _script_through_architecture(agents, _approved_review())
     _script_through_sprint(agents)
     agents.script("specialist_testing", [
         responds_with(_specialist(changed_files=["tests/test_bookings.py"])),
-        responds_with(_specialist(blockers=["made no change: the existing tests already cover it"])),
         responds_with(_specialist()),
     ])
 
     state = start_workflow(_graph(), _document(), _repository(tmp_path), "run-claimed")
 
     assert state["stage"] == "complete", state.get("error")
-    follow_up = "\n".join(str(m.get("content", "")) for m in agents.requests["specialist_testing"][1]["messages"])
-    assert "`tests/test_bookings.py`" in follow_up and "nothing in this conversation wrote it" in follow_up
     kept = state["specialist_outputs"]["specialist_testing_0"]
-    assert kept.changed_files == [] and kept.blockers
+    assert kept.changed_files == []
+    # The work order and the test round, and nothing between them: no
+    # clarification turn was sent to the stage about its claim.
+    assert len(agents.requests["specialist_testing"]) == 2
+    asked = "\n".join(
+        str(message.get("content", ""))
+        for request in agents.requests["specialist_testing"]
+        for message in request["messages"]
+    )
+    assert "nothing in this conversation wrote" not in asked
 
 
 def test_a_stage_that_claims_it_again_is_recorded_without_it(agents: ScriptedAgents, tmp_path: Any) -> None:
-    """The first stage asked was one call from its budget, with its tools
-    withheld, and named the same file again: the record keeps only what changed."""
+    """Measured on the first stage ever asked about a phantom claim: one call
+    from its budget, its tools withheld, it named the same file again. Nothing
+    is asked now (Q.4); the record keeps only what changed either way."""
     _script_through_architecture(agents, _approved_review())
     _script_through_sprint(agents)
     claim = responds_with(_specialist(changed_files=["tests/test_bookings.py"]))
@@ -1362,9 +1372,8 @@ def test_a_reported_failure_becomes_a_tracked_defect_routed_to_its_owner(
         "specialist_backend",
         [
             responds_with(_specialist(changed_files=["src/api/bookings.py"])),
-            # A scripted answer reports a file nothing wrote, so it is asked
-            # once to make the change or say what it did.
-            responds_with(_specialist(changed_files=["src/api/bookings.py"])),
+            # A scripted answer reports a file nothing wrote; the claim is
+            # dropped from the record with no model call about it (Q.4).
             responds_with(_specialist(tests=["tests/test_bookings_regression.py"])),
         ],
     )

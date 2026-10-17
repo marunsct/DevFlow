@@ -85,6 +85,8 @@ export const listRuns = async (): Promise<RunListResponse> => {
 export interface RunOutcome {
   run_id: string;
   status: string;
+  /** What the release knew it did not prove (Initiative J.4). */
+  completion_gaps?: string[];
   delivery_mode: string;
   use_frontier_model: boolean;
   started_at: string | null;

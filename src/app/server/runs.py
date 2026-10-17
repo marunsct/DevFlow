@@ -1726,6 +1726,7 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         remediation=remediation,
         error=record.error,
         auto_approve=bool(record.auto_approve),
+        completion_gaps=[str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         cost=_cost_summary(record.run_id),

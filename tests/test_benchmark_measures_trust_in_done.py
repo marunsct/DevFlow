@@ -43,8 +43,20 @@ def test_the_harness_verdict_is_read_from_the_locked_suite(tmp_path) -> None:
     assert verdict == {
         "status": "completed", "locked_passed": 8, "locked_failed": 1,
         "criteria_passed": 1, "criteria_deferred": 1, "criteria": 2,
+        "completion_gaps": [],
     }
     assert score.harness_verdict(tmp_path / "missing")["status"] == "unknown"
+
+
+def test_a_completed_run_s_gaps_ride_the_bench_export(tmp_path) -> None:
+    """The export says what the release knew it did not prove, so a false
+    acceptance can be read as 'it finished and said so' or 'it finished and
+    claimed verified' (Initiative J.4)."""
+    verdict = score.harness_verdict(
+        tmp_path / "missing", "completed", ["AC-2 ships deferred, unproven by the suite"]
+    )
+
+    assert verdict["completion_gaps"] == ["AC-2 ships deferred, unproven by the suite"]
 
 
 def test_a_finished_run_that_fails_hidden_tests_is_a_false_acceptance() -> None:

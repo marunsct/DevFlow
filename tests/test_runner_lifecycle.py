@@ -1177,4 +1177,8 @@ def test_the_worker_works_a_run_on_the_models_it_was_started_with():
     source = Path("src/app/server/tasks.py").read_text()
     assert 'on_the_build_model_only(bool(getattr(record, "local_only", False)))' in source
     store = Path("src/app/server/run_store.py").read_text()
-    assert "ADD COLUMN IF NOT EXISTS local_only" in store and store.count("delivery_mode, local_only, approval_timeout_minutes FROM runs") == 3
+    assert "ADD COLUMN IF NOT EXISTS local_only" in store
+    # Every SELECT carries the columns the record is rebuilt from - the pin
+    # moves with the newest one (completion_gaps, Initiative J.4) so a SELECT
+    # left behind fails here rather than as a record missing a field.
+    assert store.count("delivery_mode, local_only, approval_timeout_minutes, completion_gaps FROM runs") == 3

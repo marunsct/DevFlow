@@ -701,6 +701,11 @@ class RunRecord:
     local_only: bool = False
     #: Minutes a gate waits for a person before approving itself; None waits for ever.
     approval_timeout_minutes: int | None = None
+    #: What the release knew it did not prove (Initiative J.4): deferred
+    #: criteria, problems the suite was locked with, an unproven setup. Set
+    #: when the graph completes; a completed run with a non-empty list is
+    #: never plain "completed" on any surface that shows it.
+    completion_gaps: list[str] = field(default_factory=list)
 
     # Execution bookkeeping.
     task_id: str | None = None
@@ -1438,6 +1443,10 @@ class WorkflowRunner:
 
             if stage in ("complete", "failed"):
                 record.status = "completed" if stage == "complete" else "failed"
+                # What the release knew it did not prove rides the record, so
+                # every surface that shows the completion can show the gaps
+                # with it (Initiative J.4). See `app.graph.delivery.release`.
+                record.completion_gaps = [str(gap) for gap in state.get("completion_gaps") or []]
                 # A failed run must never be recorded with nothing to say. The
                 # graph's `failed_node` names the route it came from, and this is
                 # the second line of defence for any path that reaches here

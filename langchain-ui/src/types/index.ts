@@ -76,6 +76,10 @@ export interface RunStatusResponse {
   reviews: ReviewInfo[];
   remediation: RemediationInfo | null;
   error: string | null;
+  /** What this release knew it did not prove: deferred criteria, problems the
+   *  suite was locked with, an unproven setup (Initiative J.4). A completed
+   *  run with gaps is never plain "completed" on any surface that shows it. */
+  completion_gaps?: string[];
   // Absent when this run's accounting lives in another worker process, which is
   // not the same as zero - see RunCostSummary on the API side.
   cost?: RunCostSummary | null;

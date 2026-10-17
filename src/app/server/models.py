@@ -275,6 +275,16 @@ class RunStatusResponse(BaseModel):
     reviews: list[ReviewInfo] = Field(default_factory=list, description="Reviews associated with the run.")
     remediation: RemediationInfo | None = Field(default=None, description="Remediation information if applicable.")
     error: str | None = Field(default=None, description="Error message if the run failed.")
+    completion_gaps: list[str] = Field(
+        default_factory=list,
+        description=(
+            "What this release knew it did not prove: deferred criteria, "
+            "problems the suite was locked with, an unproven setup (Initiative "
+            "J.4). Empty on a completed run that proved everything it claims; "
+            "a completed run with gaps here is never plain 'completed' on any "
+            "surface that shows it."
+        ),
+    )
     delivery_mode: str = Field(
         default="", description="`fast` or `thorough`: how this run delivers, chosen when it started.",
     )

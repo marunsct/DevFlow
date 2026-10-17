@@ -135,6 +135,19 @@ def evidence(state: Any, sprint_number: int, goal: str, heading: str = "") -> st
         lines += [f"- {item}" for item in open_items]
         lines += [f"- {cid} deferred: {why}" for cid, why in deferred.items()]
         lines.append("")
+    gaps = [str(gap) for gap in state.get("completion_gaps") or []]
+    if gaps:
+        # The release page must carry what the release knew it did not prove,
+        # beside the counts it measured - a record that says "verified" over a
+        # shipped gap is how a 1/10 product came to read as a success.
+        # Initiative J.5: every record cites the verdict it actually got.
+        lines += [
+            "## Completion gaps", "",
+            "What this release knows it did not prove - a completed run with these is not plain \"completed\":",
+            "",
+        ]
+        lines += [f"- {gap}" for gap in gaps]
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -244,6 +257,34 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         return _escalate_to_a_human(state, error=text, release_attempts=attempts)
 
     deferred = suite.deferred(root)
+    # What this release knows it did not prove, so no record of the run can
+    # read as a plain success: the gaps ride the run record
+    # (`completion_gaps`), the decision below, and every surface that shows
+    # the completion. A criterion is deferred by a dispute or by QA; problems
+    # the suite was locked with survived its rounds; a plan dispatched with
+    # problems noted shipped with them; a setup that was never proven leaves
+    # every later proof weaker. See Initiative J.4 in docs/improvement-plan.md.
+    gaps: list[str] = []
+    if not suite.is_locked(root):
+        gaps.append("No acceptance suite was locked; the milestone reviews were the only gate.")
+    for cid in sorted(deferred):
+        gaps.append(f"{cid} ships deferred, unproven by the suite: {deferred[cid]}")
+    gaps.extend(
+        f"The suite was locked with this still open: {problem}"
+        for problem in state.get("acceptance_open_problems") or []
+    )
+    gaps.extend(
+        f"The plan was dispatched with this noted against it: {problem}"
+        for problem in state.get("work_order_problems") or []
+    )
+    scaffolded = state.get("scaffold_result") or {}
+    if scaffolded and not scaffolded.get("ok"):
+        gaps.append(
+            "The project setup was never proven: "
+            + str(scaffolded.get("problem") or "its smoke tests did not pass")
+        )
+    if gaps:
+        update["completion_gaps"] = gaps
     # What someone who did not write it needs to test and ship it, from the
     # stack pack's own verified commands. See `app.stacks.release`.
     from app.stacks import release as release_files
@@ -263,6 +304,11 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "Every acceptance criterion passes"
             + (f", except those deferred: {', '.join(sorted(deferred))}" if deferred else "")
             + ".\n" + (f"{packaged}\n" if packaged else "") + summary
+            + (
+                "\nShips with gaps a plain 'completed' would hide:\n"
+                + "\n".join(f"- {gap}" for gap in gaps)
+                if gaps else ""
+            )
         ),
     )
     goal = str(getattr(state.get("product_intake"), "product_name", "") or "the product")

@@ -33,6 +33,22 @@ def test_each_finished_run_shows_how_it_ended_its_hours_and_its_score(tmp_path, 
     assert rows[1]["score"] is None
 
 
+def test_a_completed_run_s_gaps_ride_the_outcome_row():
+    """What the release knew it did not prove shows beside the score, so a
+    'completed' run whose product fails its hidden tests is seen to have said
+    so - or to have claimed verified when it was not (Initiative J.4)."""
+    gapped = SimpleNamespace(
+        run_id="run-g", status="completed", delivery_mode="fast", local_only=False,
+        completion_gaps=["AC-2 ships deferred, unproven by the suite: no automated check"],
+        created_at="2026-10-15T00:00:00+00:00", updated_at="2026-10-15T05:00:00+00:00",
+    )
+
+    rows = outcomes.outcomes([gapped, _run("run-h", "completed", "fast", 3)])
+
+    assert rows[0]["completion_gaps"] == ["AC-2 ships deferred, unproven by the suite: no automated check"]
+    assert rows[1]["completion_gaps"] == []
+
+
 def test_the_forecast_is_the_typical_completed_run_of_that_mode_and_none_with_too_few():
     rows = outcomes.outcomes(RUNS)
 

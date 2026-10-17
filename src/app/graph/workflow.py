@@ -596,6 +596,11 @@ class WorkflowGraphState(TypedDict, total=False):
     # How often this run has reopened its locked suite to repair tests that
     # cannot pass. See `acceptance_nodes.reopen_the_suite_for`.
     suite_repairs: int
+    # What the release knows it did not prove: deferred criteria, problems the
+    # suite was locked with, plan problems noted at dispatch, an unproven
+    # setup. Set once by `delivery.release`; a completed run with gaps here is
+    # never plain "completed" in any record that shows it.
+    completion_gaps: list[str]
     # Parallel mode's defect fixes (`_the_next_fix_batch`): the batch in
     # flight, by defect index; the fix stages tried this round; and the ones
     # whose batch was reverted, to be fixed alone.

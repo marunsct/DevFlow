@@ -45,7 +45,15 @@ export const OutcomesPanel: React.FC = () => {
                 <td className="py-2 pr-4">
                   <Link to={`/runs/${row.run_id}`} className="text-primary hover:underline">{row.run_id.slice(0, 12)}</Link>
                 </td>
-                <td className="py-2 pr-4">{row.status}</td>
+                <td className="py-2 pr-4">
+                  {row.completion_gaps && row.completion_gaps.length > 0 ? (
+                    <span className="text-warning" title={row.completion_gaps.join('\n')}>
+                      {row.status} · {row.completion_gaps.length} gap{row.completion_gaps.length === 1 ? '' : 's'}
+                    </span>
+                  ) : (
+                    row.status
+                  )}
+                </td>
                 <td className="py-2 pr-4">{row.delivery_mode || '-'}</td>
                 <td className="py-2 pr-4">{row.use_frontier_model ? 'frontier + local' : 'local only'}</td>
                 <td className="py-2 pr-4 text-right">{row.hours ?? '-'}</td>

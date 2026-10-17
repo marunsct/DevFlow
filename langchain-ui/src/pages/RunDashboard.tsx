@@ -570,6 +570,23 @@ export const RunDashboard: React.FC = () => {
             <p className="text-[13px] text-text-secondary leading-relaxed mt-2.5">
               {stageCopy.blurb}
             </p>
+            {/* A completed run that knows what it did not prove says so here,
+                beside the green badge - the record must not read as a plain
+                success (Initiative J.4). */}
+            {run.completion_gaps && run.completion_gaps.length > 0 && (
+              <div className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2">
+                <p className="text-xs font-semibold text-warning">
+                  Completed with {run.completion_gaps.length} gap{run.completion_gaps.length === 1 ? '' : 's'} it did not prove
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {run.completion_gaps.map((gap, index) => (
+                    <li key={index} className="text-xs text-text-secondary leading-relaxed">
+                      • {gap}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
 
           <dl className="flex flex-wrap items-start gap-x-5 sm:gap-x-7 gap-y-3">

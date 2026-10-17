@@ -649,6 +649,17 @@ know about its testing, and what changed most recently.
   when every criterion is deferred or passing. Before this, a round count
   waived them at lock time and a release only asked whether a criterion was
   failing - the path by which runs shipped at hidden-test 1/10.
+- **A completed run carries what it did not prove (2026-10-18, Initiative
+  J.4/J.5).** The release records `completion_gaps` - deferred criteria,
+  problems the suite was locked with, plan problems noted at dispatch, an
+  unproven setup, no locked suite at all - and every record shows them: the
+  runs row (new column, migrated), the release decision's rationale, the
+  release-evidence page (a "Completion gaps" section), the run dashboard
+  (amber panel beside the green badge), the outcomes dashboard row, and
+  `loop.sh score`'s export (`data/bench/<run>.json` and
+  `<data>/outcomes/<run>.json` both carry `completion_gaps`; the score script
+  takes them as its fifth argument, so an old database answers empty). A
+  completed run with gaps is never plain "completed" on any surface.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

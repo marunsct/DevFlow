@@ -55,6 +55,10 @@ def outcomes(records: Iterable[Any]) -> list[dict[str, Any]]:
         rows.append({
             "run_id": record.run_id,
             "status": record.status,
+            # What the release knew it did not prove (Initiative J.4): the
+            # dashboard shows a completed run's gaps beside its score, so a
+            # 1/10 that reads "completed" can be seen for what it shipped.
+            "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
             "delivery_mode": getattr(record, "delivery_mode", "") or "",
             "use_frontier_model": not bool(getattr(record, "local_only", False)),
             "started_at": started.isoformat() if started else None,

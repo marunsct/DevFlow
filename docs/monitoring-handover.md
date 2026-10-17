@@ -739,6 +739,14 @@ know about its testing, and what changed most recently.
   environment while a Python pack serves through `.venv/bin/python`: the
   contract said installs must land where the product's commands read, and the
   sandbox contradicted it. Now it does not.
+- **A reverted fix goes to the judgement model next (2026-10-18, Initiative
+  L.4).** The revert is the proven failure signal, so the attempt after it
+  does not wait for the generic two-failure rung: one revert note on a
+  defect's record escalates its next fix to the judgement model ("the fix it
+  retries was reverted once" in the log). A second revert reaches the generic
+  rung on its own, so this escalates at most once per defect - the cap that
+  protects cost. Both reverted fixes in the live run came from the local
+  build model; its fixes and reviews are the measured weak link.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

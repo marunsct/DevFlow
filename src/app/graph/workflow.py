@@ -1197,6 +1197,34 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
     ]})
 
 
+def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:
+    """Whether this defect's next fix attempt goes to the judgement model because one was reverted.
+
+    The revert is the proven failure signal: a fix was measured, it broke what
+    passed before it, and the harness undid it - stronger evidence than a
+    failed try that merely left the defect failing. Both reverted fixes in the
+    live run came from the local build model, matching the bench pattern that
+    the local model drafts fine but its fixes are the weak link, so the
+    attempt right after a revert does not wait for the generic
+    `escalate_after()` rung (Initiative L.4).
+
+    Capped at one escalation per defect by its own shape: exactly one revert
+    note escalates. A second revert has already pushed `failed_fix_tries` to
+    the generic rung, where the ladder escalates on its own - counting that
+    too would escalate every later attempt twice over and defeat the cap that
+    protects cost.
+    """
+    try:
+        defect = cycle.defects[defect_index]
+        notes = str(getattr(defect, "actual_behavior", "") or "")
+    except (AttributeError, IndexError, TypeError):
+        return False
+    reverts = len(_REVERTED_FOR.findall(notes)) + notes.count(
+        "A batch of fixes including this one was reverted"
+    )
+    return reverts == 1
+
+
 def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     """The differently-shaped work order for a defect's last permitted attempt, or "".
 
@@ -6602,7 +6630,14 @@ def build_workflow_graph(
         except Exception:  # noqa: BLE001 - the judgement model gathers for itself
             logger.warning("Could not set up gathering on the build model", exc_info=True)
 
-    def _the_build_model(state: Any, stage_name: str, failed_tries: int = 0, *, reasons: bool = False) -> Any:
+    def _the_build_model(
+        state: Any,
+        stage_name: str,
+        failed_tries: int = 0,
+        *,
+        reasons: bool = False,
+        after_a_revert: bool = False,
+    ) -> Any:
         """The model a stage that builds or fixes runs on: the default one, until it has failed.
 
         The judgement model takes over once this stage has had to start over on
@@ -6620,6 +6655,16 @@ def build_workflow_graph(
         quiet = model if reasons else building_model
         if judgement_model is model:
             return quiet
+        if after_a_revert:
+            # The revert is the proven failure signal; the next attempt does
+            # not wait for the generic rung (Initiative L.4). Capped at one
+            # per defect by `_a_revert_escalates_this_fix`.
+            logger.info(
+                "Stage %s goes to the judgement model: the fix it retries was reverted once, "
+                "which is a measured failure of the build model's attempt",
+                stage_name,
+            )
+            return judgement_model
         limit = escalate_after()
         restarts = int((state.get("structured_retries") or {}).get(stage_name, 0))
         if restarts >= limit or failed_tries >= limit:
@@ -8773,7 +8818,13 @@ def build_workflow_graph(
         if closed is not None:
             return closed
 
-        fix_model = _the_build_model(state, stage_name, failed_fix_tries(cycle, defect_index), reasons=True)
+        fix_model = _the_build_model(
+            state,
+            stage_name,
+            failed_fix_tries(cycle, defect_index),
+            reasons=True,
+            after_a_revert=_a_revert_escalates_this_fix(cycle, defect_index),
+        )
         # A fix that breaks what passed before it is reverted to exactly where
         # it started. The commit it starts from is taken on the stage's first
         # entry and carried across an approval pause. See `app.graph.engineering`.
@@ -8967,7 +9018,10 @@ def build_workflow_graph(
         defect = cycle.defects[index]
         stage_name = f"defect_fix_{state.get('test_round', 0)}_{index}"
         agent = create_specialist_agent(
-            defect.owner, model=_the_build_model(state, stage_name, failed_fix_tries(cycle, index), reasons=True),
+            defect.owner, model=_the_build_model(
+                state, stage_name, failed_fix_tries(cycle, index), reasons=True,
+                after_a_revert=_a_revert_escalates_this_fix(cycle, index),
+            ),
             checkpointer=shared_checkpointer, repo_root=repo_root, allow_subdirectories=allow_subdirectories,
         )
         request, _ = _the_fix_request(state, config, cycle, index)

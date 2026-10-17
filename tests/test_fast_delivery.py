@@ -255,8 +255,11 @@ def test_a_fix_reasons_as_configured_and_a_build_does_not():
     source = inspect.getsource(workflow)
     chooser = source[source.index("def _the_build_model("):source.index("def _the_model_for_this_attempt(")]
     assert "quiet = model if reasons else building_model" in chooser
-    assert source.count("failed_fix_tries(cycle, defect_index), reasons=True)") == 1
-    assert source.count("failed_fix_tries(cycle, index), reasons=True)") == 1
+    # Initiative L.4 folded the revert signal into both fixer dispatches, so
+    # the calls span lines now; the pin's intent stands - exactly one dispatch
+    # site of each shape, and both reason.
+    assert source.count("failed_fix_tries(cycle, defect_index),\n            reasons=True,") == 1
+    assert source.count("failed_fix_tries(cycle, index), reasons=True,") == 1
     assert "_the_build_model(state, stage_name)," in source, "a work order still builds without reasoning"
 
 

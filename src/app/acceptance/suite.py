@@ -795,6 +795,39 @@ def tests_the_runner_never_ran(repo_root: str | Path, result: AcceptanceResult) 
     return missing
 
 
+def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Reasons this result proves nothing even though the runner complained of nothing.
+
+    Every gate that reads "no failures" as "done" is vacuous when the runner
+    collected none of what the suite declares: zero tests and exit 0 is green
+    to every count, and each criterion reads "untested" - which a dispute can
+    defer and a release then ship. Measured on one run: the scaffold's own
+    smoke test ran zero tests, exited 0, and the setup was left to the agents.
+    Unlike the round's other problems, these are never waivable by a round
+    count or spent with a repair budget: a round count can waive advice, but
+    it cannot make an empty report into evidence.
+    """
+    if not result.ran:
+        return []  # a suite that never ran is each gate's own problem, reported there
+    if not result.report.tests:
+        return [
+            f"The suite's runner ran and reported zero tests (exit {result.exit_code}, "
+            f"`{result.command}`): nothing was proven. A runner that collects none of the "
+            "suite's tests - a discovery pattern its runtime does not expand, a configuration "
+            "that switches the suite off, a report written empty - exits without complaint. "
+            "Zero tests is not a green suite: find what the runner stopped collecting and "
+            "make it run the tests that are written."
+        ]
+    if criteria(repo_root) and not any(junit.tags_in(test.name) for test in result.report.tests):
+        return [
+            f"The suite's runner ran {len(result.report.tests)} test(s) and not one of them names "
+            "an acceptance criterion in its title (a title carries its criterion as its "
+            "[AC-n] tag): tests that name no criterion prove no criterion, and every criterion "
+            "reads \"untested\" whatever they show. Point each test at the criterion it checks."
+        ]
+    return tests_the_runner_never_ran(repo_root, result)
+
+
 def tests_that_need_what_they_never_made(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Locked tests that can pass only on a product that ships with data, by the pack's reader.
 

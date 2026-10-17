@@ -636,6 +636,16 @@ know about its testing, and what changed most recently.
 - **CI gate.** Regressions are measured against both the last accepted state
   and the last measurement; a fix that breaks a passing test is reverted; code
   review runs on each batch.
+- **A suite that proved nothing is not green (2026-10-18, Initiative J.1).**
+  `suite.vacuous_green` names the results that prove nothing while every count
+  reads green: a runner that reported zero tests, a run whose tests name no
+  criterion, or a declared test the runner never collected. These are never
+  waivable: the acceptance review refuses to lock while one stands (and fails
+  the run after the last round instead of locking with it open), a test round
+  treats one as the suite's defect to repair, and a release is held back even
+  when every criterion is deferred or passing. Before this, a round count
+  waived them at lock time and a release only asked whether a criterion was
+  failing - the path by which runs shipped at hidden-test 1/10.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

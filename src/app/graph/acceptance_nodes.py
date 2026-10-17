@@ -338,7 +338,8 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()
         )
     problems.extend(suite.tests_that_broke_themselves(root, result))
-    problems.extend(suite.tests_the_runner_never_ran(root, result))
+    vacuous = suite.vacuous_green(root, result)
+    problems.extend(vacuous)
     problems.extend(suite.tests_that_need_what_they_never_made(root, result))
     problems.extend(suite.locators_nobody_sees(root))
     problems.extend(suite.locators_that_pick_one(root))
@@ -364,6 +365,19 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         return _handing_on(
             stage="failed",
             error=f"The acceptance suite cannot run or load after {rounds} rounds: {result.problem}\n{result.output[-1000:]}",
+        )
+    if vacuous:
+        # A suite that proved nothing is never locked, whatever was spent on
+        # it: the round count waives advice, not evidence. A locked suite is
+        # the run's definition of done, and an empty report defines nothing.
+        # See `suite.vacuous_green`.
+        if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
+            logger.warning("Acceptance suite proved nothing (%d reason(s)); sent back to QA", len(vacuous))
+            return _handing_on(stage="acceptance_author", acceptance_feedback=problems)
+        logger.error("Acceptance suite still proves nothing after %d rounds", rounds)
+        return _handing_on(
+            stage="failed",
+            error=f"The acceptance suite proves nothing after {rounds} rounds: " + "; ".join(vacuous)[:1500],
         )
     if problems and rounds < MAX_ACCEPTANCE_ROUNDS:
         logger.info("Acceptance suite sent back to QA: %d problem(s)", len(problems))
@@ -1006,7 +1020,7 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
     broken = [
         *suite.tests_that_broke_themselves(root, result),
         *suite.tests_left_behind_by_their_own_change(root, result),
-        *suite.tests_the_runner_never_ran(root, result),
+        *suite.vacuous_green(root, result),
         *suite.assertions_that_do_not_exist(root),
         *suite.locators_that_do_not_exist(root),
         *suite.locators_by_a_name_the_role_never_has(root),

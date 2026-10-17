@@ -187,6 +187,16 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         summary = result.summary()
         if not result.ran:
             failing = failing or ["the suite did not run"]
+        vacuous = suite.vacuous_green(root, result)
+        if vacuous:
+            # A green suite that proved nothing is not a green suite: zero
+            # collected tests, or a declared test the runner never collected,
+            # makes every "no failures" reading vacuous - including the
+            # criteria a dispute deferred from tests that no longer run.
+            # Nothing here is waivable by a deferred criterion or a spent
+            # budget. See `suite.vacuous_green`.
+            summary = "\n".join(vacuous) + "\n" + summary
+            failing = [*vacuous, *failing]
     # The project's own unit tests too: they ship with the product and the CI
     # pipeline written below runs them first. Measured on one run: released
     # with every criterion passing or deferred while `npm test` failed on a

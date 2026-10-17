@@ -1319,14 +1319,14 @@ unmapped.
 ### Implementation Progress Ledger
 
 Started 2026-10-18 (JST). Rules: update this ledger in the same commit as
-every implementation change; DONE rows carry the commit hash; BLOCKED rows
+every implementation change; DONE rows carry the date (the commit is the one whose message names the row); BLOCKED rows
 carry the reason. Priorities are from the sequencing table; the Antigravity
 cautions (recorded inline on Initiatives J/K/L/M/O above) are binding
 implementation constraints and are restated in the Notes column.
 
 | Item | Priority | Status | Notes |
 |---|---|---|---|
-| J.1 vacuous-green hard gate | P0 | NOT STARTED | Applies at every gate: lock, test rounds, CI, release, and the scaffold setup proof (amendment: zero-test smoke fails closed, never "left to the agents") |
+| J.1 vacuous-green hard gate | P0 | SUITE GATES DONE 2026-10-18 (setup-proof amendment next) | `suite.vacuous_green` (zero tests, no criterion named, declared test never collected) enforced at lock (never waivable by round count), test rounds (suite defect → repair flow), and release (held even with all criteria deferred); tests in `tests/test_a_suite_that_proved_nothing_is_not_green.py`; documented in monitoring-handover §0.10. Remaining: setup-proof fail-closed (scaffold node) |
 | J.4 `completed_with_gaps` status | P0 | NOT STARTED | Includes deferred+failing criteria, reclassification counts, demoted review findings |
 | J.5 records cite the verdict | P0 | NOT STARTED | Process rule + delivery-panel/bench-export fields; a green suite alone is never "verified" |
 | K.1 environment contract to architect/QA | P0 | NOT STARTED | `describe_execution_environment()` reaches architect, acceptance author, QA prompts — not only the stack selector |

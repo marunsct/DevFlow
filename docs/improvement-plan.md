@@ -100,43 +100,68 @@ flowchart TD
   - In `src/app/graph/planned_work.py` and `technical_lead.py`, enforce that a single work order modifies at most one core product file (`app.js`, `index.html`, or `styles.css`) and its paired test.
   - Keep prompt sizes under 4,000 tokens during specialist execution.
 
+### Initiative F: Root-Crash & Load-Error Pre-Check Gate (Prevent Defect Sprawl)
+- **Concept**: Catch root initialization crashes before evaluating downstream element assertions.
+- **Harness Mechanism**:
+  - In `src/app/acceptance/suite.py` and defect queue generation, detect if the application fails to boot, import scripts, or load the DOM cleanly (*"The product reports errors by itself while it loads"*).
+  - Treat this root load error as a blocking prerequisite defect. Defer queueing downstream element selector defects (e.g., button, filter, checkbox checks) until the application initializes cleanly.
+- **Impact**: Prevents cascading defect sprawl (e.g., 15 simultaneous defects generated for 1 root load error in `run-77c6650e`), saving 10–15 redundant fixer invocations and ~20 minutes of wall-clock time.
+
+### Initiative G: Lenient Whitespace and Unicode Normalization in `edit_artifact`
+- **Concept**: Prevent failed tool calls caused by trivial whitespace or character formatting differences.
+- **Harness Mechanism**:
+  - In `src/app/tools/artifacts.py` (`edit_artifact`), when an exact literal string match fails, attempt a **normalized fallback match**:
+    - Trim trailing whitespace per line.
+    - Normalize Unicode dashes (`─`, `—`, `-`) and curly quotes.
+    - Check if a unique normalized block match exists.
+  - If a single unambiguous match is found, apply the replacement cleanly.
+- **Impact**: Eliminates recurring tool retries observed in `specialist_testing` and acceptance authoring where models format comment dividers or indentation slightly differently than disk.
+
+### Initiative H: Pre-Flight State Verification Before Defect Fixer Dispatch
+- **Concept**: Never invoke a defect fixer if the defect's target condition is already satisfied on disk.
+- **Harness Mechanism**:
+  - In `src/app/graph/engineering.py`, before launching a defect fixer node, execute a lightweight pre-flight check (file existence, AST check, or targeted test rerun).
+  - If the requested change is already present (e.g., `defect_fix_2_17` in `run-77c6650e` where a file rename was already completed by a preceding stage), immediately close the defect and advance without launching the model node.
+- **Impact**: Saves 10–12 model calls and 3–5 minutes per sprint by bypassing already-resolved defect tickets.
+
+### Initiative I: Reasoning Token Budget Governor for Synthesis & Planning Roles
+- **Concept**: Prevent reasoning models from consuming their entire reply budget before generating tool calls.
+- **Harness Mechanism**:
+  - In `src/app/agents/context_budget.py` and model request parameterization, set a bounded `max_thinking_tokens` (e.g., 2,048 tokens) for stages that require tool invocation (`principal_architect`, `technical_lead`).
+- **Impact**: Guarantees the model retains sufficient output budget to emit tool calls in its initial turn, avoiding the zero-call reasoning exhaustion observed in `run-77c6650e` and `run-bf43c7e2`.
+
 ---
 
 ## 4. Execution & Benchmark Verification Roadmap
 
 ```mermaid
-sequenceDiagram
-    participant Harness as Benchmark Harness
-    participant FastRun as Fast Run (MoE 35B)
-    participant Audit as Continuous Audit
-    participant ThoroughRun as Thorough Run (MoE 35B)
-
-    Harness->>FastRun: 1. Launch Fast Mode (run-3642baf8)
-    Note over FastRun: Direct Drafting & Procedural Gates
-    Audit-->>FastRun: Monitor tool calls, token speed, and completion
-    FastRun->>Harness: Fast Run Finishes (Score & Log)
-    Harness->>ThoroughRun: 2. Launch Thorough Mode
-    Note over ThoroughRun: Full Sprint Reviews & Multi-Specialist Pipeline
-    Audit-->>ThoroughRun: Audit Sprints, Verify AC-1..AC-8, Defect Checks
-    ThoroughRun->>Harness: Thorough Run Finishes (Release Audit)
+flowchart TD
+    subgraph Step 1: Low Brief (Web To-Do)
+        L1[Fast Mode run-77c6650e: 10/10 Score, 82m] --> L_DONE[Low Brief Complete]
+        L2[Thorough Mode run-94d2c449: 100% Acceptance, 136m] --> L_DONE
+    end
+    subgraph Step 2: Medium Brief (Task Management Dashboard)
+        L_DONE --> M1[Fast Mode run-bf43c7e2: Running]
+        M1 --> M2[Thorough Mode: Scheduled]
+        M2 --> M_DONE[Medium Brief Complete]
+    end
+    subgraph Step 3: Hard Brief (Enterprise E-Commerce)
+        M_DONE --> H1[Fast Mode: Scheduled]
+        H1 --> H2[Thorough Mode: Scheduled]
+        H2 --> H_DONE[Hard Brief Complete]
+    end
 ```
 
-### Phase 1: Fast Run Monitoring (`run-3642baf8-34f7-492d-8667-b64a897b1fd7`)
-- **Configuration**: `DELIVERY=fast`, `local_only=true`, Model `unsloth/Qwen3.6-35B-A3B-MTP-GGUF`.
-- **Key Metrics to Track**:
-  - Generation speed (tokens/sec) on MoE architecture.
-  - Quality of drafted HTML/JS/CSS.
-  - Hidden benchmark score on completion (`loop.sh score`).
-- **Action**: When `run-3642baf8` completes, log full scorecard and audit.
+### Phase 1: Low Brief Verification (`tests/brief_low.md` & `benchmarks/web-todo/brief.md`) - **COMPLETED**
+- **Fast Run (`run-77c6650e`)**: Completed at 00:52 JST in 82 min. 15/15 acceptance tests passed. 38/38 unit tests passed. **Hidden Benchmark Score: 10/10 (1.0 / 100%)**.
+- **Thorough Run (`run-94d2c449`)**: Completed at 17:08 JST in 136 min. 9/9 acceptance tests passed. 76/76 unit tests passed. Verified multi-sprint collaboration and release.
 
-### Phase 2: Thorough Mode Verification
-- **Configuration**: `DELIVERY=thorough`, `local_only=true`, Model `unsloth/Qwen3.6-35B-A3B-MTP-GGUF`.
-- **Execution**: Run `scripts/loop/loop.sh start tests/brief_low.md` with `DELIVERY=thorough`.
-- **Focus**:
-  - Verify multi-specialist collaboration on MoE model.
-  - Confirm Sprint 1 and Sprint 2 pass cleanly without manual interventions.
-  - Compare Thorough Mode product architecture against Fast Mode output.
+### Phase 2: Medium Brief Verification (`tests/brief_medium.md`) - **ACTIVE**
+- **Brief Scope**: Task Management Dashboard with JWT authentication, PostgreSQL, RESTful API, team assignments, priorities, categories, and analytics.
+- **Fast Run (`run-bf43c7e2`)**: **Currently Running** (started 00:54 JST). Auditing Python/FastAPI/React stack setup, acceptance authoring, direct drafting, and test rounds.
+- **Thorough Run**: To be launched immediately following successful completion and audit of Fast Run.
 
-### Phase 3: Transition to Medium Brief
-- Once Low Brief passes cleanly in both Fast and Thorough modes on the MoE model, advance the standing benchmark loop to **`tests/brief_medium.md`**.
+### Phase 3: Hard Brief Verification (`tests/brief_high.md`) - **QUEUED**
+- **Brief Scope**: Enterprise E-Commerce Platform with microservices, multi-vendor support, OAuth2/2FA, payment gateways, Redis caching, real-time inventory, and analytics.
+- To be executed sequentially across Fast Mode and Thorough Mode following successful completion of Phase 2.
 

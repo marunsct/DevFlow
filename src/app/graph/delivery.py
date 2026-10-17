@@ -269,6 +269,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         gaps.append("No acceptance suite was locked; the milestone reviews were the only gate.")
     for cid in sorted(deferred):
         gaps.append(f"{cid} ships deferred, unproven by the suite: {deferred[cid]}")
+    reclassified = sorted(set(state.get("suite_reclassified_tests") or []))
+    if reclassified:
+        gaps.append(
+            f"{len(reclassified)} locked test(s) were reclassified under dispute: "
+            + ", ".join(reclassified[:5])
+        )
     gaps.extend(
         f"The suite was locked with this still open: {problem}"
         for problem in state.get("acceptance_open_problems") or []

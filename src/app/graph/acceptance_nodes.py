@@ -1038,6 +1038,85 @@ def may_repair(state: Any, broken: list[str]) -> bool:
     fresh = {_which_test(item) for item in broken} - sent
     return bool(fresh) and repairs < MAX_SUITE_REPAIRS_IN_ALL
 
+#: The most locked tests one run's disputes may reclassify when the suite is
+#: small; a bigger suite gets a tenth of it. The cap exists to stop
+#: reclassify-to-ship - seven of thirty-three audited runs were falsely
+#: accepted, and this was the path the worst of them traveled - not to forbid
+#: correcting a genuinely wrong test. See Initiative J.2 in
+#: docs/improvement-plan.md.
+MOST_RECLASSIFICATIONS = 2
+
+
+def most_reclassifications(repo_root: Any) -> int:
+    """The reclassification cap: two, or a tenth of a bigger locked suite."""
+    try:
+        locked = len({name for _, name in suite.declared_tests(repo_root)})
+    except Exception:  # noqa: BLE001 - no suite to count; the floor stands
+        locked = 0
+    return max(MOST_RECLASSIFICATIONS, locked // 10)
+
+
+def reclassification_room(state: Any) -> int:
+    """How many more locked tests this run's disputes may reclassify."""
+    done = len(set(state.get("suite_reclassified_tests") or []))
+    return max(0, most_reclassifications(_root(state)) - done)
+
+
+def within_the_cap(state: Any, names: list[str]) -> tuple[list[str], list[str]]:
+    """(the disputed tests a reclassification may still cover, the ones past the cap).
+
+    A test past the cap stays exactly as it is - failing where it fails - and
+    the run carries it to its release rather than rewriting what it is checked
+    against. The QA lead's own ordering decides which fit.
+    """
+    room = reclassification_room(state)
+    return list(names[:room]), list(names[room:])
+
+
+def tests_that_fail_alone(repo_root: Any, names: list[str]) -> tuple[list[str], list[str]]:
+    """(the disputed tests that still fail when run alone, the ones that pass alone).
+
+    The executable leg of a reclassification (Initiative J.2): before the
+    suite is reopened for a test the QA lead calls unpassable, the harness
+    runs each acceptance file alone against the delivered surface, in the
+    project's own runner, with no model in the loop. A named test whose file
+    passes alone is not unpassable - the suite run failed it for order or
+    shared state - and it stays locked. A test that cannot be re-measured (no
+    runner, no file, no criterion tag) is left on the failing list: unknown is
+    not passed.
+    """
+    from app.acceptance import junit
+    from app.acceptance.per_file import each_file
+    from app.stacks.scaffold import sandbox_runner
+
+    if not names:
+        return [], []
+    try:
+        tagged: dict[str, set[str]] = {}
+        for shown, declared in suite.declared_tests(repo_root):
+            for tag in junit.tags_in(declared):
+                tagged.setdefault(tag, set()).add(shown)
+        runs = each_file(repo_root, contract.read(repo_root) or {}, sandbox_runner(repo_root))
+        outcome = {str(run.get("file")): str(run.get("outcome")) for run in runs}
+    except Exception:  # noqa: BLE001 - a check that cannot run re-measures nothing
+        logger.warning("Could not re-measure the disputed tests file by file", exc_info=True)
+        return list(names), []
+    if not outcome or not tagged:
+        return list(names), []
+    still: list[str] = []
+    passed: list[str] = []
+    for name in names:
+        files: set[str] = set()
+        for tag in junit.tags_in(name):
+            files |= tagged.get(tag, set())
+        results = [outcome.get(shown) for shown in files]
+        if results and all(result == "finished" for result in results):
+            passed.append(name)
+        else:
+            still.append(name)
+    return still, passed
+
+
 #: What QA is held to when it repairs a locked suite.
 REPAIR_RULE = (
     "Change only the tests named above, and only as far as their own code is wrong. "
@@ -1081,9 +1160,15 @@ SPRINT_REPLAN = "sprint_replan"
 
 
 def reopen_the_suite_for(
-    state: Any, broken: list[str], return_to: str = "test_and_triage"
+    state: Any, broken: list[str], return_to: str = "test_and_triage", *, reclassifying: bool = False
 ) -> dict[str, Any] | None:
-    """Send tests that can never pass back to QA, then back to `return_to`; None when spent."""
+    """Send tests that can never pass back to QA, then back to `return_to`; None when spent.
+
+    `reclassifying` marks the reopen a dispute's - a judgement about what the
+    product is checked against, counted against the run's reclassification cap
+    and named in its release gaps - rather than a repair the harness's own
+    checks sent for (Initiative J.2).
+    """
     from app.acceptance.junit import tags_in
     from app.graph.workflow import _handing_on
 
@@ -1100,8 +1185,16 @@ def reopen_the_suite_for(
         affects=sorted({tag for item in broken for tag in tags_in(item) if tag.startswith("AC-")}),
     )
     logger.warning("Reopening the locked suite: %d test(s) cannot pass", len(broken))
+    reclassified = (
+        {"suite_reclassified_tests": sorted({
+            *(state.get("suite_reclassified_tests") or []), *map(_which_test, broken),
+        })}
+        if reclassifying
+        else {}
+    )
     return _handing_on(
         **update,
+        **reclassified,
         stage="acceptance_author",
         acceptance_return_to=return_to,
         acceptance_round=0,

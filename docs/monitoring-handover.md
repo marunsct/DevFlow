@@ -699,6 +699,15 @@ know about its testing, and what changed most recently.
   conversation's write receipts; the warning "claimed N file(s) nothing in it
   wrote ... dropped from the record" is the line to count for the per-model
   claim rate when U.2's KPI ledger lands.
+- **A locked test is not reclassified on the QA lead's word alone (2026-10-18,
+  Initiative J.2).** Before the suite reopens for a test the dispute stage
+  calls unpassable, the harness re-measures it: its own file, run alone
+  against the delivered surface in the project's own runner, no model in the
+  loop. A test that passes alone stays locked ("Disputed test(s) ... pass when
+  run alone"). And a run may reclassify at most max(2, a tenth of the locked
+  suite) tests through its disputes - past the cap the tests stay failing
+  ("past this run's reclassification cap"). Every reclassification is tracked
+  (`suite_reclassified_tests`) and named in the release's completion gaps.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

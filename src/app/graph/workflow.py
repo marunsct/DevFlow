@@ -614,6 +614,10 @@ class WorkflowGraphState(TypedDict, total=False):
     # The tests each repair was for, so a test never sent for repair is not
     # refused for a budget others spent. See `acceptance_nodes.may_repair`.
     suite_repaired_tests: list[str]
+    #: The locked tests this run's disputes reclassified - sent back to QA as
+    #: "cannot pass" past the harness's own re-measure and its cap. Named in
+    #: the release's `completion_gaps` (Initiative J.2).
+    suite_reclassified_tests: list[str]
     release_attempts: int
     # The last rung: a stuck sprint's decision. See `app.graph.escalation`.
     escalation: dict[str, Any] | None
@@ -9117,6 +9121,26 @@ def build_workflow_graph(
         if _hand_back(update, "__suite_dispute__"):
             return update
         named = tests_it_names(update.pop("__suite_dispute__"), [name for name, _, _ in failing])
+        # The executable leg before a reclassification (Initiative J.2): each
+        # named test is run alone against the delivered surface in the
+        # project's own runner. One that passes alone is not unpassable - the
+        # suite run failed it for order or shared state - and stays locked.
+        if named and not state.get("pending_inner_thread_id"):
+            named, passed_alone = acceptance_nodes.tests_that_fail_alone(root, named)
+            if passed_alone:
+                logger.warning(
+                    "Disputed test(s) %s pass when run alone; they stay locked",
+                    ", ".join(passed_alone),
+                )
+        # And the cap: this run may reclassify this many locked tests, period.
+        # Past it the tests stay as they are and the run carries them to its
+        # release rather than rewriting what it is checked against.
+        named, past_the_cap = acceptance_nodes.within_the_cap(state, named)
+        if past_the_cap:
+            logger.warning(
+                "Disputed test(s) %s are past this run's reclassification cap; they stay as they are",
+                ", ".join(past_the_cap),
+            )
         missing = [
             f"`{name}` is missing from the locked suite; no test checks what the criterion says. Add a test for `{name.split()[0]}` or tag an existing test that proves it."
             for name, _, _ in failing
@@ -9126,7 +9150,9 @@ def build_workflow_graph(
         update.pop("stage", None)
         if to_repair:
             logger.warning("The QA lead / harness identifies %d locked test(s)/missing criteria cannot pass; reopening the suite", len(to_repair))
-            reopened = reopen_the_suite_for(state, to_repair, return_to=returns_to or SPRINT_REPLAN)
+            reopened = reopen_the_suite_for(
+                state, to_repair, return_to=returns_to or SPRINT_REPLAN, reclassifying=True,
+            )
             if reopened is not None:
                 return _handing_on(**{**update, **reopened, "disputed_sprints": disputed, "dispute_returns_to": None, "dispute_reason": None})
         return _handing_on(**update, stage=carry_on, disputed_sprints=disputed, dispute_returns_to=None, dispute_reason=None)

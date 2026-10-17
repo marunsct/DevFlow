@@ -135,6 +135,19 @@ def test_a_fix_that_breaks_nothing_is_kept_and_committed(workspace) -> None:
     assert ci.load(root, "latest").acceptance["[AC-2] deletes"] == "passed"
 
 
+def test_a_fix_that_replaces_a_unit_test_without_dropping_coverage_is_kept(workspace) -> None:
+    root = str(workspace.root)
+    workspace.runner.unit = {"old_behavior_assertion": "passed"}
+    base = engineering.before_a_fix(root, "defect_fix_1_0")
+    (workspace.root / "notes" / "src" / "main.js").write_text("// fixed\n")
+    workspace.runner.unit = {"new_behavior_assertion": "passed"}
+    workspace.runner.acceptance = {"[AC-1] adds": "passed", "[AC-2] deletes": "passed"}
+
+    assert engineering.after_a_fix(root, base, "defect_fix_1_0", "Fix behavior") == []
+    assert ci.head(root) != base
+    assert ci.load(root, "latest").unit["new_behavior_assertion"] == "passed"
+
+
 def test_the_code_review_s_blocking_findings_become_owned_defects(workspace, monkeypatch) -> None:
     from app.agents.code_reviewer import CodeReviewFinding, CodeReviewOutput
 
@@ -397,3 +410,20 @@ def test_fast_delivery_leaves_the_code_review_to_the_tests(workspace, monkeypatc
         judgement_model=None, checkpointer=None, repo_root=None, allow_subdirectories=True))
 
     assert update["stage"] == "test_and_triage" and reviewed == []
+
+
+def test_revert_note_contains_no_banned_words() -> None:
+    import re
+    from app.graph.workflow import _noted_as_reverted
+    from app.sprint import RemediationCycle, Defect
+
+    cycle = RemediationCycle(sprint_goal="goal", defects=[Defect(
+        description="d", severity="major", reproduction_steps="",
+        expected_behavior="", actual_behavior="initially failed",
+        owner="ui_ux",
+    )])
+    updated = _noted_as_reverted(cycle, [0], ["unit: tests/app.test.js › sample"])
+    text = updated.defects[0].actual_behavior
+    banned = ("task", "tasks", "to-do", "todo", "button", "click", "checkbox")
+    for word in banned:
+        assert not re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE), f"Banned word {word!r} found in revert note: {text}"

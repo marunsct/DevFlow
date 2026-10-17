@@ -1167,11 +1167,19 @@ def _noted_as_reverted(cycle: Any, indices: list[int], broke: list[str], *, in_a
     noted otherwise: which of its fixes broke the test is not known, and each is
     fixed alone next.
     """
+    unit_guidance = (
+        "\nIf the behaviour this sprint delivers is different from what was built before, the "
+        "test is out of date, not the product: change what it asserts to the behaviour "
+        "this sprint delivers, keep the test's name (a test that disappears is counted "
+        "as broken), and say in your answer that the test was out of date."
+        if any(item.startswith("unit:") for item in broke)
+        else ""
+    )
     note = (
         "A batch of fixes including this one was reverted, because together they broke what "
-        f"passed before them: {'; '.join(broke[:5])}. It is fixed on its own next."
+        f"passed before them: {'; '.join(broke[:5])}. It is fixed on its own next.{unit_guidance}"
         if in_a_batch
-        else f"A fix was tried and reverted, because it broke what passed before it: {'; '.join(broke[:5])}."
+        else f"A fix was tried and reverted, because it broke what passed before it: {'; '.join(broke[:5])}.{unit_guidance}"
     )
     return cycle.model_copy(update={"defects": [
         item.model_copy(update={"actual_behavior": f"{item.actual_behavior}\n{note}"})

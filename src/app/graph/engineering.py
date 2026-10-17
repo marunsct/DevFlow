@@ -498,6 +498,20 @@ def before_a_fix(root: str, stage_name: str) -> str:
     return base
 
 
+def _broken_tests(lost: list[str], before: ci.Snapshot | None, after: ci.Snapshot) -> list[str]:
+    """Tests in `lost` that genuinely broke, rather than unit tests replaced on purpose."""
+    if not lost:
+        return []
+    broken_acceptance = [item for item in lost if item.startswith("acceptance:")]
+    if not after.unit_ran or any(outcome != "passed" for outcome in after.unit.values()):
+        return lost
+    passing_before = sum(1 for outcome in (before.unit.values() if before else ()) if outcome == "passed")
+    passing_after = sum(1 for outcome in after.unit.values() if outcome == "passed")
+    if passing_after < passing_before:
+        return lost
+    return broken_acceptance
+
+
 def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list[str]:
     """Measure the fix. A fix that broke what passed before it is reverted; returns what it broke."""
     if not base or not ci_applies(root):
@@ -505,9 +519,10 @@ def after_a_fix(root: str, base: str, stage_name: str, description: str) -> list
     before = ci.load(root, "latest")
     after = ci.take(root, f"after {stage_name}")
     lost = ci.regressions(before, after)
-    if lost and ci.revert_to(root, base):
-        logger.warning("Reverted %s: it broke %d test(s) that passed before it", stage_name, len(lost))
-        return lost
+    broken = _broken_tests(lost, before, after)
+    if broken and ci.revert_to(root, base):
+        logger.warning("Reverted %s: it broke %d test(s) that passed before it", stage_name, len(broken))
+        return broken
     ci.save(root, after)
     ci.commit(root, f"Fix: {description[:60]}")
     return []

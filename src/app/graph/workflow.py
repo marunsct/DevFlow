@@ -2509,6 +2509,31 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     )
 
 
+def _the_served_app_is_the_scaffold_s_stub(relative: str, owner: str) -> Any:
+    """The wiring defect for a served app that is still the scaffold's stub.
+
+    The dominant live failure: 31 of 35 locked tests failed against the stub
+    while everything drafted sat in files nothing served, and the fixers
+    chased the criteria one by one without exiting. One bundled defect names
+    the gap itself (Initiative K.3; see `scaffold.entrypoint_is_still_the_stub`).
+    """
+    from app.agents.specialists import ReportedDefect
+
+    return ReportedDefect(
+        description=(
+            f"The served app is still the scaffold's stub: `{relative}` is byte-identical to "
+            "what the scaffold wrote, so nothing this run drafted is wired into the service "
+            "the acceptance suite runs against. This fails when the code runs."
+        ),
+        severity="major",
+        reproduction_steps=f"Read `{relative}`: it is unchanged since the scaffold wrote it.",
+        expected_behavior=f"`{relative}` serves the drafted product.",
+        actual_behavior=f"`{relative}` is still the scaffold's stub (the harness compared it byte for byte)",
+        affected_files=[relative],
+        owner=owner,
+    )
+
+
 def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: Any, test_round: int) -> Any:
     """A locked suite that gave no answer, run one file at a time by the harness; or None.
 
@@ -2530,7 +2555,7 @@ def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: An
         from app.acceptance.per_file import defects_from, each_file
         from app.agents.specialists import SpecialistOutput
         from app.stacks import contract
-        from app.stacks.scaffold import sandbox_runner
+        from app.stacks.scaffold import entrypoint_is_still_the_stub, sandbox_runner
         from app.tools.sandbox import timeout_for
 
         runs = each_file(root, contract.read(root) or {}, sandbox_runner(root))
@@ -2541,6 +2566,11 @@ def _diagnosed_file_by_file(state: Any, saved_run: dict[str, Any], milestone: An
         unit_ok, unit_output = _run_unit_tests_procedurally(root)
         if unit_ok is False:
             defects.append(_the_unit_tests_fail(milestone, unit_output))
+        # A suite that gave no answer, run file by file, failing most of it -
+        # ask whether what it ran against is still the scaffold's stub, and
+        # name the wiring gap itself instead of only its symptoms (K.3).
+        if (stubbed := entrypoint_is_still_the_stub(root)) is not None:
+            defects.append(_the_served_app_is_the_scaffold_s_stub(stubbed, owner))
     except Exception:  # noqa: BLE001 - the testing specialist's round, as before
         logger.warning("Could not run the acceptance suite file by file", exc_info=True)
         return None
@@ -8197,10 +8227,24 @@ def build_workflow_graph(
                 "test_round_%d: run by the harness (fast delivery); unit tests %s",
                 test_round, {True: "pass", False: "fail", None: "not recorded"}[unit_ok],
             )
+            harness_defects: list[Any] = (
+                [] if unit_ok is not False else [_the_unit_tests_fail(milestone, unit_output)]
+            )
+            if failing_due:
+                # The suite ran and locked criteria failed: ask whether what it
+                # ran against is still the scaffold's stub (Initiative K.3).
+                from app.stacks.scaffold import entrypoint_is_still_the_stub
+
+                if (stubbed := entrypoint_is_still_the_stub(state["repository"].root_path)) is not None:
+                    harness_defects.append(
+                        _the_served_app_is_the_scaffold_s_stub(
+                            stubbed, _the_unit_tests_fail(milestone, "").owner
+                        )
+                    )
             update = {
                 "__test_result__": SpecialistOutput(
                     changed_files=[],
-                    defects=[] if unit_ok is not False else [_the_unit_tests_fail(milestone, unit_output)],
+                    defects=harness_defects,
                     decisions=["The harness ran this round itself (fast delivery)."],
                 )
             }

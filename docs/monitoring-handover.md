@@ -724,6 +724,14 @@ know about its testing, and what changed most recently.
   install had landed the package somewhere a clean `npm ci` never reads.
   The warning "The CI gate found N package(s) the code imports that no
   manifest declares" is the line to count when U.2's KPI ledger lands.
+- **A served app that is still the scaffold's stub is named as such
+  (2026-10-18, Initiative K.3).** The packs that serve declare the file
+  their drafted routes live in (`entrypoint`); the harness's own measurement
+  rounds compare it byte for byte against the scaffold's stub, and while it
+  is unchanged one bundled defect says "The served app is still the
+  scaffold's stub" instead of 31 failing criteria saying nothing about the
+  wiring. This was the dominant live failure: the suite ran against the stub
+  while everything drafted sat in files nothing served.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

@@ -95,6 +95,14 @@ class StackPack:
     check_families: frozenset[str] = field(default_factory=frozenset)
     #: Where screenshots and other evidence the acceptance run leaves are found.
     evidence_dir: str = ""
+    #: The file the drafted service's routes or handlers live in, which the
+    #: scaffold writes as a stub. While it is still byte-identical to that
+    #: stub, nothing the run drafted is wired into the service the acceptance
+    #: suite runs against - the dominant live failure, measured as 31 of 35
+    #: locked tests failing against the stub (Initiative K.3; see
+    #: `scaffold.entrypoint_is_still_the_stub`). "" when the pack's server is
+    #: harness-owned or it serves nothing: there is no stub to outgrow.
+    entrypoint: str = ""
     #: What a failure looks like when the test's own code broke, rather than
     #: the product being unbuilt or wrong - for this pack's runner. Before
     #: anything is built every test fails; only these failures are the test's.

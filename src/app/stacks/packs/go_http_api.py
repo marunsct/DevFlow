@@ -100,6 +100,7 @@ ENTRYPOINT ["/server"]
 
 PACK = service_pack(
     name="go-http-api",
+    entrypoint="server.go",
     title="HTTP service in Go on the standard library",
     language="go",
     frameworks=("net/http", "go", "golang", "standard library", "stdlib"),

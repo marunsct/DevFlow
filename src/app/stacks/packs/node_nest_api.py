@@ -167,6 +167,7 @@ CMD ["node", "dist/main.js"]
 
 PACK = service_pack(
     name="node-nest-api",
+    entrypoint="src/app.module.ts",
     title="HTTP service in TypeScript on NestJS",
     language="typescript",
     frameworks=("nest", "nestjs", "nest.js"),

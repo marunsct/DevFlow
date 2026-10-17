@@ -81,6 +81,7 @@ def service_pack(
     kept_files: tuple[str, ...] = (),
     gitignore: str = "",
     kept_scripts: dict[str, str] | None = None,
+    entrypoint: str = "",
 ) -> StackPack:
     """A pack for an HTTP service in its own language, accepted through Playwright's `request` fixture."""
     return StackPack(
@@ -109,6 +110,7 @@ def service_pack(
         unit_pattern=unit_pattern,
         kept_files=("playwright.config.js", *kept_files),
         kept_scripts={"test:acceptance": "playwright test", **(kept_scripts or {})},
+        entrypoint=entrypoint,
         smoke_files={smoke_unit[0]: smoke_unit[1], "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE},
         guide=f"{guide}\n{DATA_GUIDE}",
         acceptance_guide=ACCEPTANCE_GUIDE,

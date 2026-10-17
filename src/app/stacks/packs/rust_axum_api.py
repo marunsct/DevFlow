@@ -93,6 +93,7 @@ ENTRYPOINT ["/usr/local/bin/service"]
 
 PACK = service_pack(
     name="rust-axum-api",
+    entrypoint="src/lib.rs",
     title="HTTP service in Rust on axum",
     language="rust",
     frameworks=("axum", "tokio"),

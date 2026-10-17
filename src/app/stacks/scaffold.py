@@ -43,6 +43,46 @@ class ScaffoldResult:
     problem: str = ""
 
 
+def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
+    """The declared entrypoint's workspace-relative path while it is still the stub; else None.
+
+    The dominant live failure was a served app that was still the scaffold's
+    stub: everything the run drafted sat in files nothing served, and 31 of 35
+    locked tests failed against the stub with no measurement ever saying so -
+    the fixers chased criteria one by one and could not exit (Initiative K.3).
+    The comparison is byte for byte against what `StackPack.render` produced
+    for this project's names, which is exactly what the scaffold wrote.
+
+    None - nothing to accuse - when the run has no contract, was not
+    scaffolded by a pack, the pack declares no entrypoint or keeps the file
+    itself, the rendered stub is unknown, or the file changed, went missing
+    or cannot be read.
+    """
+    from app.stacks import contract, pack_named
+
+    record = contract.read(repo_root)
+    if not record or not record.get("scaffolded", True):
+        return None
+    pack = pack_named(str(record.get("pack") or ""))
+    entrypoint = str(getattr(pack, "entrypoint", "") or "") if pack else ""
+    if not entrypoint or entrypoint in (getattr(pack, "kept_files", ()) or ()):
+        return None
+    try:
+        project = str(record.get("project") or "")
+        rendered = pack.render(
+            project,
+            str(record.get("title") or ""),
+            str(record.get("package") or "") or None,
+        ).get(entrypoint)
+        if rendered is None:
+            return None
+        current = (Path(repo_root) / project / entrypoint).read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    return f"{project}/{entrypoint}" if current == rendered else None
+
+
+
 def sandbox_runner(repo_root: str | Path) -> Runner:
     """Run the harness's own commands: contained and recorded like a stage's.
 

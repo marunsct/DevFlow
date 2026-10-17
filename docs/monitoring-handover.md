@@ -716,6 +716,14 @@ know about its testing, and what changed most recently.
   shows it in a red panel beside the badge. The sweeper also learned the two
   stage-note names measured shipping inside stored products: `blocker.txt`
   and `verification.log` are throwaways now.
+- **An import no manifest declares is one bundled defect (2026-10-18,
+  Initiative K.4).** At the CI gate, once the batch is done, the harness
+  reconciles the code's third-party imports against the manifests
+  (`package.json`; `requirements*.txt`/`pyproject.toml`) and bundles every
+  gap into a single defect for the fixer - the jsdom class, where a bare
+  install had landed the package somewhere a clean `npm ci` never reads.
+  The warning "The CI gate found N package(s) the code imports that no
+  manifest declares" is the line to count when U.2's KPI ledger lands.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

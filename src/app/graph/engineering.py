@@ -246,7 +246,47 @@ def underlined_in_the_batch(state: Any, root: str, since: str) -> list[Any]:
                 owner=_owner_of(state, ""),
             ))
     defects.extend(_what_the_compiler_says(state, root, since, pinned or ""))
-    return defects[:MOST_UNDERLINED_DEFECTS]
+    # The bundled manifest-drift defect rides after the cap: it is one defect
+    # however many imports it names, and truncating it would hide the root
+    # cause behind its symptoms (Initiative K.4).
+    return [
+        *defects[:MOST_UNDERLINED_DEFECTS],
+        *_what_the_manifests_do_not_declare(state, root, since, pinned or ""),
+    ]
+
+
+def _what_the_manifests_do_not_declare(state: Any, root: str, since: str, project: str) -> list[Any]:
+    """One bundled defect for the packages the code imports that no manifest declares.
+
+    A bare install can land a package somewhere the product's own commands
+    never read, and a clean install then provides none of it: the runner
+    fails and the failure looks like a code bug while the manifest is what
+    broke. The reconciliation is deterministic - see
+    `app.analysis.dependency_drift` - and runs at the gate, once the batch is
+    done, because until then another work order may still write the manifest
+    entry (Initiative K.4).
+    """
+    from app.analysis import dependency_drift
+
+    directory = Path(root) / project if project else None
+    if directory is None or not directory.is_dir():
+        return []
+    if not [
+        p for p in ci.changed_since(root, since)
+        if p.lower().endswith(dependency_drift.CODE_SUFFIXES)
+    ]:
+        return []
+    try:
+        found = dependency_drift.undeclared(directory)
+    except Exception:  # noqa: BLE001 - a check that cannot run finds nothing
+        return []
+    if not found:
+        return []
+    logger.warning(
+        "The CI gate found %d package(s) the code imports that no manifest declares: %s",
+        len(found), ", ".join(name for name, _, _ in found[:8]),
+    )
+    return [dependency_drift.the_bundled_defect(found, owner=_owner_of(state, ""))]
 
 
 def _what_the_compiler_says(state: Any, root: str, since: str, project: str) -> list[Any]:

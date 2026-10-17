@@ -511,9 +511,13 @@ _READ_ONLY_RULES = (
     "  produce travels in your structured response, and the workflow renders any\n"
     "  document from it. Do not look for a write tool, and do not report that one\n"
     "  is missing - nothing is missing.\n"
+    "- Do not call tools to edit or write files. They are not offered and will fail.\n"
+    "  Any code or verification changes must be delegated or reported in your\n"
+    "  structured response.\n"
     "- You may read anything in the workspace with `ls`, `read_file`, `glob` and\n"
     "  `grep`, and reading widely before you answer is the whole of your job.\n"
 )
+
 
 
 #: What every stage's answer tool says about itself. It used to be the schema

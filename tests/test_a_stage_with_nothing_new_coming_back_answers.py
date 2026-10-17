@@ -98,3 +98,16 @@ def test_one_call_of_a_withheld_tool_is_not_yet_the_end():
     captured = _captured(_stage([SAME] * (IDENTICAL_ANSWERS_BEFORE_WITHHOLDING_THE_TOOL + 1), tools=("glob",)))
 
     assert captured.get("tools") != []
+
+
+def test_invalid_tool_errors_repeated_leave_only_the_answer():
+    """An unoffered tool returning 'is not a valid tool' yields nothing new; five in a row leaves only the answer."""
+    invalid1 = "Error: edit_file is not a valid tool, try one of [glob, ls, read_file]."
+    invalid2 = "Error: SearchReplace is not a valid tool, try one of [glob, ls, read_file]."
+    results = [NEW] + [invalid1 if i % 2 == 0 else invalid2 for i in range(NOTHING_NEW_BEFORE_THE_ANSWER)]
+    captured = _captured(_stage(results, tools=("edit_file", "SearchReplace")))
+
+    assert captured.get("tools") == []
+    assert TOOLS_WITHHELD_NOTICE in str(captured["messages"][-1])
+
+

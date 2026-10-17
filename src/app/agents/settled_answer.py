@@ -814,9 +814,11 @@ _NOTHING_NEW = re.compile(
     r"returned exactly what it returned|the same bytes|Refusing to read .{0,200}? again|"
     r"You have already read|nothing you did not already have|nothing you have not already been given|"
     r"is in the project memory at the start of this conversation|has had its share of|"
-    r"There is nothing to compare against",
+    r"There is nothing to compare against|"
+    r"is not a valid tool",
     re.S,
 )
+
 
 
 def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE_ANSWER) -> bool:
@@ -1121,12 +1123,15 @@ def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
         pair = asked.get(str(getattr(message, "tool_call_id", "") or ""))
         if pair is None:
             continue
-        if not _REFUSED.match(str(getattr(message, "content", "") or "")):
+        content = str(getattr(message, "content", "") or "")
+        if not _REFUSED.match(content):
             continue
-        failures[pair] = failures.get(pair, 0) + 1
+        key = (pair[0], "invalid_tool") if "is not a valid tool" in content else pair
+        failures[key] = failures.get(key, 0) + 1
     if not failures:
         return None
     (name, _identity), count = max(failures.items(), key=lambda item: item[1])
+
     if count < IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL:
         return None
     return name, count

@@ -757,8 +757,12 @@ Constraints:
   needed architecture change, record it as a blocker for human review instead
   of changing it yourself.
 - Do not grant a specialist access beyond their delegated task.
-- Do not modify application source code yourself.
-- Do not change repo files except through the approved artifact tool.
+- Do not modify application source code or automated test files yourself; all
+  changes must be delegated to specialist roles in your work orders.
+- Do not attempt to change repository files directly; you have no file
+  modification tools. Your plan reaches the workflow only through your
+  structured response.
+
 - Do not write a document. The workflow renders `docs/milestone_plan.md` from the
   structured response you return, so your milestone plan reaches its readers
   either way - and only through that response. Writing it yourself

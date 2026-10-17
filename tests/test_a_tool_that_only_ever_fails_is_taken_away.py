@@ -126,6 +126,20 @@ class TestCountingTheRepeats:
 
         assert _a_tool_refused_identically(working) is None
 
+    def test_an_unoffered_tool_refused_across_varying_arguments_counts(self) -> None:
+        """Calling an unoffered tool cannot succeed on any arguments; refusals count by tool name."""
+        unoffered = _conversation(
+            IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
+            tool="edit_file",
+            vary=True,
+            result="Error: edit_file is not a valid tool, try one of [ls, read_file, glob, grep].",
+        )
+        assert _a_tool_refused_identically(unoffered) == (
+            "edit_file",
+            IDENTICAL_FAILURES_BEFORE_WITHHOLDING_THE_TOOL,
+        )
+
+
     def test_calls_that_succeeded_are_not_counted(self) -> None:
         answered = _conversation(7, result="@@ lines 1-20 of 20 @@\nconst a = 1;")
 

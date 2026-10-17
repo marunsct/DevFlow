@@ -3,7 +3,7 @@
 **Written for:** whoever continues the harness-hardening loop from here, on a
 different account and with none of this conversation's context.
 
-**As of:** 2026-10-17 07:25 JST (stage 1 gate: 2 of 2 clean runs — STAGE 1 GATE PASSED!; start at
+**As of:** 2026-10-17 11:25 JST (stage 1 gate: 2 of 2 clean runs — STAGE 1 GATE PASSED!; start at
 `docs/HANDOVER.md` §0), branch `harness-hardening-session`, pushed to the git
 remote named `main` (`git push main harness-hardening-session`). Section 0 is
 kept current by whoever runs the loop - **in the same commit as any change to
@@ -91,6 +91,10 @@ A new agent, session or account starts at `docs/HANDOVER.md`: the first ten minu
 |---|---|
 | brief | the benchmark in `benchmarks/` the gate is on (`benchmarks/README.md`); `data/loop/current_brief.txt` |
 
+  - **2026-10-17 11:20 JST:** Unoffered tool failure grouping across varying arguments (`settled_answer`) and read-only prompt hardening (`role_agent`, `technical_lead`).
+    When read-only roles without file-writing tools (`can_write=False`, e.g. `technical_lead`, `consult_testing`) repeatedly called unoffered editing tools (`edit_file`) with varying arguments, `_NOTHING_NEW` lacked recognition for `is not a valid tool`, and `_a_tool_refused_identically` grouped strictly by `(name, exact_args)`, so 48+ invalid tool calls accumulated without triggering tool refusal or early stall termination.
+    Added `|is not a valid tool` to `_NOTHING_NEW` so `_nothing_new_lately` detects unoffered tool loops and triggers `answer_only` after 5 non-advancing calls. Grouped invalid tool calls by `(pair[0], "invalid_tool")` in `_a_tool_refused_identically` so 4 calls to an unoffered tool across varying arguments count as 4 refusals and withhold the tool. Added explicit instructions to read-only agents in `_READ_ONLY_RULES` and `technical_lead._SYSTEM_PROMPT` that file editing/writing tools are not offered and will fail, and all changes must be delegated via work orders in structured responses.
+    Proven to fail on old code; unit tests in `tests/test_a_stage_with_nothing_new_coming_back_answers.py` and `tests/test_a_tool_that_only_ever_fails_is_taken_away.py`. Zero banned words verified in `tests/test_banned_words_in_refusal.py`. Full suite passed (10,896 passed).
   - **2026-10-17 08:50 JST:** Defect fix unit test replacement preservation (`engineering.after_a_fix`, `workflow`).
     When a specialist fixes code to satisfy acceptance tests and replaces or updates an outdated unit test asserting the previous behavior (e.g. updating an assertion from duplicate DOM elements to a single container), `ci.regressions(before, after)` flagged the missing old test name as a regression. `after_a_fix` previously reverted the fix immediately even when all unit tests passed (0 failures), passing test count was maintained or increased, and acceptance tests improved. This trapped agents in cyclic rollback loops across defect fix attempts.
     Added `_broken_tests` in `src/app/graph/engineering.py`: if every unit test passes, passing unit test count is $\ge$ previous passing count, and no acceptance tests regressed, a renamed or updated unit test is preserved rather than rejected as broken. Added `_OR_THE_TEST_IS_OUT_OF_DATE` guidance to `_noted_as_reverted` in `src/app/graph/workflow.py` instructing specialists to retain test names when revising assertions.

@@ -604,7 +604,10 @@ know about its testing, and what changed most recently.
   unit tests), `scripts/serve.mjs`, and the manifest scripts `start`, `test`,
   `test:acceptance`. Agents are refused writes to them and the workspace digest
   labels them "the project's test commands run it". The scaffold proves itself
-  with two smoke tests before any agent writes.
+  with two smoke tests before any agent writes. A pack scaffold that cannot be
+  proven is retried whole once and then stops the run at an escalation
+  (2026-10-18, Initiative J.1) - it no longer continues "left to the agents";
+  stacks no pack covers keep that documented escape.
 - **Acceptance suite.** Written by QA from the criteria, then locked
   (`acceptance/`); the harness runs it every round. A failing test carries what
   the page showed when it failed, and - when nothing on the page matches its

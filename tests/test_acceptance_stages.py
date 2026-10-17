@@ -87,17 +87,52 @@ def test_scaffold_proves_the_pack_and_records_the_decision(tmp_path, monkeypatch
     assert (tmp_path / "docs" / "decision_log.md").is_file()
 
 
-def test_a_scaffold_that_cannot_be_proven_drops_the_pack(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.stacks.scaffold.scaffold", lambda *a, **k: SimpleNamespace(ok=False, problem="no network")
-    )
+def test_a_scaffold_that_cannot_be_proven_escalates_instead_of_continuing(tmp_path, monkeypatch) -> None:
+    """An unproven setup used to continue "left to the agents".
+
+    Measured on one run: the acceptance smoke test ran zero tests and exited
+    0, the scaffold was abandoned, its files stayed with no contract behind
+    them, and a later sprint's tester switched the next sprint's tests off.
+    A run whose setup was never proven stops and says why - parked for a
+    person when one is watching, failed when not - instead of handing the
+    doubt to every later gate.
+    """
+    attempts: list[str] = []
+
+    def fake(root, pack, project, title, package=None):
+        attempts.append(pack.name)
+        return SimpleNamespace(ok=False, problem="no network")
+
+    monkeypatch.setattr("app.stacks.scaffold.scaffold", fake)
     monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
 
     update = nodes.scaffold(_state(tmp_path, stack_pack="browser-javascript"), CONFIG, CTX)
 
-    assert update["stage"] == "acceptance_author"
-    assert update["stack_pack"] is None
+    assert attempts == ["browser-javascript", "browser-javascript"]
+    assert update["stage"] == "escalation"
+    assert "no network" in update["escalation"]["error"]
+    assert update["scaffold_result"]["ok"] is False
     assert "no network" in update["decisions"][0]["rationale"]
+
+
+def test_a_scaffold_proven_on_the_second_attempt_continues(tmp_path, monkeypatch) -> None:
+    """The retry covers the state around one attempt: a worker recreated
+    mid-install, a registry blip longer than a command's own retry."""
+    attempts: list[str] = []
+
+    def fake(root, pack, project, title, package=None):
+        attempts.append(pack.name)
+        ok = len(attempts) > 1
+        return SimpleNamespace(ok=ok, problem="" if ok else "a blip")
+
+    monkeypatch.setattr("app.stacks.scaffold.scaffold", fake)
+    monkeypatch.setattr("app.graph.workflow._stop_if_cancelled", lambda run_id: None)
+
+    update = nodes.scaffold(_state(tmp_path, stack_pack="browser-javascript"), CONFIG, CTX)
+
+    assert attempts == ["browser-javascript", "browser-javascript"]
+    assert update["stage"] == "acceptance_author"
+    assert update["scaffold_result"]["ok"]
 
 
 def test_no_pack_and_no_setup_stage_means_no_scaffold(tmp_path, monkeypatch) -> None:

@@ -1326,7 +1326,7 @@ implementation constraints and are restated in the Notes column.
 
 | Item | Priority | Status | Notes |
 |---|---|---|---|
-| J.1 vacuous-green hard gate | P0 | SUITE GATES DONE 2026-10-18 (setup-proof amendment next) | `suite.vacuous_green` (zero tests, no criterion named, declared test never collected) enforced at lock (never waivable by round count), test rounds (suite defect → repair flow), and release (held even with all criteria deferred); tests in `tests/test_a_suite_that_proved_nothing_is_not_green.py`; documented in monitoring-handover §0.10. Remaining: setup-proof fail-closed (scaffold node) |
+| J.1 vacuous-green hard gate | P0 | DONE 2026-10-18 | `suite.vacuous_green` (zero tests, no criterion named, declared test never collected) enforced at lock (never waivable by round count), test rounds (suite defect → repair flow), and release (held even with all criteria deferred); tests in `tests/test_a_suite_that_proved_nothing_is_not_green.py`; documented in monitoring-handover §0.10. setup-proof amendment: a pack scaffold that cannot be proven is retried whole once, then the run escalates (parked attended / failed unattended) instead of continuing "left to the agents"; pack-less custom stacks keep their documented escape (`custom_setup` already requires >=1 passing smoke test) |
 | J.4 `completed_with_gaps` status | P0 | NOT STARTED | Includes deferred+failing criteria, reclassification counts, demoted review findings |
 | J.5 records cite the verdict | P0 | NOT STARTED | Process rule + delivery-panel/bench-export fields; a green suite alone is never "verified" |
 | K.1 environment contract to architect/QA | P0 | NOT STARTED | `describe_execution_environment()` reaches architect, acceptance author, QA prompts — not only the stack selector |

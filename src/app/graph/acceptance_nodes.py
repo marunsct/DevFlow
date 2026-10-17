@@ -60,7 +60,12 @@ def _stack(state: Any) -> Any:
 
 def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]:
     """Scaffold the chosen pack into the project directory, proven by its smoke tests."""
-    from app.graph.workflow import APP_RUN_ID_KEY, _handing_on, _stop_if_cancelled
+    from app.graph.workflow import (
+        APP_RUN_ID_KEY,
+        _escalate_to_a_human,
+        _handing_on,
+        _stop_if_cancelled,
+    )
 
     _stop_if_cancelled(config["configurable"].get(APP_RUN_ID_KEY))
     root = _root(state)
@@ -79,24 +84,61 @@ def scaffold(state: Any, config: RunnableConfig, ctx: Context) -> dict[str, Any]
             brief = getattr(state.get("document"), "text", "") or ""
             package = stated_module(brief) if pack.language == "python" else None
             result = scaffold_pack(root, pack, project, title or project, package=package)
+            if not result.ok:
+                # One retry of the whole scaffold: the commands inside a single
+                # attempt are each retried once already, so a second attempt
+                # covers the state around them - a worker recreated mid-install,
+                # a registry blip longer than one command's retry.
+                logger.warning(
+                    "Scaffold %s was not kept (%s); trying the whole scaffold once more",
+                    pack.name, result.problem,
+                )
+                result = scaffold_pack(root, pack, project, title or project, package=package)
             update["scaffold_result"] = {
                 "ok": result.ok, "pack": pack.name, "project": project, "problem": result.problem,
             }
             if result.ok:
                 logger.info("Scaffolded %s into %s/; its smoke tests passed", pack.title, project)
+                _decide(
+                    state, update, point="scaffold",
+                    question="How is the project set up?",
+                    options=[pack.title, "stop and ask"],
+                    decision=pack.title,
+                    rationale=(
+                        f"The {pack.title} scaffold installed and passed its own unit and acceptance "
+                        "smoke tests."
+                    ),
+                )
             else:
-                logger.warning("Scaffold %s was not kept: %s", pack.name, result.problem)
-                update["stack_pack"] = None
-            _decide(
-                state, update, point="scaffold",
-                question="How is the project set up?",
-                options=[pack.title, "left to the agents"],
-                decision=pack.title if result.ok else "left to the agents",
-                rationale=(
-                    f"The {pack.title} scaffold installed and passed its own unit and acceptance "
-                    "smoke tests." if result.ok else f"The scaffold could not be proven: {result.problem}"
-                ),
-            )
+                # Fail closed. An unproven setup used to continue "left to the
+                # agents": measured on one run, the acceptance smoke test ran
+                # zero tests and exited 0, the scaffold was abandoned, its
+                # files stayed with no contract behind them - "the harness
+                # keeps this" in their own comments, and nothing kept them -
+                # and a later sprint's tester switched the next sprint's tests
+                # off, with nothing to put them back. A run whose setup was
+                # never proven stops and says why: parked for a person when one
+                # is watching, failed when not. See `app.graph.escalation`.
+                logger.error("Scaffold %s could not be proven twice: %s", pack.name, result.problem)
+                _decide(
+                    state, update, point="scaffold",
+                    question="How is the project set up?",
+                    options=[pack.title, "stop and ask"],
+                    decision="stop and ask",
+                    rationale=(
+                        f"The {pack.title} scaffold could not be proven after two full attempts: "
+                        f"{result.problem}"
+                    ),
+                )
+                return _escalate_to_a_human(
+                    state,
+                    error=(
+                        f"The {pack.title} scaffold could not be proven after two full attempts: "
+                        f"{result.problem}. Nothing is built on an unproven setup; every later "
+                        "gate would inherit the doubt."
+                    ),
+                    **{key: value for key, value in update.items() if key != "stage"},
+                )
     elif pack is None and not already_done:
         set_up = _set_up_a_stack_no_pack_covers(state, config, ctx)
         if set_up is not None:

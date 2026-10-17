@@ -866,6 +866,31 @@ def _short_temporary_directory(workspace: str) -> str:
     return path
 
 
+def _the_project_virtualenv(workspace: str) -> str | None:
+    """The project's virtualenv bin directory, when this workspace's project has one.
+
+    Found through the project contract, so it is the same directory the
+    pack's own commands use - `.venv/bin/python` in a Python pack's install,
+    unit and serve argv - and never a guess about where a virtualenv might
+    be (Initiative K.5). None when there is no contract, no project, no
+    virtualenv or no interpreter in it: a command then keeps the PATH it
+    had, and nothing is claimed that is not there.
+    """
+    try:
+        from app.stacks import contract
+
+        record = contract.read(workspace)
+        project = str((record or {}).get("project") or "")
+        if not project:
+            return None
+        candidate = Path(workspace) / project / ".venv" / "bin"
+        if (candidate / "python").exists() or (candidate / "python3").exists():
+            return str(candidate)
+    except Exception:  # noqa: BLE001 - a PATH that cannot be enriched stays as it is
+        logger.debug("Could not look for the project's virtualenv", exc_info=True)
+    return None
+
+
 def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict[str, str]:
     """A minimal environment for a directly-executed command."""
     environment = {
@@ -877,6 +902,17 @@ def _child_environment(workspace: str, extra_env: Dict[str, str] | None) -> Dict
     from app.tools.runtimes import path_for
 
     environment["PATH"] = path_for(workspace, environment["PATH"])
+    # Installs must land in the interpreter environment the product's own
+    # commands read (Initiative K.5). The environment contract tells every
+    # stage so, and then a bare `pip install` in a sandbox command landed in
+    # the system environment while a Python pack runs everything through
+    # `.venv/bin/python` - instructing and then punishing. The project's
+    # virtualenv goes in front of every command's PATH, so `pip`, `python`
+    # and `pytest` are the virtualenv's and an install is visible to the
+    # acceptance server the moment it lands.
+    virtualenv = _the_project_virtualenv(workspace)
+    if virtualenv:
+        environment["PATH"] = virtualenv + os.pathsep + environment["PATH"]
     # Tool caches (npm, pip, cargo) land in the workspace rather than in a
     # home directory shared by every run.
     home = os.path.join(workspace, ".agent-home")

@@ -732,6 +732,13 @@ know about its testing, and what changed most recently.
   scaffold's stub" instead of 31 failing criteria saying nothing about the
   wiring. This was the dominant live failure: the suite ran against the stub
   while everything drafted sat in files nothing served.
+- **A sandbox install lands where the product reads (2026-10-18, Initiative
+  K.5).** The project's virtualenv - found through the contract record, the
+  same `.venv/bin` the pack's commands use - now goes in front of every
+  sandbox command's PATH. A bare `pip install` used to land in the system
+  environment while a Python pack serves through `.venv/bin/python`: the
+  contract said installs must land where the product's commands read, and the
+  sandbox contradicted it. Now it does not.
 
 **Watch on the next runs:** unit-test churn on page code (five web-todo runs in
 a row before `80e97e7`; should now be gone); probes named like the product

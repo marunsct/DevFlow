@@ -2672,6 +2672,128 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         return None
 
 
+def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
+    """Whether the defect's own tests pass in the snapshot `label` names; None when it cannot say.
+
+    Its own tests are the acceptance tests naming its criteria - or, when it
+    names none, the unit tests - as `_the_defect_s_tests_pass` picks them, read
+    from what the fix's measurement already ran rather than run again. Only
+    the latest snapshot, and only under `label`: one taken at another moment
+    measured another change.
+    """
+    if not label:
+        return None
+    try:
+        from app import ci
+        from app.acceptance.junit import tags_in
+
+        snapshot = ci.load(root, "latest")
+        if snapshot is None or snapshot.label != label:
+            return None
+        tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
+        if tags:
+            mine = [outcome for key, outcome in snapshot.acceptance.items() if tags & set(tags_in(key))]
+            if mine:
+                return all(outcome == "passed" for outcome in mine)
+        if snapshot.unit_ran and snapshot.unit:
+            return all(outcome != "failed" for outcome in snapshot.unit.values())
+        return None
+    except Exception:  # noqa: BLE001 - a measurement that cannot answer says nothing
+        return None
+
+
+def _settle_the_fix(
+    state: Any, cycle: Any, defect_index: int, stage_name: str, fix_result: Any, *, measured: str = "",
+) -> tuple[dict[str, Any], bool]:
+    """What one fix that broke nothing settles: (the update, whether it blames a locked test).
+
+    The update carries `remediation` - the defect fixed, or left open with
+    the reason in the ledger - and the fix's output. `measured` is the label
+    of the snapshot `engineering.after_a_fix` just took of this fix: the
+    defect's own tests in it decide, not the test the fixer names
+    (`_the_defect_s_tests_in`).
+    """
+    from app.observability import defect_ledger
+
+    defect = cycle.defects[defect_index]
+    update: dict[str, Any] = {}
+    outputs = dict(state.get("specialist_outputs", {}))
+    outputs[stage_name] = fix_result
+
+    regression_test = "; ".join(fix_result.tests)
+    # What the execution ledger confirms actually ran and passed for this
+    # fix, or "". `VerificationRun` has always said a claim there is checked
+    # against the ledger; until now it never was, and "fixed" meant the
+    # specialist had named a test. It does not gate the transition - see
+    # `mark_defect_fixed` for why that would cost more than it saves.
+    verified_by = _what_the_ledger_confirms(
+        state["repository"].root_path, fix_result.verification
+    )
+    if fix_result.blockers and not fix_result.changed_files:
+        # Blocked and nothing changed: not a fix. Recorded as fixed, it was
+        # closed with no change behind it, and a stage that could not
+        # reply at all now answers this way (`_blocked_for_want_of_room`).
+        # The next round measures it again.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
+        )
+    elif defect.regression_test_required and not regression_test:
+        # No named regression test: the defect stays open on purpose. The
+        # next test round will count this as another failed attempt, so the
+        # bounded loop still terminates.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="the fix named no regression test",
+        )
+    elif (measured_now := _the_defect_s_tests_in(state["repository"].root_path, measured, defect)) is False:
+        # Its own tests still fail, measured after the fix. Closed, the next
+        # round found it again and charged the attempt a round late.
+        update["remediation"] = cycle
+        defect_ledger.note(
+            "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail="its own tests still fail, measured after the fix",
+        )
+    else:
+        if measured_now is None:
+            logger.info("The fix for '%s' could not be measured at settlement", defect.description[:80])
+        if not verified_by:
+            logger.info(
+                "Stage %s reported a fix for '%s' with no command the ledger "
+                "records as having run and passed",
+                stage_name, defect.description[:80],
+            )
+        # How it was fixed, for the Sprint Record's defect log: the fixer's
+        # own decisions and the files it changed.
+        resolution = "; ".join(
+            [" ".join(str(d).split()) for d in fix_result.decisions if str(d).strip()]
+            + ([f"changed {', '.join(fix_result.changed_files)}"] if fix_result.changed_files else [])
+        )[:600]
+        update["remediation"] = mark_defect_fixed(
+            cycle, defect_index, regression_test=regression_test, verified_by=verified_by,
+            resolution=resolution,
+        )
+        defect_ledger.note(
+            "fixed", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
+            sprint=state.get("current_sprint_index", 0),
+            detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
+        )
+
+    still_open = update["remediation"] is cycle
+    if still_open:
+        # One more failed try: past `escalate_after()` its next fix runs on
+        # the judgement model (`_the_build_model`).
+        update["remediation"] = _one_more_failed_fix(cycle, defect_index)
+    blames = still_open and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
+    update["specialist_outputs"] = outputs
+    return update, blames
+
+
 def _run_unit_tests_procedurally(repo_root: str) -> tuple[bool | None, str]:
     """Run the contract's unit test command: (whether it passed, its output).
 
@@ -8934,83 +9056,6 @@ def build_workflow_graph(
         request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
         return request, co_defects
 
-    def _settle_the_fix(
-        state: Any, cycle: Any, defect_index: int, stage_name: str, fix_result: Any,
-    ) -> tuple[dict[str, Any], bool]:
-        """What one fix that broke nothing settles: (the update, whether it blames a locked test).
-
-        The update carries `remediation` - the defect fixed, or left open with
-        the reason in the ledger - and the fix's output.
-        """
-        from app.observability import defect_ledger
-
-        defect = cycle.defects[defect_index]
-        update: dict[str, Any] = {}
-        outputs = dict(state.get("specialist_outputs", {}))
-        outputs[stage_name] = fix_result
-
-        regression_test = "; ".join(fix_result.tests)
-        # What the execution ledger confirms actually ran and passed for this
-        # fix, or "". `VerificationRun` has always said a claim there is checked
-        # against the ledger; until now it never was, and "fixed" meant the
-        # specialist had named a test. It does not gate the transition - see
-        # `mark_defect_fixed` for why that would cost more than it saves.
-        verified_by = _what_the_ledger_confirms(
-            state["repository"].root_path, fix_result.verification
-        )
-        if fix_result.blockers and not fix_result.changed_files:
-            # Blocked and nothing changed: not a fix. Recorded as fixed, it was
-            # closed with no change behind it, and a stage that could not
-            # reply at all now answers this way (`_blocked_for_want_of_room`).
-            # The next round measures it again.
-            update["remediation"] = cycle
-            defect_ledger.note(
-                "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
-                sprint=state.get("current_sprint_index", 0),
-                detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
-            )
-        elif defect.regression_test_required and not regression_test:
-            # No named regression test: the defect stays open on purpose. The
-            # next test round will count this as another failed attempt, so the
-            # bounded loop still terminates.
-            update["remediation"] = cycle
-            defect_ledger.note(
-                "left open", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
-                sprint=state.get("current_sprint_index", 0),
-                detail="the fix named no regression test",
-            )
-        else:
-            if not verified_by:
-                logger.info(
-                    "Stage %s reported a fix for '%s' with no command the ledger "
-                    "records as having run and passed",
-                    stage_name, defect.description[:80],
-                )
-            # How it was fixed, for the Sprint Record's defect log: the fixer's
-            # own decisions and the files it changed.
-            resolution = "; ".join(
-                [" ".join(str(d).split()) for d in fix_result.decisions if str(d).strip()]
-                + ([f"changed {', '.join(fix_result.changed_files)}"] if fix_result.changed_files else [])
-            )[:600]
-            update["remediation"] = mark_defect_fixed(
-                cycle, defect_index, regression_test=regression_test, verified_by=verified_by,
-                resolution=resolution,
-            )
-            defect_ledger.note(
-                "fixed", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
-                sprint=state.get("current_sprint_index", 0),
-                detail=(resolution or "") + (f" (verified by {verified_by})" if verified_by else " (no passing command recorded)"),
-            )
-
-        still_open = update["remediation"] is cycle
-        if still_open:
-            # One more failed try: past `escalate_after()` its next fix runs on
-            # the judgement model (`_the_build_model`).
-            update["remediation"] = _one_more_failed_fix(cycle, defect_index)
-        blames = still_open and _blames_a_locked_test(state, [*fix_result.blockers, *fix_result.decisions])
-        update["specialist_outputs"] = outputs
-        return update, blames
-
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:
         """A fast-delivery fix by rewriting the defect's files, or None for the agent loop.
 
@@ -9160,7 +9205,9 @@ def build_workflow_graph(
                 "defect_cursor": defect_index + 1,
                 "fix_base_commit": "",
             })
-        settled, blames = _settle_the_fix(state, cycle, defect_index, stage_name, fix_result)
+        settled, blames = _settle_the_fix(
+            state, cycle, defect_index, stage_name, fix_result, measured=f"after {stage_name}",
+        )
         update.update(settled)
         if blames and _a_dispute_may_be_held_now(state):
             # The fix stage left its defect open and says a locked test is
@@ -9355,7 +9402,7 @@ def build_workflow_graph(
                 continue
             settled, blames = _settle_the_fix(
                 {**state, "specialist_outputs": {**outputs, **update.get("specialist_outputs", {})}},
-                settled_cycle, index, stage_name, result,
+                settled_cycle, index, stage_name, result, measured=f"after defect_fix_{round_}_batch",
             )
             settled_cycle = settled["remediation"]
             update["specialist_outputs"] = settled["specialist_outputs"]

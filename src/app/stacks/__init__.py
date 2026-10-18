@@ -209,6 +209,16 @@ class StackPack:
     #: use (`sandbox._run_and_watch_the_tree`).
     process_memory: str = ""
 
+
+    @property
+    def probe_runner(self) -> str:
+        """The runner the release's interface-contract checks go through ("playwright"), or "" for none.
+
+        Declared by what the pack ships rather than named in the checks' own
+        module, so a new kind of pack declares its runner here and the checks
+        stay free of any one tool (Initiative AO.10, AU).
+        """
+        return "playwright" if "playwright.config.js" in self.files else ""
     def render(self, project: str, title: str, package: str | None = None) -> dict[str, str]:
         """The scaffold's files with this project's names filled in."""
         return _filled(self.files, project, title, package)

@@ -141,6 +141,19 @@ def playwright_config(suite_config: str) -> str:
     )
 
 
+#: The probe runners a pack can declare (`StackPack.probe_runner`): what compiles
+#: the contract's lines into checks, and the command that runs them. Everything
+#: specific to one tool is here and in its two functions above.
+PROBE_RUNNERS: dict[str, dict[str, Any]] = {
+    "playwright": {
+        "checks": playwright_checks,
+        "config": playwright_config,
+        "command": ("npx", "playwright", "test", "--config", CONFIG_FILE),
+        "base_config": "playwright.config.js",
+    },
+}
+
+
 def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) -> list[str]:
     """A completion gap for each contract check the product fails at release; [] when none, or none can run."""
     try:
@@ -153,17 +166,18 @@ def what_the_contract_checks_find(repo_root: str | Path, *, runner: Any = None) 
         if found is None or not checks:
             return []
         pack, record = found
-        if "playwright.config.js" not in pack.files:
+        probe = PROBE_RUNNERS.get(pack.probe_runner)
+        if probe is None:
             return []
         project = root / str(record.get("project") or "")
         (project / CHECK_DIR).mkdir(parents=True, exist_ok=True)
-        (project / CHECK_DIR / "contract.spec.js").write_text(playwright_checks(checks), encoding="utf-8")
-        (project / CONFIG_FILE).write_text(playwright_config("playwright.config.js"), encoding="utf-8")
+        (project / CHECK_DIR / "contract.spec.js").write_text(probe["checks"](checks), encoding="utf-8")
+        (project / CONFIG_FILE).write_text(probe["config"](probe["base_config"]), encoding="utf-8")
         report_file = project / REPORT_FILE
         junit.clear(report_file)
         try:
             (runner or suite._sandbox_runner(root))(  # noqa: SLF001 - the suite's own runner
-                ["npx", "playwright", "test", "--config", CONFIG_FILE], "test", str(record.get("project") or ""),
+                list(probe["command"]), "test", str(record.get("project") or ""),
             )
             report = junit.read(report_file)
         finally:

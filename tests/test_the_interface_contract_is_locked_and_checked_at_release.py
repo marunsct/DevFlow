@@ -47,7 +47,7 @@ def _locked_project(tmp_path, monkeypatch):
     monkeypatch.setattr(suite, "_state", lambda root: state)
     monkeypatch.setattr(suite, "_save_state", lambda root, data: state.update(data))
     state: dict = {}
-    pack = SimpleNamespace(files={"playwright.config.js": ""})
+    pack = SimpleNamespace(files={"playwright.config.js": ""}, probe_runner="playwright")
     monkeypatch.setattr(contract, "the_pack", lambda root: (pack, {"project": "app"}))
     return state
 
@@ -89,7 +89,7 @@ def test_a_failed_check_at_release_is_a_gap_and_the_files_are_removed(tmp_path, 
 def test_a_pack_without_playwright_is_not_checked(tmp_path, monkeypatch):
     _locked_project(tmp_path, monkeypatch)
     ic.record_at_lock(tmp_path, LINES)
-    monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={}), {"project": "app"}))
+    monkeypatch.setattr(contract, "the_pack", lambda root: (SimpleNamespace(files={}, probe_runner=""), {"project": "app"}))
 
     assert ic.what_the_contract_checks_find(tmp_path, runner=lambda *a: 1 / 0) == []
 
@@ -115,3 +115,15 @@ def test_the_lock_and_the_release_use_it():
 
     assert "record_at_lock(root," in inspect.getsource(acceptance_nodes)
     assert "gaps.extend(what_the_contract_checks_find(root))" in inspect.getsource(delivery)
+
+
+def test_a_pack_declares_its_runner_by_what_it_ships_and_the_checks_name_no_tool():
+    from app.stacks.packs import ALL_PACKS
+
+    declared = {pack.name: pack.probe_runner for pack in ALL_PACKS}
+
+    assert declared["fullstack-react-fastapi"] == "playwright"
+    assert declared["python-library"] == ""
+    assert set(declared.values()) <= set(ic.PROBE_RUNNERS) | {""}
+    body = __import__("inspect").getsource(ic.what_the_contract_checks_find)
+    assert "playwright" not in body.lower().replace("probe_runners", "")

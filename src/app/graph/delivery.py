@@ -283,6 +283,9 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
         f"The plan was dispatched with this noted against it: {problem}"
         for problem in state.get("work_order_problems") or []
     )
+    unit_gap = _no_unit_tests_ran(root)
+    if unit_gap:
+        gaps.append(unit_gap)
     scaffolded = state.get("scaffold_result") or {}
     if scaffolded and not scaffolded.get("ok"):
         gaps.append(
@@ -372,3 +375,31 @@ def change_request_brief(root: str) -> list[str]:
         + " must pass before this sprint is accepted."
         for cid, text in suite.change_requests(root).items()
     ]
+
+
+
+def _no_unit_tests_ran(root: Any) -> str:
+    """A gap when the product's own unit command ran no test at all; "" otherwise or when unknown.
+
+    Measured on one run: 2,863 lines of product code, and `npm test` exited 0 -
+    the page runner passes with no tests and pytest's "no tests ran" is taken
+    as success - so the product shipped with no unit test and no record said so.
+    """
+    try:
+        from pathlib import Path
+
+        from app.acceptance import junit
+        from app.stacks import contract
+
+        found = contract.the_pack(root)
+        record = contract.read(root) or {}
+        report = str(getattr(found[0], "unit_report", "") or "") if found else ""
+        project = str(record.get("project") or "")
+        if not report or not project:
+            return ""
+        parsed = junit.read(Path(root) / project / report)
+    except Exception:  # noqa: BLE001 - the release says nothing it cannot measure
+        return ""
+    if not parsed.found or parsed.tests:
+        return ""
+    return "The product ships no unit tests: its unit test command ran none and exited as a pass."

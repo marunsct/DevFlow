@@ -544,6 +544,12 @@ class RunSummary(BaseModel):
     current_stage: str | None = Field(default=None, description="The currently active stage.")
     created_at: datetime = Field(description="Timestamp when the run was created.")
     document_names: list[str] = Field(default_factory=list, description="Names of the documents associated with the run.")
+    updated_at: datetime | None = Field(default=None, description="When the run last moved.")
+    delivery_mode: str | None = Field(default=None, description="fast or thorough.")
+    local_only: bool | None = Field(default=None, description="Whether the run was started not to use the frontier model.")
+    completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove.")
+    criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
+    criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
 
 
 class RunListResponse(BaseModel):

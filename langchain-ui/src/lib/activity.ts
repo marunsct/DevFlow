@@ -173,6 +173,8 @@ export function describeStatus(status: string | null | undefined): StatusCopy {
       return { label: 'Waiting for you', tone: 'waiting' };
     case 'waiting_for_review':
       return { label: 'Needs your review', tone: 'waiting' };
+    case 'waiting_for_budget':
+      return { label: 'Stopped at its budget', tone: 'waiting' };
     case 'paused':
       return { label: 'Paused', tone: 'waiting' };
     case 'rejected':

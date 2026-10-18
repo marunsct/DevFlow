@@ -1,3 +1,4 @@
+import { endSession, refreshNow, scheduleRefresh } from '../lib/session';
 import axios from 'axios';
 import type {
   ApprovalDecisionRequest,
@@ -26,16 +27,27 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const original = error.config;
     if (error.response && error.response.status === 401) {
-      localStorage.removeItem('token');
+      // One quiet renewal before giving up: an expired access token with a good
+      // refresh token is not a signed-out owner.
+      if (original && !original._renewed && (await refreshNow())) {
+        original._renewed = true;
+        original.headers.Authorization = `Bearer ${localStorage.getItem('token')}`;
+        return api.request(original);
+      }
+      endSession();
       if (window.location.pathname !== '/login') {
-        window.location.href = '/login';
+        const back = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/login?back=${back}`;
       }
     }
     return Promise.reject(error);
   }
 );
+
+scheduleRefresh();
 
 // Run API
 export const createRun = async (files: File[]): Promise<CreateRunResponse> => {

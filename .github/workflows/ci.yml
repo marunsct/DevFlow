@@ -64,6 +64,8 @@ jobs:
           cache-dependency-path: langchain-ui/package-lock.json
 
       - run: npm ci
+      - name: Test
+        run: npm test
       - name: Lint
         run: npm run lint
       - name: Type check and build

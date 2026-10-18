@@ -97,7 +97,14 @@ export interface RunSummary {
   status: string;
   current_stage: string | null;
   created_at: string;
-  document_name: string | null;
+  /** Names of the documents the run was started from (the server's `document_names`). */
+  document_names: string[];
+  updated_at?: string | null;
+  delivery_mode?: string | null;
+  local_only?: boolean | null;
+  completion_gaps?: number;
+  criteria_proven?: number | null;
+  criteria_total?: number | null;
 }
 
 export interface RunListResponse {

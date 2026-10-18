@@ -1,5 +1,6 @@
+import { keepSession } from '../lib/session';
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { Layers, Lock, User } from 'lucide-react';
 
@@ -9,6 +10,7 @@ export function Login() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -26,9 +28,12 @@ export function Login() {
         },
       });
 
-      const { access_token } = response.data;
-      localStorage.setItem('token', access_token);
-      navigate('/');
+      keepSession(response.data);
+      // Back to the page that was asked for, when it was one of this interface's own.
+      const asked = new URLSearchParams(window.location.search).get('back')
+        || ((location.state as { from?: { pathname: string; search?: string } } | null)?.from
+          ? `${(location.state as any).from.pathname}${(location.state as any).from.search ?? ''}` : '/');
+      navigate(asked.startsWith('/') && !asked.startsWith('//') && asked !== '/login' ? asked : '/', { replace: true });
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Login failed. Please check your credentials.');
     } finally {

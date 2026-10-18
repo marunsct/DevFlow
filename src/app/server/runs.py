@@ -111,6 +111,26 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     return record
 
 
+def _how_many_criteria_hold(record: Any) -> dict[str, int | None]:
+    """The criteria passing and the criteria there are, from the last measured suite; None for each before there is one."""
+    none: dict[str, int | None] = {"criteria_proven": None, "criteria_total": None}
+    root = getattr(record, "repo_root", None)
+    if not root:
+        return none
+    try:
+        from app.acceptance import suite
+
+        criteria = (suite.last_result(root) or {}).get("criteria") or {}
+    except Exception:  # noqa: BLE001 - a list must not fail over one run's measurement
+        return none
+    if not criteria:
+        return none
+    return {
+        "criteria_proven": sum(1 for c in criteria.values() if c.get("status") == "passed"),
+        "criteria_total": len(criteria),
+    }
+
+
 def create_runs_router(
     runner: WorkflowRunner,
     event_bus: EventBus,
@@ -469,6 +489,11 @@ def create_runs_router(
                     current_stage=r.current_stage,
                     created_at=r.created_at,
                     document_names=r.document_names,
+                    updated_at=getattr(r, "updated_at", None),
+                    delivery_mode=getattr(r, "delivery_mode", None),
+                    local_only=getattr(r, "local_only", None),
+                    completion_gaps=len(getattr(r, "completion_gaps", None) or []),
+                    **_how_many_criteria_hold(r),
                 )
                 for r in records
             ],

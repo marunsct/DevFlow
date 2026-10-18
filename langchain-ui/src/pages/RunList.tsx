@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { listRuns, deleteRun, cloneRun, resumeRun, pauseRun } from '../api';
 import type { RunSummary } from '../types';
-import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy, Pause } from 'lucide-react';
-import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
+import { Activity, AlertCircle, Inbox, Plus, Trash2, Copy, Pause, Search } from 'lucide-react';
+import { describeStage, RESUMABLE } from '../lib/activity';
+import { statusView } from '../lib/status';
+import { StatusBadge } from '../components/StatusBadge';
+import { markRunsSeen } from '../lib/useNeedsYou';
 import { OutcomesPanel } from '../components/OutcomesPanel';
-import { usePageVisible } from '../lib/usePageVisible';
+import { useNow, usePageVisible } from '../lib/usePageVisible';
 import { useFeedback } from '../components/Feedback';
 
 export const RunList: React.FC = () => {
@@ -82,18 +85,41 @@ export const RunList: React.FC = () => {
     }
   };
 
-  const getStatusConfig = (status: string) => {
-    const configs: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
-      created: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: Clock },
-      running: { bg: 'bg-accent-soft', text: 'text-primary', glow: 'status-running', icon: Activity },
-      waiting_for_review: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-      waiting_for_approval: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-      completed: { bg: 'bg-success-bg', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
-      failed: { bg: 'bg-danger-bg', text: 'text-danger', glow: 'status-danger', icon: XCircle },
-      cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
-      paused: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: Clock },
-    };
-    return configs[status] || configs.created;
+  // The view lives in the address, so a link or a reload opens the same list.
+  const [params, setParams] = useSearchParams();
+  const filter = params.get('status') ?? 'all';
+  const query = (params.get('q') ?? '').trim().toLowerCase();
+  const change = (key: string, value: string) => {
+    const next = new URLSearchParams(params);
+    if (value && value !== 'all') next.set(key, value); else next.delete(key);
+    setParams(next, { replace: true });
+  };
+
+  useEffect(() => { markRunsSeen(); }, []);
+  const now = useNow(true, 30_000);
+
+  const shown = useMemo(() => {
+    const keep = runs.filter((run) => {
+      const view = statusView(run.status);
+      if (filter === 'needs-you' && !view.needsYou) return false;
+      if (filter === 'running' && run.status !== 'running') return false;
+      if (filter === 'finished' && !view.terminal) return false;
+      if (query) {
+        const text = `${run.run_id} ${(run.document_names ?? []).join(' ')} ${describeStage(run.current_stage).title}`.toLowerCase();
+        if (!text.includes(query)) return false;
+      }
+      return true;
+    });
+    // The runs that need the owner first, then the newest.
+    return keep.sort((a, b) =>
+      Number(statusView(b.status).needsYou) - Number(statusView(a.status).needsYou)
+      || new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }, [runs, filter, query]);
+
+  const elapsed = (run: RunSummary): string => {
+    const end = statusView(run.status).terminal && run.updated_at ? new Date(run.updated_at).getTime() : now;
+    const minutes = Math.max(0, Math.round((end - new Date(run.created_at).getTime()) / 60000));
+    return minutes < 60 ? `${minutes} min` : `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`;
   };
 
   return (
@@ -125,9 +151,9 @@ export const RunList: React.FC = () => {
         </div>
       ) : runs.length === 0 ? (
         <div className="glass-card rounded-2xl p-16 text-center">
-          <Inbox className="h-14 w-14 text-text-muted mx-auto mb-4 opacity-50" />
-          <h3 className="text-lg font-semibold text-text-primary mb-2">No runs yet</h3>
-          <p className="text-text-secondary mb-6 text-sm">Start your first workflow to see it here.</p>
+          <Inbox className="h-14 w-14 text-text-muted mx-auto mb-4" aria-hidden="true" />
+          <h2 className="text-lg font-semibold text-text-primary mb-2">No runs yet</h2>
+          <p className="text-text-secondary mb-6 text-sm">No runs yet. Start a build and it appears here.</p>
           <Link
             to="/"
             className="gradient-btn inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-primary-foreground text-sm"
@@ -137,91 +163,105 @@ export const RunList: React.FC = () => {
           </Link>
         </div>
       ) : (
-        <div className="space-y-3">
-          {runs.map((run) => {
-            const config = getStatusConfig(run.status);
-            const StatusIcon = config.icon;
-            const isTerminal = ['completed', 'failed', 'cancelled'].includes(run.status);
-            return (
-              <div
-                key={run.run_id}
-                className="glass-card rounded-xl p-4 hover:bg-overlay transition-all duration-200 group"
-              >
-                {/* Stacks on a phone. Laid out as one row it put the status
-                    chip, the step, a full timestamp, the run id and four
-                    controls on a 390px line, which truncated the step name to
-                    "De..." and left the buttons sitting on top of the date. */}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-start gap-3 min-w-0 flex-1 sm:items-center sm:gap-4">
-                    <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border shrink-0 ${config.bg} ${config.text} ${config.glow}`}>
-                      <StatusIcon className="h-3 w-3" />
-                      <span>{describeStatus(run.status).label}</span>
-                    </div>
-                    {/* The step it is on, in words, is what tells you whether a
-                        run needs you. The run id is an identifier for support,
-                        so it moves underneath rather than leading the row. */}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-text-primary truncate">
-                        {describeStage(run.current_stage).title}
-                      </p>
-                      <div className="mt-0.5 text-xs text-text-muted">
-                        <span>
-                          {new Date(run.created_at).toLocaleString([], {
-                            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
-                          })}
-                        </span>
-                        <span className="hidden sm:inline"> · </span>
-                        <span className="block sm:inline font-mono truncate">{run.run_id}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                    {isTerminal && (
-                      <button
-                        onClick={() => handleDelete(run.run_id)}
-                        className="p-2 text-text-muted hover:text-danger hover:bg-danger-bg rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
-                        title="Delete run"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                    {run.status === 'running' && (
-                      <button
-                        onClick={() => handlePause(run.run_id)}
-                        className="p-2 text-text-muted hover:text-warning hover:bg-warning-bg rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
-                        title="Pause run"
-                      >
-                        <Pause className="h-4 w-4" />
-                      </button>
-                    )}
-                    {RESUMABLE.includes(run.status) && (
-                      <button
-                        onClick={() => handleResume(run.run_id)}
-                        className="p-2 text-text-muted hover:text-text-primary hover:bg-overlay-strong rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
-                        title="Resume run"
-                      >
-                        <Activity className="h-4 w-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleClone(run.run_id)}
-                      className="p-2 text-text-muted hover:text-text-primary hover:bg-overlay-strong rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
-                      title="Clone run"
-                    >
-                      <Copy className="h-4 w-4" />
-                    </button>
-                    <Link
-                      to={`/runs/${run.run_id}`}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary hover:text-primary-hover rounded-lg hover:bg-accent-soft transition-all"
-                    >
-                      Dashboard
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+        <div>
+          <div className="flex flex-col sm:flex-row gap-3 mb-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" aria-hidden="true" />
+              <label htmlFor="runs-search" className="sr-only">Search runs</label>
+              <input
+                id="runs-search" type="search" value={params.get('q') ?? ''}
+                onChange={(e) => change('q', e.target.value)}
+                placeholder="Search by run, brief or step"
+                className="w-full rounded-lg bg-overlay border border-border pl-9 pr-3 py-2 text-sm text-text-primary"
+              />
+            </div>
+            <label htmlFor="runs-filter" className="sr-only">Show</label>
+            <select
+              id="runs-filter" value={filter} onChange={(e) => change('status', e.target.value)}
+              className="rounded-lg bg-overlay border border-border px-3 py-2 text-sm text-text-primary"
+            >
+              <option value="all">All runs</option>
+              <option value="needs-you">Needs you</option>
+              <option value="running">Running</option>
+              <option value="finished">Finished</option>
+            </select>
+          </div>
+          {shown.length === 0 ? (
+            <p role="status" className="glass-card rounded-xl p-8 text-center text-sm text-text-secondary">
+              No run matches. <button type="button" className="underline text-primary" onClick={() => setParams({}, { replace: true })}>Show every run</button>
+            </p>
+          ) : (
+          <div className="glass-card rounded-xl overflow-x-auto">
+            <table className="w-full text-sm">
+              <caption className="sr-only">Runs, the ones that need you first</caption>
+              <thead>
+                <tr className="text-left text-xs text-text-secondary border-b border-border">
+                  <th scope="col" className="px-4 py-3 font-medium">Status</th>
+                  <th scope="col" className="px-4 py-3 font-medium">Run</th>
+                  <th scope="col" className="px-4 py-3 font-medium hidden lg:table-cell">Brief</th>
+                  <th scope="col" className="px-4 py-3 font-medium hidden md:table-cell">Mode</th>
+                  <th scope="col" className="px-4 py-3 font-medium hidden xl:table-cell">Model</th>
+                  <th scope="col" className="px-4 py-3 font-medium hidden md:table-cell text-right">Elapsed</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-right">Proven</th>
+                  <th scope="col" className="px-4 py-3 font-medium hidden lg:table-cell text-right">Gaps</th>
+                  <th scope="col" className="px-4 py-3 font-medium text-right"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((run) => {
+                  const view = statusView(run.status);
+                  const label = describeStage(run.current_stage).title;
+                  const button = 'p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-overlay-strong transition-colors';
+                  return (
+                    <tr key={run.run_id} className={`border-b border-border last:border-0 hover:bg-overlay ${view.needsYou ? 'bg-accent-soft' : ''}`}>
+                      <td className="px-4 py-3 align-top"><StatusBadge status={run.status} /></td>
+                      <td className="px-4 py-3 align-top min-w-0">
+                        <Link to={`/runs/${run.run_id}`} className="font-medium text-text-primary hover:underline">{label}</Link>
+                        <div className="text-xs text-text-muted font-mono truncate max-w-[16rem]" title={run.run_id}>
+                          {run.run_id} · {new Date(run.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 align-top hidden lg:table-cell text-text-secondary max-w-[14rem] truncate" title={(run.document_names ?? []).join(', ')}>
+                        {(run.document_names ?? [])[0] ?? '-'}
+                      </td>
+                      <td className="px-4 py-3 align-top hidden md:table-cell text-text-secondary capitalize">{run.delivery_mode ?? '-'}</td>
+                      <td className="px-4 py-3 align-top hidden xl:table-cell text-text-secondary">
+                        {run.local_only === null || run.local_only === undefined ? '-' : run.local_only ? 'Local only' : 'Local + judgement'}
+                      </td>
+                      <td className="px-4 py-3 align-top hidden md:table-cell text-right tabular-nums text-text-secondary">{elapsed(run)}</td>
+                      <td className="px-4 py-3 align-top text-right tabular-nums">
+                        {run.criteria_total ? `${run.criteria_proven ?? 0} of ${run.criteria_total}` : '-'}
+                      </td>
+                      <td className="px-4 py-3 align-top hidden lg:table-cell text-right tabular-nums">
+                        {run.completion_gaps ? <span className="text-warning">{run.completion_gaps}</span> : <span className="text-text-muted">0</span>}
+                      </td>
+                      <td className="px-4 py-2 align-top whitespace-nowrap text-right">
+                        {run.status === 'running' && (
+                          <button type="button" onClick={() => handlePause(run.run_id)} className={button} aria-label={`Pause ${run.run_id}`} title="Pause run">
+                            <Pause className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        )}
+                        {RESUMABLE.includes(run.status) && (
+                          <button type="button" onClick={() => handleResume(run.run_id)} className={button} aria-label={`Resume ${run.run_id}`} title="Resume run">
+                            <Activity className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        )}
+                        <button type="button" onClick={() => handleClone(run.run_id)} className={button} aria-label={`Clone ${run.run_id}`} title="Clone run">
+                          <Copy className="h-4 w-4" aria-hidden="true" />
+                        </button>
+                        {view.terminal && (
+                          <button type="button" onClick={() => handleDelete(run.run_id)} className={`${button} hover:text-danger`} aria-label={`Delete ${run.run_id}`} title="Delete run">
+                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          )}
         </div>
       )}
     </div>

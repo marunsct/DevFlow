@@ -1,3 +1,4 @@
+import { NotFound } from './pages/NotFound';
 import { adoptServerPreferences } from './lib/appearance';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
@@ -103,6 +104,7 @@ function App() {
             <Route path="runs" element={<RunList />} />
             <Route path="runs/:runId" element={<RunDashboard />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="*" element={<NotFound />} />
           </Route>
         </Routes>
       </ErrorBoundary>

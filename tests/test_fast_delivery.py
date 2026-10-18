@@ -316,3 +316,27 @@ def test_the_worker_runs_a_run_in_its_own_delivery_mode():
     source = Path("src/app/server/tasks.py").read_text()
     assert 'with delivery.for_the_run(getattr(record, "delivery_mode", "")), \\' in source
     assert "delivery_mode" in Path("src/app/server/run_store.py").read_text()
+
+
+def test_a_fast_work_order_of_more_than_three_files_is_split_into_parts():
+    """Owner decision 2026-10-18: a soft cap of three files per fast work order."""
+    files = [f"notes/src/f{n}.ts" for n in range(drafting.MOST_FILES_PER_WORK_ORDER * 2 + 1)]
+    order = _order("backend", *files).model_copy(update={"title": "Store"})
+
+    kept, split = drafting.in_work_orders_of_at_most([order, _order("ui_ux", "notes/src/page.tsx")])
+
+    assert split == 1
+    assert [k.files for k in kept[:3]] == [files[0:3], files[3:6], files[6:]]
+    assert [k.title for k in kept[:3]] == ["Store (part 1 of 3)", "Store (part 2 of 3)", "Store (part 3 of 3)"]
+    assert {k.specialist_role for k in kept[:3]} == {kept[0].specialist_role}
+    assert kept[3].files == ["notes/src/page.tsx"]
+
+
+def test_the_fast_build_splits_before_it_drafts():
+    import inspect
+
+    from app.graph import workflow
+
+    source = inspect.getsource(workflow)
+    assert "tasks, split = in_work_orders_of_at_most(tasks)" in source
+    assert 'if dropped or split:' in source

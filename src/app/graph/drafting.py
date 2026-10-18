@@ -63,6 +63,37 @@ def _is_planned(path: str, planned: list[str]) -> bool:
 #: Test files the lead may give its work orders when the file plan names none.
 MOST_UNPLANNED_TEST_FILES = 5
 
+#: Files one fast work order owns at most. A soft cap: the lead's larger
+#: orders are split here, not refused (owner decision 2026-10-18, to be
+#: measured over two runs). One file per order multiplies stages and makes a
+#: contract across files harder; an order of many files is one agent loop the
+#: size of the whole product when its drafts do not land.
+MOST_FILES_PER_WORK_ORDER = 3
+
+
+def in_work_orders_of_at_most(tasks: list[Any], most: int = MOST_FILES_PER_WORK_ORDER) -> tuple[list[Any], int]:
+    """`tasks` with each order of more than `most` files split, in order, into orders of `most`; and how many were split.
+
+    Each part keeps its order's owner, description, contract and checks, and
+    owns its own files only; its title says which part it is.
+    """
+    kept: list[Any] = []
+    split = 0
+    for task in tasks:
+        files = list(getattr(task, "files", None) or [])
+        if len(files) <= most:
+            kept.append(task)
+            continue
+        split += 1
+        parts = [files[i:i + most] for i in range(0, len(files), most)]
+        title = str(getattr(task, "title", "") or "").strip()
+        for number, part in enumerate(parts, start=1):
+            kept.append(task.model_copy(update={
+                "files": part,
+                "title": f"{title} (part {number} of {len(parts)})" if title else f"part {number} of {len(parts)}",
+            }))
+    return kept, split
+
 
 def with_tests_the_specification_plans(tasks: list[Any], specification: Any) -> tuple[list[Any], list[str]]:
     """`tasks`, each test file not in the specification's file plan taken out; and what was taken.

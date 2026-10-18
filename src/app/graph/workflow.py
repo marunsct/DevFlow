@@ -8340,7 +8340,7 @@ def build_workflow_graph(
         specification = state.get("technical_specification")
         if specification is None or not _the_run_approves_its_own_writes(run_id):
             return {"drafted_for_plan": True, "stage": "specialist_dispatch"}
-        from app.graph.drafting import draft_work_orders, with_tests_the_specification_plans
+        from app.graph.drafting import draft_work_orders, in_work_orders_of_at_most, with_tests_the_specification_plans
 
         milestone = state.get("milestone_plan")
         if milestone is None:
@@ -8351,6 +8351,9 @@ def build_workflow_graph(
                 "Fast delivery: %d test file(s) the specification does not plan left out: %s",
                 len(dropped), ", ".join(dropped[:6]),
             )
+        tasks, split = in_work_orders_of_at_most(tasks)
+        if split:
+            logger.info("Fast delivery: %d work order(s) of more than three files split into parts", split)
         drafted = draft_work_orders(
             tasks, specification, getattr(state.get("stack_selection"), "technology_stack", None),
             state["repository"].root_path, _the_build_model(state, "drafting"), workers=concurrent_requests(),
@@ -8365,7 +8368,7 @@ def build_workflow_graph(
         update: dict[str, Any] = {"drafted_for_plan": True, "stage": "specialist_dispatch"}
         if outputs:
             update["specialist_outputs"] = outputs
-        if dropped:
+        if dropped or split:
             update["milestone_plan"] = milestone.model_copy(update={"delegated_tasks": tasks})
         return update
 

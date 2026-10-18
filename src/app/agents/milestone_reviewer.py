@@ -88,6 +88,17 @@ class MilestoneReviewFinding(BaseModel):
     )
 
 
+#: What `blocked` does, in the words both the schema and its refusal use.
+#: Kept beside `app.graph.workflow.MILESTONE_REVIEW_NEXT_STAGE`, which routes on
+#: it: a reviewer told the run ends when it does not picks a status for a
+#: consequence that never happens.
+BLOCKED_MEANS = (
+    "this sprint is recorded as failed and the Technical Lead plans it again "
+    "from the start, fixing none of your findings and using one of the "
+    "milestone's revisions"
+)
+
+
 class MilestoneReviewOutput(BaseModel):
     """Structured review decision produced by the Milestone Reviewer."""
 
@@ -99,10 +110,10 @@ class MilestoneReviewOutput(BaseModel):
             "What happens next. 'accepted': the sprint continues. "
             "'changes_required': the Technical Lead re-plans and the "
             "specialists fix your findings - this is the one to use for "
-            "anything that can be fixed, however severe. 'blocked': the run "
-            "ENDS HERE, permanently, with no attempt to fix anything - use it "
-            "only when the milestone cannot proceed for a reason no amount of "
-            "work inside this run could resolve."
+            "anything that can be fixed, however severe. 'blocked': "
+            + BLOCKED_MEANS
+            + " - use it only when the milestone cannot proceed for a reason "
+            "no fix to its findings could resolve."
         ),
     )
     findings: list[MilestoneReviewFinding] = Field(default_factory=list)
@@ -121,8 +132,11 @@ class MilestoneReviewOutput(BaseModel):
         The three statuses have wildly different consequences and the schema
         said only "Routing decision: accepted, changes required, or blocked."
         `changes_required` re-plans the milestone and lets specialists fix the
-        findings; `blocked` ends the run immediately with no attempt at any of
-        them. Nothing told the reviewer that.
+        findings; `blocked` records the sprint as failed and plans it again
+        from the start, fixing none of them. (It once ended the run; the
+        owner's sprint re-run made it re-plan instead, and this text said
+        "ends the run" long after - see `BLOCKED_MEANS`.) Nothing told the
+        reviewer that.
 
         Measured on one run, which died sixteen minutes in. Its review was
         good - `toggleTask` absent so every checkbox did nothing, filter buttons
@@ -149,7 +163,7 @@ class MilestoneReviewOutput(BaseModel):
         if len(remediable) != len(self.findings):
             return self
         raise ValueError(
-            f"status='blocked' ends this run immediately and nothing will be "
+            f"status='blocked' means {BLOCKED_MEANS}, so nothing will be "
             f"fixed, but all {len(self.findings)} of your findings state a "
             "`required_remediation`, so they are fixable. Use "
             "'changes_required': the Technical Lead re-plans the milestone and "

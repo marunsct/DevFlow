@@ -216,6 +216,11 @@ MAX_MILESTONE_REVISIONS = 3
 """Bound how many times milestone review can send work back to the Technical
 Lead before the run falls back to a human review instead of looping forever."""
 
+#: Where a milestone review's `blocked` sends the run. The reviewer's schema
+#: describes this consequence (`app.agents.milestone_reviewer.BLOCKED_MEANS`)
+#: and a test holds the two together.
+MILESTONE_REVIEW_NEXT_STAGE = {"blocked": "technical_lead"}
+
 FAST_MILESTONE_REVISIONS = 2
 """The same bound in fast delivery: one send-back, then the findings are recorded as risks."""
 
@@ -9794,7 +9799,7 @@ def build_workflow_graph(
             summary = _record_sprint_summary(state, "Failed", "Blocked by review")
             return _handing_on(
                 **summary,
-                stage="technical_lead",
+                stage=MILESTONE_REVIEW_NEXT_STAGE["blocked"],
                 milestone_review=review,
                 milestone_plan=None,
                 specialist_outputs={},

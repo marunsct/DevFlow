@@ -1,9 +1,10 @@
-"""`blocked` ends the run; `changes_required` fixes it. The schema now says so.
+"""`blocked` re-plans the sprint from nothing; `changes_required` fixes it. The schema says so.
 
 The three statuses a milestone reviewer can return have wildly different
 consequences - `accepted` continues the sprint, `changes_required` re-plans the
-milestone and lets specialists fix every finding, `blocked` ends the run
-immediately with no attempt at any of them - and the field description said
+milestone and lets specialists fix every finding, `blocked` (which then ended
+the run, and now records the sprint failed and plans it again from the start)
+fixes none of them - and the field description said
 only "Routing decision: accepted, changes required, or blocked."
 
 One run died sixteen minutes in. Its review was good: `toggleTask` absent
@@ -58,7 +59,7 @@ def test_blocked_is_refused_when_every_finding_says_how_to_fix_it():
         _review("blocked", [REMEDIABLE])
 
     message = str(raised.value)
-    assert "ends this run immediately" in message
+    assert "nothing will be fixed" in message
     assert "changes_required" in message
 
 
@@ -99,6 +100,34 @@ def test_accepted_is_untouched():
 def test_the_field_says_what_each_status_does():
     """The description was a tautology naming the three words back."""
     description = MilestoneReviewOutput.model_fields["status"].description
-    assert "ENDS HERE" in description
+    assert "plans it again from the start" in description
     assert "the sprint continues" in description
     assert "re-plans" in description
+
+
+def test_what_the_schema_says_blocked_does_is_what_the_workflow_does():
+    """The schema said the run ENDS HERE; the workflow re-plans the sprint.
+    A reviewer choosing by a consequence that never happens is choosing blind."""
+    from app.agents.milestone_reviewer import BLOCKED_MEANS
+    from app.graph.workflow import MILESTONE_REVIEW_NEXT_STAGE
+
+    description = MilestoneReviewOutput.model_fields["status"].description
+    assert BLOCKED_MEANS in description
+    assert MILESTONE_REVIEW_NEXT_STAGE["blocked"] == "technical_lead"
+    assert "Technical Lead plans it again" in BLOCKED_MEANS
+    for claim in ("ENDS", "ends the run", "ends this run", "permanently"):
+        assert claim not in description
+
+    with pytest.raises(pydantic.ValidationError) as raised:
+        _review("blocked", [REMEDIABLE])
+    assert "ends this run" not in str(raised.value)
+    assert BLOCKED_MEANS in str(raised.value)
+
+
+def test_the_blocked_wording_avoids_the_banned_words():
+    import re
+
+    from app.agents.milestone_reviewer import BLOCKED_MEANS
+
+    banned = {"task", "tasks", "to-do", "todo", "button", "click", "checkbox"}
+    assert not set(re.findall(r"[\w-]+", BLOCKED_MEANS.lower())) & banned

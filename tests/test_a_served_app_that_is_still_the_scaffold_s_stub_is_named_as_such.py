@@ -130,3 +130,22 @@ def test_every_fullstack_pack_declares_its_page_and_its_service() -> None:
         pack = pack_named(name)
         if pack is not None:
             assert len(pack.entrypoints) == 2, name
+
+
+def test_every_fixer_is_told_first_while_the_stub_is_served(tmp_path: Path) -> None:
+    """A queue assembled before the stub was found went fixer after fixer, each chasing its own symptom."""
+    import inspect
+    import re
+
+    from app.graph import workflow
+
+    root = _a_scaffolded_workspace(tmp_path, "fullstack-react-fastapi")
+    told = workflow._the_stub_still_served_section(root)
+    assert "`notes-app/src/App.tsx` is byte-identical" in told
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", told, re.I)
+
+    for path in ("src/App.tsx", "notes_app/main.py"):
+        f = root / "notes-app" / path
+        f.write_text(f.read_text(encoding="utf-8") + "\n// built\n", encoding="utf-8")
+    assert workflow._the_stub_still_served_section(root) == ""
+    assert "_the_stub_still_served_section(state" in inspect.getsource(workflow)

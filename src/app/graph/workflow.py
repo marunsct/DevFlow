@@ -1225,6 +1225,33 @@ def _a_revert_escalates_this_fix(cycle: Any, defect_index: int) -> bool:
     return reverts == 1
 
 
+def _the_stub_still_served_section(root: Any) -> str:
+    """What every fixer must know first while the served app is still the scaffold's stub; else "".
+
+    Measured on one run: a round queued 13 defects, one per criterion, all of
+    them failing their first page control because the page served was the
+    scaffold's stub - the drafted app sat in folders nothing served. The stub
+    is found when a round is assembled; a queue assembled before then went to
+    fixer after fixer, ten to seventeen minutes each, every one chasing its
+    own symptom. Checked at each dispatch, so the cause reaches the queue too.
+    """
+    try:
+        from app.stacks.scaffold import entrypoint_is_still_the_stub
+
+        stub = entrypoint_is_still_the_stub(root) if root else None
+    except Exception:  # noqa: BLE001 - the request stands as it was
+        return ""
+    if not stub:
+        return ""
+    return (
+        "\n--- Before this defect: the served app is still the scaffold's stub ---\n"
+        f"`{stub}` is byte-identical to what the scaffold wrote, and the acceptance suite runs "
+        "against exactly that file. Whatever this run drafted elsewhere is not served, which is "
+        "why this criterion fails - and every other one with it. First make the served file the "
+        "product: build it there, or import the drafted code from it. Then check this defect again.\n"
+    )
+
+
 def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     """The differently-shaped work order for a defect's last permitted attempt, or "".
 
@@ -8890,6 +8917,7 @@ def build_workflow_graph(
         # work, not a third variation of the instruction that failed twice.
         # See `_the_last_attempt_section`.
         request["messages"][-1]["content"] += _the_last_attempt_section(cycle, defect_index)
+        request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
         return request, co_defects
 
     def _settle_the_fix(

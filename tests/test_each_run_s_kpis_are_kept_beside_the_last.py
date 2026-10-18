@@ -91,3 +91,14 @@ def test_the_loop_keeps_every_scored_run_s_kpis() -> None:
     loop = (ROOT / "loop.sh").read_text()
     assert 'in_worker kpi.py "$run"' in loop
     assert '"$0" kpi "$run"' in loop
+
+
+def test_a_read_the_memory_answers_with_a_pointer_is_redundant() -> None:
+    """431 of one run's identical repeats were these pointers, and neither audit counted them."""
+    records = [
+        {"at": _at(0), "stage": "s", "kind": "tool_call", "call_id": "a", "tool": "read_file", "args": {"file_path": "m.py"}},
+        {"at": _at(1), "stage": "s", "kind": "tool_result", "call_id": "a",
+         "content": "`m.py` is in the project memory at the start of this conversation, whole and as it is now"},
+    ]
+    assert kpi.kpis(records)["redundant_read_rate"] == 1.0
+    assert "is in the project memory at the start of this conversation" in (ROOT / "audit_live.py").read_text()

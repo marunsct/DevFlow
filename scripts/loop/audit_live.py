@@ -50,7 +50,8 @@ if not paths:
 # "[This `grep` returned exactly what ...]". Matching only at the start of the
 # text undercounted failures by half before the prefix was allowed for.
 FAIL = re.compile(r"^\s*(\[[^\]]*\]\s*)?(\{\"error\"|Error:|Refusing|Not running|Not looking)")
-REDUNDANT = ("You have already read lines", "same bytes", "Refusing to read", "These are the same bytes")
+REDUNDANT = ("You have already read lines", "same bytes", "Refusing to read", "These are the same bytes",
+             "is in the project memory at the start of this conversation")
 READS = ("read_file", "read_repository_file")
 
 records = []

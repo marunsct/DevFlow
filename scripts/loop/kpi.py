@@ -23,7 +23,8 @@ import sys
 from datetime import datetime
 
 FAIL = re.compile(r"^\s*(\[[^\]]*\]\s*)?(\{\"error\"|Error:|Refusing|Not running|Not looking)")
-REDUNDANT = ("You have already read lines", "same bytes", "Refusing to read", "These are the same bytes")
+REDUNDANT = ("You have already read lines", "same bytes", "Refusing to read", "These are the same bytes",
+             "is in the project memory at the start of this conversation")
 READS = ("read_file", "read_repository_file")
 INVALID_TOOL = "is not a valid tool"
 

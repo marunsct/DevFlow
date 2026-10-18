@@ -84,6 +84,15 @@ except Exception:  # noqa: BLE001 - an image without roles has no second model
     judging = None
 if judging is not None:
     results.append(check("judgement", load_settings(judging)))
+# Commands, as well as the model (Initiative AH.4): a run on a worker that
+# cannot run commands writes a product nothing can install, build or test.
+try:
+    from app.tools.sandbox import execution_readiness
+
+    can_run, why = execution_readiness()
+    results.append((can_run, f"{'READY' if can_run else 'NOTREADY'} commands ({why})"))
+except ImportError:  # an image from before the probe
+    pass
 for ok, line in results:
     print(line)
 print("ALL READY" if all(ok for ok, _ in results) else "NOT ALL READY")

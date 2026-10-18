@@ -56,3 +56,10 @@ def test_readiness_reads_what_the_server_says_of_its_slots_and_context():
     profile = (SCRIPTS.parents[1] / "src" / "app" / "models" / "server_profile.py").read_text()
     assert '"/props"' in profile and "total_slots" in profile and "n_ctx" in profile
     assert server_profile.from_props({"total_slots": 2, "default_generation_settings": {"n_ctx": 8192}}).slots == 2
+
+
+def test_readiness_covers_command_execution_as_well_as_the_model():
+    """A worker that cannot run commands writes a product nothing can test (AH.4)."""
+    source = (SCRIPTS / "model_ready.py").read_text()
+    assert "from app.tools.sandbox import execution_readiness" in source
+    assert "commands (" in source

@@ -288,6 +288,22 @@ def _max_run_cost_usd() -> float:
         return 0.0
 
 
+def _max_run_tokens() -> int:
+    """`MAX_RUN_TOKENS`: a bound on every model token a run uses, priced or not; 0 (the default) is none.
+
+    The dollar ceiling counts priced calls only, so a local model - priced at
+    nothing and counted as nothing - has no bound at all; one run used 73
+    million tokens over twelve hours. Tokens are counted for every call, so
+    this bound holds whatever the model costs (Initiative AH.1).
+    """
+    raw = os.environ.get("MAX_RUN_TOKENS", "").strip()
+    try:
+        return max(0, int(raw)) if raw else 0
+    except ValueError:
+        logger.warning("Malformed MAX_RUN_TOKENS (%r); no bound applied", raw)
+        return 0
+
+
 def _budget_exceeded(run_id: str) -> tuple[bool, RunCost]:
     """Whether this run has passed its ceiling, and the total it passed it with.
 
@@ -308,6 +324,9 @@ def _budget_exceeded(run_id: str) -> tuple[bool, RunCost]:
     """
     ceiling = _max_run_cost_usd()
     total = run_cost(run_id)
+    tokens = _max_run_tokens()
+    if tokens and total.total_tokens >= tokens:
+        return True, total
     if ceiling <= 0:
         return False, total
     return total.usd >= ceiling, total
@@ -1513,7 +1532,14 @@ class WorkflowRunner:
                         "so the real spend is higher than the figure above."
                     )
                 )
+                by_tokens = bool(_max_run_tokens()) and spent.total_tokens >= _max_run_tokens()
                 message = (
+                    f"Paused at {spent.total_tokens:,} tokens, which has reached the MAX_RUN_TOKENS "
+                    f"bound of {_max_run_tokens():,}, across {spent.successful_requests} model calls "
+                    f"(${spent.usd:.2f} known spend).\n\n"
+                    "The run is intact and paused at a stage boundary - nothing has failed. Raise "
+                    "MAX_RUN_TOKENS and resume to continue, or cancel it."
+                ) if by_tokens else (
                     f"Paused at ${spent.usd:.2f}, which has reached the "
                     f"MAX_RUN_COST_USD ceiling of ${_max_run_cost_usd():.2f}, across "
                     f"{spent.successful_requests} model calls and "

@@ -1977,11 +1977,11 @@ Delegation", arXiv 2609.24234.
 | W.3 toggles through compose + config unification | P0 | DONE 2026-10-18 (`54ab3bd`) except `/props` defaults | Six switches passed with empty defaults (no behaviour change; every read site treats empty as unset). JUDGEMENT_* and MODEL_MAX_OUTPUT_TOKENS left out on purpose: model settings and derived budgets are the settings page's (compose's own note). SANDBOX_MEMORY_LIMIT 1g everywhere. MODEL_CONTEXT_WINDOW / HARNESS_MAX_PARALLEL from `/props` moved to M.1 / AB, where the probe lives |
 | W.4 per-run KPI JSON + cross-run ledger + regression flag | P0 | DONE 2026-10-18 (`bdc464c`) | `loop.sh kpi` (and every `score`): `data/kpi/<run>.json` + `data/kpi/ledger.csv`, regression flag at 1.5x the 5-run mean. Live run-8b0c94df: identical-call rate 23.9% (agrees with `audit_run.py`: 527/2190), 431 of them `read_file` - a lead for the next audit. The flag runs in `loop.sh`; `audit_live.py` itself is unchanged |
 | W.5 ledger rows for Initiatives A–I; correct U.2 row | P0 | DONE 2026-10-18 | Rows below, each from a grep of the code; U.2 row corrected |
-| A design tokens seeded by pack | pre-ledger | NOT IMPLEMENTED | No token or palette seeding in `plugins/seed.py` or any pack |
+| A design tokens seeded by pack | pre-ledger | DONE 2026-10-18 (owner decision) | `stacks/packs/_design.py` `DESIGN_TOKENS`: an accessible colour set (AA contrast, tested, light and dark), spacing and type scales, and a visible focus ring, as CSS custom properties. Every web pack's stylesheet starts with it; the product may change the values. Test: `test_every_web_product_starts_with_design_tokens.py` |
 | B procedural visual/layout audits | pre-ledger | PARTLY | The suite's runtime report measures phone-width overflow (`phone_overflow`) and axe accessibility (`_read_accessibility`); no element overlap/bounding-box audit |
 | C contract-strict interface extraction | pre-ledger | PARTLY | The specification carries `interface_design` (principal architect); no `ui_contract` extraction or strict check against the brief's named controls beyond `controls_never_found_by_name` |
 | D pre-execution linter / assertion normalizer | pre-ledger | DONE in substance | Parse checks at the write (`javascript_parse`, `typescript_parse`, pack hooks); `suite.assertions_that_do_not_exist` at review and every round |
-| E narrow single-file work orders | pre-ledger | PARTLY | Fast delivery's fixes and repairs are one rewrite per file (`fa0b4da`); work orders themselves are not capped to one file |
+| E narrow single-file work orders | pre-ledger | DONE 2026-10-18 (owner decision), MEASURE over 2 runs | A soft cap, not one file: `drafting.in_work_orders_of_at_most` splits a fast work order of more than 3 files (`MOST_FILES_PER_WORK_ORDER`) into parts of 3 with the same owner and contract; the worker logs each split. Fast also keeps up to 5 of the lead's test files when the file plan names none (`MOST_UNPLANNED_TEST_FILES`, owner decision) |
 | F root-crash / load-error gate | pre-ledger | DONE | One whole-product defect for a product that reports errors as it loads; L.1 whole-product layers (`_WHOLE_PRODUCT_LAYERS`) |
 | G lenient whitespace in `edit_artifact` | pre-ledger | PARTLY; Unicode half NOT BUILT (measured 2026-10-18) | 4 of 280 'Could not find that text' misses carried a curly quote/dash/NBSP; the plan's own example was a box-drawing run of a different length, which normalisation does not fix |
 | H pre-flight verification before a fixer | pre-ledger | DONE | L.3: `_the_defect_s_tests_pass` at dispatch, "closed without a fixer" |
@@ -2030,3 +2030,18 @@ Delegation", arXiv 2609.24234.
 > produced" count, dead-code deletion, modal focus trap (verify), and the
 > API/UI contract drift items. Ledger row "UI contract drift + Phase-1
 > remainder" is scoped to that remainder.
+
+### Owner decisions 2026-10-18 (20:55 JST): every recommendation accepted
+
+1. Fast keeps up to 5 of the lead's test files when the plan names none: done.
+2. Model time between runs for measurement work (AF, T, A/B): up to about an hour, only when no run waits and never during an owner run.
+3. K.2: an embedded database first (no compose change); a Postgres service in compose only when a brief demands it, and with the owner's yes.
+4. C + J.3: a formal interface contract, locked like the suite; a failed release check is a completion gap for the first 2 runs, then a blocker if accurate.
+5. AI: the owner approves each lesson from a short list after each run; nothing agent-written reaches a prompt unapproved.
+6. UI: diff viewer, criteria panel and URL state first, then steering built on the existing instruction injection; no PWA or i18n.
+7. A: design tokens in every web pack: done.
+8. E: a soft cap of 3 files per fast work order, measured over 2 runs: done.
+9. W.2: after the current run, Fast notes-api-hono then fast fullstack-bookmarks-py on the same code; Thorough after.
+10. K.6: after the W.2 baselines.
+11. AF budget: about 3 sampled criteria per lock, logic breaks the unit tests check in seconds, no browser runs.
+12. M.3 (sampling) stays dropped; U.4 (automatic deletion) stays unbuilt.

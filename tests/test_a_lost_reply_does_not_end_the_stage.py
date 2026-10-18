@@ -118,3 +118,23 @@ def test_the_hook_may_jump_back_to_the_model():
     allowed = getattr(type(middleware).after_model, "__can_jump_to__", None)
 
     assert allowed is not None and "model" in allowed
+
+
+def test_a_second_lost_reply_keeps_thinking_off_though_compaction_took_the_first_from_history():
+    """A lead lost five 20,000-token replies in one visit: compaction took each
+    lost reply out of the history, so the count never reached two and thinking
+    came back on after every one."""
+    middleware = settled_answer.build_settled_answer_middleware(_Plan, "technical_lead", step_limit=40)
+    first, second = _lost(), _lost()
+    first.id, second.id = "lost-1", "lost-2"
+    middleware.wrap_model_call(_Request([*_ASKED, first], _model()), lambda request: SimpleNamespace(result=[]))
+    middleware.wrap_model_call(_Request([*_ASKED, *_WORKED, second], _model()), lambda request: SimpleNamespace(result=[]))
+
+    seen: dict = {}
+    # Compacted: neither lost reply is in the history any more.
+    middleware.wrap_model_call(
+        _Request([*_ASKED, *_WORKED, *_WORKED], _model()), lambda request: seen.setdefault("request", request)
+    )
+
+    extra = (seen["request"].model_settings or {}).get("extra_body") or {}
+    assert (extra.get("chat_template_kwargs") or {}).get("enable_thinking") is False

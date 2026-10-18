@@ -1398,12 +1398,19 @@ def _the_same_refused_answer_running(messages: list[Any], schema: Any) -> int:
 LOST_REPLIES_BEFORE_THINKING_STAYS_OFF = 2
 
 
-def _thinking_is_off_here(messages: list[Any], stage_name: str = "") -> bool:
+def _thinking_is_off_here(messages: list[Any], stage_name: str = "", lost_before: int = 0) -> bool:
     """Whether this call goes without thinking: the reply right after one lost
     to reasoning, or any reply once a visit has lost
-    `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`."""
+    `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`.
+
+    `lost_before` is the visit's own count, kept by the middleware: counted
+    from the history alone, compaction took the lost replies out of it and
+    the count never reached two. Measured on one run: a lead lost five
+    20,000-token replies to reasoning in 23 minutes of one visit, thinking
+    coming back on after each.
+    """
     return _the_last_reply_was_all_reasoning(messages) or (
-        _replies_that_were_all_reasoning(messages) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
+        max(lost_before, _replies_that_were_all_reasoning(messages)) >= LOST_REPLIES_BEFORE_THINKING_STAYS_OFF
     )
 
 
@@ -1517,7 +1524,7 @@ _READ_TOOL_WITHHELD_NOTICE = (
 )
 
 
-def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str) -> Any:
+def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str, lost_before: int = 0) -> Any:
     """`request` with thinking switched off on the reply after one lost to
     reasoning, and for the rest of a visit that has lost
     `LOST_REPLIES_BEFORE_THINKING_STAYS_OFF`; otherwise `request` unchanged.
@@ -1533,7 +1540,7 @@ def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str) -> Any:
     try:
         from app.agents.thinking import answering_without_reasoning
 
-        if not _thinking_is_off_here(list(getattr(request, "messages", None) or []), stage_name):
+        if not _thinking_is_off_here(list(getattr(request, "messages", None) or []), stage_name, lost_before):
             return request
         quiet = answering_without_reasoning(getattr(request, "model", None))
         if not quiet:
@@ -1570,7 +1577,16 @@ def build_settled_answer_middleware(
             self._model = getattr(request, "model", None)
             # Tools this call withholds, refused if called anyway (`wrap_tool_call`).
             self._withheld = set()
-            request = _without_reasoning_after_a_lost_reply(request, stage_name)
+            # Each lost reply, counted once by its message, so compaction
+            # cannot take the count with the history.
+            seen = list(getattr(request, "messages", None) or [])
+            if _the_last_reply_was_all_reasoning(seen):
+                last_ai = next((m for m in reversed(seen) if getattr(m, "type", None) == "ai"), None)
+                self._lost_replies = getattr(self, "_lost_replies", set()) | {
+                    str(getattr(last_ai, "id", "") or id(last_ai))
+                }
+            lost = max(len(getattr(self, "_lost_replies", set())), _replies_that_were_all_reasoning(seen))
+            request = _without_reasoning_after_a_lost_reply(request, stage_name, lost)
             try:
                 messages = getattr(request, "messages", None)
                 if not isinstance(messages, list) or not messages:

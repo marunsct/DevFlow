@@ -3509,6 +3509,44 @@ def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
     return revised.model_copy(update=kept) if kept else revised
 
 
+def _the_served_files_the_plan_leaves_out(specification: Any, state: Any) -> list[str]:
+    """The files the stack's scaffold serves that the specification's file plan never names; [] if none or unknown.
+
+    Measured on one run: the file plan put the product in `frontend/` and
+    `backend/app/`; the scaffold served `src/App.tsx` and the package's
+    `main.py`; nothing drafted was ever served and every page test failed its
+    first control. Said to the architect, the cheapest moment to fix it.
+    """
+    try:
+        from app.stacks import choose_pack, python_package_name
+        from app.tools.repository import pinned_project_directory
+
+        stack = getattr(state.get("stack_selection"), "technology_stack", None)
+        pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
+        if pack is None:
+            return []
+        declared = [e for e in (getattr(pack, "entrypoint", ""), *(getattr(pack, "entrypoints", ()) or ())) if e]
+        if not declared:
+            return []
+        root = getattr(state.get("repository"), "root_path", None)
+        project = pinned_project_directory(Path(root)) if root else None
+        package = python_package_name(project) if project and pack.language == "python" else None
+        plan = " ".join(str(item) for item in getattr(specification, "file_plan", None) or [])
+        if not plan.strip():
+            return []
+        served = [pack.filled(e, project or "", "", package) for e in declared]
+
+        def named(path: str) -> bool:
+            # The path itself or under the project folder - `frontend/src/App.tsx` is not `src/App.tsx`.
+            where = rf"(?:{re.escape(project)}/)?" if project else ""
+            return re.search(rf"(?<![\w./-]){where}{re.escape(path)}(?![\w/.-])", plan) is not None
+
+        return [path for path in served if not named(path)]
+    except Exception:  # noqa: BLE001 - the specification goes on as written
+        logger.debug("Could not compare the file plan with the served files", exc_info=True)
+        return []
+
+
 def _incomplete_specification_sections(specification: Any) -> list[str]:
     """Return the required sections this specification left empty.
 
@@ -7298,6 +7336,20 @@ def build_workflow_graph(
                         "The document `docs/technical_specification.md` on disk already holds the completed sections. "
                         "Do not return the whole specification from the beginning. "
                         "Return only `testing` with those checks corrected; unchanged sections are automatically preserved."
+                    ]
+                elif (served := _the_served_files_the_plan_leaves_out(update.get("technical_specification"), state)) \
+                        and repairs < MAX_SPECIFICATION_REPAIRS:
+                    update["specification_repair_count"] = repairs + 1
+                    update["stage"] = "principal_architect"
+                    update["revision_comments"] = [
+                        "The project's scaffold serves "
+                        + ", ".join(f"`{path}`" for path in served)
+                        + ": the acceptance suite runs the product through exactly these files, and the "
+                        "file plan names none of them, so what it plans would be built where nothing serves "
+                        "it. Plan the product in those files - or in modules they import - and keep the "
+                        "project's layout. Return only `file_plan`, `component_boundaries` and "
+                        "`implementation_order` with the paths corrected; unchanged sections are "
+                        "automatically preserved."
                     ]
                 else:
                     update["specification_repair_count"] = 0

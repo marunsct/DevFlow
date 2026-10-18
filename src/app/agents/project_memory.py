@@ -116,7 +116,7 @@ def current(repo_root: str | Path) -> dict[str, str]:
     return files
 
 
-def _ranked(files: dict[str, str], focus: str) -> list[str]:
+def _ranked(files: dict[str, str], focus: str, unserved: tuple[str, ...] = ()) -> list[str]:
     from app.analysis.file_kinds import classify_file
 
     def rank(path: str) -> tuple[int, int, str]:
@@ -124,6 +124,10 @@ def _ranked(files: dict[str, str], focus: str) -> list[str]:
         named = path in focus or (len(name) > 4 and name in focus)
         if named and not path.startswith("docs/"):
             return (-1, 0, path)
+        # A copy nothing serves comes after everything that is the product, so
+        # a limited memory holds the served files first (Initiative AQ).
+        if any(path.startswith(folder + "/") for folder in unserved):
+            return (4, 1, path)
         if path in DOCUMENT_ORDER:
             return (0, DOCUMENT_ORDER.index(path), path)
         if path.startswith("docs/"):
@@ -261,7 +265,13 @@ def render(repo_root: str | Path, budget_characters: int, focus: str = "") -> tu
     parts: list[str] = []
     left_out: list[str] = []
     used = 0
-    for path in _ranked(files, focus):
+    try:
+        from app.stacks.scaffold import folders_nothing_serves
+
+        unserved = tuple(folders_nothing_serves(repo_root))
+    except Exception:  # noqa: BLE001 - the order stands as it was
+        unserved = ()
+    for path in _ranked(files, focus, unserved):
         text = files[path]
         if _RECORDS.match(path):
             left_out.append(path)

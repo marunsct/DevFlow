@@ -126,6 +126,62 @@ def _family(path: str) -> str:
     return next((name for name, suffixes in _FAMILIES.items() if suffix in suffixes), "")
 
 
+def _second_copies(entrypoints: list[str], files: list[str]) -> list[tuple[str, str, str, list[str]]]:
+    """(entrypoint, its folder, the copy, the copy's files) for each folder repeating two or more files of a served folder."""
+    found = []
+    for entrypoint in entrypoints:
+        folder = Path(entrypoint).parent.as_posix()
+        if folder in ("", "."):
+            continue
+        name = Path(folder).name
+        served = {
+            Path(f[len(folder) + 1:]).with_suffix("").as_posix()
+            for f in files if f.startswith(folder + "/")
+        }
+        copies: dict[str, list[str]] = {}
+        for f in files:
+            if f.startswith(folder + "/"):
+                continue
+            parts = Path(f).parts
+            for at in range(len(parts) - 1):
+                if parts[at] != name:
+                    continue
+                rest = Path(*parts[at + 1:]).with_suffix("").as_posix()
+                if rest in served:
+                    copies.setdefault(Path(*parts[: at + 1]).as_posix(), []).append(f)
+                break
+        for copy, mirrored in sorted(copies.items()):
+            if len(mirrored) >= 2:
+                found.append((entrypoint, folder, copy, mirrored))
+    return found
+
+
+def folders_nothing_serves(repo_root: str | Path) -> list[str]:
+    """The folders (relative to the workspace) that repeat files of a served folder and are never run. Never raises.
+
+    The project memory and the stage's reading leave them to the end: they
+    filled the memory beside the served copy and were read as though they
+    were the product (Initiative AQ).
+    """
+    try:
+        project, entrypoints = _served_entrypoints(repo_root)
+        root = Path(repo_root) / project
+        if not entrypoints or not root.is_dir():
+            return []
+        from app.acceptance import suite
+        from app.analysis.walk import files_under
+
+        acceptance = suite.directory(repo_root)
+        files = [
+            path.relative_to(root).as_posix()
+            for path in files_under(root, _NOT_CODE)
+            if _family(path.name) and not (acceptance and path.is_relative_to(acceptance))
+        ]
+        return [f"{project}/{copy}".strip("/") for _e, _f, copy, _m in _second_copies(entrypoints, files)]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
     """Code beside the served app that the product never runs, and unit tests that only test it. Never raises.
 
@@ -156,34 +212,12 @@ def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
             if _family(path.name) and not (acceptance and path.is_relative_to(acceptance))
         ]
         problems: list[str] = []
-        for entrypoint in entrypoints:
-            folder = Path(entrypoint).parent.as_posix()
-            if folder in ("", "."):
-                continue
-            name = Path(folder).name
-            served = {
-                Path(f[len(folder) + 1:]).with_suffix("").as_posix()
-                for f in files if f.startswith(folder + "/")
-            }
-            copies: dict[str, list[str]] = {}
-            for f in files:
-                if f.startswith(folder + "/"):
-                    continue
-                parts = Path(f).parts
-                for at in range(len(parts) - 1):
-                    if parts[at] != name:
-                        continue
-                    rest = Path(*parts[at + 1:]).with_suffix("").as_posix()
-                    if rest in served:
-                        copies.setdefault(Path(*parts[: at + 1]).as_posix(), []).append(f)
-                    break
-            for copy, mirrored in sorted(copies.items()):
-                if len(mirrored) >= 2:
-                    problems.append(
-                        f"`{project}/{copy}/` repeats {len(mirrored)} files of the served `{project}/{folder}/` "
-                        f"(e.g. `{project}/{mirrored[0]}`), and nothing serves it: the product runs from "
-                        f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
-                    )
+        for entrypoint, folder, copy, mirrored in _second_copies(entrypoints, files):
+            problems.append(
+                f"`{project}/{copy}/` repeats {len(mirrored)} files of the served `{project}/{folder}/` "
+                f"(e.g. `{project}/{mirrored[0]}`), and nothing serves it: the product runs from "
+                f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
+            )
         for family in sorted({_family(e) for e in entrypoints} - {""}):
             tests = [f for f in files if _family(f) == family and _UNIT_TEST.search(Path(f).name)]
             served_folders = {

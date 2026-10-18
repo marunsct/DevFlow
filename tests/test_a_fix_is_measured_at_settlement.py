@@ -84,3 +84,67 @@ def test_a_defect_naming_no_criterion_is_measured_by_the_unit_tests(tmp_path) ->
         unit={"tests/store.test.ts::keeps every note": "failed"},
     )
     assert defect.status != "fixed"
+
+
+# --- Initiative AO.1: the edges of the measurement -------------------------------
+
+from app.ci import WHERE  # noqa: E402
+
+
+def test_a_skipped_test_is_neither_the_fixer_s_failure_nor_its_proof(tmp_path) -> None:
+    """Only skipped tests name the criterion: the snapshot cannot say, and today's behaviour stands."""
+    defect = _settle(tmp_path, {f"tests/acceptance/ac-3.spec.ts{WHERE}AC-3 lists a new note": "skipped"})
+    assert defect.status == "fixed"
+
+
+def test_a_skipped_test_beside_a_passing_one_does_not_hold_the_fix_open(tmp_path) -> None:
+    defect = _settle(tmp_path, {
+        f"tests/acceptance/ac-3.spec.ts{WHERE}AC-3 lists a new note": "passed",
+        f"tests/acceptance/ac-3.spec.ts{WHERE}AC-3 on a phone": "skipped",
+    })
+    assert defect.status == "fixed"
+
+
+def test_a_failing_test_is_still_a_failure_beside_a_skipped_one(tmp_path) -> None:
+    defect = _settle(tmp_path, {
+        f"tests/acceptance/ac-3.spec.ts{WHERE}AC-3 lists a new note": "failed",
+        f"tests/acceptance/ac-3.spec.ts{WHERE}AC-3 on a phone": "skipped",
+    })
+    assert defect.status != "fixed"
+
+
+def _about(files, description="The note store loses the last note on save"):
+    return _defect(description).model_copy(update={"affected_files": files})
+
+
+def test_another_file_s_failing_unit_test_does_not_hold_this_defect_open(tmp_path) -> None:
+    defect = _settle(
+        tmp_path, {}, defect=_about(["src/store.ts"]),
+        unit={f"tests/store.test.ts{WHERE}keeps every note": "passed",
+              f"tests/render.test.ts{WHERE}draws the list": "failed"},
+    )
+    assert defect.status == "fixed"
+
+
+def test_a_failing_unit_test_about_this_defect_s_file_holds_it_open(tmp_path) -> None:
+    defect = _settle(
+        tmp_path, {}, defect=_about(["src/store.ts"]),
+        unit={f"tests/store.test.ts{WHERE}keeps every note": "failed"},
+    )
+    assert defect.status != "fixed"
+
+
+def test_no_unit_test_about_its_files_means_the_snapshot_cannot_say(tmp_path) -> None:
+    defect = _settle(
+        tmp_path, {}, defect=_about(["src/store.ts"]),
+        unit={f"tests/render.test.ts{WHERE}draws the list": "failed"},
+    )
+    assert defect.status == "fixed"
+
+
+def test_a_defect_naming_no_file_is_still_measured_by_every_unit_test(tmp_path) -> None:
+    defect = _settle(
+        tmp_path, {}, defect=_about([]),
+        unit={f"tests/render.test.ts{WHERE}draws the list": "failed"},
+    )
+    assert defect.status != "fixed"

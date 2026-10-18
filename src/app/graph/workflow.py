@@ -2708,6 +2708,24 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         return None
 
 
+def _the_unit_tests_about(defect: Any, unit: dict[str, str]) -> dict[str, str]:
+    """The unit tests that belong to this defect: all of them when it names no file, else those about its files.
+
+    The whole suite answered for a defect about one file, so another
+    defect's failing test left this one open (Initiative AO.1). A test is
+    about a file when the file's name, without its extension, is in the
+    test's key; a name shorter than three letters says too little to match
+    on. {} when the defect names files and no test mentions them: the
+    snapshot cannot say.
+    """
+    files = [str(f) for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
+    if not files:
+        return dict(unit)
+    stems = {PurePosixPath(f.replace("\\", "/")).stem.lower() for f in files}
+    stems = {stem for stem in stems if len(stem) >= 3}
+    return {key: outcome for key, outcome in unit.items() if any(stem in key.lower() for stem in stems)}
+
+
 def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
     """Whether the defect's own tests pass in the snapshot `label` names; None when it cannot say.
 
@@ -2729,10 +2747,16 @@ def _the_defect_s_tests_in(root: str, label: str, defect: Any) -> bool | None:
         tags = {t for t in tags_in(str(getattr(defect, "description", "") or "")) if t.startswith(("AC-", "CR-"))}
         if tags:
             mine = [outcome for key, outcome in snapshot.acceptance.items() if tags & set(tags_in(key))]
+            # A skipped test proves nothing either way: it is neither the
+            # fixer's failure nor its success (Initiative AO.1).
+            decisive = [outcome for outcome in mine if outcome != "skipped"]
+            if decisive:
+                return all(outcome == "passed" for outcome in decisive)
             if mine:
-                return all(outcome == "passed" for outcome in mine)
+                return None
         if snapshot.unit_ran and snapshot.unit:
-            return all(outcome != "failed" for outcome in snapshot.unit.values())
+            about = _the_unit_tests_about(defect, snapshot.unit)
+            return all(outcome != "failed" for outcome in about.values()) if about else None
         return None
     except Exception:  # noqa: BLE001 - a measurement that cannot answer says nothing
         return None

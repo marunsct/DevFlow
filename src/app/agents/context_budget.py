@@ -247,8 +247,29 @@ def context_window(environment: Mapping[str, str] | None = None) -> int:
         slot = None
     if slot:
         value = min(value, slot)
+        if slot < MIN_VIABLE_WINDOW:
+            # The smaller truth stands (Initiative AO.2): raising the window past
+            # what the server gives one request sends requests it will refuse.
+            _say_once(
+                f"The model server gives each request {slot:,} tokens, below the "
+                f"{MIN_VIABLE_WINDOW:,} a stage needs to work well; budgeting for {slot:,}. "
+                "Fewer slots on the server give each one more."
+            )
+            return slot
+    else:
+        _say_once("The model server reports no slot or context facts; using the configured window.")
     # A window smaller than the framing plus a minimum reply cannot run anything.
     return max(value, MIN_VIABLE_WINDOW)
+
+
+_SAID: set[str] = set()
+
+
+def _say_once(message: str) -> None:
+    """Log `message` once per process, at warning level."""
+    if message not in _SAID:
+        _SAID.add(message)
+        logger.warning(message)
 
 
 @dataclass(frozen=True)
@@ -290,11 +311,13 @@ class ContextBudget:
         *,
         keep_recent_messages: int | None = None,
         max_output_tokens: int | None = None,
+        floor: int = MIN_VIABLE_WINDOW,
     ) -> "ContextBudget":
         # Clamped here as well as in `context_window`, so a budget built
         # directly - by a test, or by a caller passing a model's advertised
-        # window - cannot produce limits that were never satisfiable.
-        window_tokens = max(window_tokens, MIN_VIABLE_WINDOW)
+        # window - cannot produce limits that were never satisfiable. `floor`
+        # is lower only for a window the server itself reports (AO.2).
+        window_tokens = max(window_tokens, floor)
         keep = keep_recent_messages or DEFAULT_KEEP_RECENT_MESSAGES
 
         if max_output_tokens is None:
@@ -314,7 +337,11 @@ class ContextBudget:
             spare = window_tokens - FRAMING_TOKENS - MIN_INPUT_CEILING_TOKENS
             output = max(MIN_OUTPUT_TOKENS, min(int(max_output_tokens), spare))
 
-        ceiling = window_tokens - (output or (window_tokens // 4)) - FRAMING_TOKENS
+        if window_tokens < MIN_VIABLE_WINDOW:
+            # A slot below the floor: the reply takes a quarter and the framing
+            # what it must, and the conversation keeps the rest.
+            output = min(output or window_tokens // 4, window_tokens // 4) if output else 0
+        ceiling = max(1_024, window_tokens - (output or (window_tokens // 4)) - min(FRAMING_TOKENS, window_tokens // 4))
 
         document_chars = int(ceiling * DOCUMENT_FRACTION) * CHARS_PER_TOKEN
         tool_bytes = max(
@@ -366,6 +393,7 @@ class ContextBudget:
             window,
             keep_recent_messages=keep,
             max_output_tokens=_read_int(env, "MODEL_MAX_OUTPUT_TOKENS"),
+            floor=min(window, MIN_VIABLE_WINDOW),
         )
 
         overrides = {

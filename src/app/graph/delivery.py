@@ -409,11 +409,14 @@ def _what_the_release_re_check_finds(state: Any, root: str) -> list[str]:
     """What the checks that read the files find breaking the product now, as gaps. Never raises.
 
     They ran at each milestone review, and later fixes can break what they
-    passed; reading the files costs nothing beside a release.
+    passed; reading the files costs nothing beside a release. Not the locked
+    suite's own files: it ran just now, which a static reading of it cannot
+    overrule.
     """
     try:
         from app.analysis.integration_checks import problems_that_break_the_product
 
+        locked = suite.relative_directory(root) if suite.is_locked(root) else ""
         found = problems_that_break_the_product(
             root,
             getattr(state.get("stack_selection"), "technology_stack", None),
@@ -422,6 +425,7 @@ def _what_the_release_re_check_finds(state: Any, root: str) -> list[str]:
     except Exception:  # noqa: BLE001 - a re-check that cannot run adds nothing
         logger.debug("Could not re-check the product at release", exc_info=True)
         return []
+    found = [problem for problem in found if not (locked and locked in problem)]
     return [f"At release, reading the files still finds: {problem}"[:600] for problem in found[:8]]
 
 

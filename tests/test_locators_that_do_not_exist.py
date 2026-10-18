@@ -107,14 +107,20 @@ def test_suite_allows_valid_playwright_locators(tmp_path: Path) -> None:
 
 
 def test_acceptance_review_calls_locators_that_do_not_exist() -> None:
-    source = inspect.getsource(acceptance_nodes.acceptance_review)
+    from app.acceptance import suite
+
+    source = inspect.getsource(acceptance_nodes.acceptance_review) + inspect.getsource(suite.tests_that_cannot_pass)
+    assert "suite.tests_that_cannot_pass(root, result)" in inspect.getsource(acceptance_nodes.acceptance_review)
     assert "locators_that_do_not_exist" in source, (
         "acceptance_review must check for locators_that_do_not_exist before locking"
     )
 
 
 def test_acceptance_for_round_includes_locators_that_do_not_exist() -> None:
-    source = inspect.getsource(acceptance_nodes.acceptance_for_round)
+    from app.acceptance import suite
+
+    source = inspect.getsource(acceptance_nodes.acceptance_for_round) + inspect.getsource(suite.tests_that_cannot_pass)
+    assert "suite.tests_that_cannot_pass(root, result)" in inspect.getsource(acceptance_nodes.acceptance_for_round)
     assert "locators_that_do_not_exist" in source, (
         "acceptance_for_round must check locators_that_do_not_exist to reopen broken tests"
     )

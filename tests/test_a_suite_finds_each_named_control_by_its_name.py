@@ -394,7 +394,11 @@ class TestATestThatLooksForAValueItNeverGave:
         outside = re.sub(r"`[^`]*`", "", problem).lower()
         for word in BANNED:
             assert not re.search(rf"\b{word}\b", outside), word
+        import inspect
+
+        # One shared list, called when the suite is reviewed and on every round.
+        assert "tests_that_expect_what_they_never_gave(repo_root)" in inspect.getsource(suite.tests_that_cannot_pass)
         review = (Path(nodes.__file__).read_text())
-        assert review.count("suite.tests_that_expect_what_they_never_gave(root)") == 2, (
+        assert review.count("suite.tests_that_cannot_pass(root, result)") == 2, (
             "checked when the suite is reviewed and on every round"
         )

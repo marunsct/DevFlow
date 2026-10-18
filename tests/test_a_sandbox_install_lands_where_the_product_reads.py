@@ -67,3 +67,19 @@ def test_a_workspace_without_a_virtualenv_keeps_its_path(tmp_path: Path) -> None
     # Nothing of this workspace is prepended: no virtualenv, no claim.
     # (The inherited PATH may mention other virtualenvs - the host's own.)
     assert str(bare) not in environment["PATH"]
+
+
+def test_a_tool_in_the_project_virtualenv_is_found_by_its_bare_name(tmp_path: Path, monkeypatch) -> None:
+    """`pytest` in `.venv/bin` was answered "not installed in this environment" five
+    times while the command, with the virtualenv on its PATH, would have found it."""
+    from app.tools.sandbox import SandboxExecutor
+
+    root = _a_python_workspace(tmp_path)
+    tool = root / "notes-app" / ".venv" / "bin" / "pytest"
+    tool.write_text("#!/bin/sh\n")
+    tool.chmod(0o755)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    found = SandboxExecutor._resolve_executable("pytest", str(root))
+
+    assert found == str(tool)

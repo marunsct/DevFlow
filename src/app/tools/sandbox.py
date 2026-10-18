@@ -4358,7 +4358,15 @@ class SandboxExecutor:
             return candidate if os.access(candidate, os.X_OK) else None
         from app.tools.runtimes import path_for
 
-        return shutil.which(name, path=path_for(workspace, os.environ.get("PATH", "")))
+        # Looked up on the PATH the command will run with, the project's
+        # virtualenv first (`_child_environment`): measured on one run, `pytest`
+        # in `.venv/bin` was answered "not installed in this environment" five
+        # times while the command would have found it.
+        search = path_for(workspace, os.environ.get("PATH", ""))
+        venv = _the_project_virtualenv(workspace)
+        if venv:
+            search = os.pathsep.join((venv, search))
+        return shutil.which(name, path=search)
 
     @classmethod
     def _execute_here(

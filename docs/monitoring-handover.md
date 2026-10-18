@@ -705,6 +705,20 @@ know about its testing, and what changed most recently.
   too-lenient checks stay review-only. Release adds three gap sources:
   escalation `known_issues`, fast-mode findings recorded as risks, and a
   release re-read of the files (`problems_that_break_the_product`).
+- **Code the product does not run is named (2026-10-18).** A folder that
+  repeats two or more paths of a served entrypoint's folder (a drafted
+  `frontend/src/` beside the served `src/`), and unit tests whose files and
+  `conftest.py` never name the served folder, are listed in every fix request
+  ("Code the product does not run") and as completion gaps
+  (`scaffold.code_the_product_does_not_run`). Measured on the medium run: both
+  were true, and a fix rewrote a migration file nothing ran.
+- **Project-memory pointers count toward the read rung (2026-10-18).** Eight
+  reads answered "is in the project memory at the start of this conversation"
+  withhold the read tool for the rest of the stage, like three refusals (one
+  testing stage spent ~35 of 70 calls cycling read batch -> stall -> one write).
+  The audits (`audit_live.py`, `kpi.py`) now count those pointers as redundant
+  reads, so the redundant-read rate reads higher than before for the same
+  behaviour.
 - **Each run's KPIs are kept (2026-10-18, Initiative W.4/W.1).** `loop.sh kpi
   [run]` writes `data/kpi/<run>.json` and a row of `data/kpi/ledger.csv` and
   prints `REGRESSION ...` for any rate past 1.5x its 5-run mean; `loop.sh

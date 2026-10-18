@@ -24,7 +24,11 @@ the whole resume order is done - X.1/X.2, AD, AE, W.3, W.1, W.4, W.5 (ledger
 rows "Appendix 2 rows"). W.2 baseline runs are the owner's. New: `loop.sh kpi`
 (run by every `loop.sh score`) keeps each run's KPIs in `data/kpi/` and flags
 regressions; a score against another brief's hidden suite is marked
-`brief_mismatch` and kept out of the false-acceptance count.
+`brief_mismatch` and kept out of the false-acceptance count. Deep analysis 18:45 JST of the medium run added
+two general fixes (unserved code named to fixers and at release; memory
+pointers count toward withholding the read tool) - see monitoring §0.
+Two sessions share this tree: one drives deploys/starts/cancels, the other
+sends pushed commits; announce a suite run before starting it.
 
 ## 0. Your first ten minutes
 

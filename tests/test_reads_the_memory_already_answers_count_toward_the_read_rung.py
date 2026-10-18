@@ -51,3 +51,13 @@ def test_the_pointer_wording_is_the_one_counted() -> None:
 
     assert f"{{HELD_POINTER}}" in open(project_memory.__file__).read()
     assert len(TOOLS) > 0
+
+
+def test_the_log_names_the_count_that_took_it_away(caplog) -> None:
+    """It said "refused 0 redundant reads" when the pointers had done it."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="app.agents.settled_answer"):
+        _call(_cycles(POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL))
+    said = [r.getMessage() for r in caplog.records if "withholding the read tool" in r.getMessage()]
+    assert said and f"pointed to the project memory for {POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL}" in said[0]

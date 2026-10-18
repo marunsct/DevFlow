@@ -1293,6 +1293,34 @@ def _the_unserved_code_section(root: Any) -> str:
     return "\n--- Code the product does not run ---\n" + "\n".join(f"- {p}" for p in problems) + "\n"
 
 
+def _the_database_section(root: Any) -> str:
+    """For a service product: the data store here is the embedded file, and a missing server is no blocker; else "".
+
+    Measured on one run: the specification named PostgreSQL, and three fixes of
+    three criteria each ended "changed nothing: no PostgreSQL server is
+    available, an environmental constraint" - while the same product ran on
+    an embedded file. The environment contract says so to every stage; a
+    fixer that has just read a specification naming a server needs it said
+    where it is deciding whether it can act (Initiative K.2).
+    """
+    try:
+        from app.stacks import contract
+
+        found = contract.the_pack(root) if root else None
+        if found is None or found[0].kind not in ("http_api", "fullstack"):
+            return ""
+    except Exception:  # noqa: BLE001 - the request stands as it was
+        return ""
+    return (
+        "\n--- The database here ---\n"
+        "No database server runs here and none is needed: the served service keeps its data in an "
+        "embedded file database under the directory named by `DATA_DIR`. Where the specification "
+        "names a server such as PostgreSQL, the served code opens that file when no connection "
+        "setting is given. A missing server is never a reason to change nothing - make the served "
+        "code work on the embedded file.\n"
+    )
+
+
 def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     """The differently-shaped work order for a defect's last permitted attempt, or "".
 
@@ -9246,6 +9274,7 @@ def build_workflow_graph(
         request["messages"][-1]["content"] += _the_last_attempt_section(cycle, defect_index)
         request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
         request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
+        request["messages"][-1]["content"] += _the_database_section(state["repository"].root_path)
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:

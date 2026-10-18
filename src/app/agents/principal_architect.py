@@ -299,6 +299,13 @@ def _specification_excerpt(text: str, budget: int) -> str:
     """The previous specification, trimmed to a budget if overly large."""
     if budget <= 0 or len(text) <= budget:
         return text
+    # Every section in part, so a section the review names is never the cut tail.
+    from app.agents.text_budget import _every_section_in_part
+
+    shared = _every_section_in_part(text, budget, "the previous specification")
+    if shared is not None:
+        return shared + (" The full document is recorded in project memory at "
+                         "`docs/technical_specification.md`. Only return the sections you are revising.")
     return (
         text[:budget]
         + f"\n\n[Excerpt: {len(text):,} characters of the previous specification were trimmed to "

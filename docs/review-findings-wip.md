@@ -1888,3 +1888,93 @@ medium run's output tokens; 5,556 edits / 21.7% refused (guards working);
 setting in parallel waves (fixed by O.2); compaction never fired in the
 last 10 runs (largest request 73–101k vs 80k trigger); 4/30 acceptance
 tests passing when the medium run was last observed.
+
+### 14.3 Checkpoint 4 (23:40 JST) — backend implementation review landed (`review-backend-diff.md`); findings H16–H33
+Scope: commits `7e4bc9a..HEAD` in `src/app` and `scripts/`, read not run.
+✓ = verified by hand in this session.
+
+**High**
+- H16 ✓ **AH.1 `MAX_RUN_TOKENS` / `MAX_RUN_COST_USD` are per worker process.**
+  `cost_tracker._RUN_COSTS` is an in-memory dict (`cost_tracker.py:195-215`);
+  `runner._budget_exceeded` (`:307`) reads it. Every mid-run deploy
+  (`loop.sh deploy` restarts the worker) or orphan recovery resets the
+  total to 0, so the bound is per *segment* — which defeats the 12-hour /
+  73M-token case it was built for. `cost_from_transcript` exists
+  (`cost_tracker.py:350`) but only feeds the display (`runs.py:1864`).
+- H17 ✓ **AF mutation probe is not crash-safe.** `mutation.py:175` calls
+  `apply()` *outside* the `try`; the `finally` (`:181`) restores only in the
+  same process. A worker death mid-probe (deploy, OOM, cancel) leaves the
+  mutated source on disk and orphan recovery re-runs release on the broken
+  tree. Also: restore writes LF (CRLF files change), and sites can land in
+  docstrings/comments → false "unnoticed" gaps. Fix shape: mutate a *copy*
+  of the workspace or journal the original under `.harness/` and restore on
+  recovery.
+- H18 (verify on a run) **AA frozen memory vs `seen_content`.**
+  `project_memory.py:383-386` calls `remember(held_path, held_content)` on
+  every call with the *visit-start* content, overwriting the digest the edit
+  tool set after the stage's own edit (`repository.py:3619`) → a later
+  failed `edit_artifact` may be misreported as "a command you ran rewrote
+  it". The new "read for the current text" note also contradicts `9d637fe`
+  (read tool withheld after 8 pointers) and `8ed63b2` (cat/ls/find refused)
+  — a fixer told to re-read with no way to.
+
+**Medium**
+- H19 K.2: the environment contract promises a fresh `DATA_DIR` per
+  acceptance run; only `_javascript.py:307` provides it (≈20 packs do not);
+  AF re-runs non-browser suites on shared data; `seed.py`'s postgres row
+  still says "working with PostgreSQL" → two dialects, server path never run.
+- H20 X.3: the network-sentence replacement matches a 16-space-indented
+  docstring string; Python 3.13 dedents docstrings → no-op there (2 of 3
+  tests fail on 3.13; Docker is 3.12; `pyproject` allows ≥3.12).
+- H21 R digest: lists any non-failed read as "already in this conversation"
+  ignoring offset/limit windows and truncation; misses writes made by
+  commands; returncode regex misses string codes.
+- H22 `changes.py`/`runs.py`: sync `subprocess.run` inside async handlers
+  blocks the API event loop; `TimeoutExpired` uncaught; `git log/show
+  --patch` runs on an agent-writable workspace without `--no-textconv`;
+  nothing refuses agent writes to `.git/` (only `.harness/` is protected).
+- H23 Interface contract (C/J.3): Playwright/npx/.mjs hard-coded in a
+  generic module; CLI/library packs skip silently (no "unchecked" note);
+  `command` lines advertised to the architect but never executed;
+  `globalSetup` dropped; bare POST / parameterised routes give false gaps;
+  contract frozen at lock.
+- H24 M.1: `max(min(window, slot), MIN_VIABLE_WINDOW=32000)` raises the
+  window back above a smaller slot with no warning; `/props` fails *open*
+  (vLLM/Ollama/LM Studio 404 → no bound, no log).
+- H25 E: split work-order parts keep the whole order's steps/interfaces/
+  verification/out_of_scope and run in parallel → verification fails on
+  files siblings have not written yet.
+- H26 AE.1: widening the round's cannot-pass list widens the suite-reopen
+  triggers (`workflow.py:8643-8708`); heuristic false positives can hide
+  real failures; the `ea714bc` locked-in-problem filter is untested.
+- H27 AD: unit fallback is "no unit test failed anywhere" (unrelated failure
+  keeps defects open); `skipped` counts as not passed; tags with no
+  acceptance results fall to the unit suite; `defects_left_open` will jump
+  and trip W.4's regression flag; tests use `::` keys where the real
+  separator is ` > `.
+- H28 W.4 ledger: `mean > 0` guard means 0→n regressions never flag;
+  benchmarks mixed in the 5-run window; wall time includes orphan gaps; CSV
+  write non-atomic. W.1: byte-exact `cmp` fails toward *excluding* runs from
+  false-acceptance stats.
+- H29 AI lessons: gate is owner CLI approval only; `lessons.json` sits on a
+  volume container-mode commands can write, no integrity check; `role`
+  unused; rule text only length/banned-word checked, no "cannot override
+  rules" framing. Injection point: system prompt after FRAMEWORK
+  CAPABILITIES, cap 5, id order (byte-stable; one cache miss per approval).
+- H30 `7eb9a91`: Python/JS heuristics (conftest, test-name regexes) in
+  generic `stacks/scaffold.py`; mirror detection could flag monorepos.
+- H31 AH.3: `_DOWNGRADE` ContextVar resets per graph build → the gap
+  vanishes if the judgement server is back after a restart; detects
+  construction failure only.
+- H32 Repo-rule drift: stack-specific code in generic modules
+  (`interface_contract.py`, `mutation.py`, `scaffold.py`); new prompt text
+  without banned-word tests (X.3 sentence, AA update note, AE.2 gap
+  strings — none contains a banned word today); two tests that would pass
+  on old code (`ea714bc` filter, X.4 ceilings).
+- H33 Steering placement (answer to the interaction question): end of the
+  system prompt after stack instructions and lessons; byte-stable until a
+  note is added or the 5-note window rolls (one full-prefix miss per live
+  stage per note); up to 5×2000 chars ride every role's calls.
+
+**Low**: `find -delete` and `head/tail` of logs blocked by `8ed63b2`;
+confirm the per-stage withheld flag resets on stage revisit.

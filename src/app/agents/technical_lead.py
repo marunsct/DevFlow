@@ -671,6 +671,13 @@ def build_milestone_planning_request(
     return {"messages": [{"role": "user", "content": brief}]}
 
 
+# Evidence for two of the rules below, kept here rather than in the prompt
+# (Initiative X.4: the model needs the rule, not its history). Across the
+# stored runs, 18 of 143 delegated specialist tasks were test-only work given
+# to another role - most often `backend`, on products with no backend; one such
+# stage ran 47 model calls and wrote its tests in another module system. And 17
+# of 25 sprint plans assigned one file to more than one specialist; 157 writes
+# were a stage writing byte for byte what another had written.
 _SYSTEM_PROMPT = f"""You are the Technical Lead for this workflow.
 
 Your role is to select exactly one sprint from the approved plan, define a
@@ -687,19 +694,10 @@ Responsibilities:
   cover - tests for a UI component are still testing work, not ui_ux work.
   Only the `testing` specialist is given the validation tool that runs a
   suite; every other role has to fall back on a raw terminal command, and it
-  is the only role told which runner this run's stack chose. Measured across
-  the stored runs, 18 of 143 delegated specialist tasks were test-only work
-  given to another role - most often `backend`, including on products with no
-  backend at all. One such stage ran 47 model calls, wrote its
-  tests in a different module system from the suite already in the project,
-  and the testing specialist spent the next stage undoing it.
+  is the only role told which runner this run's stack chose.
 - One file, one owner. Two tasks that both write the same file are two
   specialists running at the same time on one file, and the second whole-file
-  write discards the first. Measured across the stored runs: 17 of 25 sprint
-  plans assign one file to more than one specialist, and 157 writes were one
-  stage writing byte-for-byte what a different stage had already written - three
-  specialists each wrote the same manifest, entry file and test file on one
-  run. If two roles genuinely need the same file, say in each task which part of
+  write discards the first. If two roles genuinely need the same file, say in each task which part of
   it that task owns, so neither has to rewrite the whole thing.
 - A role whose part of the product does not exist has nothing to delegate. A
   product the stack builds on vanilla JavaScript and browser storage has no

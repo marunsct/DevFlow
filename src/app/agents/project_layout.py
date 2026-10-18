@@ -56,6 +56,47 @@ PROJECT_LAYOUT = """WHERE FILES GO - this is settled; follow it rather than inve
   recreate them, and never copy `docs/` into the project. A second copy is stale the
   moment that stage runs again, and writing one is refused."""
 
+_KEPT_FROM_THE_GENERAL_LAYOUT = PROJECT_LAYOUT[PROJECT_LAYOUT.index("- ONE LANGUAGE PER DIRECTORY."):]
+
+
+def scaffolded_layout(project: str, served: list[str]) -> str:
+    """The layout section for a project a stack pack scaffolded: where it is served from, settled.
+
+    The general section's "one directory per tier - `backend/`, `frontend/`"
+    was in every specialist's prompt on a scaffolded full-stack run whose
+    product is served from `src/` and the package's `main.py`. The run drafted
+    the page in `frontend/src/` and the service in `backend/app/`, beside the
+    served files; nothing built or ran them, and fixes landed in both. Once a
+    pack has scaffolded the project, where the product lives is a fact, not a
+    convention to choose from.
+    """
+    names = ", ".join(f"`{project}/{path}`" for path in served)
+    return (
+        "WHERE FILES GO - settled by the scaffold; follow it:\n\n"
+        f"- The project is `{project}/`. The product is served from {names}. Build it there: in\n"
+        "  those files, or in files beside them that they import. Code anywhere else is\n"
+        "  never built or run.\n"
+        "- Never start a second copy of a served folder elsewhere in the project - a\n"
+        "  `frontend/` or `backend/` beside the folder that is served. Change the served one.\n"
+        + _KEPT_FROM_THE_GENERAL_LAYOUT
+    )
+
+
+def for_this_workspace(text: str, repo_root: object) -> str:
+    """`text` with the general layout section replaced by the scaffold's, when a pack scaffolded `repo_root`."""
+    if PROJECT_LAYOUT not in text or not repo_root:
+        return text
+    try:
+        from app.stacks.scaffold import _served_entrypoints
+
+        project, served = _served_entrypoints(repo_root)
+    except Exception:  # noqa: BLE001 - the general section stands
+        return text
+    if not project or not served:
+        return text
+    return text.replace(PROJECT_LAYOUT, scaffolded_layout(project, served))
+
+
 #: What to tell an agent about where it is, instead of where the workspace is
 #: on the host. `product_manager` has carried this reasoning in a comment since
 #: one run and was the only caller that acted on it; five other briefs

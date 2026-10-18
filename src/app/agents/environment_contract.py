@@ -68,12 +68,10 @@ def _describe_the_browser(runnable: list[str]) -> str:
         "  for the logic, Playwright for the page' - rather than choosing one and\n"
         "  leaving the\n"
         "  other to be discovered later.\n"
-        "  Measured across the stored workspaces: 14 technical specifications\n"
-        "  name Playwright and only 2 of their technology stacks agree. In the\n"
-        "  other 12 this stage chose the built-in runner alone while the\n"
-        "  architect, reading the same environment, chose Playwright, and the\n"
-        "  architecture reviewer then reported the two documents as a\n"
-        "  contradiction - which costs a revision round every time.\n"
+        # Evidence, kept out of the prompt (X.4): 14 stored specifications
+        # named Playwright and only 2 of their stacks agreed; the reviewer
+        # then reported the two documents as a contradiction, a revision
+        # round each time.
         "- There is still NO display and NO human. Nothing watches the screen, so\n"
         "  'manual browser testing', 'visual inspection' and 'check it in DevTools'\n"
         "  remain impossible - not because a browser is missing, but because\n"

@@ -674,6 +674,9 @@ def create_role_agent(
     # instead of returning its structured response. Contradictory instructions
     # cost a stage; withholding the irrelevant half costs nothing.
     full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _READ_ONLY_RULES))
+    from app.agents.project_layout import for_this_workspace
+
+    full_system_prompt = for_this_workspace(full_system_prompt, resolved_repo_root)
 
     # Compaction. Built here rather than at module scope so a policy change
     # takes effect on the next agent, not the next restart. The context

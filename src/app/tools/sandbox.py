@@ -4478,7 +4478,7 @@ class SandboxExecutor:
             )
         except subprocess.TimeoutExpired as expired:
             return {
-                "error": f"Command timed out after {timeout} seconds." + _timeout_advice(workspace, run_in, argv),
+                "error": f"Command timed out after {timeout} seconds; it was ended at the time limit. Its output so far is in stdout and stderr." + _timeout_advice(workspace, run_in, argv),
                 "stdout": _as_workspace_relative(_truncate(expired.stdout or "" if isinstance(expired.stdout, str) else "", f"{role_name}-{argv[0]}-stdout", workspace), workspace),
                 "stderr": _as_workspace_relative(_truncate(expired.stderr or "" if isinstance(expired.stderr, str) else "", f"{role_name}-{argv[0]}-stderr", workspace), workspace),
                 "returncode": "124",

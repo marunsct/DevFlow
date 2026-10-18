@@ -490,7 +490,10 @@ def test_the_service_reports_its_health():
 the built page from `dist/`. Its unit tests go in `tests/`, named `test_<module>.py`, as
 pytest functions calling routes through `fastapi.testclient.TestClient(app)`. Install a
 Python dependency by adding it to `requirements.txt` (`requirements-dev.txt` for one
-only tests use) and running `.venv/bin/python -m pip install -r requirements.txt`.""",
+only tests use) and running `.venv/bin/python -m pip install -r requirements.txt`. Anything a
+test opens is closed when the tests end: an async database engine is made inside a fixture that
+yields it and then awaits `engine.dispose()` (use `NullPool` for a test database), never at
+import time - a thread left open keeps pytest alive after it has printed its results.""",
     testing="Vitest for unit tests of the page, pytest for unit tests of the service",
     ci_setup=_python.CI_SETUP,
     check_families=frozenset({"python"}),

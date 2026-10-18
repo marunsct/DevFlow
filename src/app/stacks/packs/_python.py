@@ -77,7 +77,10 @@ that import the product's modules directly (`from {{package}}.<module> import ..
 Install a new dependency by adding it to `requirements.txt` (or
 `requirements-dev.txt` for test-only tools) and running
 `.venv/bin/python -m pip install -r requirements.txt`. Run the unit tests with
-`.venv/bin/python -m pytest tests`. Never start a server yourself."""
+`.venv/bin/python -m pytest tests`. Never start a server yourself. Anything a test opens
+is closed when the tests end: an async database engine is made inside a fixture that
+yields it and then awaits `engine.dispose()` (use `NullPool` for a test database), never at
+import time - a thread left open keeps pytest alive after it has printed its results."""
 
 #: How an acceptance test names the criterion it proves. Python test names are
 #: identifiers, so the id is written into the function name.

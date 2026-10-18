@@ -603,10 +603,24 @@ def _the_testability_advice(state: Any) -> list[str]:
         return []
 
 
-def _owner_for(state: Any) -> str:
-    """Who fixes a failing criterion when the test round did not say."""
+#: A failure met on the page itself: a control a test reached for, or the page it opened.
+_ON_THE_PAGE = re.compile(r"\b(?:locator|page)\.\w+:|\bgetBy[A-Z]\w*\(|\bnet::ERR_")
+
+
+def _owner_for(state: Any, detail: str = "") -> str:
+    """Who fixes a failing criterion when the test round did not say.
+
+    In a product with a page and a service, a failure met on the page - a
+    control that never appeared - is the page's specialist's. Measured on one
+    run: every defect went to the backend specialist, every page test had failed
+    its first control, and no fixer in two rounds ever wrote the page.
+    """
     kind = getattr(_stack(state), "product_kind", "") or ""
-    return "ui_ux" if kind == "browser_app" else "backend"
+    if kind == "browser_app":
+        return "ui_ux"
+    if kind == "fullstack" and _ON_THE_PAGE.search(detail or ""):
+        return "ui_ux"
+    return "backend"
 
 
 def _failing_due(state: Any) -> tuple[list[dict[str, Any]], str]:
@@ -949,7 +963,8 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             expected_behavior="The product loads without an uncaught error, a console error or a failed request.",
             actual_behavior="; ".join(str(p) for p in problems)[:1200],
             affected_files=[],
-            owner=_owner_for(state),
+            # Errors the page reports while it loads are the page's.
+            owner=_owner_for(state, "page.load: " + "; ".join(str(p) for p in problems)),
         ))
     for entry in failing:
         if entry.get("id") in mentioned:
@@ -972,7 +987,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
             expected_behavior=str(entry.get("text") or ""),
             actual_behavior=detail + seen,
             affected_files=[],
-            owner=_owner_for(state),
+            owner=_owner_for(state, detail),
         ))
     return defects
 

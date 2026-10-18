@@ -2564,6 +2564,10 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     )
 
 
+#: Files that are a page or a page's component, whatever framework draws it.
+_PAGE_SUFFIXES = frozenset({".tsx", ".jsx", ".vue", ".svelte", ".html", ".astro"})
+
+
 def _the_served_app_is_the_scaffold_s_stub(relative: str, owner: str) -> Any:
     """The wiring defect for a served app that is still the scaffold's stub.
 
@@ -2574,6 +2578,11 @@ def _the_served_app_is_the_scaffold_s_stub(relative: str, owner: str) -> Any:
     """
     from app.agents.specialists import ReportedDefect
 
+    # The page's own stub is the page's specialist's to replace: one run
+    # handed every defect to the backend specialist, and none of its fixers
+    # ever touched the page component the acceptance suite was served.
+    if PurePosixPath(relative).suffix.lower() in _PAGE_SUFFIXES:
+        owner = "ui_ux"
     return ReportedDefect(
         description=(
             f"The served app is still the scaffold's stub: `{relative}` is byte-identical to "

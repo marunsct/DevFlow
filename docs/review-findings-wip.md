@@ -1829,3 +1829,62 @@ workspace → workspace below the fold at 768 px.
 #### H8 (API data unused by the UI that would change behaviour): `/events?since`
 exists → WS→poll fallback is a UI-only change; `approval_timeout_minutes`
 in payload → the stall/countdown surfaces need no backend.
+
+### 14.2 Checkpoint 3 (23:05 JST) — evidence/KPI map landed (`map-evidence-v2.md`); findings H9–H15 (verified where marked ✓)
+
+#### H9 (GOVERNING GAP, unchanged from G13): ~25 fixes today, zero verified on a run
+- run-8b0c94df's outcome is still recorded nowhere (last note: "cancel if
+  ≥20 of 30 acceptance tests still fail"); no run has started on the
+  post-fix code; HANDOVER §2.2 "Verify on the next run" not updated for
+  today's commits. Owner decision 9 (W.2 order: fast notes-api-hono → fast
+  fullstack-bookmarks-py → thorough) is the gate for everything below.
+
+#### H10 ✓ (KPI CORRECTNESS): the new KPI script under-counts and mis-ratios
+- `scripts/loop/kpi.py:123,134` look for guard markers only in the first
+  600 chars of a tool result; the harness *appends* its notes after file
+  content, so `redundant_read_rate` misses them and can disagree with
+  `identical_call_rate` on the same call. `prefill_decode_ratio` (`:149`)
+  divides total input by output — cached input inflates it; the useful
+  number is (input − cached)/output. `reasoning_chars` recorded but unused;
+  `invalid_tool_calls` recorded but not counted; no per-stage/per-role KPI;
+  no phantom-claim rate (Q.4), prompt-size, compaction counter (so O.4's
+  "revisit if KPI shows compaction" can never fire), stale dispatches,
+  reclassifications, vacuous-green, edit well-formedness. 527/2190 is
+  24.06%, not 23.9%.
+
+#### H11 ✓ (LOOP SCRIPT BUGS): `loop.sh kpi` (`loop.sh:222`) redirects to
+`data/kpi/<run>.json` *before* the worker command succeeds → a failing
+worker leaves an error JSON in place of the run's KPIs (ledger step
+skipped). `loop.sh lessons` (`loop.sh:294`) passes only `${2:-3}` → `list`
+works, `propose|approve|reject` fail through `loop.sh` (HANDOVER already
+notes it). The per-run proposal list for the owner is not automated.
+
+#### H12 (THE 431 READS): the lead the ledger left open
+- Read ladder today: memory pointer → note at 3rd read → withhold at 3
+  repeats → name the exit at 6 → refuse at 12; read tool removed at 3
+  refusals/held-backs or 8 pointers. Two plausible causes, neither
+  confirmed: the first repeat gets no notice (`REPEATS_BEFORE_SAYING_SO`=2,
+  notes appended *after* content), and memory pointers cover whole files
+  ≤60k chars only. With R's recitation now in place, the next audit should
+  measure repeated reads per stage *before vs after* R on the W.2 baseline.
+
+#### H13 (LEDGER DRIFT): stale NOT STARTED rows duplicate DONE rows (M L1348;
+O.1–O.4 L1358–1361; Z/AA/AB L2022–2024; UI rows L2036–2040); AJ row
+"IDENTIFIED" though item 1 landed in `2f68304` (NullPool/`dispose()`
+seeding and timeout stdout diagnostics not built — direct pytest runs can
+still hang); M.4–M.6 row says out-of-list tool-name KPI NOT STARTED but
+`unknown_tool_name_rate` exists; HANDOVER §2 table still 2026-10-12.
+
+#### H14 (DECISION/IMPLEMENTATION MISMATCHES): AF budget decided "per lock",
+implemented at release (correctly — the suite locks before the build — but
+the decision text should say so); J.3 "gap for 2 runs then blocker" and E
+"measure over 2 runs" have no run behind them; `gate_deadline` derived from
+`updated_at` may not match the real timeout sweep.
+
+#### H15 (MEASUREMENTS TO CARRY INTO THE PLAN): 37 lost replies ≈40% of the
+medium run's output tokens; 5,556 edits / 21.7% refused (guards working);
+72% `cache_read` on the medium run; 495 pointer answers / 93 withholdings /
+85 held-back reads; ~45 "Context size exceeded" at 20–48k input under a 100k
+setting in parallel waves (fixed by O.2); compaction never fired in the
+last 10 runs (largest request 73–101k vs 80k trigger); 4/30 acceptance
+tests passing when the medium run was last observed.

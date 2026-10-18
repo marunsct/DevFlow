@@ -11,14 +11,21 @@ permissions:
 
 jobs:
   backend:
-    name: Python backend
+    name: Python backend (${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    # 3.13 informs and does not gate: docstring indentation changed there once
+    # already (the command tool's network sentence), and the image runs 3.12.
+    continue-on-error: ${{ matrix.python == '3.13' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
 
       - name: Install uv
         run: pip install uv

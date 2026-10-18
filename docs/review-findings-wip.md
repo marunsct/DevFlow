@@ -1444,3 +1444,87 @@ calls gpt-oss-20b "frontier".
   log virtualization/buffer cap, `waiting_for_budget` status styling,
   dead-code deletion. The plan's Part 4 Phase 1 row should be split
   accordingly in the ledger.
+
+### 13.4 Checkpoint 5 (12:55 JST) — graph/acceptance/tools map landed (`map-graph.md`); Fable-verified
+
+#### G19 (HIGH, release integrity + treadmill): a fix is "fixed" on the fixer's say-so
+- `graph/workflow.py:8895-8960` `_settle_the_fix`: with no blockers and a
+  named test, the defect is marked fixed; `verified_by` (what the execution
+  ledger confirms ran and passed) is only an info log ("does not gate the
+  transition"). The post-fix check `after_a_fix` (engineering.py:555)
+  reverts a fix that *broke other tests*; nothing checks that the defect's
+  own tests now pass — that waits for the next test round, which then counts
+  it as another failed attempt. Yet `_the_defect_s_tests_pass`
+  (workflow.py:2615, per-file acceptance probe, no model) already exists and
+  L.3 runs it at *dispatch*. Running it at *settlement* is the symmetric
+  missing half: a defect only closes on a green probe; a red probe marks the
+  attempt failed immediately (saving a whole round, and making the fixer's
+  self-report irrelevant). The rewrite fixers hard-code the regression-test
+  string (`rewritten_fixes.py:207,306`) and `fix_by_candidates` keeps a
+  candidate when the check could not run (`:296`, `passed is not False`) —
+  same class: unknown treated as passed.
+
+#### G20 (MEDIUM): two different "tests that cannot pass" lists
+- `acceptance_nodes.py:376-401` (review, 18 checks) vs `:1141-1153` (per
+  round, 11): the round list lacks `locators_nobody_sees`,
+  `locators_that_pick_one`, `tests_that_assert_an_unstated_order`,
+  `locators_that_contradict_their_assertions`, `controls_never_found_by_name`,
+  `tests_with_module_system_mismatch`, `tests_with_unawaited_async_helpers`.
+  Repaired/reopened tests re-enter through the shorter list, so a test only
+  the long list catches can be locked and later charged to the product. One
+  list, one function.
+
+#### G21 (MEDIUM, prompt/code disagreement): milestone `blocked` verdict
+- `agents/milestone_reviewer.py:99-105` tells the model `blocked` ends the
+  run; `workflow.py:9756-9768` re-plans instead, with no visible cap on that
+  branch. Same class as G1 (instruct, then do otherwise) — and a weak model
+  that believes `blocked` is terminal will avoid saying it.
+
+#### G22 (MEDIUM, local-model): tool description untrue in container mode
+- `agent_toolkit.py:585` says everything except install runs with the
+  network off; in-container mode applies no network restriction
+  (`sandbox.py:4364-4437`) and builds its environment differently (venv
+  PATH, `ACCEPTANCE_PORT`). The tool text is part of the prompt the model
+  reasons from; it must be rendered from the active mode.
+
+#### G23 (THROUGHPUT): parallelism is mostly nominal
+- Per-workspace command lock serialises every command (`sandbox.py:3732`);
+  `HARNESS_MAX_PARALLEL=6`; `fix_by_candidates` fires 3× the file count of
+  concurrent model calls (`rewritten_fixes.py:278`) — against a 1-slot
+  server this is queueing plus KV-cache thrash (session-1 F10 measured
+  1.0–1.3×). The honest default is `max_parallel = server slots` (S already
+  reads `/props`).
+
+#### G24 (THROUGHPUT, model calls that deterministic data can gate)
+- Thorough mode runs a judgement-model testing agent every round although
+  the fast "harness round" gathers the same measurements; architecture and
+  milestone reviews run even when the harness found no breakage and the
+  suite is green; `security_review` runs when nothing risky changed (the
+  conditional skip exists per the old plan — verify it is reached);
+  `what_the_files_already_prove` (49 whole-workspace checks) is recomputed
+  several times per round with no caching.
+
+#### G25 (CORRECTNESS, status model): `completed_with_gaps` is a list on `completed`
+- Stored as `completed` + `completion_gaps` + `NON-DELIVERABLE.json`
+  (delivery.py:259-293, runner.py:1448-1490). Never reaching the gaps list:
+  fast-mode review findings recorded as risks, escalation `known_issues`,
+  defects accepted as risk. Release does not re-run compiler, dependency-
+  drift or integration checks. (J.4 implementation note acknowledged the
+  enum constraint; the three missing sources are new.)
+
+#### G26 (MAINTAINABILITY, refactor evidence for V)
+- `build_workflow_graph` is one 3,672-line closure (46 nodes, string-routed
+  through `_route_from_stage` on 35 of them); `_review_the_milestone` 463
+  lines with its revise-or-escalate branch repeated 5×; `_run_gated_agent`
+  440 lines with the failure block duplicated (W:3073-3111 / 3191-3230);
+  `_closed_if_an_earlier_fix_resolved_it` repeats its close block 4×; two
+  defect clusterers (W:4178, W:4296) share scaffolding; `MAX_*` caps read at
+  import time (worker restart to change). `build_repository_read_tools` is
+  imported in role_agent.py but absent from the tool list (verify: dead).
+  Revert is `git reset --hard` + `git clean -fd` on the whole workspace
+  (ci.py:230-239) — consistent with L.2's DROPPED verdict (one fix per
+  stage) but worth stating as the invariant that keeps L.2 dropped.
+
+#### G27 (not a bug, mapper over-flag): last-attempt shape change
+- Fires at `failed_fix_tries >= escalate_after()` (=2) → attempt 3, which
+  with three charged attempts *is* the last rung. No action.

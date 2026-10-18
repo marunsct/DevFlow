@@ -106,3 +106,52 @@ def test_the_endpoints_exist():
     source = inspect.getsource(runs)
     for route in ('"/{run_id}/changes"', '"/{run_id}/changes/{sha}"', '"/{run_id}/steering"'):
         assert route in source
+
+
+# --- Initiative AO.8: hygiene --------------------------------------------------
+
+def test_git_is_run_without_textconv_or_an_external_diff_and_a_timeout_is_its_own_error(tmp_path, monkeypatch):
+    import subprocess
+
+    root = _repo(tmp_path)
+    seen = []
+    real = subprocess.run
+
+    def spy(argv, **kwargs):
+        seen.append(argv)
+        return real(argv, **kwargs)
+
+    monkeypatch.setattr(changes.subprocess, "run", spy)
+    changes.diff(root, changes.commits(root)[0]["sha"])
+
+    shown = next(a for a in seen if "show" in a)
+    assert "--no-textconv" in shown and "--no-ext-diff" in shown and "core.fsmonitor=false" in shown
+
+    def slow(argv, **kwargs):
+        raise subprocess.TimeoutExpired(argv, 20)
+
+    monkeypatch.setattr(changes.subprocess, "run", slow)
+    with pytest.raises(changes.ChangesTookTooLong):
+        changes.commits(root)
+
+
+def test_the_endpoints_read_git_off_the_event_loop_and_answer_504_on_a_timeout():
+    import inspect
+
+    from app.server import runs
+
+    source = inspect.getsource(runs)
+    assert "await asyncio.to_thread(commits, record.repo_root)" in source
+    assert "await asyncio.to_thread(diff, record.repo_root, sha)" in source
+    assert source.count("status_code=504") >= 2
+
+
+def test_an_agent_cannot_write_into_the_workspace_s_history(tmp_path):
+    from app.tools.repository import RepositoryToolError, write_approved_artifact
+
+    (tmp_path / ".harness").mkdir()
+    (tmp_path / ".git" / "hooks").mkdir(parents=True)
+
+    with pytest.raises(RepositoryToolError, match="version history"):
+        write_approved_artifact(tmp_path, ".git/hooks/pre-commit", "#!/bin/sh\necho run\n")
+    assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()

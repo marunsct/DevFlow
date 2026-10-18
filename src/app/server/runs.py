@@ -10,6 +10,7 @@ which validates it and resumes the LangGraph thread.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
@@ -822,13 +823,16 @@ def create_runs_router(
         run_id: str, user: UserInDB = Depends(get_current_active_user)
     ) -> dict[str, Any]:
         """The run's workspace history, newest first, with the files each commit touched."""
-        from app.server.changes import ChangesUnavailable, commits
+        from app.server.changes import ChangesTookTooLong, ChangesUnavailable, commits
 
         record = _require_run(runner, run_id, user)
         if not record.repo_root:
             return {"run_id": run_id, "commits": []}
         try:
-            return {"run_id": run_id, "commits": commits(record.repo_root)}
+            # Off the event loop: git can take seconds on a large history.
+            return {"run_id": run_id, "commits": await asyncio.to_thread(commits, record.repo_root)}
+        except ChangesTookTooLong as error:
+            raise HTTPException(status_code=504, detail=str(error)) from error
         except ChangesUnavailable as error:
             return {"run_id": run_id, "commits": [], "problem": str(error)}
 
@@ -837,13 +841,15 @@ def create_runs_router(
         run_id: str, sha: str, user: UserInDB = Depends(get_current_active_user)
     ) -> dict[str, Any]:
         """One commit's diff in the run's workspace."""
-        from app.server.changes import ChangesUnavailable, diff
+        from app.server.changes import ChangesTookTooLong, ChangesUnavailable, diff
 
         record = _require_run(runner, run_id, user)
         if not record.repo_root:
             raise HTTPException(status_code=404, detail="This run has no workspace yet.")
         try:
-            return {"run_id": run_id, **diff(record.repo_root, sha)}
+            return {"run_id": run_id, **await asyncio.to_thread(diff, record.repo_root, sha)}
+        except ChangesTookTooLong as error:
+            raise HTTPException(status_code=504, detail=str(error)) from error
         except ChangesUnavailable as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

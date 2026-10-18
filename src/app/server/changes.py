@@ -27,13 +27,22 @@ class ChangesUnavailable(ValueError):
     """The workspace has no history to read, or the commit is not one of it."""
 
 
+class ChangesTookTooLong(ChangesUnavailable):
+    """Reading the history did not finish in time."""
+
+
 def _git(root: Path, *args: str) -> str:
     if not (root / ".git").exists():
         raise ChangesUnavailable("This run's workspace keeps no history.")
-    done = subprocess.run(
-        ["git", "-C", str(root), "-c", "core.quotepath=off", *args],
-        capture_output=True, text=True, timeout=20, check=False,
-    )
+    try:
+        done = subprocess.run(
+            # No textconv and no external diff: a filter the workspace's own
+            # configuration names would run a command it chose (Initiative AO.8).
+            ["git", "-C", str(root), "-c", "core.quotepath=off", "-c", "core.fsmonitor=false", *args],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise ChangesTookTooLong("Reading this run's history took too long.") from error
     if done.returncode != 0:
         raise ChangesUnavailable((done.stderr or "git failed").strip()[:200])
     return done.stdout
@@ -42,7 +51,7 @@ def _git(root: Path, *args: str) -> str:
 def commits(root: str | Path, limit: int = MOST_COMMITS) -> list[dict[str, Any]]:
     """The workspace's commits, newest first: hash, message, time, and each file's lines added and removed."""
     out = _git(
-        Path(root), "log", f"--max-count={int(limit)}", "--numstat",
+        Path(root), "log", f"--max-count={int(limit)}", "--numstat", "--no-ext-diff",
         f"--format=%x1e%H{_SEPARATOR}%s{_SEPARATOR}%cI",
     )
     found: list[dict[str, Any]] = []
@@ -69,6 +78,6 @@ def diff(root: str | Path, sha: str) -> dict[str, Any]:
     """One commit's unified diff against its parent, capped; the first commit against nothing."""
     if not _A_HASH.match(str(sha or "")):
         raise ChangesUnavailable("A commit is named by its hash.")
-    text = _git(Path(root), "show", "--format=", "--no-color", "--patch", "--find-renames", sha)
+    text = _git(Path(root), "show", "--format=", "--no-color", "--patch", "--find-renames", "--no-textconv", "--no-ext-diff", sha)
     truncated = len(text) > MOST_DIFF_CHARS
     return {"sha": sha, "diff": text[:MOST_DIFF_CHARS], "truncated": truncated}

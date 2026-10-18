@@ -1357,3 +1357,77 @@ them apart from session 1's F-series).
   not refetch on `budget_pause`/`approval_denied`/`review_decision`; after a
   `closed` frame the stream is never re-attached; brownfield
   (`StartRunRequest.source`, `POST /runs/{id}/codebase`) unreachable from UI.
+
+### 13.3 Checkpoint 4 (12:25 JST) — run history / packs / loop map landed (`map-runs-packs.md`)
+
+#### G12 (EVIDENCE CORRECTION, HIGH): the local-model "quality cliff" (C8 → Initiative Q) is confounded
+- The brief_low runs scored 1/10, 1/10, 5/10 (94d2c449, 3642baf8, 866e972e)
+  against `benchmarks/web-todo/hidden`, whose tests require the `## Interface`
+  labels present only in `benchmarks/web-todo/brief.md`, not in
+  `tests/brief_low.md`. The one run given the real bench brief (77c6650e,
+  local model, fast) scored 10/10. So `false_acceptance` (`completed and
+  score<1.0`) on those three mixes a *brief/suite mismatch* with harness
+  faults, and improvement-plan lines 429/741 ("fast/local web-todo scored
+  0.1/0.1/0.5 while frontier-judged scored 1.0") over-read it. 94d2c449
+  remains a true false acceptance (reclassify-to-ship). Consequence: Q's
+  routing items stay justified by the *revert* evidence (both live reverts
+  were local-model fixes) but not by the hidden-score gap; the bench harness
+  needs a rule that a run is only scored against a hidden suite whose brief
+  it was given (or the score is tagged `brief_mismatch`).
+
+#### G13 (EVIDENCE GAP, HIGH): no scored run exists after the P0 wave
+- run-8b0c94df is the only run documented after the 2026-10-18 fixes; its
+  brief, mode, model, duration and outcome are recorded nowhere (mentioned
+  only at IP:1340/1344/1350, RF:1218). K.3-extension and L.1 refinement were
+  written *because of* it, so it did not benefit from them. The medium brief
+  has 0 completions in 9 attempts; `tests/brief_high.md` has never run; the
+  stage-2 bench gate (notes-api, wordstats-cli, textkit-lib) has no recorded
+  result. Session-2 plan items must therefore be framed as hypotheses with
+  the measurement that confirms them, and the first action of the loop is a
+  scored post-P0 run on the real bench briefs.
+
+#### G14 (A/B BLOCKER, MEDIUM): the toggles do not reach the container
+- `docker-compose.yml` `x-app-env` does not pass `LINE_EDITS`,
+  `ENVIRONMENT_CONTRACT`, `WORKSPACE_DIGEST`, `PROJECT_MEMORY`,
+  `HARNESS_TASK_LIST`, `JUDGEMENT_*`, `ESCALATE_AFTER_ATTEMPTS`,
+  `MODEL_MAX_OUTPUT_TOKENS`. Every "A/B-verified" clause in the plan is
+  unexecutable without editing compose. Related config drift:
+  `SANDBOX_MEMORY_LIMIT` 4g (code) / 1g (compose) / 2g (.env.example);
+  `MODEL_CONTEXT_WINDOW` default 100000 vs server started at 126,464;
+  `HARNESS_MAX_PARALLEL=6` default against a 1-slot server.
+
+#### G15 (LEDGER ACCURACY): U.2 claims not borne out
+- "duplicate-call rate already in audit_live.py" — audit_live counts
+  replayed call_ids; the identical-call measure lives only in
+  `scripts/audit_run.py`, which `loop.sh` never calls. Not counted anywhere:
+  reasoning-exhaustion discarded tokens (and the owner's llama server reports
+  no reasoning tokens, so the share is unmeasurable from usage), stale-fixer
+  dispatches, reverts/run, reclassifications, vacuous-green detections,
+  prefill:decode ratio. No cross-run KPI ledger exists; all script output is
+  text. `evaluation/evaluate.py` is a LangSmith heuristic evaluator for
+  intake/architecture, unrelated to bench scores.
+
+#### G16 (LANGUAGE-AGNOSTIC CLAIM): where the packs stop
+- 35 packs / 5 kinds. Only the two fullstack-*-fastapi packs declare
+  `entrypoints` (K.3's stub check covers nobody else, incl. fullstack-next/
+  django, python-http/flask). Ten service packs have empty `check_families`
+  (go×2, java-spring, aspnet, rust-axum, ruby×2, php×2, node-nest).
+  Dependency-drift covers JS/TS + Python only; the compiler check is a
+  silent no-op when a toolchain is absent; no pack for Kotlin/Swift/Dart/
+  Elixir/Scala/C++; every service pack's acceptance needs Node+Playwright;
+  bench corpus is JS+Python only; no `services` field in the contract.
+  → The external review's "capability tiers" (logs.md §3) is the honest
+  framing until K.6 lands: *pack-supported / custom / unverified*, surfaced
+  at intake.
+
+#### G17 (DOCS DRIFT): HANDOVER §2 frozen at 10-12 (model row, suite count,
+"27 packs" vs 35); improvement-plan §4 still says bf43c7e2 is running (it
+failed 06:49 JST in `defect_fix_2_19`, `ValueError` from the venv symlink
+outside the workspace root — itself a K.5 regression candidate); line 15
+calls gpt-oss-20b "frontier".
+
+#### G18 (THROUGHPUT, parked items that matter most)
+- Parallel mode ≈1.0–1.3× on 1 slot (auto-approve loop redesign parked);
+  reads ≈70% of calls; task list built, off, never measured; thinking budget
+  is the biggest single time lever and is an owner decision — the plan
+  should give the owner a measured recommendation, not a setting change.

@@ -72,6 +72,7 @@ def what_failed(defect: Any, repo_root: str | Path, last_failure: Any = None) ->
 
 def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Callable[[str], bool]) -> list[str]:
     """The workspace files a fix rewrites: the ones the defect names, then the ones its failure points at."""
+    from app.analysis.file_kinds import is_scratch
     from app.tools.repository import IGNORED_DIRECTORIES
 
     root = Path(repo_root)
@@ -89,6 +90,12 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         if target is None or any(part in IGNORED_DIRECTORIES for part in target.parts):
             continue
         relative = target.relative_to(root).as_posix()
+        # A stage's throwaway probe is no part of the product. Measured live:
+        # one fixer's `tmp-check-*.py` failed, its traceback reached two later
+        # fixes as what failed, and each rewrote the probe and was recorded
+        # as having fixed its defect.
+        if is_scratch(relative):
+            continue
         if relative not in found and may_write(relative):
             found.append(relative)
         if len(found) >= MOST_FILES:

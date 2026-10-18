@@ -212,7 +212,7 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
         if call is None or outcome is None:
             continue
         command = _the_command(call)
-        if not command:
+        if not command or _runs_a_probe(call):
             continue
         # Re-inserted so the dict's order is the order of each command's
         # latest result.
@@ -225,6 +225,20 @@ def last_failing_command(run_id: str | None) -> dict[str, str] | None:
         }
     failing = [found for found in latest.values() if found]
     return failing[-1] if failing else None
+
+
+def _runs_a_probe(call: dict) -> bool:
+    """Whether the command runs a stage's throwaway probe, whose failure is the probe's, not the product's.
+
+    Measured live: one fixer's `tmp-check-*.py` failed on its own import path,
+    and two later fixes, of other defects, were briefed with that traceback
+    as the product's failure.
+    """
+    from app.analysis.file_kinds import is_scratch
+
+    argv = (call.get("args") or {}).get("command")
+    words = argv if isinstance(argv, list) else str(argv or "").split()
+    return any(is_scratch(str(word)) for word in words[:4] if "/" in str(word) or "." in str(word))
 
 
 def _the_command(call: dict) -> str:

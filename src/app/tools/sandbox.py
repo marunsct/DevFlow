@@ -705,7 +705,7 @@ def after_a_run_that_never_finished(
 
 
 # Resource ceilings. A fork bomb or a runaway build hits these instead of the host.
-MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "4g")
+MEMORY_LIMIT = os.environ.get("SANDBOX_MEMORY_LIMIT", "1g")
 CPU_LIMIT = os.environ.get("SANDBOX_CPU_LIMIT", "2")
 PIDS_LIMIT = os.environ.get("SANDBOX_PIDS_LIMIT", "512")
 

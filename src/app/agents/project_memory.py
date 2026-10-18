@@ -23,6 +23,7 @@ a pointer to it rather than the same text a second time.
 
 from __future__ import annotations
 
+import difflib
 import logging
 import os
 import re
@@ -324,6 +325,20 @@ def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:
     return None
 
 
+#: Files whose changes are shown in full when reading is withheld, and the lines of each.
+MOST_CHANGED_FILES_SHOWN = 3
+MOST_DIFF_LINES_PER_FILE = 24
+
+
+def _the_read_tool_is_withheld() -> bool:
+    try:
+        from app.agents.settled_answer import the_read_tool_is_withheld
+
+        return the_read_tool_is_withheld()
+    except Exception:  # noqa: BLE001 - then the note names the files, as before
+        return False
+
+
 def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
     """A note naming what changed since the memory was taken, for the end of a call; "" if nothing did.
 
@@ -336,7 +351,24 @@ def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
     gone = sorted(path for path in snapshot if path not in now)
     added = sorted(path for path in now if path not in snapshot and not _RECORDS.match(path))
     lines = []
-    if changed:
+    if changed and _the_read_tool_is_withheld():
+        # The note used to say "read for the current text" to a stage whose
+        # read tool had been taken away. What changed is shown instead
+        # (Initiative AM).
+        lines.append("Changed since the project memory was taken (reading is withheld; this is what changed):")
+        for path in changed[:MOST_CHANGED_FILES_SHOWN]:
+            shown = list(difflib.unified_diff(
+                snapshot[path].splitlines(), now[path].splitlines(), "before", "now", n=1, lineterm="",
+            ))
+            body = shown[:MOST_DIFF_LINES_PER_FILE]
+            more = len(shown) - len(body)
+            lines.append(f"{path} ({len(now[path].splitlines())} lines now):")
+            lines.extend(f"  {line}" for line in body)
+            if more > 0:
+                lines.append(f"  ... {more} more changed lines; `grep` finds any text in the file")
+        if len(changed) > MOST_CHANGED_FILES_SHOWN:
+            lines.append("Also changed: " + ", ".join(changed[MOST_CHANGED_FILES_SHOWN:40]))
+    elif changed:
         lines.append("Changed since the project memory was taken (read for the current text): "
                      + ", ".join(f"{p} ({len(now[p].splitlines())} lines now)" for p in changed[:40]))
     if added:
@@ -381,10 +413,10 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                 for held_path, held_content in self._held.items():
                     self._first_held.setdefault(held_path, held_content)
                 if self._held:
-                    from app.tools.seen_content import remember
+                    from app.tools.seen_content import remember_if_unseen
 
                     for held_path, held_content in self._held.items():
-                        remember(held_path, held_content)
+                        remember_if_unseen(held_path, held_content)
                 changed = _with_memory(messages, memory) if memory else None
                 if changed is not None:
                     note = changes_since(self._snapshot_files, current(repo_root))

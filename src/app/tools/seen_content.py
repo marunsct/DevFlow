@@ -62,6 +62,25 @@ def remember(relative_path: str, content: str) -> None:
         seen.pop(next(iter(seen)))
 
 
+def remember_if_unseen(relative_path: str, content: str) -> None:
+    """Record `content` as seen only when this stage has seen nothing of the file yet.
+
+    The project memory hands a stage the files it holds on every model call.
+    Writing their visit-start text with `remember` each time overwrote what the
+    stage's own edit had just recorded, so the next edit was judged against
+    text the stage had since changed and the failure was blamed on "a command
+    you ran" (Initiative AM). Whoever saw the file first stands; an edit or a
+    read, which know more, still use `remember`.
+    """
+    seen = store(_PURPOSE, _FALLBACK)
+    key = the_same_place(relative_path)
+    if key in seen:
+        return
+    seen[key] = _digest(content)
+    while len(seen) > MAX_FILES_REMEMBERED:
+        seen.pop(next(iter(seen)))
+
+
 def record_state(relative_path: str, content: str) -> None:
     """Remember that this stage has left `relative_path` holding `content`."""
     history = store(_HISTORY, _FALLBACK_HISTORY)

@@ -1431,3 +1431,16 @@ calls gpt-oss-20b "frontier".
   reads ≈70% of calls; task list built, off, never measured; thinking budget
   is the biggest single time lever and is an owner decision — the plan
   should give the owner a measured recommendation, not a setting change.
+
+#### G10 amendment (12:40 JST): concurrent UI Phase 1 commit
+- `3435fb0` (another session, 11:32 JST) landed contrast tokens, live
+  regions on feed + log, skip link, aria-current, focus-visible, reduced
+  motion, keyboard dropzone, named Settings controls, page title/colour
+  scheme, and `scripts/ui/axe_measure.mjs` (455 axe violations → 5 on four
+  pages). Still open from G10 after that commit: toast/dialog primitives (17
+  native alert/confirm), modal dialog role/focus trap, title/favicon badges,
+  browser Notifications, inline artifact rendering, auto-approve countdown,
+  stale-while-error dashboard, WS→poll fallback, hidden-tab polling pause,
+  log virtualization/buffer cap, `waiting_for_budget` status styling,
+  dead-code deletion. The plan's Part 4 Phase 1 row should be split
+  accordingly in the ledger.

@@ -2065,3 +2065,646 @@ Delegation", arXiv 2609.24234.
 10. K.6: after the W.2 baselines.
 11. AF budget: about 3 sampled criteria per lock, logic breaks the unit tests check in seconds, no browser runs.
 12. M.3 (sampling) stays dropped; U.4 (automatic deletion) stays unbuilt.
+
+---
+
+## Appendix 3 (2026-10-18, third review session): Review of the day's implementations, remaining gaps, and the UI/UX revamp with a multi-theme design system
+
+> **Status tracking**: rows for every item below are in the "Appendix 3
+> rows" block at the end. Evidence ledger: `docs/review-findings-wip.md`
+> §14 (findings H1–H33, each with file:line; ✓ marks what this session
+> verified by reading the code). The live Docker app could not be reached
+> from the review session (no shell/file bridge; the Chrome extension was
+> not connected), so UI findings are from the code; 15.7 lists the
+> screenshot pass that should confirm them.
+
+**Where the harness stands tonight.** Between 18:30 and 23:00 JST the driver
+session implemented most of Appendix 2 and all twelve owner decisions (119
+files, +5.5k lines, each with a test), and dropped several items on
+measurement with reasons recorded in the ledger (M.2, M.3, Z/O.4, Y, AA.2,
+AC.3). That is the right behaviour of the loop. Two things follow for this
+appendix: first, **none of the ~25 changes has run on a product yet** (H9),
+so W.2's baseline is still the gate and every item below is a hypothesis
+with its measurement named; second, a same-day code review of the
+implementations found three high-severity defects and ~15 medium ones
+(H16–H33) — the kind a suite of focused unit tests does not catch because
+they are *lifecycle* and *interaction* bugs (process restarts, crashes
+mid-probe, two middlewares writing the same digest). Part 13 is those fixes,
+ranked; Part 14 is the remaining harness gaps; Part 15 is the UI/UX revamp
+the owner asked for, with the multi-theme design system; Part 16 is the
+detailed implementation sequence.
+
+**Format of every item below** (the owner asked for a *detailed*
+implementation plan): Goal → Evidence → Files → Steps → Tests (the
+failing-first test, named) → Acceptance (how the loop knows it worked) →
+Effort → Depends on.
+
+---
+
+### Part 13 — Fix what today built (P0 before the W.2 baseline, so the baseline measures the intended code)
+
+#### Initiative AK: Run-wide budgets survive the process — `MAX_RUN_TOKENS` / `MAX_RUN_COST_USD`
+- **Goal**: a token or cost ceiling bounds the *run*, not the current worker
+  segment.
+- **Evidence (H16 ✓)**: `observability/cost_tracker.py:195-215` keeps
+  `_RUN_COSTS` in process memory; `server/runner.py:307 _budget_exceeded`
+  reads it; `loop.sh deploy` and orphan recovery restart the worker → 0.
+  `cost_from_transcript` (`cost_tracker.py:350`) already reconstructs the
+  total from the transcript but only feeds the dashboard (`runs.py:1864`).
+- **Files**: `src/app/observability/cost_tracker.py`,
+  `src/app/server/runner.py`, `src/app/server/run_store.py` (or the runs
+  table), migration.
+- **Steps**:
+  1. Persist the running total: on every priced/unpriced call, add the
+     delta to a `run_usage` row (`run_id, prompt_tokens, completion_tokens,
+     cached_tokens, requests, unpriced_requests, cost_usd`) with an
+     `UPDATE … SET x = x + ?` (no read-modify-write), batched per stage end
+     at most every N calls to keep the DB write rate low.
+  2. On worker start / orphan recovery, seed `_RUN_COSTS[run_id]` from the
+     row; if the row is missing (pre-migration runs), seed from
+     `cost_from_transcript`.
+  3. `_budget_exceeded` reads the persisted total + in-memory delta since
+     the last flush.
+  4. The pause message names the persisted total and the segment delta.
+- **Tests**: `tests/test_a_run_s_token_ceiling_survives_a_worker_restart.py`
+  — spend 60% in one tracker instance, drop it, create a new one for the
+  same run, spend 50% more → `_budget_exceeded` is True (fails on old code:
+  new instance starts at 0).
+- **Acceptance**: a deploy mid-run on the W.2 baseline shows a continuous
+  token total in the run status; W.4's KPI `tokens.input` equals the
+  persisted total ± the last flush interval.
+- **Effort**: S–M. **Depends on**: nothing.
+
+#### Initiative AL: The mutation probe cannot leave a broken product behind
+- **Goal**: AF's deliberate breaks are impossible to ship.
+- **Evidence (H17 ✓)**: `acceptance/mutation.py:175` — `original =
+  apply(project, site)` precedes the `try`; `finally` restores in-process
+  only; a death mid-probe leaves the mutated file, and orphan recovery
+  re-enters release on the broken tree. CRLF→LF on restore; sites inside
+  docstrings/comments produce false "unnoticed" gaps.
+- **Files**: `src/app/acceptance/mutation.py`, `src/app/graph/delivery.py`
+  (release entry), `src/app/graph/terminal_state.py`.
+- **Steps**:
+  1. **Journal before mutate**: write `.harness/mutation-in-flight.json`
+     `{file, original_sha, original_bytes_path}` and a byte copy of the
+     original under `.harness/mutation-backup/` *before* `apply()`; delete
+     the journal after a verified restore (compare sha).
+  2. **Recovery**: at release entry (and in orphan recovery), if the journal
+     exists → restore from the backup, log "a probe was interrupted;
+     restored", then continue. Add the journal path to the harness-owned
+     set so no agent touches it.
+  3. Restore bytes, not text (`write_bytes` of the backup) — fixes CRLF.
+  4. **Site selection**: skip lines inside comments/docstrings using the
+     existing language-service/tree-sitter layer (`analysis/grammar_parse`)
+     where available; otherwise skip lines that the language's comment
+     prefix starts. Keep the budget (≤3 sites) and the non-browser rule.
+  5. Prefer mutating a **copy**: when the pack's unit command can run from a
+     temp copy of the project (`contract.unit` is argv-only), run the probe
+     against `shutil.copytree(project, tmp, ignore=node_modules/.venv)` and
+     never touch the workspace; fall back to in-place+journal only when the
+     command depends on the workspace path.
+- **Tests**: `tests/test_an_interrupted_mutation_probe_is_restored_at_release.py`
+  (simulate: write journal+backup, mutate file, call release entry →
+  original bytes back, journal gone; fails on old code — nothing restores);
+  `tests/test_a_mutation_never_lands_in_a_comment.py`.
+- **Acceptance**: zero `NON-DELIVERABLE` workspaces with a lingering
+  `mutation-in-flight.json`; AF gap rate on the W.2 baseline reported with
+  the site list so false positives can be read.
+- **Effort**: S–M. **Depends on**: nothing.
+
+#### Initiative AM: One owner of a file's "seen" digest
+- **Goal**: the edit tool's view of what the model last saw is never
+  overwritten by the memory middleware.
+- **Evidence (H18)**: `agents/project_memory.py:383-386` calls
+  `remember(held_path, held_content)` with the visit-start content on every
+  call; `tools/repository.py:3619` sets the same digest after an edit → a
+  later failed `edit_artifact` can be blamed on "a command you ran". The
+  visit-start note "read it for the current text" conflicts with read
+  withholding (`9d637fe`, `8ed63b2`).
+- **Files**: `src/app/agents/project_memory.py`, `src/app/tools/seen_content.py`,
+  `src/app/tools/repository.py`.
+- **Steps**:
+  1. `remember()` becomes *first-writer-wins per stage visit* for memory
+     (`remember_if_unseen`) while the edit tool keeps `remember()` (always
+     wins); or key the digest by `(path, source)` and have the edit error
+     path consult the edit source first.
+  2. When memory's note says a file changed since the visit started, and
+     the read tool is withheld, the note must *include the current excerpt
+     of the changed region* (the harness has the bytes) instead of asking
+     for a read the stage cannot make.
+  3. Add a middleware-order comment and a test that pins the order:
+     memory → (model) → edit → next call's memory does not clobber.
+- **Tests**: `tests/test_an_edit_s_own_digest_is_not_overwritten_by_memory.py`
+  (edit a held file, run the memory middleware once more, fail an edit with
+  stale `find` → the error names the model's own edit, not a command).
+- **Acceptance**: on the W.2 baseline, zero occurrences of "a command you
+  ran rewrote it" immediately after a successful `edit_artifact` on the same
+  path (W.4 can count this pair).
+- **Effort**: S. **Depends on**: nothing.
+
+#### Initiative AN: Correctness of the measurement layer (W.4 / W.1 / loop.sh)
+- **Goal**: the KPIs the loop now depends on count what they claim.
+- **Evidence (H10 ✓, H11 ✓, H28)**: `scripts/loop/kpi.py:123,134` scan only
+  `text[:600]` for guard markers while the harness appends notes *after*
+  content; `prefill_decode_ratio` uses total input (cached inflates it);
+  `reasoning_chars`, `invalid_tool_calls` recorded but unused; no per-stage
+  KPI; `kpi_ledger.py` `mean > 0` guard never flags 0→n; benches mixed in
+  the 5-run window; wall time includes orphan gaps; CSV non-atomic;
+  `loop.sh:222` clobbers `data/kpi/<run>.json` when the worker fails;
+  `loop.sh:294` passes one arg to `lessons.py`; W.1's byte-exact `cmp`
+  excludes near-identical briefs from false-acceptance stats.
+- **Files**: `scripts/loop/kpi.py`, `scripts/loop/kpi_ledger.py`,
+  `scripts/loop/loop.sh`, `scripts/bench/score.py`.
+- **Steps**:
+  1. Guard markers: search the whole result, or better, read the structured
+     marker the harness already attaches (make `repeated_queries` /
+     `seen_content` emit a one-token tag at the *start* of the note and
+     match that).
+  2. Ratios: `prefill_decode_ratio = (input − cached) / output`; add
+     `effective_input_tokens`.
+  3. Per-stage block: `stages[{name, calls, input, cached, output,
+     identical_calls, redundant_reads, lost_replies, tool_errors}]`.
+  4. New counters: `lost_replies` by reply shape (length finish + no answer
+     + no tool call — the owner's server reports no reasoning tokens),
+     `phantom_write_claims` (Q.4 line), `compactions`, `stale_dispatches`
+     ("closed without a fixer"), `reverts`, `reclassifications`,
+     `vacuous_green`, `edit_wellformed_rate` per tool, `prompt_chars` per
+     role (X.4), `steering_notes`.
+  5. Ledger: flag when `value > max(1.5×mean, floor)` with a per-KPI floor;
+     window per benchmark name; wall time from stage spans, orphan gaps
+     separately; write CSV via temp+rename.
+  6. `loop.sh kpi`: write to a temp file, move on success only; `lessons`:
+     pass `"${@:2}"`.
+  7. W.1: compare *normalised* brief text (whitespace, line endings) and
+     report similarity; `brief_mismatch` only below a threshold, with the
+     ratio in the export.
+- **Tests**: `scripts/loop/tests/test_kpi_counts_appended_guard_notes.py`,
+  `test_ledger_flags_zero_to_many.py`, a shell test for the temp-file
+  write.
+- **Acceptance**: `redundant_read_rate` and `identical_call_rate` agree on
+  the medium run's transcript within 2 points; the ledger flags a seeded
+  0→3 revert regression.
+- **Effort**: S–M. **Depends on**: nothing; do before W.2 so the baseline
+  is measured correctly.
+
+#### Initiative AO: Lifecycle correctness of today's medium items (bundle)
+One commit each, in this order; all S:
+1. **AD edge cases (H27)**: `skipped` ≠ failed for the defect's own tests;
+   unit fallback scoped to tests whose names/paths match the defect's
+   affected files when tags are absent, else "cannot answer"; test keys use
+   the real ` > ` separator; add `defects_left_open` to the KPI *before*
+   the baseline so the jump is expected, not flagged.
+2. **M.1 fail-closed semantics (H24)**: when `/props` is absent (vLLM,
+   Ollama, LM Studio) log "server reports no slot/context facts; using the
+   setting" once per run; when the slot context is *below*
+   `MIN_VIABLE_WINDOW`, warn loudly and keep the smaller truth rather than
+   raising the window above the slot.
+3. **E split parts (H25)**: a part carries only the steps/interfaces/
+   verification lines that name its files; sibling files listed as
+   "written by a parallel part — do not wait on them"; parts of one order
+   run *sequentially* unless the pack marks them independent.
+4. **X.3 on Python 3.13 (H20)**: match the dedented sentence (or render
+   the tool description from a template instead of replacing text); CI
+   runs the suite on 3.12 and 3.13.
+5. **AE reopen triggers (H26)**: a heuristic that joins the round list
+   gains a precision measurement from the transcript archive (the loop's
+   `check_precision.py` exists); any check under 90% precision stays
+   review-only; add the missing test for the `ea714bc` filter.
+6. **K.2 fresh `DATA_DIR` for every pack (H19)**: move the per-run data
+   dir into the pack contract's acceptance argv/env (`contract.acceptance.
+   env.DATA_DIR = <run tmp>`) so all ~20 service/fullstack packs get it;
+   test iterates every pack; fix `seed.py`'s postgres row to say
+   "embedded by default; PostgreSQL only when the brief demands it".
+7. **AH.3 downgrade memory (H31)**: persist the judgement-downgrade fact
+   on the run record when it happens; the gap stands even if the server
+   returns.
+8. **Changes API hygiene (H22)**: `asyncio.to_thread` for git calls, a
+   timeout with a 504 body, `--no-textconv --no-ext-diff`, and refuse
+   agent writes under `.git/` in the sandbox write guard.
+9. **R digest precision (H21)**: record offset/limit and truncation in the
+   "already held" line ("lines 1–200 of 640"); include files written by
+   commands (the sandbox knows its write receipts).
+10. **Repo-rule drift (H32)**: move Playwright/npx specifics out of
+    `interface_contract.py` and the conftest/test-name heuristics out of
+    `stacks/scaffold.py` into pack data; add banned-word tests for the X.3
+    sentence, AA note and AE.2 gap strings; replace the two tests that pass
+    on old code.
+
+#### Initiative AP: Ledger and handover hygiene (process, half a day)
+- Remove the duplicate NOT STARTED rows (M L1348; O.1–O.4 L1358–1361;
+  Z/AA/AB L2022–2024; UI rows L2036–2040); AJ row → "item 1 DONE
+  (`2f68304`, `4abd460`); fixture seeding and timeout diagnostics open";
+  M.4–M.6 row: `unknown_tool_name_rate` exists; HANDOVER §2 table and
+  header date; AF decision text says "at release" (H14); record
+  run-8b0c94df's outcome (H9) the moment it is known.
+
+---
+
+### Part 14 — Remaining harness gaps (after the baseline)
+
+#### Initiative AQ: The 431 repeated reads — instrumented hypotheses, not another guard
+- **Evidence (H12, H15)**: 24% identical calls on the medium run, 431 of
+  them `read_file`, *after* pointers (495), withholdings (93) and held-back
+  reads (85). Two unconfirmed causes: the first repeat gets no notice
+  (`REPEATS_BEFORE_SAYING_SO`=2, and notes are appended after content); memory
+  pointers cover whole files ≤60k only. R's recitation landed after the run.
+- **Steps**: (1) with AN.3's per-stage KPI, measure repeated reads per stage
+  on the W.2 baseline *with R on*; (2) if still >10% in build stages, A/B
+  `REPEATS_BEFORE_SAYING_SO=1` with the note *prepended* (one-line tag
+  first, content after — also fixes AN.1's marker position); (3) windowed
+  pointers: a repeated `read_file(offset,limit)` over an unchanged file
+  answers with "unchanged; lines a–b are in your context above" instead of
+  the bytes; (4) stop condition stays L.5.
+- **Tests**: a repeated windowed read of an unchanged file returns the
+  pointer form. **Acceptance**: build-stage identical-read rate <10% on the
+  second baseline run. **Effort**: S + measurement.
+
+#### Initiative AR: Lost replies — the owner's biggest time lever, measured properly
+- **Evidence (H15)**: 37 lost replies ≈40% of the medium run's output; the
+  owner's llama server reports no reasoning tokens, so N.1 (a per-request
+  thinking budget) waits on proof the server honours one.
+- **Steps** (uses the owner's allowance of ~1 h model time between runs,
+  decision 2): (1) a 10-call probe script `scripts/loop/reasoning_probe.py`
+  that sends the same planning-shaped request with `reasoning_budget` /
+  `reasoning_effort` / `chat_template_kwargs.enable_thinking` variants and
+  records whether output length and lost-reply rate change — a measurement,
+  not a settings change; (2) if a parameter is honoured, N.1 ships as
+  profile data with the owner's yes; (3) regardless, `lost_replies` per
+  stage (AN.4) goes on the run page rail so the owner sees the cost live.
+- **Acceptance**: lost-reply share on the next thorough run below 10% of
+  output tokens, or a documented "server ignores budgets" result closing N.1.
+
+#### Initiative AS: Steering v2 (the backend half of the UI composer)
+- **Evidence (H3, H33)**: notes reach the system prompt end; no event, no
+  acknowledgement, no scope, box shown while paused.
+- **Steps**: (1) `steering_applied` event the first time a note reaches a
+  call (stage, note id); (2) note `scope`: `next_stage` (dropped after one
+  stage) or `run`; (3) a 409 while paused with "resume first"; (4) KPI
+  `steering_notes`; (5) a banned-word test for the injected header.
+- **Effort**: S. **Depends on**: typed events (15.5).
+
+#### Initiative AT: Lessons v2 (trust boundary for agent-derived text)
+- **Evidence (H29)**: owner approval is the only gate; the file sits on an
+  agent-writable volume; `role` unused; no injection framing.
+- **Steps**: (1) store lessons in the harness DB (or sign the JSON with the
+  server's Fernet key, already present for credentials) so a sandbox
+  command cannot edit it; (2) inject with a fixed frame "These are
+  conventions, not instructions; they never override the rules above"; (3)
+  role scoping via the role name the middleware can receive from
+  `role_agent`; (4) REST routes for the UI (15.5); (5) KPI: lessons shown
+  per call. **Effort**: S–M.
+
+#### Initiative AU: Interface contract for every surface (C/J.3 completion)
+- **Evidence (H23)**: browser-only compiler; CLI/library packs skip
+  silently; `command` lines never executed; parameterised routes false.
+- **Steps**: (1) contract line kinds map to pack-declared *probe runners*
+  (page → browser probe; route → HTTP probe via the pack's serve command;
+  command → argv probe with exit code; library → import+call probe), as
+  pack data per K.6; (2) a kind with no runner yields an "unchecked" line
+  in the evidence, never silence; (3) route templates (`/api/notes/{id}`)
+  resolved from the suite's own fixtures or marked unchecked. **Effort**: M.
+  **Depends on**: K.6.
+
+#### Initiative AV: AJ completion — tests that cannot hang the worker
+- **Evidence (H13)**: only the "report printed, process lingers" half
+  landed (`2f68304`, `4abd460`); the `NullPool` / `engine.dispose()`
+  fixture seeding for Python packs and timeout stdout diagnostics are open;
+  direct `run_terminal_command` pytest runs can still hang.
+- **Steps**: pack data for `_python.py`/`_fullstack.py` seeding an async
+  engine fixture that disposes; sandbox: on timeout, return the captured
+  stdout/stderr tail with "ended at the time limit" rather than nothing.
+  **Effort**: S.
+
+#### Initiative AW: K.6 (stack-shaped checks as pack data) — scoped after the baselines, per decision 10
+- Deliverables, in order: per-pack `check_families` for the ten empty
+  service packs (go×2, java-spring, aspnet, rust-axum, ruby×2, php×2,
+  node-nest); `entrypoints` for every fullstack/service pack (K.3 covers
+  two today); dependency-drift manifests for Go (`go.mod`), Rust
+  (`Cargo.toml`), Java (`pom.xml`/`build.gradle`), .NET (`*.csproj`), Ruby
+  (`Gemfile`), PHP (`composer.json`); a per-pack `coverage` field rendered
+  by AG's tier on the evidence page and in S3. **Effort**: M–L, incremental.
+
+### Part 15 — UI/UX revamp: "the control room", with a multi-theme design system
+
+**Why a revamp and not more patches.** Phase 1 removed the measured harms
+(455→5 axe violations, toasts/dialogs, countdown, stale-while-error) and
+`ef982a2` added the three owner-priority views (Changes, criteria→tests,
+steering). What remains is structural: one real primitive module
+(`Feedback.tsx`), eight copies of the status colour map, hand-rolled
+spinners ×7, dark-only tokens with `color-scheme: dark` hard-set, Google
+Fonts over the network on an offline product, no empty/loading states on
+the evidence panels, and a run page whose workspace sits below the fold at
+768 px because four panels stack above it (H1–H7). The research is explicit
+about what this UI must do: professional developers *control* agents through
+planning and supervision and the cost of delegation is "maintaining enough
+understanding of work they had not written" (R21) — so the job of the UI is
+legibility of plan, evidence and diff, and getting the owner back to the one
+thing that needs them.
+
+#### 15.1 Design brief and plan (reviewed against the generic default)
+
+- **Subject**: a self-hosted "AI software company" control room. One owner
+  (sometimes a second operator) supervises multi-hour builds on a local
+  model, approves gates, judges evidence, steers, and reads history.
+- **Primary job of each screen**: Home — start a build with confidence;
+  Runs — find the run that needs you; Run — know in five seconds whether it
+  needs you, what it is doing, and what has been proven; Evidence — decide
+  whether to ship; Settings — make the model and appearance yours.
+- **Identity device (spend the boldness here)**: *the ledger*. The product's
+  promise is "measured, not vibes", so the hero of the run page is the
+  acceptance-criteria ledger: each criterion a row that flips from "not yet"
+  to "proven" with the test that proved it, the commit that made it pass,
+  and the time. Everything else is quiet. The current UI spends its boldness
+  on glass blur, animated gradient buttons and glow badges (`index.css:
+  118-160`) — the SaaS-kit default the brief rejects — and those go.
+- **Type**: **IBM Plex Sans** (UI) + **IBM Plex Mono** (identifiers, paths,
+  diffs, log, numbers in the ledger), both self-hosted woff2 under
+  `langchain-ui/public/fonts/` with `font-display: swap`. One family in two
+  clearly distinct cuts; the mono is part of the identity because half the
+  content *is* code and run ids. Scale (1.25 ratio, 14 px base): 12 / 13 /
+  14 / 16 / 20 / 25 / 31; line-height 1.5 body, 1.25 headings; measure ≤ 72
+  characters in prose panels. No tracked-out all-caps eyebrows; labels are
+  sentence case.
+- **Layout concept** (run page): a persistent left *status rail*, a centre
+  *work area* with tabs, and the *ledger* on the right; gates and steering
+  dock at the bottom of the work area as a composer, never above the fold.
+
+  ```
+  ┌──────────── header: DevFlow · Runs · Start a build · Settings · [needs you ●2] ─────────┐
+  │ RAIL (18rem)       │ WORK AREA (fluid)                           │ LEDGER (24rem)        │
+  │ run name, brief    │ [Activity] [Changes] [Evidence] [Artifacts] │ 12 of 15 proven       │
+  │ fast · local       │  …tab content…                              │ ✓ AC-1 Add item  t1   │
+  │ ● needs you: gate  │                                             │ ✓ AC-2 …              │
+  │ stage stepper      │                                             │ ○ AC-7 Filter… (fix 2)│
+  │ 2h14m · $0 · 1.2M  │                                             │ ⚠ AC-9 deferred       │
+  │ model · slots      ├─────────────────────────────────────────────┤ gaps: 1               │
+  │ [pause] [cancel]   │ composer: gate decision / steering note     │ support tier: pack    │
+  └────────────────────┴─────────────────────────────────────────────┴───────────────────────┘
+  <1024 px: rail collapses to a top strip; ledger becomes a tab. <640 px: single column,
+  "needs you" pinned bottom with one-tap approve.
+  ```
+  Alignment: left-aligned throughout; numbers right-aligned in the ledger
+  and cost rows; no centred hero text anywhere.
+- **Palette**: three theme families with full semantic token sets (15.2),
+  one accent spent on "needs you" and primary actions only. Neutral
+  graphite surfaces, not blue-tinted slate; no alpha-white overlays as a
+  colour system (they are what breaks light mode today).
+- **Motion**: two moments only — a feed entry arriving (already exists,
+  `activity-in`) and the "needs you" indicator's single pulse on arrival.
+  No hover lifts, no gradient animation, no glow. `prefers-reduced-motion`
+  stays honoured.
+- **Copy**: plain verbs, sentence case, the same word through a flow
+  ("Approve plan" → toast "Plan approved"). Errors say what happened and
+  what to do; empty states are invitations ("No runs yet. Start a build.").
+  The narration module (`lib/activity.ts`) is kept and extended to cover all
+  stages (H6).
+- **Review against the generic default**: the obvious design for "AI agent
+  dashboard" is dark slate + indigo + glass cards + a KPI stat row on top —
+  which is the current UI. Changed on purpose: graphite neutrals over
+  blue-slate; Plex over Inter; the criteria ledger as the hero instead of a
+  stat row; the accent reserved for attention instead of brand decoration;
+  density control instead of fixed card padding; light and high-contrast
+  as first-class families, not a `dark:` afterthought.
+
+#### 15.2 The theme system (multiple theme options)
+
+**Mechanism** (H1 makes this cheap: Tailwind 4 keeps `@theme` variables as
+CSS custom properties, so redefining them re-themes ~830 class sites with no
+component edits).
+
+1. **Three token layers in `index.css`**:
+   - *Primitive scales per theme* under `:root[data-theme="graphite"]`,
+     `[data-theme="paper"]`, `[data-theme="contrast"]` (and `@media
+     (prefers-color-scheme)` blocks used only when `data-theme="system"`).
+   - *Semantic tokens* (theme-independent names, defined per theme):
+     `--bg-canvas --bg-surface --bg-raised --bg-overlay --bg-inset`,
+     `--fg --fg-muted --fg-subtle --fg-on-accent`, `--border --border-strong
+     --border-focus`, `--accent --accent-hover --accent-soft --accent-fg`,
+     `--status-ok-fg/-bg/-border`, `--status-warn-*`, `--status-danger-*`,
+     `--status-info-*`, `--status-attention-*` (needs-you), `--code-bg
+     --code-fg`, `--diff-add-bg --diff-add-fg --diff-del-bg --diff-del-fg
+     --diff-hunk-bg`, `--shadow-1 --shadow-2`, `--ring`.
+   - *Tailwind mapping* in `@theme inline { --color-surface: var(--bg-surface);
+     --color-text-primary: var(--fg); … }` so every existing `bg-surface`,
+     `text-text-primary`, `border-border` utility follows the active theme.
+2. **Attributes on `<html>`**: `data-theme` (`graphite | paper | contrast |
+   system`), `data-accent` (`blue | violet | teal | amber | rose | neutral`),
+   `data-density` (`comfortable | compact` → spacing scale and row heights),
+   plus `color-scheme` set to match so native controls and scrollbars follow.
+3. **No flash**: a 10-line inline script in `index.html` reads
+   `localStorage.devflow.appearance` → falls back to `system` → sets the
+   attributes before first paint. A `<meta name="theme-color">` per theme.
+4. **Persistence across devices**: `GET /auth/me` returns `preferences:
+   {theme, accent, density}`; `PATCH /auth/me/preferences` stores them per
+   user (new column on the users table + migration). localStorage is the
+   fast path; the server value wins on login.
+5. **Contrast as a test, not a hope**: `scripts/ui/theme_contrast.mjs`
+   computes WCAG ratios for every declared (fg, bg) pair in every theme and
+   fails under 4.5:1 (7:1 for `contrast`); `scripts/ui/axe_measure.mjs`
+   runs once per theme. Both run in the UI CI step.
+6. **Codemod for the outliers** (~210–230 sites, 22 files): `text-white` →
+   `text-text-primary` (headings/body) or `text-accent-fg` (on accent fills);
+   `bg-white/5|10` and `bg-black/40` → `bg-overlay` / `bg-inset`; raw
+   `slate-*` → semantic; `bg-[#hex]` → the matching token; the unlayered
+   `.text-primary` / `.text-danger` overrides deleted in favour of
+   `--status-*-fg` tokens; the 8 status maps collapse into
+   `lib/status.ts` (one map from run/stage status → label, token class,
+   icon, narration). `ErrorBoundary`'s inline `#f4f4f4` goes.
+7. **Theme families (initial values; the contrast script is the authority)**
+
+   | Token | Graphite (default dark) | Paper (light) | Contrast (dark, AAA) |
+   |---|---|---|---|
+   | bg-canvas | `#15171C` | `#F4F5F7` | `#000000` |
+   | bg-surface | `#1C1F26` | `#FFFFFF` | `#0A0A0A` |
+   | bg-raised | `#242830` | `#EEF0F3` | `#141414` |
+   | border | `#343945` | `#D7DBE2` | `#8A8A8A` (2 px) |
+   | fg | `#E8EAEF` | `#1B1F27` | `#FFFFFF` |
+   | fg-muted | `#9AA3B2` | `#5B6474` | `#D0D0D0` |
+   | accent (blue) | `#6E8BFF` | `#3350D6` | `#9DB4FF` |
+   | status-ok-fg / bg | `#3FB68B` / `#163A2E` | `#1E7F5A` / `#DDF3EA` | `#5CE0A8` / `#002B1C` |
+   | status-warn-fg / bg | `#E2A33A` / `#3B2E12` | `#9A6700` / `#FBEFD3` | `#FFD166` / `#2E2200` |
+   | status-danger-fg / bg | `#E5605C` / `#3D1C1B` | `#B42318` / `#FBE3E1` | `#FF7B74` / `#330B09` |
+   | status-attention | accent at full strength; the only saturated fill on a quiet screen |
+
+   Accent variants redefine `--accent*` only. `neutral` accent exists for
+   owners who want zero colour except status.
+8. **Where the owner picks**: a sun/moon/system toggle in the header (one
+   click, cycles), and *Settings → Appearance*: three theme cards with a
+   live miniature of the run page, accent swatches, density, and "follow
+   system motion setting" (read-only, informational). Keyboard: `t` cycles
+   theme when no input is focused (listed in the shortcuts sheet, 15.4).
+9. **Generated products are not themed by this**: Initiative A's pack design
+   tokens stay separate; a product never inherits the control room's theme.
+
+**Deliverables and order (UI-T1…T6)**: T1 token layers + attributes + boot
+script + self-hosted Plex (1–2 days); T2 codemod + status map (1–2 days);
+T3 contrast + axe per theme in CI (half a day); T4 Appearance settings +
+header toggle + server preference (1 day, needs the small API); T5 Paper
+and Contrast tuning against the contrast script (1 day); T6 screenshots of
+each theme into `docs/ui/` for the handover (half a day).
+
+#### 15.3 Primitives (UI-P): the component kit the revamp is built from
+
+`langchain-ui/src/ui/` — one file each, all token-only, all with keyboard
+and ARIA done once: `Button` (primary/secondary/quiet/danger; sizes;
+loading state; icon slot), `IconButton` (requires `aria-label`), `Card`
+(surface/raised; header/body/footer slots; no shadow by default), `Badge`
+(status map driven), `Tabs` (roving tabindex, `role=tablist/tab/tabpanel`,
+URL-synced), `Dialog` (built on the existing confirm's focus trap; sizes;
+`aria-modal`), `Drawer` (artifact/diff on narrow screens), `Toast`
+(existing, moved), `Field`/`Input`/`Select`/`Textarea`/`Checkbox` (label,
+hint, error, `aria-describedby`), `Skeleton`, `EmptyState` (icon, one
+sentence, one action), `Stat` (number + source line — every number in the
+UI says where it came from), `Kbd`, `Tooltip` (hover + focus), `Progress`
+(determinate/indeterminate, `aria-valuenow`). `CredentialField`/`InfoRow`
+move out of the Settings render (H2). Each primitive gets a Storybook-free
+"kitchen sink" route `/dev/ui` (dev build only) used by axe and the theme
+screenshots.
+
+#### 15.4 Screens (UI-S), in build order
+
+- **S1 Shell + navigation**: header = DevFlow, *Runs*, *Start a build*,
+  *Settings*, a **needs-you indicator** (count of runs in
+  `awaiting_approval`/`waiting_for_budget`/`failed` since last seen; click
+  → list), theme toggle, user menu with sign out. 404 route; post-login
+  redirect to the page asked for; token refresh via `/auth/refresh` 5 min
+  before expiry (no more reload mid-run). Command palette (`⌘K`): go to
+  run, start a build, approve the waiting gate, switch theme. Shortcuts
+  sheet (`?`).
+- **S2 Runs list**: a table, not cards: status (badge + plain words), name,
+  brief, mode (fast/thorough), model (local/judgement), started, elapsed,
+  proven x/y, gaps, needs-you. Filters by status; search; "needs you" rows
+  first; row actions visible (not hover-only) and keyboard reachable;
+  pagination at 50; polling pauses when hidden (exists) and uses
+  `/events?since` on reconnect. Empty state: "No runs yet — Start a build".
+- **S3 Start a build (plan-first intake)**: three steps with a draft saved
+  in localStorage: (1) *Brief* — free text **and/or** documents (fixes H7:
+  documents-only today), with the brief's acceptance criteria extracted
+  live as a preview list; (2) *How* — stack suggestion with **support tier**
+  (pack-supported / custom / unverified, from AG) and what each tier
+  verifies; mode fast/thorough with the measured typical duration ("fast
+  web builds have taken 1.4–2.5 h over the last 5 runs"); model (shows the
+  probed server: slots, context, quant from M.1; a warning when nothing is
+  configured with a link to Settings); gates (auto-approve or ask, timeout
+  with its consequence spelled out); budget caps (`MAX_RUN_TOKENS`,
+  known-spend cap labelled honestly); (3) *Review* — the plan page: what
+  will be built, the criteria ledger pre-populated as "not yet", the ETA,
+  and one button, **Start build**. `createRun`+`startRun` become one
+  endpoint call or the failure path deletes the orphan (G9). Brownfield:
+  "Start from an existing repository" uses the unused `/codebase` route.
+- **S4 Run page (the control room)**: rail / work area / ledger as drawn.
+  Tabs: *Activity* (virtualized feed, grouped by stage, narration first,
+  raw event on expand, filter by agent in parallel mode — "lanes"),
+  *Changes* (commit list + per-file tree + diff with syntax colours via
+  tokens; file filter; "jump to criterion's commit"), *Evidence* (the
+  release decision page rendered natively: suite counts, completion gaps as
+  a structured list, mutation probe results, interface-contract check
+  results, support tier, reviewer completeness — all from new endpoints,
+  15.5), *Artifacts* (inline render of markdown/code/images; version list
+  per path from git; download), *Log* (virtualized, 5,000-row buffer,
+  search). Composer at the bottom: gate decisions with the countdown and
+  "waits indefinitely" (H8 — payload already has it), steering with
+  acknowledgement (the next `steering_applied` event, 15.5) and note
+  history; hidden when the run is terminal. Rail: stage stepper from the
+  typed event schema (replaces title-case fallbacks, H6), elapsed (ticks),
+  tokens and known spend with per-stage breakdown on hover, model and
+  slots, pause/cancel/rewind. Title and favicon badge for needs-you;
+  browser Notification on gate/failure/completion (opt-in in Appearance).
+- **S5 Settings**: *Models* (build/judgement endpoints with the live probe
+  result and a "test call" button), *Appearance* (15.2), *Runs* (defaults
+  for mode, gates, caps), *Lessons* (the AI store: proposals with evidence
+  counts → approve/reject; today CLI-only), *Account*.
+- **S6 Insights** (after W.2 data exists): per-run KPI card from
+  `data/kpi/<run>.json` and the cross-run ledger: identical-call rate,
+  cache share, lost replies, reverts, gaps; regression flags; two runs side
+  by side (U.3's compare already exists as a script).
+
+#### 15.5 Backend enablers the screens need (small, listed so the parts connect)
+
+| Enabler | Shape | Needed by |
+|---|---|---|
+| Typed event schema | `events` carry `kind`, `stage`, `agent`, `payload` with a published JSON schema; `STAGE_COPY` generated from the graph's node list so no stage lacks copy | S4 rail/feed, H6 |
+| `steering_applied` event | emitted by the instruction middleware the first time a note reaches a call; `steering` notes get `id` and optional `until` (next stage / run end) | S4 composer, H3 |
+| Preferences | `GET/PATCH /auth/me/preferences` | 15.2 |
+| Structured evidence | `GET /runs/{id}/evidence` → `{suite, completion_gaps[], mutation[], interface_contract[], support_tier, reviewers[]}` | S4 Evidence |
+| Per-stage usage | `GET /runs/{id}/usage` → per stage tokens in/out/cached, calls, known cost | S4 rail, S6 |
+| KPI | `GET /runs/{id}/kpi` (the W.4 JSON) and `GET /kpi/ledger` | S6 |
+| Lessons | `GET /lessons`, `POST /lessons/{id}/approve|reject` (wraps `plugins/lessons.py`) | S5 |
+| Artifact versions | `GET /runs/{id}/artifacts/{path}/versions` from git log; replaces the hard-coded `revision=1` | S4 Artifacts |
+| Start | `POST /runs/start` (create+start) or compensating delete | S3 |
+| Generated client | TS client + types generated from the FastAPI OpenAPI schema at build (`openapi-typescript`), replacing hand-kept `types/` — ends the `document_names` class of drift | all |
+
+#### 15.6 Quality floor and measurement
+
+- axe per theme per page ≤ 5 violations, none colour-contrast; keyboard-only
+  run of the three main flows recorded; Lighthouse performance ≥ 90 on the
+  run page with 5,000 events; bundle split per route; fonts self-hosted;
+  works offline after first load for cached screens (no PWA install — owner
+  decision 6 — just correct caching headers); UI tests: Vitest + Testing
+  Library for primitives and the status map, Playwright for the three
+  flows (start a build, approve a gate, review evidence).
+
+#### 15.7 Order and effort
+
+| Step | Scope | Effort |
+|---|---|---|
+| UI-0 | Phase-1 remainder (H5) + contract drift via generated client | 2–3 days |
+| UI-T1–T3 | Token layers, Plex, codemod, status map, contrast/axe per theme | 3–4 days |
+| UI-P | Primitive kit + `/dev/ui` | 3–4 days |
+| UI-S1, S2 | Shell, needs-you, palette, runs table | 3 days |
+| UI-S4 | Control room (rail/work area/ledger, virtualized feed, Changes per-file, Evidence, composer) + enablers | 2–3 weeks |
+| UI-T4–T6, S5 | Appearance settings, server preference, theme tuning, Settings rework incl. Lessons | 4–5 days |
+| UI-S3 | Plan-first intake + start endpoint + brownfield | 1 week |
+| UI-S6 | Insights (after W.2 data) | 3–4 days |
+
+---
+
+### Part 16 — Implementation sequence (detailed)
+
+| Wave | Items | Gate to next wave |
+|---|---|---|
+| 0 (now, before any run) | AN (measurement correctness), AK, AL, AM, AO.1–AO.2, AP | suite green on 3.12 + 3.13; `loop.sh kpi` on run-8b0c94df's transcript reproduces agreeing rates |
+| 1 (owner) | **W.2 baselines** in the decided order: fast notes-api-hono → fast fullstack-bookmarks-py → thorough | scored, KPI JSON + ledger rows, outcome recorded in HANDOVER §2 and the plan |
+| 2 | AO.3–AO.10, AQ (measure → A/B), AR probe, AS, AT, AV | per-stage KPIs on both baselines; lost-reply share and identical-read rate reported |
+| 3 (UI, can run in parallel with 2 by a second session) | UI-0 → UI-T1–T3 → UI-P → UI-S1/S2 → UI-S4 (+15.5 enablers) → UI-T4–T6/S5 → UI-S3 → UI-S6 | axe per theme ≤5; contrast script green; three Playwright flows green; screenshots per theme in `docs/ui/` |
+| 4 | AU, AW (K.6), M.4–M.6, U.3 A/B wiring on the ledger | second bench family (fullstack-python) scored under the same KPIs |
+
+Rules unchanged: every change with a test that fails on the old code; no
+stack specifics outside packs/seed/profiles; no run ids in code; both
+handovers updated in the same commit; the model and its settings are the
+owner's.
+
+### Appendix 3 rows (Implementation Progress Ledger continuation)
+
+| Item | Priority | Status | Notes |
+|---|---|---|---|
+| AK run-wide budgets persisted | P0 | NOT STARTED | `run_usage` row, seeded on worker start; H16 |
+| AL crash-safe mutation probe | P0 | NOT STARTED | journal + byte restore + recovery at release entry; skip comments; prefer a copy; H17 |
+| AM one owner of the seen digest | P0 | NOT STARTED | first-writer-wins for memory; changed-region excerpt when reads are withheld; H18 |
+| AN measurement correctness | P0 | NOT STARTED | marker position, effective-input ratio, per-stage block, new counters, ledger flags, atomic writes, `loop.sh kpi`/`lessons` fixes, W.1 normalised compare; H10/H11/H28 |
+| AO.1 AD edge cases | P0 | NOT STARTED | skipped ≠ failed; scoped unit fallback; real key separator; H27 |
+| AO.2 M.1 fail-closed semantics | P0 | NOT STARTED | H24 |
+| AO.3 E split parts | P1 | NOT STARTED | H25 |
+| AO.4 X.3 on 3.13 + CI matrix | P1 | NOT STARTED | H20 |
+| AO.5 AE reopen precision | P1 | NOT STARTED | H26 |
+| AO.6 K.2 DATA_DIR for every pack + seed text | P1 | NOT STARTED | H19 |
+| AO.7 AH.3 persisted downgrade | P1 | NOT STARTED | H31 |
+| AO.8 changes API hygiene + `.git/` write guard | P1 | NOT STARTED | H22 |
+| AO.9 R digest precision | P1 | NOT STARTED | H21 |
+| AO.10 repo-rule drift | P1 | NOT STARTED | H32 |
+| AP ledger/handover hygiene | P0 | NOT STARTED | H13, H14, H9 |
+| AQ repeated-read hypotheses | P1 | NOT STARTED | after W.2; H12 |
+| AR lost-reply probe → N.1 | P1 | NOT STARTED | owner's 1 h allowance; H15 |
+| AS steering v2 | P1 | NOT STARTED | event, scope, paused 409; H3/H33 |
+| AT lessons v2 | P2 | NOT STARTED | signed/DB store, framing, role scope, REST; H29 |
+| AU interface contract for every surface | P2 | NOT STARTED | with K.6; H23 |
+| AV AJ completion | P1 | NOT STARTED | fixture seeding + timeout diagnostics |
+| AW K.6 scoped | P2 | NOT STARTED | after baselines (decision 10) |
+| UI-0 Phase-1 remainder + generated client | P1 | NOT STARTED | H5, H4 |
+| UI-T1–T3 theme system (tokens, Plex, codemod, contrast CI) | P1 | NOT STARTED | H1 |
+| UI-P primitive kit | P1 | NOT STARTED | H2 |
+| UI-S1/S2 shell + runs table | P1 | NOT STARTED | H7 |
+| UI-S4 control room + 15.5 enablers | P1 | NOT STARTED | H3, H4, H6 |
+| UI-T4–T6 / S5 appearance + settings | P2 | NOT STARTED | |
+| UI-S3 plan-first intake | P2 | NOT STARTED | G9, H7 |
+| UI-S6 insights | P3 | NOT STARTED | after W.2 |

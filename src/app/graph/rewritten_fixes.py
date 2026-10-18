@@ -76,6 +76,17 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
     from app.tools.repository import IGNORED_DIRECTORIES
 
     root = Path(repo_root)
+    from app.acceptance.junit import tags_in
+    from app.analysis.file_kinds import classify_file
+
+    # A criterion the acceptance suite judges is the product's, never a unit
+    # test's: the suite runs the product. Measured live: a login criterion's
+    # rewrite took `tests/test_auth.py` from the run's last failing command,
+    # rewrote it, and the defect was recorded as fixed with the login still
+    # broken - and with it every test that needs a signed-in user.
+    judged_by_the_suite = any(
+        t.startswith(("AC-", "CR-")) for t in tags_in(str(getattr(defect, "description", "") or ""))
+    )
     named = [str(f).strip().lstrip("./") for f in getattr(defect, "affected_files", None) or [] if str(f).strip()]
     # In the order the failure names them, with a line or without.
     mentioned = sorted(
@@ -94,7 +105,7 @@ def files_to_fix(defect: Any, failure: str, repo_root: str | Path, may_write: Ca
         # one fixer's `tmp-check-*.py` failed, its traceback reached two later
         # fixes as what failed, and each rewrote the probe and was recorded
         # as having fixed its defect.
-        if is_scratch(relative):
+        if is_scratch(relative) or (judged_by_the_suite and classify_file(relative) == "test"):
             continue
         if relative not in found and may_write(relative):
             found.append(relative)

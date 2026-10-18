@@ -62,3 +62,17 @@ def test_a_probe_the_failure_names_is_not_rewritten(tmp_path):
     found = files_to_fix(SimpleNamespace(affected_files=[]), failure, tmp_path, lambda _: True)
 
     assert found == ["app/search.py"]
+
+
+def test_a_criterion_the_suite_judges_is_never_fixed_in_a_unit_test(tmp_path):
+    """Measured live: a login criterion's rewrite rewrote `tests/test_auth.py`,
+    named by the run's last failing command, and was recorded as fixed."""
+    (tmp_path / "app" / "tests").mkdir(parents=True)
+    (tmp_path / "app" / "tests" / "test_auth.py").write_text("def test_login(): pass\n", encoding="utf-8")
+    (tmp_path / "app" / "login.py").write_text("def login(): return None\n", encoding="utf-8")
+    failure = 'File "app/tests/test_auth.py", line 1\nFile "app/login.py", line 1'
+    criterion = SimpleNamespace(affected_files=[], description="[AC-1] Sign-in - the acceptance suite says this does not work yet.")
+    unit_failure = SimpleNamespace(affected_files=[], description="The unit tests fail.")
+
+    assert files_to_fix(criterion, failure, tmp_path, lambda _: True) == ["app/login.py"]
+    assert files_to_fix(unit_failure, failure, tmp_path, lambda _: True) == ["app/tests/test_auth.py", "app/login.py"]

@@ -1704,3 +1704,15 @@ L.7/validator (plan critic = judgement-model plan review, Q-amend);
   digest. No code was changed. No run was started.
 - Follow-ups for the next session: W.2 baseline runs (owner), then P0 rows
   in order W → X.1/X.2 → AD → AE, each with its failing-first test.
+
+### 13.8 Implementation paused (18:30 JST)
+Owner approved starting the Appendix 2 P0 items, then paused when this
+cloud sandbox could not install the project's dependencies (egress proxy
+denies `files.pythonhosted.org`; `langchain_core` unavailable, so no target
+module imports and `loop.sh suite` cannot run — AGENTS.md's failing-first
+test rule cannot be honoured here). No code was changed. Resume from a
+session linked to the owner's machine (or one with PyPI access) in this
+order, one commit each: X.1/X.2 → AD → AE → W.3 → W.1 → W.4 → W.5. Each
+item's exact code pointers are in §13.2–13.4 (G1, G19, G20, G21, G22, G25,
+G14, G12, G15) and the mechanism text is in `docs/improvement-plan.md`
+Appendix 2 Parts 6, 7 (X) and 9 (AD, AE).

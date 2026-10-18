@@ -578,6 +578,11 @@ class CompatibleChatOpenAI(ChatOpenAI):
                     generation.message.additional_kwargs[REASONING_FIELD] = (
                         reasoning.strip()[-REASONING_CARRIED_CHARS:]
                     )
+                    # The whole length, before the cut above: a server that
+                    # reports no reasoning tokens otherwise leaves a run's
+                    # reasoning share unmeasurable (`scripts/loop/run_timing.py`).
+                    # Response metadata, so it is never sent back to the model.
+                    generation.message.response_metadata[REASONING_CHARS] = len(reasoning.strip())
                 from app.models.tool_arguments import with_every_call_the_server_sent
 
                 with_every_call_the_server_sent(generation.message, message.get("tool_calls"))
@@ -588,6 +593,9 @@ class CompatibleChatOpenAI(ChatOpenAI):
 
 #: Where a reply's reasoning is kept on its message.
 REASONING_FIELD = "reasoning_content"
+
+#: Where a reply's whole reasoning length, in characters, is kept on its message.
+REASONING_CHARS = "reasoning_chars"
 
 #: How much of one reply's reasoning is kept and carried forward - its end,
 #: where a model states what it has decided to do next. Every tool-calling

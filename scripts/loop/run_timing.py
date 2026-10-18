@@ -84,6 +84,10 @@ def analyse(prefix):
             u = r.get("usage") or {}
             out = u.get("output_tokens") or 0
             rea = (u.get("output_token_details") or {}).get("reasoning") or 0
+            if not rea and r.get("reasoning_chars"):
+                # The server reported no reasoning tokens: estimate them from
+                # the reasoning text's length, about four characters a token.
+                rea = min(out, int(r["reasoning_chars"]) // 4)
             per[fam]["calls"] += 1
             per[fam]["out"] += out
             per[fam]["reasoning"] += rea

@@ -478,6 +478,9 @@ def build_transcript_callback(run_id: str | None, stage: str) -> Any:
                                 if isinstance(c, dict)
                             ],
                             usage=getattr(message, "usage_metadata", None),
+                            # How long the reply's reasoning was, for a server
+                            # that reports no reasoning tokens.
+                            reasoning_chars=(getattr(message, "response_metadata", None) or {}).get("reasoning_chars") or 0,
                             finish_reason=(getattr(generation, "generation_info", None) or {}).get(
                                 "finish_reason"
                             ),

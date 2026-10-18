@@ -32,115 +32,16 @@ import sys
 import time
 from pathlib import Path
 
-#: (pattern, replacement) pairs. Order matters only for reporting.
-OPERATORS: list[tuple[str, str]] = [
-    (r"===", "!=="),
-    (r"!==", "==="),
-    (r"(?<![=!<>])==(?!=)", "!="),
-    (r"(?<![=!])!=(?!=)", "=="),
-    (r"&&", "||"),
-    (r"\|\|", "&&"),
-    (r"\band\b", "or"),
-    (r"\bor\b", "and"),
-    (r"\btrue\b", "false"),
-    (r"\bfalse\b", "true"),
-    (r"\bTrue\b", "False"),
-    (r"\bFalse\b", "True"),
-    (r">=", "<"),
-    (r"<=", ">"),
-    (r"(?<![-=>])>(?![=>])", "<="),
-    (r"(?<![<=-])<(?![=<])", ">="),
-    (r"\+ 1\b", "- 1"),
-    (r"- 1\b", "+ 1"),
-]
-
-#: Source a product's behaviour lives in.
-SOURCE_SUFFIXES = {".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx", ".py", ".rb", ".go", ".java", ".php"}
-
-#: Directories that are not the product's own source.
-SKIPPED_PARTS = {"node_modules", "dist", "build", "coverage", "__pycache__", ".venv", "venv", ".harness",
-                 "tests", "test", "__tests__", "e2e", "acceptance", "docs", "public", "vendor"}
-
-#: File names that are tests or configuration, not behaviour.
-SKIPPED_NAME = re.compile(r"(\.test\.|\.spec\.|^test_|_test\.|\.config\.|^conftest\.py$|^setup\.py$)")
-
-
-def source_files(project: Path, kept: set[str] | frozenset[str] = frozenset()) -> list[Path]:
-    """The product's own source: not tests, not configuration, not the harness's kept files.
-
-    `kept` are the pack's runner files (relative to the project), which the
-    harness puts back before every suite run - a change there is undone
-    before any test sees it.
-    """
-    files = []
-    for path in sorted(project.rglob("*")):
-        relative = path.relative_to(project)
-        if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
-            continue
-        if relative.as_posix() in kept:
-            continue
-        if any(part in SKIPPED_PARTS or part.startswith(".") for part in relative.parts[:-1]):
-            continue
-        if SKIPPED_NAME.search(path.name):
-            continue
-        files.append(path)
-    return files
-
-
-def _in_comment_or_string(line: str, column: int) -> bool:
-    before = line[:column]
-    stripped = before.lstrip()
-    if stripped.startswith(("//", "#", "*", "/*")) or "//" in before or " #" in before:
-        return True
-    return any(before.count(quote) % 2 for quote in ("'", '"', "`"))
-
-
-def sites(files: list[Path], project: Path) -> list[dict]:
-    """Every place an operator applies: file, line, column, the text it replaces and its replacement."""
-    found = []
-    for path in files:
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
-        except (OSError, UnicodeDecodeError):
-            continue
-        for number, line in enumerate(lines, start=1):
-            if line.lstrip().startswith(("import ", "from ", "export {", "require(")):
-                continue
-            for pattern, replacement in OPERATORS:
-                for match in re.finditer(pattern, line):
-                    if _in_comment_or_string(line, match.start()):
-                        continue
-                    found.append({
-                        "file": str(path.relative_to(project)), "line": number, "column": match.start(),
-                        "original": match.group(0), "replacement": replacement,
-                    })
-    return found
-
-
-def spread(candidates: list[dict], count: int) -> list[dict]:
-    """`count` sites spread evenly over the list, so every file gets its share."""
-    if len(candidates) <= count:
-        return candidates
-    step = len(candidates) / count
-    return [candidates[int(i * step)] for i in range(count)]
-
-
-def apply(project: Path, site: dict) -> str:
-    """Make the change in place; return the file's original text."""
-    path = project / site["file"]
-    original = path.read_text(encoding="utf-8")
-    lines = original.splitlines(keepends=True)
-    line = lines[site["line"] - 1]
-    column, length = site["column"], len(site["original"])
-    lines[site["line"] - 1] = line[:column] + site["replacement"] + line[column + length:]
-    path.write_text("".join(lines), encoding="utf-8")
-    return original
-
-
-def _passing(result) -> set[str]:
-    report = getattr(result, "report", None)
-    tests = getattr(report, "tests", None) or []
-    return {getattr(t, "name", str(t)) for t in tests if getattr(t, "outcome", "") == "passed"}
+# The changes and where they apply are the harness's own: `app.acceptance.mutation`
+# runs the same probe at release, over fewer changes.
+from app.acceptance.mutation import (  # noqa: E402 - run inside the worker, where `app` imports
+    OPERATORS,
+    apply,
+    passing as _passing,
+    source_files,
+    sites,
+    spread,
+)
 
 
 def mutate(workspace: Path, out: Path, count: int = 12) -> dict:

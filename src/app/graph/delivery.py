@@ -310,6 +310,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps.extend(_reviews_that_were_not_independent())
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
+    # Plan item AF: whether the suite would notice the product breaking.
+    from app.acceptance.mutation import what_the_suite_does_not_notice
+
+    gaps.extend(what_the_suite_does_not_notice(root))
     if gaps:
         update["completion_gaps"] = gaps
     # What someone who did not write it needs to test and ship it, from the

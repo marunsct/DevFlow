@@ -37,10 +37,13 @@ import { SprintSummaryPanel } from '../components/SprintSummaryPanel';
 import { DeliveryPanel } from '../components/DeliveryPanel';
 import { Activity, CheckCircle2, Clock, XCircle, AlertCircle, ArrowLeft, Ban, Play, Pause, Copy, ListChecks, LayoutGrid, RotateCcw, Download } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
+import { useNow } from '../lib/usePageVisible';
+import { useFeedback } from '../components/Feedback';
 
 
 
 export const RunDashboard: React.FC = () => {
+  const { notify, confirm: askConfirm } = useFeedback();
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
 
@@ -56,6 +59,19 @@ export const RunDashboard: React.FC = () => {
   const [approval, setApproval] = useState<ApprovalPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Whether the live stream is connected: it reconnects on its own, and said
+  // nothing while it did - a stopped feed looked like a quiet run.
+  const [streamDown, setStreamDown] = useState(false);
+  const live = !!run && !['completed', 'failed', 'cancelled'].includes(run.status);
+  const now = useNow(live);
+  // The tab says what the run needs, so a gate is seen from another tab.
+  useEffect(() => {
+    if (!run) return;
+    const waiting = run.status === 'waiting_for_review' || run.status === 'waiting_for_approval';
+    const mark = waiting ? '\u23F8 Needs you' : run.status === 'failed' ? '\u2716 Failed' : run.status === 'completed' ? '\u2714 Done' : run.status === 'running' ? '\u25B6' : '';
+    document.title = `${mark ? mark + ' \u00B7 ' : ''}${run.run_id.slice(0, 12)} \u00B7 DevFlow.ai`;
+    return () => { document.title = 'DevFlow.ai'; };
+  }, [run?.status, run?.run_id]);
   const [actionLoading, setActionLoading] = useState(false);
   // The centre column carries two different audiences: what the run produced,
   // and the raw event log. Tabs let each have the full width instead of
@@ -221,6 +237,7 @@ export const RunDashboard: React.FC = () => {
 
       ws.onopen = () => {
         attempt = 0;
+        setStreamDown(false);
       };
 
       ws.onmessage = (event) => {
@@ -252,7 +269,10 @@ export const RunDashboard: React.FC = () => {
 
       ws.onerror = () => ws?.close();
       ws.onclose = () => {
-        if (isSubscribed) scheduleReconnect();
+        if (isSubscribed) {
+          setStreamDown(true);
+          scheduleReconnect();
+        }
       };
     };
 
@@ -285,7 +305,7 @@ export const RunDashboard: React.FC = () => {
       setReview(null);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to submit review: " + (err.response?.data?.detail || err.message));
+      notify("Failed to submit review: " + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
@@ -299,19 +319,24 @@ export const RunDashboard: React.FC = () => {
       setApproval(null);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to submit approval: " + (err.response?.data?.detail || err.message));
+      notify("Failed to submit approval: " + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
   };
 
   const handleCancel = async () => {
-    if (!runId || !confirm('Are you sure you want to cancel this run?')) return;
+    if (!runId || !(await askConfirm({
+      title: 'Cancel this run?',
+      message: 'It stops at the next stage boundary and cannot be resumed. Pause it instead to continue later.',
+      confirmLabel: 'Cancel run',
+      danger: true,
+    }))) return;
     try {
       await cancelRun(runId);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to cancel: " + (err.response?.data?.detail || err.message));
+      notify("Failed to cancel: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -321,7 +346,7 @@ export const RunDashboard: React.FC = () => {
       await pauseRun(runId);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to pause: " + (err.response?.data?.detail || err.message));
+      notify("Failed to pause: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -331,7 +356,7 @@ export const RunDashboard: React.FC = () => {
       await resumeRun(runId);
       await fetchState();
     } catch (err: any) {
-      alert("Failed to resume: " + (err.response?.data?.detail || err.message));
+      notify("Failed to resume: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -342,22 +367,26 @@ export const RunDashboard: React.FC = () => {
       setRewindPoints(points);
       setRewindTo(points.length ? points[points.length - 1].checkpoint_id : '');
     } catch (err: any) {
-      alert("Failed to list rewind points: " + (err.response?.data?.detail || err.message));
+      notify("Failed to list rewind points: " + (err.response?.data?.detail || err.message));
     }
   };
 
   const handleRewind = async () => {
     if (!runId || !rewindTo) return;
     const point = rewindPoints?.find((p) => p.checkpoint_id === rewindTo);
-    if (!confirm(`Rewind this run to the start of "${point ? describeStage(point.stage).title : rewindTo}" and run it from there? `
-      + 'Files made after that point are removed (a snapshot of them is kept).')) return;
+    if (!(await askConfirm({
+      title: `Rewind to "${point ? describeStage(point.stage).title : rewindTo}"?`,
+      message: 'The run starts again from there. Files made after that point are removed (a snapshot of them is kept).',
+      confirmLabel: 'Rewind',
+      danger: true,
+    }))) return;
     try {
       const done = await rewindRun(runId, rewindTo);
       setRewindPoints(null);
-      if (!done.files_restored) alert('Rewound. No snapshot of the files existed for that point, so they were left as they are.');
+      if (!done.files_restored) notify('Rewound. No snapshot of the files existed for that point, so they were left as they are.', 'info');
       await fetchState();
     } catch (err: any) {
-      alert("Failed to rewind: " + (err.response?.data?.detail || err.message));
+      notify("Failed to rewind: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -367,7 +396,7 @@ export const RunDashboard: React.FC = () => {
       const clonedRun = await cloneRun(runId);
       navigate(`/runs/${clonedRun.run_id}`);
     } catch (err: any) {
-      alert("Failed to clone: " + (err.response?.data?.detail || err.message));
+      notify("Failed to clone: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -386,7 +415,7 @@ export const RunDashboard: React.FC = () => {
       await startRun(runId, {});
       await fetchState();
     } catch (err: any) {
-      alert("Failed to start: " + (err.response?.data?.detail || err.message));
+      notify("Failed to start: " + (err.response?.data?.detail || err.message));
     } finally {
       setActionLoading(false);
     }
@@ -403,7 +432,7 @@ export const RunDashboard: React.FC = () => {
     );
   }
 
-  if (error || !run) {
+  if (!run) {
     return (
       <div className="max-w-lg mx-auto mt-20 p-8 glass-card rounded-2xl text-center">
         <AlertCircle className="h-12 w-12 text-danger mx-auto mb-4" />
@@ -436,7 +465,7 @@ export const RunDashboard: React.FC = () => {
   // node was current but never how long any of it had taken, which is the first
   // thing anyone watching a long build wants to know.
   const startedAt = new Date(run.created_at).getTime();
-  const endedAt = isTerminal ? new Date(run.updated_at).getTime() : Date.now();
+  const endedAt = isTerminal ? new Date(run.updated_at).getTime() : now;
   const totalSeconds = Math.max(0, Math.round((endedAt - startedAt) / 1000));
   const elapsed =
     totalSeconds < 60
@@ -457,6 +486,14 @@ export const RunDashboard: React.FC = () => {
     // grows and scrolls. Pinning the height instead made the workspace overflow
     // its container on a short screen and render underneath the footer.
     <div className="animate-fade-in flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]">
+      {(error || streamDown) && (
+        <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning">
+          <span className="h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden="true" />
+          {error
+            ? `${error} The page shows the last state it loaded.`
+            : 'Live updates paused - reconnecting. The page shows the last state it loaded.'}
+        </div>
+      )}
       {/* Top bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
@@ -681,10 +718,16 @@ export const RunDashboard: React.FC = () => {
       {/* Anything waiting on a person goes full width, above the workspace. It
           is the only thing on the page that is a request rather than a report. */}
       {review && (
-        <ReviewPanel runId={runId!} review={review} onSubmit={handleReviewSubmit} isLoading={actionLoading} />
+        <>
+          <GateDeadline run={run} now={now} />
+          <ReviewPanel runId={runId!} review={review} onSubmit={handleReviewSubmit} isLoading={actionLoading} />
+        </>
       )}
       {approval && (
-        <ApprovalGate runId={runId!} approval={approval} onSubmit={handleApprovalSubmit} isLoading={actionLoading} />
+        <>
+          <GateDeadline run={run} now={now} />
+          <ApprovalGate runId={runId!} approval={approval} onSubmit={handleApprovalSubmit} isLoading={actionLoading} />
+        </>
       )}
 
       {/* Sprint Milestones - shown in both views */}
@@ -741,5 +784,27 @@ export const RunDashboard: React.FC = () => {
       </div>
       )}
     </div>
+  );
+};
+
+
+/** Whether a waiting gate approves itself, and when - or that it waits for the person however long it takes. */
+const GateDeadline: React.FC<{ run: RunStatusResponse; now: number }> = ({ run, now }) => {
+  if (!run.gate_deadline) {
+    return (
+      <p role="status" className="text-sm text-text-secondary">
+        This step waits for you however long it takes - nothing approves it on its own.
+      </p>
+    );
+  }
+  const at = new Date(run.gate_deadline);
+  const minutes = Math.max(0, Math.round((at.getTime() - now) / 60000));
+  const clock = at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return (
+    <p role="status" className="text-sm text-warning">
+      {minutes > 0
+        ? `Approves itself at ${clock} (in ${minutes} min) unless you decide first.`
+        : 'Approving itself now: its waiting time has passed.'}
+    </p>
   );
 };

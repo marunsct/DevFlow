@@ -80,6 +80,9 @@ export interface RunStatusResponse {
    *  suite was locked with, an unproven setup (Initiative J.4). A completed
    *  run with gaps is never plain "completed" on any surface that shows it. */
   completion_gaps?: string[];
+  /** When a waiting gate approves itself; null when it waits for the person. */
+  gate_deadline?: string | null;
+  approval_timeout_minutes?: number | null;
   /** What the workspace's NON-DELIVERABLE marker says, or '' when the
    *  workspace is deliverable: every terminal state but a clean release
    *  writes it into the workspace root (Initiative J.6). */

@@ -1727,11 +1727,35 @@ async def _build_status_response(record: RunRecord, runner: WorkflowRunner) -> R
         error=record.error,
         auto_approve=bool(record.auto_approve),
         completion_gaps=[str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+        gate_deadline=_when_the_gate_approves_itself(record),
+        approval_timeout_minutes=getattr(record, "approval_timeout_minutes", None),
         non_deliverable=_what_the_marker_says(record),
         delivery_mode=str(getattr(record, "delivery_mode", "") or ""),
         use_frontier_model=not bool(getattr(record, "local_only", False)),
         cost=_cost_summary(record.run_id),
     )
+
+
+def _when_the_gate_approves_itself(record: Any) -> Any:
+    """When a waiting gate approves itself, or None: nothing waits, or it waits for the person.
+
+    The sweep approves a gate `approval_timeout_minutes` after the run started
+    waiting (`app.server.approval_timeouts`), and the page never said so: a
+    gate approved itself with nobody told, and gates with no timeout were
+    measured parked for 12-13 h with nothing to say they would wait for ever.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    minutes = getattr(record, "approval_timeout_minutes", None)
+    if record.status not in ("waiting_for_approval", "waiting_for_review") or not minutes:
+        return None
+    try:
+        since = datetime.fromisoformat(str(record.updated_at))
+    except (TypeError, ValueError):
+        return None
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    return since + timedelta(minutes=int(minutes))
 
 
 def _what_the_marker_says(record: Any) -> str:

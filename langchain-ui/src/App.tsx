@@ -7,6 +7,7 @@ import { Login } from './pages/Login';
 import { Settings } from './pages/Settings';
 import React, { useEffect, useState } from 'react';
 import { api } from './api';
+import { FeedbackProvider } from './components/Feedback';
 
 class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: any) {
@@ -83,6 +84,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
+    <FeedbackProvider>
     <BrowserRouter>
       <ErrorBoundary>
         <Routes>
@@ -103,6 +105,7 @@ function App() {
         </Routes>
       </ErrorBoundary>
     </BrowserRouter>
+    </FeedbackProvider>
   );
 }
 

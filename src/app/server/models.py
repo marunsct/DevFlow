@@ -283,6 +283,16 @@ class RunStatusResponse(BaseModel):
             "clean release writes it into the workspace root (Initiative J.6)."
         ),
     )
+    gate_deadline: datetime | None = Field(
+        default=None,
+        description=(
+            "When a gate that is waiting for a person approves itself (the run's approval timeout), "
+            "or null when nothing waits or the gate waits for the person however long it takes."
+        ),
+    )
+    approval_timeout_minutes: int | None = Field(
+        default=None, description="The run's approval timeout in minutes; null waits for the person."
+    )
     completion_gaps: list[str] = Field(
         default_factory=list,
         description=(

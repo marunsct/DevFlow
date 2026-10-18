@@ -51,9 +51,26 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
     }
   };
 
+  // A dialog: Escape closes it, the page behind does not scroll, and focus
+  // returns to whatever opened it.
+  const closeRef = React.useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const before = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const overflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = overflow;
+      before?.focus?.();
+    };
+  }, [onClose]);
+
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in">
-      <div className="bg-[#1e2330]/95 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in overscroll-contain" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="artifact-viewer-title" onClick={(e) => e.stopPropagation()} className="bg-[#1e2330]/95 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-black/20">
@@ -62,7 +79,7 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
               <FileText className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-semibold text-white text-lg truncate tracking-tight">{path.split('/').pop()}</h3>
+              <h2 id="artifact-viewer-title" className="font-semibold text-white text-lg truncate tracking-tight">{path.split('/').pop()}</h2>
               <p className="text-xs text-primary truncate font-mono mt-0.5">{path}</p>
             </div>
           </div>
@@ -71,11 +88,14 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
               onClick={handleDownload}
               className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition-all"
               title="Download"
+              aria-label="Download"
             >
               <Download className="h-5 w-5" />
             </button>
             <button
+              ref={closeRef}
               onClick={onClose}
+              aria-label="Close"
               className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition-all"
             >
               <X className="h-5 w-5" />

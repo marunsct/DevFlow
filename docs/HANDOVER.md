@@ -1,7 +1,7 @@
 # Handover - the harness improvement loop
 
 **Written for:** any coding agent (or person) taking over the loop, with none
-of the previous sessions' context. Last updated **2026-10-18 07:00 JST**.
+of the previous sessions' context. Last updated **2026-10-18 18:40 JST**.
 
 
 Read this file first, then `docs/monitoring-handover.md` §0 (the mechanics and
@@ -17,6 +17,14 @@ Everything they held that is not a secret is in this file.
 Per-item status lives in the *Implementation Progress Ledger* at the end of
 that document and is updated in the same commit as every implementation
 change. Evidence archive for the review: `docs/review-findings-wip.md`.
+
+**2026-10-18 18:40 JST:** Appendix 2 (second review) of the same document is
+being implemented in its resume order (`docs/review-findings-wip.md` §13.8):
+the whole resume order is done - X.1/X.2, AD, AE, W.3, W.1, W.4, W.5 (ledger
+rows "Appendix 2 rows"). W.2 baseline runs are the owner's. New: `loop.sh kpi`
+(run by every `loop.sh score`) keeps each run's KPIs in `data/kpi/` and flags
+regressions; a score against another brief's hidden suite is marked
+`brief_mismatch` and kept out of the false-acceptance count.
 
 ## 0. Your first ten minutes
 

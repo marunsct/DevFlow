@@ -681,6 +681,31 @@ know about its testing, and what changed most recently.
   defect with a `closed without a fixer` ledger note and no model call, a probe
   that cannot answer dispatches the fixer as before. The cheaper stored answers
   still come first.
+- **A fix closes on its own tests, measured (2026-10-18, Initiative AD).**
+  Settlement used to mark a fix that broke nothing as fixed when the fixer
+  named a test. `after_a_fix` has already run both suites, so settlement now
+  reads the defect's own tests (its criteria's acceptance tests, else the unit
+  tests) from that snapshot: red leaves it open with a `left open ... its own
+  tests still fail, measured after the fix` ledger note and counts the failed
+  attempt at once. No extra test run.
+- **One list of tests that cannot pass (2026-10-18, Initiative AE).** The
+  review and every test round use `suite.tests_that_cannot_pass`; the
+  too-lenient checks stay review-only. Release adds three gap sources:
+  escalation `known_issues`, fast-mode findings recorded as risks, and a
+  release re-read of the files (`problems_that_break_the_product`).
+- **Each run's KPIs are kept (2026-10-18, Initiative W.4/W.1).** `loop.sh kpi
+  [run]` writes `data/kpi/<run>.json` and a row of `data/kpi/ledger.csv` and
+  prints `REGRESSION ...` for any rate past 1.5x its 5-run mean; `loop.sh
+  score` runs it after scoring. A score is `brief_mismatch` when the run's
+  uploaded brief is not byte-identical to `benchmarks/<name>/brief.md`, and
+  such a score is never a false acceptance. The harness switches (LINE_EDITS,
+  ENVIRONMENT_CONTRACT, WORKSPACE_DIGEST, PROJECT_MEMORY, HARNESS_TASK_LIST,
+  ESCALATE_AFTER_ATTEMPTS, MODEL_MAX_OUTPUT_TOKENS) now reach the worker from
+  `.env` (W.3), so A/B runs are possible without editing compose.
+- **Prompts match tools and routing (2026-10-18, Initiative X).** A suite test
+  builds every role agent and fails if its prompt names a tool it is not
+  offered; the milestone review's `blocked` text now says the sprint is
+  planned again (the owner's sprint re-run), not that the run ends.
 - **A stage circling identical calls ends deterministically (2026-10-18,
   Initiative L.5).** Twelve identical calls that returned nothing new - counted
   from the read-refusal, same-answer and identical-failure markers in the stage's

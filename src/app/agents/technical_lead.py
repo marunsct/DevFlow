@@ -730,9 +730,10 @@ Responsibilities:
   the other work orders' `interfaces` and `test_cases` and writes the automated
   tests from them while the code is written - contract first, not after.
 - The harness checks every plan before dispatch: a code work order with no
-  `files` or no `test_cases`, a file outside the project directory, a milestone
-  with code and no `testing` work order, or a verification command the sandbox
-  refuses sends the plan back to you.
+  `files` or no `test_cases`, a file outside the project directory or one the
+  harness keeps, a file the sprint's scope names that no work order lists, a
+  milestone with code and no `testing` work order, or a verification command
+  the sandbox refuses sends the plan back to you.
 - Every milestone must change what the product DOES. At least one delegated
   task must add or change application code that a user or a caller would
   notice. Creating directories, copying files and writing documentation are

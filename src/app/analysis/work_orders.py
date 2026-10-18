@@ -28,11 +28,14 @@ Nothing here names a language, a framework or a kind of product.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from difflib import SequenceMatcher
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable, Sequence
+
+logger = logging.getLogger(__name__)
 
 #: Roles whose task is not code the product runs, so they need not name files
 #: or test cases.
@@ -167,6 +170,73 @@ def with_named_tests_given_to_testing(
         given.append(str(planned) if planned else (f"{beside}/{name}" if beside and beside != "." else name))
     tasks[testing] = tasks[testing].model_copy(update={"files": [*(getattr(tasks[testing], "files", None) or []), *given]})
     return milestone.model_copy(update={"delegated_tasks": tasks}), given
+
+
+def with_a_testing_work_order(milestone: Any, repo_root: str | Path | None) -> tuple[Any, bool]:
+    """The plan with a testing work order built from its code work orders when it has none; and whether one was added.
+
+    "No `testing` work order" is the readiness problem that recurs identically:
+    five send-backs in one day across three runs, each a full re-plan of about
+    ten minutes, for a work order the harness can write itself. Which files it
+    owns follows from the project's own test layout (its stack contract's unit
+    directory and file pattern) and the code files planned; what it tests is
+    the other work orders' `test_cases` and `interfaces`. Without a stack
+    contract to name the test files, the plan goes back as before. Never raises.
+    """
+    try:
+        from app.analysis.file_kinds import classify_file
+        from app.stacks import contract
+
+        tasks = list(getattr(milestone, "delegated_tasks", None) or [])
+        if not tasks or any(_role(t) == _TESTING for t in tasks):
+            return milestone, False
+        behaviour = [
+            t for t in tasks
+            if _role(t) not in _NOT_CODE
+            and _touches_product_code([str(f) for f in getattr(t, "files", None) or [] if str(f).strip()])
+        ]
+        found = contract.the_pack(repo_root)
+        if not behaviour or not found:
+            return milestone, False
+        pack = found[0]
+        unit_dir = str(getattr(pack, "unit_dir", "") or "").strip("/")
+        pattern = str(getattr(pack, "unit_pattern", "") or "")
+        project = _pinned_project_directory(repo_root)
+        if not unit_dir or "*" not in pattern:
+            return milestone, False
+        files: list[str] = []
+        for task in behaviour:
+            for path in getattr(task, "files", None) or []:
+                if classify_file(str(path)) != "application":
+                    continue
+                stem = PurePosixPath(str(path)).name.split(".", 1)[0]
+                test = "/".join(part for part in (project, unit_dir, pattern.replace("*", stem, 1)) if part)
+                if test not in files:
+                    files.append(test)
+        if not files:
+            return milestone, False
+
+        def union(field: str) -> list[str]:
+            return list(dict.fromkeys(str(v) for t in behaviour for v in getattr(t, field, None) or [] if str(v).strip()))
+
+        command = " ".join(str(part) for part in getattr(pack, "unit_test", ()) or ())
+        testing = type(behaviour[0])(
+            specialist_role=_TESTING,
+            title="Automated tests for this milestone's work orders",
+            task_description=(
+                "Write the automated tests that prove the other work orders, from their test cases and "
+                "interfaces, while the code is written."
+            ),
+            files=files,
+            interfaces=union("interfaces"),
+            test_cases=union("test_cases") or union("acceptance_criteria"),
+            acceptance_criteria=["Every test case of the other work orders has an automated test that runs."],
+            verification=[command] if command else [],
+        )
+        return milestone.model_copy(update={"delegated_tasks": [*tasks, testing]}), True
+    except Exception:  # noqa: BLE001 - the plan is sent back as before
+        logger.debug("Could not add a testing work order", exc_info=True)
+        return milestone, False
 
 
 def with_test_cases_from_its_criteria(milestone: Any) -> Any:

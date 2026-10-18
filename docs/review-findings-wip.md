@@ -1249,3 +1249,111 @@ summarisation, Fable for the review and the plan itself.
   → 2, 3, 4, 6 are NOT covered by the current plan; 1 partly (loop.sh ready
   covers the model, not command execution); 5 partly (U.4 retention, but
   not deletion of transcripts/object-store copies).
+
+### 13.2 Checkpoint 3 (12:10 JST) — agents/models map + UI map landed; Fable-verified findings
+
+Mapper inventories: `map-agents.md` (agents/, models/, context budget, repair
+layers, kill switches) and `map-ui.md` (React UI + API surface). Findings
+below are the ones verified by reading the code directly (G-numbered to keep
+them apart from session 1's F-series).
+
+#### G1 (HIGH, local-model): prompts order a tool the role is not given — and contradict themselves
+- `agents/product_manager.py:352-360` says "Do not write a document … only
+  through that response" and then "**Write the complete intake in ONE single
+  write_artifact call.**"; the role is built with `can_write=False`
+  (`product_manager.py:391`), so `write_artifact` is not in its tool list
+  (`role_agent.py:665`). Same pair in `agents/tools_models.py:322-333` /
+  `:363`. The specialist prompt also says "ONE single write_artifact call, no
+  follow-up edits" (`specialists.py:1317`) while `_WRITING_RULES` teaches
+  `edit_artifact`, and ui_ux is told "do not run tests" (`specialists.py:84`)
+  and "prove your work by running it" (`:1287`).
+- Why it matters: this is the exact mechanism behind A3 (hallucinated tool
+  names, `edit_file` ×53) — the prompt *names* a tool the schema lacks, and a
+  small model follows the prompt. Session 1 catalogued the symptom in M; the
+  prompt-side cause was not found. Deterministic fix class: a test that every
+  tool name a prompt mentions is in that role's offered set (same shape as the
+  banned-words tests).
+
+#### G2 (HIGH, throughput): project memory sits at the head of the conversation and is rewritten from disk every call
+- `agents/project_memory.py:312-321` splices the memory text into the
+  *opening* human message; the middleware re-reads it each call; budget up to
+  30% of the window (`MEMORY_SHARE`). Any write changes the first message →
+  the server-side prefix cache misses for the entire history on the next
+  call. This is the single largest prefix-cache leak the harness controls and
+  it is *in front of* the task text (lost-in-the-middle for the brief itself).
+  Session 1 measured 45–73% cache hits and average requests growing
+  44k→95k after memory deployment (B2) but attributed it to size only.
+- The environment contract and workspace digest are appended *after* the
+  growing history (`environment_contract.py:253`, `workspace_digest.py:526`),
+  so the stable block is re-prefilled every turn while the volatile block
+  (memory) sits in the cached region. Both are the inverse of O.3's rule.
+  Candidate: memory + contract as a byte-stable second system block
+  *before* history; digest ("already known", volatile) last — and measure
+  `cached_tokens` per call (nothing reads it: `map-agents.md` §2).
+
+#### G3 (MEDIUM, local-model): no sampling or cache parameters are ever sent
+- Stages send no `temperature`/`top_p`/`seed`/`cache_prompt`/`json_schema`
+  (`models/__init__.py`); the only `temperature=0` is the framework-extraction
+  call (`plugins/middleware.py:166`). Behaviour therefore depends entirely on
+  how the owner launched the server. Model cards (Qwen3: 0.7/0.8/20, presence
+  penalty for loops; GLM 1.0/0.95/40) and M's profile contract are the place
+  for these; today `server/model_profiles.py` is only a saved-settings store
+  (235 lines, no per-family behaviour) and `models/fitness.py` has no caller
+  under `src/`.
+
+#### G4 (MEDIUM): tool list changes mid-conversation
+- Settled-answer withholding and the research-share cap remove tools
+  mid-stage; the prefix changes (cache miss) and the schema the model
+  learned from no longer matches (weak models keep calling the removed
+  tool). Manus "mask, don't remove"; Initiative O noted it — now with code
+  pointers (`map-agents.md` §6 item 4).
+
+#### G5 (MEDIUM): maintenance prose inside system prompts
+- `technical_lead.py:674-777` and the environment contract carry "Measured
+  across the stored runs…" statistics and ALL-CAPS/CRITICAL emphasis. Prompt
+  sizes 1.7k–14k chars per role. For 20–40B models the research consistently
+  favours short, imperative, example-led rules; the rationale belongs in the
+  module docstring (where this codebase already keeps it beautifully), not
+  in the tokens the model pays for every call.
+
+#### G6 (LOW–MED): parallel-mode hazard — process-wide globals
+- `settled_answer.py:573,584` `_LAST_FAILING_FIELDS` / `_LAST_FAILURE_KIND`
+  are module globals read across stages; in parallel mode two specialists
+  can read each other's failure state. Needs a per-thread/per-stage carrier.
+
+#### G7 (UI/plan correction): no steering endpoint exists
+- Session 1's Phase 3 "steering composer via the existing
+  dynamic-instruction-injection hook" rests on a misreading:
+  `plugins/middleware.py` injects *framework* guidance per stack; there is
+  no user→run instruction path and the WebSocket is read-only (`map-ui.md`
+  §3). Steering needs a new backend enabler (queue + middleware that
+  appends the operator note as a trailing message at the next stage
+  boundary), and that is the right place for it architecturally.
+
+#### G8 (UI/plan correction): artifact versioning has no real data
+- `server/runs.py:1704-1713` hard-codes `revision=1` and the in-flight stage
+  on every artifact. The planned diff/version viewer needs the workspace git
+  history (every stage commits) exposed per path first.
+
+#### G9 (UI): intake has no free-text brief, and a failed start orphans a run
+- Intake accepts documents only; `createRun` then `startRun` — a failure in
+  the second leaves a `created` run with no owner action. Access token
+  expires at 60 min with no refresh → a full reload mid-run.
+
+#### G10 (UI, measured by mapper): still-open harms from Part 4 Phase 1
+- None of Phase 1 landed (no `aria-live`/`role=status`, 17 native
+  `alert()/confirm()`, modal without dialog role, 31 hex literals + 115 raw
+  slate/white classes, RunList polls 5 s even when hidden, no WS→poll
+  fallback, whole-log copy+sort per WS frame, `waiting_for_budget` missing
+  from `statusConfig`, "Documents N produced" counts code files). Landed
+  since: completion_gaps/non_deliverable banners, partial-pricing honesty,
+  rewind UI, outcomes+forecast, approval-timeout input.
+
+#### G11 (API/UI mismatches, mapper)
+- `document_names` (list) vs UI `document_name`; `approval_timeout_minutes`
+  stored but absent from `RunStatusResponse`; token counts, `reviews[]`,
+  `remediation` typed but never rendered; `delivery_mode`,
+  `use_frontier_model`, `auto_approve` absent from the UI type; dashboard does
+  not refetch on `budget_pause`/`approval_denied`/`review_decision`; after a
+  `closed` frame the stream is never re-attached; brownfield
+  (`StartRunRequest.source`, `POST /runs/{id}/codebase`) unreachable from UI.

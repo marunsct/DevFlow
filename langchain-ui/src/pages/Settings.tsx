@@ -386,6 +386,7 @@ export const Settings: React.FC = () => {
                 <div className="flex items-center gap-2 mt-2">
                   <select
                     id="saved-local-models"
+                    aria-label="Saved local models"
                     value={chosenLocalProfile}
                     onChange={(e) => applyLocalProfile(e.target.value)}
                     className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
@@ -417,7 +418,7 @@ export const Settings: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Provider</label>
-                <select
+                <select aria-label="Provider"
                   value={settings.llm_provider}
                   onChange={(e) => setSettings({ ...settings, llm_provider: e.target.value })}
                   className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
@@ -431,7 +432,7 @@ export const Settings: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Model Name</label>
-                <input
+                <input aria-label="Model Name"
                   type="text"
                   value={settings.model_name}
                   onChange={(e) => setSettings({ ...settings, model_name: e.target.value })}
@@ -445,7 +446,7 @@ export const Settings: React.FC = () => {
                   Context window
                 </label>
                 <div className="flex items-center gap-2">
-                  <input
+                  <input aria-label="Context window"
                     type="number"
                     min={32000}
                     step={1000}
@@ -637,7 +638,7 @@ export const Settings: React.FC = () => {
 
               <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1">Base URL</label>
-                <input
+                <input aria-label="Base URL"
                   type="text"
                   value={settings.openai_base_url}
                   onChange={(e) => setSettings({ ...settings, openai_base_url: e.target.value })}
@@ -742,7 +743,7 @@ export const Settings: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs text-text-secondary mb-1">Model name</label>
-                    <input
+                    <input aria-label="Model name"
                       type="text"
                       value={settings.judgement_model_name ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_model_name: e.target.value })}
@@ -752,7 +753,7 @@ export const Settings: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs text-text-secondary mb-1">Provider</label>
-                    <select
+                    <select aria-label="Provider"
                       value={settings.judgement_provider ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_provider: e.target.value })}
                       className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
@@ -766,7 +767,7 @@ export const Settings: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs text-text-secondary mb-1">Base URL</label>
-                    <input
+                    <input aria-label="Base URL"
                       type="text"
                       value={settings.judgement_base_url ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_base_url: e.target.value })}
@@ -776,7 +777,7 @@ export const Settings: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs text-text-secondary mb-1">Context window (tokens)</label>
-                    <input
+                    <input aria-label="Context window (tokens)"
                       type="number"
                       min={0}
                       step={1000}
@@ -787,7 +788,7 @@ export const Settings: React.FC = () => {
                   </div>
                   <div>
                     <label className="block text-xs text-text-secondary mb-1">Longest reply (tokens)</label>
-                    <input
+                    <input aria-label="Longest reply (tokens)"
                       type="number"
                       min={0}
                       step={1000}

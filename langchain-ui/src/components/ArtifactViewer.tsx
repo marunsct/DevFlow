@@ -63,7 +63,7 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
             </div>
             <div className="min-w-0">
               <h3 className="font-semibold text-white text-lg truncate tracking-tight">{path.split('/').pop()}</h3>
-              <p className="text-xs text-primary/80 truncate font-mono mt-0.5">{path}</p>
+              <p className="text-xs text-primary truncate font-mono mt-0.5">{path}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">

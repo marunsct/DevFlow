@@ -68,13 +68,13 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                 key={`${artifact.path}-${index}`}
                 className="group flex items-center gap-3 rounded-xl px-3 py-2.5 transition-colors hover:bg-white/[0.04]"
               >
-                <span className="flex-none grid place-items-center h-9 w-9 rounded-lg bg-primary/12 text-primary/90">
+                <span className="flex-none grid place-items-center h-9 w-9 rounded-lg bg-primary/12 text-primary">
                   <FileText className="h-4 w-4" />
                 </span>
 
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-medium text-white truncate">{readableName(artifact)}</p>
-                  <p className="text-[11px] text-text-muted/80 font-mono truncate" title={artifact.path}>
+                  <p className="text-[11px] text-text-muted font-mono truncate" title={artifact.path}>
                     {artifact.path}
                     {artifact.revision > 1 && ` · version ${artifact.revision}`}
                   </p>

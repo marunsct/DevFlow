@@ -88,21 +88,21 @@ const buildComponents = (density: Density): Components => {
         );
       }
       return (
-        <code className="rounded bg-white/[0.07] px-1 py-0.5 font-mono text-[0.9em] text-primary/90 break-words">
+        <code className="rounded bg-white/[0.07] px-1 py-0.5 font-mono text-[0.9em] text-primary break-words">
           {children}
         </code>
       );
     },
     pre: ({ children }) => (
       // Its own scroller: a long line of code must not widen the panel it is in.
-      <pre className="my-2 overflow-x-auto rounded-lg border border-white/5 bg-black/40 p-3">{children}</pre>
+      <pre tabIndex={0} className="my-2 overflow-x-auto rounded-lg border border-white/5 bg-black/40 p-3">{children}</pre>
     ),
 
     // Tables are wrapped rather than styled in place. An agent's verification
     // matrix is routinely wider than a 23rem rail, and without a scroller of its
     // own it stretches the grid column and pushes the layout sideways.
     table: ({ children }) => (
-      <div className="my-2 overflow-x-auto rounded-lg border border-border/50">
+      <div tabIndex={0} className="my-2 overflow-x-auto rounded-lg border border-border/50">
         {/* A minimum width in the narrow column, deliberately wider than the
             column itself. Left to fit, a four-column verification matrix
             squeezed each cell to a few characters and turned every row into a

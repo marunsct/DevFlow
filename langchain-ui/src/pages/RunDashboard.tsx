@@ -472,7 +472,7 @@ export const RunDashboard: React.FC = () => {
             onClick={() => handleViewModeChange(viewMode === 'wizard' ? 'classic' : 'wizard')}
             className={`${actionButton} ${
               viewMode === 'wizard'
-                ? 'text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5'
+                ? 'text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'
                 : 'text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5'
             }`}
             title={viewMode === 'wizard' ? 'Switch to classic dashboard' : 'Switch to guided wizard'}
@@ -495,7 +495,7 @@ export const RunDashboard: React.FC = () => {
           )}
           {RESUMABLE.includes(run.status) && !run.error?.startsWith('Interrupted:') && (
             <button onClick={handleResume}
-              className={`${actionButton} text-primary/90 border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
+              className={`${actionButton} text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5`}>
               <Play className="h-3.5 w-3.5" /> Resume
             </button>
           )}
@@ -721,7 +721,7 @@ export const RunDashboard: React.FC = () => {
                 }`}
               >
                 {tab.label}
-                <span className="text-[11px] tabular-nums opacity-60">{tab.count}</span>
+                <span className="text-[11px] tabular-nums text-text-muted">{tab.count}</span>
               </button>
             ))}
           </div>

@@ -2,8 +2,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 @theme {
-  --color-primary: #6366f1;
-  --color-primary-hover: #818cf8;
+  --color-primary: #4f46e5;
+  --color-primary-hover: #6366f1;
   --color-primary-foreground: #ffffff;
   --color-muted: #94a3b8;
   --color-success: #22c55e;
@@ -19,10 +19,14 @@
   --color-border-subtle: #1e293b;
   --color-text-primary: #f1f5f9;
   --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
+  --color-text-muted: #8b9ab0;
 }
 
 @layer base {
+  :root {
+    color-scheme: dark;
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -156,4 +160,48 @@
 .status-danger {
   box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
   border-color: rgba(239, 68, 68, 0.5);
+}
+
+
+/* Accessibility (UI audit, 2026-10-18). Unlayered on purpose: these win over
+   the utilities. Measured before: 455 axe violations on four pages, almost all
+   colour contrast - indigo and red used as small text on the dark surfaces
+   (3.0-4.0:1), and white on the indigo buttons at 4.47:1. */
+.text-primary {
+  color: #a5b4fc;
+}
+
+.text-danger {
+  color: #f87171;
+}
+
+:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 2px;
+}
+
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+.skip-link:focus {
+  top: 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

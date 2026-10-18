@@ -216,7 +216,7 @@ const MessageRow: React.FC<{
             // rather than as another progress update. Height-capped with its own
             // scroll: one expanded verification matrix is long enough to fill the
             // whole panel and bury the updates on either side of it.
-            <div className="mt-1.5 max-h-80 overflow-y-auto border-l-2 border-border/60 pl-3">
+            <div tabIndex={0} className="mt-1.5 max-h-80 overflow-y-auto border-l-2 border-border/60 pl-3">
               <Markdown>{item.reasoning}</Markdown>
             </div>
           )}
@@ -285,7 +285,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
       </button>
 
       {open && item.detail && (
-        <pre className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-black/30 p-3 text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
+        <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-black/30 p-3 text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
           {item.detail}
         </pre>
       )}
@@ -420,6 +420,10 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
           <div
             ref={scrollRef}
             onScroll={onScroll}
+            role="log"
+            aria-live="polite"
+            aria-label="Agent activity"
+            tabIndex={0}
             className="absolute inset-0 overflow-y-auto px-2 py-3 flex flex-col"
           >
             {!live ? (

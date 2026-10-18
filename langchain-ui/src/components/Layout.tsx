@@ -36,15 +36,15 @@ export const Header: React.FC = () => {
             </span>
           </Link>
           <nav className="flex items-center gap-1">
-            <Link to="/" className={linkClass('/')}>
+            <Link to="/" className={linkClass('/')} aria-label="Home" aria-current={isActive('/') ? 'page' : undefined}>
               <Home className="h-4 w-4" />
               <span className="hidden sm:inline">Home</span>
             </Link>
-            <Link to="/runs" className={linkClass('/runs')}>
+            <Link to="/runs" className={linkClass('/runs')} aria-label="Runs" aria-current={isActive('/runs') ? 'page' : undefined}>
               <List className="h-4 w-4" />
               <span className="hidden sm:inline">Runs</span>
             </Link>
-            <Link to="/settings" className={linkClass('/settings')}>
+            <Link to="/settings" className={linkClass('/settings')} aria-label="Settings" aria-current={isActive('/settings') ? 'page' : undefined}>
               <Settings className="h-4 w-4" />
               <span className="hidden sm:inline">Settings</span>
             </Link>
@@ -53,6 +53,7 @@ export const Header: React.FC = () => {
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
               title="Sign out"
+              aria-label="Sign out"
             >
               <LogOut className="h-4 w-4" />
               <span className="hidden sm:inline">Logout</span>
@@ -67,12 +68,13 @@ export const Header: React.FC = () => {
 export const Layout: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col bg-[#020617]">
+      <a href="#main" className="skip-link">Skip to content</a>
       <Header />
       {/* The run dashboard is a three-column workspace, so the shell takes the
           whole window. At max-w-7xl the rails were squeezed into ~18rem each on
           a 1080p display; capped at 120-140rem, a wider screen still sat empty
           on both sides. */}
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6">
+      <main id="main" tabIndex={-1} className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-6 focus:outline-none">
         <Outlet />
       </main>
       <footer className="border-t border-border/50 py-6 text-center text-xs text-text-muted">

@@ -167,7 +167,7 @@ export const RunList: React.FC = () => {
                     {isTerminal && (
                       <button
                         onClick={() => handleDelete(run.run_id)}
-                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                         title="Delete run"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -176,7 +176,7 @@ export const RunList: React.FC = () => {
                     {run.status === 'running' && (
                       <button
                         onClick={() => handlePause(run.run_id)}
-                        className="p-2 text-text-muted hover:text-warning hover:bg-warning/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                        className="p-2 text-text-muted hover:text-warning hover:bg-warning/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                         title="Pause run"
                       >
                         <Pause className="h-4 w-4" />
@@ -185,7 +185,7 @@ export const RunList: React.FC = () => {
                     {RESUMABLE.includes(run.status) && (
                       <button
                         onClick={() => handleResume(run.run_id)}
-                        className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                        className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                         title="Resume run"
                       >
                         <Activity className="h-4 w-4" />
@@ -193,7 +193,7 @@ export const RunList: React.FC = () => {
                     )}
                     <button
                       onClick={() => handleClone(run.run_id)}
-                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100"
+                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                       title="Clone run"
                     >
                       <Copy className="h-4 w-4" />

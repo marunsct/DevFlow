@@ -15,7 +15,7 @@ const EVENT_COLOR: Record<string, string> = {
   complete: 'text-success',
   stage_change: 'text-primary',
   agent_message: 'text-slate-400',
-  tool_call: 'text-primary/70',
+  tool_call: 'text-primary',
   tool_result: 'text-text-muted',
 };
 
@@ -62,6 +62,10 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
       <div
         ref={scrollRef}
         onScroll={onScroll}
+        role="log"
+        aria-live="polite"
+        aria-label="Run log"
+        tabIndex={0}
         className="absolute inset-0 overflow-y-auto bg-[#080c16] px-3 py-3 font-mono text-[11.5px] leading-relaxed"
       >
         {logs.map((log) => {

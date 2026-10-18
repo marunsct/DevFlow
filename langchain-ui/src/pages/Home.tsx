@@ -193,6 +193,15 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => document.getElementById('file-upload')?.click()}
+              role="button"
+              tabIndex={0}
+              aria-label="Choose product documents to upload"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  document.getElementById('file-upload')?.click();
+                }
+              }}
             >
               <input
                 id="file-upload"
@@ -208,9 +217,9 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   <div className="h-14 w-14 bg-surface-overlay/50 rounded-xl flex items-center justify-center mb-4">
                     <UploadCloud className="h-7 w-7 text-text-muted" />
                   </div>
-                  <h3 className="text-base font-semibold text-text-primary mb-1">
+                  <h2 className="text-base font-semibold text-text-primary mb-1">
                     Drop files here or click to browse
-                  </h3>
+                  </h2>
                   <p className="text-sm text-text-muted">
                     Markdown, PDF, TXT or DOCX (max 10MB each)
                   </p>
@@ -220,9 +229,9 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   <div className="h-14 w-14 bg-success/10 rounded-xl flex items-center justify-center mb-4">
                     <FileText className="h-7 w-7 text-success" />
                   </div>
-                  <h3 className="text-base font-semibold text-white mb-2">
+                  <h2 className="text-base font-semibold text-white mb-2">
                     {files.length} file{files.length > 1 ? 's' : ''} selected
-                  </h3>
+                  </h2>
                   <ul className="text-sm text-text-secondary max-h-24 overflow-y-auto mb-3 w-full max-w-sm text-left space-y-1">
                     {files.map((f, i) => (
                       <li key={i} className="truncate flex items-center gap-2">
@@ -261,8 +270,8 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                 <p className="text-xs text-text-muted mt-1.5">
                   Just a label, not a path. Every run gets its own isolated workspace on the
                   server either way &mdash; this only makes it recognisable on disk. Documents go
-                  to <code className="text-primary/80">docs/</code> and code
-                  to <code className="text-primary/80">{'<product-name>'}/</code> inside it.
+                  to <code className="text-primary">docs/</code> and code
+                  to <code className="text-primary">{'<product-name>'}/</code> inside it.
                 </p>
               </div>
 
@@ -304,10 +313,10 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
             <div className="space-y-6 xl:mt-0">
               {/* How much the run should stop for you */}
               <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-primary" />
                   Supervision
-                </h3>
+                </h2>
                 <Checkbox
                   id="unattended"
                   checked={unattended}
@@ -325,7 +334,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               </div>
 
               <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-3">
-                <h3 className="text-sm font-semibold text-text-primary">Delivery</h3>
+                <h2 className="text-sm font-semibold text-text-primary">Delivery</h2>
                 <div className="flex flex-col sm:flex-row gap-3" role="radiogroup" aria-label="Delivery">
                   {(['fast', 'thorough'] as const).map((choice) => (
                     <button
@@ -363,7 +372,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               </div>
 
               <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-3">
-                <h3 className="text-sm font-semibold text-text-primary">Models</h3>
+                <h2 className="text-sm font-semibold text-text-primary">Models</h2>
                 <Checkbox
                   id="useFrontierModel"
                   checked={useFrontierModel}
@@ -377,10 +386,10 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               {!unattended && (
                 <>
                   <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                    <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                       <ShieldCheck className="h-4 w-4 text-primary" />
                       Approvals
-                    </h3>
+                    </h2>
                     <Checkbox
                       id="autoApprove"
                       checked={autoApprove}
@@ -391,10 +400,10 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   </div>
 
                   <div className="p-4 rounded-xl bg-surface/50 border border-border/50 space-y-4">
-                    <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
+                    <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
                       <CheckSquare className="h-4 w-4 text-primary" />
                       Review Gates
-                    </h3>
+                    </h2>
                     <label htmlFor="approvalTimeout" className="block text-sm text-text-primary">
                       Approve a waiting gate automatically after
                       <input

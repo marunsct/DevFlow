@@ -362,6 +362,32 @@ def build_artifact_edit_tool(repo_root: str) -> BaseTool:
     return edit_artifact
 
 
+NETWORK_OFF_SENTENCE = "Everything\n                except 'install' runs with networking disabled."
+
+
+def with_the_network_as_it_is(description: str) -> str:
+    """The command tool's text with its network sentence true for the sandbox mode in use (Initiative X.3).
+
+    It said every category but 'install' runs with networking disabled. That
+    is the per-command container's `--network none`; in container mode the
+    command runs in the worker itself and nothing cuts the network, so the
+    sentence was false on the deployment that uses that mode.
+    """
+    try:
+        from app.tools.sandbox import IN_CONTAINER_MODE, execution_mode
+
+        here = execution_mode() == IN_CONTAINER_MODE
+    except Exception:  # noqa: BLE001 - the text stands as written
+        return description
+    if not here:
+        return description
+    return description.replace(
+        NETWORK_OFF_SENTENCE,
+        "Commands run in\n                the harness's own container, which is not cut off from the network; "
+        "fetch nothing\n                but dependencies, and those with category 'install'.",
+    )
+
+
 def line_edits_offered() -> bool:
     """Whether stages are offered `replace_lines`. Off unless `LINE_EDITS=on`.
 
@@ -597,6 +623,7 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
             working_directory=working_directory,
         )
 
+    run_terminal_command.description = with_the_network_as_it_is(run_terminal_command.description)
     return run_terminal_command
 
 

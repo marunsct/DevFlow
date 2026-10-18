@@ -138,3 +138,22 @@ def test_a_second_lost_reply_keeps_thinking_off_though_compaction_took_the_first
 
     extra = (seen["request"].model_settings or {}).get("extra_body") or {}
     assert (extra.get("chat_template_kwargs") or {}).get("enable_thinking") is False
+
+
+def test_lost_replies_count_across_the_visits_of_one_stage(monkeypatch):
+    """A retry starts a new conversation and middleware; one run lost two or more
+    20,000-token replies per defect because the count started again each visit."""
+    monkeypatch.setattr(settled_answer, "_the_stage_across_visits", lambda: ("run-x", "defect_fix_2_2"))
+    monkeypatch.setattr(settled_answer, "_LOST_ACROSS_VISITS", {})
+    first, second = _lost(), _lost()
+    first.id, second.id = "visit-1-lost", "visit-2-lost"
+
+    one = settled_answer.build_settled_answer_middleware(_Plan, "specialist_backend", step_limit=40)
+    one.wrap_model_call(_Request([*_ASKED, first], _model()), lambda request: SimpleNamespace(result=[]))
+    two = settled_answer.build_settled_answer_middleware(_Plan, "specialist_backend", step_limit=40)
+    two.wrap_model_call(_Request([*_ASKED, second], _model()), lambda request: SimpleNamespace(result=[]))
+
+    seen: dict = {}
+    two.wrap_model_call(_Request([*_ASKED, *_WORKED], _model()), lambda request: seen.setdefault("request", request))
+    extra = (seen["request"].model_settings or {}).get("extra_body") or {}
+    assert (extra.get("chat_template_kwargs") or {}).get("enable_thinking") is False

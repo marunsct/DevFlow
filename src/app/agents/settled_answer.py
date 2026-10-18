@@ -1536,6 +1536,29 @@ _READ_TOOL_WITHHELD_NOTICE = (
 )
 
 
+#: Replies lost to reasoning, by (run, graph stage), across the stage's visits.
+#: A retry or a resume starts a new conversation and a new middleware, and the
+#: count started again with thinking back on: one run lost 37 replies of 20,000
+#: tokens each, two or more per defect in eleven defects' fix stages - eight in
+#: one planning stage across its visits.
+_LOST_ACROSS_VISITS: dict[tuple[str, str], int] = {}
+
+
+def _the_stage_across_visits() -> tuple[str, str] | None:
+    """(run, graph stage) of the running call, the same for every visit of a stage; None outside a run."""
+    try:
+        from app.observability.log_context import _from_the_graph
+
+        run, stage = _from_the_graph()
+    except Exception:  # noqa: BLE001
+        return None
+    if not run or not stage:
+        return None
+    if len(_LOST_ACROSS_VISITS) > 2000:
+        _LOST_ACROSS_VISITS.clear()
+    return str(run), str(stage)
+
+
 def _without_reasoning_after_a_lost_reply(request: Any, stage_name: str, lost_before: int = 0) -> Any:
     """`request` with thinking switched off on the reply after one lost to
     reasoning, and for the rest of a visit that has lost
@@ -1592,12 +1615,19 @@ def build_settled_answer_middleware(
             # Each lost reply, counted once by its message, so compaction
             # cannot take the count with the history.
             seen = list(getattr(request, "messages", None) or [])
+            visit_stage = _the_stage_across_visits()
             if _the_last_reply_was_all_reasoning(seen):
                 last_ai = next((m for m in reversed(seen) if getattr(m, "type", None) == "ai"), None)
-                self._lost_replies = getattr(self, "_lost_replies", set()) | {
-                    str(getattr(last_ai, "id", "") or id(last_ai))
-                }
-            lost = max(len(getattr(self, "_lost_replies", set())), _replies_that_were_all_reasoning(seen))
+                lost_id = str(getattr(last_ai, "id", "") or id(last_ai))
+                if lost_id not in getattr(self, "_lost_replies", set()):
+                    self._lost_replies = getattr(self, "_lost_replies", set()) | {lost_id}
+                    if visit_stage:
+                        _LOST_ACROSS_VISITS[visit_stage] = _LOST_ACROSS_VISITS.get(visit_stage, 0) + 1
+            lost = max(
+                len(getattr(self, "_lost_replies", set())),
+                _replies_that_were_all_reasoning(seen),
+                _LOST_ACROSS_VISITS.get(visit_stage, 0) if visit_stage else 0,
+            )
             request = _without_reasoning_after_a_lost_reply(request, stage_name, lost)
             try:
                 messages = getattr(request, "messages", None)

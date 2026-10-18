@@ -141,11 +141,17 @@ def brief_pairing(own_brief: str) -> dict:
     brief scored 10. Such a score is kept, marked, and never counted as a false
     acceptance.
     """
-    answer = (own_brief or "").strip().lower()
-    return {
+    # "yes" or "no", optionally with how alike the briefs were: "yes:0.998".
+    answer, _, ratio = (own_brief or "").strip().lower().partition(":")
+    found = {
         "brief": {"yes": "own", "no": "other"}.get(answer, "unknown"),
         "brief_mismatch": answer == "no",
     }
+    try:
+        found["brief_similarity"] = float(ratio)
+    except ValueError:
+        pass
+    return found
 
 
 def score(

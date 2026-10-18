@@ -133,7 +133,8 @@ score)
   doc=$("${DB[@]}" "select document_paths from runs where run_id='$run'" 2>/dev/null \
     | "$PY" -c 'import json,sys;p=json.loads(sys.stdin.read() or "[]");print(p[0] if len(p)==1 else "")' 2>/dev/null)
   if [ -n "$doc" ] && docker compose exec -T worker test -f "$doc"; then
-    if docker compose exec -T worker cat "$doc" | cmp -s - "benchmarks/$name/brief.md"; then own=yes; else own=no; fi
+    # Normalised text and a similarity, not a byte comparison (Initiative AN).
+    own=$(docker compose exec -T worker cat "$doc" | "$PY" "$ROOT/scripts/bench/brief_match.py" - "benchmarks/$name/brief.md" 2>/dev/null | tr ' ' ':')
   fi
   docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own"
   mkdir -p data/bench
@@ -219,7 +220,15 @@ timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
 kpi)
   run="${2:-$(current)}"
   mkdir -p data/kpi
-  in_worker kpi.py "$run" > "data/kpi/$run.json" && "$PY" "$HERE/kpi_ledger.py" "data/kpi/$run.json" data/kpi/ledger.csv
+  # Written beside the file and moved over it only when the worker succeeded: a
+  # failed run of the script used to leave an empty or half JSON in its place.
+  if in_worker kpi.py "$run" > "data/kpi/$run.json.tmp"; then
+    mv "data/kpi/$run.json.tmp" "data/kpi/$run.json"
+    bench=$(echo "$(cat "$STATE/current_brief.txt" 2>/dev/null)" | sed -n 's#^benchmarks/\([^/]*\)/brief.md$#\1#p')
+    "$PY" "$HERE/kpi_ledger.py" "data/kpi/$run.json" data/kpi/ledger.csv "$bench"
+  else
+    rm -f "data/kpi/$run.json.tmp"; echo "kpi: the worker could not read $run's transcript; nothing was changed" >&2; exit 1
+  fi
   ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
 checks) in_worker check_precision.py "${2:-}" ;;
@@ -291,7 +300,7 @@ deploy)
   ;;
 
 freshness) "$PY" "$HERE/pack_freshness.py" ;;
-lessons) in_worker lessons.py "${2:-3}" ;;
+lessons) shift; in_worker lessons.py "${@:-3}" ;;
 nightly)
   # Never beside a live run: scaffolding 27 packs competes for its memory and CPU.
   live=$("${DB[@]}" "select count(*) from runs where status in ('running','queued','pending')")

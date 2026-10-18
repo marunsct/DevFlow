@@ -140,7 +140,7 @@ def test_a_run_scored_against_another_brief_s_suite_is_not_a_false_acceptance() 
 
 def test_the_loop_compares_the_brief_by_content() -> None:
     loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
-    assert 'cmp -s - "benchmarks/$name/brief.md"' in loop
+    assert "scripts/bench/brief_match.py" in loop and "benchmarks/$name/brief.md" in loop
     assert '"$gaps" "$own"' in loop
 
 

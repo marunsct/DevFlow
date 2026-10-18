@@ -615,6 +615,9 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
         """
         from app.tools.sandbox import SandboxExecutor
 
+        held_back = _a_look_with_the_looking_tools_withheld(command)
+        if held_back:
+            return {"error": held_back}
         return SandboxExecutor.execute(
             command=command,
             repo_root=repo_root,
@@ -625,6 +628,36 @@ def build_terminal_command_tool(repo_root: str, role_name: str = "general") -> B
 
     run_terminal_command.description = with_the_network_as_it_is(run_terminal_command.description)
     return run_terminal_command
+
+
+#: Programs that only show what is in the workspace: what `read_file` and
+#: `ls` do, by another door.
+_PROGRAMS_THAT_ONLY_LOOK = frozenset({"cat", "head", "tail", "less", "more", "nl", "ls", "tree", "find", "stat"})
+
+
+def _a_look_with_the_looking_tools_withheld(command: Any) -> str:
+    """The refusal for a command that only looks, once this stage's reading is withheld; else "".
+
+    Measured live: a fixer had its read tools withheld for re-reading files it
+    held, then read the same files with `cat` and listed the same folders with
+    `ls` through this tool - about ten calls in two minutes - until its budget
+    ran out with nothing written.
+    """
+    argv = command if isinstance(command, list) else str(command or "").split()
+    if not argv:
+        return ""
+    program = os.path.basename(str(argv[0]))
+    if program not in _PROGRAMS_THAT_ONLY_LOOK:
+        return ""
+    from app.agents.settled_answer import the_read_tool_is_withheld
+
+    if not the_read_tool_is_withheld():
+        return ""
+    return (
+        f"Not running `{program}`: reading is done for this stage, and this command only shows "
+        "what the project memory and your earlier reads already gave you. Make the change with "
+        "the tools that write, then return your structured response saying what you changed."
+    )
 
 
 JOURNAL_TOOL_MAX_CHARS = 20_000

@@ -242,6 +242,19 @@ deploy)
   docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
     build --progress=plain app worker >/dev/null 2>&1
   git -C "$ROOT" worktree remove --force "$head_tree"
+  # At a stage boundary: a resume restarts the running stage's conversation,
+  # and one fix stage was restarted five times in an hour by deploys landing
+  # mid-stage. Wait (up to BOUNDARY_WAIT seconds, default 1800; 0 skips) for
+  # the live run's transcript to name a new stage.
+  live=$("${DB[@]}" "select run_id from runs where status='running' limit 1" | tr -d '[:space:]')
+  if [ -n "$live" ] && [ "${BOUNDARY_WAIT:-1800}" -gt 0 ]; then
+    last_stage() { docker compose exec -T worker sh -c "tail -n 1 \$(ls /app/data/transcripts/$live*.jsonl | head -1)" \
+      | python3 -c 'import sys,json; print(json.loads(sys.stdin.read() or "{}").get("stage",""))' 2>/dev/null; }
+    was=$(last_stage); waited=0
+    echo "waiting for $live to leave stage '$was' ($(jst '+%H:%M JST'))"
+    while [ "$(last_stage)" = "$was" ] && [ "$waited" -lt "${BOUNDARY_WAIT:-1800}" ]; do sleep 20; waited=$((waited + 20)); done
+    echo "stage now '$(last_stage)' after ${waited}s"
+  fi
   # Between model calls (owner, 2026-10-15): hold new calls, wait for the ones
   # in flight to return, then restart (app.models.call_gate). GATE_WAIT caps the
   # wait in seconds; a call still running then is restarted with its stage.

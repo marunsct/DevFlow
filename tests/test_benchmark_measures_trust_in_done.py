@@ -152,3 +152,11 @@ def test_a_deploy_builds_what_was_committed_not_the_working_tree() -> None:
     assert '-f "$head_tree/docker-compose.yml"' in deploy
     assert "docker compose build" not in deploy
     assert 'git -C "$ROOT" show "HEAD:src/app/$f"' in deploy
+
+
+def test_a_deploy_waits_for_the_live_stage_to_end() -> None:
+    """A resume restarts the running stage's conversation; one fix stage was restarted five times in an hour."""
+    loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+    deploy = loop[loop.index("\ndeploy)"):loop.index("\n  ;;", loop.index("\ndeploy)"))]
+    assert "BOUNDARY_WAIT:-1800" in deploy
+    assert deploy.index("last_stage") < deploy.index('touch $gate/hold')

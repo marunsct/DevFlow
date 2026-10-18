@@ -705,6 +705,11 @@ know about its testing, and what changed most recently.
   too-lenient checks stay review-only. Release adds three gap sources:
   escalation `known_issues`, fast-mode findings recorded as risks, and a
   release re-read of the files (`problems_that_break_the_product`).
+- **Deploys wait for a stage boundary (2026-10-18).** `loop.sh deploy` builds,
+  then waits up to `BOUNDARY_WAIT` seconds (default 1800; 0 skips) for the
+  live run's transcript to name a new stage, then the call gate. A resume
+  restarts the running stage's conversation, so mid-stage deploys cost the
+  stage its progress.
 - **The server bounds the run (2026-10-18, M.1/O.2/AB).** Each run segment
   reads `/props` once (worker log: "Model server: N slot(s), T tokens per
   slot"). The context window is no larger than a slot's context, and each

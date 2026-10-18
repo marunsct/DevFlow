@@ -238,7 +238,8 @@ deploy)
   # session's uncommitted, unverified edits sat in the same tree, and a build
   # of it shipped them into the live run.
   head_tree=$(mktemp -d)/head
-  git -C "$ROOT" worktree add -q --detach "$head_tree" HEAD
+  built=$(git -C "$ROOT" rev-parse HEAD)
+  git -C "$ROOT" worktree add -q --detach "$head_tree" "$built"
   docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
     build --progress=plain app worker >/dev/null 2>&1
   git -C "$ROOT" worktree remove --force "$head_tree"
@@ -276,13 +277,15 @@ deploy)
   # The image bakes src/ in; a restart without a build deploys nothing. Prove it.
   pkg=$(docker compose exec -T worker python -c "import app,os;print(os.path.dirname(app.__file__))")
   stale=0
-  for f in $(git diff --name-only HEAD~1 -- src/app | sed 's#^src/app/##'); do
-    git -C "$ROOT" cat-file -e "HEAD:src/app/$f" 2>/dev/null || continue
-    here=$(git -C "$ROOT" show "HEAD:src/app/$f" | sha1sum | cut -c1-12)
+  # Against the commit that was built: HEAD may have moved while the deploy
+  # waited for a stage boundary.
+  for f in $(git diff --name-only "$built~1" "$built" -- src/app | sed 's#^src/app/##'); do
+    git -C "$ROOT" cat-file -e "$built:src/app/$f" 2>/dev/null || continue
+    here=$(git -C "$ROOT" show "$built:src/app/$f" | sha1sum | cut -c1-12)
     there=$(docker compose exec -T worker sha1sum "$pkg/$f" | cut -c1-12)
     [ "$here" = "$there" ] || { echo "STALE in image: $f"; stale=1; }
   done
-  [ "$stale" = 0 ] && echo "image matches HEAD for the last commit's files"
+  [ "$stale" = 0 ] && echo "image matches ${built:0:7} (the commit built) for its files"
   echo "live runs after deploy:"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   ;;

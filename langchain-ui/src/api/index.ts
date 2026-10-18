@@ -363,3 +363,38 @@ export const saveFrontierModelSettings = async (payload: {
   const response = await api.put<SettingsView>('/settings/frontier', payload);
   return response.data;
 };
+
+/** One commit of a run's workspace history, with each file's lines added and removed. */
+export interface WorkspaceCommit {
+  sha: string;
+  message: string;
+  at: string;
+  files: Array<{ path: string; added: number | null; removed: number | null }>;
+}
+
+export const getChanges = async (runId: string): Promise<{ commits: WorkspaceCommit[]; problem?: string }> => {
+  const response = await api.get(`/runs/${runId}/changes`);
+  return response.data;
+};
+
+export const getChange = async (runId: string, sha: string): Promise<{ sha: string; diff: string; truncated: boolean }> => {
+  const response = await api.get(`/runs/${runId}/changes/${sha}`);
+  return response.data;
+};
+
+/** A note the owner sent a run while it ran; its next model calls carry it. */
+export interface SteeringNote {
+  text: string;
+  by: string;
+  at: string;
+}
+
+export const getSteering = async (runId: string): Promise<SteeringNote[]> => {
+  const response = await api.get(`/runs/${runId}/steering`);
+  return response.data.notes ?? [];
+};
+
+export const sendSteering = async (runId: string, text: string): Promise<SteeringNote> => {
+  const response = await api.post(`/runs/${runId}/steering`, { text });
+  return response.data.note;
+};

@@ -131,11 +131,33 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
                     <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded border text-[10px] font-semibold uppercase ${STATUS_STYLE[c.status] ?? STATUS_STYLE.untested}`}>
                       {c.status}
                     </span>
-                    <span className="text-text-secondary">
+                    <span className="text-text-secondary min-w-0">
                       <span className="font-mono text-xs text-text-muted mr-1.5">{c.id}</span>
                       {c.text}
                       {evidence?.deferred?.[c.id] && (
                         <span className="block text-xs text-text-muted">deferred: {evidence.deferred[c.id]}</span>
+                      )}
+                      {(c.tests?.length ?? 0) > 0 && (
+                        <details className="mt-1">
+                          <summary className="cursor-pointer text-xs text-text-muted hover:text-text-secondary">
+                            {c.tests!.filter((t) => t.outcome === 'passed').length} of {c.tests!.length} test{c.tests!.length === 1 ? '' : 's'} passing
+                          </summary>
+                          <ul className="mt-1 space-y-1">
+                            {c.tests!.map((t) => (
+                              <li key={t.name} className="text-xs">
+                                <span className={t.outcome === 'passed' ? 'text-success' : t.outcome === 'skipped' ? 'text-text-muted' : 'text-danger'}>
+                                  {t.outcome}
+                                </span>{' '}
+                                <span className="text-text-secondary">{t.name}</span>
+                                {t.outcome !== 'passed' && t.message && (
+                                  <span className="block font-mono text-[11px] text-text-muted break-words">
+                                    {t.message.trim().split('\n')[0].slice(0, 240)}
+                                  </span>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
                       )}
                     </span>
                   </li>

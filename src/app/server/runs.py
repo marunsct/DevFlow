@@ -53,6 +53,7 @@ from app.server.models import (
     SpinnerResponse,
     StartRunRequest,
     SprintRevision,
+    SteeringNote,
     WizardModel,
     WizardNote,
     WizardReview,
@@ -815,6 +816,61 @@ def create_runs_router(
             "screenshots": screenshots(root),
             "pages": pages,
         }
+
+    @runs.get("/{run_id}/changes")
+    async def get_changes(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The run's workspace history, newest first, with the files each commit touched."""
+        from app.server.changes import ChangesUnavailable, commits
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            return {"run_id": run_id, "commits": []}
+        try:
+            return {"run_id": run_id, "commits": commits(record.repo_root)}
+        except ChangesUnavailable as error:
+            return {"run_id": run_id, "commits": [], "problem": str(error)}
+
+    @runs.get("/{run_id}/changes/{sha}")
+    async def get_change(
+        run_id: str, sha: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """One commit's diff in the run's workspace."""
+        from app.server.changes import ChangesUnavailable, diff
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root:
+            raise HTTPException(status_code=404, detail="This run has no workspace yet.")
+        try:
+            return {"run_id": run_id, **diff(record.repo_root, sha)}
+        except ChangesUnavailable as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @runs.get("/{run_id}/steering")
+    async def get_steering(
+        run_id: str, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """The notes the owner sent this run while it ran."""
+        from app.server.steering import notes
+
+        record = _require_run(runner, run_id, user)
+        return {"run_id": run_id, "notes": notes(record.repo_root) if record.repo_root else []}
+
+    @runs.post("/{run_id}/steering", status_code=201)
+    async def post_steering(
+        run_id: str, body: SteeringNote, user: UserInDB = Depends(get_current_active_user)
+    ) -> dict[str, Any]:
+        """Give a running run a direction its next model calls carry."""
+        from app.server.steering import add
+
+        record = _require_run(runner, run_id, user)
+        if not record.repo_root or record.status in ("completed", "failed", "cancelled"):
+            raise HTTPException(status_code=409, detail="Only a run that is still going can be steered.")
+        try:
+            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username)}
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
 
     @runs.get("/{run_id}/review")
     async def get_pending_review(

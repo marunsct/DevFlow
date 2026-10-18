@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type {
   RunStatusResponse,
   LogEntry,
@@ -27,6 +27,8 @@ import {
   getWizard
 } from '../api';
 import { LogViewer } from '../components/LogViewer';
+import { ChangesPanel } from '../components/ChangesPanel';
+import { SteeringBox } from '../components/SteeringBox';
 import { ArtifactList } from '../components/ArtifactList';
 import { ExecutionFlow } from '../components/ExecutionFlow';
 import { AgentActivity } from '../components/AgentActivity';
@@ -76,7 +78,24 @@ export const RunDashboard: React.FC = () => {
   // The centre column carries two different audiences: what the run produced,
   // and the raw event log. Tabs let each have the full width instead of
   // splitting it and leaving both cramped.
-  const [centreTab, setCentreTab] = useState<'results' | 'log'>('results');
+  // Kept in the address, so a link or a reload opens the same view and change.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = searchParams.get('view');
+  const centreTab: 'results' | 'log' | 'changes' =
+    viewParam === 'log' || viewParam === 'changes' ? viewParam : 'results';
+  const selectedChange = searchParams.get('change');
+  const setCentreTab = (tab: 'results' | 'log' | 'changes') => {
+    const next = new URLSearchParams(searchParams);
+    if (tab === 'results') next.delete('view'); else next.set('view', tab);
+    if (tab !== 'changes') next.delete('change');
+    setSearchParams(next, { replace: true });
+  };
+  const selectChange = (sha: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('view', 'changes');
+    if (sha) next.set('change', sha); else next.delete('change');
+    setSearchParams(next, { replace: true });
+  };
   // A failure message can be a paragraph or twenty lines. Collapsed by default
   // so a short screen still has room for the panels underneath; the first lines
   // carry the summary, and the rest is one click away.
@@ -730,6 +749,9 @@ export const RunDashboard: React.FC = () => {
         </>
       )}
 
+      {/* The owner's direction to a run that is still going. */}
+      {!isTerminal && <SteeringBox runId={runId!} />}
+
       {/* Sprint Milestones - shown in both views */}
       <SprintSummaryPanel runId={runId!} />
 
@@ -753,6 +775,7 @@ export const RunDashboard: React.FC = () => {
             {([
               { id: 'results', label: 'Results', count: run.artifacts?.length ?? 0 },
               { id: 'log', label: 'Technical log', count: logs.length },
+              { id: 'changes', label: 'Changes', count: null },
             ] as const).map((tab) => (
               <button
                 key={tab.id}
@@ -764,7 +787,7 @@ export const RunDashboard: React.FC = () => {
                 }`}
               >
                 {tab.label}
-                <span className="text-[11px] tabular-nums text-text-muted">{tab.count}</span>
+                {tab.count !== null && <span className="text-[11px] tabular-nums text-text-muted">{tab.count}</span>}
               </button>
             ))}
           </div>
@@ -772,6 +795,13 @@ export const RunDashboard: React.FC = () => {
           <div className="flex-1 min-h-0">
             {centreTab === 'results' ? (
               <ArtifactList artifacts={run.artifacts} runId={runId!} />
+            ) : centreTab === 'changes' ? (
+              <ChangesPanel
+                runId={runId!}
+                refreshKey={`${run.current_stage ?? ''}:${run.status}`}
+                selected={selectedChange}
+                onSelect={selectChange}
+              />
             ) : (
               <LogViewer logs={logs} />
             )}

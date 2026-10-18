@@ -526,10 +526,15 @@ def build_plugin_instructions_middleware(repo_root: str) -> Any:
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             keywords = _extract_stack_keywords(repo_root)
-            if not keywords:
-                return handler(request)
+            instructions = get_plugin_instructions(_with_the_setup_notes(keywords, repo_root)) if keywords else ""
+            # The owner's direction for this run, sent while it runs, after
+            # the stack's instructions (`app.server.steering`).
+            try:
+                from app.server.steering import as_instructions as the_owner_s_direction
 
-            instructions = get_plugin_instructions(_with_the_setup_notes(keywords, repo_root))
+                instructions += the_owner_s_direction(repo_root)
+            except Exception:  # noqa: BLE001 - a note that cannot be read adds nothing
+                logger.debug("Could not read the run's steering notes", exc_info=True)
             if not instructions:
                 return handler(request)
 

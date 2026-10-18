@@ -243,6 +243,12 @@ class RunCostSummary(BaseModel):
     prices_as_of: str = Field(description="Month the built-in price table was current.")
 
 
+class SteeringNote(BaseModel):
+    """The owner's direction to a running run, carried by its next model calls."""
+
+    text: str = Field(..., min_length=1, max_length=2000)
+
+
 class RunStatusResponse(BaseModel):
     """Comprehensive status of a run."""
     model_config = ConfigDict(extra="forbid")

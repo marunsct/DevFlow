@@ -2329,6 +2329,59 @@ def _a_runner_writes(path: str) -> bool:
     return bool(_RUNNER_OUTPUT.search(path))
 
 
+def _files_the_conversation_wrote(result: Mapping[str, Any]) -> list[str]:
+    """The files a stage's conversation wrote, deleted or moved, by the tools that did it; in the order first written."""
+    messages = list(result.get("messages") or [])
+    results = {
+        str(getattr(message, "tool_call_id", "")): getattr(message, "content", "")
+        for message in messages if getattr(message, "type", None) == "tool"
+    }
+    written: list[str] = []
+    for message in messages:
+        for call in getattr(message, "tool_calls", None) or ():
+            name = call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+            args = (call.get("args") if isinstance(call, dict) else getattr(call, "args", None)) or {}
+            call_id = str(call.get("id") if isinstance(call, dict) else getattr(call, "id", ""))
+            if name in _FILE_WRITES and _a_tool_result_that_succeeded(results.get(call_id)):
+                for key in ("relative_path", "destination"):
+                    if args.get(key):
+                        path = _without_a_leading_dot_slash(str(args[key]))
+                        if path not in written:
+                            written.append(path)
+    return written
+
+
+def _a_fix_recorded_from_its_writes(stage_name: str, result: Mapping[str, Any]) -> Any | None:
+    """What a fix stage did, when it spent its model calls without ever answering; None when it wrote nothing.
+
+    Measured live: fix stages kept editing to the last call, ignored the
+    warning that their budget was nearly spent, and were then started over on
+    a fresh conversation twice more - three conversations of forty calls for
+    one defect, with the edits of the first already on disk. The harness holds
+    the receipts of what was written. It records the fix from them and lets the
+    measurement after a fix decide, as it does for an answered one: a fix that
+    breaks a passing test is reverted, one whose own tests still fail stays
+    open (Initiative AO).
+    """
+    if not str(stage_name or "").startswith("defect_fix_"):
+        return None
+    written = _files_the_conversation_wrote(result)
+    if not written:
+        return None
+    try:
+        from app.agents.specialists import SpecialistOutput
+
+        return SpecialistOutput(
+            changed_files=written,
+            decisions=[
+                "The stage used all of its model calls without writing its answer. Recorded by the "
+                "harness from the files it wrote; the measurement after the fix decides whether it worked."
+            ],
+        )
+    except Exception:  # noqa: BLE001 - then the stage is started over, as before
+        return None
+
+
 def _files_it_claims_but_never_wrote(result: Mapping[str, Any], answer: Any) -> list[str]:
     """The files an answer's `changed_files` names that nothing in its conversation wrote.
 
@@ -2708,6 +2761,20 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         return None
 
 
+def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool:
+    """Whether the defect is a locked criterion whose own tests measured green after the fix.
+
+    The locked acceptance suite is that criterion's regression test, and the
+    harness has just measured it. Requiring the fixer to also name one left a
+    fix open whose criterion passed (Initiative AO).
+    """
+    from app.acceptance.junit import tags_in
+
+    if not any(t.startswith(("AC-", "CR-")) for t in tags_in(str(getattr(defect, "description", "") or ""))):
+        return False
+    return _the_defect_s_tests_in(state["repository"].root_path, measured, defect) is True
+
+
 def _the_unit_tests_about(defect: Any, unit: dict[str, str]) -> dict[str, str]:
     """The unit tests that belong to this defect: all of them when it names no file, else those about its files.
 
@@ -2800,7 +2867,9 @@ def _settle_the_fix(
             sprint=state.get("current_sprint_index", 0),
             detail="the fix stage changed nothing and reported: " + "; ".join(map(str, fix_result.blockers))[:300],
         )
-    elif defect.regression_test_required and not regression_test:
+    elif defect.regression_test_required and not regression_test and not _the_suite_already_guards_it(
+        state, measured, defect
+    ):
         # No named regression test: the defect stays open on purpose. The
         # next test round will count this as another failed attempt, so the
         # bounded loop still terminates.
@@ -2835,8 +2904,13 @@ def _settle_the_fix(
             + ([f"changed {', '.join(fix_result.changed_files)}"] if fix_result.changed_files else [])
         )[:600]
         update["remediation"] = mark_defect_fixed(
-            cycle, defect_index, regression_test=regression_test, verified_by=verified_by,
-            resolution=resolution,
+            cycle, defect_index,
+            # A criterion the suite measured green after the fix has the locked
+            # suite for its regression test (`_the_suite_already_guards_it`).
+            regression_test=regression_test or (
+                "the locked acceptance suite, measured after the fix" if defect.regression_test_required else regression_test
+            ),
+            verified_by=verified_by, resolution=resolution,
         )
         defect_ledger.note(
             "fixed", stage_name, defect=defect, round_=state.get("test_round", 0), index=defect_index,
@@ -3517,6 +3591,14 @@ def _run_gated_agent(
                     "retry", stage_name,
                 )
                 structured_response = recovered
+        if structured_response is None and was_stopped_by_the_budget(result):
+            structured_response = _a_fix_recorded_from_its_writes(stage_name, result)
+            if structured_response is not None:
+                logger.warning(
+                    "Stage %s was stopped at its model-call budget without an answer; recorded from the "
+                    "%d file(s) it wrote instead of starting it over", stage_name,
+                    len(structured_response.changed_files),
+                )
         if nudged is not None:
             if nudged.get("__interrupt__"):
                 approval = extract_pending_approval(

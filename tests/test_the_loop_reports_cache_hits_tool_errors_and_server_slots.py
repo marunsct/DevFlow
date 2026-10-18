@@ -50,4 +50,9 @@ def test_the_timing_report_states_cache_share_and_tool_errors(monkeypatch, tmp_p
 
 def test_readiness_reads_what_the_server_says_of_its_slots_and_context():
     source = (SCRIPTS / "model_ready.py").read_text()
-    assert '"/props"' in source and "total_slots" in source and "n_ctx" in source
+    assert "from app.models.server_profile import read" in source
+    from app.models import server_profile
+
+    profile = (SCRIPTS.parents[1] / "src" / "app" / "models" / "server_profile.py").read_text()
+    assert '"/props"' in profile and "total_slots" in profile and "n_ctx" in profile
+    assert server_profile.from_props({"total_slots": 2, "default_generation_settings": {"n_ctx": 8192}}).slots == 2

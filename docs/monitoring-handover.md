@@ -705,6 +705,15 @@ know about its testing, and what changed most recently.
   too-lenient checks stay review-only. Release adds three gap sources:
   escalation `known_issues`, fast-mode findings recorded as risks, and a
   release re-read of the files (`problems_that_break_the_product`).
+- **The server bounds the run (2026-10-18, M.1/O.2/AB).** Each run segment
+  reads `/props` once (worker log: "Model server: N slot(s), T tokens per
+  slot"). The context window is no larger than a slot's context, and each
+  fan-out wave no wider than the slots. On the owner's 1-slot, 126k server
+  nothing changes in the window; parallel waves go one at a time.
+- **Prefix-cache layout (2026-10-18, AA/O.3).** Project memory is taken once per
+  stage visit and kept byte for byte; a "[Project memory update]" note at the
+  end names files changed since. The environment contract is in the system
+  prompt. Expect the KPI `cached_token_share` to rise; compare with the ledger.
 - **Code the product does not run is named (2026-10-18).** A folder that
   repeats two or more paths of a served entrypoint's folder (a drafted
   `frontend/src/` beside the served `src/`), and unit tests whose files and

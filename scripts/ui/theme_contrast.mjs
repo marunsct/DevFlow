@@ -14,11 +14,11 @@ function block(selector) {
   return Object.fromEntries([...body.matchAll(/(--[\w-]+):\s*([^;]+);/g)].map((m) => [m[1], m[2].trim()]));
 }
 // graphite is the base; each other theme and accent overrides some tokens.
-const base = block(':root,\n:root[data-theme="graphite"],\n:root[data-theme="system"]') ?? {};
+const base = block(':root,\n[data-theme="graphite"],\n:root[data-theme="system"]') ?? {};
 const themes = {
   graphite: { ...base },
-  paper: { ...base, ...block(':root[data-theme="paper"]') },
-  contrast: { ...base, ...block(':root[data-theme="contrast"]') },
+  paper: { ...base, ...block('[data-theme="paper"]') },
+  contrast: { ...base, ...block('[data-theme="contrast"]') },
 };
 const accents = ['violet', 'teal', 'amber', 'rose', 'neutral'];
 for (const accent of accents) {

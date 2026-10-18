@@ -51,8 +51,10 @@
 }
 
 /* ---- Layer 1+2: graphite (the default dark theme) ---- */
+/* Not `:root[...]` for the three named themes: any element carrying the attribute
+   (a theme card's miniature) paints itself with that theme's tokens. */
 :root,
-:root[data-theme="graphite"],
+[data-theme="graphite"],
 :root[data-theme="system"] {
   color-scheme: dark;
   --bg-canvas: #15171c;
@@ -103,7 +105,7 @@
 }
 
 /* ---- Paper (light) ---- */
-:root[data-theme="paper"] {
+[data-theme="paper"] {
   color-scheme: light;
   --bg-canvas: #f4f5f7;
   --bg-surface: #ffffff;
@@ -153,7 +155,7 @@
 }
 
 /* ---- Contrast (dark, AAA) ---- */
-:root[data-theme="contrast"] {
+[data-theme="contrast"] {
   color-scheme: dark;
   --bg-canvas: #000000;
   --bg-surface: #0a0a0a;

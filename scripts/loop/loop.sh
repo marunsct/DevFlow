@@ -37,6 +37,8 @@
 #                                            for orphan recovery to resume it (await_resume.sh)
 #   scripts/loop/loop.sh freshness           pins in the stack packs a major version behind their registry
 #                                            (pack_freshness.py, on the host)
+#   scripts/loop/loop.sh reasoning-probe [run]  does the server shorten replies when asked to think less? prints a plan
+#                                            unless given `run` (uses the model: only when no run waits)
 #   scripts/loop/loop.sh lessons [min-runs]  failed-call shapes recurring across runs, by language: candidates
 #                                            for guidance in src/app/plugins/seed.py (lessons.py, in the worker)
 #   scripts/loop/loop.sh nightly             verify every pack in the worker, then the freshness report, into
@@ -234,6 +236,7 @@ product) in_worker product_audit.py "${2:-$(current)}" ;;
 checks) in_worker check_precision.py "${2:-}" ;;
 ready)  in_worker model_ready.py ;;
 fitness) in_worker model_fitness.py ;;
+reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
 resumed) sh "$HERE/await_resume.sh" ;;
 stage)
   [ -n "${2:-}" ] || { echo "usage: loop.sh stage <stage> [HH:MM UTC]" >&2; exit 2; }

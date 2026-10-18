@@ -1528,3 +1528,50 @@ calls gpt-oss-20b "frontier".
 #### G27 (not a bug, mapper over-flag): last-attempt shape change
 - Fires at `failed_fix_tries >= escalate_after()` (=2) → attempt 3, which
   with three charged attempts *is* the last rung. No action.
+
+### 13.5 Checkpoint 6 (13:10 JST) — corrections + outline of the session-2 plan addendum
+
+Corrections to earlier checkpoints:
+- 13.1 said Initiative G (lenient edit matching) had no code trace: wrong
+  file grepped. `tools/repository.py` carries an extensive repair chain
+  (line numbers, backslashes, JSON escaping, indentation, blank lines,
+  pipe-stripping) and the 2026-09-19 sweep behind it (247 of 371 costly
+  failures = "Could not find that text"; 294 of 330 failed edits were on a
+  file the stage had already read; replay resolved 7/75). G is in code; the
+  ACI problem is deeper than matching — reproducing bytes from context is
+  the requirement weak models cannot meet, which is why `replace_lines` was
+  built and then demoted (P.1). Edit ACI remains the open core.
+- Compaction uses deepagents' `SummarizationMiddleware` with the *run's own
+  model* as summariser (`role_agent.py:385-411`), trigger 0.8×ceiling, args
+  truncated first (`truncate_args_settings`). The summary prompt is the
+  library default (unverified offline). Summarising 55k tokens on a 35B MoE
+  is itself a long decode on the prefill-bound server.
+
+Addendum outline (appended to `docs/improvement-plan.md` as "Appendix 2,
+session 2"; initiative letters continue after V):
+- Part 6 Measurement first: W (scored post-P0 run on real bench briefs;
+  brief-mismatch tag; toggles through compose; per-run KPI JSON + cross-run
+  ledger; ledger rows for A–I).
+- Part 7 Local-model core: X prompt-contract integrity (G1/G5/G21/G22);
+  M made concrete (control-plane `response_format`/grammar via the
+  OpenAI-compatible server, sampling presets, probe-time capability
+  detection — G3); Y edit-ACI replay bench from the transcript failure
+  corpus → per-profile edit format; Z compaction that keeps state (strip
+  tool results first, structured summary template, re-injection).
+- Part 8 Throughput: AA prefix-cache layout (memory/contract as byte-stable
+  prefix, digest last, cached_tokens KPI — G2); AB parallelism = server
+  slots, fan-out caps (G23); AC deterministic gating of review/testing
+  model calls + check caching (G24).
+- Part 9 Release integrity residuals: AD measure-at-settlement (G19, the
+  mirror of L.3); AE one cannot-pass list (G20), gaps completeness +
+  release re-checks (G25); AF suite-strength mutation probe (logs.md #2);
+  AG capability tiers at intake (G16, logs #3); AH honest cost cap,
+  retention/deletion contract, reviewer completeness (logs #4–#6).
+- Part 10 Cross-run learning: AI structured, provenance-tagged lesson store
+  (old plan Tier-1 #2; `lessons.py` as the proposer).
+- Part 11 UI/UX session 2: corrections (G7 steering enabler, G8 real
+  revisions, G9 intake, G11 mismatches), Phase-1 split after `3435fb0`,
+  then the design plan proper.
+- Part 12 Refactor track evidence (G26) for V.
+- Sequencing table + new ledger rows. Frontier/research citations slot in
+  per item when the research report lands.

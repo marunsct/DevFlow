@@ -114,3 +114,14 @@ def test_each_guard_layer_s_interventions_are_counted() -> None:
 def test_two_runs_compare_side_by_side() -> None:
     lines = ledger.compare({"tool_calls": 100, "run": "a"}, {"tool_calls": 80, "run": "b"})
     assert lines == ["tool_calls                              100             80 (-20%)"]
+
+
+def test_a_tool_withheld_is_counted_from_the_requests_tool_lists() -> None:
+    """The withholding notice is a correction message, never a tool result."""
+    records = [
+        {"at": _at(0), "stage": "s", "kind": "model_request", "tools": "['ls', 'read_file', 'edit_artifact']"},
+        {"at": _at(1), "stage": "s", "kind": "model_request", "tools": "['ls', 'edit_artifact']"},
+        {"at": _at(2), "stage": "s", "kind": "model_request", "tools": "['ls', 'edit_artifact']"},
+        {"at": _at(3), "stage": "t", "kind": "model_request", "tools": "['ls']"},
+    ]
+    assert kpi.kpis(records)["layer_tool_withheld"] == 1

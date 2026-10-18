@@ -39,7 +39,6 @@ LAYERS = {
     "layer_edit_reblanked": "Matched ignoring blank lines",
     "layer_write_unchanged": "already contained exactly this content",
     "layer_write_diagnostic": "IDE DIAGNOSTIC WARNING",
-    "layer_tool_withheld": "withheld for the rest of this stage",
     "layer_command_refused": "is not permitted",
 }
 
@@ -75,12 +74,21 @@ def kpis(records: list[dict]) -> dict:
     count = collections.Counter()
     defects = collections.Counter()
     stages: list[str] = []
+    offered: dict[str, set] = {}
     for r in records:
         stage, kind = r.get("stage") or "", r.get("kind")
         if stage and (not stages or stages[-1] != stage):
             stages.append(stage)
         if kind == "model_request":
             opened[stage] = _seconds(r["at"])
+            # A tool withheld: this request offers fewer tools than the stage's
+            # last. Its notice is in a correction message, not a tool result.
+            tools = r.get("tools")
+            tools = set(tools) if isinstance(tools, list) else set(re.findall(r"'([^']+)'", str(tools or "")))
+            if stage in offered and tools and tools < offered[stage]:
+                count["layer_tool_withheld"] += 1
+            if tools:
+                offered[stage] = tools
         elif kind == "model_response":
             count["model_calls"] += 1
             if stage in opened:
@@ -154,7 +162,7 @@ def kpis(records: list[dict]) -> dict:
         "defects_left_open": defects["left open"],
         "fixes_reverted": defects["reverted"],
         "closed_without_a_fixer": defects["closed without a fixer"],
-        **{layer: count[layer] for layer in LAYERS},
+        **{layer: count[layer] for layer in [*LAYERS, "layer_tool_withheld"]},
     }
 
 

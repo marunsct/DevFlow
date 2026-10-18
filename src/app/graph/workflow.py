@@ -4207,6 +4207,11 @@ _FAILING_LAYERS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("not-found", re.compile(r"\b404\b|\bNot Found\b")),
     ("unauthorized", re.compile(r"\b40[13]\b|\bUnauthorized\b|\bForbidden\b")),
     ("server-error", re.compile(r"\b50[023]\b|\bInternal Server Error\b|\bBad Gateway\b|\bService Unavailable\b")),
+    # A control the page never showed: every page test's first step meets it
+    # when the page does not render. One run's round queued 13 defects, one per
+    # criterion, each failing its first `locator.fill`/`locator.click` at
+    # "Timeout 3000ms exceeded" - one cause, thirteen fixers.
+    ("control-never-shown", re.compile(r"\blocator\.\w+: Timeout \d+m?s exceeded")),
     ("timeout", re.compile(r"Timeout \d+m?s exceeded|\bTimed out\b|\bETIMEDOUT\b|\bexceeded while waiting\b")),
 )
 
@@ -4247,7 +4252,7 @@ def _share_a_failing_surface(one: Any, other: Any) -> bool:
 
 
 #: First failing layers every request meets, whatever the route.
-_WHOLE_PRODUCT_LAYERS = frozenset({"connection-refused", "unauthorized"})
+_WHOLE_PRODUCT_LAYERS = frozenset({"connection-refused", "unauthorized", "control-never-shown"})
 
 
 def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:

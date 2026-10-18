@@ -40,7 +40,8 @@ def test_the_layer_a_failure_meets_is_read_from_its_text() -> None:
     assert _the_first_failing_layer("GET /notes answered 404 Not Found") == "not-found"
     assert _the_first_failing_layer("expected 200 but the server answered 401 Unauthorized") == "unauthorized"
     assert _the_first_failing_layer("the server answered 500 Internal Server Error") == "server-error"
-    assert _the_first_failing_layer("locator.getByRole: Timeout 5000ms exceeded") == "timeout"
+    assert _the_first_failing_layer("locator.getByRole: Timeout 5000ms exceeded") == "control-never-shown"
+    assert _the_first_failing_layer("GET /notes: Timed out after 30s") == "timeout"
 
 
 def test_an_assertion_is_a_symptom_not_a_layer() -> None:
@@ -145,3 +146,21 @@ def test_a_route_layer_on_three_different_routes_is_three_causes() -> None:
         _d("[AC-3] users are listed", "GET /users answered 401 Unauthorized"),
     ]
     assert len(_one_defect_per_root_error(behind_one_middleware)) == 1
+
+
+def test_a_control_the_page_never_showed_to_any_test_is_one_cause() -> None:
+    """One run queued 13 defects, each failing its first `locator.fill` at the same timeout."""
+    reported = [
+        _d("[AC-1] users can register", "[AC-1] register: locator.click: Timeout 3000ms exceeded."),
+        _d("[AC-2] tasks can be created", "[AC-2] create: locator.fill: Timeout 3000ms exceeded."),
+        _d("[AC-7] tasks can be searched", "[AC-7] search: locator.fill: Timeout 3000ms exceeded."),
+    ]
+    merged = _one_defect_per_root_error(reported)
+    assert len(merged) == 1 and "[AC-7]" in merged[0].description
+
+    requests_that_timed_out = [
+        _d("[AC-1] notes are listed", "GET /notes: Timed out after 30s"),
+        _d("[AC-2] tags are listed", "GET /tags: Timed out after 30s"),
+        _d("[AC-3] users are listed", "GET /users: Timed out after 30s"),
+    ]
+    assert len(_one_defect_per_root_error(requests_that_timed_out)) == 3

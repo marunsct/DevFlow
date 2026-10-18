@@ -72,3 +72,44 @@ def test_the_digest_carries_it_and_it_can_be_switched_off(tmp_path, monkeypatch)
 def test_its_wording_avoids_the_banned_words() -> None:
     text = re.sub(r"`[^`]*`|\S+\.py", "", already_known(_conversation())).lower()
     assert not set(re.findall(r"[\w-]+", text)) & {"task", "tasks", "to-do", "todo", "button", "click", "checkbox"}
+
+
+# --- Initiative AO.9: which lines a read covered ------------------------------------
+
+def _numbered(first: int, last: int) -> str:
+    return "\n".join(f"{n:>4}  line {n}" for n in range(first, last + 1))
+
+
+def test_a_read_of_part_of_a_file_says_which_part() -> None:
+    messages = [
+        HumanMessage(content="fix it"),
+        AIMessage(content="", tool_calls=[{"id": "a", "name": "read_file", "args": {"file_path": "app/big.py", "limit": 200}}]),
+        ToolMessage(content=_numbered(1, 200), tool_call_id="a"),
+        AIMessage(content="", tool_calls=[{"id": "b", "name": "read_file", "args": {"file_path": "app/big.py", "offset": 300}}]),
+        ToolMessage(content=_numbered(301, 340), tool_call_id="b"),
+        AIMessage(content="", tool_calls=[{"id": "c", "name": "read_file", "args": {"file_path": "app/small.py"}}]),
+        ToolMessage(content=_numbered(1, 12), tool_call_id="c"),
+    ]
+
+    known = already_known(messages)
+
+    assert "app/big.py (call 2; lines 1–200, 301–340)" in known
+    assert "app/small.py (call 3; lines 1–12)" in known
+
+
+def test_touching_ranges_are_one_range_and_a_write_forgets_what_was_read() -> None:
+    messages = [
+        HumanMessage(content="fix it"),
+        AIMessage(content="", tool_calls=[{"id": "a", "name": "read_file", "args": {"file_path": "app/x.py"}}]),
+        ToolMessage(content=_numbered(1, 50), tool_call_id="a"),
+        AIMessage(content="", tool_calls=[{"id": "b", "name": "read_file", "args": {"file_path": "app/x.py", "offset": 50}}]),
+        ToolMessage(content=_numbered(51, 90), tool_call_id="b"),
+        AIMessage(content="", tool_calls=[{"id": "c", "name": "edit_artifact", "args": {"relative_path": "app/x.py"}}]),
+        ToolMessage(content='{"status": "edited"}', tool_call_id="c"),
+    ]
+
+    known = already_known(messages)
+
+    assert "lines 1–50" not in known
+    assert "app/x.py (call 2; changed by your write at call 3)" in known
+    assert "lines 1–90" in already_known(messages[:5])

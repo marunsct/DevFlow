@@ -456,6 +456,26 @@ def _get(message: Any, key: str) -> Any:
     return message.get(key) if isinstance(message, dict) else getattr(message, key, None)
 
 
+_A_NUMBERED_LINE = re.compile(r"^\s*(\d+)(?:\t|  )", re.M)
+
+
+def _lines_a_read_showed(content: str) -> tuple[int, int] | None:
+    """The first and last line numbers a `read_file` result carries; None when it numbers none."""
+    found = [int(n) for n in _A_NUMBERED_LINE.findall(content)]
+    return (min(found), max(found)) if found else None
+
+
+def _joined(ranges: list[tuple[int, int]]) -> str:
+    """Ranges of lines, merged where they touch, as "1-200, 300-340"."""
+    merged: list[list[int]] = []
+    for start, end in sorted(ranges):
+        if merged and start <= merged[-1][1] + 1:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    return ", ".join(f"{a}\u2013{b}" for a, b in merged)
+
+
 def already_known(messages: list[Any]) -> str:
     """What this conversation already holds, from its own calls: a line for the end of each call; "" if nothing.
 
@@ -475,6 +495,7 @@ def already_known(messages: list[Any]) -> str:
                 order += 1
                 calls[str(call.get("id") or "")] = (order, str(call.get("name") or ""), call.get("args") or {})
     read_at: dict[str, int] = {}
+    read_lines: dict[str, list[tuple[int, int]]] = {}
     written_at: dict[str, int] = {}
     ran: dict[str, tuple[int, str]] = {}
     for message in messages:
@@ -488,8 +509,14 @@ def already_known(messages: list[Any]) -> str:
         failed = content.lstrip().startswith(("Error", '{"error"', "Refusing"))
         if name in ("read_file", "read_repository_file") and path and not failed:
             read_at[path] = n
+            # What the read covered, so "already read" does not mean the whole
+            # file when it was lines 1-200 of 640 (Initiative AO.9).
+            shown = _lines_a_read_showed(content)
+            if shown:
+                read_lines.setdefault(path, []).append(shown)
         elif name in _WRITERS and path and not failed:
             written_at[path] = n
+            read_lines.pop(path, None)  # what was read is no longer what is there
         elif name == "run_terminal_command":
             command = args.get("command")
             text = " ".join(command) if isinstance(command, list) else str(command or "")
@@ -501,7 +528,8 @@ def already_known(messages: list[Any]) -> str:
     if read_at:
         shown = sorted(read_at.items(), key=lambda kv: -kv[1])[:MOST_KNOWN]
         lines.append("Files already in this conversation (scroll up rather than read again): " + ", ".join(
-            f"{p} (call {n}{'; changed by your write at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
+            f"{p} (call {n}{'; lines ' + _joined(read_lines[p]) if read_lines.get(p) else ''}"
+            f"{'; changed by your write at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
             for p, n in shown
         ))
     if ran:

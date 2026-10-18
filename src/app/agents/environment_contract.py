@@ -227,7 +227,7 @@ def environment_contract_text() -> str:
 
 
 def build_environment_contract_middleware() -> Any:
-    """Append the environment contract to every call, ahead of the listing.
+    """Put the environment contract in every call's system prompt (or, with none, after the conversation).
 
     Built as middleware rather than added to each request builder for the
     reason the workspace digest was: there are thirteen of those, and reaching
@@ -253,9 +253,20 @@ def build_environment_contract_middleware() -> Any:
             if os.environ.get("ENVIRONMENT_CONTRACT", "1").lower() in ("0", "false", "off"):
                 return handler(request)
             try:
-                request = request.override(
-                    messages=[*messages, {"role": "user", "content": environment_contract_text()}]
-                )
+                # In the system prompt when there is one: the same bytes every
+                # call, so they belong in the cached prefix. Appended after the
+                # history they were re-prefilled on every call (Initiative AA).
+                system = getattr(request, "system_message", None)
+                if system is not None and isinstance(getattr(system, "content", None), str):
+                    from langchain_core.messages import SystemMessage
+
+                    request = request.override(
+                        system_message=SystemMessage(content=f"{system.content}\n\n{environment_contract_text()}")
+                    )
+                else:
+                    request = request.override(
+                        messages=[*messages, {"role": "user", "content": environment_contract_text()}]
+                    )
             except Exception:  # noqa: BLE001 - never fail a call over a hint
                 return handler(request)
             return handler(request)

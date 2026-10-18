@@ -25,8 +25,9 @@ from app.tools.sandbox import allowed_executables
 
 
 class _Request:
-    def __init__(self, messages):
+    def __init__(self, messages, system_message=None):
         self.messages, self.captured = messages, {}
+        self.system_message = system_message
 
     def override(self, **changes):
         self.captured.update(changes)
@@ -43,7 +44,20 @@ def test_the_contract_is_the_same_bytes_on_every_call():
     assert environment_contract.the_environment_contract() == environment_contract_text()
 
 
-def test_the_middleware_appends_the_contract_after_the_conversation():
+def test_the_contract_goes_in_the_system_prompt_where_the_prefix_cache_holds_it():
+    """Appended after the history, the same bytes were re-prefilled on every call."""
+    from langchain_core.messages import SystemMessage
+
+    request = _Request([{"role": "user", "content": "design it"}], SystemMessage(content="You are the architect."))
+
+    build_environment_contract_middleware().wrap_model_call(request, lambda r: r)
+
+    assert "messages" not in request.captured
+    system = request.captured["system_message"].content
+    assert system.startswith("You are the architect.") and system.endswith(environment_contract_text())
+
+
+def test_with_no_system_prompt_it_is_appended_after_the_conversation():
     request = _Request([{"role": "user", "content": "design it"}])
 
     build_environment_contract_middleware().wrap_model_call(request, lambda r: r)

@@ -1189,3 +1189,63 @@ indirect: Initiative V (layer-economics audit / delete-or-keep ledger +
 workflow.py seam refactor track), J.5 (records must cite the independent
 verdict, never suite-green alone), L.6 (final attempt changes strategy shape,
 not just model).
+
+---
+
+## 13. Second review session — progress log (started 2026-10-18 11:30 JST)
+
+Owner mandate (same as session 1, now a *further* pass): review only, no code
+changes; append to `docs/improvement-plan.md`; evidence + reasoning per item;
+language/framework-agnostic; local-model quality; throughput without quality
+loss; UI/UX "as much as possible"; use fresh web research; log progress often.
+Economy rule from the owner: cheap models (Sonnet/Haiku) for mapping and
+summarisation, Fable for the review and the plan itself.
+
+### 13.0 Checkpoint 1 (11:35 JST) — orientation
+- Repo cloned fresh from `harness-hardening-session` @ `3fcd36d` (the branch
+  name is lowercase on the remote; the Project instruction's capitalised
+  spelling does not resolve).
+- Read `docs/improvement-plan.md` end to end (Initiatives A–I, appendix J–V,
+  two addenda, Implementation Progress Ledger). The ledger says the P0 wave
+  is DONE (J.1/J.4/J.5/K.1/L.3/L.5/L.6/Q.4/J.2/J.6/K.3/K.4/K.5/L.1/L.4/L.7/
+  N.2/P.1); NOT STARTED: J.3, K.6, M, N.1, Q.2, Q.3, O.1–O.4, R, T, U.1/U.3/
+  U.4, V, K.2, every UI phase. The second review therefore must (a) look for
+  evidence of what the DONE items changed in later runs, (b) find *new*
+  gaps rather than restate J–V, (c) deepen the local-model and UI/UX work.
+- No transcripts or `data/` in the clone (git-ignored) and this session has no
+  bridge to the owner's Docker volumes → run forensics in this pass come from
+  the docs' run records (`monitoring-handover` §0.2, ledger notes naming
+  run-8b0c94df) unless the owner attaches transcripts.
+- `docs/logs.md` is an external reviewer's report (owner's file, never
+  edited): its six items are run-readiness gate, mutation-tested suite
+  strength, capability tiers for stack support, honest cost cap, retention
+  contract, reviewer-completeness visibility. Cross-checked below against
+  the plan; the ones not already covered become candidates.
+- Web research task launched 11:23 JST (frontier harnesses, local-model
+  serving, agent UI/UX; 2025–2026 primary sources). Report integrates in
+  §13.x when it lands.
+
+### 13.1 Checkpoint 2 (11:50 JST) — spot checks while mappers run
+- Four Sonnet mappers in flight (agents/models layer; graph/acceptance/tools;
+  UI+API; run history/packs/loop KPIs). Their inventories land in the session
+  scratchpad and are folded into this file as §13.2–13.5.
+- Spot checks (grep, no model): pre-ledger Initiatives A–I are only partly
+  traceable in code — G (lenient `edit_artifact` matching) and C
+  (`ui_contract` in the specification) have **no** code trace; F (root
+  load-error gate) and I/N (thinking budget plumbing) do. A-I were never put
+  in the ledger; candidate: add them so their status is honest.
+- Cross-run learning exists only as a human-driven proposer
+  (`scripts/loop/lessons.py` → a person writes a seed rule). No structured,
+  injection-safe lesson store (old plan Tier 1 #2 still open). Frontier
+  parallel: Claude Code auto-memory, OpenHands microagents, Cursor memories.
+- The control plane still relies on free-text JSON parsed from message
+  content (`settled_answer._repair_json`: a 59× one-character truncation
+  loop was measured). Constrained decoding for control-plane schemas
+  (Initiative M) remains NOT STARTED — the single highest-leverage
+  local-model item; this pass will make it concrete and evidence-ranked.
+- `docs/logs.md` external review: items 1 (run-readiness gate before model
+  calls), 2 (mutation-tested suite strength), 3 (capability tiers), 4 (cost
+  cap honesty), 5 (retention/deletion contract), 6 (reviewer completeness)
+  → 2, 3, 4, 6 are NOT covered by the current plan; 1 partly (loop.sh ready
+  covers the model, not command execution); 5 partly (U.4 retention, but
+  not deletion of transcripts/object-store copies).

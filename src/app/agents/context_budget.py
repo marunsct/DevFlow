@@ -257,7 +257,17 @@ def context_window(environment: Mapping[str, str] | None = None) -> int:
             )
             return slot
     else:
-        _say_once("The model server reports no slot or context facts; using the configured window.")
+        # Only once the server has been asked: the window is first computed at
+        # worker start, before the profile is read, and "not asked yet" is not
+        # "the server has no facts".
+        try:
+            from app.models.server_profile import asked
+
+            was_asked = asked()
+        except Exception:  # noqa: BLE001
+            was_asked = False
+        if was_asked:
+            _say_once("The model server reports no slot or context facts; using the configured window.")
     # A window smaller than the framing plus a minimum reply cannot run anything.
     return max(value, MIN_VIABLE_WINDOW)
 

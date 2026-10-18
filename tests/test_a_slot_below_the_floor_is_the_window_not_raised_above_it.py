@@ -56,7 +56,15 @@ def test_a_slot_above_the_floor_still_bounds_the_setting():
     assert context_window(ENV) == 64_000
 
 
+def test_the_note_waits_until_the_server_has_been_asked(caplog):
+    with caplog.at_level(logging.WARNING):
+        context_window(ENV)  # worker start: nothing has been read yet
+
+    assert not any("reports no slot or context facts" in r.message for r in caplog.records)
+
+
 def test_a_server_that_reports_nothing_is_noted_once_and_the_setting_stands(caplog):
+    server_profile._TRIED = True
     with caplog.at_level(logging.WARNING):
         assert context_window(ENV) == 100_000
         context_window(ENV)

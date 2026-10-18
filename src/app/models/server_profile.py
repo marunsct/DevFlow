@@ -90,11 +90,15 @@ def read(base_url: str, api_key: str = "") -> ServerProfile | None:
 
 
 _RECORDED: ServerProfile | None = None
+#: Whether a read of the server was attempted in this process. Before it, "no facts" means
+#: "not asked yet", which is not what a server that has none is.
+_TRIED = False
 
 
 def record() -> ServerProfile | None:
     """Read the build model's server profile and keep it for this process. Never raises."""
-    global _RECORDED
+    global _RECORDED, _TRIED
+    _TRIED = True
     try:
         from app.models import _runtime_settings
 
@@ -120,9 +124,15 @@ def current() -> ServerProfile | None:
     return _RECORDED
 
 
+def asked() -> bool:
+    """Whether the server's profile has been read in this process (it may have said nothing)."""
+    return _TRIED
+
+
 def forget() -> None:
-    global _RECORDED
+    global _RECORDED, _TRIED
     _RECORDED = None
+    _TRIED = False
 
 
-__all__ = ["ServerProfile", "current", "forget", "from_props", "read", "record"]
+__all__ = ["ServerProfile", "asked", "current", "forget", "from_props", "read", "record"]

@@ -1978,3 +1978,18 @@ Scope: commits `7e4bc9a..HEAD` in `src/app` and `scripts/`, read not run.
 
 **Low**: `find -delete` and `head/tail` of logs blocked by `8ed63b2`;
 confirm the per-stage withheld flag resets on stage revisit.
+
+### 14.4 Final status (00:05 JST 2026-10-19)
+- `docs/improvement-plan.md` Appendix 3 appended (`738f494`): Part 13
+  fixes to today's implementations (AK budgets persisted, AL crash-safe
+  mutation, AM seen-digest ownership, AN measurement correctness, AO bundle
+  of ten lifecycle fixes, AP hygiene); Part 14 remaining gaps (AQ repeated
+  reads, AR lost replies, AS steering v2, AT lessons v2, AU contract for
+  every surface, AV AJ completion, AW K.6); Part 15 UI/UX revamp with the
+  multi-theme design system (design brief reviewed against the generic
+  default; three theme families + accents + density; token layers and the
+  no-flash boot; codemod scope; primitive kit; six screens; backend
+  enablers; quality floor); Part 16 sequence; ledger rows.
+- Each item carries Goal/Evidence/Files/Steps/Tests/Acceptance/Effort.
+- No code changed. No run started. The live app was not reachable; a
+  screenshot pass per theme is the first UI task once a session is linked.

@@ -515,7 +515,7 @@ def _with_the_setup_notes(keywords: List[str], repo_root: str) -> List[str]:
     return [name for keyword in keywords for name in (keyword, keyword + SETUP)]
 
 
-def build_plugin_instructions_middleware(repo_root: str) -> Any:
+def build_plugin_instructions_middleware(repo_root: str, role: str = "") -> Any:
     """Append the stack's framework instructions to every call's system prompt."""
     from langchain.agents.middleware import AgentMiddleware
 
@@ -526,7 +526,7 @@ def build_plugin_instructions_middleware(repo_root: str) -> Any:
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             keywords = _extract_stack_keywords(repo_root)
-            instructions = get_plugin_instructions(_with_the_setup_notes(keywords, repo_root)) if keywords else ""
+            instructions = get_plugin_instructions(_with_the_setup_notes(keywords, repo_root), role) if keywords else ""
             # The owner's direction for this run, sent while it runs, after
             # the stack's instructions (`app.server.steering`).
             try:

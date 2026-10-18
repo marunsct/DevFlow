@@ -720,7 +720,7 @@ def create_role_agent(
         # After the path rewrite, so it sees the path the tool will resolve.
         # See `app.agents.project_memory`.
         build_project_memory_middleware(resolved_repo_root),
-        build_plugin_instructions_middleware(resolved_repo_root),
+        build_plugin_instructions_middleware(resolved_repo_root, name),
         _workspace_filesystem_middleware(resolved_repo_root),
         # After the filesystem middleware, so it sees the tool results the
         # model will. `read_file` has its own, better notice in the backend;

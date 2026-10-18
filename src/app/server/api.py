@@ -165,6 +165,7 @@ def create_app(
 
     from app.server.auth import auth_router, get_current_active_user, require_admin
     from app.server.settings import settings_router
+    from app.server.lessons_api import lessons_router
 
     runs_router = create_runs_router(runner, event_bus, effective_upload_dir, effective_repo_root)
     progress_router = create_progress_router(runner, event_bus)
@@ -173,6 +174,7 @@ def create_app(
     application.include_router(runs_router)
     application.include_router(progress_router, prefix="/api/runs", tags=["progress"])
     application.include_router(settings_router)
+    application.include_router(lessons_router)
 
     _mount_metrics(application)
 

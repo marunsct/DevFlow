@@ -1,7 +1,7 @@
 from typing import List
 from app.server.plugin_store import PluginStore
 
-def get_plugin_instructions(stack_keywords: List[str]) -> str:
+def get_plugin_instructions(stack_keywords: List[str], role: str = "") -> str:
     """Returns aggregated instructions for the given stack keywords from the database."""
     instructions = []
     
@@ -30,7 +30,7 @@ def get_plugin_instructions(stack_keywords: List[str]) -> str:
     try:
         from app.plugins.lessons import as_instructions
 
-        learned = as_instructions(stack_keywords)
+        learned = as_instructions(stack_keywords, role=role)
     except Exception:  # noqa: BLE001 - a lesson store that cannot be read adds nothing
         learned = ""
 

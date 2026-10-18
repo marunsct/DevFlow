@@ -524,6 +524,12 @@ def run(repo_root: str | Path, *, runner: Runner | None = None, save: bool = Tru
         repairs=repairs,
         problem="" if report.found else "the runner wrote no report; its output is below",
     )
+    if not report.tests:
+        # No test ran because the product never started: the suite is not at
+        # fault, and the product's own error is the defect (`the_product_did_not_start`).
+        never_started = the_product_did_not_start(output)
+        if never_started:
+            result.problem = never_started
     result.runtime_problems, result.shows = _read_runtime_report(runtime_file)
     result.phone_overflow = _read_phone_overflow(runtime_file)
     result.accessibility = _read_accessibility(runtime_file)
@@ -795,6 +801,35 @@ def tests_the_runner_never_ran(repo_root: str | Path, result: AcceptanceResult) 
     return missing
 
 
+#: What a runner prints when the product it should test never came up: the
+#: server it starts exited, or the build that server serves failed.
+_NEVER_STARTED = re.compile(
+    r"(?:webServer was not able to start|Process from config\.webServer|Build failed in|"
+    r"\berror during build\b|Address already in use|EADDRINUSE|"
+    r"(?:server|service) (?:exited|did not start|failed to start))",
+    re.I,
+)
+#: The start of every "the product did not start" problem.
+PRODUCT_DID_NOT_START = "The product did not start for the acceptance suite"
+
+
+def the_product_did_not_start(output: str) -> str:
+    """The problem to record when no test ran because the product never came up; "" otherwise.
+
+    Measured on one run: a fix rewired the page, the build it served then
+    failed ("App" is not exported by "src/App.tsx"), Playwright's web server
+    never started, and the zero tests that ran were read as a suite that
+    collects nothing - so the suite went back to QA, who cannot fix a build.
+    """
+    text = str(output or "")
+    if not _NEVER_STARTED.search(text):
+        return ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    first = next((i for i, line in enumerate(lines) if _NEVER_STARTED.search(line) or re.search(r"\berror\b", line, re.I)), 0)
+    excerpt = "\n".join(lines[first:first + 6])[:1200]
+    return f"{PRODUCT_DID_NOT_START}: no test could reach it. Its output:\n{excerpt}"
+
+
 def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """Reasons this result proves nothing even though the runner complained of nothing.
 
@@ -809,6 +844,8 @@ def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
     """
     if not result.ran:
         return []  # a suite that never ran is each gate's own problem, reported there
+    if str(result.problem or "").startswith(PRODUCT_DID_NOT_START):
+        return []  # the product's failure, raised as its defect - not the suite's
     if not result.report.tests:
         return [
             f"The suite's runner ran and reported zero tests (exit {result.exit_code}, "

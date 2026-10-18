@@ -605,6 +605,8 @@ def _the_testability_advice(state: Any) -> list[str]:
 
 #: A failure met on the page itself: a control a test reached for, or the page it opened.
 _ON_THE_PAGE = re.compile(r"\b(?:locator|page)\.\w+:|\bgetBy[A-Z]\w*\(|\bnet::ERR_")
+#: A page file named in an error: the page's build failed, not the service's.
+_A_PAGE_FILE = re.compile(r"[\w/.-]+\.(?:tsx|jsx|vue|svelte|astro)\b")
 
 
 def _owner_for(state: Any, detail: str = "") -> str:
@@ -618,7 +620,7 @@ def _owner_for(state: Any, detail: str = "") -> str:
     kind = getattr(_stack(state), "product_kind", "") or ""
     if kind == "browser_app":
         return "ui_ux"
-    if kind == "fullstack" and _ON_THE_PAGE.search(detail or ""):
+    if kind == "fullstack" and (_ON_THE_PAGE.search(detail or "") or _A_PAGE_FILE.search(detail or "")):
         return "ui_ux"
     return "backend"
 
@@ -955,6 +957,19 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
     # "element not found" cannot tell an absent control from a misnamed one.
     shown = str(saved.get("shows") or "")
     seen = f" What the product shows when it loads, before any test touches it:\n{shown[:600]}" if shown else ""
+    never_started = str(saved.get("problem") or "")
+    if never_started.startswith(suite.PRODUCT_DID_NOT_START):
+        # One defect for the one cause: nothing could be measured while it stands.
+        defects.append(ReportedDefect(
+            description="The product does not start for the acceptance suite, so no test can reach it.",
+            severity="blocking",
+            reproduction_steps=f"Run `{command}` in the project directory: the product fails before any test runs.",
+            expected_behavior="The product builds and starts, and the acceptance suite's tests run against it.",
+            actual_behavior=never_started[:1500],
+            affected_files=[],
+            owner=_owner_for(state, never_started),
+        ))
+        return defects
     if problems:
         defects.append(ReportedDefect(
             description="The product reports errors by itself while it loads, before any test touches it.",

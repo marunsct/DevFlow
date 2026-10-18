@@ -189,3 +189,24 @@ def test_an_empty_project_directory_is_said_to_be_empty(tmp_path, monkeypatch):
 
     (tmp_path / "notes-api" / "app.ts").write_text("export {}\n")
     assert "holds no files yet" not in project_memory.render(tmp_path, 100_000, "")[0]
+
+
+def test_a_file_the_stage_changed_is_read_for_real_not_called_unchanged(workspace):
+    """A fix stage edited a file, read it to see its change, was told six times
+    'it has not changed since', and fell back to `cat`."""
+    middleware = project_memory.build_project_memory_middleware(str(workspace))
+
+    class Request(SimpleNamespace):
+        def override(self, **changes):
+            return Request(**{**self.__dict__, **changes})
+
+    def call():
+        middleware.wrap_model_call(Request(messages=[HumanMessage(content="Fix it")], model=None), lambda r: None)
+
+    read = SimpleNamespace(tool_call={"name": "read_file", "id": "r", "args": {"file_path": "notes-api/src/store.ts"}})
+    call()
+    assert isinstance(middleware.wrap_tool_call(read, lambda r: "the file"), ToolMessage)
+
+    (workspace / "notes-api" / "src" / "store.ts").write_text("export const store = 2;\n")
+    call()
+    assert middleware.wrap_tool_call(read, lambda r: "the file as it is now") == "the file as it is now"

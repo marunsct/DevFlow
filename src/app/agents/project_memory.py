@@ -331,6 +331,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
         def __init__(self) -> None:
             super().__init__()
             self._held: dict[str, str] = {}
+            self._first_held: dict[str, str] = {}
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             messages = getattr(request, "messages", None)
@@ -340,6 +341,11 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                 opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
                                 for m in messages), "")
                 memory, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                # Each file as this visit first held it, so a read of one that
+                # changed since - by this stage's own edit - is answered with
+                # the file, not "it has not changed since the start".
+                for held_path, held_content in self._held.items():
+                    self._first_held.setdefault(held_path, held_content)
                 if self._held:
                     from app.tools.seen_content import remember
 
@@ -361,7 +367,12 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             if call.get("name") == "read_file" and self._held:
                 path = str(args.get("file_path") or args.get("path") or "").strip().lstrip("/")
                 held = self._held.get(path)
-                if held is not None and current(repo_root).get(path) == held:
+                # A file changed since this visit began is read for real once:
+                # measured on one run, a fix stage edited a file, read it to see
+                # its change, was told six times "it has not changed since",
+                # and fell back to `cat`.
+                changed_this_visit = self._first_held.get(path, held) != held
+                if held is not None and not changed_this_visit and current(repo_root).get(path) == held:
                     from app.tools.seen_content import remember
 
                     remember(path, held)

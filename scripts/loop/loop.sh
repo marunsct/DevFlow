@@ -11,6 +11,8 @@
 #   scripts/loop/loop.sh stage <stage> [HH:MM]  trace one stage (stage_trace.py; HH:MM is UTC)
 #   scripts/loop/loop.sh reads [run-id]      redundant reads by stage and file (redundant_reads.py)
 #   scripts/loop/loop.sh timing [run-id..]   where the wall-clock time went: model vs tools, phases, reasoning share (run_timing.py)
+#   scripts/loop/loop.sh kpi [run-id]        the run's KPIs as JSON (data/kpi/<run>.json), a row of data/kpi/ledger.csv,
+#                                            and any KPI past 1.5x its 5-run mean (kpi.py, kpi_ledger.py); score runs it too
 #   scripts/loop/loop.sh product [run-id]    audit the generated product: files, code lines, the
 #                                            harness's claims, and the product's own tests (product_audit.py)
 #   scripts/loop/loop.sh deploy              rebuild + restart app and worker, verify the image
@@ -142,6 +144,8 @@ score)
   # The hidden tests and the copy they ran against leave the worker at once:
   # it is the container the harness's agents work in.
   docker compose exec -T -u root worker rm -rf /tmp/bench-src /tmp/bench-work "/tmp/bench-$run.json" || true
+  # Every scored run's KPIs, beside the runs before it (Initiative W.4).
+  "$0" kpi "$run" || true
   ;;
 
 mutate)
@@ -212,6 +216,11 @@ failures)
   ;;
 reads)  in_worker redundant_reads.py "${2:-$(current)}" ;;
 timing) shift; in_worker run_timing.py "${@:-$(current)}" ;;
+kpi)
+  run="${2:-$(current)}"
+  mkdir -p data/kpi
+  in_worker kpi.py "$run" > "data/kpi/$run.json" && "$PY" "$HERE/kpi_ledger.py" "data/kpi/$run.json" data/kpi/ledger.csv
+  ;;
 product) in_worker product_audit.py "${2:-$(current)}" ;;
 checks) in_worker check_precision.py "${2:-}" ;;
 ready)  in_worker model_ready.py ;;

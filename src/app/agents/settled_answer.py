@@ -1512,6 +1512,56 @@ def _without_that_tool_in(tools: list[Any], name: str) -> list[Any] | None:
     return kept
 
 
+#: Model calls a fix stage may make before it has changed a file, after which its tools that only
+#: look are withheld and it must write. Measured live: one fix stage made 123 model calls and one edit
+#: over 47 minutes, saying "I have all the information I need" before each further read; another made 118
+#: tool calls and none. The attempt is measured and reverted if it is wrong, so a best attempt costs
+#: less than a seventh reading of the same files.
+CALLS_BEFORE_A_FIX_MUST_WRITE = 12
+
+#: The tools whose success is a change to a file.
+_THE_WRITING_TOOLS = frozenset({"write_artifact", "edit_artifact", "replace_lines", "delete_artifact", "move_artifact"})
+
+_WRITE_NOW_NOTICE = (
+    "You have made {calls} calls and changed nothing. Reading is done for this stage: the tools that look are "
+    "withheld, and the ones that change files are still yours. Change the files now, from what you have read - "
+    "your change is measured after you return, and a wrong attempt is undone. Then return your structured "
+    "response saying what you changed."
+)
+
+
+def _the_graph_stage(role_name: str = "") -> str:
+    """The graph stage making this call (`defect_fix_2_14`), not the role the agent was built with."""
+    try:
+        from app.observability.transcript import _stage_from_config
+
+        return str(_stage_from_config(role_name or "") or "")
+    except Exception:  # noqa: BLE001
+        return str(role_name or "")
+
+
+def _model_calls_without_a_write(messages: list[Any]) -> int:
+    """How many model calls the conversation has made since a file last changed (or since it began)."""
+    names: dict[str, str] = {}
+    calls = 0
+    for message in messages:
+        kind = getattr(message, "type", None)
+        if kind == "ai":
+            tool_calls = getattr(message, "tool_calls", None) or []
+            if tool_calls:
+                calls += 1
+            for call in tool_calls:
+                names[str(call.get("id") if isinstance(call, dict) else getattr(call, "id", ""))] = str(
+                    call.get("name") if isinstance(call, dict) else getattr(call, "name", "")
+                )
+        elif kind == "tool":
+            name = names.get(str(getattr(message, "tool_call_id", "") or ""), "")
+            body = str(getattr(message, "content", "") or "").lstrip()
+            if name in _THE_WRITING_TOOLS and not body.startswith(("Error", '{"error"', "Refusing", "Not running")):
+                calls = 0
+    return calls
+
+
 def _without_the_looking_tools_in(tools: list[Any]) -> list[Any]:
     """`tools` without any that only read, list, search or look something up."""
     from app.agents.repeated_queries import QUERY_TOOLS
@@ -1744,6 +1794,15 @@ def build_settled_answer_middleware(
                             stage_name or "?",
                         )
                 stalled = schema is not None and _nothing_new_lately(messages)
+                # A fix stage that has read for many calls and changed nothing is
+                # made to write - only when it has the tools to (a stage with no
+                # writers would be left with only its answer).
+                unwritten = (
+                    schema is not None and _the_graph_stage(stage_name).startswith("defect_fix_")
+                    and bool(_without_the_looking_tools_in(list(getattr(request, "tools", None) or [])))
+                    and _model_calls_without_a_write(messages) >= CALLS_BEFORE_A_FIX_MUST_WRITE
+                )
+                stalled = stalled or unwritten
                 ignored = schema is not None and _a_withheld_tool_still_called(messages)
                 same_failure = _the_same_failure_running(messages)
                 if same_failure is not None and same_failure[1] >= SAME_FAILURE_BEFORE_SAYING_SO:
@@ -1786,7 +1845,11 @@ def build_settled_answer_middleware(
                     )
                 if stalled:
                     if writers:
-                        correction = f"{correction}\n\n{_STALLED_WITH_WRITERS_NOTICE}" if correction else _STALLED_WITH_WRITERS_NOTICE
+                        notice = (
+                            _WRITE_NOW_NOTICE.format(calls=_model_calls_without_a_write(messages))
+                            if unwritten else _STALLED_WITH_WRITERS_NOTICE
+                        )
+                        correction = f"{correction}\n\n{notice}" if correction else notice
                         # Reading is withheld from here: what refuses a write
                         # as unseen shows the file instead (`repository`).
                         _remember_the_read_tool_is_withheld()

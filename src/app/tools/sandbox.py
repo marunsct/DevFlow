@@ -1066,8 +1066,31 @@ def _kill_the_tree(group: int) -> None:
         pass
 
 
+#: A test run's closing summary: pytest's "7 errors in 0.26s", "=== 3 passed in 1.2s ===".
+_A_TEST_SUMMARY = re.compile(
+    r"^=*\s*(?:\d+ (?:passed|failed|errors?|skipped|deselected|warnings?|xfailed|xpassed)[, ]*)+"
+    r"(?:in \d+(?:\.\d+)?s)(?: \(\d+:\d+:\d+\))?\s*=*$|^=*\s*no tests ran in \d+(?:\.\d+)?s\s*=*$"
+)
+#: Seconds of silence after that summary before the run is taken as finished.
+SETTLED_AFTER_THE_SUMMARY_SECONDS = 5.0
+
+
+def _the_run_has_summed_up(output: str) -> bool:
+    """Whether the output's last line is a test run's closing summary."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    return bool(lines) and bool(_A_TEST_SUMMARY.match(lines[-1]))
+
+
+def _what_the_summary_says(output: str) -> int:
+    """The exit code the summary implies: 1 when anything failed or errored, else 0."""
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+    last = lines[-1] if lines else ""
+    return 1 if re.search(r"\b\d+ (?:failed|errors?)\b", last) else 0
+
+
 def _run_and_watch_the_tree(
-    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int, data_bytes: int | None = None
+    argv: list[str], *, cwd: str, env: Dict[str, str], timeout: int, data_bytes: int | None = None,
+    ends_at_its_summary: bool = False,
 ) -> "subprocess.CompletedProcess[str]":
     """`subprocess.run`, bounding the command's whole process tree.
 
@@ -1097,7 +1120,27 @@ def _run_and_watch_the_tree(
     )
     budget = _tree_budget_bytes()
     over: list[int] = []
+    lingered: list[bool] = []
     finished = threading.Event()
+    # Read as it comes, so the watcher can see a test run's summary arrive.
+    # Measured live: a product's test setup opened a database thread at
+    # import; pytest printed "7 errors in 0.26s" and then never exited, and
+    # every run of it waited out the timeout - 300 s, then 60 s, then 60 s.
+    chunks: dict[str, list[str]] = {"stdout": [], "stderr": []}
+    last_output = [time.monotonic()]
+
+    def read(name: str, stream: Any) -> None:
+        for line in iter(stream.readline, ""):
+            chunks[name].append(line)
+            last_output[0] = time.monotonic()
+        stream.close()
+
+    readers = [
+        threading.Thread(target=read, args=(name, stream), daemon=True)
+        for name, stream in (("stdout", process.stdout), ("stderr", process.stderr))
+    ]
+    for reader in readers:
+        reader.start()
 
     def watch() -> None:
         while not finished.wait(_TREE_POLL_SECONDS):
@@ -1106,22 +1149,41 @@ def _run_and_watch_the_tree(
                 over.append(used)
                 _kill_the_tree(process.pid)
                 return
+            if (
+                ends_at_its_summary
+                and time.monotonic() - last_output[0] >= SETTLED_AFTER_THE_SUMMARY_SECONDS
+                and _the_run_has_summed_up("".join(chunks["stdout"]) or "".join(chunks["stderr"]))
+            ):
+                lingered.append(True)
+                _kill_the_tree(process.pid)
+                return
 
     watcher = threading.Thread(target=watch, name="sandbox-tree-watch", daemon=True)
     watcher.start()
     try:
-        stdout, stderr = process.communicate(timeout=timeout)
+        process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         _kill_the_tree(process.pid)
-        stdout, stderr = process.communicate()
-        raise subprocess.TimeoutExpired(argv, timeout, output=stdout, stderr=stderr) from None
+        process.wait()
+        for reader in readers:
+            reader.join(timeout=5)
+        raise subprocess.TimeoutExpired(
+            argv, timeout, output="".join(chunks["stdout"]), stderr="".join(chunks["stderr"])
+        ) from None
     finally:
         finished.set()
         watcher.join(timeout=2)
         # Whatever the command left behind in its group goes with it.
         _kill_the_tree(process.pid)
+    for reader in readers:
+        reader.join(timeout=5)
+    stdout, stderr = "".join(chunks["stdout"]), "".join(chunks["stderr"])
     if over:
-        raise _TreeOverBudget(over[0], budget, stdout or "", stderr or "")
+        raise _TreeOverBudget(over[0], budget, stdout, stderr)
+    if lingered:
+        result = subprocess.CompletedProcess(argv, _what_the_summary_says(stdout or stderr), stdout, stderr)
+        result.lingered = True  # type: ignore[attr-defined]
+        return result
     return subprocess.CompletedProcess(argv, process.returncode, stdout, stderr)
 
 
@@ -4412,6 +4474,7 @@ class SandboxExecutor:
                 env=_child_environment(workspace, extra_env),
                 timeout=timeout,
                 data_bytes=_process_memory(workspace),
+                ends_at_its_summary=_runs_tests(argv),
             )
         except subprocess.TimeoutExpired as expired:
             return {
@@ -4438,11 +4501,19 @@ class SandboxExecutor:
         except OSError as exc:
             return {"error": f"Could not run '{argv[0]}': {exc}"}
 
-        return {
+        finished = {
             "stdout": _as_workspace_relative(_truncate(result.stdout, f"{role_name}-{argv[0]}-stdout", workspace), workspace),
             "stderr": _as_workspace_relative(_truncate(result.stderr, f"{role_name}-{argv[0]}-stderr", workspace), workspace),
             "returncode": str(result.returncode),
         }
+        if getattr(result, "lingered", False):
+            finished["note"] = (
+                "The tests finished and printed their summary, but the process did not exit, so it "
+                "was ended; the exit code is the summary's. Something the tests start keeps it "
+                "alive - a database engine, a thread, a server or a timer never closed. That is a "
+                "defect in the tests' setup: close or dispose of it when the tests end."
+            )
+        return finished
 
     @classmethod
     def execute(

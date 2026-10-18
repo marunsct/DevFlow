@@ -379,26 +379,17 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         problems.append(
             f"The suite does not run: {result.problem}.\n{result.output[-1500:]}".strip()
         )
-    problems.extend(suite.tests_that_broke_themselves(root, result))
+    problems.extend(suite.tests_that_cannot_pass(root, result))
     vacuous = suite.vacuous_green(root, result)
     problems.extend(vacuous)
-    problems.extend(suite.tests_that_need_what_they_never_made(root, result))
+    # Too lenient rather than impossible: a suite that passes a product it
+    # should fail. The review sends these back; a test round has nothing to
+    # charge for them.
     problems.extend(suite.locators_nobody_sees(root))
     problems.extend(suite.locators_that_pick_one(root))
-    problems.extend(suite.locators_by_a_name_the_role_never_has(root))
-    problems.extend(suite.tests_that_never_open_the_page(root))
-    problems.extend(suite.tests_that_access_storage_before_opening_the_page(root))
-    problems.extend(suite.tests_that_expect_what_they_never_gave(root))
-    problems.extend(suite.tests_that_assert_an_unstated_order(root))
-    problems.extend(suite.locators_that_contradict_their_assertions(root))
     problems.extend(
         suite.controls_never_found_by_name(root, getattr(state.get("document"), "text", "") or "")
     )
-    problems.extend(suite.assertions_that_do_not_exist(root))
-    problems.extend(suite.locators_that_do_not_exist(root))
-    problems.extend(suite.tests_with_module_system_mismatch(root))
-    problems.extend(suite.tests_with_unawaited_async_helpers(root))
-    problems.extend(suite.locators_with_invalid_name_option(root))
     if not result.ran:
         if rounds < MAX_ACCEPTANCE_ROUNDS + 2:
             logger.warning("Acceptance suite could not run (exit %s); sent back to QA", result.exit_code)
@@ -1169,17 +1160,9 @@ def acceptance_for_round(state: Any) -> tuple[str, list[str]]:
         return "", []
     root = _root(state)
     broken = [
-        *suite.tests_that_broke_themselves(root, result),
+        *suite.tests_that_cannot_pass(root, result),
         *suite.tests_left_behind_by_their_own_change(root, result),
         *suite.vacuous_green(root, result),
-        *suite.assertions_that_do_not_exist(root),
-        *suite.locators_that_do_not_exist(root),
-        *suite.locators_by_a_name_the_role_never_has(root),
-        *suite.locators_with_invalid_name_option(root),
-        *suite.tests_that_never_open_the_page(root),
-        *suite.tests_that_access_storage_before_opening_the_page(root),
-        *suite.tests_that_expect_what_they_never_gave(root),
-        *suite.tests_that_need_what_they_never_made(root, result),
     ]
     return acceptance_requests.acceptance_block(result, due), broken
 

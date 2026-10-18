@@ -1409,3 +1409,32 @@ def add_change_request(repo_root: str | Path, text: str) -> str:
 
 def change_requests(repo_root: str | Path) -> dict[str, str]:
     return dict(_state(repo_root).get("change_requests") or {})
+
+
+def tests_that_cannot_pass(repo_root: str | Path, result: AcceptanceResult) -> list[str]:
+    """Locked tests no product can pass, by every check that says so; one list for every caller.
+
+    The review that locks the suite and each test round kept a list each, and
+    the round's lacked four of the review's checks. A review that has spent its
+    rounds locks the suite with its problems open, so a test only the review
+    named - one holding the product to an order no criterion states - was then
+    failed against the product and charged to it as a defect no fix could
+    close. Checks that make a suite too lenient are not here: a suite that
+    passes too much never charges the product for anything, so they stay with
+    the review.
+    """
+    return [
+        *tests_that_broke_themselves(repo_root, result),
+        *tests_that_need_what_they_never_made(repo_root, result),
+        *assertions_that_do_not_exist(repo_root),
+        *locators_that_do_not_exist(repo_root),
+        *locators_by_a_name_the_role_never_has(repo_root),
+        *locators_with_invalid_name_option(repo_root),
+        *tests_that_never_open_the_page(repo_root),
+        *tests_that_access_storage_before_opening_the_page(repo_root),
+        *tests_that_expect_what_they_never_gave(repo_root),
+        *tests_that_assert_an_unstated_order(repo_root),
+        *locators_that_contradict_their_assertions(repo_root),
+        *tests_with_module_system_mismatch(repo_root),
+        *tests_with_unawaited_async_helpers(repo_root),
+    ]

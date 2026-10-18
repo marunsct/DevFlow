@@ -363,6 +363,7 @@ def build_artifact_edit_tool(repo_root: str) -> BaseTool:
 
 
 NETWORK_OFF_SENTENCE = "Everything\n                except 'install' runs with networking disabled."
+_THE_NETWORK_SENTENCE = re.compile(r"Everything\s+except 'install' runs with networking disabled\.")
 
 
 def with_the_network_as_it_is(description: str) -> str:
@@ -381,10 +382,13 @@ def with_the_network_as_it_is(description: str) -> str:
         return description
     if not here:
         return description
-    return description.replace(
-        NETWORK_OFF_SENTENCE,
-        "Commands run in\n                the harness's own container, which is not cut off from the network; "
-        "fetch nothing\n                but dependencies, and those with category 'install'.",
+    # Matched on its words, not on the whitespace between them: Python 3.13
+    # strips a docstring's indentation at compile time, so the sentence that
+    # matched on 3.12 silently did not (Initiative AO.4).
+    return _THE_NETWORK_SENTENCE.sub(
+        "Commands run in the harness's own container, which is not cut off from the network; "
+        "fetch nothing but dependencies, and those with category 'install'.",
+        description,
     )
 
 

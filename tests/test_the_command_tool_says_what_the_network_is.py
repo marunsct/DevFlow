@@ -29,4 +29,15 @@ def test_with_a_container_per_command_it_says_the_network_is_off() -> None:
 
 
 def test_the_sentence_replaced_is_the_one_the_docstring_has() -> None:
-    assert agent_toolkit.NETWORK_OFF_SENTENCE in _description("docker")
+    # By its words: Python 3.13 strips a docstring's indentation (Initiative AO.4).
+    assert " ".join(agent_toolkit.NETWORK_OFF_SENTENCE.split()) in " ".join(_description("docker").split())
+
+
+def test_the_sentence_is_found_however_the_docstring_was_indented() -> None:
+    """3.13 dedents docstrings at compile time; the rewrite must not depend on the spaces."""
+    for spaces in ("\n                ", "\n    ", "\n", " "):
+        text = f"Args:\n  category: Everything{spaces}except 'install' runs with networking disabled. More."
+        with mock.patch.object(sandbox, "execution_mode", lambda: sandbox.IN_CONTAINER_MODE):
+            said = agent_toolkit.with_the_network_as_it_is(text)
+        assert "runs with networking disabled" not in said
+        assert "not cut off from the network" in said and said.endswith(" More.")

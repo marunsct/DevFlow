@@ -234,7 +234,14 @@ stage)
 deploy)
   echo "live runs before deploy (they will be resumed by orphan recovery):"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
-  docker compose build --progress=plain app worker >/dev/null 2>&1
+  # Built from a clean checkout of HEAD, never the working tree: another
+  # session's uncommitted, unverified edits sat in the same tree, and a build
+  # of it shipped them into the live run.
+  head_tree=$(mktemp -d)/head
+  git -C "$ROOT" worktree add -q --detach "$head_tree" HEAD
+  docker compose -p langchain --env-file "$ROOT/.env" -f "$head_tree/docker-compose.yml" \
+    build --progress=plain app worker >/dev/null 2>&1
+  git -C "$ROOT" worktree remove --force "$head_tree"
   # Between model calls (owner, 2026-10-15): hold new calls, wait for the ones
   # in flight to return, then restart (app.models.call_gate). GATE_WAIT caps the
   # wait in seconds; a call still running then is restarted with its stage.
@@ -257,12 +264,12 @@ deploy)
   pkg=$(docker compose exec -T worker python -c "import app,os;print(os.path.dirname(app.__file__))")
   stale=0
   for f in $(git diff --name-only HEAD~1 -- src/app | sed 's#^src/app/##'); do
-    [ -f "src/app/$f" ] || continue
-    here=$(sha1sum "src/app/$f" | cut -c1-12)
+    git -C "$ROOT" cat-file -e "HEAD:src/app/$f" 2>/dev/null || continue
+    here=$(git -C "$ROOT" show "HEAD:src/app/$f" | sha1sum | cut -c1-12)
     there=$(docker compose exec -T worker sha1sum "$pkg/$f" | cut -c1-12)
     [ "$here" = "$there" ] || { echo "STALE in image: $f"; stale=1; }
   done
-  [ "$stale" = 0 ] && echo "image matches the working tree for the last commit's files"
+  [ "$stale" = 0 ] && echo "image matches HEAD for the last commit's files"
   echo "live runs after deploy:"
   "${DB[@]}" "select run_id, status from runs where status in ('running','queued','pending')"
   ;;

@@ -10,6 +10,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
+import { usePageVisible } from '../lib/usePageVisible';
 import { fetchArtifactContent } from '../api';
 import {
   CheckCircle2,
@@ -119,8 +120,10 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
   const [sprints, setSprints] = useState<ParsedSprint[]>([]);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
+  const visible = usePageVisible();
 
   useEffect(() => {
+    if (!visible) return;
     let cancelled = false;
     setLoading(true);
 
@@ -144,7 +147,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
     // Refresh every 30s while loading might still produce new sprints
     const interval = setInterval(fetchAll, 30000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [runId, maxSprints]);
+  }, [runId, maxSprints, visible]);
 
   const toggle = (n: number) => {
     setExpanded((prev) => {

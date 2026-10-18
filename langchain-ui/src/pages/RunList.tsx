@@ -5,8 +5,11 @@ import type { RunSummary } from '../types';
 import { Clock, Activity, AlertCircle, CheckCircle2, XCircle, Inbox, Plus, Trash2, ArrowRight, Copy, Pause } from 'lucide-react';
 import { describeStage, describeStatus, RESUMABLE } from '../lib/activity';
 import { OutcomesPanel } from '../components/OutcomesPanel';
+import { usePageVisible } from '../lib/usePageVisible';
+import { useFeedback } from '../components/Feedback';
 
 export const RunList: React.FC = () => {
+  const { notify, confirm: askConfirm } = useFeedback();
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -27,19 +30,28 @@ export const RunList: React.FC = () => {
     }
   };
 
+  // Polled only while the tab is visible: a hidden tab polling every 5 s
+  // spent the server's request budget for nobody.
+  const visible = usePageVisible();
   useEffect(() => {
+    if (!visible) return;
     fetchRuns();
     const interval = setInterval(fetchRuns, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [visible]);
 
   const handleDelete = async (runId: string) => {
-    if (!confirm('Delete this run?')) return;
+    if (!(await askConfirm({
+      title: 'Delete this run?',
+      message: 'Its record and workspace are removed. This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    }))) return;
     try {
       await deleteRun(runId);
       await fetchRuns();
     } catch (err: any) {
-      alert('Failed to delete: ' + (err.response?.data?.detail || err.message));
+      notify('Failed to delete: ' + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -48,7 +60,7 @@ export const RunList: React.FC = () => {
       const clonedRun = await cloneRun(runId);
       navigate(`/runs/${clonedRun.run_id}`);
     } catch (err: any) {
-      alert("Failed to clone: " + (err.response?.data?.detail || err.message));
+      notify("Failed to clone: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -57,7 +69,7 @@ export const RunList: React.FC = () => {
       await pauseRun(runId);
       await fetchRuns();
     } catch (err: any) {
-      alert("Failed to pause: " + (err.response?.data?.detail || err.message));
+      notify("Failed to pause: " + (err.response?.data?.detail || err.message));
     }
   };
 
@@ -66,7 +78,7 @@ export const RunList: React.FC = () => {
       await resumeRun(runId);
       await fetchRuns();
     } catch (err: any) {
-      alert("Failed to resume: " + (err.response?.data?.detail || err.message));
+      notify("Failed to resume: " + (err.response?.data?.detail || err.message));
     }
   };
 

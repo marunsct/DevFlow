@@ -60,6 +60,10 @@ def _is_planned(path: str, planned: list[str]) -> bool:
     return any(plain == p or plain.endswith("/" + p) or p.endswith("/" + plain) for p in planned)
 
 
+#: Test files the lead may give its work orders when the file plan names none.
+MOST_UNPLANNED_TEST_FILES = 5
+
+
 def with_tests_the_specification_plans(tasks: list[Any], specification: Any) -> tuple[list[Any], list[str]]:
     """`tasks`, each test file not in the specification's file plan taken out; and what was taken.
 
@@ -72,10 +76,21 @@ def with_tests_the_specification_plans(tasks: list[Any], specification: Any) -> 
     planned = planned_files(specification)
     if not planned:
         return tasks, []
+    # A file plan that names no test at all is no plan for the tests: dropping
+    # every one then shipped a 2,863-line product with no unit test (one run).
+    # The lead's are kept instead, bounded, so the bloat this guards stays out.
+    plans_tests = any(classify_file(f) == "test" for f in planned)
+    allowance = 0 if plans_tests else MOST_UNPLANNED_TEST_FILES
     kept_tasks, dropped = [], []
     for task in tasks:
         files = list(getattr(task, "files", None) or [])
-        keep = [f for f in files if classify_file(f) != "test" or _is_planned(f, planned)]
+        keep = []
+        for f in files:
+            if classify_file(f) != "test" or _is_planned(f, planned):
+                keep.append(f)
+            elif allowance > 0:
+                keep.append(f)
+                allowance -= 1
         dropped.extend(f for f in files if f not in keep)
         kept_tasks.append(task.model_copy(update={"files": keep}) if keep != files else task)
     return kept_tasks, dropped

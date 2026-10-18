@@ -153,6 +153,19 @@ def test_tests_are_the_ones_the_specification_plans():
     assert drafting.with_tests_the_specification_plans(orders, no_plan) == (orders, [])
 
 
+def test_a_file_plan_that_names_no_test_keeps_the_lead_s_tests_within_a_bound():
+    """A plan naming no test at all dropped every one, and a 2,863-line product shipped with none."""
+    no_tests = TechnicalSpecificationOutput(product_scope="Notes.", file_plan=["notes/src/store.ts - keeps notes"])
+    many = [f"notes/tests/test_{n}.py" for n in range(drafting.MOST_UNPLANNED_TEST_FILES + 3)]
+    orders = [_order("testing", *many), _order("backend", "notes/src/store.ts")]
+
+    kept, dropped = drafting.with_tests_the_specification_plans(orders, no_tests)
+
+    assert kept[0].files == many[: drafting.MOST_UNPLANNED_TEST_FILES]
+    assert dropped == many[drafting.MOST_UNPLANNED_TEST_FILES:]
+    assert kept[1].files == ["notes/src/store.ts"]
+
+
 def test_a_reply_s_file_is_its_longest_fenced_block():
     assert drafting.the_content_in("intro\n```\nshort\n```\nthen\n```ts\nlonger content\n```") == "longer content\n"
     assert drafting.the_content_in("plain text file") == "plain text file\n"

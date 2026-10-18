@@ -705,6 +705,10 @@ know about its testing, and what changed most recently.
   too-lenient checks stay review-only. Release adds three gap sources:
   escalation `known_issues`, fast-mode findings recorded as risks, and a
   release re-read of the files (`problems_that_break_the_product`).
+- **New bounds and checks (2026-10-18, AH).** `MAX_RUN_TOKENS` (empty: none)
+  pauses a run at a stage boundary once it has used that many tokens, priced
+  or not. `loop.sh ready` also prints `READY commands (...)`. A judgement
+  model that could not be built is a completion gap at release.
 - **Deploys wait for a stage boundary (2026-10-18).** `loop.sh deploy` builds,
   then waits up to `BOUNDARY_WAIT` seconds (default 1800; 0 skips) for the
   live run's transcript to name a new stage, then the call gate. A resume

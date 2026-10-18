@@ -1575,3 +1575,132 @@ session 2"; initiative letters continue after V):
 - Part 12 Refactor track evidence (G26) for V.
 - Sequencing table + new ledger rows. Frontier/research citations slot in
   per item when the research report lands.
+
+### 13.6 Research report digest (landed 17:45 JST) — frontier harnesses, local serving, agent UX
+Full report from the web-research task (primary sources 2025-06→2026-10).
+Kept here because the research tool's output is not otherwise persisted.
+R-numbers are cited from `docs/improvement-plan.md` Appendix 2.
+
+**Headline**: "one writer, many advisors." Local-model failures are
+*interface* failures (tool-call format, edit format, context truncation,
+quantization) more than reasoning failures.
+
+- R1 Anthropic "Effective harnesses for long-running agents" (2025-11-26):
+  initializer writes `init.sh`, progress file, initial commit, JSON feature
+  list with every feature `passes:false`; each session reads progress, runs
+  a basic e2e first, implements ONE feature, commits, logs. Adopt as
+  backbone.
+- R2 Anthropic "Harness design for long-running apps" (≈2026-03-24):
+  planner (told NOT to over-specify implementation — errors cascade) /
+  generator / evaluator negotiating "sprint contracts"; evaluator drives
+  the app via Playwright; context *resets* needed (Sonnet 4.5 "context
+  anxiety"); ~6 h/$200 per 16-feature app; evaluator "unnecessary
+  overhead" when the task is within the generator's ability → for weaker
+  local models the evaluator gives *more* lift.
+- R3 Cognition "Multi-agents: what's actually working" (2026-04-22): works
+  "when writes stay single-threaded"; clean-context Devin Review catches
+  ~2 bugs/PR, 58% severe, even on Devin's own PRs; weak-primary +
+  strong-advisor failed ("quality ceiling set by the primary"); Manager
+  Devins: over-prescription and assumed shared state are the failure
+  modes. "Don't build multi-agents" (2025-06-12): edit-apply lesson — a
+  small model rewriting a whole file from a markdown explanation beat a
+  large model emitting a diff (R15).
+- R4 MAST (arXiv 2503.13657): 14 failure modes; spec/design 41.8%,
+  inter-agent misalignment 36.9%, verification 21.3%; ChatDev 33.3% on
+  ProgramDev, +9.4% from better prompts/topology; verifiers do low-level
+  checks (compiles?) and miss the requirement.
+- R5 "Flat score, amplified failures" (arXiv 2607.27275): INT4 looked free
+  on τ²-bench scores but out-of-list tool-call names rose 19.5%→38.3%;
+  community: Qwen3.6 Q4 breaks tool JSON/diffs, Q5_K_M/Q6 fix most,
+  collapse past ~30k ctx (anecdotal). Single-turn HumanEval unaffected by
+  Q4. → Q6/Q8/FP8 for the tool-calling implementer; Q4 OK for summarisers.
+- R6 Ollama: since commit 0334ffa6 (2026-02-02) default `num_ctx` is
+  VRAM-based (4,096 <24 GiB; 32,768 24–48; 262,144 above); docs recommend
+  ≥64k for agents; `/v1` ignores `num_ctx` → set `OLLAMA_CONTEXT_LENGTH`.
+  "#1 silent failure for local agents."
+- R7 Cline v3.35 (2025-10-31): native tool calling only for frontier
+  families; tool defs as API params cut tokens ~15%/request; local models
+  get XML-in-prompt; issues #10843 (Qwen emits JSON into XML parser →
+  loop), #13008 (syntax change broke Ollama+Qwen3.6-35B-A3B), #7424
+  (Compact Prompt for local), PR #12835 (explicit xml tool mode). Lesson:
+  tolerant multi-format parser; version-stable tool syntax.
+- R8 aider: edit formats whole/diff/diff-fenced/udiff/patch/editor-*;
+  unknown models default to `whole` ("easiest format"); leaderboard
+  reports well-formed-edit % separately; llama3-70b 73.5% well-formed on
+  diff (secondary); v0.19 udiff took GPT-4 Turbo 20%→61% on the laziness
+  bench; `--architect`/`--editor-model`/`--weak-model`.
+- R9 JetBrains "The Complexity Trap" (arXiv 2508.21433, 2025-08-29): LLM
+  summarisation +15% trajectory length vs raw, +13% vs observation
+  masking; masking halves cost at equal solve rate.
+- R10 mini-SWE-agent (~100 lines, bash-only, >74% SWE-bench Verified) as
+  control harness; same-harness open-model run 2026-02-17: MiniMax M2.5
+  75.8%, GLM-5 72.8%, Kimi K2.5 70.8%, DeepSeek V3.2 70.0% vs Opus 4.5
+  76.8%; vendor claims Qwen3.6-27B 77.2%, Qwen3.6-35B-A3B 73.4%, Devstral
+  Small 2 68.0% (harness-dependent; OpenAI stopped reporting SWE-bench
+  Verified 2026-02).
+- R11 OpenHands condenser: up to 2× per-turn cost cut, event-sourced and
+  replayable; default max_size=80 keep_first=4; SDK paper arXiv 2511.03690.
+- R12/R13 Claude Code: plan mode = write tools not exposed; permission
+  mode ladder; ExitPlanMode gate; hooks are enforcement, CLAUDE.md is
+  advice; checkpoints miss bash side-effects → use git per step; subagents
+  for read-only work.
+- R14 vLLM `--enable-auto-tool-choice --tool-call-parser <family>`
+  (qwen3_coder/qwen3_xml/llama3_json…); Qwen3.5/3.6 recipe: MTP-1 spec
+  decoding for low-concurrency latency (disable prefix caching in that
+  mode); llama.cpp `--jinja`, native handlers per family else Generic
+  (more tokens), lazy GBNF grammars after tool trigger (PR #9639),
+  `--chat-template-file` overrides; JSON Schema→GBNF automatic. Security:
+  vLLM GHSA-79j6-g2m3-jgfw (`qwen3_coder` parser `eval()` RCE) — pin.
+- R16 Ralph loop (Huntley 2025-07-14): fresh context per iteration, state
+  in files/git, mandatory `--max-iterations` + completion promise.
+- R17 Anthropic "Effective context engineering" (2025-09-29): attention
+  budget, context rot, just-in-time retrieval, compaction + notes +
+  subagents; Manus: KV-cache hit rate the key production metric, mask
+  don't remove tools; Lost-in-the-middle (TACL 2024), Chroma context rot.
+- R18 Cursor 2.0 (2025-10-29) 8 parallel agents; Plan mode 1.7/2.1 with
+  clarifying-question UI → adapt only at planning on a single GPU.
+- R19 Memory as plain markdown files navigated with file tools; `LESSONS.md`
+  reviewer-appends/planner-reads.
+- R20 UX: Jules plan approval + browser notifications + Planning Critic
+  (−9.5% failures, vendor); Devin Interactive Planning (2025-04-03), Devin
+  Review hunk grouping with confidence/severity (2026-01-21); Copilot draft
+  PR as work surface, mission-control steering (2025-10-28); Codex
+  evidence citations of terminal logs/tests; Lovable/Bolt/v0 live preview +
+  versioned rollback mapped to commits.
+- R21 Huang et al. arXiv 2512.14012 (2025-12-16): professional devs
+  "control the agents through planning and supervision"; "The Work Behind
+  Delegation" arXiv 2609.24234: supervisory demand to understand unwritten
+  work; Chen et al. arXiv 2507.08149.
+- Top-20 ranked recommendations from the report (verbatim order): 1 fix
+  context sizing and verify at startup; 2 single writer; 3 feature list
+  as source of truth; 4 one feature per fresh context with caps; 5
+  clean-context evaluator that executes; 6 per-model tool-call adapter;
+  7 grammar/JSON-schema constrained decoding for structured artifacts;
+  8 per-model edit format by calibration; 9 architect/editor split; 10
+  avoid INT4 for the tool-calling implementer; 11 remove tools instead of
+  forbidding; 12 hooks over prompts; 13 stable short system prompt +
+  prefix caching; 14 condensation with template + resets at 60–70%; 15
+  loop detection → reset → escalate → human; 16 plan critic; 17 git
+  per step + no-network container; 18 append-only event log → OTel; 19 UI
+  essentials; 20 model selection on your own harness.
+- Not verified by the report (do not copy specifics): Goose, Amp,
+  Windsurf, Augment, Factory, Replit, Gemini CLI internals,
+  CrewAI/LangGraph patterns, AgentCoder, Roo/Kilo internals, BFCL/Tau
+  tables, OTel GenAI conventions, Langfuse.
+
+Mapping to Appendix 2: #1→M.1/W.3; #2 already (work orders); #3→Part 11
+plan-first (criteria as feature list) + existing locked suite; #4→Z.3;
+#5→AD/AF (+ existing acceptance); #6/#7→M.1–M.2; #8/#9→Y; #10→M.6;
+#11/#12→X; #13→AA/X.4; #14→Z; #15→existing L.5 + Z.3; #16→existing
+L.7/validator (plan critic = judgement-model plan review, Q-amend);
+#17→existing; #18→W.4; #19→Part 11; #20→W.
+
+### 13.7 Final status (18:05 JST)
+- `docs/improvement-plan.md` Appendix 2 appended: Initiatives W, X, M
+  (concrete), Y, Z, AA, AB, AC, AD, AE, AF, AG, AH, AI; UI/UX Part 11 with
+  corrections + design plan; Part 12 refactor evidence; sequencing table;
+  R-citations; ledger rows (all NOT STARTED, per the review-only mandate).
+- This file §13 holds the per-finding evidence (G1–G27) and the research
+  digest. No code was changed. No run was started.
+- Follow-ups for the next session: W.2 baseline runs (owner), then P0 rows
+  in order W → X.1/X.2 → AD → AE, each with its failing-first test.

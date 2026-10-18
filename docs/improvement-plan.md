@@ -1378,3 +1378,629 @@ Committed plan artifacts: appendix + addenda + this ledger live in
 `docs/improvement-plan.md`; the evidence archive is `docs/review-findings-wip.md`;
 the frontier research report is `.langchain/research/frontier-harness-report.md`
 (git-ignored, local only).
+
+---
+
+## Appendix 2 (2026-10-18, second review session): Measurement-first hardening, local-model interface quality, throughput, release-integrity residuals, UI/UX
+
+> **Status tracking**: new rows for every item below are appended to the
+> [Implementation Progress Ledger](#implementation-progress-ledger) in the
+> "Appendix 2 rows" block at the end of this document. Same rules as before:
+> a DONE row carries its date and names the test that fails on the old code.
+
+**Method and evidence base.** This appendix is a *further* pass over the
+harness after the Appendix 1 P0/P1 wave landed (ledger rows dated
+2026-10-18). It does not restate Initiatives A–V. Evidence: a fresh read of
+the codebase at `3fcd36d`/`3435fb0` (four cheap-model inventories covering
+agents/models, graph/acceptance/tools, UI+API, run history/packs/loop
+scripts, each verified by hand where cited); the run record as the docs
+carry it (no transcripts were reachable from the review sandbox — see
+`docs/review-findings-wip.md` §13 for the per-finding ledger G1–G27); the
+external reviewer's report in `docs/logs.md`; and a fresh web-research pass
+on frontier harnesses, local-model serving and agent UI/UX (primary sources
+dated 2025-06 → 2026-10; summarised in `docs/review-findings-wip.md` §13.6).
+Findings are cited as **G-numbers**; research items as **R-numbers**.
+
+**What the research adds to Appendix 1's consensus.** Since the first pass,
+the frontier harnesses have published the shape of their long-running loops
+in detail, and it is simpler than this harness: *one writer, many advisors*.
+Anthropic's long-running-agent harness is an initializer that writes a JSON
+feature list with every feature `passes: false`, then one feature per fresh
+context, tests first, commit, progress log (R1, Nov 2025); its later
+planner/generator/evaluator harness negotiates "sprint contracts" of
+testable criteria and has the evaluator *drive the running app* (R2, Mar
+2026). Cognition's 2026 follow-up to "Don't build multi-agents" reports
+that multi-agent *writing* is still fragile, multi-agent *reviewing* works
+(a clean-context reviewer catches ~2 bugs/PR even on Devin's own work), and
+that a weak primary model with a strong advisor fails because "the quality
+ceiling was set by the primary" (R3). MAST measured ChatDev at 33% correct
+and attributed 42% of multi-agent failures to specification/design and 21%
+to verification (R4). For local models the research is blunt that failures
+are *interface* failures — tool-call format, edit format, context
+truncation, quantization — more than reasoning failures: INT4 doubled
+out-of-list tool-call names (19.5%→38.3%) while benchmark scores stayed
+flat (R5); Ollama's VRAM-based default context silently truncates (R6);
+Cline keeps native tool calling off for non-frontier families and local
+users loop on format mismatches (R7); Aider defaults unknown models to
+whole-file edits because it is the easiest format to comply with (R8);
+JetBrains found LLM summarisation *lengthened* trajectories 13–15% vs
+observation masking, which halves cost at equal solve rate (R9).
+
+This harness already has the artifacts (intake → spec → work orders →
+locked suite → sprint record) and the single-writer work orders. The gaps
+this appendix closes are: it still lets the model's word stand in for a
+measurement at one critical point (G19); its prompts and tool schemas
+disagree (G1/G21/G22); its prefix-cache layout is inverted (G2); its
+parallelism is nominal (G23); and — the governing problem — nothing after
+the P0 wave has been *scored*, and the one quality inference the earlier
+plan leaned on (local fixes/reviews are the weak link) rests partly on a
+brief/suite mismatch (G12/G13). So this appendix is ordered
+measurement-first.
+
+---
+
+### Part 6 — Measurement first (P0): nothing else in this appendix can be verified without it
+
+#### Initiative W: Score the harness as it is now, and make every later claim falsifiable
+- **Reasoning**: The P0/P1 wave shipped ~18 behaviour changes on
+  2026-10-18; the only run after them (run-8b0c94df) has no recorded brief,
+  mode, model, duration or outcome, and K.3-ext/L.1-refinement were written
+  *because* of it (G13). The medium brief has 0 completions in 9 attempts;
+  the hard brief has never run; the stage-2 bench gate has no result. The
+  earlier hidden-score evidence is confounded: brief_low runs were scored
+  against the web-todo hidden suite, whose tests need `## Interface` labels
+  that only `benchmarks/web-todo/brief.md` contains — the one run given the
+  real brief scored 10/10 (G12). And every "A/B-verified" clause in
+  Appendix 1 is unexecutable because `docker-compose.yml`'s `x-app-env`
+  does not pass the toggles (`LINE_EDITS`, `ENVIRONMENT_CONTRACT`,
+  `WORKSPACE_DIGEST`, `PROJECT_MEMORY`, `HARNESS_TASK_LIST`, `JUDGEMENT_*`,
+  `ESCALATE_AFTER_ATTEMPTS`, `MODEL_MAX_OUTPUT_TOKENS`) (G14). U.2's ledger
+  entry over-reports: the identical-call measure lives in
+  `scripts/audit_run.py`, which `loop.sh` never calls (G15).
+- **Mechanism**:
+  1. **Bench-brief integrity rule**: a run is scored against a hidden
+     suite only if it was started from that benchmark's own brief; any
+     other pairing is exported with `brief_mismatch: true` and excluded
+     from false-acceptance statistics. Re-tag the three brief_low runs.
+  2. **Post-P0 baseline**: one fast + one thorough run per stage-1 bench
+     (web-todo, notes-api) on the real briefs with the current code, before
+     any Appendix-2 behaviour change — the control every later item is
+     measured against. (Owner-operated; AGENTS.md rules apply.)
+  3. **Toggles through compose**: pass every harness flag listed in
+     `map-agents.md` §7 through `x-app-env` with `${VAR:-default}`; unify
+     `SANDBOX_MEMORY_LIMIT` (4g/1g/2g today); default
+     `MODEL_CONTEXT_WINDOW` from the server's `/props` when readable (S
+     already reads it); default `HARNESS_MAX_PARALLEL` to the slot count.
+  4. **Per-run KPI JSON + cross-run ledger**: `loop.sh score` writes one
+     JSON per run with the U.2 KPIs *plus* the ones G15 found missing
+     (identical-call rate from `audit_run.py` wired into the loop,
+     reasoning-exhaustion events by *reply shape* since the owner's server
+     reports no reasoning tokens, stale dispatches, reverts, reclassifications,
+     vacuous-green detections, prefill:decode ratio, cached-token share, edit
+     well-formedness per tool, out-of-list tool-name rate); a
+     `data/kpi/ledger.csv` accumulates them; `audit_live.py` flags any
+     stage >1.5× its 5-run moving average (the old plan's Tier-3 #7).
+  5. **Ledger honesty**: add rows for pre-ledger Initiatives A–I with their
+     real status (G: in code; C `ui_contract`: no trace; etc.) and correct
+     the U.2 row.
+- **Frontier validation**: Terminal-Bench/Harbor and the SWE-bench
+  "mini-roulette" result exist because scores are harness-specific; the
+  research's #20 recommendation is "select and measure on your own harness
+  with mini-SWE-agent as control" (R10). OpenHands keeps an event-sourced,
+  replayable log precisely so condensation and routing changes can be
+  evaluated after the fact (R11).
+- **Impact**: Turns the rest of this appendix from opinion into
+  experiments; also fixes the one piece of evidence the earlier plan
+  over-read. **Effort**: S–M (compose: S; KPI JSON: M; baseline runs: owner
+  wall-clock).
+
+---
+
+### Part 7 — Local-model interface quality (P0/P1)
+
+#### Initiative X: Prompt-contract integrity — what the prompt names, the schema must offer; what the code does, the prompt must say
+- **Reasoning**: The harness's largest format-waste class (A3: `edit_file`
+  ×53, tools named after file paths) has a prompt-side cause that Appendix 1
+  did not find: read-only roles are *told* to call `write_artifact` while
+  `can_write=False` removes it from their tools (`product_manager.py:352-360`
+  vs `:391`; `tools_models.py:322-333` vs `:363`); the specialist prompt says
+  "ONE single write_artifact call, no follow-up edits" while `_WRITING_RULES`
+  teaches `edit_artifact`; ui_ux is told both "do not run tests" and "prove
+  your work by running it" (G1). The milestone-review schema tells the model
+  `blocked` ends the run while the workflow re-plans on it (G21). The
+  `run_terminal_command` description claims network-off for everything but
+  installs, which is false in container mode (G22). Prompts also carry
+  maintenance prose ("Measured across the stored runs…", ALL-CAPS/CRITICAL)
+  that costs tokens on every call and is exactly the style the small-model
+  research says to avoid (G5). A weak model follows the prompt; when the
+  prompt and the schema disagree, the hallucinated tool name is the model
+  doing as it was told.
+- **Mechanism** (all deterministic, all testable):
+  1. **Tool-name/offer test**: a suite test that every tool name mentioned
+     in any role's rendered system prompt is in that role's offered tool
+     set (same shape as the banned-words tests); fix the four instances now.
+  2. **Verdict-semantics test**: each structured-output enum value's
+     description must match a routing table the graph exports (the
+     `blocked` case first).
+  3. **Mode-rendered tool descriptions**: tool text that states a policy
+     (network, cwd, venv) is rendered from the active sandbox mode, never a
+     constant.
+  4. **Prompt diet**: move "why" prose to module docstrings (where this
+     codebase already keeps it well), keep rules imperative and short, one
+     example per format; budget each role's static prompt (chars) in the
+     KPI JSON so growth is visible. Target: no role prompt above ~6k chars
+     without a measured reason.
+- **Frontier validation**: "remove tools instead of forbidding them" is a
+  top-20 research recommendation (plan mode exposes read-only tools only,
+  R12); Cline's "Compact Prompt" is its maintainers' recommendation for
+  local models (R7); hooks-over-prompts for invariants because small-model
+  prompt compliance is weaker (R13).
+- **Impact**: removes a *cause* of A3 rather than another repair layer; the
+  prompt diet is the cheapest prefill cut available. **Effort**: S.
+
+#### Initiative M (made concrete): the model-profile contract, step by step
+Appendix 1's M is NOT STARTED and is still the highest-leverage local-model
+item. Concrete scope, ordered so each step is independently shippable:
+  1. **Probe-time capability detection** (extend the existing fitness/window
+     probes; `models/fitness.py` is currently unwired — G3): one forced
+     trivial tool call (does it parse natively?), one `response_format:
+     json_schema` request (does the server honour schema-constrained
+     decoding? llama.cpp converts JSON Schema→GBNF; vLLM/SGLang have
+     guided decoding — R14), one `cached_tokens`/`timings.cache_n` read
+     (does the server report prefix-cache hits?), effective context vs
+     configured (Ollama's VRAM-based default is the #1 silent local failure
+     — R6). Record all four in the run's profile and in `loop.sh ready`.
+  2. **Control-plane enforcement where the probe says yes**: send the
+     response schema as `response_format` (json_schema) for the answer tool
+     of every *structured* stage (intake, spec sections, plan, reports,
+     review verdicts, finish signal) — never for file bodies (O.1
+     amendment stands). Where the probe says no, keep the forced-tool
+     strategy + the existing repair ladder. This retires the 59× one-char
+     truncation class (`settled_answer._repair_json`) at the source on
+     servers that support it.
+  3. **Sampling presets per family** sent per request (`temperature`,
+     `top_p`, `top_k`, `presence_penalty`, `seed` for reproducible
+     benchmarking) — today nothing is sent (G3), so behaviour depends on
+     server launch flags. Model-card values live in profile data.
+  4. **Reasoning policy per family and role** (N.1's prerequisite):
+     parameter name + budget + history policy (strip/keep) in the profile;
+     N.1 ships when the probe shows the owner's server honours a budget.
+  5. **Arg-fit/hallucination map as profile data** (unchanged from
+     Appendix 1).
+  6. **Quantization advisory** (new, R5): the profile records the served
+     quant when the server exposes it (llama.cpp `/props`); `loop.sh
+     ready` warns when the *tool-calling* model is ≤4-bit (research: INT4
+     doubles out-of-list tool names while scores stay flat; community
+     reports of Q4 Qwen3.6 breaking tool JSON/diffs past ~30k context) and
+     the KPI JSON tracks the out-of-list tool-name rate so the owner can
+     see the effect on their own hardware. Advisory only — the model is the
+     owner's.
+- **Effort**: M total; steps 1–3 are each S–M and can land one at a time.
+
+#### Initiative Y: Edit-ACI calibration — pick the edit format per model from a replay bench, not by argument
+- **Reasoning**: Appendix 1 demoted `replace_lines` (P.1, 62% failure) and
+  kept `edit_artifact` + whole-file rewrite; the repair chain in
+  `tools/repository.py` records that of 330 failed edits, 294 were on a
+  file the stage had *already read* — "reproducing bytes from context is
+  the hard part" — and that transcription repair had reached its limit
+  (7/75 on replay). So the remaining question is empirical per model: at
+  what file size does whole-file beat SEARCH/REPLACE for *this* model at
+  *this* quant? Aider answers it with a per-model edit-format table and a
+  separately-reported well-formed-edit rate (R8); Devin's lesson was that a
+  small model rewriting a whole file from a markdown explanation beat a
+  large model emitting a diff (R15).
+- **Mechanism**:
+  1. **Replay corpus**: the transcript archive already holds every failed
+     and successful edit with the file state; extract (file, intended
+     change, model, outcome) into a fixture set (no run ids in code; the
+     corpus is data under `benchmarks/edits/`).
+  2. **Calibration run** per profile: well-formed rate and
+     applied-correctly rate for whole-file vs SEARCH/REPLACE vs (optional)
+     line-range, bucketed by file size; the profile records the crossover
+     size and the harness picks the format per edit from it. Default for an
+     unprofiled model: whole-file under the crossover, SEARCH/REPLACE above
+     only once its well-formed rate is ≥95% (research #8).
+  3. **Architect/editor split as a profile option**: the strong (judgement)
+     model writes the change as prose + target lines; the local model
+     applies it as a whole-file rewrite — Aider's `--architect` /
+     `--editor-model` (R8). Bench-gated like everything else.
+  4. **KPI**: well-formed-edit rate per tool per model is a first-class
+     line in the KPI JSON (W.4).
+- **Impact**: converts the biggest single tool-failure class into a
+  measured, per-model setting; also the prerequisite for any claim about
+  "local models can't edit". **Effort**: M.
+
+#### Initiative Z: Compaction that keeps state — mask first, summarise with a template, reset at boundaries
+- **Reasoning**: Compaction today is deepagents' `SummarizationMiddleware`
+  with the *run's own model* as summariser at 0.8×ceiling, args truncated
+  first (`role_agent.py:385-411`), library default summary prompt. On a
+  prefill-bound local server, summarising ~55k tokens is itself a long
+  decode, and JetBrains measured LLM summarisation *lengthening*
+  trajectories 13–15% versus simply masking old observations, which halved
+  cost at equal solve rate (R9). OpenHands' condenser reports up to 2×
+  per-turn cost reduction but is event-sourced and replayable (R11).
+  Anthropic found context *resets* with handoff files necessary even for
+  frontier models (R2); the Ralph loop's whole premise is fresh context per
+  feature with state in files (R16). This harness already has fresh
+  conversations per stage and work orders on disk — the pieces of a reset
+  design — but compacts *within* a stage by summarising.
+- **Mechanism**:
+  1. **Observation masking before summarisation**: replace old tool
+     *results* (not calls) with one-line stubs ("read src/app.js, 212
+     lines, unchanged since") once they are older than N turns — the
+     digest's "already known" block (R) supplies the facts. Summarise only
+     when masking is not enough.
+  2. **Structured summary template** when summarising: files touched,
+     decisions, failing tests, open items, next step — written "for the
+     model that resumes" (Codex framing, Appendix 1 O.4); re-inject the
+     active work order + the N most recently modified paths after
+     compaction.
+  3. **Reset instead of compact** for build stages: when a specialist's
+     context crosses the trigger mid-work-order, end the stage with a
+     handoff note (same shape as 2) and restart it on a fresh conversation
+     with the note — the harness's existing restart path, used
+     deliberately. Profile knob; A/B against in-stage summarisation on the
+     W baseline.
+  4. **Summariser routing**: the compaction model is already a policy
+     field; set it to the cheapest adequate model (Aider `--weak-model`,
+     R8) rather than the build model by default.
+- **Impact**: cuts the second-largest decode cost per stage and attacks
+  context rot at its root; makes compaction events replayable in the KPI
+  log. **Effort**: M. **Constraint (Antigravity, O.4) stands**: trigger
+  stays 0.75–0.80; this initiative changes *what happens* at the trigger,
+  not where it is.
+
+---
+
+### Part 8 — Throughput without quality loss (P1)
+
+#### Initiative AA: Prefix-cache layout — stable first, volatile last, measured every call
+- **Reasoning**: Project memory is spliced into the *opening* human message
+  and rewritten from disk on every call, up to 30% of the window
+  (`project_memory.py:312-321`): any file write changes the first message,
+  so the server's prefix cache misses for the whole history on the next
+  call — and it pushes the brief itself behind ~30k tokens (G2). Meanwhile
+  the byte-stable environment contract and the digest are appended *after*
+  the growing history (`environment_contract.py:253`,
+  `workspace_digest.py:526`), so the stable block is re-prefilled every
+  turn. Mid-stage tool-list changes (settled-answer withholding,
+  research-share cap) change the prefix too (G4). This is the inverse of
+  O.3's rule, and it is the harness-controlled part of the 45–73% cache
+  hit rate measured in Appendix 1. Nothing reads `cached_tokens` (G3).
+- **Mechanism**:
+  1. Layout: `[system prompt + tool schemas] [environment contract]
+     [project memory snapshot, byte-stable for the stage] [brief/work
+     order] … history … [digest + already-known block, volatile]`.
+     Memory updates land in the digest tail during a stage and roll into
+     the stable snapshot at the next stage boundary.
+  2. Mask, don't remove: withholding sets a one-line instruction and
+     returns a refusal from the tool; the schema list stays constant
+     within a stage (Manus; R17).
+  3. KPI: `cached_tokens` share per call and per stage in the KPI JSON
+     (W.4), with the layout change A/B'd on the baseline.
+- **Frontier validation**: "keep system prompt + tool schemas + rules
+  byte-identical; put volatile content at the end" is the research's #13
+  recommendation and Manus's stated most-important production metric (R17);
+  Cline measured −15% tokens/request just from moving tool definitions into
+  API parameters (R7).
+- **Impact**: on a prefill-bound server with 31:1 input:output, a 20-point
+  cache-hit gain is worth more wall-clock than any decode speed-up the
+  owner could buy. **Effort**: S–M.
+
+#### Initiative AB: Honest parallelism — fan-out equals server slots
+- **Reasoning**: `HARNESS_MAX_PARALLEL=6` by default; a per-workspace command
+  lock serialises every sandbox command (`sandbox.py:3732`);
+  `fix_by_candidates` fires 3× the file count of concurrent model calls
+  (`rewritten_fixes.py:278`); the owner's server has one slot. Measured
+  overlap 1.0–1.3× (F10). Against one slot, fan-out is queueing plus
+  KV-cache thrash from interleaved prefixes (G23).
+- **Mechanism**: default `max_parallel` = slots from `/props` (S already
+  reads it), cap candidate fan-out by the same number, and gate the
+  parallel/linear toggle's *recommendation* in the UI on the measured
+  slot count (the toggle itself stays — owner feature). Keep the
+  per-workspace command lock (it is correct) but document it as the reason
+  parallel mode cannot overlap sandbox work.
+- **Frontier validation**: Cursor's 8-way parallel agents and Codex
+  threads assume cloud concurrency; the research's adapt note is explicit
+  that on a single local GPU best-of-N costs throughput and belongs only
+  at the planning stage (R18). **Effort**: S.
+
+#### Initiative AC: Deterministic gating of review/testing model calls, and check caching
+- **Reasoning**: Thorough mode runs a judgement-model testing agent every
+  round although the fast "harness round" gathers the same measurements;
+  architecture and milestone reviews run when the harness found no
+  breakage and the suite is green; `what_the_files_already_prove` (49
+  checks) is recomputed several times per round with no cache (G24).
+  Anthropic found its evaluator "unnecessary overhead" for tasks within the
+  generator's ability (R2) — the inverse holds for local models (more
+  lift), so the right move is not to drop reviews but to *gate* them on
+  deterministic signals and cache the deterministic part.
+- **Mechanism**: (1) test-round report built procedurally from JUnit (Q.2)
+  in both modes; the model narrates only when the procedural queue is
+  non-empty; (2) reviews run on a diff-since-last-accepted basis with
+  skip-when-nothing-relevant-changed (verify the existing conditional
+  security/advice skips are reached); (3) memoise whole-workspace checks
+  on the workspace tree hash within a round. **Effort**: S–M.
+
+---
+
+### Part 9 — Release-integrity residuals (P0/P1)
+
+#### Initiative AD: Measure at settlement — the mirror of L.3
+- **Reasoning**: `_settle_the_fix` (`workflow.py:8895-8960`) marks a defect
+  fixed when the fixer names a test and no blocker; `verified_by` — what
+  the execution ledger confirms ran and passed — is an info log that
+  "does not gate the transition". `after_a_fix` reverts a fix that broke
+  *other* tests, but nothing checks that the defect's *own* tests pass
+  until the next round, which then counts it as another failed attempt.
+  The rewrite fixers hard-code the regression-test string
+  (`rewritten_fixes.py:207,306`) and `fix_by_candidates` keeps a candidate
+  when the check could not run (`:296`) (G19). Yet `_the_defect_s_tests_pass`
+  (`workflow.py:2615`) exists and L.3 runs it at dispatch. This is the last
+  place in the loop where the model's self-report stands in for a
+  measurement — and the research's single strongest multi-agent finding is
+  that verification must check the *requirement*, not just "does it compile"
+  (R4), with the evaluator separate from the generator (R2/R3).
+- **Mechanism**: a defect closes only on a green `_the_defect_s_tests_pass`
+  probe at settlement; a red probe records the attempt as failed
+  immediately (saving a round); a probe that cannot answer keeps today's
+  behaviour but is counted in the KPI JSON. `fix_by_candidates` treats
+  "could not run" as not-passed. Keep the fixer's named test as narrative
+  only. **Effort**: S. **Impact**: closes the self-report hole and
+  shortens every treadmill by one round.
+
+#### Initiative AE: One "cannot pass" list; gaps completeness; release re-checks
+- `acceptance_nodes.py:376-401` (18 checks) vs `:1141-1153` (11): repaired
+  tests re-enter through the shorter list, so a test only the long list
+  catches can be locked and later charged to the product (G20) → one
+  function, both call sites. `completion_gaps` never receives fast-mode
+  findings recorded as risks, escalation `known_issues`, or defects
+  accepted as risk, and release does not re-run compiler/dependency-drift/
+  integration checks (G25) → add the three sources; run the deterministic
+  checks once more at release and record them in the evidence page (J.5).
+  **Effort**: S.
+
+#### Initiative AF: Suite-strength probe — mutation testing the locked suite
+- **Reasoning** (logs.md §2; `agents/testability.py` docstring already
+  argues it: "a mutation has to change what a function DOES"): criterion
+  coverage is checked by `[AC-n]` tags in test names, which proves a label
+  exists, not that the test fails when the behaviour is absent. A suite
+  that cannot fail is the vacuous-green class J.1 could not see.
+- **Mechanism**: at lock time, for a sample of criteria, apply one
+  deterministic behavioural mutation to the product's pure logic (return
+  first argument / invert a comparison / drop a branch — language-agnostic
+  AST edits via the existing tree-sitter/language-service layer) and
+  require at least one locked test to fail; a criterion whose tests survive
+  every mutation is a suite defect routed to the acceptance author with the
+  surviving mutant as evidence. Stack-specific mutation operators are pack
+  data (K.6). **Effort**: M. **Impact**: the first *independent* measure of
+  suite strength; feeds `completion_gaps` when sampling cannot run.
+
+#### Initiative AG: Capability tiers at intake (the honest language-agnostic claim)
+- 35 packs, but only two declare `entrypoints` for K.3; ten service packs
+  have empty `check_families`; dependency-drift covers JS/TS+Python only;
+  the compiler check is a silent no-op without a toolchain; no pack for
+  Kotlin/Swift/Dart/Elixir/Scala/C++; the bench corpus is JS+Python (G16).
+  Until K.6 lands, intake should classify the chosen stack as
+  *pack-supported / custom (agents supply setup + test contract) /
+  unverified*, show the tier on the run card and in the release evidence,
+  and have the stack selector prefer a pack-supported stack when the brief
+  allows (logs.md §3). Each pack's verification coverage becomes a
+  one-line declared field so the UI can render it. **Effort**: S (tiering)
+  + the K.6 work it motivates.
+
+#### Initiative AH: Promises that match guarantees — cost cap, retention/deletion, reviewer completeness
+(from the external review, `docs/logs.md` §4–§6; none covered by Appendix 1)
+- **Cost cap**: `_budget_exceeded` compares only priced spend; unpriced
+  calls do not count toward `MAX_RUN_COST_USD`. Label the cap "known spend
+  only" in UI and run record, and offer an independent hard bound (max
+  model calls / max tokens) that *is* enforced. **S**.
+- **Retention/deletion contract**: `delete_run` removes uploads, workspace,
+  checkpoints and events but not the transcript or the durable object-store
+  copy of an upload; define what delete removes, what is retained for audit
+  and for how long, and make transcripts part of it (extends U.4). **S–M**.
+- **Reviewer completeness**: a configured judgement model that fails to
+  build silently falls back to the default model; the security reviewer's
+  source is capped at 24k chars without a completeness report. Record the
+  downgrade as a completion gap, and have every review emit reviewed/skipped
+  file lists. **S**.
+- **Run-readiness check before model calls** (logs.md §1): `loop.sh ready`
+  covers the model; add command-execution readiness (sandbox mode available,
+  runtime reachable) and label a deployment with execution disabled as
+  planning-only. **S**.
+
+---
+
+### Part 10 — Cross-run learning (P2)
+
+#### Initiative AI: Structured, provenance-tagged lesson store
+- **Reasoning**: Cross-run memory was dropped once over prompt-injection
+  risk; the only survivor is `scripts/loop/lessons.py`, a human-driven
+  proposer. The old plan's Tier-1 #2 (deterministic distillation into pack
+  knowledge) is still open. Every frontier harness now has some form of
+  it: Claude Code auto-memory/CLAUDE.md, Codex AGENTS.md layering, OpenHands
+  microagents, Cursor memories; Anthropic's guidance is plain markdown
+  navigated with file tools (R19); the research recommends a `LESSONS.md`
+  the reviewer appends to and the planner reads (R19).
+- **Mechanism**: lessons are *schema-validated records*, not prose:
+  `{stack, role, trigger (tool+error shape), rule (≤2 lines), evidence
+  (count of runs), source: harness|operator}`; produced by `lessons.py`'s
+  grouping (≥MIN_RUNS) and confirmed by a person or the judgement model;
+  injected by the existing plugin middleware per stack and role, capped per
+  stage, byte-stable (AA). Operator-authored rules carry provenance and can
+  be disabled per run; nothing agent-written reaches a prompt without the
+  confirmation step. **Effort**: M.
+
+---
+
+### Part 11 — UI/UX, second pass
+
+**Corrections to Appendix 1 Part 4 (from the code, G7–G11):**
+- "Mid-run steering via the existing dynamic-instruction-injection hook" —
+  that hook is `plugins/middleware.py`, which injects *framework* guidance
+  per stack; there is **no** user→run instruction path and the WebSocket is
+  read-only. Steering needs a backend enabler: a per-run steering queue, a
+  middleware that appends the operator's note as a trailing message at the
+  next stage boundary (AA-compatible), and an event in the log so the
+  timeline shows it (Copilot "mission control", R20).
+- "Artifact versioning + diff viewer (artifacts already track revision)" —
+  `server/runs.py:1704-1713` hard-codes `revision=1`. The real history is
+  the workspace git log (every stage commits); expose per-path commits and
+  diffs from it first.
+- Concurrent commit `3435fb0` landed most of Phase 1's accessibility items
+  (455→5 axe violations, `scripts/ui/axe_measure.mjs`). Still open from
+  Phase 1: toast/dialog primitives (17 native `alert/confirm`), modal
+  role/focus trap, title/favicon badges + browser Notifications,
+  stale-while-error dashboard, WS→poll fallback, hidden-tab polling pause,
+  log virtualization + buffer cap, `waiting_for_budget` styling,
+  "Documents N produced" counting code files, dead code (`wizardData.ts`
+  694 lines, `DynamicWorkflowUI.tsx`, `App.css`, template assets).
+- API/UI contract drift to fix in one pass (G11): `document_names` vs
+  `document_name`; `approval_timeout_minutes` absent from `RunStatusResponse`;
+  token counts/`reviews[]`/`remediation` typed but unrendered;
+  `delivery_mode`/`use_frontier_model`/`auto_approve` absent from the UI type;
+  missed refetch on `budget_pause`/`approval_denied`/`review_decision`;
+  stream never re-attached after `closed`; brownfield endpoints unreachable
+  from the UI; `createRun`→`startRun` failure orphans a run; 60-min token
+  with no refresh forces a reload mid-run. Add a generated TS client from
+  the FastAPI OpenAPI schema so this class cannot recur.
+
+**The design plan (what "great" looks like for this product).** The research
+on professional developers and agents is consistent: they "control the
+agents through planning and supervision", prefer collaboration over full
+delegation, and the main cost of delegation is maintaining enough
+understanding of work they did not write (R21). The UI's job is therefore
+*legibility of plan, evidence and diff*, not a prettier spinner. Every
+frontier product converges on the same six surfaces (R20): editable plan
+approval, live step timeline, mid-run steering, per-file diff review, live
+preview with versioned rollback, and ask-user notifications.
+
+1. **Plan-first intake (Phase 2, revised)**: brief (free text *and*
+   documents), capability tier shown as the stack is chosen (AG), ETA from
+   the forecast, then the *intake and specification as an editable plan*
+   with the acceptance criteria listed as the run's feature list
+   (`passes: false` until the suite proves them — R1). Approval is of the
+   plan, not of a form.
+2. **Run page = timeline + evidence + preview**: left, a virtualized
+   step timeline grouped by sprint/stage with the plain-English narration
+   (keep `lib/activity.ts`; move its regexes behind a typed event schema
+   so server format changes cannot break it silently); centre, the
+   artifact/diff pane (per-file diff from workspace git, accept/reject at
+   gates; Devin Review-style grouping and confidence labels — R20);
+   right, the criteria list flipping to pass with the test that proved it,
+   plus a live preview iframe of the acceptance server when the pack
+   declares a page surface.
+3. **Steering composer** (needs the enabler above): queue a note for the
+   next stage; show it in the timeline; show what the model did with it.
+4. **Gates that cannot be missed**: countdown from `approval_timeout_minutes`,
+   "waits indefinitely" when NULL, title/favicon badge, browser
+   Notification, one-tap approve from the run list and from a mobile-width
+   layout (runs parked 12–13 h in `awaiting_approval` were observed).
+5. **Cost/throughput cockpit**: spend (labelled "known spend"), model
+   calls, cache-hit %, prefill:decode, reasoning-lost replies, per stage —
+   straight from the KPI JSON (W.4) so the UI and the loop audit read the
+   same numbers.
+6. **Design system**: tokens (already started in `3435fb0`) → primitives
+   (Button/Card/Badge/Tabs/Dialog-with-focus-trap/Toast/Disclosure) →
+   light theme from the token layer → i18n extraction. Replace the 31 hex
+   literals and 115 raw slate/white classes as each screen is touched.
+7. **Resilience**: stale-while-error, reconnecting chip, WS→poll fallback,
+   hidden-tab pause, buffer cap; token refresh; orphan-run cleanup on
+   failed start.
+
+Sequencing: contract drift + Phase-1 remainder (days) → design-system
+primitives + run page (2–3 weeks) → plan-first intake + gates (1–2 weeks)
+→ steering + preview + cockpit (needs enablers; 2–4 weeks).
+
+---
+
+### Part 12 — Refactor evidence for Initiative V
+
+`build_workflow_graph` is one 3,672-line closure registering 46 nodes,
+string-routed through `_route_from_stage` on 35 of them;
+`_review_the_milestone` (463 lines) repeats its revise-or-escalate branch
+5×; `_run_gated_agent` (440) duplicates its failure block;
+`_closed_if_an_earlier_fix_resolved_it` repeats its close block 4×; two
+defect clusterers share scaffolding; `MAX_*` caps are read at import time;
+`settled_answer.py` keeps process-wide failure globals that parallel stages
+can read across (G6, G26). V's bounded refactor track should start with:
+(1) the per-stage failure carrier (correctness under parallel mode),
+(2) extracting the milestone-review and gated-agent branches into one
+function each (suite-proven, no behaviour change), (3) moving node
+registration to a table so routing is data. No rewrite; the external review
+and Appendix 1 agree a broad rewrite before a working bench gate is the
+wrong order.
+
+---
+
+### Appendix 2 sequencing
+
+| Priority | Items | Why |
+|---|---|---|
+| P0 | W (bench-brief rule, baseline runs, toggles via compose, KPI JSON), X (prompt-contract tests + four fixes), AD (measure at settlement), AE (one list; gaps sources) | Days each; W makes everything measurable, X/AD/AE close self-report and instruct-then-punish holes with deterministic code |
+| P1 | M steps 1–3 (probe, control-plane schema, sampling), AA (cache layout + KPI), AB (parallel = slots), AC (gating + check cache), AH (honest cap/retention/completeness/readiness), AG (tiers), UI contract drift + Phase-1 remainder | Local-model interface quality and the throughput levers; mostly S–M |
+| P2 | Y (edit calibration bench + architect/editor option), Z (mask-first compaction, reset at boundaries), M steps 4–6, AF (mutation probe), AI (lesson store), UI design system + run page | Need W's baseline to A/B; medium builds |
+| P3 | UI plan-first intake, steering (with enabler), preview, cockpit; Part 12 refactor track; K.6/U.1 as before | Differentiators and long builds |
+
+Cross-cutting rules unchanged: every mechanism at the contract/pack/profile
+level; stack-specific data in packs/profiles/seed; every change with a test
+that fails on the old code; no run ids in code or prompts.
+
+### Research citations (R-numbers; full notes in `docs/review-findings-wip.md` §13.6)
+R1 Anthropic, "Effective harnesses for long-running agents" (2025-11-26) ·
+R2 Anthropic, "Harness design for long-running apps" (≈2026-03-24) ·
+R3 Cognition, "Multi-agents: what's actually working" (2026-04-22) and
+"Don't build multi-agents" (2025-06-12) · R4 MAST, arXiv 2503.13657 ·
+R5 "Flat score, amplified failures", arXiv 2607.27275 · R6 Ollama context
+defaults (commit 0334ffa6, 2026-02) · R7 Cline v3.35 blog (2025-10-31),
+issues #7424/#10843/#13008 · R8 aider edit-format leaderboard + HISTORY ·
+R9 JetBrains Research, "The Complexity Trap", arXiv 2508.21433 ·
+R10 mini-SWE-agent README; SWE-bench mini-roulette · R11 OpenHands
+condenser docs; SDK paper arXiv 2511.03690 · R12 Claude Code best
+practices (plan mode) · R13 Claude Code hooks reference · R14 vLLM tool
+calling + structured outputs; llama.cpp function-calling.md (lazy
+grammars, PR #9639) · R15 Cognition edit-apply lesson (2025-06-12) ·
+R16 Huntley, Ralph loop (2025-07-14) · R17 Manus context engineering;
+Anthropic "Effective context engineering" (2025-09-29) · R18 Cursor 2.0
+changelog (2025-10-29) · R19 Anthropic memory-as-files guidance; research
+rec. (f) · R20 Jules docs/changelog, Devin Review (2026-01-21), Copilot
+mission control (2025-10-28), Lovable/Bolt/v0 version history ·
+R21 Huang et al., arXiv 2512.14012 (2025-12-16); "The Work Behind
+Delegation", arXiv 2609.24234.
+
+### Appendix 2 rows (Implementation Progress Ledger continuation)
+
+| Item | Priority | Status | Notes |
+|---|---|---|---|
+| W.1 bench-brief integrity rule | P0 | NOT STARTED | `brief_mismatch` tag; re-tag the three brief_low runs |
+| W.2 post-P0 baseline runs | P0 | NOT STARTED | Owner-operated; stage-1 benches, real briefs, fast + thorough |
+| W.3 toggles through compose + config unification | P0 | NOT STARTED | `x-app-env` passes every flag; SANDBOX_MEMORY_LIMIT one default; MODEL_CONTEXT_WINDOW/HARNESS_MAX_PARALLEL from `/props` |
+| W.4 per-run KPI JSON + cross-run ledger + regression flag | P0 | NOT STARTED | Wire `audit_run.py` identical-call measure into the loop; add the G15 missing counters |
+| W.5 ledger rows for Initiatives A–I; correct U.2 row | P0 | NOT STARTED | Process |
+| X.1 tool-name/offer test + four prompt fixes | P0 | NOT STARTED | product_manager, tools_models, specialists write rule, ui_ux tests rule |
+| X.2 verdict-semantics test (`blocked`) | P0 | NOT STARTED | Prompt vs routing table |
+| X.3 mode-rendered tool descriptions | P1 | NOT STARTED | Network/cwd/venv text from active sandbox mode |
+| X.4 prompt diet + prompt-size KPI | P1 | NOT STARTED | Rationale to docstrings; ≤~6k chars per role without measured reason |
+| M.1 probe-time capability detection | P1 | NOT STARTED | Wire `models/fitness.py`; tool-call parse, json_schema, cached_tokens, effective context |
+| M.2 control-plane `response_format` where supported | P1 | NOT STARTED | Never for file bodies (O.1 amendment) |
+| M.3 sampling presets per family | P1 | NOT STARTED | Profile data; `seed` for bench reproducibility |
+| M.4–M.6 reasoning policy, arg-fit map, quant advisory | P2 | NOT STARTED | M.6 advisory only; out-of-list tool-name KPI |
+| Y edit-ACI calibration bench + architect/editor option | P2 | NOT STARTED | Replay corpus under `benchmarks/edits/`; per-profile crossover size |
+| Z mask-first compaction, structured summary, reset-at-boundary knob | P2 | NOT STARTED | Trigger ratio unchanged (Antigravity O.4) |
+| AA prefix-cache layout + `cached_tokens` KPI | P1 | NOT STARTED | Memory/contract stable-first; digest last; mask-don't-remove tools |
+| AB parallel = server slots; fan-out caps | P1 | NOT STARTED | Toggle stays; recommendation gated on measured slots |
+| AC deterministic gating of reviews/test agent; check memoisation | P1 | NOT STARTED | Depends on Q.2 for the procedural test report |
+| AD measure at settlement | P0 | NOT STARTED | `_settle_the_fix` closes only on green `_the_defect_s_tests_pass`; `fix_by_candidates` unknown≠passed |
+| AE one cannot-pass list; gaps sources; release re-checks | P0 | NOT STARTED | Three new `completion_gaps` sources |
+| AF mutation probe for suite strength | P2 | NOT STARTED | Operators as pack data (K.6) |
+| AG capability tiers at intake + per-pack coverage field | P1 | NOT STARTED | pack-supported / custom / unverified |
+| AH.1 honest cost cap + independent hard bound | P1 | NOT STARTED | |
+| AH.2 retention/deletion contract incl. transcripts | P1 | NOT STARTED | Extends U.4 |
+| AH.3 reviewer completeness + judgement-model downgrade as gap | P1 | NOT STARTED | |
+| AH.4 execution-readiness check in `loop.sh ready` / run start | P1 | NOT STARTED | Planning-only label when execution disabled |
+| AI structured lesson store | P2 | NOT STARTED | `lessons.py` as proposer; schema-validated; confirmation step |
+| UI contract drift + Phase-1 remainder | P1 | NOT STARTED | Generated TS client from OpenAPI; items listed in Part 11 |
+| UI design system + run page (timeline/diff/criteria/preview) | P2 | NOT STARTED | Needs per-path git history endpoint |
+| UI plan-first intake + gates | P3 | NOT STARTED | Needs AG tier + `approval_timeout_minutes` in payload |
+| UI steering + cockpit | P3 | NOT STARTED | Needs steering enabler + KPI JSON |
+| Part 12 refactor track (V) | P3 | NOT STARTED | Per-stage failure carrier first (parallel-mode correctness) |

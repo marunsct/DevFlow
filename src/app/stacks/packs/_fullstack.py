@@ -380,8 +380,13 @@ async def the_page(request: Request, call_next):
 
 UNIT_TESTS = """// Kept by the harness: `npm test` runs the page's unit tests and the service's,
 // and writes one report. Run it as it is.
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+//
+// A runner that has written its final report is done, even when something it
+// started keeps the process alive - an open database thread, a timer. Each one
+// is ended once its report is complete and has stopped changing, and its
+// result is read from the report.
+import { spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 
 mkdirSync('test-results', { recursive: true });
 const parts = [
@@ -392,14 +397,59 @@ const parts = [
   ['test-results/unit-service.xml', %(python)s,
     ['-m', 'pytest', 'tests', '-q', '--junitxml=test-results/unit-service.xml'], 5],
 ];
+// How long a complete report must stay unchanged before its runner is ended.
+const SETTLED_MS = 3000;
+
+const complete = (report) => {
+  if (!existsSync(report)) return false;
+  const text = readFileSync(report, 'utf8').trimEnd();
+  return text.endsWith('</testsuites>') || text.endsWith('</testsuite>');
+};
+
+const failedIn = (text) =>
+  [...text.matchAll(/<testsuite\\b[^>]*>/g)].some((tag) =>
+    /\\b(?:failures|errors)="([1-9]\\d*)"/.test(tag[0]));
+
+// The runner in progress, ended with this script if the harness stops it.
+let active = null;
+const endActive = () => { if (active) { try { process.kill(-active.pid, 'SIGKILL'); } catch {} } };
+for (const signal of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+  process.on(signal, () => { endActive(); process.exit(1); });
+}
+process.on('exit', endActive);
+
+const runOne = (command, args, report) => new Promise((resolve) => {
+  // Its own process group, so ending it ends whatever it started too.
+  const child = spawn(command, args, { stdio: 'inherit', detached: true });
+  active = child;
+  let lastChange = 0;
+  let lastSize = -1;
+  let ended = false;
+  const watch = setInterval(() => {
+    if (!complete(report)) return;
+    const size = statSync(report).size;
+    if (size !== lastSize) { lastSize = size; lastChange = Date.now(); return; }
+    if (Date.now() - lastChange >= SETTLED_MS) {
+      ended = true;
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
+    }
+  }, 250);
+  child.on('error', () => { clearInterval(watch); resolve({ status: 127, ended: false }); });
+  child.on('exit', (status) => { clearInterval(watch); active = null; resolve({ status, ended }); });
+});
+
 let failed = false;
 const suites = [];
 for (const [report, command, args, none] of parts) {
   rmSync(report, { force: true });
-  const run = spawnSync(command, args, { stdio: 'inherit' });
-  if (run.status !== 0 && run.status !== none) failed = true;
+  const run = await runOne(command, args, report);
   if (!existsSync(report)) { failed = true; continue; }
   const text = readFileSync(report, 'utf8');
+  if (run.ended) {
+    if (failedIn(text)) failed = true;
+  } else if (run.status !== 0 && run.status !== none) {
+    failed = true;
+  }
   suites.push(...(text.match(/<testsuite[\\s>][\\s\\S]*?<\\/testsuite>/g) || []));
 }
 writeFileSync('test-results/unit.xml', `<?xml version="1.0" encoding="UTF-8"?>\\n<testsuites>\\n${suites.join('\\n')}\\n</testsuites>\\n`);

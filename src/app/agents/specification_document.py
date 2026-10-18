@@ -37,6 +37,7 @@ _SECTIONS: tuple[tuple[str, str], ...] = (
     ("deployment", "Deployment"),
     ("acceptance_criteria", "Acceptance Criteria"),
     ("interface_design", "Interface Design"),
+    ("interface_contract", "Interface Contract"),
     ("file_plan", "File Plan"),
     ("function_contracts", "Function Contracts"),
     ("data_contracts", "Data Contracts"),

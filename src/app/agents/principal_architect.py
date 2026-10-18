@@ -176,6 +176,21 @@ class TechnicalSpecificationOutput(BaseModel):
             "accessibility, and the visual style - from the UI/UX advice adopted."
         ),
     )
+    # Plan items C and J.3 (owner decision 2026-10-18): the interface as lines
+    # the harness can check without a model. Recorded when the acceptance
+    # suite is locked and checked at release (`app.acceptance.interface_contract`).
+    interface_contract: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The product's interface as exact checkable lines, each starting with the criterion "
+            "it serves, in one of three forms: `AC-3 GET /api/notes -> 200` (a route, the method, "
+            "and the status it answers a bare request with), `AC-1 page /login textbox \"Email\"` "
+            "(a control's ARIA role and accessible name on a page a visitor opens directly), and "
+            "`AC-5 command notes add milk -> exit 0` (a command and its exit code). Use the same "
+            "paths and names as the routes, pages and commands above; the acceptance tests and the "
+            "release check use exactly these."
+        ),
+    )
     specialist_advice_decisions: list[str] = Field(
         default_factory=list,
         description=(

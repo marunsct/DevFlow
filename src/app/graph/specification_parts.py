@@ -31,7 +31,7 @@ PARTS = (
     ("domain_model", "data_flows", "function_contracts", "implementation_order"),
     ("error_catalogue", "security_and_privacy", "reliability_and_observability", "configuration"),
     ("testing", "test_cases", "acceptance_criteria", "deployment", "interface_design",
-     "specialist_advice_decisions", "open_questions"),
+     "interface_contract", "specialist_advice_decisions", "open_questions"),
 )
 
 #: What the architect's request says, in fast delivery.

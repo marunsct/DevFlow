@@ -314,6 +314,10 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     from app.acceptance.mutation import what_the_suite_does_not_notice
 
     gaps.extend(what_the_suite_does_not_notice(root))
+    # Plan items C and J.3: the architect's contract, checked without a model.
+    from app.acceptance.interface_contract import what_the_contract_checks_find
+
+    gaps.extend(what_the_contract_checks_find(root))
     if gaps:
         update["completion_gaps"] = gaps
     # What someone who did not write it needs to test and ship it, from the

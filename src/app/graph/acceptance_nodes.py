@@ -293,6 +293,7 @@ def acceptance_author(state: Any, config: RunnableConfig, ctx: Context) -> dict[
         root, criteria, _stack(state), feedback=feedback, change_requests=suite.change_requests(root),
         brief=getattr(state.get("document"), "text", "") or "",
         testability=_the_testability_advice(state),
+        interface_contract=getattr(state.get("technical_specification"), "interface_contract", None) or (),
     )
     update = _run_gated_agent(
         state, config,
@@ -468,6 +469,9 @@ def acceptance_review(state: Any, config: RunnableConfig, ctx: Context) -> dict[
                 return _handing_on(**update, stage="acceptance_author", acceptance_feedback=findings)
 
     suite.lock(root)
+    from app.acceptance.interface_contract import record_at_lock
+
+    record_at_lock(root, getattr(state.get("technical_specification"), "interface_contract", None) or ())
     from app.graph.engineering import suite_locked
 
     suite_locked(root)

@@ -120,6 +120,19 @@ def _a_test_that_ran_here(repo_root: str | Path, acceptance_dir: str) -> str:
     )
 
 
+def _the_interface_contract(lines: Sequence[str]) -> str:
+    """The architect's interface contract as a section of the brief, or "" when there is none."""
+    kept = [" ".join(str(line).split()) for line in lines or () if str(line).strip()]
+    if not kept:
+        return ""
+    return (
+        "--- The interface contract ---\n"
+        + "\n".join(f"- {line}" for line in kept)
+        + "\nThe architect fixed these routes, page controls and commands, and the release checks "
+        "each one. Where a test reaches one, it uses exactly this path, role and name.\n\n"
+    )
+
+
 def build_author_request(
     repo_root: str | Path,
     criteria: Sequence[Criterion],
@@ -128,6 +141,7 @@ def build_author_request(
     change_requests: dict[str, str] | None = None,
     brief: str = "",
     testability: Sequence[str] = (),
+    interface_contract: Sequence[str] = (),
 ) -> dict[str, list[dict[str, str]]]:
     """The QA stage's brief: write the acceptance suite before anything is built.
 
@@ -183,6 +197,7 @@ def build_author_request(
         f"{_a_test_that_ran_here(repo_root, acceptance_dir)}"
         + (f"--- The brief, as the customer wrote it ---\n{brief.strip()[:BRIEF_CHARS]}\n\n" if brief.strip() else "")
         + _the_names_the_brief_gives(brief)
+        + _the_interface_contract(interface_contract)
         + "--- What to build them against ---\n"
         "Where the brief states the interface - the labels on controls, endpoints, commands, "
         "names - the tests use exactly those words: they are what the customer will check. "

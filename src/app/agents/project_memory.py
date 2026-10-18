@@ -324,6 +324,28 @@ def _with_memory(messages: list[Any], memory: str) -> list[Any] | None:
     return None
 
 
+def changes_since(snapshot: dict[str, str], now: dict[str, str]) -> str:
+    """A note naming what changed since the memory was taken, for the end of a call; "" if nothing did.
+
+    The memory is taken once per stage visit and kept byte for byte (see the
+    middleware), so a server's prefix cache holds across the visit; what a
+    write changed after that is named here, at the end, where it changes
+    nothing before it. A read of a changed file returns the file.
+    """
+    changed = sorted(path for path, text in snapshot.items() if path in now and now[path] != text)
+    gone = sorted(path for path in snapshot if path not in now)
+    added = sorted(path for path in now if path not in snapshot and not _RECORDS.match(path))
+    lines = []
+    if changed:
+        lines.append("Changed since the project memory was taken (read for the current text): "
+                     + ", ".join(f"{p} ({len(now[p].splitlines())} lines now)" for p in changed[:40]))
+    if added:
+        lines.append("New since then: " + ", ".join(added[:40]))
+    if gone:
+        lines.append("Deleted since then: " + ", ".join(gone[:40]))
+    return ("[Project memory update]\n" + "\n".join(lines)) if lines else ""
+
+
 def build_project_memory_middleware(repo_root: str) -> Any:
     """Middleware that hands each call the project memory, and answers a read of what it already holds."""
     from langchain.agents.middleware import AgentMiddleware
@@ -335,6 +357,12 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             super().__init__()
             self._held: dict[str, str] = {}
             self._first_held: dict[str, str] = {}
+            # The memory as this visit's first call rendered it, kept byte for
+            # byte: rendered again on every call it changed with every write,
+            # at the very start of the conversation, and the server's prefix
+            # cache missed for everything after it on the next call.
+            self._snapshot: str | None = None
+            self._snapshot_files: dict[str, str] = {}
 
         def wrap_model_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
             messages = getattr(request, "messages", None)
@@ -343,7 +371,10 @@ def build_project_memory_middleware(repo_root: str) -> Any:
             try:
                 opening = next((str(getattr(m, "content", "") or (m.get("content") if isinstance(m, dict) else ""))
                                 for m in messages), "")
-                memory, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                if self._snapshot is None:
+                    self._snapshot, self._held = render(repo_root, budget_for(getattr(request, "model", None)), opening)
+                    self._snapshot_files = dict(current(repo_root))
+                memory = self._snapshot
                 # Each file as this visit first held it, so a read of one that
                 # changed since - by this stage's own edit - is answered with
                 # the file, not "it has not changed since the start".
@@ -356,6 +387,9 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                         remember(held_path, held_content)
                 changed = _with_memory(messages, memory) if memory else None
                 if changed is not None:
+                    note = changes_since(self._snapshot_files, current(repo_root))
+                    if note:
+                        changed = [*changed, {"role": "user", "content": note}]
                     request = request.override(messages=changed)
             except Exception:  # noqa: BLE001 - the stage reads for itself
                 logger.debug("Could not hand the project memory to a call", exc_info=True)

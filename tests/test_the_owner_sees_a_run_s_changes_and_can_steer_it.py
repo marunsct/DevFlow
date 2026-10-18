@@ -152,6 +152,6 @@ def test_an_agent_cannot_write_into_the_workspace_s_history(tmp_path):
     (tmp_path / ".harness").mkdir()
     (tmp_path / ".git" / "hooks").mkdir(parents=True)
 
-    with pytest.raises(RepositoryToolError, match="version history"):
+    with pytest.raises(RepositoryToolError, match="which a tool fills"):  # the guard that already covered `.git/`
         write_approved_artifact(tmp_path, ".git/hooks/pre-commit", "#!/bin/sh\necho run\n")
     assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()

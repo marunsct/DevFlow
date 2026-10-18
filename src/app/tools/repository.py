@@ -6298,12 +6298,6 @@ def write_approved_artifact(
         raise RepositoryToolError(
             f"Refusing to write '{relative_path}': the path matches a credential file pattern."
         )
-    if ".git" in target.relative_to(artifact_root).parts:
-        # The workspace's history is the harness's: a hook written there runs
-        # in the next commit the harness makes (Initiative AO.8).
-        raise RepositoryToolError(
-            f"Refusing to write '{relative_path}': the workspace's version history is not the product's."
-        )
     locked = _the_harness_s_own_or_the_locked_suite(artifact_root, target)
     if locked is not None:
         raise RepositoryToolError(locked)

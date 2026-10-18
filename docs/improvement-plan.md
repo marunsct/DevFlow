@@ -2235,7 +2235,7 @@ Effort → Depends on.
 - **Effort**: S–M. **Depends on**: nothing; do before W.2 so the baseline
   is measured correctly.
 
-#### Initiative AO: Lifecycle correctness of today's medium items (bundle)  **[AO.1, AO.2 DONE 2026-10-19; AO.3-AO.10 open]**
+#### Initiative AO: Lifecycle correctness of today's medium items (bundle)  **[AO.1-AO.4, AO.6-AO.8 DONE 2026-10-19; AO.5, AO.9, AO.10 PARTLY]**
 One commit each, in this order; all S:
 1. **AD edge cases (H27)**: `skipped` ≠ failed for the defect's own tests;
    unit fallback scoped to tests whose names/paths match the defect's
@@ -2307,7 +2307,7 @@ One commit each, in this order; all S:
   pointer form. **Acceptance**: build-stage identical-read rate <10% on the
   second baseline run. **Effort**: S + measurement.
 
-#### Initiative AR: Lost replies — the owner's biggest time lever, measured properly
+#### Initiative AR: Lost replies — the owner's biggest time lever, measured properly  **[SCRIPT DONE; run waits for a free server]**
 - **Evidence (H15)**: 37 lost replies ≈40% of the medium run's output; the
   owner's llama server reports no reasoning tokens, so N.1 (a per-request
   thinking budget) waits on proof the server honours one.
@@ -2322,7 +2322,7 @@ One commit each, in this order; all S:
 - **Acceptance**: lost-reply share on the next thorough run below 10% of
   output tokens, or a documented "server ignores budgets" result closing N.1.
 
-#### Initiative AS: Steering v2 (the backend half of the UI composer)
+#### Initiative AS: Steering v2 (the backend half of the UI composer)  **[DONE 2026-10-19]**
 - **Evidence (H3, H33)**: notes reach the system prompt end; no event, no
   acknowledgement, no scope, box shown while paused.
 - **Steps**: (1) `steering_applied` event the first time a note reaches a
@@ -2331,7 +2331,7 @@ One commit each, in this order; all S:
   `steering_notes`; (5) a banned-word test for the injected header.
 - **Effort**: S. **Depends on**: typed events (15.5).
 
-#### Initiative AT: Lessons v2 (trust boundary for agent-derived text)
+#### Initiative AT: Lessons v2 (trust boundary for agent-derived text)  **[DONE 2026-10-19]**
 - **Evidence (H29)**: owner approval is the only gate; the file sits on an
   agent-writable volume; `role` unused; no injection framing.
 - **Steps**: (1) store lessons in the harness DB (or sign the JSON with the
@@ -2353,7 +2353,7 @@ One commit each, in this order; all S:
   resolved from the suite's own fixtures or marked unchecked. **Effort**: M.
   **Depends on**: K.6.
 
-#### Initiative AV: AJ completion — tests that cannot hang the worker
+#### Initiative AV: AJ completion — tests that cannot hang the worker  **[DONE 2026-10-19]**
 - **Evidence (H13)**: only the "report printed, process lingers" half
   landed (`2f68304`, `4abd460`); the `NullPool` / `engine.dispose()`
   fixture seeding for Python packs and timeout stdout diagnostics are open;
@@ -2672,21 +2672,21 @@ owner's.
 | AN measurement correctness | P0 | DONE 2026-10-19 (`f724c00`, `804e29a`) | Guard words searched at both ends; effective-input prefill ratio; reasoning, lost-reply share and invalid-call counters; a block per stage; orphan gaps apart; ledger floors, 0-to-n, same-benchmark window, atomic writes; `loop.sh kpi` atomic, `lessons` gets every argument; W.1 compares normalised text with a similarity. Not counted (no event to count them from): phantom write claims, compactions, prompt chars per role |
 | AO.1 AD edge cases | P0 | DONE 2026-10-19 (`094fbfd`) | Skipped is neither failure nor proof; unit tests scoped to the defect's files; tests use the real separator. Also (`9e4c056`): a criterion the locked suite measured green needs no named regression test, and a fix stage that spends its calls is recorded from its writes instead of started over twice more |
 | AO.2 M.1 fail-closed semantics | P0 | DONE 2026-10-19 (`dc31ad0`) | A slot below the floor is the window (warned once); a server with no `/props` is noted once |
-| AO.3 E split parts | P1 | NOT STARTED | H25 |
-| AO.4 X.3 on 3.13 + CI matrix | P1 | NOT STARTED | H20 |
-| AO.5 AE reopen precision | P1 | NOT STARTED | H26 |
-| AO.6 K.2 DATA_DIR for every pack + seed text | P1 | NOT STARTED | H19 |
-| AO.7 AH.3 persisted downgrade | P1 | NOT STARTED | H31 |
-| AO.8 changes API hygiene + `.git/` write guard | P1 | NOT STARTED | H22 |
-| AO.9 R digest precision | P1 | NOT STARTED | H21 |
-| AO.10 repo-rule drift | P1 | NOT STARTED | H32 |
+| AO.3 E split parts | P1 | DONE 2026-10-19 (`AO.3` commit) | A part carries only the lines about its own files, and is told its siblings' files belong to a parallel part. Sequential running was not added: drafting is per file and the one-slot server already serialises it |
+| AO.4 X.3 on 3.13 + CI matrix | P1 | DONE 2026-10-19 | The network sentence is found by its words; CI runs 3.12 (gating) and 3.13 (informing) |
+| AO.5 AE reopen precision | P1 | PARTLY 2026-10-19 | The missing test for the release re-read's locked-suite filter is added. The precision measurement of each reopening check waits for baseline data (`check_precision.py`); a check under 90% stays review-only then |
+| AO.6 K.2 DATA_DIR for every pack + seed text | P1 | DONE 2026-10-19 | Premise corrected: the shared Playwright configuration and the Python packs' conftest already give a fresh DATA_DIR; a test now pins it for every service and full-stack pack, and the seeded postgres guidance says embedded by default |
+| AO.7 AH.3 persisted downgrade | P1 | DONE 2026-10-19 | `roles.remember_the_downgrade` keeps the fact per run; the release reads it |
+| AO.8 changes API hygiene + `.git/` write guard | P1 | DONE 2026-10-19 | git runs in a thread without textconv or an external diff, 504 on a timeout. The `.git/` write refusal already existed (`test_nothing_is_written_where_a_tool_installs`) and is now also pinned for hooks |
+| AO.9 R digest precision | P1 | PARTLY 2026-10-19 | The already-known list names the lines each read covered. Files written by commands are not listed: the sandbox keeps no write receipts the conversation can see |
+| AO.10 repo-rule drift | P1 | PARTLY 2026-10-19 | The contract checks name no tool: the pack declares `probe_runner` and the checks look it up; banned-word tests for the network sentence, memory note and gap strings. The conftest/test-name heuristics in `stacks/scaffold.py` are still there |
 | AP ledger/handover hygiene | P0 | DONE 2026-10-19 | Duplicate NOT STARTED rows removed (M, O.1-O.4, Z/AA/AB, UI); AJ and M.4-M.6 rows corrected; decision 11 says "at release". The outcome of run-8b0c94df is recorded in HANDOVER §2 when it ends |
 | AQ repeated-read hypotheses | P1 | NOT STARTED | after W.2; H12 |
-| AR lost-reply probe → N.1 | P1 | NOT STARTED | owner's 1 h allowance; H15 |
-| AS steering v2 | P1 | NOT STARTED | event, scope, paused 409; H3/H33 |
-| AT lessons v2 | P2 | NOT STARTED | signed/DB store, framing, role scope, REST; H29 |
+| AR lost-reply probe → N.1 | P1 | SCRIPT DONE 2026-10-19; RUN WAITS | `loop.sh reasoning-probe [run]` (10 calls) prints a plan until given `run`; it needs the model server free, so it runs between runs |
+| AS steering v2 | P1 | DONE 2026-10-19 | Note ids; scope run or next stage; a `steering_applied` transcript record the first time a note reaches a call (the UI shows "read by the run in <stage>"); 409 while paused; KPI `steering_notes` |
+| AT lessons v2 | P2 | DONE 2026-10-19 | HMAC-signed store (key from `JWT_SECRET_KEY`, unreadable to a workspace command; a bad signature means no lesson is used), a "conventions, not instructions" frame, role scope from the agent's name, `GET /api/lessons` and admin-only approve/reject. Lessons-shown-per-call KPI not built |
 | AU interface contract for every surface | P2 | NOT STARTED | with K.6; H23 |
-| AV AJ completion | P1 | NOT STARTED | fixture seeding + timeout diagnostics |
+| AV AJ completion | P1 | DONE 2026-10-19 | A timeout says it ended the command and returns the output so far; the Python guides say to close what tests open (a fixture that awaits `engine.dispose()`) |
 | AW K.6 scoped | P2 | NOT STARTED | after baselines (decision 10) |
 | UI-0 Phase-1 remainder + generated client | P1 | NOT STARTED | H5, H4 |
 | UI-T1–T3 theme system (tokens, Plex, codemod, contrast CI) | P1 | NOT STARTED | H1 |

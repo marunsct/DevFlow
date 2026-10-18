@@ -20,7 +20,7 @@ from __future__ import annotations
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
 from typing import Any, Callable
 
@@ -88,11 +88,42 @@ def in_work_orders_of_at_most(tasks: list[Any], most: int = MOST_FILES_PER_WORK_
         parts = [files[i:i + most] for i in range(0, len(files), most)]
         title = str(getattr(task, "title", "") or "").strip()
         for number, part in enumerate(parts, start=1):
-            kept.append(task.model_copy(update={
+            siblings = [f for f in files if f not in part]
+            update = {
                 "files": part,
                 "title": f"{title} (part {number} of {len(parts)})" if title else f"part {number} of {len(parts)}",
-            }))
+            }
+            # A part carries what concerns its own files. An order's steps for
+            # a sibling's file sent a part to write, or wait for, a file that
+            # is not its own (Initiative AO.3).
+            for field in _LINES_ABOUT_FILES:
+                lines = getattr(task, field, None)
+                if lines:
+                    update[field] = _lines_for_a_part(lines, part, siblings)
+            update["out_of_scope"] = [
+                *(getattr(task, "out_of_scope", None) or []),
+                "Written by a parallel part of this order - do not wait for them or rewrite them, "
+                "and use their contracts from the specification: " + ", ".join(siblings),
+            ]
+            kept.append(task.model_copy(update=update))
     return kept, split
+
+
+#: The work-order fields whose lines can be about one file or another.
+_LINES_ABOUT_FILES = ("interfaces", "steps", "edge_cases", "test_cases", "verification")
+
+
+def _lines_for_a_part(lines: list[str], own: list[str], siblings: list[str]) -> list[str]:
+    """`lines` without those that name only files of other parts.
+
+    A line naming one of this part's files stays; a line naming no file of the
+    order at all (a rule for the whole work) stays; one that names only
+    siblings goes.
+    """
+    def names(line: str, files: list[str]) -> bool:
+        return any(PurePosixPath(f).name in line for f in files)
+
+    return [line for line in lines if names(line, own) or not names(line, siblings)]
 
 
 def with_tests_the_specification_plans(tasks: list[Any], specification: Any) -> tuple[list[Any], list[str]]:

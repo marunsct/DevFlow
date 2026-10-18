@@ -340,3 +340,24 @@ def test_the_fast_build_splits_before_it_drafts():
     source = inspect.getsource(workflow)
     assert "tasks, split = in_work_orders_of_at_most(tasks)" in source
     assert 'if dropped or split:' in source
+
+
+def test_a_part_carries_the_lines_about_its_own_files_and_is_told_who_has_the_rest():
+    """Initiative AO.3: an order's steps for a sibling's file sent a part to write or wait for it."""
+    files = ["notes/a.ts", "notes/b.ts", "notes/c.ts", "notes/d.ts"]
+    order = _order("backend", *files).model_copy(update={
+        "title": "Store",
+        "steps": ["a.ts exports createStore", "b.ts reads from createStore", "d.ts wires the routes", "keep names stable"],
+        "verification": ["run npm test", "d.ts answers 200"],
+    })
+
+    kept, _ = drafting.in_work_orders_of_at_most([order], most=3)
+
+    first, second = kept
+    assert first.files == files[:3] and second.files == ["notes/d.ts"]
+    assert first.steps == ["a.ts exports createStore", "b.ts reads from createStore", "keep names stable"]
+    assert second.steps == ["d.ts wires the routes", "keep names stable"]
+    assert second.verification == ["run npm test", "d.ts answers 200"]
+    assert first.verification == ["run npm test"]
+    assert "do not wait for them or rewrite them" in first.out_of_scope[-1] and "notes/d.ts" in first.out_of_scope[-1]
+    assert "notes/a.ts" in second.out_of_scope[-1]

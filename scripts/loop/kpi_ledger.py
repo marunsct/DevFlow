@@ -62,6 +62,19 @@ def append(ledger: Path, row: dict) -> list[dict]:
     return earlier
 
 
+def compare(a: dict, b: dict) -> list[str]:
+    """Each numeric KPI of run `a` beside run `b`, with the change (Initiative U.3)."""
+    out = []
+    for key in sorted(set(a) | set(b)):
+        try:
+            x, y = float(a.get(key, "nan")), float(b.get(key, "nan"))
+        except (TypeError, ValueError):
+            continue
+        change = "" if x != x or y != y or x == 0 else f" ({(y - x) / abs(x):+.0%})"
+        out.append(f"{key:<28} {x:>14g} {y:>14g}{change}")
+    return out
+
+
 def main(path: str, ledger: str = "data/kpi/ledger.csv") -> int:
     row = json.loads(Path(path).read_text())
     earlier = append(Path(ledger), row)
@@ -74,4 +87,8 @@ def main(path: str, ledger: str = "data/kpi/ledger.csv") -> int:
 
 
 if __name__ == "__main__" and len(sys.argv) > 1:
+    if sys.argv[1] == "compare" and len(sys.argv) == 4:
+        # python kpi_ledger.py compare data/kpi/<A>.json data/kpi/<B>.json
+        print("\n".join(compare(*(json.loads(Path(f).read_text()) for f in sys.argv[2:4]))))
+        raise SystemExit(0)
     raise SystemExit(main(*sys.argv[1:3]))

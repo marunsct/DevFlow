@@ -28,6 +28,21 @@ REDUNDANT = ("You have already read lines", "same bytes", "Refusing to read", "T
 READS = ("read_file", "read_repository_file")
 INVALID_TOOL = "is not a valid tool"
 
+#: Each guard layer's intervention, by the words it writes into a tool result
+#: (Initiative V): how often each one acted on this run, side by side across
+#: runs in the ledger. Its marginal value needs an A/B (`kpi_ledger.py compare`).
+LAYERS = {
+    "layer_memory_pointer": "is in the project memory at the start of this conversation",
+    "layer_read_refused": "Refusing to read",
+    "layer_read_held_back": "same bytes",
+    "layer_edit_reindented": "Matched ignoring indentation",
+    "layer_edit_reblanked": "Matched ignoring blank lines",
+    "layer_write_unchanged": "already contained exactly this content",
+    "layer_write_diagnostic": "IDE DIAGNOSTIC WARNING",
+    "layer_tool_withheld": "withheld for the rest of this stage",
+    "layer_command_refused": "is not permitted",
+}
+
 
 def _seconds(value: str) -> float:
     return datetime.fromisoformat(value).timestamp()
@@ -101,6 +116,9 @@ def kpis(records: list[dict]) -> dict:
                 count["redundant_reads"] += 1
             if INVALID_TOOL in text[:400]:
                 count["unknown_tool_names"] += 1
+            for layer, marker in LAYERS.items():
+                if marker in text[:1500]:
+                    count[layer] += 1
             # A repeat is the same call answered the same way in one visit:
             # re-asking what was already answered (`scripts/audit_run.py`).
             # Refusals and notices are the guards working, counted above.
@@ -136,6 +154,7 @@ def kpis(records: list[dict]) -> dict:
         "defects_left_open": defects["left open"],
         "fixes_reverted": defects["reverted"],
         "closed_without_a_fixer": defects["closed without a fixer"],
+        **{layer: count[layer] for layer in LAYERS},
     }
 
 

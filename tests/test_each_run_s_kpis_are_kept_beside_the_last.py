@@ -102,3 +102,15 @@ def test_a_read_the_memory_answers_with_a_pointer_is_redundant() -> None:
     ]
     assert kpi.kpis(records)["redundant_read_rate"] == 1.0
     assert "is in the project memory at the start of this conversation" in (ROOT / "audit_live.py").read_text()
+
+
+def test_each_guard_layer_s_interventions_are_counted() -> None:
+    """Initiative V: how often each layer acted, kept per run."""
+    got = kpi.kpis(RECORDS)
+    assert got["layer_read_refused"] == 1
+    assert all(key in got for key in kpi.LAYERS)
+
+
+def test_two_runs_compare_side_by_side() -> None:
+    lines = ledger.compare({"tool_calls": 100, "run": "a"}, {"tool_calls": 80, "run": "b"})
+    assert lines == ["tool_calls                              100             80 (-20%)"]

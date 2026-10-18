@@ -1,6 +1,7 @@
 import React from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Layers, List, Settings, LogOut } from 'lucide-react';
+import { ThemeToggle } from './ThemeToggle';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
@@ -48,15 +49,15 @@ export const Header: React.FC = () => {
               <Settings className="h-4 w-4" />
               <span className="hidden sm:inline">Settings</span>
             </Link>
+            <ThemeToggle />
             <div className="w-px h-6 bg-border mx-2" />
             <button
               onClick={handleLogout}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-text-secondary hover:text-danger hover:bg-danger-bg transition-all duration-200"
               title="Sign out"
-              aria-label="Sign out"
             >
               <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Logout</span>
+              <span className="sr-only sm:not-sr-only">Sign out</span>
             </button>
           </nav>
         </div>

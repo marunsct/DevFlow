@@ -10,10 +10,10 @@ interface ExecutionFlowProps {
 }
 
 const TONE = {
-  done:    { icon: Check,     dot: 'bg-success/15 text-success border-success/30',   text: 'text-success' },
-  active:  { icon: Loader2,   dot: 'bg-primary/15 text-primary border-primary/40',   text: 'text-primary' },
-  waiting: { icon: Clock,     dot: 'bg-warning/15 text-warning border-warning/40',   text: 'text-warning' },
-  error:   { icon: X,         dot: 'bg-danger/15 text-danger border-danger/40',      text: 'text-danger' },
+  done:    { icon: Check,     dot: 'bg-success-bg text-success border-success/30',   text: 'text-success' },
+  active:  { icon: Loader2,   dot: 'bg-accent-soft text-primary border-primary/40',   text: 'text-primary' },
+  waiting: { icon: Clock,     dot: 'bg-warning-bg text-warning border-warning/40',   text: 'text-warning' },
+  error:   { icon: X,         dot: 'bg-danger-bg text-danger border-danger/40',      text: 'text-danger' },
   idle:    { icon: Circle,    dot: 'bg-overlay text-text-muted border-border/50', text: 'text-text-muted' },
 } as const;
 
@@ -52,11 +52,11 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
   return (
     <div className="glass-card rounded-2xl flex flex-col h-full overflow-hidden">
       <div className="flex-none px-4 py-3 border-b border-border/40 flex items-center gap-2.5">
-        <span className="grid place-items-center h-7 w-7 rounded-lg bg-primary/15">
+        <span className="grid place-items-center h-7 w-7 rounded-lg bg-accent-soft">
           <ListChecks className="h-3.5 w-3.5 text-primary" />
         </span>
         <div className="min-w-0">
-          <h3 className="font-semibold text-text-primary text-sm leading-none">Progress</h3>
+          <h2 className="font-semibold text-text-primary text-sm leading-none">Progress</h2>
           <p className="text-[11px] text-text-muted mt-1 leading-none">
             {stages.length > 0 ? `${done} of ${stages.length} steps finished` : 'Steps appear as they start'}
           </p>
@@ -80,9 +80,9 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
             return (
               <section key={`sprint-${group.sprint}`} className="mb-5 last:mb-0">
                 <header className="flex items-baseline gap-2 mb-2.5">
-                  <h4 className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary">
+                  <h3 className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary">
                     {sprintTitle(group.sprint)}
-                  </h4>
+                  </h3>
                   <span className="text-[11px] text-text-muted tabular-nums">
                     {groupDone}/{group.stages.length}
                   </span>

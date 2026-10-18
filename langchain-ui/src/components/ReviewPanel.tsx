@@ -24,9 +24,9 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
 
   return (
     <div className="rounded-2xl overflow-hidden border border-primary/40 bg-primary/5 backdrop-blur-sm">
-      <div className="px-5 py-3.5 bg-primary/10 border-b border-primary/30 flex items-center gap-2.5">
+      <div className="px-5 py-3.5 bg-accent-soft border-b border-primary/30 flex items-center gap-2.5">
         <MessageSquare className="h-5 w-5 text-primary" />
-        <h3 className="font-semibold text-primary text-sm">Review Required: {review.point}</h3>
+        <h2 className="font-semibold text-primary text-sm">Review Required: {review.point}</h2>
       </div>
       <div className="p-5">
         {/* Artifact Info */}
@@ -106,7 +106,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
                 <button
                   type="button"
                   onClick={() => setFile(null)}
-                  className="text-danger hover:text-danger/80 text-xs font-medium"
+                  className="text-danger hover:text-danger text-xs font-medium"
                 >
                   Remove
                 </button>

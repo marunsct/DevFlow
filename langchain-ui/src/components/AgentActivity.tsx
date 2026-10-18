@@ -239,7 +239,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
         onClick={() => item.detail && setOpen((v) => !v)}
         aria-expanded={item.detail ? open : undefined}
         className={`w-full flex items-start gap-2 rounded-lg py-1.5 pl-2 pr-1 text-left transition-colors ${
-          item.failed ? 'hover:bg-danger/10' : 'hover:bg-overlay'
+          item.failed ? 'hover:bg-danger-bg' : 'hover:bg-overlay'
         }`}
       >
         {/* State first, then kind. Whether it finished is the more urgent fact. */}
@@ -400,11 +400,11 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
   return (
     <div className="glass-card rounded-2xl flex flex-col h-full overflow-hidden">
       <div className="flex-none px-4 py-3 border-b border-border/40 flex items-center gap-2.5">
-        <span className="grid place-items-center h-7 w-7 rounded-lg bg-primary/15">
+        <span className="grid place-items-center h-7 w-7 rounded-lg bg-accent-soft">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
         </span>
         <div className="min-w-0">
-          <h3 className="font-semibold text-text-primary text-sm leading-none">Live progress</h3>
+          <h2 className="font-semibold text-text-primary text-sm leading-none">Live progress</h2>
           <p className="text-[11px] text-text-muted mt-1 leading-none">What the workflow is doing right now</p>
         </div>
         {live && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{items.length}</span>}
@@ -452,9 +452,9 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                           showed through as a smear of half-legible text along
                           the top edge of the panel. */}
                       <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-surface-raised px-4 py-1.5">
-                        <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary truncate">
+                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary truncate">
                           {describeStage(group.stage).title}
-                        </h4>
+                        </h3>
                         {span && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{span}</span>}
                       </header>
 

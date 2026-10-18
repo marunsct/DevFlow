@@ -14,16 +14,16 @@ export const ApprovalGate: React.FC<ApprovalGateProps> = ({ runId, approval, onS
   const [reason, setReason] = useState('');
 
   const riskColors: Record<string, string> = {
-    low: 'text-success bg-success/10 border-success/30',
-    medium: 'text-warning bg-warning/10 border-warning/30',
-    high: 'text-danger bg-danger/10 border-danger/30',
+    low: 'text-success bg-success-bg border-success/30',
+    medium: 'text-warning bg-warning-bg border-warning/30',
+    high: 'text-danger bg-danger-bg border-danger/30',
   };
 
   return (
     <div className="rounded-2xl overflow-hidden border border-warning/40 bg-warning/5 backdrop-blur-sm">
-      <div className="px-5 py-3.5 bg-warning/10 border-b border-warning/30 flex items-center gap-2.5">
+      <div className="px-5 py-3.5 bg-warning-bg border-b border-warning/30 flex items-center gap-2.5">
         <ShieldAlert className="h-5 w-5 text-warning" />
-        <h3 className="font-semibold text-warning text-sm">Write Approval Required</h3>
+        <h2 className="font-semibold text-warning text-sm">Write Approval Required</h2>
       </div>
       <div className="p-5">
         {/* Artifact Info */}

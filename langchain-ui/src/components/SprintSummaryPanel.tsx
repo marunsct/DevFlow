@@ -175,7 +175,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
     <div className="glass-card rounded-2xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-border/40 flex items-center gap-2">
         <Rocket className="h-4.5 w-4.5 text-primary" />
-        <h3 className="text-sm font-semibold text-text-primary">Sprint Milestones</h3>
+        <h2 className="text-sm font-semibold text-text-primary">Sprint Milestones</h2>
         <span className="ml-auto text-[11px] text-text-muted tabular-nums">
           {/* The plan's own count, so a re-run cannot read as an extra sprint. */}
           {plannedTotal > 0
@@ -191,7 +191,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
           const passed = sprint.status.toLowerCase() === 'completed';
           const StatusIcon = passed ? CheckCircle2 : XCircle;
           const statusColor = passed ? 'text-success' : 'text-danger';
-          const statusBg = passed ? 'bg-success/10' : 'bg-danger/10';
+          const statusBg = passed ? 'bg-success-bg' : 'bg-danger-bg';
 
           return (
             <div key={sprint.number}>
@@ -209,7 +209,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                     </span>
                     {sprint.attempts > 1 && (
                       <span
-                        className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-warning/10 text-warning"
+                        className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-warning-bg text-warning"
                         title="This sprint was attempted more than once. It is one sprint, not several."
                       >
                         re-run ×{sprint.attempts}
@@ -270,9 +270,9 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* What the sprint plan promised - separate from what was built */}
                   {sprint.planned.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Planned for This Sprint
-                      </h4>
+                      </h3>
                       <ul className="space-y-1">
                         {sprint.planned.map((item, i) => (
                           <li key={i} className="flex items-start gap-2 text-[12px] text-text-secondary">
@@ -287,9 +287,9 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Every attempt at this one sprint, including the failed ones */}
                   {sprint.attemptHistory.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Attempt History
-                      </h4>
+                      </h3>
                       <ul className="space-y-1">
                         {sprint.attemptHistory.map((item, i) => (
                           <li key={i} className="text-[12px] text-text-secondary">
@@ -306,9 +306,9 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Features */}
                   {sprint.features.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Features Implemented
-                      </h4>
+                      </h3>
                       <ul className="space-y-1">
                         {sprint.features.map((f, i) => (
                           <li key={i} className="flex items-start gap-2 text-[12px] text-text-secondary">
@@ -323,14 +323,14 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Defects */}
                   {sprint.defects.length > 0 && (
                     <div>
-                      <h4 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Defect Summary
-                      </h4>
+                      </h3>
                       <div className="space-y-1">
                         {sprint.defects.map((d, i) => (
                           <div key={i} className="flex items-start gap-2 text-[12px]">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                              d.status === 'FIXED' ? 'bg-success/15 text-success' : 'bg-danger/15 text-danger'
+                              d.status === 'FIXED' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'
                             }`}>
                               {d.status}
                             </span>

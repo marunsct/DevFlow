@@ -85,13 +85,13 @@ export const RunList: React.FC = () => {
   const getStatusConfig = (status: string) => {
     const configs: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
       created: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: Clock },
-      running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
-      waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-      waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-      completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
-      failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
+      running: { bg: 'bg-accent-soft', text: 'text-primary', glow: 'status-running', icon: Activity },
+      waiting_for_review: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+      waiting_for_approval: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+      completed: { bg: 'bg-success-bg', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
+      failed: { bg: 'bg-danger-bg', text: 'text-danger', glow: 'status-danger', icon: XCircle },
       cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
-      paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
+      paused: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: Clock },
     };
     return configs[status] || configs.created;
   };
@@ -179,7 +179,7 @@ export const RunList: React.FC = () => {
                     {isTerminal && (
                       <button
                         onClick={() => handleDelete(run.run_id)}
-                        className="p-2 text-text-muted hover:text-danger hover:bg-danger/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
+                        className="p-2 text-text-muted hover:text-danger hover:bg-danger-bg rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                         title="Delete run"
                       >
                         <Trash2 className="h-4 w-4" />
@@ -188,7 +188,7 @@ export const RunList: React.FC = () => {
                     {run.status === 'running' && (
                       <button
                         onClick={() => handlePause(run.run_id)}
-                        className="p-2 text-text-muted hover:text-warning hover:bg-warning/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
+                        className="p-2 text-text-muted hover:text-warning hover:bg-warning-bg rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                         title="Pause run"
                       >
                         <Pause className="h-4 w-4" />
@@ -212,7 +212,7 @@ export const RunList: React.FC = () => {
                     </button>
                     <Link
                       to={`/runs/${run.run_id}`}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary hover:text-primary-hover rounded-lg hover:bg-primary/10 transition-all"
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-primary hover:text-primary-hover rounded-lg hover:bg-accent-soft transition-all"
                     >
                       Dashboard
                       <ArrowRight className="h-3.5 w-3.5" />

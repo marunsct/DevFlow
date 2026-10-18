@@ -1,3 +1,4 @@
+import { adoptServerPreferences } from './lib/appearance';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { Home } from './pages/Home';
@@ -50,7 +51,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
     let isMounted = true;
     const checkToken = async () => {
       try {
-        await api.get('/auth/me');
+        const me = await api.get('/auth/me');
+        adoptServerPreferences(me.data?.preferences);
         if (isMounted) setIsValid(true);
       } catch {
         // Clearing the token is enough: the render path below redirects to

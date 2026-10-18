@@ -65,10 +65,10 @@ interface WizardDashboardProps {
  * ------------------------------------------------------------------ */
 
 const TONE = {
-  done:    { icon: Check,     dot: 'bg-success/15 text-success border-success/30',   text: 'text-success',  glow: 'status-success' },
-  active:  { icon: Loader2,   dot: 'bg-primary/15 text-primary border-primary/40',   text: 'text-primary',  glow: 'status-running' },
-  waiting: { icon: Clock,     dot: 'bg-warning/15 text-warning border-warning/40',   text: 'text-warning',  glow: 'status-warning' },
-  error:   { icon: X,         dot: 'bg-danger/15 text-danger border-danger/40',      text: 'text-danger',   glow: 'status-danger' },
+  done:    { icon: Check,     dot: 'bg-success-bg text-success border-success/30',   text: 'text-success',  glow: 'status-success' },
+  active:  { icon: Loader2,   dot: 'bg-accent-soft text-primary border-primary/40',   text: 'text-primary',  glow: 'status-running' },
+  waiting: { icon: Clock,     dot: 'bg-warning-bg text-warning border-warning/40',   text: 'text-warning',  glow: 'status-warning' },
+  error:   { icon: X,         dot: 'bg-danger-bg text-danger border-danger/40',      text: 'text-danger',   glow: 'status-danger' },
   idle:    { icon: Circle,    dot: 'bg-overlay text-text-muted border-border/50', text: 'text-text-muted', glow: '' },
 } as const;
 
@@ -153,11 +153,11 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
       {/* The phase rail: the run's phases in order, clickable. */}
       <div className="glass-card rounded-2xl flex flex-col overflow-hidden">
         <div className="flex-none px-4 py-3 border-b border-border/40 flex items-center gap-2.5">
-          <span className="grid place-items-center h-7 w-7 rounded-lg bg-primary/15">
+          <span className="grid place-items-center h-7 w-7 rounded-lg bg-accent-soft">
             <ListChecks className="h-3.5 w-3.5 text-primary" />
           </span>
           <div className="min-w-0">
-            <h3 className="font-semibold text-text-primary text-sm leading-none">The build, in phases</h3>
+            <h2 className="font-semibold text-text-primary text-sm leading-none">The build, in phases</h2>
             <p className="text-[11px] text-text-muted mt-1 leading-none">
               Click a phase to see what happened in it.
             </p>
@@ -181,7 +181,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
                   <button
                     onClick={() => setSelectedId(section.id)}
                     className={`relative z-10 w-full flex items-start gap-3 rounded-xl px-2 py-2 text-left transition-colors ${
-                      isSelected ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-overlay'
+                      isSelected ? 'bg-accent-soft ring-1 ring-primary/30' : 'hover:bg-overlay'
                     }`}
                   >
                     <span
@@ -197,7 +197,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
                           {section.title}
                         </p>
                         {section.kind === 'sprint' && section.revisions.length > 1 && (
-                          <span className="text-[10px] font-medium text-warning bg-warning/10 border border-warning/30 rounded-full px-1.5 py-0.5">
+                          <span className="text-[10px] font-medium text-warning bg-warning-bg border border-warning/30 rounded-full px-1.5 py-0.5">
                             {section.revisions.length} passes
                           </span>
                         )}
@@ -267,7 +267,7 @@ const SectionDetail: React.FC<SectionDetailProps> = ({ section, run, summary, sp
           <Icon className={`h-4.5 w-4.5 ${section.status === 'active' ? 'animate-spin' : ''}`} />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-text-primary text-base leading-none">{section.title}</h3>
+          <h2 className="font-semibold text-text-primary text-base leading-none">{section.title}</h2>
           <p className="text-[12px] text-text-muted mt-1 leading-none">{section.blurb}</p>
         </div>
         <span className={`text-[12px] font-medium ${tone.text}`}>{section.status_label}</span>

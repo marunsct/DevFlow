@@ -8,8 +8,8 @@ import { getChange, getChanges, type WorkspaceCommit } from '../api';
 
 const lineStyle = (line: string): string => {
   if (line.startsWith('+++') || line.startsWith('---')) return 'text-text-muted';
-  if (line.startsWith('+')) return 'text-success bg-success/10';
-  if (line.startsWith('-')) return 'text-danger bg-danger/10';
+  if (line.startsWith('+')) return 'text-success bg-success-bg';
+  if (line.startsWith('-')) return 'text-danger bg-danger-bg';
   if (line.startsWith('@@')) return 'text-primary';
   if (line.startsWith('diff --git')) return 'text-text-secondary font-semibold mt-3';
   return 'text-text-secondary';

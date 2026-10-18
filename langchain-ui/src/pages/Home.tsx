@@ -184,7 +184,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
             <div
               className={`border-2 border-dashed rounded-xl p-10 text-center transition-all duration-300 cursor-pointer ${
                 isDragging
-                  ? 'border-primary bg-primary/10 scale-[1.01]'
+                  ? 'border-primary bg-accent-soft scale-[1.01]'
                   : files.length > 0
                     ? 'border-success/50 bg-success/5'
                     : 'border-border hover:border-primary/50 hover:bg-overlay'
@@ -195,7 +195,6 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               onClick={() => document.getElementById('file-upload')?.click()}
               role="button"
               tabIndex={0}
-              aria-label="Choose product documents to upload"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -226,7 +225,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                 </div>
               ) : (
                 <div className="flex flex-col items-center">
-                  <div className="h-14 w-14 bg-success/10 rounded-xl flex items-center justify-center mb-4">
+                  <div className="h-14 w-14 bg-success-bg rounded-xl flex items-center justify-center mb-4">
                     <FileText className="h-7 w-7 text-success" />
                   </div>
                   <h2 className="text-base font-semibold text-text-primary mb-2">
@@ -243,7 +242,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   </ul>
                   <button
                     type="button"
-                    className="text-sm text-danger hover:text-danger/80 transition-colors"
+                    className="text-sm text-danger hover:text-danger transition-colors"
                     onClick={(e) => { e.stopPropagation(); setFiles([]); }}
                   >
                     Remove all files
@@ -277,7 +276,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
 
             {/* Error */}
             {error && (
-              <div className="p-4 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
+              <div className="p-4 bg-danger-bg border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full bg-danger animate-pulse shrink-0" />
                 {error}
               </div>
@@ -346,12 +345,12 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                       onClick={() => setDeliveryMode(choice)}
                       className={`flex-1 rounded-lg border px-3 py-2.5 text-left text-sm font-medium transition-all ${
                         deliveryMode === choice
-                          ? 'border-primary bg-primary/15 text-primary'
+                          ? 'border-primary bg-accent-soft text-primary'
                           : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
                       }`}
                     >
                       {choice === 'fast' ? 'Fast' : 'Thorough'}
-                      <span className="block text-[11px] font-normal mt-0.5 opacity-70">
+                      <span className="block text-[11px] font-normal mt-0.5">
                         {choice === 'fast'
                           ? 'One sprint for a small product, files written from the specification, harness-run checks'
                           : 'Every sprint planned, built, tested and reviewed in full'}

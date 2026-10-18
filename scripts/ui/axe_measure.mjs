@@ -18,14 +18,29 @@ await page.fill('input[type="text"]', USER);
 await page.fill('input[type="password"]', PASSWORD);
 await page.click('button[type="submit"]');
 await page.waitForURL(u => !u.pathname.startsWith('/login'), { timeout: 15000 });
+// Each theme (plan Part 15.2): axe on every page, and a screenshot of each into docs/ui/
+// when SHOTS=1, for the handover. THEMES=graphite,paper narrows the set.
+const themes = (process.env.THEMES || 'graphite,paper,contrast').split(',');
 const out = {};
-for (const [name, url] of [['home', '/'], ['runs', '/runs'], ['settings', '/settings'], ['run', `/runs/${run}`]]) {
-  await page.goto(BASE + url, { waitUntil: 'networkidle' }); await page.waitForTimeout(2500);
-  await page.addScriptTag({ content: axe });
-  const r = await page.evaluate(async () => { const res = await window.axe.run(document, { resultTypes: ['violations'] }); return res.violations.map(v => [v.id, v.nodes.length]); });
-  const live = await page.locator('[aria-live],[role="status"],[role="alert"],[role="log"]').count();
-  const unlabeled = await page.evaluate(() => [...document.querySelectorAll('button')].filter(b => !(b.getAttribute('aria-label') || b.textContent.trim() || b.getAttribute('title'))).length);
-  out[name] = { violations: Object.fromEntries(r), total: r.reduce((a, [, n]) => a + n, 0), live, unlabeled_buttons: unlabeled, title: await page.title() };
+for (const theme of themes) {
+  await page.evaluate((t) => localStorage.setItem('devflow.appearance', JSON.stringify({ theme: t, accent: 'blue', density: 'comfortable' })), theme);
+  for (const [name, url] of [['home', '/'], ['runs', '/runs'], ['settings', '/settings'], ['run', `/runs/${run}`]]) {
+    await page.goto(BASE + url, { waitUntil: 'networkidle' }); await page.waitForTimeout(2500);
+    await page.addScriptTag({ content: axe });
+    const r = await page.evaluate(async () => { const res = await window.axe.run(document, { resultTypes: ['violations'] }); return res.violations.map(v => [v.id, v.nodes.length]); });
+    if (process.env.DETAIL) {
+      const detail = await page.evaluate(async () => { const res = await window.axe.run(document, { resultTypes: ['violations'] });
+        return res.violations.flatMap(v => v.nodes.slice(0, 4).map(n => `${v.id}: ${n.target.join(' ')} :: ${(n.any[0]?.message || n.failureSummary || '').slice(0, 150)}`)); });
+      console.error(`--- ${theme}/${name}\n` + detail.join('\n'));
+    }
+    const live = await page.locator('[aria-live],[role="status"],[role="alert"],[role="log"]').count();
+    const unlabeled = await page.evaluate(() => [...document.querySelectorAll('button')].filter(b => !(b.getAttribute('aria-label') || b.textContent.trim() || b.getAttribute('title'))).length);
+    out[`${theme}/${name}`] = { violations: Object.fromEntries(r), total: r.reduce((a, [, n]) => a + n, 0), live, unlabeled_buttons: unlabeled, theme_attr: await page.evaluate(() => document.documentElement.dataset.theme) };
+    if (process.env.SHOTS) {
+      fs.mkdirSync('docs/ui', { recursive: true });
+      await page.screenshot({ path: `docs/ui/${theme}-${name}.png`, fullPage: false });
+    }
+  }
 }
 console.log(JSON.stringify(out, null, 1));
 await browser.close();

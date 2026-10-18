@@ -84,7 +84,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                   <button
                     onClick={() => setViewing(artifact)}
                     title="Read this document"
-                    className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    className="p-2 text-text-muted hover:text-primary hover:bg-accent-soft rounded-lg transition-colors"
                   >
                     <Eye className="h-4 w-4" />
                   </button>
@@ -95,7 +95,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
                       void downloadArtifact(runId, artifact.path);
                     }}
                     title="Download"
-                    className="p-2 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-colors"
+                    className="p-2 text-text-muted hover:text-primary hover:bg-accent-soft rounded-lg transition-colors"
                   >
                     <Download className="h-4 w-4" />
                   </button>

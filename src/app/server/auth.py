@@ -3,7 +3,8 @@ import secrets
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+import json
+from typing import Any, Literal, Optional
 
 import bcrypt
 import jwt
@@ -185,6 +186,8 @@ def init_db():
             # idempotent so this is safe to run on every start.
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'operator'")
             c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'")
+            # The owner's appearance (theme, accent, density), kept per user so it follows them across devices.
+            c.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS preferences TEXT NOT NULL DEFAULT '{}'")
             # A database created before roles existed has an 'admin' account that
             # the ADD COLUMN default would silently demote to 'operator',
             # locking every administrative action out of an upgraded install.
@@ -286,6 +289,15 @@ class User(BaseModel):
     disabled: Optional[bool] = None
     role: str = "operator"
     tenant_id: str = "default"
+    preferences: dict = {}
+
+
+class Preferences(BaseModel):
+    """The owner's appearance. Every field is optional: a patch changes only what it names."""
+
+    theme: Optional[Literal["graphite", "paper", "contrast", "system"]] = None
+    accent: Optional[Literal["blue", "violet", "teal", "amber", "rose", "neutral"]] = None
+    density: Optional[Literal["comfortable", "compact"]] = None
 
 
 class UserInDB(User):
@@ -300,7 +312,8 @@ def get_user(username: str) -> Optional[UserInDB]:
     with get_db_connection() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as c:
             c.execute(
-                "SELECT username, hashed_password, disabled, role, tenant_id "
+                "SELECT username, hashed_password, disabled, role, tenant_id, "
+                "COALESCE(preferences, '{}') AS preferences "
                 "FROM users WHERE username = %s",
                 (username,),
             )
@@ -312,8 +325,18 @@ def get_user(username: str) -> Optional[UserInDB]:
                     disabled=bool(row["disabled"]),
                     role=row.get("role") or "operator",
                     tenant_id=row.get("tenant_id") or "default",
+                    preferences=_read_preferences(row.get("preferences")),
                 )
     return None
+
+
+def _read_preferences(raw: Any) -> dict:
+    """The stored appearance as a dict; {} when it is absent or not JSON."""
+    try:
+        value = json.loads(raw) if isinstance(raw, str) else raw
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _create_token(data: dict, expires_delta: timedelta, token_type: str) -> str:
@@ -476,4 +499,21 @@ async def read_users_me(current_user: UserInDB = Depends(get_current_active_user
         disabled=current_user.disabled,
         role=current_user.role,
         tenant_id=current_user.tenant_id,
+        preferences=current_user.preferences,
+    )
+
+
+@auth_router.patch("/api/auth/me/preferences", response_model=User, tags=["auth"])
+async def update_my_preferences(
+    patch: Preferences, current_user: UserInDB = Depends(get_current_active_user)
+) -> User:
+    """Keep the owner's appearance, merged over what was kept; the stored value wins on the next sign-in."""
+    merged = {**current_user.preferences, **patch.model_dump(exclude_none=True)}
+    with get_db_connection() as conn:
+        with conn.cursor() as c:
+            c.execute("UPDATE users SET preferences = %s WHERE username = %s", (json.dumps(merged), current_user.username))
+        conn.commit()
+    return User(
+        username=current_user.username, disabled=current_user.disabled, role=current_user.role,
+        tenant_id=current_user.tenant_id, preferences=merged,
     )

@@ -1,3 +1,4 @@
+import { AppearanceSettings } from '../components/AppearanceSettings';
 import React, { useEffect, useState } from 'react';
 import { Server, User, Shield, Info, Save, Trash2 } from 'lucide-react';
 import { api, saveLocalModelSettings, saveFrontierModelSettings } from '../api';
@@ -351,6 +352,8 @@ export const Settings: React.FC = () => {
         <p className="text-text-secondary text-sm">View system configuration and account details.</p>
       </div>
 
+      <AppearanceSettings />
+
       {/* Wide screens: the models on the left, the account and the rest beside them. */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6 items-start">
       <div className="space-y-6 min-w-0">
@@ -377,7 +380,7 @@ export const Settings: React.FC = () => {
                     type="button"
                     onClick={handleSaveLocal}
                     disabled={savingLocal}
-                    className="flex items-center gap-1.5 px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                    className="flex items-center gap-1.5 px-3 py-1 bg-accent-soft hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                   >
                     <Save className="h-3.5 w-3.5" />
                     {savingLocal ? 'Saving Local...' : 'Save Local Model'}
@@ -581,6 +584,7 @@ export const Settings: React.FC = () => {
                     number on its own is not checkable by eye - the failures it
                     causes appear hours later in an unrelated stage. */}
                 {settings.derived_budgets && (
+                  <>
                   <dl className="mt-3 rounded-lg border border-border/50 bg-surface/30 px-3 py-2.5 space-y-1">
                     {DERIVED_LABELS.filter(([key]) => settings.derived_budgets?.[key] !== undefined).map(
                       ([key, label, unit]) => (
@@ -593,10 +597,11 @@ export const Settings: React.FC = () => {
                         </div>
                       ),
                     )}
-                    <p className="pt-1.5 text-[11px] text-text-muted leading-relaxed">
-                      Saved values. These update when you save a new window.
-                    </p>
                   </dl>
+                  <p className="mt-1.5 text-[11px] text-text-muted leading-relaxed">
+                    Saved values. These update when you save a new window.
+                  </p>
+                  </>
                 )}
               </div>
 
@@ -610,24 +615,24 @@ export const Settings: React.FC = () => {
                     onClick={() => setSettings({ ...settings, execution_mode: 'linear' })}
                     className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                       settings.execution_mode === 'linear'
-                        ? 'border-primary bg-primary/15 text-primary'
+                        ? 'border-primary bg-accent-soft text-primary'
                         : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
                     }`}
                   >
                     🔗 Linear
-                    <span className="block text-[11px] font-normal mt-0.5 opacity-70">Stages run one at a time</span>
+                    <span className="block text-[11px] font-normal mt-0.5">Stages run one at a time</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setSettings({ ...settings, execution_mode: 'parallel' })}
                     className={`flex-1 rounded-lg border px-3 py-2.5 text-sm font-medium transition-all ${
                       settings.execution_mode === 'parallel'
-                        ? 'border-primary bg-primary/15 text-primary'
+                        ? 'border-primary bg-accent-soft text-primary'
                         : 'border-border/50 bg-surface/30 text-text-muted hover:text-text-secondary hover:border-border'
                     }`}
                   >
                     ⚡ Parallel
-                    <span className="block text-[11px] font-normal mt-0.5 opacity-70">Specialist tasks fan out concurrently</span>
+                    <span className="block text-[11px] font-normal mt-0.5">Specialist tasks fan out concurrently</span>
                   </button>
                 </div>
                 <p className="mt-2 text-xs text-text-muted leading-relaxed">
@@ -685,7 +690,7 @@ export const Settings: React.FC = () => {
                       type="button"
                       onClick={handleSaveFrontier}
                       disabled={savingFrontier}
-                      className="flex items-center gap-1.5 px-3 py-1 bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                      className="flex items-center gap-1.5 px-3 py-1 bg-accent-soft hover:bg-primary/30 text-primary border border-primary/40 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                     >
                       <Save className="h-3.5 w-3.5" />
                       {savingFrontier ? 'Saving Frontier...' : 'Save Frontier Model'}

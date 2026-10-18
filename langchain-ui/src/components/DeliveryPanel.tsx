@@ -48,9 +48,9 @@ interface Decision {
 }
 
 const STATUS_STYLE: Record<string, string> = {
-  passed: 'bg-success/15 text-success border-success/30',
-  failed: 'bg-danger/15 text-danger border-danger/30',
-  untested: 'bg-warning/15 text-warning border-warning/30',
+  passed: 'bg-success-bg text-success border-success/30',
+  failed: 'bg-danger-bg text-danger border-danger/30',
+  untested: 'bg-warning-bg text-warning border-warning/30',
   deferred: 'bg-overlay text-text-muted border-border/50',
 };
 
@@ -124,7 +124,7 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
         <div className="grid gap-5 p-5 grid-cols-1 xl:grid-cols-2">
           {criteria.length > 0 && (
             <section>
-              <h3 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2">Acceptance criteria</h3>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2">Acceptance criteria</h2>
               <ul className="space-y-1.5">
                 {criteria.map((c) => (
                   <li key={c.id} className="flex items-start gap-2 text-sm">
@@ -172,9 +172,9 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
           )}
           {decisions.length > 0 && (
             <section>
-              <h3 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2 flex items-center gap-1.5">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2 flex items-center gap-1.5">
                 <Gavel className="h-3.5 w-3.5" /> Decisions
-              </h3>
+              </h2>
               <ul className="space-y-1">
                 {decisions.map((d) => (
                   <li key={d.id} className="text-sm">
@@ -186,7 +186,7 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
                       <span className="flex-1 text-text-secondary">
                         {d.question} <span className="text-text-primary">{d.decision}</span>
                       </span>
-                      <span className={`shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded ${d.decided_by === 'user' ? 'bg-primary/15 text-primary' : 'bg-overlay text-text-muted'}`}>
+                      <span className={`shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded ${d.decided_by === 'user' ? 'bg-accent-soft text-primary' : 'bg-overlay text-text-muted'}`}>
                         {d.decided_by}
                       </span>
                     </button>
@@ -203,9 +203,9 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
           )}
           {(evidence?.screenshots?.length ?? 0) > 0 && (
             <section className="xl:col-span-2">
-              <h3 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2 flex items-center gap-1.5">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2 flex items-center gap-1.5">
                 <ImageIcon className="h-3.5 w-3.5" /> Screenshots from the last acceptance run
-              </h3>
+              </h2>
               <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                 {evidence!.screenshots.map((path) => (
                   <Screenshot key={path} runId={runId} path={path} />

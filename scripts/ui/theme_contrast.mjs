@@ -63,10 +63,11 @@ for (const [name, t] of Object.entries(themes)) {
     const r = ratio(f, b);
     if (r < min) failures.push(`${name}: ${label} ${r.toFixed(2)}:1 < ${min}:1  (${fg} ${t[fg]} on ${bg} ${t[bg]})`);
   };
-  for (const bg of ['--bg-canvas', '--bg-surface', '--bg-raised', '--bg-inset']) {
+  for (const bg of ['--bg-canvas', '--bg-surface', '--bg-raised', '--bg-inset', '--bg-overlay', '--bg-overlay-strong']) {
     pair(`text on ${bg}`, '--fg', bg);
     pair(`muted text on ${bg}`, '--fg-muted', bg);
     pair(`subtle text on ${bg}`, '--fg-subtle', bg);
+    if (bg.includes('overlay')) continue;   // only body text sits on an overlay
     pair(`accent text on ${bg}`, '--accent-text', bg);
     for (const s of ['ok', 'warn', 'danger', 'info']) pair(`${s} text on ${bg}`, `--status-${s}-fg`, bg);
   }

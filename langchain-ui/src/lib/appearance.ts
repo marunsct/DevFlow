@@ -71,3 +71,47 @@ export function nextTheme(current: Theme): Theme {
   const order: Theme[] = ['graphite', 'paper', 'contrast', 'system'];
   return order[(order.indexOf(current) + 1) % order.length];
 }
+
+// ---- A small shared store, so the header toggle and the Settings page agree ----
+
+type Listener = () => void;
+const listeners = new Set<Listener>();
+let current: Appearance | null = null;
+
+export function getAppearance(): Appearance {
+  if (current === null) current = readAppearance();
+  return current;
+}
+
+export function subscribe(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+/** Change part of the appearance: on the page, in this browser, and - when signed in - on the server. */
+export function setAppearance(patch: Partial<Appearance>, push = true): void {
+  current = { ...getAppearance(), ...patch };
+  applyAppearance(current);
+  listeners.forEach((listener) => listener());
+  if (push) void pushToServer(patch);
+}
+
+/** What the server kept for this user wins over this browser's, once, when the interface starts. */
+export function adoptServerPreferences(saved: Record<string, unknown> | undefined): void {
+  if (!saved) return;
+  const next: Appearance = {
+    theme: pick(THEMES, saved.theme, getAppearance().theme),
+    accent: pick(ACCENTS, saved.accent, getAppearance().accent),
+    density: pick(DENSITIES, saved.density, getAppearance().density),
+  };
+  if (JSON.stringify(next) !== JSON.stringify(getAppearance())) setAppearance(next, false);
+}
+
+async function pushToServer(patch: Partial<Appearance>): Promise<void> {
+  try {
+    const { api } = await import('../api');
+    await api.patch('/auth/me/preferences', patch);
+  } catch {
+    /* the choice is kept in this browser either way */
+  }
+}

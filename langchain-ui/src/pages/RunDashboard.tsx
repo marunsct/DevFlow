@@ -467,13 +467,13 @@ export const RunDashboard: React.FC = () => {
 
   const statusConfig: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
     created: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: Clock },
-    running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
-    waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-    waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
-    completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
-    failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
+    running: { bg: 'bg-accent-soft', text: 'text-primary', glow: 'status-running', icon: Activity },
+    waiting_for_review: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+    waiting_for_approval: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
+    completed: { bg: 'bg-success-bg', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
+    failed: { bg: 'bg-danger-bg', text: 'text-danger', glow: 'status-danger', icon: XCircle },
     cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
-    paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
+    paused: { bg: 'bg-warning-bg', text: 'text-warning', glow: 'status-warning', icon: Clock },
   };
 
   const config = statusConfig[run.status] || statusConfig.created;
@@ -506,7 +506,7 @@ export const RunDashboard: React.FC = () => {
     // its container on a short screen and render underneath the footer.
     <div className="animate-fade-in flex flex-col gap-4 xl:min-h-[calc(100vh-11rem)]">
       {(error || streamDown) && (
-        <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning/10 px-4 py-2 text-sm text-warning">
+        <div role="status" className="flex items-center gap-2 rounded-xl border border-warning/30 bg-warning-bg px-4 py-2 text-sm text-warning">
           <span className="h-2 w-2 rounded-full bg-warning animate-pulse" aria-hidden="true" />
           {error
             ? `${error} The page shows the last state it loaded.`
@@ -538,13 +538,13 @@ export const RunDashboard: React.FC = () => {
           </button>
           {run.status === 'created' && (
             <button onClick={handleStart} disabled={actionLoading}
-              className={`${actionButton} text-success/90 border-success/30 hover:border-success/60 hover:bg-success/5 disabled:opacity-50`}>
+              className={`${actionButton} text-success border-success/30 hover:border-success/60 hover:bg-success/5 disabled:opacity-50`}>
               <Play className="h-3.5 w-3.5" /> Start
             </button>
           )}
           {run.status === 'running' && (
             <button onClick={handlePause}
-              className={`${actionButton} text-warning/90 border-warning/30 hover:border-warning/60 hover:bg-warning/5`}
+              className={`${actionButton} text-warning border-warning/30 hover:border-warning/60 hover:bg-warning/5`}
               title="Stop at the next step and keep the run to resume later">
               <Pause className="h-3.5 w-3.5" /> Pause
             </button>
@@ -574,7 +574,7 @@ export const RunDashboard: React.FC = () => {
                 ))}
               </select>
               <button onClick={handleRewind} disabled={!rewindTo}
-                className={`${actionButton} text-warning/90 border-warning/30 hover:border-warning/60 hover:bg-warning/5 disabled:opacity-50`}>
+                className={`${actionButton} text-warning border-warning/30 hover:border-warning/60 hover:bg-warning/5 disabled:opacity-50`}>
                 <RotateCcw className="h-3.5 w-3.5" /> Rewind here
               </button>
               <button onClick={() => setRewindPoints(null)}
@@ -594,7 +594,7 @@ export const RunDashboard: React.FC = () => {
           </button>
           {!isTerminal && (
             <button onClick={handleCancel}
-              className={`${actionButton} text-danger/90 border-danger/30 hover:border-danger/60 hover:bg-danger/5`}>
+              className={`${actionButton} text-danger border-danger/30 hover:border-danger/60 hover:bg-danger/5`}>
               <Ban className="h-3.5 w-3.5" /> Cancel
             </button>
           )}
@@ -630,7 +630,7 @@ export const RunDashboard: React.FC = () => {
                 beside the green badge - the record must not read as a plain
                 success (Initiative J.4). */}
             {run.completion_gaps && run.completion_gaps.length > 0 && (
-              <div className="mt-3 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2">
+              <div className="mt-3 rounded-xl border border-warning/30 bg-warning-bg px-3 py-2">
                 <p className="text-xs font-semibold text-warning">
                   Completed with {run.completion_gaps.length} gap{run.completion_gaps.length === 1 ? '' : 's'} it did not prove
                 </p>
@@ -646,7 +646,7 @@ export const RunDashboard: React.FC = () => {
             {/* The workspace tells the truth after the run ends: what the
                 NON-DELIVERABLE marker says, on the run card (Initiative J.6). */}
             {run.non_deliverable && (
-              <div className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2">
+              <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-3 py-2">
                 <p className="text-xs font-semibold text-danger">Marked non-deliverable</p>
                 <p className="mt-0.5 text-xs text-text-secondary leading-relaxed">{run.non_deliverable}</p>
               </div>
@@ -708,7 +708,7 @@ export const RunDashboard: React.FC = () => {
             workspace off a 768px screen entirely, so it is clamped and expands
             on request. */}
         {run.error && (
-          <div className="mt-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-[13px] text-danger">
+          <div className="mt-3 rounded-xl border border-danger/30 bg-danger-bg px-4 py-3 text-[13px] text-danger">
             <p
               className={`whitespace-pre-wrap leading-relaxed ${
                 errorOpen ? 'max-h-64 overflow-y-auto pr-1' : 'line-clamp-2'
@@ -719,7 +719,7 @@ export const RunDashboard: React.FC = () => {
             {run.error.length > 160 && (
               <button
                 onClick={() => setErrorOpen((v) => !v)}
-                className="mt-1.5 text-[12px] font-medium text-danger/80 hover:text-danger underline underline-offset-2"
+                className="mt-1.5 text-[12px] font-medium text-danger hover:text-danger underline underline-offset-2"
               >
                 {errorOpen ? 'Show less' : 'Show the full reason'}
               </button>

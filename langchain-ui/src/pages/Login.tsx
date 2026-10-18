@@ -39,7 +39,7 @@ export function Login() {
   return (
     <div className="min-h-screen bg-canvas flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Background gradient orbs */}
-      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/20 rounded-full blur-[128px]" />
+      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-accent-soft rounded-full blur-[128px]" />
       <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-accent-soft rounded-full blur-[128px]" />
 
       <div className="w-full max-w-md relative z-10 animate-fade-in">
@@ -59,7 +59,7 @@ export function Login() {
         {/* Card */}
         <div className="glass-card-strong rounded-2xl shadow-2xl p-8">
           {error && (
-            <div role="alert" className="mb-6 p-3 bg-danger/10 border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
+            <div role="alert" className="mb-6 p-3 bg-danger-bg border border-danger/30 rounded-xl text-danger text-sm flex items-center gap-2">
               <div className="h-2 w-2 rounded-full bg-danger animate-pulse" />
               {error}
             </div>

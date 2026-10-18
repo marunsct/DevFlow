@@ -3,8 +3,8 @@
 Compose reads `.env` only to fill the values `x-app-env` names; a variable it
 does not name never reaches the container. The switches the plan's A/B
 comparisons turn - line edits, the environment contract, the workspace
-digest, project memory, the task list, when a fix escalates, the reply cap -
-were none of them named, so every "A/B" was the same configuration twice.
+digest, project memory, the task list, when a fix escalates - were none of
+them named, so every "A/B" was the same configuration twice.
 
 And the sandbox's per-process memory limit had three defaults: 4g in the
 code, 1g in compose (the measured one - several concurrent test workers must
@@ -27,7 +27,6 @@ TOGGLES = (
     "PROJECT_MEMORY",
     "HARNESS_TASK_LIST",
     "ESCALATE_AFTER_ATTEMPTS",
-    "MODEL_MAX_OUTPUT_TOKENS",
 )
 
 
@@ -39,6 +38,13 @@ def _app_env() -> dict[str, str]:
 def test_every_switch_is_passed_to_the_worker() -> None:
     env = _app_env()
     assert [name for name in TOGGLES if name not in env] == []
+
+
+def test_a_derived_model_budget_is_not_among_them() -> None:
+    """The reply cap is derived from the model and set per model in Settings;
+    compose deliberately names no value for it (see the note above
+    MODEL_CONTEXT_WINDOW there)."""
+    assert "MODEL_MAX_OUTPUT_TOKENS" not in _app_env()
 
 
 def test_a_switch_left_unset_keeps_the_code_s_default() -> None:

@@ -700,7 +700,7 @@ know about its testing, and what changed most recently.
   uploaded brief is not byte-identical to `benchmarks/<name>/brief.md`, and
   such a score is never a false acceptance. The harness switches (LINE_EDITS,
   ENVIRONMENT_CONTRACT, WORKSPACE_DIGEST, PROJECT_MEMORY, HARNESS_TASK_LIST,
-  ESCALATE_AFTER_ATTEMPTS, MODEL_MAX_OUTPUT_TOKENS) now reach the worker from
+  ESCALATE_AFTER_ATTEMPTS) now reach the worker from
   `.env` (W.3), so A/B runs are possible without editing compose.
 - **Prompts match tools and routing (2026-10-18, Initiative X).** A suite test
   builds every role agent and fails if its prompt names a tool it is not

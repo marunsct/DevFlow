@@ -1741,3 +1741,91 @@ theme options; no code changes; check the live Docker app.
   tools in this session and the Chrome extension reports "not connected".
   Screens are reviewed from the code; the plan marks where a live
   screenshot pass should confirm.
+
+### 14.1 Checkpoint 2 (22:50 JST) — UI/theme map landed (`map-ui-v2.md`); findings H1–H8
+(H-numbers: third session; G-numbers: second.)
+
+#### H1 (THEME FEASIBILITY, decisive): multi-theme is a token-redefinition job, not a rewrite
+- 17 colour tokens in `@theme` (`index.css:4-23`), dark values only;
+  `color-scheme: dark` hard-set (`index.css:27`, `index.html:8`); no
+  `data-theme`, no `prefers-color-scheme`, no theme context. Tailwind 4 does
+  not inline `@theme` values → redefining the same variables under
+  `[data-theme="…"]` re-themes the ~829 class sites that already use
+  semantic tokens with no component edits. Outliers to touch: ~210–230 sites
+  in 22 files — `text-white` as heading/body 89 of 106 uses (Settings 25),
+  ~72 white/black alpha overlays, 21 raw slate classes, 11 `bg-[#hex]` + 1
+  inline `#f4f4f4` (ErrorBoundary), 16 red/indigo/violet; `index.css` holds
+  44 hex/rgba literals (glows, glass, status, skip link, focus ring).
+  Unlayered overrides `.text-primary{#a5b4fc}` / `.text-danger{#f87171}`
+  (64 and 35 uses) are pastel-on-dark values that will fail on light.
+- One token each for success/warning/danger serves text *and* fill: on
+  white, success ≈2.3:1 and warning ≈2.1:1 → light themes need separate
+  `-text` / `-bg` / `-border` variants per status.
+- Fonts: Inter via Google Fonts `@import` (`index.css:2`) — render-blocking
+  and fails offline, on a product whose whole point is running locally.
+
+#### H2 (PRIMITIVES): one real primitive module
+- `components/Feedback.tsx:28` (`FeedbackProvider`/`useFeedback`: toasts +
+  confirm dialog with focus trap/Escape/scroll lock/focus restore) is the
+  only shared primitive. No Button/Card/Badge/Tabs/Input/Select/Dialog/
+  Skeleton/EmptyState; 8 separate status-colour maps; spinner hand-rolled
+  7×; `Checkbox` local to `Home.tsx:134`; `CredentialField`/`InfoRow`
+  defined *inside* the Settings render (`Settings.tsx:175,197`) → remount
+  per render, inputs likely lose focus per keystroke.
+
+#### H3 (NEW FEATURES, `ef982a2`): working, but thin
+- ChangesPanel: `?view=changes&change=<sha>`; `GET /runs/{id}/changes`
+  (≤200 commits) and `/changes/{sha}` (≤200k chars); token-based diff
+  colours. No loading state (empty reads "Nothing has been changed yet"),
+  no per-file view although files per commit are sent, no highlighting, raw
+  commit subjects as titles.
+- Criteria→tests: closed `<details>` per criterion (`DeliveryPanel.tsx:
+  134-160`); panel returns null when empty (no loading/empty state).
+- SteeringBox: `GET/POST /runs/{id}/steering` → `.harness/steering.json`;
+  newest 5 notes ≤2000 chars appended to the *system prompt* end
+  (`plugins/middleware.py:531-537`). No `steering` event → the feed never
+  acknowledges a note; older notes drop silently; box shown while paused;
+  product-specific placeholder. (Verified: `.harness/` is harness-owned,
+  excluded from memory/scaffold/delivery.)
+- URL state: only `view` and `change`; wizard/classic still localStorage.
+- Gate countdown is text only; deadline derived from `updated_at +
+  approval_timeout_minutes` (approximation of the real sweep).
+
+#### H4 (API ↔ UI): fields exist server-side, UI ignores them
+- `RunStatusResponse` now carries `gate_deadline`, `approval_timeout_minutes`,
+  `completion_gaps`, `non_deliverable`, `delivery_mode`, `use_frontier_model`,
+  `auto_approve`, `cost`; the UI type lacks the last three → a run page
+  never says fast/thorough, local-only or unattended. `cost` shows dollars
+  only. Not exposed at all: per-stage tokens/cost, cache share, KPI JSON,
+  lessons list/approve (CLI only), `support_tier` (markdown only),
+  structured `completion_gaps` detail, mutation results, interface-contract
+  check results, defects ledger, work orders, Sprint Record (regex-parsed
+  from markdown). Unused: `/health/ready`, `/events?since` (the missing poll
+  fallback), `/codebase` + `source` (brownfield unreachable).
+
+#### H5 (PHASE-1 REMAINDER, verified): favicon badge, browser Notifications,
+WS→poll fallback, log virtualization/buffer cap (log re-sorted per
+message), `waiting_for_budget` styling (missing from `RunDashboard.tsx:468`
+and `RunList.tsx:86`; `describeStatus` says "Up next"), "Documents N
+produced" (server counts ≤500 workspace files), dead code (`wizardData.ts`
+694 lines, `DynamicWorkflowUI.tsx`, `App.css`), token refresh, orphan run on
+failed start, `document_names`, refetch triggers, stream re-attach after
+`closed`, inline artifact in review, self-hosted fonts, code-splitting, UI
+tests. Partly: title badge (run page only), ArtifactViewer Escape/restore
+without trap, tabs lack `role="tab"`.
+
+#### H6 (NARRATION DRIFT): 21 graph stages have no `STAGE_COPY` (title-case
+fallback); `activity.ts:139` renders `specialist_gather`/`specialist_worker`
+as "Building the gather part".
+
+#### H7 (IA): routes `/login`, `/` (intake), `/runs`, `/runs/:id`, `/settings`;
+no 404, no global "needs you" indicator, no help, no post-login redirect;
+model settings only in `/settings` and Home never checks a model is
+configured; no skeletons; OutcomesPanel/DeliveryPanel/SprintSummaryPanel/
+first-run Settings render nothing when empty; on the run page gate,
+steering, sprint summary and delivery stack full-width above the 3-column
+workspace → workspace below the fold at 768 px.
+
+#### H8 (API data unused by the UI that would change behaviour): `/events?since`
+exists → WS→poll fallback is a UI-only change; `approval_timeout_minutes`
+in payload → the stall/countdown surfaces need no backend.

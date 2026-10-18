@@ -1,3 +1,4 @@
+import { LessonsPanel } from '../components/LessonsPanel';
 import { AppearanceSettings } from '../components/AppearanceSettings';
 import React, { useEffect, useState } from 'react';
 import { Server, User, Shield, Info, Save, Trash2 } from 'lucide-react';
@@ -353,6 +354,7 @@ export const Settings: React.FC = () => {
       </div>
 
       <AppearanceSettings />
+      <LessonsPanel />
 
       {/* Wide screens: the models on the left, the account and the rest beside them. */}
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6 items-start">

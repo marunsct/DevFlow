@@ -155,3 +155,14 @@ def test_an_agent_cannot_write_into_the_workspace_s_history(tmp_path):
     with pytest.raises(RepositoryToolError, match="which a tool fills"):  # the guard that already covered `.git/`
         write_approved_artifact(tmp_path, ".git/hooks/pre-commit", "#!/bin/sh\necho run\n")
     assert not (tmp_path / ".git" / "hooks" / "pre-commit").exists()
+
+
+def test_the_evidence_names_what_the_release_did_not_prove_and_how_the_stack_is_covered():
+    import inspect
+
+    from app.server import runs
+
+    source = inspect.getsource(runs)
+    assert '"completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])]' in source
+    assert '"support_tier": _support_tier_of(root)' in source
+    assert runs._support_tier_of("/nowhere") == ""

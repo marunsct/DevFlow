@@ -2688,11 +2688,11 @@ owner's.
 | AU interface contract for every surface | P2 | NOT STARTED | with K.6; H23 |
 | AV AJ completion | P1 | DONE 2026-10-19 | A timeout says it ended the command and returns the output so far; the Python guides say to close what tests open (a fixture that awaits `engine.dispose()`) |
 | AW K.6 scoped | P2 | NOT STARTED | after baselines (decision 10) |
-| UI-0 Phase-1 remainder + generated client | P1 | NOT STARTED | H5, H4 |
-| UI-T1–T3 theme system (tokens, Plex, codemod, contrast CI) | P1 | NOT STARTED | H1 |
-| UI-P primitive kit | P1 | NOT STARTED | H2 |
-| UI-S1/S2 shell + runs table | P1 | NOT STARTED | H7 |
-| UI-S4 control room + 15.5 enablers | P1 | NOT STARTED | H3, H4, H6 |
-| UI-T4–T6 / S5 appearance + settings | P2 | NOT STARTED | |
+| UI-0 Phase-1 remainder + generated client | P1 | PARTLY 2026-10-19 | Done: `RunSummary` type matches the server (`document_names` drift), token renewal five minutes before expiry (`lib/session.ts`), post-login redirect to the page asked for, a 404 page. Open: generated OpenAPI client, title/favicon badge, browser notifications |
+| UI-T1–T3 theme system (tokens, Plex, codemod, contrast CI) | P1 | DONE 2026-10-19 | `index.css`: three themes (graphite, paper, contrast) plus system, six accents, two densities, as tokens any element can carry; Plex Sans and Mono self-hosted (no Google Fonts); ~230 colour classes codemodded to tokens, a test bans raw colours in components; `scripts/ui/theme_contrast.mjs` checks 650 pairs over 13 theme/accent sets; axe per theme: 0 violations on Home, Runs, Settings and a run, in all three themes |
+| UI-P primitive kit | P1 | NOT STARTED | Only `StatusBadge` and the shared status map (`lib/status.ts`) exist so far; Vitest and Testing Library are in place for the kit |
+| UI-S1/S2 shell + runs table | P1 | PARTLY 2026-10-19 | Done: the runs table (status, run, brief, mode, model, elapsed, proven x of y, gaps, labelled row actions), search and filters kept in the address, the runs that need the owner first, a needs-you indicator in the header (waiting at a gate/review/budget, plus failed since last looked), a theme toggle with the key `t`. Open: command palette, shortcuts sheet, pagination, the events-since reconnect |
+| UI-S4 control room + 15.5 enablers | P1 | PARTLY 2026-10-19 | Done: a Changes view of the workspace history, criteria opening to their tests, "what this release did not prove" (completion gaps and support tier from `/evidence`), steering with an acknowledgement and scope, the run summary enabler. Open: the rail/work-area/ledger layout, virtualised activity feed, typed event schema, per-stage usage, artifact versions endpoint |
+| UI-T4–T6 / S5 appearance + settings | P2 | PARTLY 2026-10-19 | Done: the Appearance panel (theme cards with live miniatures, accents, density), `PATCH /api/auth/me/preferences` with the stored choice winning on sign-in, screenshots of each theme in `docs/ui/`, the Lessons panel (approve/reject). Open: a test-call button for the models, run defaults |
 | UI-S3 plan-first intake | P2 | NOT STARTED | G9, H7 |
 | UI-S6 insights | P3 | NOT STARTED | after W.2 |

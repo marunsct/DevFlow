@@ -232,10 +232,26 @@ test that fails on the old code:
   database under `DATA_DIR`.
 
 **Still to do:**
-- `loop.sh lessons` passes only one argument. Pass `"${@:2}"` once no
-  `loop.sh` command is running.
 - Remaining plan work: K.6 after the W.2 baselines (Fast notes-api-hono,
   then fast fullstack-bookmarks-py), the UI timeline, and log virtualization.
+
+### 2.00000 Appendix 3 built (2026-10-19)
+
+Wave 0 and most of Wave 2 are done and ledgered (`docs/improvement-plan.md`,
+Appendix 3 rows); the W.2 baselines (Wave 1) are the owner's gate and wait for
+run-8b0c94df to end. Worth knowing:
+
+- Budgets survive a restart (the transcript seeds the total), a fix stage that
+  spends its calls is recorded from its writes, the mutation probe journals
+  before it breaks anything, and a steering note says when it was read.
+- The interface has a theme system: `index.css` tokens, `lib/appearance.ts`,
+  `scripts/ui/theme_contrast.mjs` (run it after any colour change),
+  `scripts/ui/axe_measure.mjs` (axe per theme; `SHOTS=1` writes `docs/ui/`).
+  UI-only changes: `docker compose build app && docker compose up -d --no-deps app`.
+- The interface has tests: `cd langchain-ui && npm test` (Vitest, in the suite too).
+- `loop.sh reasoning-probe run` measures whether the server shortens replies when
+  asked to think less; it needs the model server free.
+- Lessons: `lessons.py list|approve|reject`, or Settings -> Lessons.
 
 ### 2.000 Fast delivery (2026-10-14, `e55dd6f`)
 

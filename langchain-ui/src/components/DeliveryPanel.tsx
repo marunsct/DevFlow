@@ -34,6 +34,8 @@ interface Evidence {
   deferred: Record<string, string>;
   screenshots: string[];
   pages: string[];
+  completion_gaps?: string[];
+  support_tier?: string;
 }
 
 interface Decision {
@@ -100,7 +102,8 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
     ...Object.values(evidence?.acceptance?.criteria ?? {}),
     ...Object.values(evidence?.acceptance?.change_requests ?? {}),
   ];
-  if (!criteria.length && !decisions.length) return null;
+  const gaps = evidence?.completion_gaps ?? [];
+  if (!criteria.length && !decisions.length && !gaps.length) return null;
   const passing = criteria.filter((c) => c.status === 'passed').length;
 
   return (
@@ -167,6 +170,24 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
                 <p className="mt-2 text-[11px] text-text-muted">
                   Measured by the harness with <code>{evidence.acceptance.command}</code>.
                 </p>
+              )}
+            </section>
+          )}
+          {((evidence?.completion_gaps?.length ?? 0) > 0 || evidence?.support_tier) && (
+            <section>
+              <h2 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2">What this release did not prove</h2>
+              {evidence?.support_tier && <p className="text-xs text-text-muted mb-1.5">{evidence.support_tier}</p>}
+              {(evidence?.completion_gaps?.length ?? 0) > 0 ? (
+                <ul className="space-y-1">
+                  {evidence!.completion_gaps!.map((gap, index) => (
+                    <li key={index} className="text-sm text-text-secondary flex gap-2">
+                      <span className="text-warning shrink-0" aria-hidden="true">!</span>
+                      <span className="min-w-0 break-words">{gap}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm text-text-muted">Nothing is recorded as unproven.</p>
               )}
             </section>
           )}

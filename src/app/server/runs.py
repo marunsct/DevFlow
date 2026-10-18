@@ -111,6 +111,17 @@ def _require_run(runner: WorkflowRunner, run_id: str, user: UserInDB) -> RunReco
     return record
 
 
+def _support_tier_of(root: Any) -> str:
+    """How well this run's stack is covered by the harness's own checks (pack-supported, custom, unverified); "" if unknown."""
+    try:
+        from app.stacks import contract, pack_named, support_tier
+
+        record = contract.read(root) or {}
+        return support_tier(pack_named(str(record.get("pack") or ""))) if record.get("pack") else ""
+    except Exception:  # noqa: BLE001 - the evidence page works without it
+        return ""
+
+
 def _how_many_criteria_hold(record: Any) -> dict[str, int | None]:
     """The criteria passing and the criteria there are, from the last measured suite; None for each before there is one."""
     none: dict[str, int | None] = {"criteria_proven": None, "criteria_total": None}
@@ -841,6 +852,9 @@ def create_runs_router(
             "change_requests": suite.change_requests(root),
             "screenshots": screenshots(root),
             "pages": pages,
+            # What the release knew it did not prove, and how well the stack's own checks cover it.
+            "completion_gaps": [str(gap) for gap in (getattr(record, "completion_gaps", None) or [])],
+            "support_tier": _support_tier_of(root),
         }
 
     @runs.get("/{run_id}/changes")

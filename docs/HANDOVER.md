@@ -201,6 +201,42 @@ read every product source file against the brief (monitoring §0.4.1). Check:
 | Celery limits | soft 43,200 s (12 h), hard 43,500 s - in `tasks.py`, `docker-compose.yml` and `.env.example` (the handover had claimed this before it was done). |
 | suite | 9,840+ pass, 29 skip, 3 expected S3 fails (`tests/test_codebase_seeding_api.py`). |
 
+### 2.0000 Owner decisions of 2026-10-18 and what they built (`77289d6`..`c56d166`)
+
+The owner accepted every recommendation (list: `docs/improvement-plan.md`,
+"Owner decisions 2026-10-18"). One session is the main driver
+(`langchain-63`); the others stay read-only. Built and tested, each with a
+test that fails on the old code:
+
+- **Fast mode:** keeps up to 5 of the lead's test files when the plan names
+  none. A work order of more than 3 files is split into parts of 3 (soft cap,
+  measure over 2 runs).
+- **Design tokens (A):** every web pack's stylesheet starts with accessible
+  design tokens.
+- **Suite strength (AF):** at release, up to 3 deliberate breaks for suites
+  that drive no browser; an unnoticed break is a completion gap. Not at lock
+  time: the suite locks before the build.
+- **Interface contract (C + J.3):** `interface_contract` in the
+  specification, in strict lines. It is shown to the acceptance author, kept
+  at lock, and compiled into Playwright checks at release; a failure is a gap.
+- **Lessons (AI):** `plugins/lessons.py`. Only owner-approved lessons reach a
+  prompt. Commands: `lessons.py list|propose|approve|reject`, in the worker;
+  list new proposals in each run's report.
+- **UI:**
+  - a Changes view of the workspace's git history;
+  - each criterion opens to its tests;
+  - the view lives in the URL;
+  - steering: notes in `.harness/steering.json`, added to every later call
+    by the instruction middleware.
+- **Database (K.2):** a product that stores data defaults to an embedded
+  database under `DATA_DIR`.
+
+**Still to do:**
+- `loop.sh lessons` passes only one argument. Pass `"${@:2}"` once no
+  `loop.sh` command is running.
+- Remaining plan work: K.6 after the W.2 baselines (Fast notes-api-hono,
+  then fast fullstack-bookmarks-py), the UI timeline, and log virtualization.
+
 ### 2.000 Fast delivery (2026-10-14, `e55dd6f`)
 
 The owner judged the harness too slow to be worth using: run-c2e62179

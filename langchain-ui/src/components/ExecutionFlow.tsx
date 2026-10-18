@@ -14,7 +14,7 @@ const TONE = {
   active:  { icon: Loader2,   dot: 'bg-primary/15 text-primary border-primary/40',   text: 'text-primary' },
   waiting: { icon: Clock,     dot: 'bg-warning/15 text-warning border-warning/40',   text: 'text-warning' },
   error:   { icon: X,         dot: 'bg-danger/15 text-danger border-danger/40',      text: 'text-danger' },
-  idle:    { icon: Circle,    dot: 'bg-white/[0.04] text-text-muted border-border/50', text: 'text-text-muted' },
+  idle:    { icon: Circle,    dot: 'bg-overlay text-text-muted border-border/50', text: 'text-text-muted' },
 } as const;
 
 /**
@@ -56,7 +56,7 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
           <ListChecks className="h-3.5 w-3.5 text-primary" />
         </span>
         <div className="min-w-0">
-          <h3 className="font-semibold text-white text-sm leading-none">Progress</h3>
+          <h3 className="font-semibold text-text-primary text-sm leading-none">Progress</h3>
           <p className="text-[11px] text-text-muted mt-1 leading-none">
             {stages.length > 0 ? `${done} of ${stages.length} steps finished` : 'Steps appear as they start'}
           </p>
@@ -65,7 +65,7 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
 
       {stages.length === 0 ? (
         <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
-          <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+          <span className="grid place-items-center h-10 w-10 rounded-xl bg-overlay">
             <Circle className="h-4 w-4 text-text-muted" />
           </span>
           <p className="text-sm text-text-secondary">Not started yet</p>
@@ -117,7 +117,7 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                         </span>
 
                         <div className={`min-w-0 flex-1 ${isLast ? 'pb-1' : 'pb-5'}`}>
-                          <p className="text-[13px] font-semibold text-white leading-snug" title={stage.name}>
+                          <p className="text-[13px] font-semibold text-text-primary leading-snug" title={stage.name}>
                             {copy.title}
                           </p>
                           <p className="text-[11px] text-text-muted leading-relaxed mt-0.5">{copy.blurb}</p>

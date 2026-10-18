@@ -19,8 +19,8 @@ export const Header: React.FC = () => {
   const linkClass = (path: string) =>
     `flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
       isActive(path)
-        ? 'bg-white/10 text-white'
-        : 'text-slate-400 hover:text-white hover:bg-white/5'
+        ? 'bg-overlay-strong text-text-primary'
+        : 'text-text-secondary hover:text-text-primary hover:bg-overlay'
     }`;
 
   return (
@@ -28,10 +28,10 @@ export const Header: React.FC = () => {
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-violet-500 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 transition-shadow">
-              <Layers className="h-4.5 w-4.5 text-white" />
+            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-hover flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 transition-shadow">
+              <Layers className="h-4.5 w-4.5 text-text-primary" />
             </div>
-            <span className="font-bold text-lg text-white tracking-tight">
+            <span className="font-bold text-lg text-text-primary tracking-tight">
               DevFlow<span className="text-primary">.ai</span>
             </span>
           </Link>
@@ -51,7 +51,7 @@ export const Header: React.FC = () => {
             <div className="w-px h-6 bg-border mx-2" />
             <button
               onClick={handleLogout}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-200"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium text-text-secondary hover:text-danger hover:bg-danger-bg transition-all duration-200"
               title="Sign out"
               aria-label="Sign out"
             >
@@ -67,7 +67,7 @@ export const Header: React.FC = () => {
 
 export const Layout: React.FC = () => {
   return (
-    <div className="min-h-screen flex flex-col bg-[#020617]">
+    <div className="min-h-screen flex flex-col bg-canvas">
       <a href="#main" className="skip-link">Skip to content</a>
       <Header />
       {/* The run dashboard is a three-column workspace, so the shell takes the

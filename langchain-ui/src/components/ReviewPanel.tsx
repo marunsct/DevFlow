@@ -34,11 +34,11 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
           <div className="space-y-1.5 text-sm">
             <p className="text-text-secondary">
               <span className="text-text-muted">Artifact:</span>{' '}
-              <span className="font-mono text-white">{review.artifact_id}</span>
+              <span className="font-mono text-text-primary">{review.artifact_id}</span>
             </p>
             <p className="text-text-secondary">
               <span className="text-text-muted">Revision:</span>{' '}
-              <span className="text-white">{review.revision}</span>
+              <span className="text-text-primary">{review.revision}</span>
             </p>
           </div>
           {review.artifact_id && (
@@ -47,7 +47,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
               // Through the client, so the auth header goes with it; a plain
               // link is a navigation and the endpoint rejects it.
               onClick={() => void downloadArtifact(runId, review.artifact_id)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-lg text-text-secondary text-xs font-medium hover:text-white hover:border-primary/50 transition-all shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-surface border border-border rounded-lg text-text-secondary text-xs font-medium hover:text-text-primary hover:border-primary/50 transition-all shrink-0"
             >
               <Download className="h-3.5 w-3.5" />
               Download
@@ -57,7 +57,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
 
         {/* Previous Comments */}
         {review.comments && review.comments.length > 0 && (
-          <div className="mb-4 p-3 bg-[#0a0f1a] rounded-xl border border-border/30">
+          <div className="mb-4 p-3 bg-inset rounded-xl border border-border/30">
             <p className="text-xs font-medium text-text-muted mb-1.5 uppercase tracking-wider">Previous Comments</p>
             <p className="whitespace-pre-wrap text-xs text-text-secondary">{review.comments}</p>
           </div>
@@ -69,7 +69,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
             Your Feedback
           </label>
           <textarea
-            className="w-full rounded-xl border border-border bg-surface p-3 text-sm text-white placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all resize-none"
+            className="w-full rounded-xl border border-border bg-surface p-3 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/50 transition-all resize-none"
             rows={4}
             placeholder="Enter feedback or approval notes..."
             value={comment}
@@ -95,7 +95,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
               type="button"
               onClick={() => document.getElementById('review-file-upload')?.click()}
               disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-lg text-text-secondary text-xs font-medium hover:text-white hover:border-primary/50 transition-all disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-lg text-text-secondary text-xs font-medium hover:text-text-primary hover:border-primary/50 transition-all disabled:opacity-50"
             >
               <UploadCloud className="h-3.5 w-3.5" />
               Select File
@@ -123,7 +123,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
           <button
             onClick={() => onSubmit('approve', comment, file || undefined)}
             disabled={isLoading}
-            className="flex items-center gap-1.5 px-5 py-2.5 bg-success/90 hover:bg-success text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50 shadow-lg shadow-success/20"
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-success/90 hover:bg-success text-text-primary rounded-xl font-semibold text-sm transition-all disabled:opacity-50 shadow-lg shadow-success/20"
           >
             <CheckCircle className="h-4 w-4" />
             Approve
@@ -131,7 +131,7 @@ export const ReviewPanel: React.FC<ReviewPanelProps> = ({ runId, review, onSubmi
           <button
             onClick={() => onSubmit('changes', comment, file || undefined)}
             disabled={isLoading || (!comment.trim() && !file)}
-            className="flex items-center gap-1.5 px-5 py-2.5 bg-danger/90 hover:bg-danger text-white rounded-xl font-semibold text-sm transition-all disabled:opacity-50 shadow-lg shadow-danger/20"
+            className="flex items-center gap-1.5 px-5 py-2.5 bg-danger/90 hover:bg-danger text-text-primary rounded-xl font-semibold text-sm transition-all disabled:opacity-50 shadow-lg shadow-danger/20"
             title={!comment.trim() && !file ? "A comment or uploaded file is required to request changes" : ""}
           >
             <XCircle className="h-4 w-4" />

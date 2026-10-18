@@ -51,7 +51,7 @@ const STATUS_STYLE: Record<string, string> = {
   passed: 'bg-success/15 text-success border-success/30',
   failed: 'bg-danger/15 text-danger border-danger/30',
   untested: 'bg-warning/15 text-warning border-warning/30',
-  deferred: 'bg-white/5 text-text-muted border-border/50',
+  deferred: 'bg-overlay text-text-muted border-border/50',
 };
 
 const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) => {
@@ -109,7 +109,7 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
         onClick={() => setOpen(!open)}
         className="w-full px-5 py-3 flex items-center justify-between border-b border-border/40 text-left"
       >
-        <span className="flex items-center gap-2 font-semibold text-white text-sm">
+        <span className="flex items-center gap-2 font-semibold text-text-primary text-sm">
           <ClipboardCheck className="h-4 w-4 text-primary" />
           Delivery
           {criteria.length > 0 && (
@@ -180,13 +180,13 @@ export const DeliveryPanel: React.FC<{ runId: string; refreshKey?: string }> = (
                   <li key={d.id} className="text-sm">
                     <button
                       onClick={() => setOpenDecision(openDecision === d.id ? null : d.id)}
-                      className="w-full text-left flex items-start gap-2 hover:bg-white/[0.03] rounded px-1 py-0.5"
+                      className="w-full text-left flex items-start gap-2 hover:bg-overlay rounded px-1 py-0.5"
                     >
                       <span className="font-mono text-xs text-text-muted mt-0.5 shrink-0">{d.id}</span>
                       <span className="flex-1 text-text-secondary">
-                        {d.question} <span className="text-white">{d.decision}</span>
+                        {d.question} <span className="text-text-primary">{d.decision}</span>
                       </span>
-                      <span className={`shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded ${d.decided_by === 'user' ? 'bg-primary/15 text-primary' : 'bg-white/5 text-text-muted'}`}>
+                      <span className={`shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded ${d.decided_by === 'user' ? 'bg-primary/15 text-primary' : 'bg-overlay text-text-muted'}`}>
                         {d.decided_by}
                       </span>
                     </button>

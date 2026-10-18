@@ -84,13 +84,13 @@ export const RunList: React.FC = () => {
 
   const getStatusConfig = (status: string) => {
     const configs: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
-      created: { bg: 'bg-slate-500/20', text: 'text-slate-300', glow: '', icon: Clock },
+      created: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: Clock },
       running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
       waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
       waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
       completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
       failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
-      cancelled: { bg: 'bg-slate-500/20', text: 'text-slate-400', glow: '', icon: XCircle },
+      cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
       paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
     };
     return configs[status] || configs.created;
@@ -100,12 +100,12 @@ export const RunList: React.FC = () => {
     <div className="w-full space-y-6 animate-fade-in">
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white">Workflow Runs</h1>
+          <h1 className="text-2xl font-bold text-text-primary">Workflow Runs</h1>
           <p className="text-sm text-text-secondary mt-1">View and manage all your workflow runs</p>
         </div>
         <Link
           to="/"
-          className="gradient-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-white text-sm"
+          className="gradient-btn flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-primary-foreground text-sm"
         >
           <Plus className="h-4 w-4" />
           New Run
@@ -126,11 +126,11 @@ export const RunList: React.FC = () => {
       ) : runs.length === 0 ? (
         <div className="glass-card rounded-2xl p-16 text-center">
           <Inbox className="h-14 w-14 text-text-muted mx-auto mb-4 opacity-50" />
-          <h3 className="text-lg font-semibold text-white mb-2">No runs yet</h3>
+          <h3 className="text-lg font-semibold text-text-primary mb-2">No runs yet</h3>
           <p className="text-text-secondary mb-6 text-sm">Start your first workflow to see it here.</p>
           <Link
             to="/"
-            className="gradient-btn inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-white text-sm"
+            className="gradient-btn inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-semibold text-primary-foreground text-sm"
           >
             <Plus className="h-4 w-4" />
             Start Your First Run
@@ -145,7 +145,7 @@ export const RunList: React.FC = () => {
             return (
               <div
                 key={run.run_id}
-                className="glass-card rounded-xl p-4 hover:bg-white/[0.03] transition-all duration-200 group"
+                className="glass-card rounded-xl p-4 hover:bg-overlay transition-all duration-200 group"
               >
                 {/* Stacks on a phone. Laid out as one row it put the status
                     chip, the step, a full timestamp, the run id and four
@@ -161,7 +161,7 @@ export const RunList: React.FC = () => {
                         run needs you. The run id is an identifier for support,
                         so it moves underneath rather than leading the row. */}
                     <div className="min-w-0">
-                      <p className="text-sm font-medium text-white truncate">
+                      <p className="text-sm font-medium text-text-primary truncate">
                         {describeStage(run.current_stage).title}
                       </p>
                       <div className="mt-0.5 text-xs text-text-muted">
@@ -197,7 +197,7 @@ export const RunList: React.FC = () => {
                     {RESUMABLE.includes(run.status) && (
                       <button
                         onClick={() => handleResume(run.run_id)}
-                        className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
+                        className="p-2 text-text-muted hover:text-text-primary hover:bg-overlay-strong rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                         title="Resume run"
                       >
                         <Activity className="h-4 w-4" />
@@ -205,7 +205,7 @@ export const RunList: React.FC = () => {
                     )}
                     <button
                       onClick={() => handleClone(run.run_id)}
-                      className="p-2 text-text-muted hover:text-white hover:bg-white/10 rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
+                      className="p-2 text-text-muted hover:text-text-primary hover:bg-overlay-strong rounded-lg transition-all sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 focus:opacity-100"
                       title="Clone run"
                     >
                       <Copy className="h-4 w-4" />

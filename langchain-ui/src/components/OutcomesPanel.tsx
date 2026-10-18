@@ -22,7 +22,7 @@ export const OutcomesPanel: React.FC = () => {
   return (
     <div className="glass-card rounded-2xl p-5 space-y-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-white">Outcomes of finished runs</h2>
+        <h2 className="text-sm font-semibold text-text-primary">Outcomes of finished runs</h2>
         <p className="text-xs text-text-muted">
           {typical.map((f) => `${f.delivery_mode}: typically ${f.typical_hours} h (${f.runs} runs)`).join(' · ')}
         </p>

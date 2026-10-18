@@ -147,14 +147,14 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
           : 'border-border bg-surface hover:border-text-muted'
       }`}>
         {checked && (
-          <svg className="h-3 w-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+          <svg className="h-3 w-3 text-text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
         )}
       </div>
     </div>
     <div>
-      <span className="text-sm font-medium text-text-primary group-hover:text-white transition-colors">{label}</span>
+      <span className="text-sm font-medium text-text-primary group-hover:text-text-primary transition-colors">{label}</span>
       {description && <p className="text-xs text-text-muted mt-0.5">{description}</p>}
     </div>
   </label>
@@ -165,10 +165,10 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
       <div className="glass-card-strong rounded-2xl shadow-2xl overflow-hidden">
         {/* Header */}
         <div className="p-8 text-center border-b border-border/50 bg-gradient-to-b from-primary/5 to-transparent">
-          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/20 to-violet-500/20 border border-primary/30 mb-4">
+          <div className="inline-flex items-center justify-center h-14 w-14 rounded-2xl bg-gradient-to-br from-primary/20 to-accent-soft border border-primary/30 mb-4">
             <PlayCircle className="h-7 w-7 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold text-white mb-2">Start New Workflow</h1>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">Start New Workflow</h1>
           <p className="text-text-secondary text-sm max-w-md mx-auto">
             Upload your product documents to kick off the automated development pipeline.
           </p>
@@ -187,7 +187,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   ? 'border-primary bg-primary/10 scale-[1.01]'
                   : files.length > 0
                     ? 'border-success/50 bg-success/5'
-                    : 'border-border hover:border-primary/50 hover:bg-white/[0.02]'
+                    : 'border-border hover:border-primary/50 hover:bg-overlay'
               }`}
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
@@ -229,7 +229,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   <div className="h-14 w-14 bg-success/10 rounded-xl flex items-center justify-center mb-4">
                     <FileText className="h-7 w-7 text-success" />
                   </div>
-                  <h2 className="text-base font-semibold text-white mb-2">
+                  <h2 className="text-base font-semibold text-text-primary mb-2">
                     {files.length} file{files.length > 1 ? 's' : ''} selected
                   </h2>
                   <ul className="text-sm text-text-secondary max-h-24 overflow-y-auto mb-3 w-full max-w-sm text-left space-y-1">
@@ -265,7 +265,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                   value={workspaceLabel}
                   onChange={(e) => setWorkspaceLabel(e.target.value)}
                   placeholder="e.g., checkout-service"
-                  className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-white placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
+                  className="w-full px-4 py-2.5 bg-surface border border-border rounded-xl text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50 transition-all text-sm"
                 />
                 <p className="text-xs text-text-muted mt-1.5">
                   Just a label, not a path. Every run gets its own isolated workspace on the
@@ -288,7 +288,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               <button
                 type="submit"
                 disabled={files.length === 0 || isUploading}
-                className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-white transition-all ${
+                className={`w-full flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl font-semibold text-primary-foreground transition-all ${
                   files.length === 0 || isUploading
                     ? 'bg-surface-overlay text-text-muted cursor-not-allowed'
                     : 'gradient-btn'
@@ -296,7 +296,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
               >
                 {isUploading ? (
                   <>
-                    <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <div className="h-5 w-5 border-2 border-border border-t-text-primary rounded-full animate-spin" />
                     Starting Workflow...
                   </>
                 ) : (

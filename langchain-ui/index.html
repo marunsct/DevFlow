@@ -1,12 +1,32 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="graphite">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#020617" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#15171c" />
+    <meta name="color-scheme" content="dark light" />
     <title>DevFlow.ai</title>
+    <link rel="preload" href="/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Sets the theme before first paint, so nothing flashes. src/lib/appearance.ts keeps it in step. -->
+    <script>
+      (function () {
+        try {
+          var saved = JSON.parse(localStorage.getItem('devflow.appearance') || '{}');
+          var root = document.documentElement;
+          var themes = ['graphite', 'paper', 'contrast', 'system'];
+          var accents = ['blue', 'violet', 'teal', 'amber', 'rose', 'neutral'];
+          var densities = ['comfortable', 'compact'];
+          root.setAttribute('data-theme', themes.indexOf(saved.theme) >= 0 ? saved.theme : 'system');
+          if (accents.indexOf(saved.accent) >= 0 && saved.accent !== 'blue') root.setAttribute('data-accent', saved.accent);
+          root.setAttribute('data-density', densities.indexOf(saved.density) >= 0 ? saved.density : 'comfortable');
+          var dark = root.getAttribute('data-theme') !== 'paper' &&
+            !(root.getAttribute('data-theme') === 'system' && window.matchMedia('(prefers-color-scheme: light)').matches);
+          var colour = { paper: '#f4f5f7', contrast: '#000000' }[root.getAttribute('data-theme')] || (dark ? '#15171c' : '#f4f5f7');
+          document.querySelector('meta[name="theme-color"]').setAttribute('content', colour);
+        } catch (e) { /* storage may be unavailable; the default theme stands */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

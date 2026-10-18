@@ -175,7 +175,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
     <div className="glass-card rounded-2xl overflow-hidden">
       <div className="px-5 py-3.5 border-b border-border/40 flex items-center gap-2">
         <Rocket className="h-4.5 w-4.5 text-primary" />
-        <h3 className="text-sm font-semibold text-white">Sprint Milestones</h3>
+        <h3 className="text-sm font-semibold text-text-primary">Sprint Milestones</h3>
         <span className="ml-auto text-[11px] text-text-muted tabular-nums">
           {/* The plan's own count, so a re-run cannot read as an extra sprint. */}
           {plannedTotal > 0
@@ -198,12 +198,12 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
               {/* Header row - always visible */}
               <button
                 onClick={() => toggle(sprint.number)}
-                className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
+                className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-overlay transition-colors"
               >
                 <StatusIcon className={`h-4.5 w-4.5 flex-none ${statusColor}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-medium text-white">Sprint {sprint.number}</span>
+                    <span className="text-sm font-medium text-text-primary">Sprint {sprint.number}</span>
                     <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${statusBg} ${statusColor}`}>
                       {sprint.status}
                     </span>
@@ -259,9 +259,9 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                       { label: 'Bugs Fixed', value: sprint.fixedBugs, icon: CheckCircle2, color: 'text-success' },
                       { label: 'Bugs Open', value: sprint.openBugs, icon: XCircle, color: 'text-danger' },
                     ].map((stat) => (
-                      <div key={stat.label} className="rounded-lg border border-border/30 bg-white/[0.02] px-3 py-2.5 text-center">
+                      <div key={stat.label} className="rounded-lg border border-border/30 bg-overlay px-3 py-2.5 text-center">
                         <stat.icon className={`h-4 w-4 mx-auto mb-1 ${stat.color}`} />
-                        <p className="text-lg font-bold text-white tabular-nums">{stat.value}</p>
+                        <p className="text-lg font-bold text-text-primary tabular-nums">{stat.value}</p>
                         <p className="text-[10px] text-text-muted uppercase tracking-wider">{stat.label}</p>
                       </div>
                     ))}

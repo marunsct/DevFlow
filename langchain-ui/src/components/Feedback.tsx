@@ -56,8 +56,8 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             role={toast.kind === 'error' ? 'alert' : 'status'}
             className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-sm shadow-xl ${
               toast.kind === 'error'
-                ? 'border-danger/40 bg-[#2a1520] text-red-200'
-                : 'border-primary/40 bg-[#171c3a] text-indigo-100'
+                ? 'border-danger/40 bg-danger-bg text-danger'
+                : 'border-primary/40 bg-accent-soft text-text-primary'
             }`}
           >
             <span className="flex-1 break-words">{toast.message}</span>
@@ -65,7 +65,7 @@ export const FeedbackProvider: React.FC<{ children: React.ReactNode }> = ({ chil
               type="button"
               aria-label="Dismiss"
               onClick={() => setToasts((current) => current.filter((t) => t.id !== toast.id))}
-              className="rounded p-0.5 text-current/80 hover:text-white"
+              className="rounded p-0.5 text-current/80 hover:text-text-primary"
             >
               <X className="h-4 w-4" />
             </button>
@@ -108,7 +108,7 @@ const ConfirmDialog: React.FC<{ request: ConfirmRequest; onAnswer: (yes: boolean
   }, [request, onAnswer]);
 
   return (
-    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/60 p-4 overscroll-contain" onClick={() => onAnswer(false)}>
+    <div className="fixed inset-0 z-[95] flex items-center justify-center bg-scrim p-4 overscroll-contain" onClick={() => onAnswer(false)}>
       <div
         ref={dialog}
         role="dialog"
@@ -116,9 +116,9 @@ const ConfirmDialog: React.FC<{ request: ConfirmRequest; onAnswer: (yes: boolean
         aria-labelledby="confirm-title"
         aria-describedby={request.message ? 'confirm-message' : undefined}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-border bg-[#111827] p-6 shadow-2xl"
+        className="w-full max-w-md rounded-2xl border border-border bg-surface-raised p-6 shadow-2xl"
       >
-        <h2 id="confirm-title" className="text-base font-semibold text-white">{request.title}</h2>
+        <h2 id="confirm-title" className="text-base font-semibold text-text-primary">{request.title}</h2>
         {request.message && (
           <p id="confirm-message" className="mt-2 text-sm text-text-secondary whitespace-pre-line">{request.message}</p>
         )}
@@ -127,7 +127,7 @@ const ConfirmDialog: React.FC<{ request: ConfirmRequest; onAnswer: (yes: boolean
             ref={cancelRef}
             type="button"
             onClick={() => onAnswer(false)}
-            className="rounded-lg border border-border px-4 py-2 text-sm text-text-secondary hover:bg-white/5 hover:text-white"
+            className="rounded-lg border border-border px-4 py-2 text-sm text-text-secondary hover:bg-overlay hover:text-text-primary"
           >
             Cancel
           </button>
@@ -135,8 +135,8 @@ const ConfirmDialog: React.FC<{ request: ConfirmRequest; onAnswer: (yes: boolean
             ref={confirmRef}
             type="button"
             onClick={() => onAnswer(true)}
-            className={`rounded-lg px-4 py-2 text-sm font-semibold text-white ${
-              request.danger ? 'bg-red-700 hover:bg-red-600' : 'bg-primary hover:bg-primary-hover'
+            className={`rounded-lg px-4 py-2 text-sm font-semibold text-primary-foreground ${
+              request.danger ? 'bg-danger hover:bg-danger/90' : 'bg-primary hover:bg-primary-hover'
             }`}
           >
             {request.confirmLabel || 'Continue'}

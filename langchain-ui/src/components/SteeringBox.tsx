@@ -63,14 +63,14 @@ export const SteeringBox: React.FC<{ runId: string }> = ({ runId }) => {
           maxLength={2000}
           rows={2}
           placeholder="e.g. Keep the sign-in page as it is; the session cookie is the problem."
-          className="flex-1 rounded-lg bg-white/[0.04] border border-border/60 px-3 py-2 text-sm text-text-primary"
+          className="flex-1 rounded-lg bg-overlay border border-border/60 px-3 py-2 text-sm text-text-primary"
         />
         <label htmlFor="steering-scope" className="sr-only">How long this direction applies</label>
         <select
           id="steering-scope"
           value={scope}
           onChange={(e) => setScope(e.target.value as 'run' | 'next_stage')}
-          className="shrink-0 rounded-lg bg-white/[0.04] border border-border/60 px-2 py-2 text-sm text-text-primary"
+          className="shrink-0 rounded-lg bg-overlay border border-border/60 px-2 py-2 text-sm text-text-primary"
         >
           <option value="run">For the rest of the run</option>
           <option value="next_stage">For the next stage only</option>
@@ -78,7 +78,7 @@ export const SteeringBox: React.FC<{ runId: string }> = ({ runId }) => {
         <button
           type="submit"
           disabled={sending || !text.trim()}
-          className="shrink-0 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium disabled:opacity-50"
+          className="shrink-0 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50"
         >
           {sending ? 'Sending…' : 'Send'}
         </button>

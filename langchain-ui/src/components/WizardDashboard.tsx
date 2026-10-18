@@ -69,7 +69,7 @@ const TONE = {
   active:  { icon: Loader2,   dot: 'bg-primary/15 text-primary border-primary/40',   text: 'text-primary',  glow: 'status-running' },
   waiting: { icon: Clock,     dot: 'bg-warning/15 text-warning border-warning/40',   text: 'text-warning',  glow: 'status-warning' },
   error:   { icon: X,         dot: 'bg-danger/15 text-danger border-danger/40',      text: 'text-danger',   glow: 'status-danger' },
-  idle:    { icon: Circle,    dot: 'bg-white/[0.04] text-text-muted border-border/50', text: 'text-text-muted', glow: '' },
+  idle:    { icon: Circle,    dot: 'bg-overlay text-text-muted border-border/50', text: 'text-text-muted', glow: '' },
 } as const;
 
 const toneFor = (status: string) => TONE[(status as keyof typeof TONE) ?? 'idle'] ?? TONE.idle;
@@ -157,7 +157,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
             <ListChecks className="h-3.5 w-3.5 text-primary" />
           </span>
           <div className="min-w-0">
-            <h3 className="font-semibold text-white text-sm leading-none">The build, in phases</h3>
+            <h3 className="font-semibold text-text-primary text-sm leading-none">The build, in phases</h3>
             <p className="text-[11px] text-text-muted mt-1 leading-none">
               Click a phase to see what happened in it.
             </p>
@@ -181,7 +181,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
                   <button
                     onClick={() => setSelectedId(section.id)}
                     className={`relative z-10 w-full flex items-start gap-3 rounded-xl px-2 py-2 text-left transition-colors ${
-                      isSelected ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-white/[0.03]'
+                      isSelected ? 'bg-primary/10 ring-1 ring-primary/30' : 'hover:bg-overlay'
                     }`}
                   >
                     <span
@@ -193,7 +193,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <p className="text-[13px] font-semibold text-white leading-snug">
+                        <p className="text-[13px] font-semibold text-text-primary leading-snug">
                           {section.title}
                         </p>
                         {section.kind === 'sprint' && section.revisions.length > 1 && (
@@ -230,7 +230,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
-            <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+            <span className="grid place-items-center h-10 w-10 rounded-xl bg-overlay">
               <Circle className="h-4 w-4 text-text-muted" />
             </span>
             <p className="text-sm text-text-secondary">Nothing to show yet</p>
@@ -267,7 +267,7 @@ const SectionDetail: React.FC<SectionDetailProps> = ({ section, run, summary, sp
           <Icon className={`h-4.5 w-4.5 ${section.status === 'active' ? 'animate-spin' : ''}`} />
         </span>
         <div className="min-w-0 flex-1">
-          <h3 className="font-semibold text-white text-base leading-none">{section.title}</h3>
+          <h3 className="font-semibold text-text-primary text-base leading-none">{section.title}</h3>
           <p className="text-[12px] text-text-muted mt-1 leading-none">{section.blurb}</p>
         </div>
         <span className={`text-[12px] font-medium ${tone.text}`}>{section.status_label}</span>
@@ -387,7 +387,7 @@ const RevisionCard: React.FC<{ revision: SprintRevision }> = ({ revision }) => {
   return (
     <div className="rounded-xl border border-border/40 overflow-hidden">
       {/* Revision header */}
-      <div className="px-4 py-2.5 bg-white/[0.02] border-b border-border/40 flex items-center gap-2">
+      <div className="px-4 py-2.5 bg-overlay border-b border-border/40 flex items-center gap-2">
         <span className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary">
           {revision.number === 1 ? 'First pass' : `Pass ${revision.number}`}
         </span>
@@ -445,14 +445,14 @@ const StepCard: React.FC<{ step: WizardStep; isLast: boolean; showEvents?: boole
     <div className={`rounded-lg border ${isLast ? 'border-border/40' : 'border-border/30'} overflow-hidden`}>
       <button
         onClick={() => hasEvents && setExpanded((e) => !e)}
-        className={`w-full flex items-start gap-2.5 px-3 py-2 text-left ${hasEvents ? 'cursor-pointer hover:bg-white/[0.02]' : 'cursor-default'}`}
+        className={`w-full flex items-start gap-2.5 px-3 py-2 text-left ${hasEvents ? 'cursor-pointer hover:bg-overlay' : 'cursor-default'}`}
       >
         <span className={`flex-none grid place-items-center h-6 w-6 rounded-full border ${tone.dot} mt-0.5`}>
           <Icon className={`h-3 w-3 ${step.status === 'active' ? 'animate-spin' : ''}`} />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-[12px] font-semibold text-white leading-snug">{step.title}</p>
+            <p className="text-[12px] font-semibold text-text-primary leading-snug">{step.title}</p>
             {step.duration_seconds !== null && (
               <span className="text-[10px] text-text-muted tabular-nums">
                 {step.duration_seconds < 60
@@ -520,7 +520,7 @@ const ReviewCard: React.FC<{ review: WizardReview }> = ({ review }) => {
   const config = {
     approved: { icon: ThumbsUp, label: 'Approved', color: 'text-success', bg: 'bg-success/[0.04]', border: 'border-success/20' },
     changes:  { icon: ThumbsDown, label: 'Sent back for changes', color: 'text-warning', bg: 'bg-warning/[0.04]', border: 'border-warning/20' },
-    skipped:  { icon: SkipForward, label: 'Skipped', color: 'text-text-muted', bg: 'bg-white/[0.02]', border: 'border-border/40' },
+    skipped:  { icon: SkipForward, label: 'Skipped', color: 'text-text-muted', bg: 'bg-overlay', border: 'border-border/40' },
     pending:  { icon: Clock, label: 'Waiting for you', color: 'text-primary', bg: 'bg-primary/[0.04]', border: 'border-primary/20' },
   }[outcome] ?? { icon: Clock, label: 'Waiting for you', color: 'text-primary', bg: 'bg-primary/[0.04]', border: 'border-primary/20' };
   const Icon = config.icon;
@@ -581,7 +581,7 @@ const SummaryDetail: React.FC<{
         {stats.map((stat) => {
           const Icon = stat.icon;
           return (
-            <div key={stat.label} className="rounded-lg border border-border/40 bg-white/[0.02] px-3 py-2.5">
+            <div key={stat.label} className="rounded-lg border border-border/40 bg-overlay px-3 py-2.5">
               <div className="flex items-center gap-1.5">
                 <Icon className={`h-3 w-3 ${stat.color}`} />
                 <span className="text-[10px] text-text-muted leading-none">{stat.label}</span>
@@ -594,7 +594,7 @@ const SummaryDetail: React.FC<{
 
       {/* The goals of each planned sprint */}
       {sprintPlan && sprintPlan.goals.length > 0 && (
-        <div className="rounded-lg border border-border/40 bg-white/[0.02] px-4 py-3">
+        <div className="rounded-lg border border-border/40 bg-overlay px-4 py-3">
           <p className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary mb-2">
             Planned sprints
           </p>

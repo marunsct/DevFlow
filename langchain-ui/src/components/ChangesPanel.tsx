@@ -53,7 +53,7 @@ export const ChangesPanel: React.FC<{
               <button
                 onClick={() => onSelect(selected === c.sha ? null : c.sha)}
                 aria-current={selected === c.sha ? 'true' : undefined}
-                className={`w-full text-left px-3 py-2 text-[13px] border-b border-border/20 hover:bg-white/[0.04] ${selected === c.sha ? 'bg-white/[0.07]' : ''}`}
+                className={`w-full text-left px-3 py-2 text-[13px] border-b border-border/20 hover:bg-overlay ${selected === c.sha ? 'bg-overlay-strong' : ''}`}
               >
                 <span className="block text-text-primary truncate" title={c.message}>{c.message}</span>
                 <span className="block text-[11px] text-text-muted tabular-nums">

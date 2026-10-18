@@ -58,7 +58,7 @@ export const DynamicWorkflowUI: React.FC<DynamicWorkflowUIProps> = ({ run }) => 
         <div className="flex-grow py-2 pb-6">
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-2">
             <div>
-              <h4 className="text-sm font-bold text-white capitalize tracking-wide">{stage.name.replace(/_/g, ' ')}</h4>
+              <h4 className="text-sm font-bold text-text-primary capitalize tracking-wide">{stage.name.replace(/_/g, ' ')}</h4>
               <p className="text-xs text-text-muted mt-1 font-medium">{stage.meaning}</p>
             </div>
             
@@ -105,7 +105,7 @@ export const DynamicWorkflowUI: React.FC<DynamicWorkflowUIProps> = ({ run }) => 
 
   return (
     <div className="p-6 rounded-2xl glass-card border border-border/30 mb-6">
-      <h3 className="text-sm font-semibold text-white mb-6 uppercase tracking-wider flex items-center gap-2">
+      <h3 className="text-sm font-semibold text-text-primary mb-6 uppercase tracking-wider flex items-center gap-2">
         <PlayCircle className="w-4 h-4 text-primary" />
         Execution Workflow
       </h3>

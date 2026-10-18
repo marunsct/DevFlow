@@ -455,7 +455,7 @@ export const RunDashboard: React.FC = () => {
     return (
       <div className="max-w-lg mx-auto mt-20 p-8 glass-card rounded-2xl text-center">
         <AlertCircle className="h-12 w-12 text-danger mx-auto mb-4" />
-        <h2 className="text-lg font-bold text-white mb-2">Error Loading Run</h2>
+        <h2 className="text-lg font-bold text-text-primary mb-2">Error Loading Run</h2>
         <p className="text-text-secondary">{error || "Run not found"}</p>
         <Link to="/runs" className="inline-block mt-6 text-primary hover:text-primary-hover text-sm font-medium">
           &larr; Back to Runs
@@ -466,13 +466,13 @@ export const RunDashboard: React.FC = () => {
 
 
   const statusConfig: Record<string, { bg: string; text: string; glow: string; icon: any }> = {
-    created: { bg: 'bg-slate-500/20', text: 'text-slate-300', glow: '', icon: Clock },
+    created: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: Clock },
     running: { bg: 'bg-primary/20', text: 'text-primary', glow: 'status-running', icon: Activity },
     waiting_for_review: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
     waiting_for_approval: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: AlertCircle },
     completed: { bg: 'bg-success/20', text: 'text-success', glow: 'status-success', icon: CheckCircle2 },
     failed: { bg: 'bg-danger/20', text: 'text-danger', glow: 'status-danger', icon: XCircle },
-    cancelled: { bg: 'bg-slate-500/20', text: 'text-slate-400', glow: '', icon: XCircle },
+    cancelled: { bg: 'bg-overlay-strong', text: 'text-text-secondary', glow: '', icon: XCircle },
     paused: { bg: 'bg-warning/20', text: 'text-warning', glow: 'status-warning', icon: Clock },
   };
 
@@ -517,7 +517,7 @@ export const RunDashboard: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link
           to="/runs"
-          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-white transition-colors"
+          className="flex items-center gap-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           All runs
@@ -529,7 +529,7 @@ export const RunDashboard: React.FC = () => {
             className={`${actionButton} ${
               viewMode === 'wizard'
                 ? 'text-primary border-primary/30 hover:border-primary/60 hover:bg-primary/5'
-                : 'text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5'
+                : 'text-text-secondary border-border hover:border-border-strong hover:bg-overlay'
             }`}
             title={viewMode === 'wizard' ? 'Switch to classic dashboard' : 'Switch to guided wizard'}
           >
@@ -557,7 +557,7 @@ export const RunDashboard: React.FC = () => {
           )}
           {(RESUMABLE.includes(run.status) || run.status === 'completed') && rewindPoints === null && (
             <button onClick={openRewind}
-              className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}
+              className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}
               title="Go back to the start of an earlier stage and run from there">
               <RotateCcw className="h-3.5 w-3.5" /> Rewind
             </button>
@@ -565,7 +565,7 @@ export const RunDashboard: React.FC = () => {
           {rewindPoints !== null && (
             <span className="flex items-center gap-2 flex-wrap">
               <select value={rewindTo} onChange={(e) => setRewindTo(e.target.value)}
-                className="bg-surface/50 border border-border/50 rounded-lg px-2 py-1 text-xs text-white max-w-[16rem]">
+                className="bg-surface/50 border border-border/50 rounded-lg px-2 py-1 text-xs text-text-primary max-w-[16rem]">
                 {rewindPoints.map((p) => (
                   <option key={p.checkpoint_id} value={p.checkpoint_id}>
                     {describeStage(p.stage).title}{p.sprint ? ` (sprint ${p.sprint})` : ''}
@@ -578,18 +578,18 @@ export const RunDashboard: React.FC = () => {
                 <RotateCcw className="h-3.5 w-3.5" /> Rewind here
               </button>
               <button onClick={() => setRewindPoints(null)}
-                className={`${actionButton} text-white/60 border-white/10 hover:border-white/30`}>
+                className={`${actionButton} text-text-secondary border-border hover:border-border-strong`}>
                 Close
               </button>
             </span>
           )}
           <button onClick={handleClone}
-            className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>
+            className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Copy className="h-3.5 w-3.5" /> Clone
           </button>
           <button onClick={() => void downloadHandover(runId!)}
             title="The run's documents, decisions and acceptance suite, as one zip"
-            className={`${actionButton} text-white/80 border-white/20 hover:border-white/50 hover:bg-white/5`}>
+            className={`${actionButton} text-text-secondary border-border hover:border-border-strong hover:bg-overlay`}>
             <Download className="h-3.5 w-3.5" /> Handover pack
           </button>
           {!isTerminal && (
@@ -612,7 +612,7 @@ export const RunDashboard: React.FC = () => {
                 <StatusIcon className={`h-4 w-4 ${config.text}`} />
               </span>
               <div className="min-w-0">
-                <h1 className="text-base sm:text-lg font-semibold text-white leading-tight truncate">
+                <h1 className="text-base sm:text-lg font-semibold text-text-primary leading-tight truncate">
                   {stageCopy.title}
                 </h1>
                 {/* A terminal run's stage title already *is* its status
@@ -785,8 +785,8 @@ export const RunDashboard: React.FC = () => {
                 onClick={() => setCentreTab(tab.id)}
                 className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
                   centreTab === tab.id
-                    ? 'bg-white/[0.07] text-white'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-white/[0.03]'
+                    ? 'bg-overlay-strong text-text-primary'
+                    : 'text-text-muted hover:text-text-secondary hover:bg-overlay'
                 }`}
               >
                 {tab.label}

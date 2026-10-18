@@ -239,7 +239,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
         onClick={() => item.detail && setOpen((v) => !v)}
         aria-expanded={item.detail ? open : undefined}
         className={`w-full flex items-start gap-2 rounded-lg py-1.5 pl-2 pr-1 text-left transition-colors ${
-          item.failed ? 'hover:bg-danger/10' : 'hover:bg-white/[0.04]'
+          item.failed ? 'hover:bg-danger/10' : 'hover:bg-overlay'
         }`}
       >
         {/* State first, then kind. Whether it finished is the more urgent fact. */}
@@ -256,7 +256,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
         <Icon className={`mt-0.5 h-3.5 w-3.5 flex-none ${item.failed ? 'text-danger' : 'text-text-muted'}`} />
 
         <span className="min-w-0 flex-1">
-          <span className={`block text-[13px] leading-snug ${item.failed ? 'text-danger' : 'text-slate-300'}`}>
+          <span className={`block text-[13px] leading-snug ${item.failed ? 'text-danger' : 'text-text-secondary'}`}>
             {item.text}
           </span>
           {(item.target || item.range) && (
@@ -269,7 +269,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
               {/* Which part of the file, kept as its own chip so it survives the
                   truncation that a long path would otherwise impose on it. */}
               {item.range && (
-                <span className="flex-none rounded bg-white/[0.06] px-1.5 py-px text-[10px] font-medium tabular-nums text-text-secondary">
+                <span className="flex-none rounded bg-overlay px-1.5 py-px text-[10px] font-medium tabular-nums text-text-secondary">
                   {item.range}
                 </span>
               )}
@@ -285,7 +285,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
       </button>
 
       {open && item.detail && (
-        <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-black/30 p-3 text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
+        <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-inset p-3 text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
           {item.detail}
         </pre>
       )}
@@ -404,7 +404,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
           <Sparkles className="h-3.5 w-3.5 text-primary" />
         </span>
         <div className="min-w-0">
-          <h3 className="font-semibold text-white text-sm leading-none">Live progress</h3>
+          <h3 className="font-semibold text-text-primary text-sm leading-none">Live progress</h3>
           <p className="text-[11px] text-text-muted mt-1 leading-none">What the workflow is doing right now</p>
         </div>
         {live && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{items.length}</span>}
@@ -428,7 +428,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
           >
             {!live ? (
               <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
-                <span className="grid place-items-center h-10 w-10 rounded-xl bg-white/[0.03]">
+                <span className="grid place-items-center h-10 w-10 rounded-xl bg-overlay">
                   <Sparkles className="h-4 w-4 text-text-muted" />
                 </span>
                 <p className="text-sm text-text-secondary">Nothing to show yet</p>
@@ -451,7 +451,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                       {/* Fully opaque. At 95% the entries scrolling underneath
                           showed through as a smear of half-legible text along
                           the top edge of the panel. */}
-                      <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-[#172033] px-4 py-1.5">
+                      <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-surface-raised px-4 py-1.5">
                         <h4 className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary truncate">
                           {describeStage(group.stage).title}
                         </h4>
@@ -498,7 +498,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
             <button
               type="button"
               onClick={scrollToEnd}
-              className="w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-medium text-text-secondary hover:text-white hover:bg-white/[0.04] transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-overlay transition-colors"
             >
               <ArrowDown className="h-3 w-3" />
               {missed > 0 ? `${missed} new ${missed === 1 ? 'update' : 'updates'}` : 'Jump to latest'}

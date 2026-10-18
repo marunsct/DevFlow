@@ -22,7 +22,7 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
       return (
         <div style={{ padding: '2rem', textAlign: 'center' }}>
           <h2>Something went wrong.</h2>
-          <pre style={{ textAlign: 'left', background: '#f4f4f4', padding: '1rem', overflow: 'auto' }}>
+          <pre style={{ textAlign: 'left', background: 'var(--bg-inset)', color: 'var(--fg)', padding: '1rem', overflow: 'auto' }}>
             {this.state.error?.toString()}
           </pre>
           <button onClick={() => window.location.reload()} style={{ marginTop: '1rem', padding: '0.5rem 1rem' }}>

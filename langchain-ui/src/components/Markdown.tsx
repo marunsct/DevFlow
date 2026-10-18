@@ -32,10 +32,10 @@ const buildComponents = (density: Density): Components => {
 
   return {
     p: ({ children }) => (
-      <p className={`${text} leading-relaxed text-slate-200 mb-2 last:mb-0`}>{children}</p>
+      <p className={`${text} leading-relaxed text-text-primary mb-2 last:mb-0`}>{children}</p>
     ),
-    strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
-    em: ({ children }) => <em className="italic text-slate-300">{children}</em>,
+    strong: ({ children }) => <strong className="font-semibold text-text-primary">{children}</strong>,
+    em: ({ children }) => <em className="italic text-text-secondary">{children}</em>,
     del: ({ children }) => <del className="text-text-muted line-through">{children}</del>,
 
     a: ({ children, href }) => (
@@ -50,23 +50,23 @@ const buildComponents = (density: Density): Components => {
     ),
 
     h1: ({ children }) => (
-      <h1 className={`${compact ? 'text-sm' : 'text-lg'} font-semibold text-white mt-4 first:mt-0 mb-2`}>{children}</h1>
+      <h1 className={`${compact ? 'text-sm' : 'text-lg'} font-semibold text-text-primary mt-4 first:mt-0 mb-2`}>{children}</h1>
     ),
     h2: ({ children }) => (
-      <h2 className={`${compact ? 'text-[13px]' : 'text-base'} font-semibold text-white mt-4 first:mt-0 mb-1.5`}>{children}</h2>
+      <h2 className={`${compact ? 'text-[13px]' : 'text-base'} font-semibold text-text-primary mt-4 first:mt-0 mb-1.5`}>{children}</h2>
     ),
     h3: ({ children }) => (
-      <h3 className={`${text} font-semibold text-white mt-3 first:mt-0 mb-1`}>{children}</h3>
+      <h3 className={`${text} font-semibold text-text-primary mt-3 first:mt-0 mb-1`}>{children}</h3>
     ),
     h4: ({ children }) => (
-      <h4 className={`${text} font-semibold text-slate-200 mt-3 first:mt-0 mb-1`}>{children}</h4>
+      <h4 className={`${text} font-semibold text-text-primary mt-3 first:mt-0 mb-1`}>{children}</h4>
     ),
 
     ul: ({ children }) => (
-      <ul className={`${text} list-disc pl-5 space-y-1 text-slate-200 mb-2 last:mb-0 marker:text-text-muted`}>{children}</ul>
+      <ul className={`${text} list-disc pl-5 space-y-1 text-text-primary mb-2 last:mb-0 marker:text-text-muted`}>{children}</ul>
     ),
     ol: ({ children }) => (
-      <ol className={`${text} list-decimal pl-5 space-y-1 text-slate-200 mb-2 last:mb-0 marker:text-text-muted`}>{children}</ol>
+      <ol className={`${text} list-decimal pl-5 space-y-1 text-text-primary mb-2 last:mb-0 marker:text-text-muted`}>{children}</ol>
     ),
     li: ({ children }) => <li className="leading-relaxed">{children}</li>,
 
@@ -82,20 +82,20 @@ const buildComponents = (density: Density): Components => {
       const isBlock = className?.startsWith('language-') || content.includes('\n');
       if (isBlock) {
         return (
-          <code className="block font-mono text-[12px] leading-relaxed text-slate-200 whitespace-pre">
+          <code className="block font-mono text-[12px] leading-relaxed text-text-primary whitespace-pre">
             {children}
           </code>
         );
       }
       return (
-        <code className="rounded bg-white/[0.07] px-1 py-0.5 font-mono text-[0.9em] text-primary break-words">
+        <code className="rounded bg-overlay-strong px-1 py-0.5 font-mono text-[0.9em] text-primary break-words">
           {children}
         </code>
       );
     },
     pre: ({ children }) => (
       // Its own scroller: a long line of code must not widen the panel it is in.
-      <pre tabIndex={0} className="my-2 overflow-x-auto rounded-lg border border-white/5 bg-black/40 p-3">{children}</pre>
+      <pre tabIndex={0} className="my-2 overflow-x-auto rounded-lg border border-border bg-inset p-3">{children}</pre>
     ),
 
     // Tables are wrapped rather than styled in place. An agent's verification
@@ -115,14 +115,14 @@ const buildComponents = (density: Density): Components => {
         </table>
       </div>
     ),
-    thead: ({ children }) => <thead className="bg-white/[0.04]">{children}</thead>,
+    thead: ({ children }) => <thead className="bg-overlay">{children}</thead>,
     tbody: ({ children }) => <tbody className="divide-y divide-border/40">{children}</tbody>,
     tr: ({ children }) => <tr>{children}</tr>,
     th: ({ children }) => (
-      <th className="px-2.5 py-1.5 font-semibold text-white whitespace-nowrap">{children}</th>
+      <th className="px-2.5 py-1.5 font-semibold text-text-primary whitespace-nowrap">{children}</th>
     ),
     td: ({ children }) => (
-      <td className="px-2.5 py-1.5 align-top text-slate-300">{children}</td>
+      <td className="px-2.5 py-1.5 align-top text-text-secondary">{children}</td>
     ),
 
     img: ({ src, alt }) => (

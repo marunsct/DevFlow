@@ -188,7 +188,7 @@ export const Settings: React.FC = () => {
         autoComplete="new-password"
         value={credentials[field]}
         onChange={(e) => setCredentials({ ...credentials, [field]: e.target.value })}
-        className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:border-primary"
+        className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary font-mono focus:outline-none focus:border-primary"
         placeholder={configured ? 'Leave blank to keep the stored key' : placeholder}
       />
     </div>
@@ -347,7 +347,7 @@ export const Settings: React.FC = () => {
   return (
     <div className="w-full mt-4 space-y-6 animate-fade-in pb-12">
       <div>
-        <h1 className="text-2xl font-bold text-white mb-1">Settings</h1>
+        <h1 className="text-2xl font-bold text-text-primary mb-1">Settings</h1>
         <p className="text-text-secondary text-sm">View system configuration and account details.</p>
       </div>
 
@@ -358,7 +358,7 @@ export const Settings: React.FC = () => {
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
           <Server className="h-5 w-5 text-primary" />
-          <h2 className="font-semibold text-white">AI Provider Configuration</h2>
+          <h2 className="font-semibold text-text-primary">AI Provider Configuration</h2>
         </div>
         <div className="px-6 py-4">
           {!settings ? (
@@ -389,7 +389,7 @@ export const Settings: React.FC = () => {
                     aria-label="Saved local models"
                     value={chosenLocalProfile}
                     onChange={(e) => applyLocalProfile(e.target.value)}
-                    className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                    className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                   >
                     <option value="">Choose a saved local model...</option>
                     {localProfiles.map((p) => (
@@ -405,7 +405,7 @@ export const Settings: React.FC = () => {
                     disabled={!chosenLocalProfile}
                     title="Remove this saved local model"
                     aria-label="Remove this saved local model"
-                    className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-40 transition-colors"
+                    className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-text-primary hover:border-primary/50 disabled:opacity-40 transition-colors"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -421,7 +421,7 @@ export const Settings: React.FC = () => {
                 <select aria-label="Provider"
                   value={settings.llm_provider}
                   onChange={(e) => setSettings({ ...settings, llm_provider: e.target.value })}
-                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                 >
                   <option value="local">Local (LM Studio / Ollama)</option>
                   <option value="openai">OpenAI</option>
@@ -436,7 +436,7 @@ export const Settings: React.FC = () => {
                   type="text"
                   value={settings.model_name}
                   onChange={(e) => setSettings({ ...settings, model_name: e.target.value })}
-                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                   placeholder="e.g. gpt-4o, claude-3-5-sonnet-20241022"
                 />
               </div>
@@ -454,14 +454,14 @@ export const Settings: React.FC = () => {
                     onChange={(e) =>
                       setSettings({ ...settings, model_context_window: Number(e.target.value) || 0 })
                     }
-                    className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                    className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary tabular-nums focus:outline-none focus:border-primary"
                   />
                   <span className="text-xs text-text-muted">tokens</span>
                   <button
                     type="button"
                     onClick={detectWindow}
                     disabled={detecting}
-                    className="ml-auto rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-50 transition-colors"
+                    className="ml-auto rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:border-primary/50 disabled:opacity-50 transition-colors"
                   >
                     {detecting ? 'Asking the model…' : 'Detect'}
                   </button>
@@ -497,7 +497,7 @@ export const Settings: React.FC = () => {
                           model_max_output_tokens: Number(e.target.value) || 0,
                         })
                       }
-                      className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                      className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary tabular-nums focus:outline-none focus:border-primary"
                     />
                     <span className="text-xs text-text-muted">tokens</span>
                   </div>
@@ -529,7 +529,7 @@ export const Settings: React.FC = () => {
                         thinking_mode: e.target.value as 'default' | 'on' | 'off',
                       })
                     }
-                    className="w-64 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                    className="w-64 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                   >
                     <option value="default">Leave the model server's setting alone</option>
                     <option value="on">Think before answering</option>
@@ -554,7 +554,7 @@ export const Settings: React.FC = () => {
                               thinking_effort: e.target.value as 'low' | 'medium' | 'high',
                             })
                           }
-                          className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                          className="w-40 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                         >
                           <option value="low">Low - a quarter of the reply</option>
                           <option value="medium">Medium - half the reply</option>
@@ -642,7 +642,7 @@ export const Settings: React.FC = () => {
                   type="text"
                   value={settings.openai_base_url}
                   onChange={(e) => setSettings({ ...settings, openai_base_url: e.target.value })}
-                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                  className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                   placeholder="http://localhost:1234/v1"
                 />
               </div>
@@ -677,7 +677,7 @@ export const Settings: React.FC = () => {
                     <button
                       type="button"
                       onClick={selectNoFrontierModel}
-                      className="px-2.5 py-1 bg-surface/60 hover:bg-surface border border-border/70 rounded-lg text-xs font-medium text-text-secondary hover:text-white transition-colors"
+                      className="px-2.5 py-1 bg-surface/60 hover:bg-surface border border-border/70 rounded-lg text-xs font-medium text-text-secondary hover:text-text-primary transition-colors"
                     >
                       Select No Model
                     </button>
@@ -712,7 +712,7 @@ export const Settings: React.FC = () => {
                       id="saved-frontier-models"
                       value={chosenFrontierProfile}
                       onChange={(e) => applyFrontierProfile(e.target.value)}
-                      className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      className="flex-1 bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                     >
                       <option value="">Choose a saved frontier model...</option>
                       <option value="__none__">🚫 No model (use local model only)</option>
@@ -728,7 +728,7 @@ export const Settings: React.FC = () => {
                       disabled={!chosenFrontierProfile || chosenFrontierProfile === '__none__'}
                       title="Remove this saved frontier model"
                       aria-label="Remove this saved frontier model"
-                      className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-white hover:border-primary/50 disabled:opacity-40 transition-colors"
+                      className="rounded-lg border border-border/50 p-2 text-text-secondary hover:text-text-primary hover:border-primary/50 disabled:opacity-40 transition-colors"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -747,7 +747,7 @@ export const Settings: React.FC = () => {
                       type="text"
                       value={settings.judgement_model_name ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_model_name: e.target.value })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                       placeholder="empty: use the model above"
                     />
                   </div>
@@ -756,7 +756,7 @@ export const Settings: React.FC = () => {
                     <select aria-label="Provider"
                       value={settings.judgement_provider ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_provider: e.target.value })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                     >
                       <option value="">Same as above</option>
                       <option value="local">Local (LM Studio / Ollama)</option>
@@ -771,7 +771,7 @@ export const Settings: React.FC = () => {
                       type="text"
                       value={settings.judgement_base_url ?? ''}
                       onChange={(e) => setSettings({ ...settings, judgement_base_url: e.target.value })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                       placeholder="empty: same server, or the provider's own"
                     />
                   </div>
@@ -783,7 +783,7 @@ export const Settings: React.FC = () => {
                       step={1000}
                       value={settings.judgement_context_window ?? 0}
                       onChange={(e) => setSettings({ ...settings, judgement_context_window: Number(e.target.value) || 0 })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary tabular-nums focus:outline-none focus:border-primary"
                     />
                   </div>
                   <div>
@@ -794,7 +794,7 @@ export const Settings: React.FC = () => {
                       step={1000}
                       value={settings.judgement_max_output_tokens ?? 0}
                       onChange={(e) => setSettings({ ...settings, judgement_max_output_tokens: Number(e.target.value) || 0 })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white tabular-nums focus:outline-none focus:border-primary"
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary tabular-nums focus:outline-none focus:border-primary"
                       placeholder="0: derived from its window"
                     />
                   </div>
@@ -825,7 +825,7 @@ export const Settings: React.FC = () => {
                       max={10}
                       value={settings.escalate_after_attempts ?? 2}
                       onChange={(e) => setSettings({ ...settings, escalate_after_attempts: Math.max(1, Number(e.target.value) || 2) })}
-                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary"
+                      className="w-full bg-surface/50 border border-border/50 rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
                     />
                     <p className="text-xs text-text-muted mt-1">
                       A work order that had to start over, or a defect whose fixes failed, this many
@@ -854,7 +854,7 @@ export const Settings: React.FC = () => {
                 <button
                   type="submit"
                   disabled={saving}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary-hover text-primary-foreground rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
                 >
                   <Save className="h-4 w-4" />
                   {saving ? 'Saving...' : 'Save Settings'}
@@ -871,7 +871,7 @@ export const Settings: React.FC = () => {
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
           <User className="h-5 w-5 text-primary" />
-          <h2 className="font-semibold text-white">Account</h2>
+          <h2 className="font-semibold text-text-primary">Account</h2>
         </div>
         <div className="px-6 py-2">
           <InfoRow label="Username" value={user?.username || 'Loading...'} />
@@ -884,7 +884,7 @@ export const Settings: React.FC = () => {
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
           <Shield className="h-5 w-5 text-primary" />
-          <h2 className="font-semibold text-white">Security</h2>
+          <h2 className="font-semibold text-text-primary">Security</h2>
         </div>
         <div className="px-6 py-2">
           <InfoRow label="Authentication" value="JWT Bearer Token" />
@@ -897,7 +897,7 @@ export const Settings: React.FC = () => {
       <div className="glass-card rounded-2xl overflow-hidden">
         <div className="px-6 py-4 border-b border-border/50 flex items-center gap-2">
           <Info className="h-5 w-5 text-primary" />
-          <h2 className="font-semibold text-white">About</h2>
+          <h2 className="font-semibold text-text-primary">About</h2>
         </div>
         <div className="px-6 py-2">
           <InfoRow label="Application" value="DevFlow.ai" />

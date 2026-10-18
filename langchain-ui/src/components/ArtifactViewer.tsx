@@ -69,24 +69,24 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
   }, [onClose]);
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md animate-fade-in overscroll-contain" onClick={onClose}>
-      <div role="dialog" aria-modal="true" aria-labelledby="artifact-viewer-title" onClick={(e) => e.stopPropagation()} className="bg-[#1e2330]/95 backdrop-blur-xl border border-white/10 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-scrim backdrop-blur-md animate-fade-in overscroll-contain" onClick={onClose}>
+      <div role="dialog" aria-modal="true" aria-labelledby="artifact-viewer-title" onClick={(e) => e.stopPropagation()} className="bg-surface-raised/95 backdrop-blur-xl border border-border rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-scale-in">
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/10 bg-black/20">
+        <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-inset">
           <div className="flex items-center gap-3 min-w-0">
             <div className="p-2.5 bg-primary/20 rounded-xl shrink-0 shadow-inner">
               <FileText className="h-5 w-5 text-primary" />
             </div>
             <div className="min-w-0">
-              <h2 id="artifact-viewer-title" className="font-semibold text-white text-lg truncate tracking-tight">{path.split('/').pop()}</h2>
+              <h2 id="artifact-viewer-title" className="font-semibold text-text-primary text-lg truncate tracking-tight">{path.split('/').pop()}</h2>
               <p className="text-xs text-primary truncate font-mono mt-0.5">{path}</p>
             </div>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <button
               onClick={handleDownload}
-              className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+              className="p-2 text-text-secondary hover:text-text-primary hover:bg-overlay-strong rounded-xl transition-all"
               title="Download"
               aria-label="Download"
             >
@@ -96,7 +96,7 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
               ref={closeRef}
               onClick={onClose}
               aria-label="Close"
-              className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-xl transition-all"
+              className="p-2 text-text-secondary hover:text-text-primary hover:bg-overlay-strong rounded-xl transition-all"
             >
               <X className="h-5 w-5" />
             </button>
@@ -106,21 +106,21 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-8 relative scroll-smooth">
           {loading ? (
-            <div className="absolute inset-0 flex items-center justify-center bg-[#1e2330]/50 backdrop-blur-sm z-10">
+            <div className="absolute inset-0 flex items-center justify-center bg-surface-raised/50 backdrop-blur-sm z-10">
               <div className="flex flex-col items-center gap-4">
                 <div className="h-10 w-10 border-4 border-primary/30 border-t-primary rounded-full animate-spin" />
-                <p className="text-sm font-medium text-white/60 tracking-wider uppercase">Loading artifact...</p>
+                <p className="text-sm font-medium text-text-secondary tracking-wider uppercase">Loading artifact...</p>
               </div>
             </div>
           ) : error ? (
             <div className="flex items-center justify-center h-full">
-              <p className="text-red-400 bg-red-400/10 px-6 py-4 rounded-xl border border-red-400/20 font-medium flex items-center gap-2">
+              <p className="text-danger bg-danger-bg px-6 py-4 rounded-xl border border-danger/30 font-medium flex items-center gap-2">
                 <X className="h-5 w-5" /> {error}
               </p>
             </div>
           ) : downloadError ? (
             <div className="flex items-center justify-center h-full">
-              <p className="text-red-400 bg-red-400/10 px-6 py-4 rounded-xl border border-red-400/20 font-medium flex items-center gap-2">
+              <p className="text-danger bg-danger-bg px-6 py-4 rounded-xl border border-danger/30 font-medium flex items-center gap-2">
                 <X className="h-5 w-5" /> {downloadError}
               </p>
             </div>
@@ -133,7 +133,7 @@ export const ArtifactViewer: React.FC<ArtifactViewerProps> = ({ runId, path, onC
               {/\.(md|markdown)$/i.test(path) ? (
                 <Markdown density="document">{content || ''}</Markdown>
               ) : (
-                <pre className="text-sm font-mono whitespace-pre-wrap leading-relaxed text-slate-200">{content}</pre>
+                <pre className="text-sm font-mono whitespace-pre-wrap leading-relaxed text-text-primary">{content}</pre>
               )}
             </div>
           )}

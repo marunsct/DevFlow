@@ -247,6 +247,9 @@ class SteeringNote(BaseModel):
     """The owner's direction to a running run, carried by its next model calls."""
 
     text: str = Field(..., min_length=1, max_length=2000)
+    scope: Literal["run", "next_stage"] = Field(
+        default="run", description="For the rest of the run, or for the one stage that is working when it is first read."
+    )
 
 
 class RunStatusResponse(BaseModel):

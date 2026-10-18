@@ -750,7 +750,10 @@ export const RunDashboard: React.FC = () => {
       )}
 
       {/* The owner's direction to a run that is still going. */}
-      {!isTerminal && <SteeringBox runId={runId!} />}
+      {!isTerminal && run.status !== 'paused' && run.status !== 'waiting_for_budget' && <SteeringBox runId={runId!} />}
+      {run.status === 'paused' && (
+        <p role="status" className="text-sm text-text-muted">Resume the run to send it a direction.</p>
+      )}
 
       {/* Sprint Milestones - shown in both views */}
       <SprintSummaryPanel runId={runId!} />

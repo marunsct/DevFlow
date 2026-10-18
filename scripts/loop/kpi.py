@@ -141,6 +141,8 @@ def kpis(records: list[dict]) -> dict:
             count["model_errors"] += 1
         elif kind == "resumed":
             count["resumes"] += 1
+        elif kind == "steering_applied":
+            count["steering_notes"] += 1
         elif kind == "tool_call":
             count["tool_calls"] += 1
             calls[r.get("call_id")] = r
@@ -191,6 +193,7 @@ def kpis(records: list[dict]) -> dict:
         "model_calls": count["model_calls"],
         "model_errors": count["model_errors"],
         "resumes": count["resumes"],
+        "steering_notes": count["steering_notes"],
         "input_tokens": tokens["input"],
         "output_tokens": tokens["output"],
         # What the server had to prefill: the input it did not take from its cache.

@@ -384,9 +384,14 @@ export const getChange = async (runId: string, sha: string): Promise<{ sha: stri
 
 /** A note the owner sent a run while it ran; its next model calls carry it. */
 export interface SteeringNote {
+  id?: string;
   text: string;
   by: string;
   at: string;
+  scope?: 'run' | 'next_stage';
+  /** Set when the first model call carried the note: the stage it was read in. */
+  applied_stage?: string;
+  applied_at?: string;
 }
 
 export const getSteering = async (runId: string): Promise<SteeringNote[]> => {
@@ -394,7 +399,11 @@ export const getSteering = async (runId: string): Promise<SteeringNote[]> => {
   return response.data.notes ?? [];
 };
 
-export const sendSteering = async (runId: string, text: string): Promise<SteeringNote> => {
-  const response = await api.post(`/runs/${runId}/steering`, { text });
+export const sendSteering = async (
+  runId: string,
+  text: string,
+  scope: 'run' | 'next_stage' = 'run',
+): Promise<SteeringNote> => {
+  const response = await api.post(`/runs/${runId}/steering`, { text, scope });
   return response.data.note;
 };

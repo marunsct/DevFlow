@@ -530,9 +530,17 @@ def build_plugin_instructions_middleware(repo_root: str) -> Any:
             # The owner's direction for this run, sent while it runs, after
             # the stack's instructions (`app.server.steering`).
             try:
+                from app.observability.transcript import _stage_from_config
                 from app.server.steering import as_instructions as the_owner_s_direction
+                from app.tracing import APP_RUN_ID_KEY
 
-                instructions += the_owner_s_direction(repo_root)
+                try:
+                    from langgraph.config import get_config
+
+                    run_id = ((get_config() or {}).get("configurable") or {}).get(APP_RUN_ID_KEY)
+                except Exception:  # noqa: BLE001 - outside a run there is no config; the note still applies
+                    run_id = None
+                instructions += the_owner_s_direction(repo_root, _stage_from_config(""), run_id)
             except Exception:  # noqa: BLE001 - a note that cannot be read adds nothing
                 logger.debug("Could not read the run's steering notes", exc_info=True)
             if not instructions:

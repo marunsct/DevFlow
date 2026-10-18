@@ -873,8 +873,12 @@ def create_runs_router(
         record = _require_run(runner, run_id, user)
         if not record.repo_root or record.status in ("completed", "failed", "cancelled"):
             raise HTTPException(status_code=409, detail="Only a run that is still going can be steered.")
+        if record.status in ("paused", "waiting_for_budget"):
+            # A note on a run that is not running reaches nothing until it is
+            # resumed, and the owner reads "sent" as "followed" (Initiative AS).
+            raise HTTPException(status_code=409, detail="This run is paused. Resume it first, then send the direction.")
         try:
-            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username)}
+            return {"run_id": run_id, "note": add(record.repo_root, body.text, user.username, body.scope)}
         except ValueError as error:
             raise HTTPException(status_code=422, detail=str(error)) from error
 

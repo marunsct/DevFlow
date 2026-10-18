@@ -694,6 +694,8 @@ Stack packs and the image:
 
 ### 2.3 Recent runs (newest first; full history in monitoring §0.2)
 
+- **run-8b0c94df** (Medium brief `tests/brief_medium.md`, Fast, local only; 2026-10-18 07:02 → cancelled 2026-10-19 07:11 JST, 24.1 h). **Hand score: 9 of 30 locked acceptance tests passing (13 criteria: AC-8 4/6, AC-1 3/5, AC-13 3/7, AC-12 2/3, the other nine 0); unit tests 17 of 42; 4,455 lines of product plus an unserved second copy (`frontend/`, `backend/`).** Cancelled at the owner's threshold (20 or more of 30 failing after a test round) on sprint-1 attempt 4. KPIs: 2,593 model calls, 160 M input tokens (73% cached), 5.2 M output (about 32% reasoning where measurable, 35% of output in replies lost to length), redundant reads 47%, 10 test rounds, 25 fix stages, 62 defects raised, 8 fixed, 6 fixes reverted. Causes, in order: the file plan built a second app beside the pack's served one (fixed at the source by `8cacab9` for future runs); fixers read without writing (now withheld after 12 calls, `9275b8f`); a specification naming PostgreSQL on a sandbox with none (fixers now told the store is the embedded file, `d7902be`). Twelve harness fixes came out of it; see monitoring-handover §0.2 2026-10-18/19.
+
 - **run-d1899b44** (brief_medium, 08:19-09:02 JST 2026-10-13, on `79089ea`):
   CANCELLED at 44 min. The selector chose "Browser app in React with its own
   HTTP service in FastAPI" in its rationale but left the frontend field "not

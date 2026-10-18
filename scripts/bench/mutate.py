@@ -68,7 +68,7 @@ def mutate(workspace: Path, out: Path, count: int = 12) -> dict:
         try:
             after = suite.run(copy, save=False)
         finally:
-            (project / site["file"]).write_text(original, encoding="utf-8")
+            (project / site["file"]).write_bytes(original)
         turned_red = sorted(held - _passing(after))
         result["mutants"].append({
             **site,

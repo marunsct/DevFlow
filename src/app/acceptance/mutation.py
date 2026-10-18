@@ -97,6 +97,50 @@ def _in_comment_or_string(line: str, column: int) -> bool:
     return any(before.count(quote) % 2 for quote in ("'", '"', "`"))
 
 
+def _lines_that_are_not_code(lines: list[str], suffix: str) -> set[int]:
+    """The 1-based numbers of lines inside a docstring or a block comment.
+
+    A break there changes nothing the product does, so the suite cannot notice
+    it, and the probe reported that as a gap (Initiative AL).
+    """
+    inside: set[int] = set()
+    if suffix == ".py":
+        opener = None
+        for number, line in enumerate(lines, start=1):
+            text = line
+            while True:
+                if opener is None:
+                    positions = [(text.find(q), q) for q in ('"""', "'''") if q in text]
+                    if not positions:
+                        break
+                    at, quote = min(positions)
+                    opener = quote
+                    inside.add(number)
+                    text = text[at + 3:]
+                else:
+                    inside.add(number)
+                    end = text.find(opener)
+                    if end == -1:
+                        break
+                    text = text[end + 3:]
+                    opener = None
+        return inside
+    in_block = False
+    for number, line in enumerate(lines, start=1):
+        text = line
+        if in_block:
+            inside.add(number)
+            end = text.find("*/")
+            if end == -1:
+                continue
+            in_block, text = False, text[end + 2:]
+        start = text.find("/*")
+        if start != -1 and "*/" not in text[start + 2:]:
+            in_block = True
+            inside.add(number)
+    return inside
+
+
 def sites(files: list[Path], project: Path) -> list[dict]:
     """Every place an operator applies: file, line, column, the text it replaces and its replacement."""
     found = []
@@ -105,8 +149,9 @@ def sites(files: list[Path], project: Path) -> list[dict]:
             lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
         except (OSError, UnicodeDecodeError):
             continue
+        not_code = _lines_that_are_not_code(lines, path.suffix)
         for number, line in enumerate(lines, start=1):
-            if line.lstrip().startswith(("import ", "from ", "export {", "require(")):
+            if number in not_code or line.lstrip().startswith(("import ", "from ", "export {", "require(")):
                 continue
             for pattern, replacement in OPERATORS:
                 for match in re.finditer(pattern, line):
@@ -127,16 +172,81 @@ def spread(candidates: list[dict], count: int) -> list[dict]:
     return [candidates[int(i * step)] for i in range(count)]
 
 
-def apply(project: Path, site: dict) -> str:
-    """Make the change in place; return the file's original text."""
+def apply(project: Path, site: dict) -> bytes:
+    """Make the change in place; return the file's original bytes.
+
+    Bytes both ways: reading as text turned a CRLF file into an LF one on the
+    way back.
+    """
     path = project / site["file"]
-    original = path.read_text(encoding="utf-8")
-    lines = original.splitlines(keepends=True)
+    original = path.read_bytes()
+    lines = original.decode("utf-8").splitlines(keepends=True)
     line = lines[site["line"] - 1]
     column, length = site["column"], len(site["original"])
     lines[site["line"] - 1] = line[:column] + site["replacement"] + line[column + length:]
-    path.write_text("".join(lines), encoding="utf-8")
+    path.write_bytes("".join(lines).encode("utf-8"))
     return original
+
+
+#: Where a probe in progress is written down, and the bytes it will put back.
+JOURNAL = ".harness/mutation-in-flight.json"
+BACKUP = ".harness/mutation-backup"
+
+
+def _journal_before_changing(root: Path, project: Path, site: dict) -> bytes:
+    """Write down what is about to be changed, then change it; the original bytes.
+
+    A process that dies between the change and the restore leaves a broken
+    product that nothing else would notice. The journal and a byte copy are
+    written first, so the next entry to the release puts the file back.
+    """
+    import hashlib
+    import json
+
+    path = project / site["file"]
+    original = path.read_bytes()
+    backup = root / BACKUP / hashlib.sha256(str(path).encode()).hexdigest()[:16]
+    backup.parent.mkdir(parents=True, exist_ok=True)
+    backup.write_bytes(original)
+    (root / JOURNAL).write_text(json.dumps({
+        "file": str(path.relative_to(root)),
+        "sha256": hashlib.sha256(original).hexdigest(),
+        "backup": str(backup.relative_to(root)),
+    }), encoding="utf-8")
+    apply(project, site)
+    return original
+
+
+def _restore_and_close_the_journal(root: Path, path: Path, original: bytes) -> None:
+    import shutil
+
+    path.write_bytes(original)
+    (root / JOURNAL).unlink(missing_ok=True)
+    shutil.rmtree(root / BACKUP, ignore_errors=True)
+
+
+def restore_an_interrupted_probe(repo_root: str | Path) -> bool:
+    """Put back a file a probe changed and did not restore; whether it did.
+
+    Called when the release is entered: a worker that died mid-probe (a deploy,
+    a crash) left the deliberate break in the workspace, and orphan recovery
+    re-enters the release on the broken tree (Initiative AL).
+    """
+    import json
+
+    root = Path(repo_root)
+    journal = root / JOURNAL
+    if not journal.is_file():
+        return False
+    try:
+        note = json.loads(journal.read_text(encoding="utf-8"))
+        original = (root / note["backup"]).read_bytes()
+        _restore_and_close_the_journal(root, root / note["file"], original)
+    except (OSError, ValueError, KeyError):
+        logger.warning("A suite-strength probe was interrupted and could not be undone", exc_info=True)
+        return False
+    logger.warning("A suite-strength probe was interrupted; %s was put back as it was", note["file"])
+    return True
 
 
 def passing(result: Any) -> set[str]:
@@ -158,6 +268,7 @@ def what_the_suite_does_not_notice(repo_root: str | Path, count: int = CHANGES_A
         from app.stacks import contract
 
         root = Path(repo_root)
+        restore_an_interrupted_probe(root)
         found = contract.the_pack(root)
         if found is None or found[0].kind in BROWSER_KINDS or not suite.is_locked(root):
             return []
@@ -172,14 +283,14 @@ def what_the_suite_does_not_notice(repo_root: str | Path, count: int = CHANGES_A
         return []
     gaps = []
     for site in chosen:
-        original = apply(project, site)
+        original = _journal_before_changing(root, project, site)
         try:
             noticed = held - passing(run())
         except Exception:  # noqa: BLE001 - an unmeasured change is no finding
             logger.debug("A probe of the suite failed to run", exc_info=True)
             continue
         finally:
-            (project / site["file"]).write_text(original, encoding="utf-8")
+            _restore_and_close_the_journal(root, project / site["file"], original)
         if not noticed:
             gaps.append(
                 f"The locked suite did not notice the product changed: `{site['file']}` line {site['line']}, "

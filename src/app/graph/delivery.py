@@ -200,6 +200,12 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
 
     _stop_if_cancelled(config["configurable"].get(APP_RUN_ID_KEY))
     root = _root(state)
+    # A worker that died in the middle of a suite-strength probe left a
+    # deliberate break in the product; the suite below must not measure it
+    # (Initiative AL).
+    from app.acceptance.mutation import restore_an_interrupted_probe
+
+    restore_an_interrupted_probe(root)
     update: dict[str, Any] = {}
     failing: list[Any] = []
     summary = "There is no acceptance suite; the milestone reviews were the gate."

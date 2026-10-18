@@ -110,7 +110,7 @@ def test_a_change_is_made_where_it_was_found_and_undone_exactly(tmp_path) -> Non
     original = mutate.apply(tmp_path, site)
 
     assert source.read_text() == "def f(a, b):\n    return a != b and a > 0\n"
-    source.write_text(original)
+    source.write_bytes(original)
     assert source.read_text() == "def f(a, b):\n    return a == b and a > 0\n"
 
 

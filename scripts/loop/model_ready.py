@@ -42,8 +42,35 @@ def check(label, s):
     except Exception as error:  # noqa: BLE001 - any failure is "not ready"
         return False, f"NOTREADY {head} ({type(error).__name__}: {str(error)[:80]})"
     if s.model_name in served:
-        return True, f"READY {head} ({len(served)} models listed)"
+        return True, f"READY {head} ({len(served)} models listed){server_facts(reached, naming, key)}"
     return False, f"NOTREADY {head} (served there: {served[:20]})"
+
+
+def server_facts(reached, naming, key):
+    """What a llama.cpp-style server says of itself at /props: slots and context. "" if it says nothing.
+
+    One slot serves one request at a time: two runs on it each waited for the
+    other (a call went from about 40 s to about 5 min), and parallel mode's
+    fan-out only queues. The context it was started with is the real ceiling,
+    whatever the settings say (one server refused at ~54k with 131k set).
+    """
+    root = reached[:-3] if reached.endswith("/v1") else reached
+    request = urllib.request.Request(
+        root + "/props", headers={**({"Authorization": f"Bearer {key}"} if key else {}), **naming}
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=5) as reply:
+            props = json.load(reply)
+    except Exception:  # noqa: BLE001 - a server without /props says nothing
+        return ""
+    slots = props.get("total_slots")
+    context = (props.get("default_generation_settings") or {}).get("n_ctx")
+    said = []
+    if isinstance(slots, int):
+        said.append(f"{slots} slot(s)" + ("; parallel mode and a second run will wait their turn" if slots == 1 else ""))
+    if isinstance(context, int):
+        said.append(f"context {context} tokens as started")
+    return f" [server: {', '.join(said)}]" if said else ""
 
 
 results = [check("default", _runtime_settings())]

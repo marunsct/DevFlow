@@ -378,6 +378,12 @@ working (the tool-approval check can fail transiently), schedule a retry about
 - Deploy = `docker compose build app worker && docker compose up -d app worker`.
   There is no source mount; a restart deploys nothing. `loop.sh deploy`
   compares the image's files with the working tree.
+- Two sessions deploying at once leave `<id>_langchain-app-1` / `-worker-1`
+  containers in state `Created`, and the next `up` fails with "container name
+  ... is already in use", which leaves `app` down. `docker rm` the `Created`
+  ones (`docker ps -a | grep langchain`), then `docker compose up -d app worker`
+  and `loop.sh resumed`. A suite run while the other session changes compose
+  can fail the compose/toggle tests; re-run them before treating it as real.
 - Orphan recovery resumes any `running` run after a deploy. A superseded run
   comes back and competes for the two worker slots and the single model
   server: cancel it with `POST /api/runs/{id}/cancel`.

@@ -2004,3 +2004,15 @@ Delegation", arXiv 2609.24234.
 | UI plan-first intake + gates | P3 | NOT STARTED | Needs AG tier + `approval_timeout_minutes` in payload |
 | UI steering + cockpit | P3 | NOT STARTED | Needs steering enabler + KPI JSON |
 | Part 12 refactor track (V) | P3 | NOT STARTED | Per-stage failure carrier first (parallel-mode correctness) |
+
+> **Appendix 2 note (18:15 JST)**: commits `a35cce9` and `72d2cf9` (another
+> session, same day) closed more of the Part 11 "still open" list — toasts
+> and dialogs replace `alert/confirm`, a waiting gate shows its
+> self-approval time, the tab title names the run state, polling pauses in
+> hidden tabs, the run page keeps its last state on a failed refresh and
+> shows a reconnecting indicator, and the clock ticks. Remaining from that
+> list: title/favicon badge + browser Notifications, WS→poll fallback, log
+> virtualization + buffer cap, `waiting_for_budget` styling, "Documents N
+> produced" count, dead-code deletion, modal focus trap (verify), and the
+> API/UI contract drift items. Ledger row "UI contract drift + Phase-1
+> remainder" is scoped to that remainder.

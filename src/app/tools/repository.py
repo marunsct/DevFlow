@@ -6623,7 +6623,7 @@ def write_approved_artifact(
         # A note by now: whatever is refused was refused before the write.
         _structural_note(relative_path, content, refuse=False),
         _discovery_note(relative_path, content, target),
-        _import_note(root, target, content),
+        underlined := _import_note(root, target, content),
         _nearly_a_workflow_document(relative_parts),
         _unrunnable_script_note(relative_path),
         _the_module_type_this_declares_breaks_files_here(target, content),
@@ -6635,6 +6635,17 @@ def write_approved_artifact(
     joined = " ".join(n for n in notes if n)
     if joined:
         result["note"] = joined
+    if unchanged and underlined:
+        # "Do not write it again; continue" beside "Fix these errors now"
+        # left a stage to resend the same file: measured live, a fixer wrote
+        # a page importing a module nothing had written, sent it back
+        # unchanged, and spent its budget between the two instructions.
+        result["detail"] = (
+            "This file already contained exactly this content, so nothing was "
+            "rewritten, and the errors below are still in it. Sending the same "
+            "content again changes nothing: change what the errors point at, "
+            "or write the file it imports if that file is yours to write."
+        )
     return result
 
 

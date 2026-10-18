@@ -299,6 +299,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
     gaps.extend(_findings_recorded_as_risks(state))
     gaps.extend(_what_the_release_re_check_finds(state, root))
+    gaps.extend(_code_the_product_does_not_run(root))
     if gaps:
         update["completion_gaps"] = gaps
     # What someone who did not write it needs to test and ship it, from the
@@ -427,6 +428,16 @@ def _what_the_release_re_check_finds(state: Any, root: str) -> list[str]:
         return []
     found = [problem for problem in found if not (locked and locked in problem)]
     return [f"At release, reading the files still finds: {problem}"[:600] for problem in found[:8]]
+
+
+def _code_the_product_does_not_run(root: str) -> list[str]:
+    """A second copy nothing serves, and unit tests of other code, as gaps. Never raises."""
+    try:
+        from app.stacks.scaffold import code_the_product_does_not_run
+
+        return [f"Code the product does not run: {problem}"[:600] for problem in code_the_product_does_not_run(root)]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def _no_unit_tests_ran(root: Any) -> str:

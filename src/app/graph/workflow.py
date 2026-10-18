@@ -1257,6 +1257,24 @@ def _the_stub_still_served_section(root: Any) -> str:
     )
 
 
+def _the_unserved_code_section(root: Any) -> str:
+    """What every fixer must know about code the product never runs; else "".
+
+    Measured on one run: two copies of the page and the service, one served
+    and one drafted beside it, and fixes landed in both - one rewrote a
+    migration file nothing ran. See `scaffold.code_the_product_does_not_run`.
+    """
+    try:
+        from app.stacks.scaffold import code_the_product_does_not_run
+
+        problems = code_the_product_does_not_run(root) if root else []
+    except Exception:  # noqa: BLE001 - the request stands as it was
+        return ""
+    if not problems:
+        return ""
+    return "\n--- Code the product does not run ---\n" + "\n".join(f"- {p}" for p in problems) + "\n"
+
+
 def _the_last_attempt_section(cycle: Any, defect_index: int) -> str:
     """The differently-shaped work order for a defect's last permitted attempt, or "".
 
@@ -9054,6 +9072,7 @@ def build_workflow_graph(
         # See `_the_last_attempt_section`.
         request["messages"][-1]["content"] += _the_last_attempt_section(cycle, defect_index)
         request["messages"][-1]["content"] += _the_stub_still_served_section(state["repository"].root_path)
+        request["messages"][-1]["content"] += _the_unserved_code_section(state["repository"].root_path)
         return request, co_defects
 
     def _fixed_by_rewriting(state: Any, config: RunnableConfig, defect: Any, fix_model: Any, failed_tries: int = 0) -> Any:

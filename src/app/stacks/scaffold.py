@@ -14,6 +14,7 @@ continues the way every run did before packs existed.
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -91,6 +92,120 @@ def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
             return f"{project}/{path}"
     return None
 
+
+
+def _served_entrypoints(repo_root: str | Path) -> tuple[str, list[str]]:
+    """(the project folder, its pack's entrypoints as project-relative paths); ("", []) when unknown."""
+    from app.stacks import contract, pack_named
+
+    record = contract.read(repo_root) or {}
+    pack = pack_named(str(record.get("pack") or ""))
+    if not pack:
+        return "", []
+    project = str(record.get("project") or "")
+    title = str(record.get("title") or "")
+    package = str(record.get("package") or "") or None
+    declared = [str(e) for e in (getattr(pack, "entrypoint", "") or "", *(getattr(pack, "entrypoints", ()) or ())) if e]
+    return project, list(dict.fromkeys(pack.filled(e, project, title, package) for e in declared))
+
+
+#: Folders that are never the product's own code.
+_NOT_CODE = (
+    "node_modules", ".venv", "venv", ".git", "dist", "build", "__pycache__", ".harness",
+    "test-results", "playwright-report", "coverage", ".pytest_cache",
+)
+_FAMILIES = {
+    "python": (".py",),
+    "script": (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"),
+}
+_UNIT_TEST = re.compile(r"(^test_.*\.py$|_test\.py$|\.(test|spec)\.[cm]?[jt]sx?$)")
+
+
+def _family(path: str) -> str:
+    suffix = Path(path).suffix.lower()
+    return next((name for name, suffixes in _FAMILIES.items() if suffix in suffixes), "")
+
+
+def code_the_product_does_not_run(repo_root: str | Path) -> list[str]:
+    """Code beside the served app that the product never runs, and unit tests that only test it. Never raises.
+
+    Measured on one run: the drafted page sat in `frontend/src/` and the
+    drafted service in `backend/app/` while the scaffold served `src/` and the
+    package's `main.py`. Fixes were made in both trees - one fix rewrote a
+    migration file nothing ran - and the unit tests imported the unserved
+    service, so their result said nothing about the product the acceptance
+    suite measured. Two findings, each decided from the files:
+
+    - a folder that repeats the relative paths of two or more files in a served
+      entrypoint's folder is a second copy nothing serves;
+    - unit tests in an entrypoint's language, none of which names that
+      entrypoint's folder, test other code.
+    """
+    try:
+        project, entrypoints = _served_entrypoints(repo_root)
+        root = Path(repo_root) / project
+        if not entrypoints or not root.is_dir():
+            return []
+        from app.acceptance import suite
+        from app.analysis.walk import files_under
+
+        acceptance = suite.directory(repo_root)
+        files = [
+            path.relative_to(root).as_posix()
+            for path in files_under(root, _NOT_CODE)
+            if _family(path.name) and not (acceptance and path.is_relative_to(acceptance))
+        ]
+        problems: list[str] = []
+        for entrypoint in entrypoints:
+            folder = Path(entrypoint).parent.as_posix()
+            if folder in ("", "."):
+                continue
+            name = Path(folder).name
+            served = {
+                Path(f[len(folder) + 1:]).with_suffix("").as_posix()
+                for f in files if f.startswith(folder + "/")
+            }
+            copies: dict[str, list[str]] = {}
+            for f in files:
+                if f.startswith(folder + "/"):
+                    continue
+                parts = Path(f).parts
+                for at in range(len(parts) - 1):
+                    if parts[at] != name:
+                        continue
+                    rest = Path(*parts[at + 1:]).with_suffix("").as_posix()
+                    if rest in served:
+                        copies.setdefault(Path(*parts[: at + 1]).as_posix(), []).append(f)
+                    break
+            for copy, mirrored in sorted(copies.items()):
+                if len(mirrored) >= 2:
+                    problems.append(
+                        f"`{project}/{copy}/` repeats {len(mirrored)} files of the served `{project}/{folder}/` "
+                        f"(e.g. `{project}/{mirrored[0]}`), and nothing serves it: the product runs from "
+                        f"`{project}/{entrypoint}`. Change the served copy; the other is never built or run."
+                    )
+        for family in sorted({_family(e) for e in entrypoints} - {""}):
+            tests = [f for f in files if _family(f) == family and _UNIT_TEST.search(Path(f).name)]
+            served_folders = {
+                Path(e).parent.name for e in entrypoints
+                if _family(e) == family and Path(e).parent.as_posix() not in ("", ".")
+            }
+            if not tests or not served_folders:
+                continue
+            # Fixtures count: a Python test reaches the app through `conftest.py`.
+            helpers = [f for f in files if Path(f).name == "conftest.py"]
+            texts = [(root / f).read_text(encoding="utf-8", errors="replace") for f in [*tests, *helpers]]
+            if not any(re.search(rf"\b{re.escape(n)}\b", text) for n in served_folders for text in texts):
+                problems.append(
+                    f"The unit tests ({len(tests)} file(s), e.g. `{project}/{tests[0]}`) never name "
+                    f"{', '.join(f'`{n}`' for n in sorted(served_folders))}, where the served code lives: "
+                    "they test other code, and their result says nothing about the product. Point them "
+                    "at the served code."
+                )
+        return problems
+    except Exception:  # noqa: BLE001 - a check that cannot read the files accuses nothing
+        logger.debug("Could not compare the served code with the rest", exc_info=True)
+        return []
 
 
 def sandbox_runner(repo_root: str | Path) -> Runner:

@@ -448,6 +448,68 @@ def render_workspace_digest(
     )
 
 
+_WRITERS = ("write_artifact", "edit_artifact", "write_file", "edit_file", "replace_lines", "delete_artifact")
+MOST_KNOWN = 30
+
+
+def _get(message: Any, key: str) -> Any:
+    return message.get(key) if isinstance(message, dict) else getattr(message, key, None)
+
+
+def already_known(messages: list[Any]) -> str:
+    """What this conversation already holds, from its own calls: a line for the end of each call; "" if nothing.
+
+    17-47% of tool calls across runs were exact repeats, most of them reads of
+    a file the conversation already had (Initiative R). The pointer and the
+    withholding rungs answer a repeat after it is made; this names, where the
+    model reads last, what it already has - each file it read and whether a
+    write here changed it since, each command it ran and how it ended - so the
+    repeat is not needed. Built from the messages alone, so it is the same
+    bytes for the same conversation.
+    """
+    calls: dict[str, tuple[int, str, dict]] = {}
+    order = 0
+    for message in messages:
+        if _get(message, "type") == "ai" or _get(message, "role") == "assistant":
+            for call in _get(message, "tool_calls") or []:
+                order += 1
+                calls[str(call.get("id") or "")] = (order, str(call.get("name") or ""), call.get("args") or {})
+    read_at: dict[str, int] = {}
+    written_at: dict[str, int] = {}
+    ran: dict[str, tuple[int, str]] = {}
+    for message in messages:
+        if not (_get(message, "type") == "tool" or _get(message, "role") == "tool"):
+            continue
+        n, name, args = calls.get(str(_get(message, "tool_call_id") or ""), (0, "", {}))
+        content = str(_get(message, "content") or "")
+        if not n:
+            continue
+        path = str(args.get("file_path") or args.get("relative_path") or args.get("path") or "").strip().lstrip("/")
+        failed = content.lstrip().startswith(("Error", '{"error"', "Refusing"))
+        if name in ("read_file", "read_repository_file") and path and not failed:
+            read_at[path] = n
+        elif name in _WRITERS and path and not failed:
+            written_at[path] = n
+        elif name == "run_terminal_command":
+            command = args.get("command")
+            text = " ".join(command) if isinstance(command, list) else str(command or "")
+            found = re.search(r'"returncode":\s*(-?\d+)', content)
+            ran[text[:100]] = (n, f"exit {found.group(1)}" if found else ("refused" if failed else "ran"))
+    if not read_at and not ran:
+        return ""
+    lines = []
+    if read_at:
+        shown = sorted(read_at.items(), key=lambda kv: -kv[1])[:MOST_KNOWN]
+        lines.append("Files already in this conversation (scroll up rather than read again): " + ", ".join(
+            f"{p} (call {n}{'; changed by your write at call ' + str(written_at[p]) if written_at.get(p, 0) > n else ''})"
+            for p, n in shown
+        ))
+    if ran:
+        shown = sorted(ran.items(), key=lambda kv: -kv[1][0])[:MOST_KNOWN // 2]
+        lines.append("Commands already run here: " + "; ".join(f"`{c}` -> {how} (call {n})" for c, (n, how) in shown))
+    return "\n".join(lines)
+
+
 def _a_refresh(messages: list[Any]) -> bool:
     """Whether the stage has already acted, so the digest is a refresh.
 
@@ -520,6 +582,10 @@ def build_workspace_digest_middleware(repo_root: str) -> Any:
             if os.environ.get("WORKSPACE_DIGEST", "1").lower() in ("0", "false", "off"):
                 return handler(request)
             digest = render_workspace_digest(repo_root, refresh=_a_refresh(messages))
+            if os.environ.get("ALREADY_KNOWN", "1").lower() not in ("0", "false", "off"):
+                known = already_known(messages)
+                if known:
+                    digest = f"{digest}\n\n{known}" if digest else known
             if not digest:
                 return handler(request)
             try:

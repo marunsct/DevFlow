@@ -149,3 +149,23 @@ def test_the_refusal_names_only_the_edit_tools_offered(workspace, monkeypatch):
     with pytest.raises(RepositoryToolError) as caught:
         write_approved_artifact(workspace, "todo-app/index.html", MINE)
     assert "`replace_lines`" in str(caught.value)
+
+
+def test_with_the_read_tool_withheld_a_long_file_is_shown_in_the_refusal(workspace, monkeypatch):
+    """A fix stage stalled on reads lost its read tool, then was refused a write over a
+    244-line file as unseen - "read it first", with nothing left to read with."""
+    from app.agents import settled_answer
+    from app.tools import repository
+
+    long_file = "\n".join(f"<p id=\"line-{n}\">{n}</p>" for n in range(repository.MOST_LINES_A_REFUSAL_SHOWS + 40)) + "\n"
+    (workspace / "todo-app" / "index.html").write_text(long_file, encoding="utf-8")
+    project_memory.record(workspace, "todo-app/index.html", "specialist_testing_4")
+
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(workspace, "todo-app/index.html", MINE)
+    assert "Read it first" in str(caught.value)
+
+    monkeypatch.setattr(settled_answer, "the_read_tool_is_withheld", lambda: True)
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(workspace, "todo-app/index.html", MINE)
+    assert "You have now seen it" in str(caught.value) and 'id="line-90"' in str(caught.value)

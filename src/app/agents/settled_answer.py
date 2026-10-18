@@ -1729,6 +1729,9 @@ def build_settled_answer_middleware(
                 if stalled:
                     if writers:
                         correction = f"{correction}\n\n{_STALLED_WITH_WRITERS_NOTICE}" if correction else _STALLED_WITH_WRITERS_NOTICE
+                        # Reading is withheld from here: what refuses a write
+                        # as unseen shows the file instead (`repository`).
+                        _remember_the_read_tool_is_withheld()
                     logger.warning(
                         "Stage %s had nothing new from its last %d tool calls; withholding %s",
                         stage_name or "?", NOTHING_NEW_BEFORE_THE_ANSWER,

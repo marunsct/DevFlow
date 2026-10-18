@@ -6046,6 +6046,10 @@ def _refuse_a_blind_overwrite_of_another_stage_s_file(
 MOST_LINES_A_REFUSAL_SHOWS = 60
 
 
+#: The longest file a refusal quotes whole when the stage has no read tool left.
+MOST_LINES_SHOWN_WITH_NO_READ_TOOL = 600
+
+
 def _the_version_there_now(relative_path: str, existing: str) -> str:
     """A short file, numbered, and recorded as seen by this stage; or "".
 
@@ -6053,7 +6057,17 @@ def _the_version_there_now(relative_path: str, existing: str) -> str:
     then showing it would promise a second write that is refused again.
     """
     lines = existing.splitlines()
-    if not lines or len(lines) > MOST_LINES_A_REFUSAL_SHOWS:
+    # With the read tool withheld this refusal is the only way the stage can
+    # see the file, so it shows more of it: "read it first" cannot be done.
+    # Measured on one run: a fix stage stalled on reads lost its read tool, then
+    # was refused its write over a 244-line file as unseen.
+    try:
+        from app.agents.settled_answer import the_read_tool_is_withheld
+
+        most = MOST_LINES_SHOWN_WITH_NO_READ_TOOL if the_read_tool_is_withheld() else MOST_LINES_A_REFUSAL_SHOWS
+    except Exception:  # noqa: BLE001
+        most = MOST_LINES_A_REFUSAL_SHOWS
+    if not lines or len(lines) > most:
         return ""
     try:
         from app.tools.seen_content import has_seen_this_version, remember

@@ -1372,7 +1372,7 @@ implementation constraints and are restated in the Notes column.
 | U.1 bench corpus additions | P3 | PARTLY DONE 2026-10-18 (`1ef5dd8`) | `fullstack-bookmarks-py`: the bookmarks brief with a Python service, same hidden tests (reference scores 8/8). Service-backed bench (a database) open: needs K.2's decision |
 | U.3 A/B wiring | P3 | DONE 2026-10-18 (`3d8789f`) | `kpi_ledger.py compare A.json B.json`: every KPI of two runs with the change. Not wired into `evaluation/evaluate.py` datasets: the loop's A/B is run-vs-run |
 | V layer-economics ledger | P3 | MEASURING since 2026-10-18 (`3d8789f`) | `kpi.py` counts each guard layer's interventions per run (memory pointers, read refusals/hold-backs, edit repairs, unchanged writes, diagnostics, command refusals, and tools withheld - from the requests' tool lists). Medium run: 495 pointers, 93 withholdings, 85 held-back reads. Keep-or-delete verdicts need A/B runs (the switches exist since W.3) |
-| K.2 services provisioning | P3 | NOT STARTED | **Antigravity constraint**: prefer embedded/in-process adapters or one persistent shared service with per-run schema isolation over dynamic per-run sidecars |
+| K.2 services provisioning | P3 | OPTION A DONE 2026-10-18 (owner: embedded first) | The environment contract every stage gets now says a product that stores data runs on an embedded database by default, in a file under `DATA_DIR` (the acceptance server gets a fresh one per run), with the brief's server kept as the production target behind one connection setting. No compose change; a Postgres service (option b) only when a brief demands it, and with the owner's yes. Originally: **Antigravity constraint**: prefer embedded/in-process adapters or one persistent shared service with per-run schema isolation over dynamic per-run sidecars |
 
 Committed plan artifacts: appendix + addenda + this ledger live in
 `docs/improvement-plan.md`; the evidence archive is `docs/review-findings-wip.md`;
@@ -1831,6 +1831,24 @@ item. Concrete scope, ordered so each step is independently shippable:
   be disabled per run; nothing agent-written reaches a prompt without the
   confirmation step. **Effort**: M.
 
+#### Initiative AJ: Test Subprocess Lifecycle & Async Connection Disposal — eliminate non-daemon thread hangs in unit test runners
+- **Reasoning (given by Antigravity)**: When service unit tests utilize async databases or connection pools (such as `sqlite+aiosqlite:///:memory:` or async SQLAlchemy engines), background worker threads like `aiosqlite`'s `_connection_worker_thread` remain alive unless the engine is explicitly disposed (`await engine.dispose()`) or connection pooling is disabled (`poolclass=NullPool`). Because Python waits for all non-daemon threads to terminate during interpreter shutdown, a test run that completes in 0.25s hangs indefinitely at exit in `futex_do_wait`. Furthermore, scaffolded test runners (`scripts/unit-tests.mjs`) call `spawnSync` without an internal execution timeout. This forces the test runner to stall until the outer harness sandbox hits its maximum 300-second category timeout (`Command timed out after 300 seconds`), burning 5–10 minutes per defect attempt, triggering conversation budget exhaustion, and forcing fresh retries.
+- **Empirical Evidence**:
+  - `run-8b0c94df-eff4-47f2-82c8-0ad06b7c5285` (Medium Brief, Fast Mode):
+    - At 12:20:41 UTC, testing specialist in `defect_fix_2_4` executed `.venv/bin/python -m pytest tests/test_auth.py -v --tb=short`. Pytest finished executing all tests in 0.25 seconds (`2 warnings, 7 errors in 0.25s`), but hung in `futex_do_wait` on thread `Thread-1 (_connection_worker_thread)` for 300 seconds until the sandbox timeout killed it at 12:25:41 UTC.
+    - At 12:27:00 UTC, `npm test` running `scripts/unit-tests.mjs` spawned `.venv/bin/python -m pytest tests -q --junitxml=test-results/unit-service.xml`. Pytest wrote `test-results/unit-service.xml` completely in sub-second time, but `spawnSync` hung waiting for `.venv/bin/python` to exit due to the undisposed `_connection_worker_thread`.
+- **Harness Mechanism**:
+  1. **Subprocess Timeout in Unit Test Runner**: In `src/app/stacks/packs/_fullstack.py` (`UNIT_TESTS`), pass `{ stdio: 'inherit', timeout: 120_000 }` to `spawnSync`. If any underlying runtime hangs on thread join, `spawnSync` fails fast with `ETIMEDOUT` rather than exhausting the outer sandbox budget.
+  2. **Async Engine Teardown & NullPool Seeding**: In Python stack packs (`_python.py`, `_fullstack.py`), configure `poolclass=NullPool` for SQLite in-memory test engines and seed a clean session teardown fixture:
+     ```python
+     @pytest_asyncio.fixture(scope="session", autouse=True)
+     async def _cleanup_database_engines():
+         yield
+         # Dispose async engine connections so worker threads terminate immediately
+     ```
+- **Impact**: Eliminates 300-second dead-wait intervals during unit test execution and defect verification rounds, turning test-cycle turnarounds from 5+ minutes into sub-second iterations.
+- **Effort**: S (timeout added to `UNIT_TESTS` template; `NullPool` / session finalizer guidance in stack pack).
+
 ---
 
 ### Part 11 — UI/UX, second pass
@@ -2013,6 +2031,7 @@ Delegation", arXiv 2609.24234.
 | AH.3 reviewer completeness + judgement-model downgrade as gap | P1 | DONE 2026-10-18 (`5c0ba55`) | A judgement model that could not be built is a completion gap. The security reviewer already lists the files its budget left out and is told to open each |
 | AH.4 execution-readiness check in `loop.sh ready` / run start | P1 | DONE 2026-10-18 (`6dccea0`) | Run start already refused a worker that cannot run commands; `loop.sh ready` now prints `READY commands (...)` and counts it toward ALL READY |
 | AI structured lesson store | P2 | DONE 2026-10-18 (owner approves) | `plugins/lessons.py`: records {id, stack, role, trigger, rule (2 lines, 300 chars, no banned words), evidence_runs, source, status} in `$DATA_DIR/lessons.json`. Only `approved` lessons reach a prompt, appended to the stack's instructions by `plugins/registry.py`, 5 a call, in id order (byte-stable). `scripts/loop/lessons.py list|propose|approve|reject` in the worker; the loop lists new proposals in each run's report for the owner. Role-scoped injection not yet: the plugin middleware knows the stack, not the role |
+| AJ test subprocess lifecycle & async engine cleanup | P1 | IDENTIFIED 2026-10-18 | `scripts/unit-tests.mjs` `spawnSync` timeout (120s); `NullPool` / `await engine.dispose()` fixture seeding to prevent `aiosqlite` `_connection_worker_thread` from hanging Python process in `futex_do_wait` after tests complete |
 | UI contract drift + Phase-1 remainder | P1 | NOT STARTED | Generated TS client from OpenAPI; items listed in Part 11 |
 | UI design system + run page (timeline/diff/criteria/preview) | P2 | NOT STARTED | Needs per-path git history endpoint |
 | UI plan-first intake + gates | P3 | NOT STARTED | Needs AG tier + `approval_timeout_minutes` in payload |

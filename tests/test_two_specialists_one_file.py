@@ -174,20 +174,19 @@ class TestTheLeadIsAskedToPreventIt:
 
         assert "One file, one owner" in _SYSTEM_PROMPT
 
-    def test_it_states_the_measurement(self):
-        """Every other rule in that prompt carries the run it came from.
-
-        Whitespace-normalised: the prompt is wrapped prose, and asserting on the
-        line breaks would make rewrapping a paragraph a test failure.
-        """
+    def test_the_measurement_is_kept_beside_the_rule_not_in_it(self):
+        """The rule's evidence stays in the module, where its maintainers read
+        it; the prompt carries the rule (Initiative X.4)."""
+        import inspect
         import re
 
-        from app.agents.technical_lead import _SYSTEM_PROMPT
+        from app.agents import technical_lead
 
-        flat = re.sub(r"\s+", " ", _SYSTEM_PROMPT)
+        flat = re.sub(r"\s+", " ", technical_lead._SYSTEM_PROMPT)
+        source = re.sub(r"[#\s]+", " ", inspect.getsource(technical_lead))
 
-        assert "17 of 25 sprint plans" in flat
-        assert "157 writes" in flat
+        assert "17 of 25 sprint plans" not in flat
+        assert "17 of 25 sprint plans" in source and "157 writes" in source
 
     def test_it_allows_a_shared_file_with_stated_parts(self):
         """Two roles on one file is sometimes right; unowned is what is wrong."""

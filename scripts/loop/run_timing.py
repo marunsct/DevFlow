@@ -71,6 +71,7 @@ def analyse(prefix):
     per_iv = collections.defaultdict(list)
     spirals = 0
     stages_seen = []
+    tool_counts, tool_errors = collections.Counter(), collections.Counter()
     for r in recs:
         st, k = r.get("stage") or "", r.get("kind")
         fam = family(st)
@@ -87,6 +88,7 @@ def analyse(prefix):
             per[fam]["out"] += out
             per[fam]["reasoning"] += rea
             per[fam]["in"] += u.get("input_tokens") or 0
+            per[fam]["cached"] += (u.get("input_token_details") or {}).get("cache_read") or 0
             per[fam]["model_s"] += b - a
             if r.get("finish_reason") == "length" and not r.get("tool_calls"):
                 spirals += 1
@@ -96,6 +98,10 @@ def analyse(prefix):
         elif k == "tool_result" and r.get("call_id") in calls:
             a, f, tool = calls.pop(r.get("call_id"))
             b = ts(r["at"])
+            said = str(r.get("content") or "")[:40]
+            tool_counts[tool] += 1
+            if said.startswith("Error") or '"error"' in said:
+                tool_errors[tool] += 1
             tool_iv.append((a, b))
             per[f]["tool_s"] += b - a
             per[f]["tools"] += 1
@@ -112,6 +118,12 @@ def analyse(prefix):
     print(f"\n===== {prefix}  wall {wall/60:.0f} min")
     print(f"model busy {model_busy/60:.0f} min ({model_busy/wall:.0%}) | tools busy {tool_busy/60:.0f} min ({tool_busy/wall:.0%}) | neither {max(wall-any_busy,0)/60:.0f} min ({max(wall-any_busy,0)/wall:.0%})")
     print(f"model calls {tot['calls']} | output tokens {tot['out']:,} of which reasoning {tot['reasoning']:,} ({tot['reasoning']/max(tot['out'],1):.0%}) | input tokens {tot['in']:,} | spirals {spirals}")
+    # The prefix the server already held: on a prefill-bound server the share
+    # of input it did not have to read again (KPI U.2).
+    print(f"prompt cache: {tot['cached']:,} of {tot['in']:,} input tokens served from cache ({tot['cached']/max(tot['in'],1):.0%})")
+    print("tool errors: " + ", ".join(
+        f"{tool} {tool_errors[tool]}/{n} ({tool_errors[tool]/n:.0%})" for tool, n in tool_counts.most_common(8)
+    ))
     print(f"tool calls {tot['tools']} | summed model seconds {tot['model_s']/60:.0f} min (parallel overlap {tot['model_s']/max(model_busy,1):.1f}x)")
     if tot["model_s"]:
         print(f"throughput: {tot['out']/tot['model_s']:.0f} output tok/s per call (summed)")

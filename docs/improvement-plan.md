@@ -1359,11 +1359,11 @@ implementation constraints and are restated in the Notes column.
 | O.2 effective context ceiling | P2 | NOT STARTED | 32–64k effective cap as profile data |
 | O.3 cache-stability rule | P2 | NOT STARTED | Byte-stable prefixes; volatile context last; KPI in U.2 |
 | O.4 compaction profile knob + re-injection | P2 | NOT STARTED | **Antigravity constraint**: keep default trigger 0.75–0.80; knob is per-profile and A/B-verified; prefer O.1 so requests never bloat near the trigger; add disk re-injection + tool-output offload |
-| O.5 stale budget constants | P2 | NOT STARTED | Fix `DEFAULT_SPECIFICATION_BUDGET` + docstring while touching text_budget |
+| O.5 stale budget constants | P2 | DONE 2026-10-18 | `DEFAULT_SPECIFICATION_BUDGET` docstring corrected (150k chars is ~40-50k tokens, not 15k); the value is unchanged until O.1's section selection can shrink it without cutting the specification's tail |
 | R duplicate-call elimination | P2 | NOT STARTED | Digest "already known" block + work-order recitation at request tail; harness-side, not the opt-in write_todos tool |
-| S server checklist + health telemetry | P2 | NOT STARTED | Owner-operated; harness probes, verifies and advises; mid-run endpoint health into the event stream |
+| S server checklist + health telemetry | P2 | PARTLY DONE 2026-10-18 | `loop.sh ready` reads a llama.cpp-style server's `/props`: slot count (one slot: "parallel mode and a second run will wait their turn") and the context it was started with; live: `1 slot(s) ... context 126464 tokens as started`. Mid-run shared-server notice already in `call_gate` (2026-10-16). Open: docs checklist, mid-run health events |
 | T streaming re-test spike | P2 | NOT STARTED | Timeboxed; watchdog for wedged calls |
-| U.2 KPI plumbing | P2 | NOT STARTED | Duplicate-call rate, per-tool error rates, cache-hit %, exhaustion events, stale dispatches, vacuous-green detections, reverts, reclassifications, prefill:decode — into scripts/loop reports |
+| U.2 KPI plumbing | P2 | PARTLY DONE 2026-10-18 | `run_timing.py` now prints the prompt-cache share (from the transcripts' `cache_read`; live run 65%) and per-tool error rates; duplicate-call and redundant-read rates were already in `audit_live.py`. Open: stale dispatches, vacuous-green detections, reverts, reclassifications as counted lines |
 | U.4 retention policy | P2 | NOT STARTED | Transcript compression/pruning after terminal state + KPI extract; never prune bench-scored evidence |
 | UI Phase 1 harm removal | P2 | NOT STARTED | aria-live regions, contrast, labels, poll-failure resilience, gate visibility, notifications |
 | UI Phase 2 structural | P2 | NOT STARTED | Design tokens, virtualization, URL state, diff viewer, intake wizard |

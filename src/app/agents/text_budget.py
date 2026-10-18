@@ -27,9 +27,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_SPECIFICATION_BUDGET = 150_000
 """Characters of the technical specification to carry into one request.
 
-Roughly 15k tokens, which leaves room in a 75k window for the system prompt,
-the tool schemas, and a structured response. Set `CTX_SPECIFICATION_BUDGET=0`
-to send the whole specification.
+About 40-50k tokens at 3-4 characters a token - not the 15k this once said.
+On a ~126k-token local window that leaves room for the system prompt, the
+tool schemas, project memory's share and a structured response; a smaller
+window should set `CTX_SPECIFICATION_BUDGET`. `0` sends the whole
+specification. Section-aware selection (plan item O.1) is what would shrink
+it without cutting the specification's tail.
 """
 
 

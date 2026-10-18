@@ -196,6 +196,48 @@ _RUN_COSTS: dict[str, RunCost] = {}
 _LOCK = threading.Lock()
 
 
+#: Runs whose earlier total this process has already taken from the transcript.
+_SEEDED: set[str] = set()
+
+
+def seed_from_the_transcript(run_id: str | None, provider: str = "", model: str = "") -> None:
+    """Take what the run spent before this process from its transcript, once per process.
+
+    `_RUN_COSTS` lives in one process's memory, so a deploy or an orphan
+    recovery restarted a run's total at zero and a token or cost ceiling bound
+    only the worker segment (Initiative AK). The transcript is the shared
+    copy; every call made before this moment is in it, and none made by this
+    process is, so the cut is exact. Called when a stage's handler is built,
+    before any call of this process for the run.
+    """
+    if not run_id:
+        return
+    key = str(run_id)
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+    with _LOCK:
+        if key in _SEEDED:
+            return
+        _SEEDED.add(key)
+        try:
+            earlier = cost_from_transcript(key, provider, model, before=now)
+        except Exception:  # noqa: BLE001 - a total that cannot be rebuilt starts at zero, as before
+            logger.debug("Could not seed %s from its transcript", key, exc_info=True)
+            return
+        if earlier is None:
+            return
+        total = _RUN_COSTS.setdefault(key, RunCost())
+        total.prompt_tokens += earlier.prompt_tokens
+        total.completion_tokens += earlier.completion_tokens
+        total.total_tokens += earlier.total_tokens
+        total.successful_requests += earlier.successful_requests
+        total.priced_requests += earlier.priced_requests
+        total.unpriced_requests += earlier.unpriced_requests
+        total.usd += earlier.usd
+        total.unpriced_models |= earlier.unpriced_models
+
+
 def run_cost(run_id: str | None) -> RunCost:
     """This run's total so far; an empty one for a run that has spent nothing.
 
@@ -233,6 +275,7 @@ def forget_run(run_id: str | None) -> None:
         return
     with _LOCK:
         _RUN_COSTS.pop(str(run_id), None)
+        _SEEDED.discard(str(run_id))
 
 
 def _record(run_id: str, price: Price | None, model: str, p: int, c: int, t: int) -> None:
@@ -292,6 +335,8 @@ class CostTrackingCallbackHandler(BaseCallbackHandler):
         self.run_id = str(run_id)
         self.provider = provider
         self.model = model
+        # Before any call of this process for the run: see `seed_from_the_transcript`.
+        seed_from_the_transcript(self.run_id, provider, model)
 
     @staticmethod
     def _counts(response: LLMResult) -> tuple[int, int, int] | None:
@@ -347,8 +392,18 @@ class CostTrackingCallbackHandler(BaseCallbackHandler):
         return run_cost(self.run_id).summary()
 
 
+def _happened_before(entry: dict, moment: str) -> bool:
+    """Whether a transcript entry is earlier than `moment`; one with no readable time counts as earlier."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(str(entry.get("at"))) < datetime.fromisoformat(moment)
+    except (TypeError, ValueError):
+        return True
+
+
 def cost_from_transcript(
-    run_id: str, provider: str = "", model: str = ""
+    run_id: str, provider: str = "", model: str = "", *, before: str | None = None
 ) -> RunCost | None:
     """Rebuild a run's total from its transcript, for a process that did not run it.
 
@@ -379,6 +434,8 @@ def cost_from_transcript(
     except Exception:  # noqa: BLE001 - a missing transcript is not an error here
         logger.debug("Could not read the transcript for %s", run_id, exc_info=True)
         return None
+    if before:
+        entries = [entry for entry in entries if _happened_before(entry, before)]
     if not entries:
         return None
 
@@ -414,4 +471,5 @@ __all__ = [
     "forget_run",
     "price_for",
     "run_cost",
+    "seed_from_the_transcript",
 ]

@@ -348,15 +348,12 @@ Responsibilities:
 
 Constraints:
 - Do not modify application source code.
-- Do not change repo files except through the approved artifact tool.
 - Do not write a document. The workflow renders `docs/product_intake.md` from the
   structured response you return, so your product intake reaches its readers
   either way - and only through that response. Writing it yourself
   produces the same work twice from one understanding, and the two
   copies then disagree.
 - Do not claim a requirement is fact without evidence from the supplied brief or repository context.
-- Every write_artifact call pauses for a human decision before anything is saved; never tell the user the artifact is saved until you see a tool result confirming a completed write.
-- **Write the complete intake in ONE single write_artifact call.** Do NOT make follow-up edit calls to refine or improve it after the initial write. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 Return the response in the required output schema only.

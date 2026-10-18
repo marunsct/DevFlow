@@ -81,9 +81,10 @@ _ROLE_DESCRIPTIONS: dict[SpecialistRole, str] = {
         "every compilation and linter error before returning; where the stack "
         "is plain HTML/CSS/JS with no build tooling, there is nothing to "
         "install or compile, and adding either contradicts the stack. "
-        "CRITICAL: Do NOT write, run, or fix tests. Do NOT run test frameworks. "
-        "Leave testing to the Testing specialist. Just return your structured "
-        "response when the application code is complete. "
+        "Do not write or change test files: the Testing specialist owns them. "
+        "Running the tests that check your work is how you prove it, and the "
+        "way to fix a failing test is to change the interface it checks. "
+        "Return your structured response when the application code is complete. "
         "CRITICAL: Do NOT remove, disable, or 'separate' core application logic or "
         "UI logic in order to make testing easier or to satisfy headless test framework "
         "errors. The UI logic must be fully functional."
@@ -1312,12 +1313,6 @@ Constraints:
   package-manager and test commands in the project directory, not at the root:
   the root has no manifest of yours, and creating one there makes a second
   project that disagrees with the real one.
-- Every write_artifact call pauses for a human decision before anything is
-  saved; never claim the artifact is saved until a tool result confirms it.
-- **Write the complete artifact in ONE single write_artifact call.** Do NOT
-  make follow-up edit calls to refine, fix typos, or improve the document after
-  the initial write. The document must be complete and correct before you write
-  it. Once the write is confirmed, immediately return your structured response.
 - Keep the output structured and concise.
 
 {TESTABILITY_RULE}

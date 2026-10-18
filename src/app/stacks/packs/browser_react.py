@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.stacks.packs._design import DESIGN_TOKENS
+
 from app.stacks import StackPack
 from app.stacks.packs import _javascript as js
 
@@ -105,7 +107,7 @@ APP = """export function App() {
 }
 """
 
-STYLES = """*, *::before, *::after { box-sizing: border-box; }
+STYLES = DESIGN_TOKENS + """*, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;

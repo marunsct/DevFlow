@@ -14,6 +14,8 @@ JavaScript, or FastAPI in Python); `fullstack_pack` composes one.
 
 from __future__ import annotations
 
+from app.stacks.packs._design import DESIGN_TOKENS
+
 from dataclasses import dataclass, field
 
 from app.stacks import StackPack
@@ -85,7 +87,7 @@ INDEX = """<!DOCTYPE html>
 </html>
 """
 
-STYLES = """*, *::before, *::after { box-sizing: border-box; }
+STYLES = DESIGN_TOKENS + """*, *::before, *::after { box-sizing: border-box; }
 
 body {
   margin: 0;

@@ -135,3 +135,17 @@ class TestAllowed:
         write_approved_artifact(workspace, "todo-app/index.html", MINE)
 
         assert _page(workspace) == MINE
+
+
+def test_the_refusal_names_only_the_edit_tools_offered(workspace, monkeypatch):
+    """`replace_lines` is off unless LINE_EDITS=on; a refusal must not send the stage to it."""
+    monkeypatch.delenv("LINE_EDITS", raising=False)
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(workspace, "todo-app/index.html", MINE)
+    assert "replace_lines" not in str(caught.value) and "`edit_artifact`" in str(caught.value)
+
+    monkeypatch.setenv("LINE_EDITS", "on")
+    stage_memory.forget_everything()
+    with pytest.raises(RepositoryToolError) as caught:
+        write_approved_artifact(workspace, "todo-app/index.html", MINE)
+    assert "`replace_lines`" in str(caught.value)

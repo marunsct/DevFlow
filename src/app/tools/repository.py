@@ -5968,6 +5968,12 @@ def _who_has_it_now(root: Path, relative_path: str) -> str:
     return f" (last written by {stage})" if stage else ""
 
 
+def _line_edits() -> bool:
+    from app.tools.agent_toolkit import line_edits_offered
+
+    return line_edits_offered()
+
+
 def _refuse_a_blind_overwrite_of_another_stage_s_file(
     root: Path, target: Path, relative_path: str, content: str
 ) -> None:
@@ -6019,8 +6025,9 @@ def _refuse_a_blind_overwrite_of_another_stage_s_file(
             f"the version there now ({_line_count(existing)} lines), and you had not "
             "seen it - writing the whole file would have replaced that work unread. "
             f"Nothing was written. This is the file as it stands:\n{shown}\n"
-            "You have now seen it. Change your part with `edit_artifact` or "
-            "`replace_lines`, keeping what the other stage wrote; or, if replacing "
+            "You have now seen it. Change your part with "
+            + ("`edit_artifact` or `replace_lines`" if _line_edits() else "`edit_artifact`")
+            + ", keeping what the other stage wrote; or, if replacing "
             "the whole file is what you mean, send the write again with everything "
             "above that still has to be there."
         )
@@ -6029,8 +6036,8 @@ def _refuse_a_blind_overwrite_of_another_stage_s_file(
         f"the version there now ({_line_count(existing)} lines), and you have not "
         "seen it - writing the whole file would replace that work unread. Nothing "
         "was written. Read it first with `read_file`; then change your part with "
-        "`edit_artifact` or `replace_lines`, or write the whole file if replacing it "
-        "is what you mean."
+        + ("`edit_artifact` or `replace_lines`" if _line_edits() else "`edit_artifact`")
+        + ", or write the whole file if replacing it is what you mean."
     )
 
 

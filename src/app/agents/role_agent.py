@@ -191,13 +191,33 @@ def writing_tools(
      A named list is here so the invariant is one thing
     to test rather than one call site to remember.
     """
+    from app.tools.agent_toolkit import line_edits_offered
+
     return [
         build_artifact_write_tool(repo_root, answer_fields, schema),
         build_artifact_edit_tool(repo_root),
-        build_line_replace_tool(repo_root),
+        *([build_line_replace_tool(repo_root)] if line_edits_offered() else []),
         build_artifact_delete_tool(repo_root),
         build_artifact_move_tool(repo_root),
     ]
+
+
+def without_line_edits(text: str) -> str:
+    """`text` naming only the edit tools offered: `replace_lines` is off unless `LINE_EDITS=on`."""
+    from app.tools.agent_toolkit import line_edits_offered
+
+    if line_edits_offered() or "replace_lines" not in text:
+        return text
+    kept, skipping = [], False
+    for line in text.split("\n"):
+        if "`replace_lines`" in line and line.lstrip().startswith("change lines"):
+            skipping = True
+            continue
+        if skipping and line.startswith(" " * 10) and line.strip():
+            continue  # the entry's continuation lines
+        skipping = False
+        kept.append(line)
+    return "\n".join(kept).replace("`edit_artifact` or `replace_lines`", "`edit_artifact`")
 
 
 _SUBAGENT_PROFILE_REGISTERED = False
@@ -653,7 +673,7 @@ def create_role_agent(
     # `write_artifact` tool or any file-writing/editing tools available"
     # instead of returning its structured response. Contradictory instructions
     # cost a stage; withholding the irrelevant half costs nothing.
-    full_system_prompt = f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _READ_ONLY_RULES)
+    full_system_prompt = without_line_edits(f"{system_prompt}\n\n" + (_WRITING_RULES if can_write else _READ_ONLY_RULES))
 
     # Compaction. Built here rather than at module scope so a policy change
     # takes effect on the next agent, not the next restart. The context

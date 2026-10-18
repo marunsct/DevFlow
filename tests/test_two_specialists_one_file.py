@@ -77,7 +77,6 @@ class TestTheSharedFileIsNamed:
         brief = _brief(THE_PLAN_THAT_OVERLAPPED[0], THE_PLAN_THAT_OVERLAPPED)
 
         assert "`edit_artifact`" in brief
-        assert "`replace_lines`" in brief
 
     def test_it_gives_an_escape_that_is_not_a_rewrite(self):
         """A task that truly needs the whole file must have somewhere to go."""

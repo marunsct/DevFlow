@@ -1443,6 +1443,15 @@ def _how_it_differs(content: str, wanted: str) -> str:
     # needs no quoting - was called 42 times against `edit_artifact`'s 1,707.
     # A tool used in 2% of edits is a tool nobody was told to reach for.
     first_line = window[0] if window else ""
+    from app.tools.agent_toolkit import line_edits_offered
+
+    if not line_edits_offered():
+        return (
+            f"\n\nIt is nearly the passage at line {start + 1}. These lines differ:\n"
+            + "\n".join(differences)
+            + "\n\nSend `find` exactly as the file has it above, with what you want "
+            "instead in `replace`."
+        )
     return (
         f"\n\nIt is nearly the passage at line {start + 1}. These lines differ:\n"
         + "\n".join(differences)

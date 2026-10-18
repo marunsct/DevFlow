@@ -362,6 +362,19 @@ def build_artifact_edit_tool(repo_root: str) -> BaseTool:
     return edit_artifact
 
 
+def line_edits_offered() -> bool:
+    """Whether stages are offered `replace_lines`. Off unless `LINE_EDITS=on`.
+
+    Measured across four runs: 51 of 81 `replace_lines` calls failed (62%),
+    against 6 of 82 `edit_artifact` (7%) and 7 of 90 `write_artifact` (7%) -
+    line numbers go stale after every earlier edit, and a weak model sends
+    them anyway. `edit_artifact` and a whole-file write do every job it does.
+    """
+    import os
+
+    return str(os.environ.get("LINE_EDITS") or "").strip().lower() in ("1", "on", "true", "yes")
+
+
 def build_line_replace_tool(repo_root: str) -> BaseTool:
     """Return the line-range counterpart to `edit_artifact`.
 
@@ -1056,6 +1069,7 @@ HUMAN_APPROVAL_TOOLS = (
 
 __all__ = [
     "HUMAN_APPROVAL_TOOLS",
+    "line_edits_offered",
     "build_artifact_delete_tool",
     "build_artifact_move_tool",
     "build_artifact_edit_tool",

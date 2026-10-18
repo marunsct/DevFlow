@@ -268,8 +268,9 @@ def test_every_file_operation_has_a_tool() -> None:
 
     mutating = {tool.name for tool in writing_tools("/workspace")}
 
+    # `replace_lines` only with `LINE_EDITS=on`: it failed 62% of calls on weak models.
     assert mutating == {
-        "write_artifact", "edit_artifact", "replace_lines",
+        "write_artifact", "edit_artifact",
         "delete_artifact", "move_artifact",
     }
     assert {"ls", "read_file", "glob", "grep"} <= set(_WORKSPACE_READ_TOOLS)

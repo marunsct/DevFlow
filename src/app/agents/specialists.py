@@ -751,7 +751,7 @@ def _a_file_another_specialist_is_also_given(
         f"--- A file another specialist is also working on ---\n"
         f"{named} is named by another task in this sprint, and that specialist may "
         "be running right now. Change only the part of it your task covers, with "
-        "`edit_artifact` or `replace_lines`. A whole-file `write_artifact` would "
+        "`edit_artifact`. A whole-file `write_artifact` would "
         "discard their work, and it is the most common wasted call in this "
         "pipeline: across the stored runs 157 writes were one stage writing "
         "byte-for-byte what another had already written. If your task cannot be "

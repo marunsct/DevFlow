@@ -355,6 +355,9 @@ REPEATED_READS_BEFORE_REFUSING = REPEATED_READS_BEFORE_NAMING_THE_EXIT * 2
 #: them cannot drift from the backend that writes them. Counting a message by
 #: a phrase written somewhere else is how a marker goes stale silently.
 READ_REFUSED_MARKER = "Refusing to read"
+#: The words a read opens with when its content is held back as a repeat. It
+#: is a refusal in all but name, and counted as one (`settled_answer._refused_reads`).
+READ_WITHHELD_MARKER = "has given you these same bytes"
 
 
 #: Lines of the withheld file shown at each end, so the message is an anchor
@@ -779,7 +782,7 @@ class _NoticingRepeats:
         if count >= READS_BEFORE_WITHHOLDING:
             self._withheld = True  # noqa: SLF001 - own attribute, read by `read`
             return (
-                f"[This file has given you these same bytes {count} times in "
+                f"[This file {READ_WITHHELD_MARKER} {count} times in "
                 "this stage and has not changed once. The content is not "
                 "repeated here, because you already have it - scroll back to "
                 "any of those results. If you need a part of it you have not "

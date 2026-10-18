@@ -1129,13 +1129,18 @@ def _refused_reads(messages: list[Any]) -> int:
     tally is really per stage, counting the refusals in front of us understates
     a stage that paused and resumed, and understating is the safe direction.
     """
-    from app.agents.workspace_backend import READ_REFUSED_MARKER
+    from app.agents.workspace_backend import READ_REFUSED_MARKER, READ_WITHHELD_MARKER
 
+    # A read whose content is held back as a repeat counts too. Measured live:
+    # a fixer read one file fourteen times with the same arguments, the last
+    # eleven held back, none of them a refusal by these words - so the read
+    # tool stayed, and the stage spent its budget on it.
     refused = 0
     for message in messages:
         if getattr(message, "type", None) != "tool":
             continue
-        if READ_REFUSED_MARKER in str(getattr(message, "content", "") or ""):
+        said = str(getattr(message, "content", "") or "")
+        if READ_REFUSED_MARKER in said or READ_WITHHELD_MARKER in said:
             refused += 1
     return refused
 

@@ -4246,6 +4246,10 @@ def _share_a_failing_surface(one: Any, other: Any) -> bool:
     return bool(mine & theirs)
 
 
+#: First failing layers every request meets, whatever the route.
+_WHOLE_PRODUCT_LAYERS = frozenset({"connection-refused", "unauthorized"})
+
+
 def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     """`reported` with the defects that fail at one layer behind one cause merged, in order.
 
@@ -4283,7 +4287,12 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
         return index
 
     for layer, indices in layers.items():
-        if len(indices) >= 3:
+        # Only a layer the whole product sits behind is merged wholesale: a
+        # connection nobody accepted (the server did not start, or served the
+        # scaffold's stub) and a 401 on every request (one auth middleware).
+        # A 404, 500 or timeout can have as many causes as routes, so it
+        # clusters only when the defects share a failing surface.
+        if layer in _WHOLE_PRODUCT_LAYERS and len(indices) >= 3:
             for other in indices[1:]:
                 if root(other) != root(indices[0]):
                     parent[root(other)] = root(indices[0])
@@ -7814,6 +7823,13 @@ def build_workflow_graph(
             )
             if given:
                 logger.info("Test files the sprint names and no work order listed, given to testing: %s", ", ".join(given))
+        from app.analysis.work_orders import with_a_testing_work_order
+
+        update["milestone_plan"], added_testing = with_a_testing_work_order(
+            update["milestone_plan"], state["repository"].root_path
+        )
+        if added_testing:
+            logger.info("The plan had code and no testing work order; the harness added one")
         problems = readiness_problems(
             update["milestone_plan"],
             state["repository"].root_path,

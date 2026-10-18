@@ -128,3 +128,20 @@ def test_the_cluster_s_words_are_plain_language() -> None:
     text = " ".join(str(v) for v in merged.model_dump().values() if v)
     for word in BANNED:
         assert not re.search(rf"\b{word}\b", text, re.IGNORECASE), word
+
+
+def test_a_route_layer_on_three_different_routes_is_three_causes() -> None:
+    """A 404 on three routes is three missing routes, not one fault to hand one fixer."""
+    reported = [
+        _d("[AC-1] notes are listed", "GET /notes answered 404 Not Found"),
+        _d("[AC-2] tags are listed", "GET /tags answered 404 Not Found"),
+        _d("[AC-3] users are listed", "GET /users answered 404 Not Found"),
+    ]
+    assert len(_one_defect_per_root_error(reported)) == 3
+
+    behind_one_middleware = [
+        _d("[AC-1] notes are listed", "GET /notes answered 401 Unauthorized"),
+        _d("[AC-2] tags are listed", "GET /tags answered 401 Unauthorized"),
+        _d("[AC-3] users are listed", "GET /users answered 401 Unauthorized"),
+    ]
+    assert len(_one_defect_per_root_error(behind_one_middleware)) == 1

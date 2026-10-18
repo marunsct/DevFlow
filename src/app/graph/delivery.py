@@ -313,7 +313,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # run that carried them read as plain "completed" (Initiative AE).
     gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
     gaps.extend(_findings_recorded_as_risks(state))
-    gaps.extend(_reviews_that_were_not_independent())
+    gaps.extend(_reviews_that_were_not_independent(config["configurable"].get(APP_RUN_ID_KEY)))
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
     # Plan item AF: whether the suite would notice the product breaking.
@@ -464,12 +464,16 @@ def _code_the_product_does_not_run(root: str) -> list[str]:
         return []
 
 
-def _reviews_that_were_not_independent() -> list[str]:
-    """The configured judgement model could not be built, so every review ran on the build model (AH.3)."""
-    try:
-        from app.models.roles import judgement_downgrade
+def _reviews_that_were_not_independent(run_id: str | None = None) -> list[str]:
+    """The configured judgement model could not be built, so reviews ran on the build model (AH.3, AO.7).
 
-        downgrade = judgement_downgrade()
+    Whether it could not be built at any point in this run, not only in the
+    segment now working: the fact is kept with the run.
+    """
+    try:
+        from app.models.roles import downgrade_for
+
+        downgrade = downgrade_for(run_id)
     except Exception:  # noqa: BLE001
         return []
     return [downgrade] if downgrade else []

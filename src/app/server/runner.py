@@ -843,11 +843,12 @@ class WorkflowRunner:
 
     async def _say_if_the_judgement_model_was_replaced(self, record: RunRecord) -> None:
         """Put a configured judgement model that could not be built into the run's history."""
-        from app.models.roles import judgement_downgrade
+        from app.models.roles import judgement_downgrade, remember_the_downgrade
 
         note = judgement_downgrade()
         if not note:
             return
+        remember_the_downgrade(record.run_id, note)
         try:
             await self.event_bus.publish(
                 record.run_id,

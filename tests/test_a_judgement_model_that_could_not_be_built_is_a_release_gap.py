@@ -27,4 +27,4 @@ def test_no_downgrade_no_gap() -> None:
 
 
 def test_the_release_asks_for_it() -> None:
-    assert "gaps.extend(_reviews_that_were_not_independent())" in inspect.getsource(delivery.release)
+    assert "gaps.extend(_reviews_that_were_not_independent(config[\"configurable\"].get(APP_RUN_ID_KEY)))" in inspect.getsource(delivery.release)

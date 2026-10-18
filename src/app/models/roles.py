@@ -120,6 +120,44 @@ def judgement_downgrade() -> str | None:
     return _DOWNGRADE.get()
 
 
+def _downgrade_file(run_id: str) -> Any:
+    import os
+    from pathlib import Path
+
+    return Path(os.environ.get("DATA_DIR") or "data") / "downgrades" / f"{run_id}.txt"
+
+
+def remember_the_downgrade(run_id: str | None, note: str) -> None:
+    """Keep that this run had reviews that were not independent, past the segment that saw it.
+
+    The fact lived in a context variable reset each time the graph was built,
+    so a restart - or the server returning on the next segment - made the gap
+    disappear from a run whose earlier reviews had not been independent
+    (Initiative AO.7). First note stands.
+    """
+    if not run_id or not note:
+        return
+    try:
+        path = _downgrade_file(str(run_id))
+        if not path.exists():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(note, encoding="utf-8")
+    except OSError:
+        logger.warning("Could not keep that the judgement model was replaced", exc_info=True)
+
+
+def downgrade_for(run_id: str | None) -> str | None:
+    """The downgrade this run has had at any point, or the current one; None when there was none."""
+    if run_id:
+        try:
+            kept = _downgrade_file(str(run_id)).read_text(encoding="utf-8").strip()
+            if kept:
+                return kept
+        except OSError:
+            pass
+    return judgement_downgrade()
+
+
 #: True while a run started not to use the frontier model is being worked:
 #: every stage, the specification and the reviews too, is on the build model.
 _BUILD_MODEL_ONLY: contextvars.ContextVar[bool] = contextvars.ContextVar("build_model_only", default=False)

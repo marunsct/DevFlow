@@ -48,6 +48,11 @@ class Context:
     allow_subdirectories: bool = True
 
 
+
+#: What opens the page snapshot in an acceptance defect's failure text
+#: (`workflow._one_defect_per_root_error` reads it).
+THE_PAGE_WHEN_IT_FAILED = "\nThe page when it failed:\n"
+
 def _root(state: Any) -> str:
     return state["repository"].root_path
 
@@ -985,7 +990,7 @@ def failing_due_defects(state: Any, reported: list[Any]) -> list[Any]:
         # control is absent, misnamed, or never appeared after the action.
         met = next((suite.page_it_failed_on(t.get("message", "")) for t in failed if suite.page_it_failed_on(t.get("message", ""))), "")
         if met:
-            detail += f"\nThe page when it failed:\n{met}"
+            detail += f"{THE_PAGE_WHEN_IT_FAILED}{met}"
         defects.append(ReportedDefect(
             description=f"[{entry.get('id')}] {entry.get('text')} - the acceptance suite says this does not work yet.",
             severity="major",

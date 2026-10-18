@@ -4492,6 +4492,34 @@ def _share_a_failing_surface(one: Any, other: Any) -> bool:
 _WHOLE_PRODUCT_LAYERS = frozenset({"connection-refused", "unauthorized", "control-never-shown"})
 
 
+#: Criteria failing the same way on the same page before they are one cause.
+SAME_FAILURE_BEFORE_ONE_CAUSE = 3
+
+_A_NUMBER = re.compile(r"\d+")
+#: What a test typed into a field, in a page snapshot: each test types its own.
+_A_FIELD_S_VALUE = re.compile(r'((?:textbox|searchbox|combobox|spinbutton) "[^"]*"):.*')
+
+
+def _the_failure_as_met(item: Any) -> str:
+    """The failure lines and the page a criterion failed on, with numbers taken out; or "".
+
+    An assertion is a symptom, not a layer (`_the_first_failing_layer`) - but
+    the same assertion failing on the same page, across many criteria, is
+    the step they all pass through. Measured live: eight criteria each
+    failed `expect(page).toHaveURL(expected)` on one sign-in page showing
+    "Login failed", and went to eight fixers one by one.
+    """
+    from app.graph.acceptance_nodes import THE_PAGE_WHEN_IT_FAILED
+
+    actual = str(getattr(item, "actual_behavior", "") or "")
+    head, found, page = actual.partition(THE_PAGE_WHEN_IT_FAILED)
+    if not found or not page.strip():
+        return ""
+    lines = sorted({part.split(": ", 1)[-1].strip() for part in head.split("; ") if part.strip()})
+    page = _A_FIELD_S_VALUE.sub(r"\1", page.strip())
+    return _A_NUMBER.sub("#", " | ".join(lines) + "\n" + page) if lines else ""
+
+
 def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     """`reported` with the defects that fail at one layer behind one cause merged, in order.
 
@@ -4513,11 +4541,15 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
     if len(reported) < 2:
         return list(reported)
     layers: dict[str, list[int]] = {}
+    met: dict[str, list[int]] = {}
     for index, item in enumerate(reported):
         layer = _the_first_failing_layer(_the_text_of_a_defect(item))
         if layer:
             layers.setdefault(layer, []).append(index)
-    if not layers:
+        elif _the_failure_as_met(item):
+            met.setdefault(_the_failure_as_met(item), []).append(index)
+    met = {k: v for k, v in met.items() if len(v) >= SAME_FAILURE_BEFORE_ONE_CAUSE}
+    if not layers and not met:
         return list(reported)
 
     parent = list(range(len(reported)))
@@ -4542,6 +4574,10 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
             i, j = indices
             if root(i) != root(j) and _share_a_failing_surface(reported[i], reported[j]):
                 parent[root(j)] = root(i)
+    for indices in met.values():
+        for other in indices[1:]:
+            if root(other) != root(indices[0]):
+                parent[root(other)] = root(indices[0])
 
     groups: dict[int, list[int]] = {}
     for index in range(len(reported)):
@@ -4555,7 +4591,7 @@ def _one_defect_per_root_error(reported: list[Any]) -> list[Any]:
             merged.append(item)
             continue
         others = [reported[i] for i in group[1:]]
-        layer = _the_first_failing_layer(_the_text_of_a_defect(item))
+        layer = _the_first_failing_layer(_the_text_of_a_defect(item)) or "the same failure on the same page"
         files = list(dict.fromkeys(
             str(f) for member in (item, *others) for f in getattr(member, "affected_files", None) or []
         ))

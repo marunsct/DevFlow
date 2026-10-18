@@ -103,6 +103,12 @@ class StackPack:
     #: `scaffold.entrypoint_is_still_the_stub`). "" when the pack's server is
     #: harness-owned or it serves nothing: there is no stub to outgrow.
     entrypoint: str = ""
+    #: More files the scaffold writes as stubs that the drafted product must
+    #: replace - a fullstack pack's page component and its service's app
+    #: module. Measured on one run: the drafted app went into `frontend/` and
+    #: `backend/app/`, the served page stayed the scaffold's `src/App.tsx`, and
+    #: every page test failed its first control while 13 fixers chased criteria.
+    entrypoints: tuple[str, ...] = ()
     #: What a failure looks like when the test's own code broke, rather than
     #: the product being unbuilt or wrong - for this pack's runner. Before
     #: anything is built every test fails; only these failures are the test's.

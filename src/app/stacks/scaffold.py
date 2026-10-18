@@ -64,22 +64,32 @@ def entrypoint_is_still_the_stub(repo_root: str | Path) -> str | None:
     if not record or not record.get("scaffolded", True):
         return None
     pack = pack_named(str(record.get("pack") or ""))
-    entrypoint = str(getattr(pack, "entrypoint", "") or "") if pack else ""
-    if not entrypoint or entrypoint in (getattr(pack, "kept_files", ()) or ()):
+    if not pack:
         return None
+    declared = [str(e) for e in (getattr(pack, "entrypoint", "") or "", *(getattr(pack, "entrypoints", ()) or ())) if e]
+    kept = getattr(pack, "kept_files", ()) or ()
+    project = str(record.get("project") or "")
+    title = str(record.get("title") or "")
+    package = str(record.get("package") or "") or None
     try:
-        project = str(record.get("project") or "")
-        rendered = pack.render(
-            project,
-            str(record.get("title") or ""),
-            str(record.get("package") or "") or None,
-        ).get(entrypoint)
-        if rendered is None:
-            return None
-        current = (Path(repo_root) / project / entrypoint).read_text(encoding="utf-8")
+        rendered_files = pack.render(project, title, package)
     except (OSError, ValueError):
         return None
-    return f"{project}/{entrypoint}" if current == rendered else None
+    for entrypoint in declared:
+        if entrypoint in kept:
+            continue
+        # Declared with the package's placeholder, rendered with its name.
+        path = pack.filled(entrypoint, project, title, package)
+        rendered = rendered_files.get(path)
+        if rendered is None:
+            continue
+        try:
+            current = (Path(repo_root) / project / path).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if current == rendered:
+            return f"{project}/{path}"
+    return None
 
 
 

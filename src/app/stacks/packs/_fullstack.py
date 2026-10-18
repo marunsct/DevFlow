@@ -38,6 +38,8 @@ class Frontend:
     unit_glob: str
     smoke_unit: tuple[str, str]
     guide: str
+    #: The page's root component the scaffold writes as a stub (`StackPack.entrypoints`).
+    entry: str = ""
 
 
 @dataclass(frozen=True)
@@ -63,6 +65,8 @@ class Service:
     dependencies: dict[str, str] = field(default_factory=dict)
     dev_dependencies: dict[str, str] = field(default_factory=dict)
     check_families: frozenset[str] = frozenset()
+    #: The service's app module the scaffold writes as a stub (`StackPack.entrypoints`).
+    entry: str = ""
 
 
 # --- the page -------------------------------------------------------------------
@@ -114,6 +118,7 @@ TSCONFIG = """{
 """
 
 REACT = Frontend(
+    entry="src/App.tsx",
     name="react",
     words=("react",),
     label="React",
@@ -170,6 +175,7 @@ Testing Library (`render`, `screen`) in a simulated DOM.""",
 )
 
 VUE = Frontend(
+    entry="src/App.vue",
     name="vue",
     words=("vue", "vue.js", "vuejs"),
     label="Vue",
@@ -269,6 +275,7 @@ createApp().listen(port, host, () => {
 """
 
 EXPRESS = Service(
+    entry="server/app.js",
     name="express",
     words=("express",),
     label="Express",
@@ -398,6 +405,7 @@ process.exit(failed ? 1 : 0);
 """
 
 FASTAPI = Service(
+    entry="{{package}}/main.py",
     name="fastapi",
     words=("fastapi", "starlette", "uvicorn"),
     label="FastAPI",
@@ -617,6 +625,7 @@ def fullstack_pack(frontend: Frontend, service: Service) -> StackPack:
             "acceptance/scaffold-smoke.spec.js": SMOKE_ACCEPTANCE,
         },
         guide=f"{frontend.guide}\n{service.guide}\nRun every unit test with `npm test`. {DATA_GUIDE}",
+        entrypoints=tuple(e for e in (frontend.entry, service.entry) if e),
         acceptance_guide=ACCEPTANCE_GUIDE,
         stack={
             "language": "Python and TypeScript" if service.language == "python" else "TypeScript and JavaScript",

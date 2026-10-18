@@ -104,3 +104,29 @@ def test_the_harness_measurement_rounds_ask_the_question() -> None:
     triage = inspect.getsource(workflow.build_workflow_graph)
     assert "entrypoint_is_still_the_stub" in triage
     assert "_the_served_app_is_the_scaffold_s_stub" in triage
+
+
+def test_a_fullstack_page_left_the_stub_is_found_though_the_app_was_drafted_elsewhere(tmp_path: Path) -> None:
+    """One run drafted its app into frontend/ and backend/app/; the served page
+    stayed the scaffold's root component and every page test failed its first
+    control, while 13 fixers chased criteria one by one."""
+    root = _a_scaffolded_workspace(tmp_path, "fullstack-react-fastapi")
+    (root / "notes-app" / "frontend" / "src").mkdir(parents=True)
+    (root / "notes-app" / "frontend" / "src" / "App.jsx").write_text("export default function App() {}\n")
+
+    assert entrypoint_is_still_the_stub(root) == "notes-app/src/App.tsx"
+
+    app = root / "notes-app" / "src" / "App.tsx"
+    app.write_text(app.read_text(encoding="utf-8") + "\n// the real page\n", encoding="utf-8")
+    assert entrypoint_is_still_the_stub(root) == "notes-app/notes_app/main.py"
+
+    main = root / "notes-app" / "notes_app" / "main.py"
+    main.write_text(main.read_text(encoding="utf-8") + "\n# the real routes\n", encoding="utf-8")
+    assert entrypoint_is_still_the_stub(root) is None
+
+
+def test_every_fullstack_pack_declares_its_page_and_its_service() -> None:
+    for name in ("fullstack-react-fastapi", "fullstack-vue-express"):
+        pack = pack_named(name)
+        if pack is not None:
+            assert len(pack.entrypoints) == 2, name

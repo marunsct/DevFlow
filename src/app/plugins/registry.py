@@ -26,9 +26,17 @@ def get_plugin_instructions(stack_keywords: List[str]) -> str:
         if blocks:
             instructions.append(f"[{key.upper()} MODULE]\n" + "\n\n".join(blocks))
     
+    # Lessons from earlier runs, only those the owner approved (plan item AI).
+    try:
+        from app.plugins.lessons import as_instructions
+
+        learned = as_instructions(stack_keywords)
+    except Exception:  # noqa: BLE001 - a lesson store that cannot be read adds nothing
+        learned = ""
+
     if not instructions:
-        return ""
+        return learned.lstrip("\n")
     
-    return "\n\n=== FRAMEWORK CAPABILITIES ===\n" + "\n\n".join(instructions)
+    return "\n\n=== FRAMEWORK CAPABILITIES ===\n" + "\n\n".join(instructions) + learned
 
 

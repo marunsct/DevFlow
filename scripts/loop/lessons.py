@@ -16,6 +16,13 @@ language. It proposes; a person or an agent writes the guidance, with a test,
 as for any prompt rule.
 
     scripts/loop/loop.sh lessons [min-runs]
+
+The lesson store (plan item AI, `app.plugins.lessons`): only a lesson the owner
+approved reaches a prompt.
+
+    lessons.py list
+    lessons.py propose <stack> "<trigger>" "<rule>" <runs> [harness|operator]
+    lessons.py approve <id>      lessons.py reject <id>
 """
 import collections
 import glob
@@ -23,6 +30,29 @@ import json
 import re
 import sys
 from pathlib import Path
+
+def _the_store_command(argv: list[str]) -> bool:
+    """Run a lesson-store command and say so; False when `argv` is not one."""
+    if not argv or argv[0] not in ("list", "propose", "approve", "reject"):
+        return False
+    from app.plugins import lessons as store
+
+    command, rest = argv[0], argv[1:]
+    if command == "list":
+        for lesson in store.load():
+            print(f"{lesson['id']:6} {lesson['status']:9} [{lesson['stack']}] in {lesson['evidence_runs']} runs, "
+                  f"{lesson['source']}: {lesson['rule']}\n         answers: {lesson['trigger']}")
+    elif command == "propose":
+        lesson = store.propose(rest[0], rest[1], rest[2], int(rest[3]), source=rest[4] if len(rest) > 4 else "harness")
+        print(f"{lesson['id']} {lesson['status']}: {lesson['rule']}")
+    else:
+        lesson = store.decide(rest[0], command == "approve")
+        print(f"{lesson['id']} {lesson['status']}")
+    return True
+
+
+if _the_store_command(sys.argv[1:]):
+    raise SystemExit(0)
 
 MIN_RUNS = int(sys.argv[1]) if len(sys.argv) > 1 else 3
 FAIL = re.compile(r"^\s*(\[[^\]]*\]\s*)?(\{\"error\"|Error:|Refusing|Not running|Not looking)")

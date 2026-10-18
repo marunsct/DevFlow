@@ -69,8 +69,8 @@ def test_the_no_answer_path_uses_it_only_when_the_budget_stopped_the_stage():
 LABEL = "after defect_fix_1_0"
 
 
-def _settled(tmp_path, description, acceptance):
-    ci.save(tmp_path, ci.Snapshot(label=LABEL, acceptance=acceptance, acceptance_ran=bool(acceptance)))
+def _settled(tmp_path, description, acceptance, unit=None):
+    ci.save(tmp_path, ci.Snapshot(label=LABEL, acceptance=acceptance, acceptance_ran=bool(acceptance), unit=unit or {}, unit_ran=bool(unit)))
     defect = Defect(
         description=description, severity="major", reproduction_steps="r", expected_behavior="e",
         actual_behavior="a", owner="backend", regression_test_required=True,
@@ -98,5 +98,24 @@ def test_a_criterion_measured_red_stays_open(tmp_path):
 
 def test_a_defect_that_is_no_criterion_still_needs_a_named_test(tmp_path):
     defect = _settled(tmp_path, "The note store loses the last note on save", {})
+
+    assert defect.status != "fixed"
+
+
+def test_a_failing_unit_test_run_measured_green_is_fixed_though_the_fixer_named_no_test(tmp_path):
+    """Measured live: a fix for 'The unit tests fail' was left open for naming no regression test."""
+    from app.graph.workflow import UNIT_TESTS_FAIL
+
+    defect = _settled(
+        tmp_path, UNIT_TESTS_FAIL + " The runner's output ends:\n7 errors", {}, unit={"tests/test_auth.py › test_login": "passed"},
+    )
+
+    assert defect.status == "fixed"
+
+
+def test_the_same_unit_run_still_failing_stays_open(tmp_path):
+    from app.graph.workflow import UNIT_TESTS_FAIL
+
+    defect = _settled(tmp_path, UNIT_TESTS_FAIL + " The runner's output ends:\n7 errors", {}, unit={"tests/test_auth.py › test_login": "failed"})
 
     assert defect.status != "fixed"

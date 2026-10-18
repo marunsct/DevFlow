@@ -2648,7 +2648,7 @@ def _the_unit_tests_fail(milestone: Any, output: str) -> Any:
     owner = next((role for role in roles if role and role not in {"testing", "documentation"}), "testing")
     tail = str(output or "").strip()[-UNIT_FAILURE_TAIL_CHARACTERS:]
     return ReportedDefect(
-        description="The unit tests fail. The runner's output ends:\n" + (tail or "(no output)"),
+        description=UNIT_TESTS_FAIL + " The runner's output ends:\n" + (tail or "(no output)"),
         severity="major",
         reproduction_steps="Run the project's unit test command.",
         expected_behavior="Every unit test passes.",
@@ -2761,6 +2761,10 @@ def _the_defect_s_tests_pass(root: Path, defect: Any) -> bool | None:
         return None
 
 
+#: How a defect from a failing unit-test run begins.
+UNIT_TESTS_FAIL = "The unit tests fail."
+
+
 def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool:
     """Whether the defect is a locked criterion whose own tests measured green after the fix.
 
@@ -2770,7 +2774,13 @@ def _the_suite_already_guards_it(state: Any, measured: str, defect: Any) -> bool
     """
     from app.acceptance.junit import tags_in
 
-    if not any(t.startswith(("AC-", "CR-")) for t in tags_in(str(getattr(defect, "description", "") or ""))):
+    description = str(getattr(defect, "description", "") or "")
+    # A locked criterion, or the failing unit tests themselves: either way the
+    # tests that were failing are the regression test, and they were just measured.
+    is_a_failing_test = description.startswith(UNIT_TESTS_FAIL) or any(
+        t.startswith(("AC-", "CR-")) for t in tags_in(description)
+    )
+    if not is_a_failing_test:
         return False
     return _the_defect_s_tests_in(state["repository"].root_path, measured, defect) is True
 

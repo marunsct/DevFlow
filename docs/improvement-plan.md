@@ -1345,7 +1345,6 @@ implementation constraints and are restated in the Notes column.
 | L.2 file-granular revert | P1 | DROPPED 2026-10-18 (validation) | Premise does not hold: one fixer stage makes one fix, so a stage revert removes only that fix; reverting "only the files the stage touched" is the same set as the whole-stage revert. The half-built version (reverted every file changed since the stage's base, with a bracket-count "parse" and a Python import check that could not fail) was set aside, not committed. A useful version would need a culprit search (revert one file at a time and re-measure the broken tests) - worth it only if measurement shows multi-file fixes whose parts are independent |
 | L.4 judgement escalation after revert | P1 | DONE 2026-10-18 | `_a_revert_escalates_this_fix(cycle, index)` reads the defect's own notes - exactly one revert note (the single-fix wording `_REVERTED_FOR` matches, or the batch wording) escalates the next attempt; `_the_build_model(..., after_a_revert=...)` routes it to the judgement model before the generic `escalate_after()` rung, and both fix dispatch sites (the single fixer and the batched one) pass the signal. The cap is the shape: a second revert has already pushed `failed_fix_tries` to the generic rung, so L.4 adds at most one escalation per defect. Evidence: both reverted fixes in the live run came from the local build model. Tests in `tests/test_a_reverted_fix_goes_to_the_judgement_model_next.py` |
 | L.7 validator-first plan repair | P1 | DONE 2026-10-18 | (1) the lead's prompt names every rule the checker sends a plan back for (adds the scope-names-a-file and harness-kept-file rules); (2) `work_orders.with_a_testing_work_order` builds the missing testing work order deterministically from the stack contract's unit directory + pattern and the code orders' test_cases/interfaces - the recurring "No `testing` work order" send-back; joins the existing deterministic repairs (`with_test_cases_from_its_criteria`, `with_named_tests_given_to_testing`); (3) noted problems already flow to `completion_gaps` via J.4. Tests in `tests/test_a_plan_with_code_and_no_testing_work_order_gets_one.py` |
-| M model-profile contract | P1 | NOT STARTED | Per-family serving metadata probed at startup; control-plane-only enforcement |
 | M-bash bash-first degraded mode | P3 | NOT STARTED | **Antigravity constraint**: strictly for models with zero native tool-calling; never Qwen/Hermes profiles; executes through the argv-only sandbox |
 | N reasoning-budget guardrails | P1 | N.2 DONE 2026-10-18; N.1 measure-first; N.3 premise false | Live run-8b0c94df: 20 replies spent the full 20,000-token budget with no answer (~400k tokens; the lead lost 5 in 23 min of one visit) - the server reports no reasoning tokens, so `run_timing` shows them as spirals. Cause: "thinking stays off after a second loss" counted lost replies from the history, and compaction removed them, so the count never reached two. N.2: the settled-answer middleware now counts each lost reply once by message id (`lost_before`), so thinking stays off for the rest of the visit. N.3: the only cap-halving is for timeouts/proxy cut-offs, never a reasoning-only finish. N.1 (per-request thinking token budget) waits for proof the owner's server honours one. Tests: `tests/test_a_lost_reply_does_not_end_the_stage.py`. Extended 2026-10-18 (deep analysis): the count also carries across a stage's visits (`_LOST_ACROSS_VISITS`, keyed by run + graph stage) - a retry or resume reset it, and run-8b0c94df lost 37 replies of 20,000 tokens (~40% of all output), two or more in eleven fix stages and eight in one planning stage. A lower reply cap was measured and rejected: 33 of 1,049 successful fix replies exceeded 12k tokens |
 | P.1 demote `replace_lines` | P1 | DONE 2026-10-18 | Re-measured across four runs: replace_lines 51/81 failed (62%) vs edit_artifact 6/82 and write_artifact 7/90 (7%). Off unless `LINE_EDITS=on` (`agent_toolkit.line_edits_offered`): not in `writing_tools`, and `role_agent.without_line_edits` removes it from every system prompt and the near-miss hint. Tests in `tests/test_line_number_edits_are_offered_only_when_switched_on.py` |
@@ -1355,10 +1354,6 @@ implementation constraints and are restated in the Notes column.
 | Q.2 procedural test-round reports | P1 | DONE in substance (verified 2026-10-18) | Fast delivery's round is the harness's own; in thorough, `failing_due_defects(state, reported)` adds every measured failure the model's report left out, so the queue is the measurement's. The model call in thorough stays: it is the owner's mode |
 | Q.3 dispute routing + rubric anchoring | P1 | DONE in substance (verified 2026-10-18) | Code-review findings become defects only when `what_shows_it` finds a failing criterion, test or diagnostic; milestone-review gating findings naming no criterion/test while every test passes are made minor (`_findings_no_measure_holds`); with tests failing, those tests gate anyway |
 | Q-amend fast-mode diff review flag | P2 | NOT STARTED | Owner-tunable, default off, benchmark before any default change |
-| O.1 section-aware spec distribution | P2 | NOT STARTED | Includes section-scoped revision requests (amendment) |
-| O.2 effective context ceiling | P2 | NOT STARTED | 32–64k effective cap as profile data |
-| O.3 cache-stability rule | P2 | NOT STARTED | Byte-stable prefixes; volatile context last; KPI in U.2 |
-| O.4 compaction profile knob + re-injection | P2 | NOT STARTED | **Antigravity constraint**: keep default trigger 0.75–0.80; knob is per-profile and A/B-verified; prefer O.1 so requests never bloat near the trigger; add disk re-injection + tool-output offload |
 | O.5 stale budget constants | P2 | DONE 2026-10-18 | `DEFAULT_SPECIFICATION_BUDGET` docstring corrected (150k chars is ~40-50k tokens, not 15k); the value is unchanged until O.1's section selection can shrink it without cutting the specification's tail |
 | R duplicate-call elimination | P1 | DONE 2026-10-18 (`3c9c931`) | The digest tail lists files read in this conversation (and whether a write here changed them since) and commands run with exit codes, from the messages alone (`ALREADY_KNOWN=0` for the A/B). With the pointer count (9d637fe) and held-back reads (326570e) feeding the read rung. Recitation of the work order not added: it is in the opening request, and the memory now stays stable there |
 | S server checklist + health telemetry | P2 | PARTLY DONE 2026-10-18 | `loop.sh ready` reads a llama.cpp-style server's `/props`: slot count (one slot: "parallel mode and a second run will wait their turn") and the context it was started with; live: `1 slot(s) ... context 126464 tokens as started`. Mid-run shared-server notice already in `call_gate` (2026-10-16). Open: docs checklist, mid-run health events |
@@ -2017,11 +2012,8 @@ Delegation", arXiv 2609.24234.
 | O.3 / AA prefix-cache layout | P1 | DONE 2026-10-18 (`d2c48b2`, `58f3bfa`) | Project memory taken once per stage visit, byte-stable; changes named in a note at the end. Environment contract in the system prompt. AA.2 (mask, don't remove tools) NOT built: measured, refusals did not stop reading loops and removal did (`test_the_read_tool_is_taken_away.py`). AA.3 cache share already in W.4's KPI |
 | O.4 / Z compaction | P1 | NOT BUILT 2026-10-18 (measured) | Compaction ~never fires: no summary in the last 10 runs; the largest request per run 73-101k against an 80k trigger. Masking old results would break the prefix cache O.3 stabilised; one local model, so no cheaper summariser. Revisit if KPI shows compaction |
 | AB fan-out = server slots | P1 | DONE 2026-10-18 (`adcc719`) | `concurrent_requests()` = min(HARNESS_MAX_PARALLEL, slots) sizes each wave; whether to fan out stays the owner's mode |
-| M.4–M.6 reasoning policy, arg-fit map, quant advisory | P2 | NOT STARTED | M.6 advisory only; out-of-list tool-name KPI |
+| M.4–M.6 reasoning policy, arg-fit map, quant advisory | P2 | PARTLY | The out-of-list tool-name KPI exists (`unknown_tool_name_rate` in `kpi.py`); M.6 shows as an advisory on `loop.sh ready`. Reasoning policy waits on the AR probe |
 | Y edit-ACI calibration bench + architect/editor option | P1 | MEASURED 2026-10-18, no change | Across all transcripts: 5,556 edits, 21.7% refused - mostly the guards working (unparseable code, another work order's file); rewrites get a diagnostic note 15-17% regardless of file size, so no size crossover to calibrate. Architect/editor needs a second model; local-only runs have one |
-| Z mask-first compaction, structured summary, reset-at-boundary knob | P2 | NOT STARTED | Trigger ratio unchanged (Antigravity O.4) |
-| AA prefix-cache layout + `cached_tokens` KPI | P1 | NOT STARTED | Memory/contract stable-first; digest last; mask-don't-remove tools |
-| AB parallel = server slots; fan-out caps | P1 | NOT STARTED | Toggle stays; recommendation gated on measured slots |
 | AC deterministic gating of reviews/test agent; check memoisation | P1 | DONE in substance / AC.3 DROPPED (measured 2026-10-18) | AC.1 = Q.2; the round's agent is already skipped when the suite and unit tests pass or a file-by-file diagnosis stands. AC.3: `what_the_files_already_prove` takes 0.9 s on the medium run's workspace, at most 3x a round - not worth a cache. The non-model time (~130 min) is the harness's real test runs |
 | AD measure at settlement | P0 | DONE 2026-10-18 (`e8593db`) | Redesigned to cost nothing: `after_a_fix` has just run both suites, so `_the_defect_s_tests_in` reads the defect's own tests (criteria tags, else unit) from that snapshot, by its label; red leaves it open and counts the attempt now, a snapshot from another moment keeps today's behaviour. `_settle_the_fix` lifted to module level (tested). `fix_by_candidates` half dropped: a candidate kept with nothing to check it is measured at settlement anyway |
 | AE one cannot-pass list; gaps sources; release re-checks | P0 | DONE 2026-10-18 (`d3962eb`, `372ff53`) | G20 premise corrected: repairs re-enter through the review, but a review that spent its rounds locks with problems open. `suite.tests_that_cannot_pass` is the one list (round gained unstated-order, contradicting locator, module mismatch, unawaited helper); too-lenient checks stay review-only. Gaps: escalation `known_issues`, fast-mode `RECORDED_AS_RISKS` decisions, and a release re-read with `problems_that_break_the_product`. Dropped: accepted-risk defects (`accept_risk` has no caller); compiler/dependency-drift re-run (no whole-project check exists; the suites cover the build) |
@@ -2032,11 +2024,7 @@ Delegation", arXiv 2609.24234.
 | AH.3 reviewer completeness + judgement-model downgrade as gap | P1 | DONE 2026-10-18 (`5c0ba55`) | A judgement model that could not be built is a completion gap. The security reviewer already lists the files its budget left out and is told to open each |
 | AH.4 execution-readiness check in `loop.sh ready` / run start | P1 | DONE 2026-10-18 (`6dccea0`) | Run start already refused a worker that cannot run commands; `loop.sh ready` now prints `READY commands (...)` and counts it toward ALL READY |
 | AI structured lesson store | P2 | DONE 2026-10-18 (owner approves) | `plugins/lessons.py`: records {id, stack, role, trigger, rule (2 lines, 300 chars, no banned words), evidence_runs, source, status} in `$DATA_DIR/lessons.json`. Only `approved` lessons reach a prompt, appended to the stack's instructions by `plugins/registry.py`, 5 a call, in id order (byte-stable). `scripts/loop/lessons.py list|propose|approve|reject` in the worker; the loop lists new proposals in each run's report for the owner. Role-scoped injection not yet: the plugin middleware knows the stack, not the role |
-| AJ test subprocess lifecycle & async engine cleanup | P1 | IDENTIFIED 2026-10-18 | `scripts/unit-tests.mjs` `spawnSync` timeout (120s); `NullPool` / `await engine.dispose()` fixture seeding to prevent `aiosqlite` `_connection_worker_thread` from hanging Python process in `futex_do_wait` after tests complete |
-| UI contract drift + Phase-1 remainder | P1 | NOT STARTED | Generated TS client from OpenAPI; items listed in Part 11 |
-| UI design system + run page (timeline/diff/criteria/preview) | P2 | NOT STARTED | Needs per-path git history endpoint |
-| UI plan-first intake + gates | P3 | NOT STARTED | Needs AG tier + `approval_timeout_minutes` in payload |
-| UI steering + cockpit | P3 | NOT STARTED | Needs steering enabler + KPI JSON |
+| AJ test subprocess lifecycle & async engine cleanup | P1 | ITEM 1 DONE 2026-10-18 (`2f68304`, `4abd460`) | The kept runner ends a runner whose report is complete and the sandbox ends a test run that printed its summary and did not exit. Open: fixture seeding that disposes an async engine, and stdout diagnostics on a timeout (AV) |
 | Part 12 refactor track (V) | P3 | NOT STARTED | Per-stage failure carrier first (parallel-mode correctness) |
 
 > **Appendix 2 note (18:15 JST)**: commits `a35cce9` and `72d2cf9` (another
@@ -2063,7 +2051,7 @@ Delegation", arXiv 2609.24234.
 8. E: a soft cap of 3 files per fast work order, measured over 2 runs: done.
 9. W.2: after the current run, Fast notes-api-hono then fast fullstack-bookmarks-py on the same code; Thorough after.
 10. K.6: after the W.2 baselines.
-11. AF budget: about 3 sampled criteria per lock, logic breaks the unit tests check in seconds, no browser runs.
+11. AF budget: about 3 sampled criteria at release (not at lock: the suite locks before the build), logic breaks the unit tests check in seconds, no browser runs.
 12. M.3 (sampling) stays dropped; U.4 (automatic deletion) stays unbuilt.
 
 ---
@@ -2103,7 +2091,7 @@ Effort → Depends on.
 
 ### Part 13 — Fix what today built (P0 before the W.2 baseline, so the baseline measures the intended code)
 
-#### Initiative AK: Run-wide budgets survive the process — `MAX_RUN_TOKENS` / `MAX_RUN_COST_USD`
+#### Initiative AK: Run-wide budgets survive the process — `MAX_RUN_TOKENS` / `MAX_RUN_COST_USD`  **[DONE 2026-10-19]**
 - **Goal**: a token or cost ceiling bounds the *run*, not the current worker
   segment.
 - **Evidence (H16 ✓)**: `observability/cost_tracker.py:195-215` keeps
@@ -2135,7 +2123,7 @@ Effort → Depends on.
   persisted total ± the last flush interval.
 - **Effort**: S–M. **Depends on**: nothing.
 
-#### Initiative AL: The mutation probe cannot leave a broken product behind
+#### Initiative AL: The mutation probe cannot leave a broken product behind  **[DONE 2026-10-19]**
 - **Goal**: AF's deliberate breaks are impossible to ship.
 - **Evidence (H17 ✓)**: `acceptance/mutation.py:175` — `original =
   apply(project, site)` precedes the `try`; `finally` restores in-process
@@ -2172,7 +2160,7 @@ Effort → Depends on.
   the site list so false positives can be read.
 - **Effort**: S–M. **Depends on**: nothing.
 
-#### Initiative AM: One owner of a file's "seen" digest
+#### Initiative AM: One owner of a file's "seen" digest  **[DONE 2026-10-19]**
 - **Goal**: the edit tool's view of what the model last saw is never
   overwritten by the memory middleware.
 - **Evidence (H18)**: `agents/project_memory.py:383-386` calls
@@ -2202,7 +2190,7 @@ Effort → Depends on.
   path (W.4 can count this pair).
 - **Effort**: S. **Depends on**: nothing.
 
-#### Initiative AN: Correctness of the measurement layer (W.4 / W.1 / loop.sh)
+#### Initiative AN: Correctness of the measurement layer (W.4 / W.1 / loop.sh)  **[DONE 2026-10-19]**
 - **Goal**: the KPIs the loop now depends on count what they claim.
 - **Evidence (H10 ✓, H11 ✓, H28)**: `scripts/loop/kpi.py:123,134` scan only
   `text[:600]` for guard markers while the harness appends notes *after*
@@ -2247,7 +2235,7 @@ Effort → Depends on.
 - **Effort**: S–M. **Depends on**: nothing; do before W.2 so the baseline
   is measured correctly.
 
-#### Initiative AO: Lifecycle correctness of today's medium items (bundle)
+#### Initiative AO: Lifecycle correctness of today's medium items (bundle)  **[AO.1, AO.2 DONE 2026-10-19; AO.3-AO.10 open]**
 One commit each, in this order; all S:
 1. **AD edge cases (H27)**: `skipped` ≠ failed for the defect's own tests;
    unit fallback scoped to tests whose names/paths match the defect's
@@ -2290,7 +2278,7 @@ One commit each, in this order; all S:
     sentence, AA note and AE.2 gap strings; replace the two tests that pass
     on old code.
 
-#### Initiative AP: Ledger and handover hygiene (process, half a day)
+#### Initiative AP: Ledger and handover hygiene (process, half a day)  **[DONE 2026-10-19]**
 - Remove the duplicate NOT STARTED rows (M L1348; O.1–O.4 L1358–1361;
   Z/AA/AB L2022–2024; UI rows L2036–2040); AJ row → "item 1 DONE
   (`2f68304`, `4abd460`); fixture seeding and timeout diagnostics open";
@@ -2678,12 +2666,12 @@ owner's.
 
 | Item | Priority | Status | Notes |
 |---|---|---|---|
-| AK run-wide budgets persisted | P0 | NOT STARTED | `run_usage` row, seeded on worker start; H16 |
-| AL crash-safe mutation probe | P0 | NOT STARTED | journal + byte restore + recovery at release entry; skip comments; prefer a copy; H17 |
-| AM one owner of the seen digest | P0 | NOT STARTED | first-writer-wins for memory; changed-region excerpt when reads are withheld; H18 |
-| AN measurement correctness | P0 | NOT STARTED | marker position, effective-input ratio, per-stage block, new counters, ledger flags, atomic writes, `loop.sh kpi`/`lessons` fixes, W.1 normalised compare; H10/H11/H28 |
-| AO.1 AD edge cases | P0 | NOT STARTED | skipped ≠ failed; scoped unit fallback; real key separator; H27 |
-| AO.2 M.1 fail-closed semantics | P0 | NOT STARTED | H24 |
+| AK run-wide budgets persisted | P0 | DONE 2026-10-19 (`a276433`) | Redesigned: no `run_usage` table. A handler built in a fresh process takes what the run spent before that moment from the transcript (`seed_from_the_transcript`; the cut by timestamp is exact), once per process. Test: `test_a_run_s_token_ceiling_survives_a_worker_restart.py` |
+| AL crash-safe mutation probe | P0 | DONE 2026-10-19 (`b18425e`) | Journal and a byte copy before the break; bytes back (CRLF kept); `restore_an_interrupted_probe` at the top of `release`; docstrings and block comments never broken. Mutating a copy was not done: the in-place journal covers the failure, and a copy changes how the pack's commands resolve paths |
+| AM one owner of the seen digest | P0 | DONE 2026-10-19 (`7207531`) | `seen_content.remember_if_unseen` for the memory; when reading is withheld the change note shows a capped diff instead of asking for a read |
+| AN measurement correctness | P0 | DONE 2026-10-19 (`f724c00`, `804e29a`) | Guard words searched at both ends; effective-input prefill ratio; reasoning, lost-reply share and invalid-call counters; a block per stage; orphan gaps apart; ledger floors, 0-to-n, same-benchmark window, atomic writes; `loop.sh kpi` atomic, `lessons` gets every argument; W.1 compares normalised text with a similarity. Not counted (no event to count them from): phantom write claims, compactions, prompt chars per role |
+| AO.1 AD edge cases | P0 | DONE 2026-10-19 (`094fbfd`) | Skipped is neither failure nor proof; unit tests scoped to the defect's files; tests use the real separator. Also (`9e4c056`): a criterion the locked suite measured green needs no named regression test, and a fix stage that spends its calls is recorded from its writes instead of started over twice more |
+| AO.2 M.1 fail-closed semantics | P0 | DONE 2026-10-19 (`dc31ad0`) | A slot below the floor is the window (warned once); a server with no `/props` is noted once |
 | AO.3 E split parts | P1 | NOT STARTED | H25 |
 | AO.4 X.3 on 3.13 + CI matrix | P1 | NOT STARTED | H20 |
 | AO.5 AE reopen precision | P1 | NOT STARTED | H26 |
@@ -2692,7 +2680,7 @@ owner's.
 | AO.8 changes API hygiene + `.git/` write guard | P1 | NOT STARTED | H22 |
 | AO.9 R digest precision | P1 | NOT STARTED | H21 |
 | AO.10 repo-rule drift | P1 | NOT STARTED | H32 |
-| AP ledger/handover hygiene | P0 | NOT STARTED | H13, H14, H9 |
+| AP ledger/handover hygiene | P0 | DONE 2026-10-19 | Duplicate NOT STARTED rows removed (M, O.1-O.4, Z/AA/AB, UI); AJ and M.4-M.6 rows corrected; decision 11 says "at release". The outcome of run-8b0c94df is recorded in HANDOVER §2 when it ends |
 | AQ repeated-read hypotheses | P1 | NOT STARTED | after W.2; H12 |
 | AR lost-reply probe → N.1 | P1 | NOT STARTED | owner's 1 h allowance; H15 |
 | AS steering v2 | P1 | NOT STARTED | event, scope, paused 409; H3/H33 |

@@ -1838,16 +1838,17 @@ item. Concrete scope, ordered so each step is independently shippable:
     - At 12:20:41 UTC, testing specialist in `defect_fix_2_4` executed `.venv/bin/python -m pytest tests/test_auth.py -v --tb=short`. Pytest finished executing all tests in 0.25 seconds (`2 warnings, 7 errors in 0.25s`), but hung in `futex_do_wait` on thread `Thread-1 (_connection_worker_thread)` for 300 seconds until the sandbox timeout killed it at 12:25:41 UTC.
     - At 12:27:00 UTC, `npm test` running `scripts/unit-tests.mjs` spawned `.venv/bin/python -m pytest tests -q --junitxml=test-results/unit-service.xml`. Pytest wrote `test-results/unit-service.xml` completely in sub-second time, but `spawnSync` hung waiting for `.venv/bin/python` to exit due to the undisposed `_connection_worker_thread`.
 - **Harness Mechanism**:
-  1. **Subprocess Timeout in Unit Test Runner**: In `src/app/stacks/packs/_fullstack.py` (`UNIT_TESTS`), pass `{ stdio: 'inherit', timeout: 120_000 }` to `spawnSync`. If any underlying runtime hangs on thread join, `spawnSync` fails fast with `ETIMEDOUT` rather than exhausting the outer sandbox budget.
-  2. **Async Engine Teardown & NullPool Seeding**: In Python stack packs (`_python.py`, `_fullstack.py`), configure `poolclass=NullPool` for SQLite in-memory test engines and seed a clean session teardown fixture:
+  1. **Subprocess Lifecycle in Unit Test Runner (LANDED `2f68304`)**: In `src/app/stacks/packs/_fullstack.py` (`UNIT_TESTS`), child runner processes are monitored and terminated (`SIGKILL` on child process group) once the JUnit XML report is settled and complete (`SETTLED_MS = 3000`). Verified with `tests/test_a_unit_runner_that_lingers_after_its_report_is_ended.py`.
+  2. **Async Engine Teardown & NullPool Seeding**: While `2f68304` secures `npm test`, direct terminal invocations (`run_terminal_command`) by specialist agents still execute raw `.venv/bin/python -m pytest ...`, which still hangs on `threading._shutdown()` if worker threads linger. In Python stack packs (`_python.py`, `_fullstack.py`), configure `poolclass=NullPool` for SQLite test engines and seed a clean session teardown fixture:
      ```python
      @pytest_asyncio.fixture(scope="session", autouse=True)
      async def _cleanup_database_engines():
          yield
          # Dispose async engine connections so worker threads terminate immediately
      ```
-- **Impact**: Eliminates 300-second dead-wait intervals during unit test execution and defect verification rounds, turning test-cycle turnarounds from 5+ minutes into sub-second iterations.
-- **Effort**: S (timeout added to `UNIT_TESTS` template; `NullPool` / session finalizer guidance in stack pack).
+  3. **Timeout Stdout Diagnostics**: When `run_terminal_command` encounters a category timeout (e.g. 300s), ensure captured stdout/stderr is returned prominently in the tool result (as done in `sandbox.py:4418-4422`) so agents do not hallucinate failure causes or guess wrong `read_command_output` references.
+- **Impact**: Eliminates 300-second dead-wait intervals during both automated test rounds and manual specialist terminal invocations, turning test-cycle turnarounds from 5+ minutes into sub-second iterations.
+- **Effort**: S.
 
 ---
 

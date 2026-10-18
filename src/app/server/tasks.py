@@ -433,6 +433,12 @@ def execute_workflow_run(
             logger.error("Run %s not found; nothing to execute", run_id)
             return
 
+        # What the build model's server gives each request, read once per
+        # segment (a deploy or a model change between segments re-reads it).
+        from app.models import server_profile
+
+        server_profile.record()
+
         if runner.run_store.is_cancel_requested(run_id):
             logger.info("Run %s was cancelled before execution started", run_id)
             _record_a_cancellation_nothing_else_will(runner, run_id, record.status)

@@ -1139,6 +1139,24 @@ def max_parallel() -> int:
         return 6
 
 
+def concurrent_requests() -> int:
+    """How many of one fan-out to send at once: `max_parallel()`, and no more than the server's slots.
+
+    A request past the server's slots only queues there, and its wait counts
+    against its timeout; on a server that splits its context across slots, a
+    fan-out wider than the slots is also what refused calls at a fraction of
+    the window (`server_profile`). Whether work fans out at all is still the
+    owner's execution mode and `max_parallel()`; this sizes each wave.
+    """
+    try:
+        from app.models.server_profile import current
+
+        slots = getattr(current(), "slots", None)
+    except Exception:  # noqa: BLE001
+        slots = None
+    return max(1, min(max_parallel(), slots)) if slots else max_parallel()
+
+
 def _in_parallel_mode() -> bool:
     """Whether the owner's execution mode is parallel. See `specialist_dispatch_node`."""
     try:
@@ -1348,7 +1366,7 @@ def _defects_to_fix_together(cycle: Any, candidates: list[int]) -> list[int]:
             continue
         chosen.append(index)
         claimed |= bundles[index]
-        if len(chosen) >= max_parallel():
+        if len(chosen) >= concurrent_requests():
             break
     return chosen or candidates[:1]
 
@@ -1414,7 +1432,7 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         )
         # At most `max_parallel()` at once, and never fewer than the paused
         # workers that must be re-sent to receive their decisions.
-        going = going[: max(max_parallel(), len(must_go))]
+        going = going[: max(concurrent_requests(), len(must_go))]
         return [
             Send("specialist_worker", {**state, "__worker_task": task, "__worker_index": index})
             for index, task in going
@@ -1424,7 +1442,7 @@ def _route_from_stage(state: WorkflowGraphState) -> str:
         pending = _reviews_pending(state)
         if not pending:
             return "review_gather"
-        return [Send("review_worker", {**state, "__review_item": item}) for item in pending[: max_parallel()]]
+        return [Send("review_worker", {**state, "__review_item": item}) for item in pending[: concurrent_requests()]]
 
     if stage == "defect_fix_parallel":
         # Every fixer of the batch still without an output: each was sent once
@@ -8299,7 +8317,7 @@ def build_workflow_graph(
             )
         drafted = draft_work_orders(
             tasks, specification, getattr(state.get("stack_selection"), "technology_stack", None),
-            state["repository"].root_path, _the_build_model(state, "drafting"), workers=max_parallel(),
+            state["repository"].root_path, _the_build_model(state, "drafting"), workers=concurrent_requests(),
             # The compiler's word on each draft, at once. See `drafting._repaired_where_the_compiler_says`.
             diagnose=lambda files: _diagnostics_in_files_touched(
                 state, {"messages": []}, __import__("types").SimpleNamespace(changed_files=files), "drafting",

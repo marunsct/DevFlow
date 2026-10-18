@@ -236,7 +236,17 @@ def context_window(environment: Mapping[str, str] | None = None) -> int:
     env = environment if environment is not None else _the_deployment_s()
     value = _read_int(env, "MODEL_CONTEXT_WINDOW")
     if value is None:
-        return DEFAULT_CONTEXT_WINDOW
+        value = DEFAULT_CONTEXT_WINDOW
+    # No larger than what the server gives one request (`server_profile`):
+    # forty-odd calls were refused at 20-48k tokens under a 100k setting.
+    try:
+        from app.models.server_profile import current
+
+        slot = getattr(current(), "slot_context", None)
+    except Exception:  # noqa: BLE001
+        slot = None
+    if slot:
+        value = min(value, slot)
     # A window smaller than the framing plus a minimum reply cannot run anything.
     return max(value, MIN_VIABLE_WINDOW)
 

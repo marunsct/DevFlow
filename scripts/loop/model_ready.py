@@ -47,29 +47,30 @@ def check(label, s):
 
 
 def server_facts(reached, naming, key):
-    """What a llama.cpp-style server says of itself at /props: slots and context. "" if it says nothing.
+    """What a llama.cpp-style server says of itself at /props: slots, context, quantisation. "" if nothing.
 
     One slot serves one request at a time: two runs on it each waited for the
     other (a call went from about 40 s to about 5 min), and parallel mode's
     fan-out only queues. The context it was started with is the real ceiling,
     whatever the settings say (one server refused at ~54k with 131k set).
+    The harness applies both itself now (`app.models.server_profile`).
     """
-    root = reached[:-3] if reached.endswith("/v1") else reached
-    request = urllib.request.Request(
-        root + "/props", headers={**({"Authorization": f"Bearer {key}"} if key else {}), **naming}
-    )
     try:
-        with urllib.request.urlopen(request, timeout=5) as reply:
-            props = json.load(reply)
-    except Exception:  # noqa: BLE001 - a server without /props says nothing
+        from app.models.server_profile import read
+    except ImportError:  # an image from before the profile module
         return ""
-    slots = props.get("total_slots")
-    context = (props.get("default_generation_settings") or {}).get("n_ctx")
+    profile = read(reached, key)
+    if profile is None:
+        return ""
     said = []
-    if isinstance(slots, int):
-        said.append(f"{slots} slot(s)" + ("; parallel mode and a second run will wait their turn" if slots == 1 else ""))
-    if isinstance(context, int):
-        said.append(f"context {context} tokens as started")
+    if profile.slots:
+        said.append(f"{profile.slots} slot(s)" + ("; parallel mode and a second run will wait their turn" if profile.slots == 1 else ""))
+    if profile.slot_context:
+        said.append(f"context {profile.slot_context} tokens as started")
+    if profile.quantisation:
+        said.append(profile.quantisation)
+    if profile.advisory():
+        said.append("ADVISORY " + profile.advisory())
     return f" [server: {', '.join(said)}]" if said else ""
 
 

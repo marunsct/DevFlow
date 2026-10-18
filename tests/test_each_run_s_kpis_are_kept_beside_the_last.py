@@ -59,7 +59,7 @@ def test_one_run_s_kpis_come_from_its_transcript() -> None:
     assert got["identical_call_rate"] == 0.25       # the second read answered the same; the refusal is a guard
     assert got["unknown_tool_name_rate"] == 0.25
     assert got["cached_token_share"] == 0.5
-    assert got["prefill_decode_ratio"] == 9.0
+    assert got["prefill_decode_ratio"] == 4.5       # (900 input - 450 from cache) / 100 output
     assert got["replies_lost_to_length"] == 1
     assert (got["defects_raised"], got["defects_left_open"], got["fixes_reverted"]) == (1, 1, 1)
     assert got["defect_fix_stages"] == 1

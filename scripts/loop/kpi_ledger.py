@@ -29,6 +29,15 @@ WORSE_WHEN_HIGHER = (
 )
 WINDOW = 5
 FACTOR = 1.5
+#: The least a KPI must reach to be flagged, so a rate moving from 0.1% to 0.2%
+#: is not a regression and a count going from 0 to 3 is (Initiative AN).
+FLOOR = {
+    "tool_failure_rate": 0.02, "redundant_read_rate": 0.02, "identical_call_rate": 0.02,
+    "unknown_tool_name_rate": 0.01, "replies_lost_to_length": 1, "model_errors": 1,
+    "fixes_reverted": 1, "defects_left_open": 1, "prefill_decode_ratio": 1.0,
+    "lost_reply_output_share": 0.02, "invalid_tool_call_rate": 0.01,
+}
+WORSE_WHEN_HIGHER = (*WORSE_WHEN_HIGHER, "lost_reply_output_share", "invalid_tool_call_rate")
 
 
 def regressions(earlier: list[dict], row: dict) -> list[str]:
@@ -41,7 +50,7 @@ def regressions(earlier: list[dict], row: dict) -> list[str]:
             continue
         mean = sum(values) / len(values)
         now = float(row[key])
-        if mean > 0 and now > FACTOR * mean:
+        if now >= FLOOR.get(key, 0) and now > FACTOR * mean:
             flagged.append(f"{key}: {now:g} against a {len(values)}-run mean of {mean:.3g}")
     return flagged
 
@@ -52,14 +61,23 @@ def append(ledger: Path, row: dict) -> list[dict]:
     if ledger.exists():
         with ledger.open(newline="") as handle:
             rows = list(csv.DictReader(handle))
+    # Scalars only: the per-stage block stays in the run's own JSON.
+    row = {k: v for k, v in row.items() if not isinstance(v, (list, dict))}
     earlier = [r for r in rows if r.get("run") != row.get("run")]
     columns = list(dict.fromkeys([*row, *(k for r in earlier for k in r)]))
     ledger.parent.mkdir(parents=True, exist_ok=True)
-    with ledger.open("w", newline="") as handle:
+    # Written beside the ledger and moved over it, so a worker that dies
+    # mid-write leaves the old ledger and not half of a new one.
+    temporary = ledger.with_name(ledger.name + ".tmp")
+    with temporary.open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=columns, restval="")
         writer.writeheader()
         writer.writerows([*earlier, row])
-    return earlier
+    temporary.replace(ledger)
+    # Compared with runs of the same benchmark only: a bench and a real brief
+    # have different shapes, and a mixed window flags nothing useful.
+    kind = str(row.get("benchmark") or "")
+    return [r for r in earlier if str(r.get("benchmark") or "") == kind]
 
 
 def compare(a: dict, b: dict) -> list[str]:
@@ -75,8 +93,10 @@ def compare(a: dict, b: dict) -> list[str]:
     return out
 
 
-def main(path: str, ledger: str = "data/kpi/ledger.csv") -> int:
+def main(path: str, ledger: str = "data/kpi/ledger.csv", benchmark: str = "") -> int:
     row = json.loads(Path(path).read_text())
+    if benchmark:
+        row["benchmark"] = benchmark
     earlier = append(Path(ledger), row)
     flagged = regressions(earlier, row)
     for line in flagged:
@@ -91,4 +111,4 @@ if __name__ == "__main__" and len(sys.argv) > 1:
         # python kpi_ledger.py compare data/kpi/<A>.json data/kpi/<B>.json
         print("\n".join(compare(*(json.loads(Path(f).read_text()) for f in sys.argv[2:4]))))
         raise SystemExit(0)
-    raise SystemExit(main(*sys.argv[1:3]))
+    raise SystemExit(main(*sys.argv[1:4]))

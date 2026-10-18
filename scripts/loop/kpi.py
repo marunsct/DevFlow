@@ -43,6 +43,26 @@ LAYERS = {
 }
 
 
+#: How much of a tool result's start and end is searched for a guard's words. The
+#: harness appends its notes after the content, so the start alone misses them
+#: (Initiative AN).
+HEAD_CHARS = 600
+TAIL_CHARS = 900
+
+#: A gap between two records longer than this is a worker stopped between them
+#: (a deploy, a crash), not work.
+ORPHAN_GAP_SECONDS = 600
+
+
+def _ends(text: str) -> str:
+    """The start and the end of a tool result: where a guard's words are."""
+    return text if len(text) <= HEAD_CHARS + TAIL_CHARS else text[:HEAD_CHARS] + "\n" + text[-TAIL_CHARS:]
+
+
+#: What each stage's block carries.
+STAGE_COUNTERS = ("calls", "input", "cached", "output", "identical_calls", "redundant_reads", "lost_replies", "tool_failures")
+
+
 def _seconds(value: str) -> float:
     return datetime.fromisoformat(value).timestamp()
 
@@ -74,7 +94,9 @@ def kpis(records: list[dict]) -> dict:
     count = collections.Counter()
     defects = collections.Counter()
     stages: list[str] = []
+    per_stage: dict[str, collections.Counter] = collections.defaultdict(collections.Counter)
     offered: dict[str, set] = {}
+    extra = collections.Counter()
     for r in records:
         stage, kind = r.get("stage") or "", r.get("kind")
         if stage and (not stages or stages[-1] != stage):
@@ -94,14 +116,27 @@ def kpis(records: list[dict]) -> dict:
             if stage in opened:
                 model_iv.append((opened.pop(stage), _seconds(r["at"])))
             usage = r.get("usage") or {}
+            output = usage.get("output_tokens") or 0
+            cached = (usage.get("input_token_details") or {}).get("cache_read") or 0
             tokens["input"] += usage.get("input_tokens") or 0
-            tokens["output"] += usage.get("output_tokens") or 0
-            tokens["cached"] += (usage.get("input_token_details") or {}).get("cache_read") or 0
+            tokens["output"] += output
+            tokens["cached"] += cached
+            row = per_stage[stage]
+            row["calls"] += 1
+            row["input"] += usage.get("input_tokens") or 0
+            row["cached"] += cached
+            row["output"] += output
+            # What the server does not report: the reasoning's length, kept by
+            # the transcript since 2026-10-18, at about four characters a token.
+            extra["reasoning_tokens_estimated"] += min(output, int(r.get("reasoning_chars") or 0) // 4)
+            extra["invalid_tool_calls"] += len(r.get("invalid_tool_calls") or [])
             # Lost to reasoning, by the reply's shape: the server reports no
             # reasoning tokens, but a reply cut at its length with no call in it
             # is one.
             if r.get("finish_reason") == "length" and not r.get("tool_calls"):
                 count["replies_lost_to_length"] += 1
+                extra["output_lost"] += output
+                row["lost_replies"] += 1
         elif kind == "model_error":
             count["model_errors"] += 1
         elif kind == "resumed":
@@ -118,35 +153,53 @@ def kpis(records: list[dict]) -> dict:
             call = calls.get(r.get("call_id")) or {}
             raw = r.get("result") or r.get("content") or ""
             text = raw if isinstance(raw, str) else json.dumps(raw)
+            ends = _ends(text)
             if (isinstance(raw, dict) and raw.get("error")) or (isinstance(raw, str) and FAIL.match(raw)):
                 count["tool_failures"] += 1
-            if call.get("tool") in READS and any(m in text[:600] for m in REDUNDANT):
+                per_stage[stage]["tool_failures"] += 1
+            if call.get("tool") in READS and any(m in ends for m in REDUNDANT):
                 count["redundant_reads"] += 1
-            if INVALID_TOOL in text[:400]:
+                per_stage[stage]["redundant_reads"] += 1
+            if INVALID_TOOL in ends:
                 count["unknown_tool_names"] += 1
             for layer, marker in LAYERS.items():
-                if marker in text[:1500]:
+                if marker in ends:
                     count[layer] += 1
             # A repeat is the same call answered the same way in one visit:
             # re-asking what was already answered (`scripts/audit_run.py`).
             # Refusals and notices are the guards working, counted above.
             if call and not text.lstrip().startswith(("Refusing", "Error: Refusing")) and not any(
-                m in text[:600] for m in REDUNDANT
+                m in ends for m in REDUNDANT
             ):
-                seen_calls[(call["_visit"], call.get("tool"), json.dumps(call.get("args") or {}, sort_keys=True), text)] += 1
+                key = (call["_visit"], call.get("tool"), json.dumps(call.get("args") or {}, sort_keys=True), text)
+                seen_calls[key] += 1
+                if seen_calls[key] > 1:
+                    per_stage[stage]["identical_calls"] += 1
         elif kind == "defect":
             defects[str(r.get("event") or "")] += 1
     wall = (max(times) - min(times)) if times else 0.0
     model_busy = _busy(model_iv)
+    ordered = sorted(times)
+    gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+    orphan = sum(g for g in gaps if g > ORPHAN_GAP_SECONDS)
+    effective_input = tokens["input"] - tokens["cached"]
     return {
         "wall_minutes": round(wall / 60, 1),
+        "active_minutes": round((wall - orphan) / 60, 1),
+        "orphan_gap_minutes": round(orphan / 60, 1),
         "model_busy_share": _share(model_busy, wall),
         "model_calls": count["model_calls"],
         "model_errors": count["model_errors"],
         "resumes": count["resumes"],
         "input_tokens": tokens["input"],
         "output_tokens": tokens["output"],
-        "prefill_decode_ratio": round(tokens["input"] / tokens["output"], 1) if tokens["output"] else 0.0,
+        # What the server had to prefill: the input it did not take from its cache.
+        "effective_input_tokens": effective_input,
+        "prefill_decode_ratio": round(effective_input / tokens["output"], 1) if tokens["output"] else 0.0,
+        "reasoning_tokens_estimated": extra["reasoning_tokens_estimated"],
+        "reasoning_share_estimated": _share(extra["reasoning_tokens_estimated"], tokens["output"]),
+        "lost_reply_output_share": _share(extra["output_lost"], tokens["output"]),
+        "invalid_tool_call_rate": _share(extra["invalid_tool_calls"], count["model_calls"]),
         "cached_token_share": _share(tokens["cached"], tokens["input"]),
         "replies_lost_to_length": count["replies_lost_to_length"],
         "tool_calls": count["tool_calls"],
@@ -163,6 +216,12 @@ def kpis(records: list[dict]) -> dict:
         "fixes_reverted": defects["reverted"],
         "closed_without_a_fixer": defects["closed without a fixer"],
         **{layer: count[layer] for layer in [*LAYERS, "layer_tool_withheld"]},
+        # One block per stage (a `defect_fix_2_3` is its own), the busiest first.
+        "stages": [
+            {"name": name, **{key: row[key] for key in STAGE_COUNTERS}}
+            for name, row in sorted(per_stage.items(), key=lambda item: -item[1]["calls"])
+            if name
+        ],
     }
 
 

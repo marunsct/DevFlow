@@ -876,6 +876,16 @@ _NOTHING_NEW = re.compile(
 
 
 
+#: Told to a stage that writes when its reads stopped teaching it anything:
+#: the looking tools go, the writing tools stay.
+_STALLED_WITH_WRITERS_NOTICE = (
+    "Your last calls only showed you what you already have - the files are in the project memory "
+    "at the start of this conversation. Reading is done for this stage: the tools that look are "
+    "withheld, and the ones that change files are still yours. Make the change now, then return "
+    "your structured response saying what you changed."
+)
+
+
 def _nothing_new_lately(messages: list[Any], count: int = NOTHING_NEW_BEFORE_THE_ANSWER) -> bool:
     """True when the stage's last `count` tool results all gave it nothing new.
 
@@ -1457,7 +1467,9 @@ def _a_query_withheld_notice(name: str, repeats: int) -> str:
 
 
 def _named(tool: Any) -> str:
-    """A tool's name, whether it is an object or a mapping."""
+    """A tool's name, whether it is an object, a mapping or the name itself."""
+    if isinstance(tool, str):
+        return tool
     return str(
         getattr(tool, "name", "")
         or (tool.get("name") if isinstance(tool, dict) else "")
@@ -1689,10 +1701,18 @@ def build_settled_answer_middleware(
                 )
                 # Every tool that only looks goes; a stage that also writes
                 # keeps its writers, and one that only looks has its answer left.
-                writers = _without_the_looking_tools_in(list(getattr(request, "tools", None) or [])) if ignored else []
+                # The same for a stall: measured on one run, fix stages that
+                # read files the project memory already held were stalled at
+                # five such reads with every tool withheld - their writers
+                # too - and could only answer, which each did by claiming
+                # changes it never made, defect after defect.
+                writers = (
+                    _without_the_looking_tools_in(list(getattr(request, "tools", None) or []))
+                    if ignored or stalled else []
+                )
                 answer_only = (spiralled and not spiral_quiet) or _nothing_left_but_the_answer(
                     messages, step_limit, schema
-                ) or stalled or (ignored and not writers) or stuck_on_a_failure
+                ) or (stalled and not writers) or (ignored and not writers) or stuck_on_a_failure
                 if ignored:
                     # Named as well: the model is told which call it kept
                     # sending, not only that its tools are gone.
@@ -1707,10 +1727,13 @@ def build_settled_answer_middleware(
                         stage_name or "?", "every tool that only looks" if writers else "its tools so the only move left is the answer",
                     )
                 if stalled:
+                    if writers:
+                        correction = f"{correction}\n\n{_STALLED_WITH_WRITERS_NOTICE}" if correction else _STALLED_WITH_WRITERS_NOTICE
                     logger.warning(
-                        "Stage %s had nothing new from its last %d tool calls; withholding its "
-                        "tools so the only move left is the answer",
+                        "Stage %s had nothing new from its last %d tool calls; withholding %s",
                         stage_name or "?", NOTHING_NEW_BEFORE_THE_ANSWER,
+                        "every tool that only looks, keeping its writers" if writers
+                        else "its tools so the only move left is the answer",
                     )
                 if answer_only and not (spiralled and not spiral_quiet):
                     correction = (
@@ -1821,7 +1844,7 @@ def build_settled_answer_middleware(
                                 "of it",
                                 stage_name or "?", repeated[0], repeated[1],
                             )
-                    if ignored:
+                    if ignored or (stalled and writers):
                         kept, narrowed = _without_the_looking_tools_in(kept), True
                     if narrowed:
                         overrides["tools"] = kept

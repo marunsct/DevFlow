@@ -111,3 +111,18 @@ def test_invalid_tool_errors_repeated_leave_only_the_answer():
     assert TOOLS_WITHHELD_NOTICE in str(captured["messages"][-1])
 
 
+
+
+def test_a_stalled_stage_that_writes_keeps_its_writers_and_is_told_to_write():
+    """Fix stages stalled on reads the memory already held lost their writers too, and
+    could only answer - each claimed changes it never made."""
+    import re
+
+    from app.agents.settled_answer import _STALLED_WITH_WRITERS_NOTICE
+
+    tools = [SimpleNamespace(name=n) for n in ("glob", "ls", "read_file", "edit_artifact", "write_artifact")]
+    captured = _captured(_stage([NEW] + [SAME] * NOTHING_NEW_BEFORE_THE_ANSWER), tools)
+
+    assert sorted(t.name for t in captured["tools"]) == ["edit_artifact", "write_artifact"]
+    assert _STALLED_WITH_WRITERS_NOTICE in str(captured["messages"][-1])
+    assert not re.search(r"\b(?:task|tasks|to-do|todo|button|click|checkbox)\b", _STALLED_WITH_WRITERS_NOTICE, re.I)

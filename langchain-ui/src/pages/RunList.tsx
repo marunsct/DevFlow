@@ -138,8 +138,6 @@ export const RunList: React.FC = () => {
         </Link>
       </div>
 
-      <OutcomesPanel />
-
       {loading ? (
         <div className="flex items-center justify-center min-h-[40vh]">
           <div className="h-10 w-10 border-3 border-primary border-t-transparent rounded-full animate-spin" />
@@ -264,6 +262,9 @@ export const RunList: React.FC = () => {
           )}
         </div>
       )}
+
+      {/* After the list: what the owner came for is the run that needs them. */}
+      <OutcomesPanel />
     </div>
   );
 };

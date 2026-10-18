@@ -32,6 +32,9 @@ from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
+#: How a read of a file the memory holds is answered; `settled_answer` counts it.
+HELD_POINTER = "is in the project memory at the start of this conversation"
+
 #: The share of a model's window the memory may take.
 MEMORY_SHARE = 0.3
 #: The most it takes on any model, in characters.
@@ -379,7 +382,7 @@ def build_project_memory_middleware(repo_root: str) -> Any:
                     from langchain_core.messages import ToolMessage
 
                     return ToolMessage(
-                        content=f"`{path}` is in the project memory at the start of this conversation, whole and as "
+                        content=f"`{path}` {HELD_POINTER}, whole and as "
                                 "it is now; it has not changed since. Use it, and any lines of it, from there.",
                         tool_call_id=call.get("id") or "",
                         name="read_file",

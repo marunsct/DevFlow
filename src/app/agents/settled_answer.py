@@ -527,6 +527,15 @@ CALLS_RESERVED_FOR_THE_ANSWER = 2
 #: finding elsewhere.
 READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL = 3
 
+#: Reads of a file the project memory already holds, answered with a pointer to
+#: it, before the read tool goes too. The pointer is the same answer as a
+#: refusal in kinder words and was not counted: measured on one run, a testing
+#: stage made 70 model calls of which 64 tool results were pointers - a batch of
+#: reads, a stall that withheld them for one call, one write, and the batch
+#: again, around 35 calls of it. Higher than the refusal count because the memory
+#: holds only whole files, and a stage may still need a file it does not.
+POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL = 8
+
 #: The tools withheld at that point - the two that return a file's contents,
 #: and nothing else.
 _READ_TOOLS = frozenset({"read_file", "read_repository_file"})
@@ -1131,6 +1140,16 @@ def _refused_reads(messages: list[Any]) -> int:
     return refused
 
 
+def _pointed_reads(messages: list[Any]) -> int:
+    """How many reads this stage was answered with a pointer to the project memory."""
+    from app.agents.project_memory import HELD_POINTER
+
+    return sum(
+        1 for message in messages
+        if getattr(message, "type", None) == "tool" and HELD_POINTER in str(getattr(message, "content", "") or "")
+    )
+
+
 def _a_tool_refused_identically(messages: list[Any]) -> tuple[str, int] | None:
     """The tool this stage keeps calling to the same failure, and how often.
 
@@ -1680,6 +1699,10 @@ def build_settled_answer_middleware(
                 # the model is being asked to answer, and it should know why
                 # its last attempt was refused.
                 reading_nothing_new = _refused_reads(messages)
+                read_tool_due = (
+                    reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL
+                    or _pointed_reads(messages) >= POINTED_READS_BEFORE_WITHHOLDING_THE_TOOL
+                )
                 # Checked before the call-budget rung and folded into the same
                 # `answer_only` path, because the remedy is identical - no tools,
                 # answer now - and a stage can be in both states at once.
@@ -1801,7 +1824,7 @@ def build_settled_answer_middleware(
                 repeated = None
                 if not answer_only:
                     notices = []
-                    if reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
+                    if read_tool_due:
                         notices.append(_READ_TOOL_WITHHELD_NOTICE)
                     repeated = _a_tool_refused_identically(messages)
                     notice = _a_tool_withheld_notice(*repeated) if repeated is not None else ""
@@ -1857,7 +1880,7 @@ def build_settled_answer_middleware(
                 else:
                     kept = list(getattr(request, "tools", None) or [])
                     narrowed = False
-                    if reading_nothing_new >= READ_REFUSALS_BEFORE_WITHHOLDING_THE_TOOL:
+                    if read_tool_due:
                         without_reads = _without_the_read_tools_in(kept)
                         if without_reads is not None:
                             kept, narrowed = without_reads, True

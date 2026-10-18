@@ -292,6 +292,13 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
             "The project setup was never proven: "
             + str(scaffolded.get("problem") or "its smoke tests did not pass")
         )
+    # What the run itself set aside on the way: an escalation's open issues,
+    # and review findings fast delivery recorded as risks instead of fixing.
+    # They reached the record of each sprint and never the run's verdict, so a
+    # run that carried them read as plain "completed" (Initiative AE).
+    gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
+    gaps.extend(_findings_recorded_as_risks(state))
+    gaps.extend(_what_the_release_re_check_finds(state, root))
     if gaps:
         update["completion_gaps"] = gaps
     # What someone who did not write it needs to test and ship it, from the
@@ -376,6 +383,46 @@ def change_request_brief(root: str) -> list[str]:
         for cid, text in suite.change_requests(root).items()
     ]
 
+
+
+#: The decision fast delivery records when a milestone review's findings are
+#: carried as risks instead of fixed; `release` finds them by it.
+RECORDED_AS_RISKS = "record the findings as risks and go on"
+
+
+def _findings_recorded_as_risks(state: Any) -> list[str]:
+    """One gap per milestone review whose findings were recorded as risks, not fixed."""
+    gaps = []
+    for record in state.get("decisions") or []:
+        if not isinstance(record, dict) or record.get("decision") != RECORDED_AS_RISKS:
+            continue
+        rationale = str(record.get("rationale") or "")
+        findings = rationale.split("\n", 1)[1] if "\n" in rationale else rationale
+        gaps.append(
+            f"A milestone review's findings were recorded as risks, not fixed ({record.get('id')}): "
+            + " ".join(findings.split())[:400]
+        )
+    return gaps
+
+
+def _what_the_release_re_check_finds(state: Any, root: str) -> list[str]:
+    """What the checks that read the files find breaking the product now, as gaps. Never raises.
+
+    They ran at each milestone review, and later fixes can break what they
+    passed; reading the files costs nothing beside a release.
+    """
+    try:
+        from app.analysis.integration_checks import problems_that_break_the_product
+
+        found = problems_that_break_the_product(
+            root,
+            getattr(state.get("stack_selection"), "technology_stack", None),
+            getattr(state.get("document"), "text", "") or "",
+        )
+    except Exception:  # noqa: BLE001 - a re-check that cannot run adds nothing
+        logger.debug("Could not re-check the product at release", exc_info=True)
+        return []
+    return [f"At release, reading the files still finds: {problem}"[:600] for problem in found[:8]]
 
 
 def _no_unit_tests_ran(root: Any) -> str:

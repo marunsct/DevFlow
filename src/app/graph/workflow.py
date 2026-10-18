@@ -334,7 +334,7 @@ PRODUCT_INTAKE_REVIEW = "product_intake"
 """Review point: the refined product intake document."""
 
 from app.graph.acceptance_nodes import ACCEPTANCE_REVIEW  # noqa: E402 - beside its siblings
-from app.graph.delivery import RELEASE_REVIEW  # noqa: E402 - beside its siblings
+from app.graph.delivery import RECORDED_AS_RISKS, RELEASE_REVIEW  # noqa: E402 - beside its siblings
 from app.graph.escalation import ESCALATION_REVIEW  # noqa: E402 - beside its siblings
 
 _REVIEW_NODES = {
@@ -9955,8 +9955,8 @@ def build_workflow_graph(
                 record_decision(
                     state, risked, point="milestone_review",
                     question=f"The review still asks for changes after {revision_count - 1} revision(s): stop or go on?",
-                    options=["stop for a person", "record the findings as risks and go on"],
-                    decision="record the findings as risks and go on",
+                    options=["stop for a person", RECORDED_AS_RISKS],
+                    decision=RECORDED_AS_RISKS,
                     rationale="Fast delivery. Every test the sprint is measured by is checked next; the "
                     "open findings are carried to the next sprint:\n" + findings_text[:3000],
                 )

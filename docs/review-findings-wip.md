@@ -1716,3 +1716,28 @@ order, one commit each: X.1/X.2 → AD → AE → W.3 → W.1 → W.4 → W.5. E
 item's exact code pointers are in §13.2–13.4 (G1, G19, G20, G21, G22, G25,
 G14, G12, G15) and the mechanism text is in `docs/improvement-plan.md`
 Appendix 2 Parts 6, 7 (X) and 9 (AD, AE).
+
+---
+
+## 14. Third review session — progress log (started 2026-10-18 22:10 JST)
+
+Owner mandate: deep review again, improvement points, a *detailed*
+implementation plan; revamp the UI to be more user-friendly with multiple
+theme options; no code changes; check the live Docker app.
+
+### 14.0 Checkpoint 1 (22:20 JST) — orientation
+- Branch moved from `7e4bc9a` to `57e8342` since the pause: another session
+  (`langchain-63`, the main driver per HANDOVER §2.0000) implemented most of
+  Appendix 2 and the owner's 12 decisions of 20:55 JST — 119 files, +5.5k
+  lines. Appendix 2 ledger now: DONE W.1/W.3/W.4/W.5, A–I rows, X.1–X.4,
+  M.1 (narrowed), O.1/O.2/O.3-AA, AB, AC, AD, AE, AF (redesigned to
+  release time), AG, AH.1–4, AI, K.2, J.3+C, U.1, V; DROPPED on measurement:
+  M.2, M.3, Z/O.4, Y (no crossover found), AA.2, AC.3; UI commit `ef982a2`
+  (Changes view from git history, criteria→tests, URL state, steering via
+  `.harness/steering.json` + instruction middleware).
+- So this pass is (1) a review of today's implementations as code (no suite
+  can run here), (2) new gaps, (3) the UI revamp + multi-theme plan.
+- Live Docker app NOT reachable: the desktop link exposes no shell/file
+  tools in this session and the Chrome extension reports "not connected".
+  Screens are reviewed from the code; the plan marks where a live
+  screenshot pass should confirm.

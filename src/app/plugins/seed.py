@@ -52,7 +52,10 @@ SEED_INSTRUCTIONS: dict[str, str] = {
         "- Connection Management: Connections must be pooled. Ensure every connection borrowed from the pool is returned gracefully in a `finally` block.\n"
         "- Transactions: Wrap write operations in transactions. If an error occurs, explicitly `rollback()` the transaction before closing or returning the connection.\n"
         "- Safety: Never construct SQL strings via f-strings or string concatenation. Always use bound parameters (`%s` or `$1` depending on driver) to prevent SQL injection.\n"
-        "- Indexing: Ensure foreign keys and heavily queried columns are indexed."
+        "- Indexing: Ensure foreign keys and heavily queried columns are indexed.\n"
+        "- Here: no PostgreSQL server runs while the product is built and tested. Keep data access behind an adapter, "
+        "default to the embedded file database under `DATA_DIR`, and take PostgreSQL from one connection setting only "
+        "when the brief names it."
     ),
     "go": (
         "You are working in a Go environment.\n"

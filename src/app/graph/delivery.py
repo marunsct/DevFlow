@@ -298,6 +298,7 @@ def release(state: Any, config: RunnableConfig, ctx: Any) -> dict[str, Any]:
     # run that carried them read as plain "completed" (Initiative AE).
     gaps.extend(f"An escalation left this open: {issue}" for issue in state.get("known_issues") or [])
     gaps.extend(_findings_recorded_as_risks(state))
+    gaps.extend(_reviews_that_were_not_independent())
     gaps.extend(_what_the_release_re_check_finds(state, root))
     gaps.extend(_code_the_product_does_not_run(root))
     if gaps:
@@ -438,6 +439,17 @@ def _code_the_product_does_not_run(root: str) -> list[str]:
         return [f"Code the product does not run: {problem}"[:600] for problem in code_the_product_does_not_run(root)]
     except Exception:  # noqa: BLE001
         return []
+
+
+def _reviews_that_were_not_independent() -> list[str]:
+    """The configured judgement model could not be built, so every review ran on the build model (AH.3)."""
+    try:
+        from app.models.roles import judgement_downgrade
+
+        downgrade = judgement_downgrade()
+    except Exception:  # noqa: BLE001
+        return []
+    return [downgrade] if downgrade else []
 
 
 def _no_unit_tests_ran(root: Any) -> str:

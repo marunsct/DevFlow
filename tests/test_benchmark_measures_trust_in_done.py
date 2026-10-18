@@ -119,3 +119,26 @@ def test_changes_are_spread_over_every_file() -> None:
     picked = mutate.spread(candidates, 4)
     assert [c["file"] for c in picked] == ["f0", "f1", "f2", "f3"]
     assert mutate.spread(candidates[:3], 4) == candidates[:3]
+
+
+def test_a_run_scored_against_another_brief_s_suite_is_not_a_false_acceptance() -> None:
+    """Three runs given a shorter brief scored 1, 1 and 5 of 10 on a suite
+    written for the benchmark's own brief; the one given that brief scored 10."""
+    assert score.brief_pairing("no") == {"brief": "other", "brief_mismatch": True}
+    assert score.brief_pairing("yes") == {"brief": "own", "brief_mismatch": False}
+    assert score.brief_pairing("") == {"brief": "unknown", "brief_mismatch": False}
+
+    results = [
+        {"benchmark": "b", "score": 0.1, "harness": {"status": "completed"}, "false_acceptance": False,
+         "brief_mismatch": True},
+        {"benchmark": "b", "score": 1.0, "harness": {"status": "completed"}, "false_acceptance": False},
+    ]
+    row = report.summarise(results)["b"]
+    assert row["brief_mismatch"] == 1
+    assert row["scored"] == 1 and row["finished"] == 1 and row["mean_score"] == 1.0
+
+
+def test_the_loop_compares_the_brief_by_content() -> None:
+    loop = (Path(__file__).resolve().parents[1] / "scripts" / "loop" / "loop.sh").read_text()
+    assert 'cmp -s - "benchmarks/$name/brief.md"' in loop
+    assert '"$gaps" "$own"' in loop

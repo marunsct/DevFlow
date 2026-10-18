@@ -125,11 +125,19 @@ score)
   # What the release knew it did not prove rides the export (Initiative J.4).
   # An old database without the column answers empty, which scores as no gaps.
   gaps=$("${DB[@]}" "select completion_gaps from runs where run_id='$run'" 2>/dev/null | head -1)
-  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps"
+  # Whether the run was started from this benchmark's own brief, by content:
+  # every benchmark's brief is named brief.md (Initiative W.1, score.py).
+  own=""
+  doc=$("${DB[@]}" "select document_paths from runs where run_id='$run'" 2>/dev/null \
+    | "$PY" -c 'import json,sys;p=json.loads(sys.stdin.read() or "[]");print(p[0] if len(p)==1 else "")' 2>/dev/null)
+  if [ -n "$doc" ] && docker compose exec -T worker test -f "$doc"; then
+    if docker compose exec -T worker cat "$doc" | cmp -s - "benchmarks/$name/brief.md"; then own=yes; else own=no; fi
+  fi
+  docker compose exec -T worker python /tmp/bench-src/score.py "$ws/$project" "/tmp/bench-src/$name" "/tmp/bench-$run.json" "$status" "$gaps" "$own"
   mkdir -p data/bench
   docker cp "langchain-worker-1:/tmp/bench-$run.json" "data/bench/$run.json" >/dev/null && echo "result: data/bench/$run.json"
   # The score alone - no test names - for the outcome dashboard (app.server.outcomes).
-  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","completion_gaps")}))' "data/bench/$run.json" \
+  "$PY" -c 'import json,sys;d=json.load(open(sys.argv[1]));print(json.dumps({k:d.get(k) for k in ("benchmark","passed","total","score","completion_gaps","brief_mismatch")}))' "data/bench/$run.json" \
     | docker compose exec -T worker sh -c "mkdir -p /app/data/outcomes && cat > /app/data/outcomes/$run.json" || true
   # The hidden tests and the copy they ran against leave the worker at once:
   # it is the container the harness's agents work in.

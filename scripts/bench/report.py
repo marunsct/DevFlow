@@ -22,9 +22,15 @@ def summarise(results: list[dict]) -> dict[str, dict]:
     """Per benchmark: scored, finished, perfect, false acceptances, and the mean score."""
     table: dict[str, dict] = defaultdict(lambda: {
         "scored": 0, "finished": 0, "perfect": 0, "false_acceptances": 0, "unknown": 0, "scores": [],
+        "brief_mismatch": 0,
     })
     for result in results:
         row = table[str(result.get("benchmark") or "?")]
+        if result.get("brief_mismatch"):
+            # Scored against a suite written for another brief: it measures
+            # the pairing, so it is counted apart and in nothing else.
+            row["brief_mismatch"] += 1
+            continue
         status = (result.get("harness") or {}).get("status", "unknown")
         row["scored"] += 1
         row["scores"].append(float(result.get("score") or 0.0))
@@ -51,12 +57,12 @@ def main(directory: Path) -> int:
     if not results:
         print(f"no scored runs in {directory}")
         return 0
-    print(f"{'benchmark':22} {'scored':>6} {'finished':>8} {'perfect':>7} {'false acc.':>10} {'rate':>6} {'mean':>6} {'unknown':>7}")
+    print(f"{'benchmark':22} {'scored':>6} {'finished':>8} {'perfect':>7} {'false acc.':>10} {'rate':>6} {'mean':>6} {'unknown':>7} {'mismatch':>8}")
     for name, row in sorted(summarise(results).items()):
         rate = "-" if row["false_acceptance_rate"] is None else f"{row['false_acceptance_rate']:.0%}"
         print(
             f"{name:22} {row['scored']:>6} {row['finished']:>8} {row['perfect']:>7} "
-            f"{row['false_acceptances']:>10} {rate:>6} {row['mean_score']:>6.0%} {row['unknown']:>7}"
+            f"{row['false_acceptances']:>10} {rate:>6} {row['mean_score']:>6.0%} {row['unknown']:>7} {row['brief_mismatch']:>8}"
         )
     return 0
 

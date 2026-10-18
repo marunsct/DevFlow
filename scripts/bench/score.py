@@ -131,7 +131,27 @@ def harness_verdict(product: Path, status: str = "", completion_gaps: list[str] 
     return verdict
 
 
-def score(product: Path, bench: Path, out: Path, status: str = "", completion_gaps: list[str] | None = None) -> dict:
+def brief_pairing(own_brief: str) -> dict:
+    """Whether the run was started from this benchmark's own brief: `yes`, `no` or unknown.
+
+    The hidden tests are written against the benchmark's own brief - its
+    interface section names what they find. A run started from another brief
+    and scored here measures the pairing, not the harness: three runs given a
+    shorter brief scored 1, 1 and 5 of 10 here while the one given the real
+    brief scored 10. Such a score is kept, marked, and never counted as a false
+    acceptance.
+    """
+    answer = (own_brief or "").strip().lower()
+    return {
+        "brief": {"yes": "own", "no": "other"}.get(answer, "unknown"),
+        "brief_mismatch": answer == "no",
+    }
+
+
+def score(
+    product: Path, bench: Path, out: Path, status: str = "", completion_gaps: list[str] | None = None,
+    own_brief: str = "",
+) -> dict:
     spec = json.loads((bench / "bench.json").read_text())
     kind, runner = spec["kind"], spec["runner"]
     notes: list[str] = []
@@ -194,7 +214,10 @@ def score(product: Path, bench: Path, out: Path, status: str = "", completion_ga
         "notes": notes,
     }
     result["harness"] = harness_verdict(product, status, completion_gaps)
-    result["false_acceptance"] = result["harness"]["status"] == "completed" and result["score"] < 1.0
+    result.update(brief_pairing(own_brief))
+    result["false_acceptance"] = (
+        result["harness"]["status"] == "completed" and result["score"] < 1.0 and not result["brief_mismatch"]
+    )
     # What the release knew it did not prove, top level as well: the outcome
     # dashboard and `report.py` read the export without walking `harness`.
     result["completion_gaps"] = result["harness"]["completion_gaps"]
@@ -211,8 +234,12 @@ if __name__ == "__main__":
             gaps = [str(gap) for gap in parsed] if isinstance(parsed, list) else []
         except ValueError:
             gaps = []
-    result = score(product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "", gaps)
+    result = score(
+        product, bench, out, sys.argv[4] if len(sys.argv) > 4 else "", gaps, sys.argv[6] if len(sys.argv) > 6 else "",
+    )
     print(f"{result['benchmark']}: {result['passed']}/{result['total']} hidden tests pass (score {result['score']})")
+    if result["brief_mismatch"]:
+        print("  BRIEF MISMATCH: the run was not started from this benchmark's brief; not a false acceptance")
     harness = result["harness"]
     print(
         f"  harness: run {harness['status']}, locked suite {harness.get('locked_passed', '?')} passed / "

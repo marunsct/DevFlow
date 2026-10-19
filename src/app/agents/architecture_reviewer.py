@@ -116,8 +116,15 @@ def build_architecture_review_request(
     document_text: str = "",
     earlier: list[ArchitectureReviewFinding] | None = None,
     revision: int = 0,
+    environment: str = "",
 ) -> dict[str, list[dict[str, str]]]:
     """Build the Deep Agent input from the specification text awaiting review.
+
+    `environment` is the setup the product is built and tested in - its layout
+    and where its data lives - as the architect was told it. Measured live:
+    without it the reviewer raised the architect's file-database fallback as a
+    major finding against the brief's database, and the revision made the
+    server's address required - a service no test could start.
 
     `earlier` is what this review asked for last time, and `revision` how many
     times the specification has been sent back. Without them each review was a
@@ -150,12 +157,26 @@ def build_architecture_review_request(
     brief = (
         WORKSPACE_ROOT_NOTE
         + constraints_note(document_text, reader="reviewing")
+        + _the_setup(environment)
         + f"--- Technical specification and ADRs under review (/docs/technical_specification.md) ---\n{specification}\n"
         + "\n" + _the_sections_it_can_have()
         + _what_the_brief_requires_that_this_defers(document_text, technical_specification_text)
         + _what_you_asked_for_last_time(earlier or [], revision)
     )
     return {"messages": [{"role": "user", "content": brief}]}
+
+
+def _the_setup(environment: str) -> str:
+    """The setup the product is built and tested in, and how to weigh it; "" when unknown."""
+    if not environment.strip():
+        return ""
+    return (
+        "--- The setup the product is built and tested in (the harness's; the specification cannot change it) ---\n"
+        + environment.strip()
+        + "\nWhat this setup requires is not a departure from the brief: a specification that does what it "
+        "says here meets the brief's constraints in this environment. Do not raise a finding against it, "
+        "and do not ask for a change that would undo it.\n\n"
+    )
 
 
 def _the_sections_it_can_have() -> str:

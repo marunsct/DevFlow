@@ -325,7 +325,8 @@ test that fails on the old code:
   `data/kpi/`). App and worker deployed at ee47e4e4 (the worker carries `run_kpis`). The first gate run, run-7622ead3,
   was cancelled at 00:51 JST (LF.40: its specification planned server-only column types for a product tested
   on the file database; not a measurement). run-ffa6599b (00:56 JST) was cancelled at 15 min for LF.41 (the layout repair named the
-  served files without their folder). **The gate run is run-46d7cb71**, started 01:17 JST on 013dabdf (LF.41): `tests/brief_medium.md`,
+  served files without their folder). run-46d7cb71 (01:17 JST) was cancelled at 29 min for LF.42 (the review undid the
+  file-database fallback). **The gate run restarts on the LF.42 deploy**: `tests/brief_medium.md`,
   `DELIVERY=fast FRONTIER=false`, compared with the baselines by `kpi_ledger.py compare` when it ends.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).

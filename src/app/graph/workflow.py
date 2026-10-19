@@ -3889,6 +3889,22 @@ def _with_the_sections_it_dropped(revised: Any, previous: Any) -> Any:
 def _the_scaffold_s_layout(state: Any) -> str:
     """The files the chosen pack's scaffold serves and where its tests live, for the architect; "" when no pack fits.
 
+    See `_the_scaffold_s_facts`.
+    """
+    facts = _the_scaffold_s_facts(state)
+    if not facts:
+        return ""
+    return "\n\n--- The layout the project is set up with (write the file plan in it) ---\n" + "\n".join(facts) + "\n"
+
+
+def _the_setup_for_the_review(state: Any) -> str:
+    """The same facts for the architecture review; "" when no pack fits. See `build_architecture_review_request`."""
+    return "\n".join(_the_scaffold_s_facts(state))
+
+
+def _the_scaffold_s_facts(state: Any) -> list[str]:
+    """The chosen pack's layout and data store, one line each; [] when no pack fits.
+
     The architect wrote the file plan knowing the stack, not the layout the
     harness would set up for it. Measured on one run: the plan put the service
     in `backend/app/` and the page in `frontend/src/` while the scaffold served
@@ -3902,7 +3918,7 @@ def _the_scaffold_s_layout(state: Any) -> str:
         stack = getattr(state.get("stack_selection"), "technology_stack", None)
         pack = choose_pack(stack, getattr(state.get("document"), "text", "") or "") if stack is not None else None
         if pack is None:
-            return ""
+            return []
         root = getattr(state.get("repository"), "root_path", None)
         project = (pinned_project_directory(Path(root)) if root else None) or ""
         package = python_package_name(project) if project and pack.language == "python" else None
@@ -3921,11 +3937,10 @@ def _the_scaffold_s_layout(state: Any) -> str:
         if kept:
             lines.append("- Kept by the harness, not the product's to write: "
                          + ", ".join(f"`{prefix}{path}`" for path in kept[:8]) + ".")
-        return ("\n\n--- The layout the project is set up with (write the file plan in it) ---\n"
-                + "\n".join(lines) + "\n")
+        return lines
     except Exception:  # noqa: BLE001 - the architect plans as before
         logger.debug("Could not describe the scaffold's layout", exc_info=True)
-        return ""
+        return []
 
 
 def _the_layout_repair(served: list[str], state: Any) -> str:
@@ -7985,6 +8000,7 @@ def build_workflow_graph(
                 or []
             ),
             revision=state.get("architecture_revision_count", 0),
+            environment=_the_setup_for_the_review(state),
         )
         update = _run_gated_agent(
             state,

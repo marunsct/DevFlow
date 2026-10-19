@@ -630,7 +630,7 @@ Then (`d9fd387`, same branch, also to deploy between runs):
   vs 4; update a pack only with `verify_packs.py`), **`loop.sh lessons`**
   (failure shapes recurring across runs, per language: candidates for
   `seed.py`), **`loop.sh nightly`** (all packs + freshness, skipped while a run
-  is live; not scheduled - the owner decides whether to add it to cron).
+  is live; in cron since 2026-10-20 (owner): daily 03:00, `crontab -l`, log `data/loop/nightly-cron.log`).
 - **`benchmarks/notes-api-hono`**: notes-api's hidden tests on TypeScript/Hono,
   which no pack covers; reference 9/9. The first run of the proven setup stage.
 

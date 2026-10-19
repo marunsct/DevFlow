@@ -64,23 +64,7 @@ export interface ReviewDecisionRequest {
   comment: string | null;
 }
 
-export interface LogEntry {
-  /** Stable per-event identifier, used to deduplicate history and live events. */
-  event_id: string;
-  event_type: string;
-  run_id: string;
-  timestamp: string;
-  sequence: number;
-  stage: string;
-  message: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface EventResponse {
-  run_id: string;
-  total: number;
-  offset: number;
-  limit: number;
-  logs: LogEntry[];
-}
+// A run's event and a page of them: generated from the server's schema, so an
+// event type added there reaches this build (plan UI-S4).
+export type { RunEvent as LogEntry, EventPage as EventResponse } from './api.gen';
 

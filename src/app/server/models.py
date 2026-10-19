@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.server.events import RunEvent
+
 
 class RewindRequest(BaseModel):
     """Which point of a run's history to rewind it to (`GET /runs/{id}/rewind-points`)."""
@@ -245,6 +247,17 @@ class SprintView(BaseModel):
     open_bugs: int = Field(default=0, description="Of those, not fixed.")
     defects: list[SprintDefectView] = Field(default_factory=list, description="The latest attempt's defects.")
     attempt_history: list[str] = Field(default_factory=list, description="One line per attempt, when there was more than one.")
+
+
+class EventPage(BaseModel):
+    """A page of a run's events, oldest first: the same events the live stream sends."""
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str = Field(description="The run.")
+    total: int = Field(description="Events the run has in all.")
+    offset: int = Field(description="Where this page starts.")
+    limit: int = Field(description="The most this page holds.")
+    logs: list[RunEvent] = Field(default_factory=list, description="The events, as the stream sends them.")
 
 
 class BriefPreviewRequest(BaseModel):

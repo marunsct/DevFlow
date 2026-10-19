@@ -372,6 +372,48 @@
     "title": "DetectedWindow",
     "type": "object"
    },
+   "EventPage": {
+    "additionalProperties": false,
+    "description": "A page of a run's events, oldest first: the same events the live stream sends.",
+    "properties": {
+     "limit": {
+      "description": "The most this page holds.",
+      "title": "Limit",
+      "type": "integer"
+     },
+     "logs": {
+      "description": "The events, as the stream sends them.",
+      "items": {
+       "$ref": "#/components/schemas/RunEvent"
+      },
+      "title": "Logs",
+      "type": "array"
+     },
+     "offset": {
+      "description": "Where this page starts.",
+      "title": "Offset",
+      "type": "integer"
+     },
+     "run_id": {
+      "description": "The run.",
+      "title": "Run Id",
+      "type": "string"
+     },
+     "total": {
+      "description": "Events the run has in all.",
+      "title": "Total",
+      "type": "integer"
+     }
+    },
+    "required": [
+     "run_id",
+     "total",
+     "offset",
+     "limit"
+    ],
+    "title": "EventPage",
+    "type": "object"
+   },
    "FrontierModelSettingsPayload": {
     "description": "Save the frontier judgement model configuration specifically, or select No Model.",
     "properties": {
@@ -1102,6 +1144,78 @@
      }
     },
     "title": "RunDefaults",
+    "type": "object"
+   },
+   "RunEvent": {
+    "description": "Canonical event model for run updates.\n\n`extra=\"ignore\"`, not `\"forbid\"`. This model is not only constructed in\nprocess - it is parsed back out of a Redis history that outlives any single\ndeployment (30-day TTL). Forbidding extras meant that *removing* a field\nmade every event already on disk unparseable: dropping the unused\n`files_modified` / `tests_passed` / `tests_failed` counters took out the log\nstream for every existing run at once, because `get_history` validates the\nwhole page and one bad record fails all of them.\n\nIgnoring extras makes a field removal backward-compatible. A field\n*addition* was always safe. Input still cannot invent fields the model\nexposes, because unknown keys are dropped rather than kept.",
+    "properties": {
+     "event_id": {
+      "description": "Unique identifier for the event.",
+      "title": "Event Id",
+      "type": "string"
+     },
+     "event_type": {
+      "description": "Type of the event.",
+      "enum": [
+       "stage_change",
+       "log",
+       "artifact",
+       "review_request",
+       "approval_request",
+       "approval_auto",
+       "approval_denied",
+       "budget_pause",
+       "error",
+       "complete",
+       "agent_message",
+       "tool_call",
+       "tool_result",
+       "review_decision",
+       "approval_decision"
+      ],
+      "title": "Event Type",
+      "type": "string"
+     },
+     "message": {
+      "description": "Human-readable message.",
+      "title": "Message",
+      "type": "string"
+     },
+     "metadata": {
+      "additionalProperties": true,
+      "description": "Safe, redacted metadata associated with the event.",
+      "title": "Metadata",
+      "type": "object"
+     },
+     "run_id": {
+      "description": "The ID of the run.",
+      "title": "Run Id",
+      "type": "string"
+     },
+     "sequence": {
+      "description": "Monotonic sequence number for the run.",
+      "title": "Sequence",
+      "type": "integer"
+     },
+     "stage": {
+      "description": "The stage in which the event occurred.",
+      "title": "Stage",
+      "type": "string"
+     },
+     "timestamp": {
+      "description": "ISO 8601 timestamp of the event.",
+      "title": "Timestamp",
+      "type": "string"
+     }
+    },
+    "required": [
+     "run_id",
+     "sequence",
+     "stage",
+     "event_type",
+     "message"
+    ],
+    "title": "RunEvent",
     "type": "object"
    },
    "RunListResponse": {
@@ -4731,7 +4845,7 @@
   },
   "/api/runs/{run_id}/logs": {
    "get": {
-    "description": "Paginated log entries, paged in Redis rather than in Python.",
+    "description": "Paginated log entries, paged in Redis rather than in Python.\n\nTyped (plan UI-S4): the event's schema is published with the API, so the\npage's type of it is generated and a new event type reaches the page's\nbuild, not a blank row.",
     "operationId": "get_logs_api_runs__run_id__logs_get",
     "parameters": [
      {
@@ -4772,9 +4886,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "additionalProperties": true,
-         "title": "Response Get Logs Api Runs  Run Id  Logs Get",
-         "type": "object"
+         "$ref": "#/components/schemas/EventPage"
         }
        }
       },

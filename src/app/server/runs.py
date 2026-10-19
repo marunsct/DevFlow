@@ -52,6 +52,7 @@ from app.server.models import (
     RunStatusResponse,
     RunSummary,
     RunUsage,
+    EventPage,
     BriefPreview,
     BriefPreviewRequest,
     PreviewCriterion,
@@ -770,24 +771,23 @@ def create_runs_router(
             headers={"Content-Disposition": f'attachment; filename="{run_id}-handover.zip"'},
         )
 
-    @runs.get("/{run_id}/logs")
+    @runs.get("/{run_id}/logs", response_model=EventPage)
     async def get_logs(
         run_id: str,
         limit: int = Query(50, ge=1, le=500),
         offset: int = Query(0, ge=0),
         user: UserInDB = Depends(get_current_active_user),
-    ) -> dict[str, Any]:
-        """Paginated log entries, paged in Redis rather than in Python."""
+    ) -> EventPage:
+        """Paginated log entries, paged in Redis rather than in Python.
+
+        Typed (plan UI-S4): the event's schema is published with the API, so the
+        page's type of it is generated and a new event type reaches the page's
+        build, not a blank row.
+        """
         _require_run(runner, run_id, user)
         total = await event_bus.history_length(run_id)
         page = await event_bus.get_history(run_id, offset=offset, limit=limit)
-        return {
-            "run_id": run_id,
-            "total": total,
-            "offset": offset,
-            "limit": limit,
-            "logs": [e.model_dump() for e in page],
-        }
+        return EventPage(run_id=run_id, total=total, offset=offset, limit=limit, logs=list(page))
 
     # ------------------------------------------------------------------
     # Lifecycle controls

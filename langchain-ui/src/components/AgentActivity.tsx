@@ -35,6 +35,9 @@ interface AgentActivityProps {
   focusAt?: string | null;
 }
 
+/** How many entries the feed shows at once, and adds each time earlier ones are asked for. */
+const SHOWN_AT_ONCE = 300;
+
 const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result', 'review_decision', 'approval_decision']);
 
 /**
@@ -358,7 +361,13 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
   const lanes = useMemo(() => [...new Set(all.map((item) => laneOf(item.stage)))], [all]);
   const [lane, setLane] = useState<string | null>(null);
   const items = useMemo(() => (lane ? all.filter((item) => laneOf(item.stage) === lane) : all), [all, lane]);
-  const groups = useMemo(() => groupByStage(items), [items]);
+  // The newest entries only, and earlier ones on request (plan UI-S4): 876
+  // entries were 10,361 elements, nine in ten of the page, rebuilt each time
+  // the tab was opened; a run's 5,000-event cap would be six times that.
+  const [shownCount, setShownCount] = useState(SHOWN_AT_ONCE);
+  const hidden = Math.max(0, items.length - shownCount);
+  const shown = useMemo(() => items.slice(hidden), [items, hidden]);
+  const groups = useMemo(() => groupByStage(shown), [shown]);
   // What a screen reader hears: the newest progress update, not every action.
   const headline = useMemo(() => [...all].reverse().find((item) => item.type === 'message')?.text ?? '', [all]);
 
@@ -445,6 +454,16 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
     );
   }, [streamingKey]);
 
+  // A moment older than the entries shown: show back to it first.
+  const [reach, setReach] = useState<string | null>(null);
+  if (focusAt !== reach) {
+    setReach(focusAt);
+    if (focusAt) {
+      const index = items.findIndex((item) => Date.parse(item.at) >= Date.parse(focusAt));
+      if (index >= 0 && index < hidden) setShownCount(items.length - index + 20);
+    }
+  }
+
   // Taken to a moment from the timeline: the first entry from then, centred.
   useEffect(() => {
     if (!focusAt || !scrollRef.current) return;
@@ -452,7 +471,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
     const target = [...scrollRef.current.querySelectorAll<HTMLElement>('[data-at]')]
       .find((element) => Date.parse(element.dataset.at ?? '') >= from);
     target?.scrollIntoView?.({ block: 'center' });
-  }, [focusAt]);
+  }, [focusAt, shownCount]);
 
   const live = items.length > 0;
   // Only the newest action can still be in flight; anything earlier was settled
@@ -525,6 +544,15 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
               // arrive. Preferred over `justify-end` on the scroller, which leaves
               // the earliest entries unreachable in several browsers.
               <div className="mt-auto">
+                {hidden > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShownCount((count) => count + SHOWN_AT_ONCE)}
+                    className="mb-2 w-full rounded-lg border border-border/60 py-1.5 text-xs font-medium text-text-secondary hover:bg-overlay hover:text-text-primary"
+                  >
+                    Show {Math.min(SHOWN_AT_ONCE, hidden)} earlier ({hidden} not shown)
+                  </button>
+                )}
                 {groups.map((group, index) => {
                   const span = formatSpan(group.from, group.to);
                   return (

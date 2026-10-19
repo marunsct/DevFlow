@@ -104,6 +104,20 @@ export interface DetectedWindow {
   explanation: string;
 }
 
+/** A page of a run's events, oldest first: the same events the live stream sends. */
+export interface EventPage {
+  /** The most this page holds. */
+  limit: number;
+  /** The events, as the stream sends them. */
+  logs: RunEvent[];
+  /** Where this page starts. */
+  offset: number;
+  /** The run. */
+  run_id: string;
+  /** Events the run has in all. */
+  total: number;
+}
+
 /** Save the frontier judgement model configuration specifically, or select No Model. */
 export interface FrontierModelSettingsPayload {
   escalate_after_attempts?: number;
@@ -248,6 +262,26 @@ export interface RunDefaults {
   reviews?: Record<string, boolean> | null;
   unattended?: boolean | null;
   use_frontier_model?: boolean | null;
+}
+
+/** Canonical event model for run updates. `extra="ignore"`, not `"forbid"`. This model is not only constructed in process - it is parsed back out of a Redis history that outlives any single deployment (30-day TTL). Forbidding extras meant that *removing* a field made every event already on disk unparseable: dropping the unused `files_modified` / `tests_passed` / `tests_failed` counters took out the log stream for every existing run at once, because `get_history` validates the whole page and one bad record fails all of them. Ignoring extras makes a field removal backward-compatible. A field *addition* was always safe. Input still cannot invent fields the model exposes, because unknown keys are dropped rather than kept. */
+export interface RunEvent {
+  /** Unique identifier for the event. */
+  event_id: string;
+  /** Type of the event. */
+  event_type: "stage_change" | "log" | "artifact" | "review_request" | "approval_request" | "approval_auto" | "approval_denied" | "budget_pause" | "error" | "complete" | "agent_message" | "tool_call" | "tool_result" | "review_decision" | "approval_decision";
+  /** Human-readable message. */
+  message: string;
+  /** Safe, redacted metadata associated with the event. */
+  metadata: Record<string, unknown>;
+  /** The ID of the run. */
+  run_id: string;
+  /** Monotonic sequence number for the run. */
+  sequence: number;
+  /** The stage in which the event occurred. */
+  stage: string;
+  /** ISO 8601 timestamp of the event. */
+  timestamp: string;
 }
 
 /** A page of run summaries. */

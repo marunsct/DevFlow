@@ -54,3 +54,20 @@ describe('what a screen reader hears', () => {
     expect(screen.getByRole('status').textContent).toBe('The session cookie is now set on sign-in.');
   });
 });
+
+describe('a long feed', () => {
+  const many = Array.from({ length: 650 }, (_, index) =>
+    ({ event_id: `m${index}`, event_type: 'agent_message', run_id: 'run-1', timestamp: new Date(Date.parse('2026-10-19T10:00:00Z') + index * 1000).toISOString(),
+       sequence: 1000 + index, stage: 'defect_fix_2_3', message: `Update ${index}`, metadata: {} }) as LogEntry);
+
+  it('shows the newest entries, and earlier ones on request', async () => {
+    render(<AgentActivity logs={many} />);
+    expect(screen.queryByText('Update 349')).toBeNull();
+    expect(screen.getByText('Update 350')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show 300 earlier (350 not shown)' }));
+    expect(screen.getByText('Update 50')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: 'Show 50 earlier (50 not shown)' }));
+    expect(screen.getByText('Update 0')).toBeTruthy();
+  });
+});

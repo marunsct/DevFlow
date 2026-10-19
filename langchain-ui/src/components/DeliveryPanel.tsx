@@ -90,6 +90,27 @@ const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) 
   );
 };
 
+const SUMMARY_ORDER = ['passed', 'failed', 'untested', 'deferred'] as const;
+
+/** How many criteria stand where, above the list: a bar and the count of each status. */
+const CriteriaSummary: React.FC<{ criteria: CriterionResult[] }> = ({ criteria }) => {
+  const count = (status: string) => criteria.filter((c) => c.status === status).length;
+  const passed = count('passed');
+  return (
+    <div className="mb-3 space-y-1.5">
+      <div role="progressbar" aria-label="Acceptance criteria passing" aria-valuemin={0} aria-valuemax={criteria.length} aria-valuenow={passed}
+        className="h-1.5 w-full overflow-hidden rounded-full bg-overlay-strong">
+        <div className="h-full rounded-full bg-success" style={{ width: `${(passed / Math.max(1, criteria.length)) * 100}%` }} />
+      </div>
+      <p className="flex flex-wrap gap-x-3 text-xs text-text-secondary tabular-nums">
+        {SUMMARY_ORDER.filter((status) => count(status) > 0).map((status) => (
+          <span key={status}>{count(status)} {status}</span>
+        ))}
+      </p>
+    </div>
+  );
+};
+
 /** The measurement a criterion first passed in, in words: its snapshot's label is "after X", "before X" or a moment. */
 function whenMeasured(label: string): string {
   const [, which, stage] = /^(after|before) (.+)$/.exec(label) ?? [];
@@ -118,7 +139,8 @@ const FirstPassed: React.FC<{
   };
   return (
     <span className="block text-xs text-text-muted" title={first.test}>
-      first passed {whenMeasured(first.after)}, {when}
+      {/* Its first passing test, not the criterion: a failing criterion can have one. */}
+      first passing test: {whenMeasured(first.after)}, {when}
       {onOpenChange && (
         <>
           {' \u00B7 '}
@@ -173,27 +195,33 @@ export const DeliveryPanel: React.FC<{
         {open ? <ChevronDown className="h-4 w-4 text-text-muted" /> : <ChevronRight className="h-4 w-4 text-text-muted" />}
       </button>
       {open && (
-        <div className="grid gap-5 p-5 grid-cols-1 xl:grid-cols-2">
+        // Laid out by the pane's own width, not the window's: in the run page's
+        // ledger column a two-column split left each criterion a few words a line.
+        <div className="@container">
+        <div className="grid gap-5 p-4 grid-cols-1 @3xl:grid-cols-2">
           {criteria.length > 0 && (
             <section>
               <h2 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2">Acceptance criteria</h2>
+              <CriteriaSummary criteria={criteria} />
               <ul className="space-y-1.5">
                 {criteria.map((c) => (
-                  <li key={c.id} className="flex items-start gap-2 text-sm">
-                    <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded border text-xs font-semibold uppercase ${STATUS_STYLE[c.status] ?? STATUS_STYLE.untested}`}>
-                      {c.status}
-                    </span>
-                    <span className="text-text-secondary min-w-0">
-                      <span className="font-mono text-xs text-text-muted mr-1.5">{c.id}</span>
-                      {c.text}
+                  <li key={c.id} className="rounded-lg border border-border/40 px-3 py-2 text-sm">
+                    <div className="flex items-start gap-2">
+                      <span className="mt-0.5 w-11 shrink-0 font-mono text-xs text-text-muted">{c.id}</span>
+                      <span className="min-w-0 flex-1 break-words text-text-primary">{c.text}</span>
+                      <span className={`shrink-0 rounded border px-1.5 py-0.5 text-xs font-semibold ${STATUS_STYLE[c.status] ?? STATUS_STYLE.untested}`}>
+                        {c.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 pl-[3.25rem] text-xs text-text-muted space-y-0.5">
                       {evidence?.deferred?.[c.id] && (
-                        <span className="block text-xs text-text-muted">deferred: {evidence.deferred[c.id]}</span>
+                        <span className="block">deferred: {evidence.deferred[c.id]}</span>
                       )}
                       {evidence?.first_passed?.[c.id] && (
                         <FirstPassed runId={runId} first={evidence.first_passed[c.id]} onOpenChange={onOpenChange} />
                       )}
                       {(c.tests?.length ?? 0) > 0 && (
-                        <details className="mt-1">
+                        <details>
                           <summary className="cursor-pointer text-xs text-text-muted hover:text-text-secondary">
                             {c.tests!.filter((t) => t.outcome === 'passed').length} of {c.tests!.length} test{c.tests!.length === 1 ? '' : 's'} passing
                           </summary>
@@ -214,7 +242,7 @@ export const DeliveryPanel: React.FC<{
                           </ul>
                         </details>
                       )}
-                    </span>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -277,17 +305,18 @@ export const DeliveryPanel: React.FC<{
             </section>
           )}
           {(evidence?.screenshots?.length ?? 0) > 0 && (
-            <section className="xl:col-span-2">
+            <section className="@3xl:col-span-2">
               <h2 className="text-xs font-medium uppercase tracking-wider text-text-secondary mb-2 flex items-center gap-1.5">
                 <ImageIcon className="h-3.5 w-3.5" /> Screenshots from the last acceptance run
               </h2>
-              <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+              <div className="grid gap-3 grid-cols-1 @sm:grid-cols-2 @xl:grid-cols-3 @4xl:grid-cols-4">
                 {evidence!.screenshots.map((path) => (
                   <Screenshot key={path} runId={runId} path={path} />
                 ))}
               </div>
             </section>
           )}
+        </div>
         </div>
       )}
     </div>

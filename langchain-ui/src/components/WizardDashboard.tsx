@@ -158,7 +158,7 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
           </span>
           <div className="min-w-0">
             <h2 className="font-semibold text-text-primary text-sm leading-none">The build, in phases</h2>
-            <p className="text-[11px] text-text-muted mt-1 leading-none">
+            <p className="text-xs text-text-muted mt-1 leading-none">
               Click a phase to see what happened in it.
             </p>
           </div>
@@ -197,16 +197,16 @@ export const WizardDashboard: React.FC<WizardDashboardProps> = ({ run, model }) 
                           {section.title}
                         </p>
                         {section.kind === 'sprint' && section.revisions.length > 1 && (
-                          <span className="text-[10px] font-medium text-warning bg-warning-bg border border-warning/30 rounded-full px-1.5 py-0.5">
+                          <span className="text-xs font-medium text-warning bg-warning-bg border border-warning/30 rounded-full px-1.5 py-0.5">
                             {section.revisions.length} passes
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] text-text-muted leading-relaxed mt-0.5">
+                      <p className="text-xs text-text-muted leading-relaxed mt-0.5">
                         {section.blurb}
                       </p>
                       <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                        <span className={`text-[11px] font-medium ${tone.text}`}>
+                        <span className={`text-xs font-medium ${tone.text}`}>
                           {section.status_label}
                         </span>
                       </div>
@@ -388,11 +388,11 @@ const RevisionCard: React.FC<{ revision: SprintRevision }> = ({ revision }) => {
     <div className="rounded-xl border border-border/40 overflow-hidden">
       {/* Revision header */}
       <div className="px-4 py-2.5 bg-overlay border-b border-border/40 flex items-center gap-2">
-        <span className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary">
+        <span className="text-xs font-semibold tracking-wide uppercase text-text-secondary">
           {revision.number === 1 ? 'First pass' : `Pass ${revision.number}`}
         </span>
         {revision.rejection_comment && (
-          <span className="text-[11px] text-warning flex items-center gap-1">
+          <span className="text-xs text-warning flex items-center gap-1">
             <ThumbsDown className="h-3 w-3" />
             Sent back for changes
           </span>
@@ -405,7 +405,7 @@ const RevisionCard: React.FC<{ revision: SprintRevision }> = ({ revision }) => {
           <div className="flex items-start gap-2">
             <MessageSquare className="h-3.5 w-3.5 text-warning mt-0.5 flex-none" />
             <div className="min-w-0">
-              <p className="text-[11px] font-medium text-warning">Review comment</p>
+              <p className="text-xs font-medium text-warning">Review comment</p>
               <p className="text-[12px] text-text-secondary leading-relaxed mt-1 whitespace-pre-wrap">
                 {revision.rejection_comment}
               </p>
@@ -454,18 +454,18 @@ const StepCard: React.FC<{ step: WizardStep; isLast: boolean; showEvents?: boole
           <div className="flex items-center gap-2">
             <p className="text-[12px] font-semibold text-text-primary leading-snug">{step.title}</p>
             {step.duration_seconds !== null && (
-              <span className="text-[10px] text-text-muted tabular-nums">
+              <span className="text-xs text-text-muted tabular-nums">
                 {step.duration_seconds < 60
                   ? `${Math.round(step.duration_seconds)}s`
                   : `${Math.floor(step.duration_seconds / 60)}m ${Math.round(step.duration_seconds % 60)}s`}
               </span>
             )}
           </div>
-          <p className="text-[11px] text-text-muted leading-relaxed mt-0.5">{step.blurb}</p>
+          <p className="text-xs text-text-muted leading-relaxed mt-0.5">{step.blurb}</p>
           <div className="flex items-center gap-2 mt-1">
-            <span className={`text-[10px] font-medium ${tone.text}`}>{step.status_label}</span>
+            <span className={`text-xs font-medium ${tone.text}`}>{step.status_label}</span>
             {hasEvents && (
-              <span className="text-[10px] text-text-muted tabular-nums">
+              <span className="text-xs text-text-muted tabular-nums">
                 {step.events.length} {step.events.length === 1 ? 'note' : 'notes'}
               </span>
             )}
@@ -505,7 +505,7 @@ const EventNote: React.FC<{ event: WizardNote }> = ({ event }) => {
     <div className="flex items-start gap-2 animate-activity-in">
       <Icon className={`h-3 w-3 ${color} mt-0.5 flex-none`} />
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] text-text-secondary leading-relaxed break-words">{event.message}</p>
+        <p className="text-xs text-text-secondary leading-relaxed break-words">{event.message}</p>
       </div>
     </div>
   );
@@ -584,7 +584,7 @@ const SummaryDetail: React.FC<{
             <div key={stat.label} className="rounded-lg border border-border/40 bg-overlay px-3 py-2.5">
               <div className="flex items-center gap-1.5">
                 <Icon className={`h-3 w-3 ${stat.color}`} />
-                <span className="text-[10px] text-text-muted leading-none">{stat.label}</span>
+                <span className="text-xs text-text-muted leading-none">{stat.label}</span>
               </div>
               <p className={`text-lg font-semibold ${stat.color} mt-1 tabular-nums`}>{stat.value}</p>
             </div>
@@ -595,13 +595,13 @@ const SummaryDetail: React.FC<{
       {/* The goals of each planned sprint */}
       {sprintPlan && sprintPlan.goals.length > 0 && (
         <div className="rounded-lg border border-border/40 bg-overlay px-4 py-3">
-          <p className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary mb-2">
+          <p className="text-xs font-semibold tracking-wide uppercase text-text-secondary mb-2">
             Planned sprints
           </p>
           <ol className="flex flex-col gap-1.5">
             {sprintPlan.goals.map((goal, i) => (
               <li key={i} className="flex items-start gap-2">
-                <span className="text-[11px] font-semibold text-primary tabular-nums mt-0.5">{i + 1}.</span>
+                <span className="text-xs font-semibold text-primary tabular-nums mt-0.5">{i + 1}.</span>
                 <p className="text-[12px] text-text-secondary leading-relaxed">{goal}</p>
               </li>
             ))}

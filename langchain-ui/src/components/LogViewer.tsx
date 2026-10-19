@@ -103,7 +103,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs }) => {
             if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' });
             setPinned(true);
           }}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-raised/95 px-3 py-1.5 text-[11px] font-medium text-text-secondary shadow-lg backdrop-blur hover:text-text-primary transition-colors"
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full border border-border/60 bg-surface-raised/95 px-3 py-1.5 text-xs font-medium text-text-secondary shadow-lg backdrop-blur hover:text-text-primary transition-colors"
         >
           <ArrowDown className="h-3 w-3" />
           Jump to latest

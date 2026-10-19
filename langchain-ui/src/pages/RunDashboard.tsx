@@ -681,7 +681,7 @@ export const RunDashboard: React.FC = () => {
 
           <dl className="flex flex-wrap items-start gap-x-5 sm:gap-x-7 gap-y-3">
             <div>
-              <dt className="text-[11px] text-text-muted uppercase tracking-wider">Started</dt>
+              <dt className="text-xs text-text-muted uppercase tracking-wider">Started</dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {new Date(run.created_at).toLocaleString([], {
                   month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
@@ -689,16 +689,16 @@ export const RunDashboard: React.FC = () => {
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] text-text-muted uppercase tracking-wider">
+              <dt className="text-xs text-text-muted uppercase tracking-wider">
                 {isTerminal ? 'Took' : 'Running for'}
               </dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {elapsed}
-                {!isTerminal && typical && <span className="block max-w-56 text-[11px] text-text-muted">{typical}</span>}
+                {!isTerminal && typical && <span className="block max-w-56 text-xs text-text-muted">{typical}</span>}
               </dd>
             </div>
             <div>
-              <dt className="text-[11px] text-text-muted uppercase tracking-wider">Documents</dt>
+              <dt className="text-xs text-text-muted uppercase tracking-wider">Documents</dt>
               <dd className="mt-1 text-[13px] text-text-primary tabular-nums">
                 {run.artifacts?.length ?? 0} produced
               </dd>
@@ -707,7 +707,7 @@ export const RunDashboard: React.FC = () => {
           </dl>
         </div>
 
-        <p className="mt-3 pt-3 border-t border-border/30 text-[11px] text-text-muted font-mono truncate">
+        <p className="mt-3 pt-3 border-t border-border/30 text-xs text-text-muted font-mono truncate">
           {run.run_id}
         </p>
 
@@ -806,12 +806,12 @@ export const RunDashboard: React.FC = () => {
               },
               {
                 id: 'log',
-                label: <>Log <span className="text-[11px] tabular-nums text-text-muted">{logs.length}</span></>,
+                label: <>Log <span className="text-xs tabular-nums text-text-muted">{logs.length}</span></>,
                 content: <LogViewer logs={logs} />,
               },
               {
                 id: 'results',
-                label: <>Artifacts <span className="text-[11px] tabular-nums text-text-muted">{run.artifacts?.length ?? 0}</span></>,
+                label: <>Artifacts <span className="text-xs tabular-nums text-text-muted">{run.artifacts?.length ?? 0}</span></>,
                 content: <ArtifactList artifacts={run.artifacts} runId={runId!} />,
               },
               { id: 'audit', label: 'Audit', content: <AuditTable runId={runId!} refreshKey={stageKey} /> },

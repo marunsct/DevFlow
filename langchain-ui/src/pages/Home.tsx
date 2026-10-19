@@ -399,7 +399,7 @@ const Checkbox: React.FC<CheckboxProps> = ({ id, checked, onChange, label, descr
                       }`}
                     >
                       {choice === 'fast' ? 'Fast' : 'Thorough'}
-                      <span className="block text-[11px] font-normal mt-0.5">
+                      <span className="block text-xs font-normal mt-0.5">
                         {choice === 'fast'
                           ? 'One sprint for a small product, files written from the specification, harness-run checks'
                           : 'Every sprint planned, built, tested and reviewed in full'}

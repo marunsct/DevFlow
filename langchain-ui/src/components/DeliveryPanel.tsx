@@ -85,7 +85,7 @@ const Screenshot: React.FC<{ runId: string; path: string }> = ({ runId, path }) 
       ) : (
         <div className="h-32 flex items-center justify-center text-text-muted text-xs">loading</div>
       )}
-      <figcaption className="px-2 py-1 text-[11px] text-text-muted truncate" title={label}>{label}</figcaption>
+      <figcaption className="px-2 py-1 text-xs text-text-muted truncate" title={label}>{label}</figcaption>
     </figure>
   );
 };
@@ -169,7 +169,7 @@ export const DeliveryPanel: React.FC<{
               <ul className="space-y-1.5">
                 {criteria.map((c) => (
                   <li key={c.id} className="flex items-start gap-2 text-sm">
-                    <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded border text-[10px] font-semibold uppercase ${STATUS_STYLE[c.status] ?? STATUS_STYLE.untested}`}>
+                    <span className={`shrink-0 mt-0.5 px-1.5 py-0.5 rounded border text-xs font-semibold uppercase ${STATUS_STYLE[c.status] ?? STATUS_STYLE.untested}`}>
                       {c.status}
                     </span>
                     <span className="text-text-secondary min-w-0">
@@ -194,7 +194,7 @@ export const DeliveryPanel: React.FC<{
                                 </span>{' '}
                                 <span className="text-text-secondary">{t.name}</span>
                                 {t.outcome !== 'passed' && t.message && (
-                                  <span className="block font-mono text-[11px] text-text-muted break-words">
+                                  <span className="block font-mono text-xs text-text-muted break-words">
                                     {t.message.trim().split('\n')[0].slice(0, 240)}
                                   </span>
                                 )}
@@ -208,7 +208,7 @@ export const DeliveryPanel: React.FC<{
                 ))}
               </ul>
               {evidence?.acceptance?.command && (
-                <p className="mt-2 text-[11px] text-text-muted">
+                <p className="mt-2 text-xs text-text-muted">
                   Measured by the harness with <code>{evidence.acceptance.command}</code>.
                 </p>
               )}
@@ -248,7 +248,7 @@ export const DeliveryPanel: React.FC<{
                       <span className="flex-1 text-text-secondary">
                         {d.question} <span className="text-text-primary">{d.decision}</span>
                       </span>
-                      <span className={`shrink-0 text-[10px] uppercase px-1.5 py-0.5 rounded ${d.decided_by === 'user' ? 'bg-accent-soft text-primary' : 'bg-overlay text-text-muted'}`}>
+                      <span className={`shrink-0 text-xs uppercase px-1.5 py-0.5 rounded ${d.decided_by === 'user' ? 'bg-accent-soft text-primary' : 'bg-overlay text-text-muted'}`}>
                         {d.decided_by}
                       </span>
                     </button>

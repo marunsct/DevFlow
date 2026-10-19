@@ -71,9 +71,9 @@ export const SteeringBox: React.FC<{ runId: string; stage?: string | null }> = (
         <ul className="mb-3 space-y-1.5" aria-label="Directions sent">
           {notes.map((n, i) => (
             <li key={i} className="text-sm text-text-secondary">
-              <span className="text-[11px] text-text-muted tabular-nums mr-2">{new Date(n.at).toLocaleTimeString()}</span>
+              <span className="text-xs text-text-muted tabular-nums mr-2">{new Date(n.at).toLocaleTimeString()}</span>
               {n.text}
-              <span className="block text-[11px] text-text-muted">
+              <span className="block text-xs text-text-muted">
                 {n.applied_stage ? `Read by the run in ${n.applied_stage}` : 'Not read yet - it is followed from the next model call'}
                 {n.scope === 'next_stage' ? ' · for that one stage' : ''}
               </span>

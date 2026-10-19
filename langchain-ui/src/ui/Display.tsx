@@ -30,7 +30,7 @@ export const Stat: React.FC<{ label: string; value: React.ReactNode; source: str
 
 /** A key on the keyboard. */
 export const Kbd: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <kbd className="rounded border border-border bg-inset px-1.5 py-0.5 font-mono text-[11px] text-text-secondary">{children}</kbd>
+  <kbd className="rounded border border-border bg-inset px-1.5 py-0.5 font-mono text-xs text-text-secondary">{children}</kbd>
 );
 
 /** A short explanation shown on hover and on keyboard focus alike, and read as the trigger's description. */

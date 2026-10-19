@@ -432,7 +432,10 @@
   outline-offset: 2px;
 }
 
-[data-theme="contrast"] * {
+/* High contrast: a border on what can be operated - controls, fields, tabs,
+   a disclosure's summary - and containers keep their own. Applied to every
+   element it boxed each heading, label and icon on the page (plan BG.12). */
+[data-theme="contrast"] :is(button, input, select, textarea, [role="tab"], summary) {
   border-width: max(1px, 1px);
 }
 [data-theme="contrast"] .glass-card,

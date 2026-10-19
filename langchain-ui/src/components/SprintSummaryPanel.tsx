@@ -205,7 +205,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
       <div className="px-5 py-3.5 border-b border-border/40 flex items-center gap-2">
         <Rocket className="h-4.5 w-4.5 text-primary" />
         <h2 className="text-sm font-semibold text-text-primary">Sprint Milestones</h2>
-        <span className="ml-auto text-[11px] text-text-muted tabular-nums">
+        <span className="ml-auto text-xs text-text-muted tabular-nums">
           {/* The plan's own count, so a re-run cannot read as an extra sprint. */}
           {plannedTotal > 0
             ? `${sprints.length} of ${plannedTotal} planned`
@@ -233,12 +233,12 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                 <div className="flex-1 min-w-0">
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm font-medium text-text-primary">Sprint {sprint.number}</span>
-                    <span className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${statusBg} ${statusColor}`}>
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${statusBg} ${statusColor}`}>
                       {sprint.status}
                     </span>
                     {sprint.attempts > 1 && (
                       <span
-                        className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-warning-bg text-warning"
+                        className="text-xs font-medium px-2 py-0.5 rounded-full bg-warning-bg text-warning"
                         title="This sprint was attempted more than once. It is one sprint, not several."
                       >
                         re-run ×{sprint.attempts}
@@ -249,7 +249,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                 </div>
 
                 {/* Quick stats */}
-                <div className="hidden sm:flex items-center gap-4 text-[11px] text-text-muted tabular-nums flex-none">
+                <div className="hidden sm:flex items-center gap-4 text-xs text-text-muted tabular-nums flex-none">
                   <span className="flex items-center gap-1" title="Test cases passed / total">
                     <FlaskConical className="h-3.5 w-3.5" aria-hidden="true" />
                     <span className="sr-only">Test cases passed:</span>
@@ -294,7 +294,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                       <div key={stat.label} className="rounded-lg border border-border/30 bg-overlay px-3 py-2.5 text-center">
                         <stat.icon className={`h-4 w-4 mx-auto mb-1 ${stat.color}`} />
                         <p className="text-lg font-bold text-text-primary tabular-nums">{stat.value}</p>
-                        <p className="text-[10px] text-text-muted uppercase tracking-wider">{stat.label}</p>
+                        <p className="text-xs text-text-muted uppercase tracking-wider">{stat.label}</p>
                       </div>
                     ))}
                   </div>
@@ -302,7 +302,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* What the sprint plan promised - separate from what was built */}
                   {sprint.planned.length > 0 && (
                     <div>
-                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Planned for This Sprint
                       </h3>
                       <ul className="space-y-1">
@@ -319,7 +319,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Every attempt at this one sprint, including the failed ones */}
                   {sprint.attemptHistory.length > 0 && (
                     <div>
-                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Attempt History
                       </h3>
                       <ul className="space-y-1">
@@ -338,7 +338,7 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Features */}
                   {sprint.features.length > 0 && (
                     <div>
-                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Features Implemented
                       </h3>
                       <ul className="space-y-1">
@@ -355,19 +355,19 @@ export const SprintSummaryPanel: React.FC<SprintSummaryPanelProps> = ({ runId, m
                   {/* Defects */}
                   {sprint.defects.length > 0 && (
                     <div>
-                      <h3 className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
+                      <h3 className="text-xs font-semibold text-text-secondary uppercase tracking-wider mb-1.5">
                         Defect Summary
                       </h3>
                       <div className="space-y-1">
                         {sprint.defects.map((d, i) => (
                           <div key={i} className="flex items-start gap-2 text-[12px]">
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${
                               d.status === 'FIXED' ? 'bg-success-bg text-success' : 'bg-danger-bg text-danger'
                             }`}>
                               {d.status}
                             </span>
                             <span className="text-text-secondary flex-1">{d.description}</span>
-                            <span className="text-text-muted text-[11px] flex-none">{d.owner}</span>
+                            <span className="text-text-muted text-xs flex-none">{d.owner}</span>
                           </div>
                         ))}
                       </div>

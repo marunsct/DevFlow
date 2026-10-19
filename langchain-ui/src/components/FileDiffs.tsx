@@ -39,7 +39,7 @@ export const FileDiffs: React.FC<{ text: string; truncated?: boolean }> = ({ tex
   if (files.length <= 1) return <DiffText text={text} truncated={truncated} />;
   return (
     <div className="space-y-2 p-3">
-      <p className="text-[11px] text-text-muted">{files.length} files</p>
+      <p className="text-xs text-text-muted">{files.length} files</p>
       {files.map((file, index) => (
         <details key={`${file.path}-${index}`} open={files.length <= OPEN_UP_TO} className="rounded-lg border border-border/40">
           <summary className="flex cursor-pointer items-center gap-2 px-3 py-1.5 font-mono text-[12px] text-text-primary">

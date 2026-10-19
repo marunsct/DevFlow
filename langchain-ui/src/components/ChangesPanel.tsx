@@ -49,7 +49,7 @@ export const ChangesPanel: React.FC<{
                 className={`w-full text-left px-3 py-2 text-[13px] border-b border-border/20 hover:bg-overlay ${selected === c.sha ? 'bg-overlay-strong' : ''}`}
               >
                 <span className="block text-text-primary truncate" title={c.message}>{c.message}</span>
-                <span className="block text-[11px] text-text-muted tabular-nums">
+                <span className="block text-xs text-text-muted tabular-nums">
                   {new Date(c.at).toLocaleString()} · {c.files.length} file{c.files.length === 1 ? '' : 's'}
                   {' '}<span className="text-success">+{added}</span> <span className="text-danger">-{removed}</span>
                 </span>

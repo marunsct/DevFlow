@@ -59,7 +59,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
     <div className="h-full overflow-y-auto p-3">
       {files.length > 0 && (
         <>
-          <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <p className="px-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
             Documents you can read
           </p>
           <ul className="space-y-1 mb-4">
@@ -74,7 +74,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
 
                 <div className="min-w-0 flex-1">
                   <p className="text-[13px] font-medium text-text-primary truncate">{readableName(artifact)}</p>
-                  <p className="text-[11px] text-text-muted font-mono truncate" title={artifact.path}>
+                  <p className="text-xs text-text-muted font-mono truncate" title={artifact.path}>
                     {artifact.path}
                     {artifact.revision > 1 && ` · version ${artifact.revision}`}
                   </p>
@@ -108,7 +108,7 @@ export const ArtifactList: React.FC<ArtifactListProps> = ({ artifacts, runId }) 
 
       {results.length > 0 && (
         <>
-          <p className="px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wider text-text-muted">
+          <p className="px-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-text-muted">
             Steps that finished
           </p>
           <ul className="space-y-0.5">

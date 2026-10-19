@@ -231,7 +231,7 @@ const MessageRow: React.FC<{
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-text-muted hover:text-text-secondary transition-colors"
+            className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-text-muted hover:text-text-secondary transition-colors"
             aria-expanded={open}
           >
             <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
@@ -289,21 +289,21 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
             {item.text}
           </span>
           {item.heldBack && (
-            <span className="mt-0.5 inline-block rounded bg-overlay px-1.5 py-px text-[10px] font-medium text-text-muted">
+            <span className="mt-0.5 inline-block rounded bg-overlay px-1.5 py-px text-xs font-medium text-text-muted">
               held back: already read
             </span>
           )}
           {(item.target || item.range) && (
             <span className="mt-0.5 flex items-center gap-1.5 min-w-0">
               {item.target && (
-                <span className="text-[11px] text-text-muted font-mono truncate" title={item.target}>
+                <span className="text-xs text-text-muted font-mono truncate" title={item.target}>
                   {shortenPath(item.target)}
                 </span>
               )}
               {/* Which part of the file, kept as its own chip so it survives the
                   truncation that a long path would otherwise impose on it. */}
               {item.range && (
-                <span className="flex-none rounded bg-overlay px-1.5 py-px text-[10px] font-medium tabular-nums text-text-secondary">
+                <span className="flex-none rounded bg-overlay px-1.5 py-px text-xs font-medium tabular-nums text-text-secondary">
                   {item.range}
                 </span>
               )}
@@ -319,7 +319,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
       </button>
 
       {open && item.detail && (
-        <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-inset p-3 text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
+        <pre tabIndex={0} className="mb-2 ml-8 mr-1 mt-1 max-h-56 overflow-auto rounded-lg bg-inset p-3 text-xs leading-relaxed text-text-secondary whitespace-pre-wrap break-all">
           {item.detail}
         </pre>
       )}
@@ -455,9 +455,9 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
         </span>
         <div className="min-w-0">
           <h2 className="font-semibold text-text-primary text-sm leading-none">Live progress</h2>
-          <p className="text-[11px] text-text-muted mt-1 leading-none">What the workflow is doing right now</p>
+          <p className="text-xs text-text-muted mt-1 leading-none">What the workflow is doing right now</p>
         </div>
-        {live && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{items.length}</span>}
+        {live && <span className="ml-auto text-xs text-text-muted tabular-nums">{items.length}</span>}
       </div>
       {lanes.length > 1 && (
         <div role="group" aria-label="Show one lane" className="flex-none flex flex-wrap gap-1.5 px-4 py-2 border-b border-border/40">
@@ -467,7 +467,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
               type="button"
               aria-pressed={lane === name}
               onClick={() => setLane(name)}
-              className={`rounded-full border px-2.5 py-0.5 text-[11px] font-medium capitalize ${
+              className={`rounded-full border px-2.5 py-0.5 text-xs font-medium capitalize ${
                 lane === name ? 'border-primary/50 bg-accent-soft text-primary' : 'border-border text-text-secondary hover:bg-overlay'
               }`}
             >
@@ -519,10 +519,10 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
                           showed through as a smear of half-legible text along
                           the top edge of the panel. */}
                       <header className="sticky top-0 z-10 -mx-2 flex items-baseline gap-2 border-b border-border/40 bg-surface-raised px-4 py-1.5">
-                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-text-secondary truncate">
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-text-secondary truncate">
                           {describeStage(group.stage).title}
                         </h3>
-                        {span && <span className="ml-auto text-[11px] text-text-muted tabular-nums">{span}</span>}
+                        {span && <span className="ml-auto text-xs text-text-muted tabular-nums">{span}</span>}
                       </header>
 
                       <div className="space-y-0.5 pt-1">
@@ -567,7 +567,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
             <button
               type="button"
               onClick={scrollToEnd}
-              className="w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-[11px] font-medium text-text-secondary hover:text-text-primary hover:bg-overlay transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium text-text-secondary hover:text-text-primary hover:bg-overlay transition-colors"
             >
               <ArrowDown className="h-3 w-3" />
               {missed > 0 ? `${missed} new ${missed === 1 ? 'update' : 'updates'}` : 'Jump to latest'}

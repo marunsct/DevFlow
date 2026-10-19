@@ -590,7 +590,7 @@ export const Settings: React.FC = () => {
                                 ),
                               )}
                             </dl>
-                            <p className="mt-1.5 text-[11px] text-text-muted leading-relaxed">
+                            <p className="mt-1.5 text-xs text-text-muted leading-relaxed">
                               Saved values. These update when you save a new window.
                             </p>
                             </>
@@ -612,7 +612,7 @@ export const Settings: React.FC = () => {
                               }`}
                             >
                               🔗 Linear
-                              <span className="block text-[11px] font-normal mt-0.5">Stages run one at a time</span>
+                              <span className="block text-xs font-normal mt-0.5">Stages run one at a time</span>
                             </button>
                             <button
                               type="button"
@@ -624,7 +624,7 @@ export const Settings: React.FC = () => {
                               }`}
                             >
                               ⚡ Parallel
-                              <span className="block text-[11px] font-normal mt-0.5">Specialist tasks fan out concurrently</span>
+                              <span className="block text-xs font-normal mt-0.5">Specialist tasks fan out concurrently</span>
                             </button>
                           </div>
                           <p className="mt-2 text-xs text-text-muted leading-relaxed">

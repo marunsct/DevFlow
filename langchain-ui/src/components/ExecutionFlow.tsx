@@ -57,7 +57,7 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
         </span>
         <div className="min-w-0">
           <h2 className="font-semibold text-text-primary text-sm leading-none">Progress</h2>
-          <p className="text-[11px] text-text-muted mt-1 leading-none">
+          <p className="text-xs text-text-muted mt-1 leading-none">
             {stages.length > 0 ? `${done} of ${stages.length} steps finished` : 'Steps appear as they start'}
           </p>
         </div>
@@ -80,10 +80,10 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
             return (
               <section key={`sprint-${group.sprint}`} className="mb-5 last:mb-0">
                 <header className="flex items-baseline gap-2 mb-2.5">
-                  <h3 className="text-[11px] font-semibold tracking-wide uppercase text-text-secondary">
+                  <h3 className="text-xs font-semibold tracking-wide uppercase text-text-secondary">
                     {sprintTitle(group.sprint)}
                   </h3>
-                  <span className="text-[11px] text-text-muted tabular-nums">
+                  <span className="text-xs text-text-muted tabular-nums">
                     {groupDone}/{group.stages.length}
                   </span>
                   <span className="flex-1 h-px bg-border/40" aria-hidden />
@@ -120,15 +120,15 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                           <p className="text-[13px] font-semibold text-text-primary leading-snug" title={stage.name}>
                             {copy.title}
                           </p>
-                          <p className="text-[11px] text-text-muted leading-relaxed mt-0.5">{copy.blurb}</p>
+                          <p className="text-xs text-text-muted leading-relaxed mt-0.5">{copy.blurb}</p>
                           <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {/* "Stopped" and "Finished" are already the step's title, so
                                 repeating them as the status underneath reads as a bug. */}
                             {status.label !== copy.title && (
-                              <span className={`text-[11px] font-medium ${tone.text}`}>{status.label}</span>
+                              <span className={`text-xs font-medium ${tone.text}`}>{status.label}</span>
                             )}
                             {stage.duration_seconds !== null && (
-                              <span className="text-[11px] text-text-muted tabular-nums">
+                              <span className="text-xs text-text-muted tabular-nums">
                                 {stage.duration_seconds < 60
                                   ? `${Math.round(stage.duration_seconds)}s`
                                   : `${Math.floor(stage.duration_seconds / 60)}m ${Math.round(stage.duration_seconds % 60)}s`}
@@ -138,12 +138,12 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
                                 them as retries told operators a run with two retries
                                 had sixty-six. */}
                             {stage.approval_count > 0 && (
-                              <span className="text-[11px] text-text-muted tabular-nums">
+                              <span className="text-xs text-text-muted tabular-nums">
                                 {stage.approval_count} {stage.approval_count === 1 ? 'approval' : 'approvals'}
                               </span>
                             )}
                             {stage.retry_count > 0 && (
-                              <span className="text-[11px] text-warning">
+                              <span className="text-xs text-warning">
                                 started over {stage.retry_count === 1 ? 'once' : `${stage.retry_count} times`}
                               </span>
                             )}

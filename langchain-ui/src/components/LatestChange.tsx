@@ -33,11 +33,11 @@ export const LatestChange: React.FC<{ runId: string; refreshKey: string; onOpen:
       title={`${latest.message} - open it in Changes`}
       className="glass-card w-full rounded-xl px-3 py-2 text-left hover:bg-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
     >
-      <span className="flex items-center gap-1.5 text-[11px] text-text-muted uppercase tracking-wider">
+      <span className="flex items-center gap-1.5 text-xs text-text-muted uppercase tracking-wider">
         <GitCommit className="h-3.5 w-3.5" aria-hidden="true" /> Latest change
       </span>
       <span className="mt-0.5 block truncate text-[13px] text-text-primary">{latest.message}</span>
-      <span className="block text-[11px] text-text-secondary tabular-nums">{changeSize(latest)}</span>
+      <span className="block text-xs text-text-secondary tabular-nums">{changeSize(latest)}</span>
     </button>
   );
 };

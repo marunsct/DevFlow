@@ -66,7 +66,7 @@ export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, classN
 
   return (
     <div className={className}>
-      <div role="tablist" aria-label={label} className="flex gap-1 border-b border-border">
+      <div role="tablist" aria-label={label} className="flex flex-wrap gap-1 border-b border-border">
         {items.map((item, index) => {
           const on = item.id === selected;
           return (
@@ -82,7 +82,7 @@ export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, classN
               onClick={() => setSelected(item.id)}
               onKeyDown={(event) => onKey(event, index)}
               className={cx(
-                '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+                '-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]',
                 on ? 'border-primary text-text-primary' : 'border-transparent text-text-secondary hover:text-text-primary',
               )}

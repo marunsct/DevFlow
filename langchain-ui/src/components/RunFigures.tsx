@@ -3,7 +3,7 @@ import type { RunStatusResponse } from '../types';
 import { Progress } from '../ui';
 import { ceilings, spend, tokens } from '../lib/runSummary';
 
-const LABEL = 'text-[11px] text-text-muted uppercase tracking-wider';
+const LABEL = 'text-xs text-text-muted uppercase tracking-wider';
 const VALUE = 'mt-1 text-[13px] text-text-primary tabular-nums';
 
 /**
@@ -22,7 +22,7 @@ export const RunFigures: React.FC<{ run: RunStatusResponse }> = ({ run }) => {
           <dt className={LABEL}>Tokens</dt>
           <dd className={VALUE} title={`${cost.successful_requests} model calls`}>
             {tokens(cost.total_tokens)}
-            <span className="block text-[11px] text-text-muted">
+            <span className="block text-xs text-text-muted">
               {tokens(cost.prompt_tokens)} in · {tokens(cost.completion_tokens)} out
             </span>
           </dd>
@@ -43,7 +43,7 @@ export const RunFigures: React.FC<{ run: RunStatusResponse }> = ({ run }) => {
           <dt className={LABEL}>Ceiling</dt>
           <dd className="mt-1.5">
             <Progress label={bar.label} value={bar.used} max={bar.limit} />
-            <span className="mt-1 block text-[11px] text-text-muted tabular-nums">{bar.said}</span>
+            <span className="mt-1 block text-xs text-text-muted tabular-nums">{bar.said}</span>
           </dd>
         </div>
       ))}

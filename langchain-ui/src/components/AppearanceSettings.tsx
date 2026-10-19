@@ -58,7 +58,7 @@ export const AppearanceSettings: React.FC = () => {
     <section className="glass-card rounded-2xl p-5" aria-labelledby="appearance-heading">
       <h2 id="appearance-heading" className="text-base font-semibold text-text-primary">Appearance</h2>
       <p className="text-sm text-text-secondary mt-0.5 mb-4">
-        Kept in this browser and on your account. The key <kbd className="px-1 rounded bg-overlay-strong text-[11px]">t</kbd> cycles the theme anywhere in the interface.
+        Kept in this browser and on your account. The key <kbd className="px-1 rounded bg-overlay-strong text-xs">t</kbd> cycles the theme anywhere in the interface.
       </p>
 
       <fieldset>

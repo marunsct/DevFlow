@@ -85,3 +85,24 @@ def test_a_failed_install_is_tried_again_next_time(tmp_path):
     again = _Runner()
     contract.install_if_the_manifests_changed(tmp_path, again)
     assert _installs(again)
+
+
+def test_every_measurement_the_harness_runs_installs_first(tmp_path, monkeypatch):
+    """Measured live: a fixer's own check after its fix - one acceptance file at a
+    time, and the unit run - went through neither the suite's run nor CI's, so the
+    manifest it had fixed was measured uninstalled and the defect stayed open."""
+    from app.stacks.scaffold import sandbox_runner
+    from app.tools.sandbox import SandboxExecutor
+
+    pack = _project(tmp_path)
+    contract.installed(tmp_path)
+    (tmp_path / "shop" / "package.json").write_text(json.dumps({"dependencies": {"react-router-dom": "6.25.0"}}))
+    ran = []
+    monkeypatch.setattr(SandboxExecutor, "execute", staticmethod(
+        lambda command, **kw: ran.append((list(command), kw["category"])) or {"returncode": 0, "stdout": ""}))
+
+    sandbox_runner(tmp_path)(["npx", "playwright", "test", "acceptance/auth.spec.js"], "probe", "shop")
+
+    installs = [argv for argv, category in ran if category == "install"]
+    assert installs == [list(argv) for argv in pack.commands("shop", None)["install"]]
+    assert ran[-1] == (["npx", "playwright", "test", "acceptance/auth.spec.js"], "probe")

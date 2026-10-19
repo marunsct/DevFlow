@@ -268,6 +268,14 @@ def sandbox_runner(repo_root: str | Path) -> Runner:
     from app.tools.sandbox import SandboxExecutor
 
     def run(argv: Sequence[str], category: str, working_directory: str) -> dict[str, Any]:
+        if category in _MEASURING:
+            # Whatever the harness measures, measured installed: a fixer's own
+            # check after its fix - one acceptance file, or the unit run - went
+            # through neither the suite's run nor CI's, and a manifest it had
+            # fixed was measured uninstalled. See `contract.install_if_the_manifests_changed`.
+            from app.stacks import contract
+
+            contract.install_if_the_manifests_changed(repo_root, run)
         return SandboxExecutor.execute(
             list(argv),
             repo_root=str(repo_root),
@@ -278,6 +286,10 @@ def sandbox_runner(repo_root: str | Path) -> Runner:
         )
 
     return run
+
+
+#: The categories of the harness's own commands that measure the product.
+_MEASURING = frozenset({"test", "probe"})
 
 
 def _exit_code(outcome: dict[str, Any]) -> int:

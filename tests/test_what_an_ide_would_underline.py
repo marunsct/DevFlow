@@ -80,6 +80,23 @@ def test_an_import_of_a_missing_export_or_file_is_underlined_in_both_directions(
 
 
 @needs_the_compiler
+def test_an_importer_of_another_file_with_the_same_name_is_not_blamed(tmp_path) -> None:
+    """Measured live: writing `src/api/client.js` was told six pages under
+    `frontend/src/` would fail to load - they import `frontend/src/api/client.js`,
+    a different file - and the fixer rewrote the file it had just written."""
+    project = _project(tmp_path, {
+        "frontend/src/api/client.js": "export function login() {}\n",
+        "frontend/src/pages/Login.jsx": "import { login, logout } from '../api/client';\nlogin();\n",
+        "src/pages/Login.jsx": "import { login } from '../api/client';\nlogin();\n",
+        "src/api/client.js": "",
+    })
+
+    found = service.underlined(tmp_path, project / "src" / "api" / "client.js", "export const other = 1;\n", project)
+
+    assert [f["file"] for f in found.elsewhere] == ["src/pages/Login.jsx"]
+
+
+@needs_the_compiler
 def test_a_test_file_is_checked_for_its_imports_not_for_the_runner_s_globals(tmp_path) -> None:
     project = _project(tmp_path, {"tests/a.test.js": ""})
     found = service.underlined(

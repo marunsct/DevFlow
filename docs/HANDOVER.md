@@ -293,11 +293,14 @@ test that fails on the old code:
   setup writes its declaration first. **Owner, 17:40 JST: group 1 (no before/after runs needed) is
   built first, then the validation runs for group 2** - the list is in monitoring §0. When group 1
   is done: deploy at a stage boundary, let the shakedown run (run-894282e3) finish, then the gate
-  run. Done: AO.10, AO.5, K.6/AW (two AW deliverables dropped, premise false), AU, S, B, U.1 (bench `tasks-api`), BH registry, M.5/M.6, Q-amend (off by default), T spike (streaming works now; rollout is group 2), G. Next: the UI track; AQ steps 1-2 need the baseline KPIs.
+  run. Done: AO.10, AO.5, K.6/AW (two AW deliverables dropped, premise false), AU, S, B, U.1 (bench `tasks-api`), BH registry, M.5/M.6, Q-amend (off by default), T spike (streaming works now; rollout is group 2), G. Now: the UI track (BG.2 done); AQ steps 1-2 need the baseline KPIs.
 - **UI track (owner, 2026-10-19: start it while the baselines run):** UI-P, the component kit in
   `langchain-ui/src/ui/` with `/dev/ui` and `scripts/ui/axe_kit.mjs` (0 violations per theme).
-  Not deployed: rebuilding the app restarts it, so UI work ships with stage 1. Next: UI-S1/S2
-  remainder, then BG.1, BG.2, BG.5, BG.6.
+  Not deployed: rebuilding the app restarts it, so UI work ships with group 1. Done since: BG.2
+  (the needs-you inbox, tab badge, opt-in notifications; `/api/runs` carries `gate_deadline`) and
+  UI-0 (types generated from the server's schema: after any API change run `npm run api:types` in
+  `langchain-ui`, or `tests/test_the_ui_s_api_types_are_current.py` fails). Next: the UI-S1/S2
+  remainder, then BG.1, BG.5, BG.6.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

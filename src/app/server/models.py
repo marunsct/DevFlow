@@ -550,6 +550,10 @@ class RunSummary(BaseModel):
     completion_gaps: int = Field(default=0, description="How many things the release knew it did not prove.")
     criteria_proven: int | None = Field(default=None, description="Acceptance criteria passing in the last measurement, or null before one.")
     criteria_total: int | None = Field(default=None, description="Acceptance criteria of the run, or null before the suite is written.")
+    gate_deadline: datetime | None = Field(
+        default=None,
+        description="When a waiting gate approves itself, or null when nothing waits or it waits for the person.",
+    )
 
 
 class RunListResponse(BaseModel):

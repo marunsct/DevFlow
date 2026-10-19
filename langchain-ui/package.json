@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "api:types": "cd .. && ENV=development PYTHONPATH=src .venv/bin/python scripts/ui/openapi_schema.py"
   },
   "dependencies": {
     "axios": "^1.20.0",

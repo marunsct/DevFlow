@@ -1,14 +1,21 @@
 /**
- * How many runs need the owner: those waiting at a gate, a review or a budget,
- * and those that failed since the Runs page was last opened. Polled while the
- * tab is visible, so the header can say it from any page.
+ * The runs that need the owner, polled from any page: the live runs waiting at
+ * a gate, a review or a budget (the count, also shown on the browser tab), and
+ * the runs that failed since the Runs page was last opened. A run reaching a
+ * status worth telling is shown as a browser notification when the owner has
+ * turned those on; then the poll goes on, slower, while the tab is hidden too.
  */
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listRuns } from '../api';
-import { statusView } from './status';
+import type { RunSummary } from '../types';
+import { dismissalKey, newlyArrived, readInbox, type Inbox } from './needsYou';
+import { notificationsWanted, tell } from './notify';
+import { showCountInTab } from './tabBadge';
 import { usePageVisible } from './usePageVisible';
 
 const SEEN = 'devflow.runsSeenAt';
+const DISMISSED = 'devflow.inboxDismissed';
+const HIDDEN_POLL_MS = 60_000;
 
 export function markRunsSeen(): void {
   try {
@@ -26,31 +33,78 @@ const seenAt = (): number => {
   }
 };
 
-export function useNeedsYou(intervalMs = 30_000): { count: number; waiting: number; failed: number } {
+const readDismissed = (): Set<string> => {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(DISMISSED) || '[]') as string[]);
+  } catch {
+    return new Set();
+  }
+};
+
+export interface NeedsYou extends Inbox {
+  /** Live waiting runs only: a failed run waits for nothing. */
+  count: number;
+  refresh: () => void;
+  /** Hide a row until its run moves again. */
+  dismiss: (run: RunSummary) => void;
+}
+
+export function useNeedsYou(open: (runId: string) => void, intervalMs = 30_000): NeedsYou {
   const visible = usePageVisible();
-  const [found, setFound] = useState({ count: 0, waiting: 0, failed: 0 });
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const [polls, setPolls] = useState(0);
+  const before = useRef<Map<string, string> | null>(null);
+  const opener = useRef(open);
+  useEffect(() => {
+    opener.current = open;
+  }, [open]);
 
   useEffect(() => {
-    if (!visible || !localStorage.getItem('token')) return;
+    if (!localStorage.getItem('token')) return;
+    if (!visible && !notificationsWanted()) return;
     let live = true;
     const read = async () => {
       try {
-        const { runs } = await listRuns();
-        const since = seenAt();
-        const waiting = runs.filter((r) => statusView(r.status).needsYou).length;
-        const failed = runs.filter((r) => r.status === 'failed' && new Date(r.updated_at ?? r.created_at).getTime() > since).length;
-        if (live) setFound({ count: waiting + failed, waiting, failed });
+        const { runs: found } = await listRuns();
+        if (!live) return;
+        for (const run of newlyArrived(before.current, found)) tell(run, opener.current);
+        before.current = new Map(found.map((run) => [run.run_id, run.status]));
+        setRuns(found);
       } catch {
-        /* the indicator stays as it was */
+        /* the inbox stays as it was */
       }
     };
     void read();
-    const timer = setInterval(read, intervalMs);
+    const timer = setInterval(read, visible ? intervalMs : HIDDEN_POLL_MS);
     return () => {
       live = false;
       clearInterval(timer);
     };
-  }, [visible, intervalMs]);
+  }, [visible, intervalMs, polls]);
 
-  return found;
+  const inbox = useMemo(() => readInbox(runs, seenAt(), dismissed), [runs, dismissed]);
+  const count = inbox.waiting.length;
+
+  useEffect(() => showCountInTab(count), [count]);
+
+  const dismiss = useCallback(
+    (run: RunSummary) => {
+      // Only rows still listed are kept, so the stored set never outgrows the list.
+      const listed = new Set(runs.map(dismissalKey));
+      const next = new Set([...dismissed].filter((key) => listed.has(key)));
+      next.add(dismissalKey(run));
+      try {
+        localStorage.setItem(DISMISSED, JSON.stringify([...next]));
+      } catch {
+        /* dismissed for this page only */
+      }
+      setDismissed(next);
+    },
+    [runs, dismissed],
+  );
+
+  const refresh = useCallback(() => setPolls((n) => n + 1), []);
+
+  return { ...inbox, count, refresh, dismiss };
 }

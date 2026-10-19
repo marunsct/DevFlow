@@ -14,6 +14,14 @@ import type { ModelProfile, SettingsView } from '../types';
  *  start empty and are only sent when the operator actually types something.
  *  Sending "" deletes the stored credential and lets the deployment's own
  *  environment apply again. */
+const THINKING_MODES = ['default', 'on', 'off'] as const;
+const THINKING_EFFORTS = ['low', 'medium', 'high'] as const;
+const EXECUTION_MODES = ['linear', 'parallel'] as const;
+
+/** The server reports these as text and accepts only its listed values: anything else is sent as the default. */
+const oneOf = <T extends string>(value: string | null | undefined, allowed: readonly T[], fallback: T): T =>
+  (allowed as readonly string[]).includes(value ?? '') ? (value as T) : fallback;
+
 interface ProviderForm {
   llm_provider: string;
   openai_base_url: string;
@@ -210,9 +218,9 @@ export const Settings: React.FC = () => {
         model_name: settings.model_name,
         model_context_window: settings.model_context_window,
         model_max_output_tokens: settings.model_max_output_tokens ?? 0,
-        thinking_mode: settings.thinking_mode ?? 'default',
-        thinking_effort: settings.thinking_effort ?? 'medium',
-        execution_mode: settings.execution_mode ?? 'linear',
+        thinking_mode: oneOf(settings.thinking_mode, THINKING_MODES, 'default'),
+        thinking_effort: oneOf(settings.thinking_effort, THINKING_EFFORTS, 'medium'),
+        execution_mode: oneOf(settings.execution_mode, EXECUTION_MODES, 'linear'),
         judgement_provider: settings.judgement_provider ?? '',
         judgement_base_url: settings.judgement_base_url ?? '',
         judgement_model_name: settings.judgement_model_name ?? '',
@@ -254,8 +262,8 @@ export const Settings: React.FC = () => {
         model_name: settings.model_name,
         model_context_window: settings.model_context_window,
         model_max_output_tokens: settings.model_max_output_tokens ?? 0,
-        thinking_mode: settings.thinking_mode ?? 'default',
-        thinking_effort: settings.thinking_effort ?? 'medium',
+        thinking_mode: oneOf(settings.thinking_mode, THINKING_MODES, 'default'),
+        thinking_effort: oneOf(settings.thinking_effort, THINKING_EFFORTS, 'medium'),
         ...(credentials[buildKeyField] !== '' ? { api_key: credentials[buildKeyField] } : {}),
       };
       const res = await saveLocalModelSettings(payload);

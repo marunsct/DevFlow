@@ -220,6 +220,18 @@ process.stdin.on('data', d => content += d).on('end', () => {
              message: ts.flattenDiagnosticMessageText(d.messageText, ' ').split(path.resolve(project) + path.sep).join(''),
              text: sf.text.split('\n')[at.line].trim().slice(0, 160) };
   }
+  // The file an import at `pos` loads, as the compiler resolves it; '' when it
+  // resolves to nothing, null when `pos` is not in an import or export.
+  function importedFile(sf, pos) {
+    for (let n = nodeAt(sf, pos); n; n = n.parent) {
+      if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier) {
+        const symbol = checker.getSymbolAtLocation(n.moduleSpecifier);
+        const declaration = symbol && (symbol.getDeclarations() || [])[0];
+        return declaration ? path.resolve(declaration.getSourceFile().fileName) : '';
+      }
+    }
+    return null;
+  }
   const here = [], elsewhere = [];
   const relativeTarget = path.relative(project, wanted);
   const stem = path.basename(wanted).replace(/\.[^.]+$/, '');
@@ -232,8 +244,12 @@ process.stdin.on('data', d => content += d).on('end', () => {
     } else {
       for (const d of diagnostics) {
         if (![2305, 2614, 1192].includes(d.code) || !keep(d, sf, false)) continue;
+        // Another file of the same name - `frontend/src/api/client.js` beside
+        // `src/api/client.js` - is not this one: its importers are not blamed.
+        const loads = importedFile(sf, d.start);
         const said = ts.flattenDiagnosticMessageText(d.messageText, ' ');
-        if (said.includes(stem)) elsewhere.push({ file: path.relative(project, name), ...describe(d, sf) });
+        const ours = loads === null ? said.includes(stem) : loads === wanted;
+        if (ours) elsewhere.push({ file: path.relative(project, name), ...describe(d, sf) });
       }
     }
   }

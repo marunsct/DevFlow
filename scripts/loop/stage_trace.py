@@ -15,7 +15,8 @@ the original state", "I'll continue from where I left off") or the instruction
 it is following.
 
 Output columns: time, then one of
-  REQ  n=<messages> <roles>   a model call and the tail of its message roles
+  REQ  n=<added>+<carried> <roles>   a model call: the messages it added, the earlier ones it
+                                     resent unchanged, and the tail of the added messages' roles
   RESP in=<tokens> out=<tokens> <first 140 chars of the reply>
   CALL <tool> <arguments, truncated>
   RES  <result, truncated>
@@ -47,7 +48,7 @@ for line in open(paths[0], errors="replace"):
     if kind == "model_request":
         msgs = r.get("messages") or []
         roles = "".join((m.get("role") or "?")[0] for m in msgs)
-        print(at, "REQ n=%d" % len(msgs), roles[-12:])
+        print(at, "REQ n=%d+%d" % (len(msgs), r.get("carried") or 0), roles[-12:])
     elif kind == "model_response":
         u = r.get("usage") or {}
         text = (r.get("text") or "")[:140].replace("\n", " ")

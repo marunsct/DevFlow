@@ -5,6 +5,20 @@ import {
   Progress, Select, Skeleton, Stat, StatusBadge, Tabs, Textarea, Tooltip,
 } from '../ui';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { InboxPanel } from '../components/NeedsYouInbox';
+import type { RunSummary } from '../types';
+
+const sampleRun = (run_id: string, status: string, current_stage: string, extra: Partial<RunSummary> = {}): RunSummary => ({
+  run_id, status, current_stage, created_at: '2026-10-19T00:00:00Z', updated_at: '2026-10-19T01:00:00Z', document_names: [],
+  delivery_mode: 'fast', local_only: true, completion_gaps: 0, criteria_proven: null, criteria_total: null, gate_deadline: null, ...extra,
+});
+
+const INBOX_WAITING = [
+  sampleRun('run-8b0c41d2-5e1f', 'waiting_for_review', 'release_review', { gate_deadline: '2026-10-19T00:40:00Z' }),
+  sampleRun('run-1f2e3d4c-9a8b', 'waiting_for_approval', 'awaiting_approval:specification'),
+  sampleRun('run-77aa01bc-0c0d', 'waiting_for_budget', 'defect_fix_2'),
+];
+const INBOX_STOPPED = [sampleRun('run-c3d4e5f6-1234', 'failed', 'acceptance_tests')];
 
 /**
  * Every primitive of the kit on one page, in its states - the "kitchen sink"
@@ -85,6 +99,23 @@ export function DevUI() {
           <Skeleton lines={3} />
           <EmptyState icon={<Inbox className="h-6 w-6" />} title="No runs yet." action={<Button variant="primary">Start a build</Button>} />
           <dl><InfoRow label="Delivery" value="fast" /><InfoRow label="Shortcut" value={<Kbd>?</Kbd>} /></dl>
+        </Card.Body>
+      </Card>
+
+      <Card>
+        <Card.Header title="Needs-you inbox" />
+        <Card.Body className="max-w-md rounded-xl border border-border bg-surface-raised p-3">
+          <InboxPanel
+            waiting={INBOX_WAITING}
+            stopped={INBOX_STOPPED}
+            answering={null}
+            onApprove={() => undefined}
+            onOpen={() => undefined}
+            onLeave={() => undefined}
+            onDismiss={() => undefined}
+            notifying={false}
+            onNotifying={() => undefined}
+          />
         </Card.Body>
       </Card>
 

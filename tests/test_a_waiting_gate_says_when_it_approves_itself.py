@@ -28,3 +28,20 @@ def test_no_timeout_or_nothing_waiting_has_none():
 
 def test_the_run_payload_carries_it():
     assert {"gate_deadline", "approval_timeout_minutes"} <= set(RunStatusResponse.model_fields)
+
+
+def test_the_runs_list_carries_it_so_the_inbox_can_say_it(client, monkeypatch):
+    """The header's inbox lists every waiting run from one call to the list."""
+    from app.server.run_store import RunStore
+    from app.server.runner import RunRecord
+
+    waiting = RunRecord(
+        run_id="run-a", thread_id="t", document_names=[], document_paths=[],
+        status="waiting_for_approval", updated_at="2026-10-18T03:00:00+00:00", approval_timeout_minutes=30,
+    )
+    monkeypatch.setattr(RunStore, "list_all", lambda self, **kwargs: [waiting])
+    monkeypatch.setattr(RunStore, "count", lambda self, *args, **kwargs: 1)
+
+    (run,) = client.get("/api/runs").json()["runs"]
+
+    assert run["gate_deadline"].startswith("2026-10-18T03:30:00")

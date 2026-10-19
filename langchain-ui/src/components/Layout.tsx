@@ -2,13 +2,12 @@ import React from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { Home, Layers, List, Settings, LogOut } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
-import { useNeedsYou } from '../lib/useNeedsYou';
+import { NeedsYouInbox } from './NeedsYouInbox';
 import { endSession } from '../lib/session';
 
 export const Header: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const needsYou = useNeedsYou();
 
   const handleLogout = () => {
     endSession();
@@ -52,16 +51,7 @@ export const Header: React.FC = () => {
               <Settings className="h-4 w-4" />
               <span className="hidden sm:inline">Settings</span>
             </Link>
-            {needsYou.count > 0 && (
-              <Link
-                to="/runs?status=needs-you"
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border border-primary/50 bg-accent-soft text-primary"
-                title={`${needsYou.waiting} waiting for you, ${needsYou.failed} stopped since you last looked`}
-              >
-                <span className="h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
-                <span>{needsYou.count} need{needsYou.count === 1 ? 's' : ''} you</span>
-              </Link>
-            )}
+            <NeedsYouInbox />
             <ThemeToggle />
             <div className="w-px h-6 bg-border mx-2" />
             <button

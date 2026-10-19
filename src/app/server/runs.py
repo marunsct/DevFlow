@@ -504,6 +504,7 @@ def create_runs_router(
                     delivery_mode=getattr(r, "delivery_mode", None),
                     local_only=getattr(r, "local_only", None),
                     completion_gaps=len(getattr(r, "completion_gaps", None) or []),
+                    gate_deadline=_when_the_gate_approves_itself(r),
                     **_how_many_criteria_hold(r),
                 )
                 for r in records

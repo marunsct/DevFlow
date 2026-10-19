@@ -31,7 +31,7 @@ from typing import Any, Sequence
 from app.acceptance import junit
 from app.stacks import KINDS, StackPack, product_kind
 from app.stacks import contract
-from app.stacks.scaffold import Runner, ScaffoldResult, _step, sandbox_runner
+from app.stacks.scaffold import Runner, ScaffoldResult, _step, sandbox_runner, where_it_failed
 
 logger = logging.getLogger(__name__)
 
@@ -481,7 +481,7 @@ def prove(
         if code != 0:
             code = _step(result.steps, argv, run(list(argv), "install", project))
         if code != 0:
-            result.problem = f"`{' '.join(argv)}` failed in {project}/: {result.steps[-1]['output'][-800:]}"
+            result.problem = f"`{' '.join(argv)}` failed in {project}/: {where_it_failed(result.steps[-1]['output'], 1200)}"
             return result
 
     # The build too: a smoke test can pass without compiling anything, and
@@ -492,7 +492,7 @@ def prove(
         code = _step(result.steps, declared.build, run(list(declared.build), "build", project))
         if code != 0:
             result.problem = (
-                f"`{' '.join(declared.build)}` failed in {project}/: {result.steps[-1]['output'][-1200:]}"
+                f"`{' '.join(declared.build)}` failed in {project}/: {where_it_failed(result.steps[-1]['output'], 1200)}"
             )
             return result
 

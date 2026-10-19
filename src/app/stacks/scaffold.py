@@ -26,8 +26,9 @@ from app.stacks import contract
 
 logger = logging.getLogger(__name__)
 
-#: How much of a failing command's output a result keeps.
-OUTPUT_TAIL_CHARS = 2_000
+#: How much of a failing command's output a result keeps: enough that the line
+#: naming the error is still in it, ahead of a tool's closing advice.
+OUTPUT_TAIL_CHARS = 6_000
 
 #: Runs one argv in a directory of the workspace: (argv, category, working
 #: directory relative to the workspace) -> {"returncode", "stdout", "stderr"}
@@ -283,6 +284,33 @@ def _tail(outcome: dict[str, Any]) -> str:
         str(outcome.get(key) or "") for key in ("error", "stdout", "stderr") if outcome.get(key)
     )
     return text[-OUTPUT_TAIL_CHARS:]
+
+
+_AN_ERROR_LINE = re.compile(r"\berror\b|\bfailed\b|exception", re.I)
+
+
+def where_it_failed(output: str, limit: int = 1200) -> str:
+    """The first line that names an error, the two after it, and the output's last lines.
+
+    A tool's last lines are often its boilerplate. Measured on one run: an
+    install failed on "Multiple top-level packages discovered in a flat-layout",
+    and the record kept the last 800 characters - which began "...covery." and
+    went on through pip's advice and its note that the error came from a
+    subprocess - so neither the stage nor the decision record had the cause.
+    """
+    lines = [line.rstrip() for line in str(output or "").splitlines() if line.strip()]
+    if not lines:
+        return ""
+    # The most telling of the lines that name an error, by length: a tool's
+    # generic ones ("subprocess-exited-with-error", "finished with status
+    # 'error'") are short, and the one that says what went wrong is not.
+    named = [i for i, line in enumerate(lines) if _AN_ERROR_LINE.search(line)]
+    tail = lines[-6:]
+    first = max(named, key=lambda i: (len(lines[i]), -i)) if named else None
+    if first is None or first >= len(lines) - 6:
+        return "\n".join(lines[-12:])[-limit:]
+    head = lines[first:first + 3]
+    return ("\n".join(head) + "\n...\n" + "\n".join(line for line in tail if line not in head))[:limit]
 
 
 def _step(steps: list, argv: Sequence[str], outcome: dict[str, Any]) -> int:

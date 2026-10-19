@@ -334,6 +334,21 @@ for _key in ("react", "vue", "angular", "nextjs"):
 for _key, _line in _TESTING_BY_LANGUAGE.items():
     SEED_INSTRUCTIONS[_key] += "\n" + _line
 
+#: Installing a Python application set up without a pack. Measured on one run:
+#: a setup declared `pip install -e .` over a `pyproject.toml` with setuptools at
+#: a project root that also held its tests, its data and `node_modules`, and the
+#: install failed on "Multiple top-level packages discovered in a flat-layout".
+_PYTHON_SETUP = """Setting up a Python project's install:
+- An editable install (`pip install -e .`) with setuptools must say what it installs when the
+  project root holds more than the package: `[tool.setuptools] py-modules = ["<module>"]` for a
+  single module, or `packages = ["<package>"]`. Otherwise tests, data or a `node_modules`
+  folder beside it make setuptools refuse: "Multiple top-level packages discovered in a
+  flat-layout".
+- An application that is never imported from elsewhere can install only its dependencies
+  instead: `pip install -r requirements.txt`, or the project's dependency group."""
+for _key in ("python", "fastapi", "flask", "django"):
+    SEED_INSTRUCTIONS[_key + SETUP] = (SEED_INSTRUCTIONS.get(_key + SETUP, "") + "\n\n" + _PYTHON_SETUP).strip()
+
 #: Playwright, wherever a stack names it. Before this a generated note stood
 #: here, telling every stage to run `npx playwright install` and download three
 #: browser engines - in a project whose browser the harness had installed and

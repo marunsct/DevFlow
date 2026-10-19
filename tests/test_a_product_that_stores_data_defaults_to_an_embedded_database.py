@@ -42,3 +42,11 @@ def test_the_acceptance_server_is_given_a_fresh_data_dir():
     config = js.playwright_config("node server.js")
 
     assert "DATA_DIR: `test-results/acceptance-data-" in config
+
+
+def test_every_stage_is_told_the_product_must_start_from_port_and_data_dir_alone():
+    text = " ".join(describe_execution_environment().split())
+
+    assert "STARTS FROM `PORT` AND `DATA_DIR` ALONE" in text
+    assert "generated at its first start and kept under `DATA_DIR`" in text
+    assert not BANNED.search(text[text.index("STARTS FROM"):text.index("STARTS FROM") + 500])

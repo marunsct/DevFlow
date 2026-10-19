@@ -812,6 +812,14 @@ _NEVER_STARTED = re.compile(
 #: The start of every "the product did not start" problem.
 PRODUCT_DID_NOT_START = "The product did not start for the acceptance suite"
 
+#: A start that failed for want of a setting: a required field, an unset variable, a missing secret.
+_A_MISSING_SETTING = re.compile(
+    r"Field required|environment variable[^\n]{0,60}(?:not set|is required|missing)|"
+    r"(?:KeyError|Missing|missing|not set)[^\n]{0,40}(?:SECRET|_KEY|TOKEN|PASSWORD|DSN|DATABASE_URL)\b|"
+    r"(?:SECRET|_KEY|TOKEN|PASSWORD|DATABASE_URL)[^\n]{0,40}(?:is not set|is required|must be set|not defined)",
+    re.I,
+)
+
 
 def the_product_did_not_start(output: str) -> str:
     """The problem to record when no test ran because the product never came up; "" otherwise.
@@ -826,8 +834,22 @@ def the_product_did_not_start(output: str) -> str:
         return ""
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     first = next((i for i, line in enumerate(lines) if _NEVER_STARTED.search(line) or re.search(r"\berror\b", line, re.I)), 0)
-    excerpt = "\n".join(lines[first:first + 6])[:1200]
-    return f"{PRODUCT_DID_NOT_START}: no test could reach it. Its output:\n{excerpt}"
+    # Where it started failing, and where it ended: a traceback names its cause
+    # on its last line, and six lines from the first one were all frames.
+    # Measured live: a service that needed a secret the suite does not set
+    # crashed on `jwt_secret_key  Field required`, and the defect showed only
+    # the frames of uvicorn's start.
+    head = lines[first:first + 3]
+    ending = [line for line in lines[-8:] if line not in head]
+    excerpt = ("\n".join(head) + ("\n...\n" + "\n".join(ending) if ending else ""))[:1800]
+    hint = ""
+    if _A_MISSING_SETTING.search(text):
+        hint = (
+            "\nThe product needs a setting that the suite does not give it: the suite sets only `PORT` and "
+            "`DATA_DIR`. A secret or key the product needs to start has a development default, or is "
+            "generated at its first start and kept under `DATA_DIR`."
+        )
+    return f"{PRODUCT_DID_NOT_START}: no test could reach it. Its output:\n{excerpt}{hint}"
 
 
 def vacuous_green(repo_root: str | Path, result: AcceptanceResult) -> list[str]:

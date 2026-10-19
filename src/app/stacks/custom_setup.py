@@ -133,7 +133,11 @@ def build_setup_request(
     )
     text = f"""--- Set up the project so its tests already run ---
 No ready-made setup exists for this stack ({_stack_line(stack)}). Before anything of the
-product is built, set up `{project}/` so that a unit test and an acceptance test both run:
+product is built, set up `{project}/` so that a unit test and an acceptance test both run.
+
+First, before anything else, write `{project}/{DECLARATION_FILE}` (its shape is in step 4) with
+the commands you intend to use, and keep it current as you go. The harness proves the setup from
+that file alone: a setup that runs out of calls before writing it is started again from nothing.
 
 1. Create the project in `{project}/` with the framework's own project generator where it has
    one, answering its questions with flags so it never waits for input. Before choosing a
@@ -146,7 +150,7 @@ product is built, set up `{project}/` so that a unit test and an acceptance test
    yourself.
 3. Write exactly one unit smoke test and one acceptance smoke test that pass on the project
    as generated, and run each through the command you will declare until it passes.
-4. Write `{project}/{DECLARATION_FILE}`, every path relative to `{project}/`:
+4. Bring `{project}/{DECLARATION_FILE}` up to date with what you ran, every path relative to `{project}/`:
    {{
      "kind": "{kind or 'one of ' + ', '.join(KINDS)}",
      "install": [["<program>", "<argument>", ...]],

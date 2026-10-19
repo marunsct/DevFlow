@@ -287,7 +287,8 @@ test that fails on the old code:
   accepted on its suite with no review yet goes through the reviews first, and the custom setup
   is held to the smallest app and to tests its runners collect; a failed setup install names its
   cause, and Python setups are told how a setuptools install names its package; a suite's own
-  `run.json` in the wrong shape is refused as written and the send-back names the shape. Next: AO.10, AO.5; AQ steps 1-2 need the baseline KPIs.
+  `run.json` in the wrong shape is refused as written and the send-back names the shape; the custom
+  setup writes its declaration first. Next: AO.10, AO.5; AQ steps 1-2 need the baseline KPIs.
 - **UI track (owner, 2026-10-19: start it while the baselines run):** UI-P, the component kit in
   `langchain-ui/src/ui/` with `/dev/ui` and `scripts/ui/axe_kit.mjs` (0 violations per theme).
   Not deployed: rebuilding the app restarts it, so UI work ships with stage 1. Next: UI-S1/S2

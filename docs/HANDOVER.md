@@ -304,8 +304,9 @@ test that fails on the old code:
   time, ceiling bars; the run payload carries `max_run_tokens`/`max_run_cost_usd`) and BG.5
   (`GET /api/health/server`, never a model call; the header's server dot; Settings in tabs).
   BG.6 (`GET /runs/{id}/sprints` from the graph state; the fix loop's open defects) and BG.3 (a
-  review shows its document and what changed; `GET /runs/{id}/artifacts/diff`). Next: BG.4 (the
-  rail / work area / ledger layout).
+  review shows its document and what changed; `GET /runs/{id}/artifacts/diff`) and BG.4 (rail,
+  work area in real tabs, ledger; each column scrolls inside itself). Next: the UI-T4-T6/S5
+  remainder, then BG.7-BG.9, BG.11-BG.13.
 - **Owner, 2026-10-19: every completed fix gets an Appendix M row in `docs/improvement-plan.md`**, in
   the fix's own commit: plan items in the main table, audit fixes in M.2 (`LF.n`).
 - Gates: two brief_medium runs on the new code against the baselines (`kpi_ledger.py compare`).

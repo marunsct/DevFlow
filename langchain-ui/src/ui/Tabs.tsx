@@ -14,6 +14,11 @@ interface TabsProps {
   initial?: string;
   label: string;
   className?: string;
+  /** Classes of each tab's panel: a work area that fills its column takes `flex-1 min-h-0`. */
+  panelClassName?: string;
+  /** Controlled: the selected tab, kept by the caller (which then keeps the address too). */
+  selected?: string;
+  onSelect?: (id: string) => void;
 }
 
 function fromTheUrl(param?: string): string | null {
@@ -26,20 +31,23 @@ function fromTheUrl(param?: string): string | null {
  * a click is not needed to show one (selection follows focus), and the choice is
  * kept in the address when `param` is given.
  */
-export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, className }) => {
+export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, className, panelClassName, selected: chosen, onSelect }) => {
   const base = useId();
   const asked = fromTheUrl(param);
   const first = items.find((item) => item.id === asked)?.id ?? items.find((item) => item.id === initial)?.id ?? items[0]?.id;
-  const [selected, setSelected] = useState(first);
+  const [own, setOwn] = useState(first);
+  const controlled = chosen !== undefined;
+  const selected = controlled ? chosen : own;
+  const setSelected = (id: string) => (controlled ? onSelect?.(id) : setOwn(id));
   const tabs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
-    if (!param || !selected || typeof window === 'undefined') return;
+    if (controlled || !param || !selected || typeof window === 'undefined') return;
     const url = new URL(window.location.href);
     if (url.searchParams.get(param) === selected) return;
     url.searchParams.set(param, selected);
     window.history.replaceState(window.history.state, '', url);
-  }, [param, selected]);
+  }, [controlled, param, selected]);
 
   const choose = (index: number) => {
     const item = items[(index + items.length) % items.length];
@@ -92,7 +100,7 @@ export const Tabs: React.FC<TabsProps> = ({ items, param, initial, label, classN
           aria-labelledby={`${base}-tab-${item.id}`}
           hidden={item.id !== selected}
           tabIndex={0}
-          className="pt-4 focus-visible:outline-none"
+          className={cx('focus-visible:outline-none', panelClassName ?? 'pt-4')}
         >
           {item.id === selected && item.content}
         </div>

@@ -49,6 +49,23 @@ describe('Tabs', () => {
     expect(document.activeElement).toBe(work);
   });
 
+  it('can be held by its caller, who keeps the address', async () => {
+    const chosen: string[] = [];
+    const Held = () => {
+      const [tab, setTab] = useState('changes');
+      return <Tabs label="Work area" items={items} selected={tab} onSelect={(id) => { chosen.push(id); setTab(id); }} />;
+    };
+    render(<Held />);
+    expect(screen.getByText('changes panel')).toBeTruthy();
+    const before = window.location.search;
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Evidence' }));
+
+    expect(chosen).toEqual(['evidence']);
+    expect(screen.getByText('evidence panel')).toBeTruthy();
+    expect(window.location.search).toBe(before);
+  });
+
   it('keeps the chosen tab in the address and opens it from there', async () => {
     window.history.replaceState(null, '', '/runs/x?tab=evidence');
     render(<Tabs label="Run sections" items={items} param="tab" />);

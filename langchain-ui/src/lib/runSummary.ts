@@ -27,8 +27,12 @@ export interface Spend {
  * The spend, never a made-up one: a run whose calls had no known price is
  * "not priced", not "$0.00"; one with some priced calls says how many were not.
  */
-export function spend(cost: RunCostSummary): Spend {
-  if (cost.fully_priced) return { shown: `$${cost.estimated_cost_usd.toFixed(2)}`, partial: false };
+export function spend(cost: RunCostSummary, localOnly = false): Spend {
+  if (cost.fully_priced) {
+    // A run on the local model alone is priced at nothing, and says why.
+    const local = localOnly && cost.estimated_cost_usd === 0 ? ' \u00B7 local model' : '';
+    return { shown: `$${cost.estimated_cost_usd.toFixed(2)}${local}`, partial: false };
+  }
   const models = cost.unpriced_models.join(', ') || 'no usage reported';
   if (cost.priced_requests === 0) {
     return {
@@ -108,7 +112,10 @@ export function fixLoop(remediation: RemediationInfo | null | undefined, stage: 
   const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
   return [
     `${remediation.attempt} of ${remediation.max_attempts} fix cycles run`,
-    `${plural(remediation.defect_count, 'defect')}, ${remediation.open_defects} open`,
+    // A server older than the open count sends none: the line leaves it out.
+    typeof remediation.open_defects === 'number'
+      ? `${plural(remediation.defect_count, 'defect')}, ${remediation.open_defects} open`
+      : plural(remediation.defect_count, 'defect'),
     plural(remediation.test_runs, 'test run'),
     ...(remediation.escalated ? ['escalated'] : []),
   ].join(' · ');

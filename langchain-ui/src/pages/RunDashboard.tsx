@@ -27,6 +27,8 @@ import {
   getWizard
 } from '../api';
 import { LogViewer } from '../components/LogViewer';
+import { LatestChange } from '../components/LatestChange';
+import { Tabs } from '../ui';
 import { ChangesPanel } from '../components/ChangesPanel';
 import { SteeringBox } from '../components/SteeringBox';
 import { ArtifactList } from '../components/ArtifactList';
@@ -87,12 +89,13 @@ export const RunDashboard: React.FC = () => {
   // Kept in the address, so a link or a reload opens the same view and change.
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get('view');
-  const centreTab: 'results' | 'log' | 'changes' =
-    viewParam === 'log' || viewParam === 'changes' ? viewParam : 'results';
+  type CentreTab = 'activity' | 'results' | 'log' | 'changes';
+  const centreTab: CentreTab =
+    viewParam === 'log' || viewParam === 'changes' || viewParam === 'results' ? viewParam : 'activity';
   const selectedChange = searchParams.get('change');
-  const setCentreTab = (tab: 'results' | 'log' | 'changes') => {
+  const setCentreTab = (tab: CentreTab) => {
     const next = new URLSearchParams(searchParams);
-    if (tab === 'results') next.delete('view'); else next.set('view', tab);
+    if (tab === 'activity') next.delete('view'); else next.set('view', tab);
     if (tab !== 'changes') next.delete('change');
     setSearchParams(next, { replace: true });
   };
@@ -500,6 +503,8 @@ export const RunDashboard: React.FC = () => {
         : `${Math.floor(totalSeconds / 3600)}h ${Math.floor((totalSeconds % 3600) / 60)}m`;
 
   const stageCopy = describeStage(run.current_stage);
+  // Panels that read the run's state again when it moves to another stage or status.
+  const stageKey = `${run.current_stage ?? ''}:${run.status}`;
   const statusCopy = describeStatus(run.status);
 
   const actionButton =
@@ -751,64 +756,71 @@ export const RunDashboard: React.FC = () => {
         <p role="status" className="text-sm text-text-muted">Resume the run to send it a direction.</p>
       )}
 
-      {/* Sprint Milestones - shown in both views */}
-      <SprintSummaryPanel runId={runId!} />
-
-      {/* Acceptance criteria, screenshots and the decision log. Refreshed as the
-          run moves between stages. */}
-      <DeliveryPanel runId={runId!} refreshKey={`${run.current_stage ?? ''}:${run.status}`} />
-
       {/* Workspace: the guided wizard or the classic dashboard. The wizard
           presents the run as phases (intake, design, sprints, summary) with a
-          detail panel; the classic dashboard shows stages + log + activity. */}
+          detail panel, under the sprints and the criteria. The classic
+          dashboard is a rail, a work area and a ledger (plan BG.4): the stages
+          with their times, the work in real tabs, and what is proven beside
+          it, so a 1366x768 screen shows all three without scrolling. */}
       {viewMode === 'wizard' ? (
-        <WizardDashboard run={run} model={wizard} />
+        <>
+          <SprintSummaryPanel runId={runId!} />
+          <DeliveryPanel runId={runId!} refreshKey={stageKey} />
+          <WizardDashboard run={run} model={wizard} />
+        </>
       ) : (
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-[17rem_minmax(0,1fr)] xl:grid-cols-[19rem_minmax(0,1fr)_23rem] 2xl:grid-cols-[22rem_minmax(0,1fr)_28rem] min-[2200px]:grid-cols-[26rem_minmax(0,1fr)_34rem] xl:flex-1 xl:min-h-[28rem]">
-        <div className="min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
-          <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
-        </div>
-
-        <div className="min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto glass-card rounded-2xl flex flex-col overflow-hidden">
-          <div className="flex-none flex items-center gap-1 px-3 py-2.5 border-b border-border/40">
-            {([
-              { id: 'results', label: 'Results', count: run.artifacts?.length ?? 0 },
-              { id: 'log', label: 'Technical log', count: logs.length },
-              { id: 'changes', label: 'Changes', count: null },
-            ] as const).map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setCentreTab(tab.id)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors ${
-                  centreTab === tab.id
-                    ? 'bg-overlay-strong text-text-primary'
-                    : 'text-text-muted hover:text-text-secondary hover:bg-overlay'
-                }`}
-              >
-                {tab.label}
-                {tab.count !== null && <span className="text-[11px] tabular-nums text-text-muted">{tab.count}</span>}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1 min-h-0">
-            {centreTab === 'results' ? (
-              <ArtifactList artifacts={run.artifacts} runId={runId!} />
-            ) : centreTab === 'changes' ? (
-              <ChangesPanel
-                runId={runId!}
-                refreshKey={`${run.current_stage ?? ''}:${run.status}`}
-                selected={selectedChange}
-                onSelect={selectChange}
-              />
-            ) : (
-              <LogViewer logs={logs} />
-            )}
+        {/* At desktop width each column fills the row and scrolls inside it:
+            no column's length sets the row's height, so the page ends where
+            the window does. */}
+        <div className="relative min-h-0 h-[22rem] sm:h-[26rem] lg:h-[32rem] xl:h-auto">
+          <div className="flex h-full flex-col gap-3 xl:absolute xl:inset-0">
+            <LatestChange runId={runId!} refreshKey={stageKey} onOpen={selectChange} />
+            <div className="flex-1 min-h-0">
+              <ExecutionFlow stages={run.stages || []} currentStage={run.current_stage} isTerminal={isTerminal} />
+            </div>
           </div>
         </div>
 
-        <div className="min-h-0 h-[26rem] sm:h-[30rem] lg:h-[24rem] lg:col-span-2 xl:col-span-1 xl:h-auto">
-          <AgentActivity logs={logs} isRunning={!isTerminal} />
+        <div className="relative min-h-0 h-[26rem] sm:h-[30rem] lg:h-[32rem] xl:h-auto">
+        <div className="h-full xl:absolute xl:inset-0 glass-card rounded-2xl flex flex-col overflow-hidden px-3 pt-1">
+          <Tabs
+            label="The run's work"
+            className="flex h-full min-h-0 flex-col"
+            panelClassName="flex-1 min-h-0"
+            selected={centreTab}
+            onSelect={(id) => setCentreTab(id as CentreTab)}
+            items={[
+              { id: 'activity', label: 'Activity', content: <AgentActivity logs={logs} isRunning={!isTerminal} bare /> },
+              {
+                id: 'changes',
+                label: 'Changes',
+                content: <ChangesPanel runId={runId!} refreshKey={stageKey} selected={selectedChange} onSelect={selectChange} />,
+              },
+              {
+                id: 'log',
+                label: <>Log <span className="text-[11px] tabular-nums text-text-muted">{logs.length}</span></>,
+                content: <LogViewer logs={logs} />,
+              },
+              {
+                id: 'results',
+                label: <>Artifacts <span className="text-[11px] tabular-nums text-text-muted">{run.artifacts?.length ?? 0}</span></>,
+                content: <ArtifactList artifacts={run.artifacts} runId={runId!} />,
+              },
+            ]}
+          />
+        </div>
+        </div>
+
+        {/* The ledger scrolls inside its column: its length must not set the
+            row's height, or the work area and the rail stretch with it. */}
+        <div className="relative min-h-0 lg:col-span-2 xl:col-span-1">
+          <div className="space-y-4 xl:absolute xl:inset-0 xl:overflow-y-auto">
+            {/* Acceptance criteria, screenshots and the decision log, then the
+                sprints - refreshed as the run moves between stages. */}
+            <DeliveryPanel runId={runId!} refreshKey={stageKey} />
+            <SprintSummaryPanel runId={runId!} />
+          </div>
         </div>
       </div>
       )}

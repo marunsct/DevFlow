@@ -31,6 +31,7 @@ describe('the summary card', () => {
     const partial = spend(cost({ fully_priced: false, priced_requests: 10, unpriced_requests: 3, estimated_cost_usd: 1.5 }));
     expect(partial.shown).toBe('$1.50 + 3 unpriced');
     expect(spend(cost({ estimated_cost_usd: 2 })).shown).toBe('$2.00');
+    expect(spend(cost(), true).shown).toBe('$0.00 · local model');
   });
 
   it('gives the typical time from the finished runs of the same mode', () => {
@@ -55,5 +56,7 @@ describe('the fix loop', () => {
     expect(fixLoop(remediation, 'test_round_2')).toMatch(/^2 of 3/);
     expect(fixLoop(remediation, 'acceptance_author_1')).toBe('');
     expect(fixLoop(null, 'defect_fix_1_0')).toBe('');
+    const older = { ...remediation, open_defects: undefined as unknown as number };
+    expect(fixLoop(older, 'defect_fix_2_3')).toBe('2 of 3 fix cycles run · 23 defects · 7 test runs');
   });
 });

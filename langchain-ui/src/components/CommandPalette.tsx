@@ -130,6 +130,8 @@ export const CommandPalette: React.FC<{
   return (
     <>
       <IconButton
+        // A phone's header has no room for it; the palette has its keys.
+        className="hidden sm:inline-flex"
         label={`Commands (${paletteKeys()})`}
         icon={<CommandIcon className="h-4 w-4" />}
         onClick={show}

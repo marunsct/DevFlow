@@ -205,7 +205,8 @@ export const RunList: React.FC = () => {
               No run matches. <button type="button" className="underline text-primary" onClick={() => setParams({}, { replace: true })}>Show every run</button>
             </p>
           ) : (
-          <div className="glass-card rounded-xl overflow-x-auto">
+          <div className="relative glass-card rounded-xl overflow-x-auto">
+            {/* Relative, so the visually hidden header label stays inside the scroller instead of widening the page. */}
             <table className="w-full text-sm">
               <caption className="sr-only">Runs, the ones that need you first</caption>
               <thead>

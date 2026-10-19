@@ -27,6 +27,8 @@ interface AgentActivityProps {
   logs: LogEntry[];
   /** Whether the run is still going, so an unfinished action can show as live. */
   isRunning?: boolean;
+  /** Inside another card (a tab of the run's work area): no card of its own. */
+  bare?: boolean;
 }
 
 const ACTIVITY_TYPES = new Set(['agent_message', 'tool_call', 'tool_result']);
@@ -302,7 +304,7 @@ const ActionRow: React.FC<{ item: Item; live: boolean }> = ({ item, live }) => {
  * Each action carries its own state, so an unfinished one reads as in progress
  * instead of looking identical to a finished one.
  */
-export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false }) => {
+export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = false, bare = false }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pinned, setPinned] = useState(true);
   const items = useMemo(() => buildItems(logs), [logs]);
@@ -398,7 +400,7 @@ export const AgentActivity: React.FC<AgentActivityProps> = ({ logs, isRunning = 
   const working = isRunning && items[items.length - 1]?.pending === true;
 
   return (
-    <div className="glass-card rounded-2xl flex flex-col h-full overflow-hidden">
+    <div className={`${bare ? '' : 'glass-card rounded-2xl '}flex flex-col h-full overflow-hidden`}>
       <div className="flex-none px-4 py-3 border-b border-border/40 flex items-center gap-2.5">
         <span className="grid place-items-center h-7 w-7 rounded-lg bg-accent-soft">
           <Sparkles className="h-3.5 w-3.5 text-primary" />

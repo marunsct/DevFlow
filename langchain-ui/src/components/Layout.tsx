@@ -34,11 +34,12 @@ export const Header: React.FC = () => {
     <header className="sticky top-0 z-50 glass-card-strong border-b border-border">
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          <Link to="/" className="flex items-center gap-2.5 group">
+          <Link to="/" aria-label="DevFlow.ai home" className="flex items-center gap-2.5 group">
             <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary-hover flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 transition-shadow">
               <Layers className="h-4.5 w-4.5 text-text-primary" />
             </div>
-            <span className="font-bold text-lg text-text-primary tracking-tight">
+            {/* The mark alone on a phone: the header's controls need the width. */}
+            <span className="hidden sm:inline font-bold text-lg text-text-primary tracking-tight">
               DevFlow<span className="text-primary">.ai</span>
             </span>
           </Link>

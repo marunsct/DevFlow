@@ -14,7 +14,7 @@ const VALUE = 'mt-1 text-[13px] text-text-primary tabular-nums';
 export const RunFigures: React.FC<{ run: RunStatusResponse }> = ({ run }) => {
   const { cost } = run;
   const bars = ceilings(cost, run.max_run_tokens, run.max_run_cost_usd);
-  const spent = cost ? spend(cost) : null;
+  const spent = cost ? spend(cost, run.use_frontier_model === false) : null;
   return (
     <>
       {cost && cost.total_tokens > 0 && (

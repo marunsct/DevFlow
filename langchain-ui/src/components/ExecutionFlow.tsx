@@ -74,7 +74,7 @@ export const ExecutionFlow: React.FC<ExecutionFlowProps> = ({ stages, currentSta
           </p>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4">
+        <div tabIndex={0} role="region" aria-label="The run's steps" className="flex-1 min-h-0 overflow-y-auto px-4 py-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]">
           {groups.map((group) => {
             const groupDone = group.stages.filter((s) => s.status === 'completed').length;
             return (

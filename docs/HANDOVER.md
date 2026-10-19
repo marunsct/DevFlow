@@ -270,9 +270,12 @@ test that fails on the old code:
 ### 2.000000 Part 21 in progress (2026-10-19, owner: "implement every open item, in Part 21's order")
 
 - **Stage 0 (owner's):** run-846b8d62 cancelled at the owner's choice. W.2 baseline 1, fast
-  `notes-api-hono`, is run-419b8ff6 (13:48 JST, on the deployed `e608003`). Then fast
-  `fullstack-bookmarks-py`, then thorough; the AR probe (`loop.sh reasoning-probe run`) only
-  between runs. **Nothing is deployed while a baseline runs**, and stage-1 code waits on
+  `notes-api-hono`, run-419b8ff6 (13:48 JST, on the deployed `e608003`): 9/9 hidden tests,
+  completed with 3 gaps (the owner paused it 14:25-14:27; read `active_minutes`). AR probe
+  14:30 JST: the server honours only thinking on/off (per-request budget +7%, effort low
+  +13%, high +18%, thinking off -30%), so AX is not built - advice to the owner in the
+  ledger. Baseline 2, fast `fullstack-bookmarks-py`, run-c00868a9, 14:32 JST. Then thorough.
+  The model server now reports 2 slots (the owner's change). **Nothing is deployed while a baseline runs**, and stage-1 code waits on
   the branch until every baseline is scored and in `loop.sh kpi`.
 - **Stage 1, built on the branch, not deployed:** BF (each request's `blocks`; KPI
   `prompt_block_share_*`, `cache_miss_after_tool_change`); BC (two pointer answers in a row

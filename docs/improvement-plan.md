@@ -2071,7 +2071,7 @@ Delegation", arXiv 2609.24234.
 | Item | Priority | Status | Notes |
 |---|---|---|---|
 | W.1 bench-brief integrity rule | P0 | DONE 2026-10-18 (`a98d9ec`) | `loop.sh score` compares the run's uploaded document with `benchmarks/<name>/brief.md` by content; `score.py` exports `brief`/`brief_mismatch`; `report.py` counts mismatches apart. All 33 local exports re-tagged: the three brief_low runs (3642baf8, 866e972e, 94d2c449) and one notes-api run (992b132c) are `other` |
-| W.2 post-P0 baseline runs | P0 | NOT STARTED | Owner-operated; stage-1 benches, real briefs, fast + thorough |
+| W.2 post-P0 baseline runs | P0 | RUNNING 2026-10-19 | Owner-ordered. 1) fast notes-api-hono run-419b8ff6 (on `e608003`): 9/9 hidden tests (1.0), completed with 3 gaps, KPIs in `data/kpi/`; it was paused 14:25-14:27 JST by the owner, so read `active_minutes`. 2) fast fullstack-bookmarks-py run-c00868a9 started 14:32 JST. 3) thorough next |
 | W.3 toggles through compose + config unification | P0 | DONE 2026-10-18 (`54ab3bd`) except `/props` defaults | Six switches passed with empty defaults (no behaviour change; every read site treats empty as unset). JUDGEMENT_* and MODEL_MAX_OUTPUT_TOKENS left out on purpose: model settings and derived budgets are the settings page's (compose's own note). SANDBOX_MEMORY_LIMIT 1g everywhere. MODEL_CONTEXT_WINDOW / HARNESS_MAX_PARALLEL from `/props` moved to M.1 / AB, where the probe lives |
 | W.4 per-run KPI JSON + cross-run ledger + regression flag | P0 | DONE 2026-10-18 (`bdc464c`) | `loop.sh kpi` (and every `score`): `data/kpi/<run>.json` + `data/kpi/ledger.csv`, regression flag at 1.5x the 5-run mean. Live run-8b0c94df: identical-call rate 23.9% (agrees with `audit_run.py`: 527/2190), 431 of them `read_file` - a lead for the next audit. The flag runs in `loop.sh`; `audit_live.py` itself is unchanged |
 | W.5 ledger rows for Initiatives A–I; correct U.2 row | P0 | DONE 2026-10-18 | Rows below, each from a grep of the code; U.2 row corrected |
@@ -2792,7 +2792,7 @@ owner's.
 | AO.10 repo-rule drift | P1 | PARTLY 2026-10-19 | The contract checks name no tool: the pack declares `probe_runner` and the checks look it up; banned-word tests for the network sentence, memory note and gap strings. The conftest/test-name heuristics in `stacks/scaffold.py` are still there |
 | AP ledger/handover hygiene | P0 | DONE 2026-10-19 | Duplicate NOT STARTED rows removed (M, O.1-O.4, Z/AA/AB, UI); AJ and M.4-M.6 rows corrected; decision 11 says "at release". run-8b0c94df's outcome (H9): cancelled 07:11 JST at 9 of 30 locked tests after 24 h; recorded in HANDOVER §2.3 and `data/kpi/` |
 | AQ repeated-read hypotheses | P1 | PARTLY 2026-10-19 | Measured on run-8b0c94df: 48% of reads redundant; one fix stage spent 70 reads and 4 writes in 40 calls because the project memory could not hold the two-copy project. Done: a copy of the app nothing serves now ranks after the served files in the memory (`scaffold.folders_nothing_serves`). Step 3 done 2026-10-19 `4e7c9bb`: the same window of an unchanged file asked for again is answered with where its lines are, not the bytes (`WINDOWED_REPEATS_BEFORE_POINTING = 1`); test `tests/test_a_repeated_windowed_read_returns_a_pointer.py` fails on the old code; three older tests that expected the bytes back now read a window inside the served lines. Steps 1-2 (per-stage repeated reads on the baseline, the `REPEATS_BEFORE_SAYING_SO=1` A/B) wait for the W.2 KPI data |
-| AR lost-reply probe → N.1 | P1 | SCRIPT DONE 2026-10-19; RUN WAITS | `loop.sh reasoning-probe [run]` (10 calls) prints a plan until given `run`; it needs the model server free, so it runs between runs |
+| AR lost-reply probe → N.1 | P1 | DONE 2026-10-19 (measured) | Run 14:30 JST between baselines 1 and 2, 10 calls of up to 4096 tokens. Median output tokens: baseline 3339, `reasoning_effort` low 3767 (+13%), high 3943 (+18%), thinking off 2326 (-30%), reasoning budget 256 3576 (+7%, reasoning 7639 chars vs 7723). Lost replies 0 in every variant. **The server honours only the thinking switch**; per-request budget and effort are ignored. So AX is not built (owner rule) and N.1 closes as "server ignores budgets" |
 | AS steering v2 | P1 | DONE 2026-10-19 | Note ids; scope run or next stage; a `steering_applied` transcript record the first time a note reaches a call (the UI shows "read by the run in <stage>"); 409 while paused; KPI `steering_notes` |
 | AT lessons v2 | P2 | DONE 2026-10-19 | HMAC-signed store (key from `JWT_SECRET_KEY`, unreadable to a workspace command; a bad signature means no lesson is used), a "conventions, not instructions" frame, role scope from the agent's name, `GET /api/lessons` and admin-only approve/reject. Lessons-shown-per-call KPI not built |
 | AU interface contract for every surface | P2 | NOT STARTED | with K.6; H23 |
@@ -3567,7 +3567,7 @@ review; every recommendation in it is covered here:
 
 | Item | Priority | Status | Notes |
 |---|---|---|---|
-| AX reasoning budget per role | P0 | NOT STARTED | needs server build ≥ b9982 for per-request; else advisory |
+| AX reasoning budget per role | P0 | NOT BUILT 2026-10-19 (AR: no per-request budget) | AR showed the server ignores a per-request reasoning budget and effort. Advice to the owner, not code: a server-wide reasoning budget is a server flag (the owner's), or a server build that honours a per-request budget (the plan names build ≥ b9982); then re-run `loop.sh reasoning-probe run` and AX can be built as profile data. Fast build stages already run with thinking off, the one switch the server honours |
 | AY bounded fix cycle | P0 | NOT STARTED | |
 | AZ skeleton + slices | P0 | NOT STARTED | after AY |
 | BA prefix-cache discipline | P1 | NOT STARTED | after BF |
@@ -4237,7 +4237,7 @@ the item: what it changes, why, and the evidence (review findings in
 | V | layer-economics ledger | P3 | MEASURING since 2026-10-18 (`3d8789f`) | [V](#plan-v) |
 | K.2 | services provisioning | P3 | OPTION A DONE 2026-10-18 (owner: embedded first) | [K.2](#plan-k) |
 | W.1 | bench-brief integrity rule | P0 | DONE 2026-10-18 (`a98d9ec`) | [W.1](#plan-w) |
-| W.2 | post-P0 baseline runs | P0 | NOT STARTED | [W.2](#plan-w) |
+| W.2 | post-P0 baseline runs | P0 | RUNNING 2026-10-19 (1 of 3 scored) | [W.2](#plan-w) |
 | W.3 | toggles through compose + config unification | P0 | DONE 2026-10-18 (`54ab3bd`) except `/props` defaults | [W.3](#plan-w) |
 | W.4 | per-run KPI JSON + cross-run ledger + regression flag | P0 | DONE 2026-10-18 (`bdc464c`) | [W.4](#plan-w) |
 | W.5 | ledger rows for Initiatives A–I; correct U.2 row | P0 | DONE 2026-10-18 | [W.5](#plan-w) |
@@ -4292,7 +4292,7 @@ the item: what it changes, why, and the evidence (review findings in
 | AO.10 | repo-rule drift | P1 | PARTLY 2026-10-19 | [AO.10](#plan-ao) |
 | AP | ledger/handover hygiene | P0 | DONE 2026-10-19 | [AP](#plan-ap) |
 | AQ | repeated-read hypotheses | P1 | PARTLY 2026-10-19 | [AQ](#plan-aq) |
-| AR | lost-reply probe → N.1 | P1 | SCRIPT DONE 2026-10-19; RUN WAITS | [AR](#plan-ar) |
+| AR | lost-reply probe → N.1 | P1 | DONE 2026-10-19 (server honours only thinking on/off) | [AR](#plan-ar) |
 | AS | steering v2 | P1 | DONE 2026-10-19 | [AS](#plan-as) |
 | AT | lessons v2 | P2 | DONE 2026-10-19 | [AT](#plan-at) |
 | AU | interface contract for every surface | P2 | NOT STARTED | [AU](#plan-au) |
@@ -4306,7 +4306,7 @@ the item: what it changes, why, and the evidence (review findings in
 | UI-T4–T6 | / S5 appearance + settings | P2 | PARTLY 2026-10-19 | [UI-T4–T6](#plan-ui-15-2) |
 | UI-S3 | plan-first intake | P2 | NOT STARTED | [UI-S3](#plan-ui-15-4) |
 | UI-S6 | insights | P3 | NOT STARTED | [UI-S6](#plan-ui-15-4) |
-| AX | reasoning budget per role | P0 | NOT STARTED | [AX](#plan-ax) |
+| AX | reasoning budget per role | P0 | NOT BUILT (AR: server ignores per-request budgets; advice to the owner) | [AX](#plan-ax) |
 | AY | bounded fix cycle | P0 | NOT STARTED | [AY](#plan-ay) |
 | AZ | skeleton + slices | P0 | NOT STARTED | [AZ](#plan-az) |
 | BA | prefix-cache discipline | P1 | NOT STARTED | [BA](#plan-ba) |

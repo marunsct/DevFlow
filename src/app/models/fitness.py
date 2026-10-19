@@ -109,3 +109,57 @@ def probe(model: Any) -> Fitness:
             got = ", ".join(f"{c.get('name')}({str(c.get('args'))[:60]})" for c in calls) or "no tool call"
             misses.append(f"{meant}: {got}")
     return Fitness(passed, len(PROBES), misses)
+
+
+#: Three small files and a change for each, asked once as a whole-file write and
+#: once as a find-and-replace edit (Initiative BH). Well formed: the call names
+#: the file, and its result is the file with the change and nothing else lost.
+EDIT_SAMPLES: list[tuple[str, str, str, str]] = [
+    ("app/config.py", "PORT = 8000\nDEBUG = False\nNAME = 'notes'\n", "Set DEBUG to True.", "DEBUG = True"),
+    ("src/greet.js", "export function greet(name) {\n  return 'Hello, ' + name;\n}\n",
+     "Make greet say Hi instead of Hello.", "'Hi, '"),
+    ("README.md", "# Notes\n\nA small notes service.\n\n## Run\n\nsh start.sh\n",
+     "Add a line 'Port: 8000' at the end of the Run section.", "Port: 8000"),
+]
+EDIT_ROUNDS = 2
+
+_EDIT_TOOL = _tool(
+    "edit_file", "Replace one exact passage of a file.",
+    {"file_path": _PATH, "find": {"type": "string"}, "replace": {"type": "string"}}, ["file_path", "find", "replace"],
+)
+
+
+def _well_formed_whole(args: dict[str, Any], path: str, before: str, wanted: str) -> bool:
+    content = str(args.get("content") or "")
+    kept = [line for line in before.splitlines() if line.strip() and wanted.split()[0] not in line]
+    return path in str(args.get("file_path") or "") and wanted in content and sum(l in content for l in kept) >= len(kept) - 1
+
+
+def _well_formed_edit(args: dict[str, Any], path: str, before: str, wanted: str) -> bool:
+    find = str(args.get("find") or "")
+    return (path in str(args.get("file_path") or "") and bool(find) and before.count(find) == 1
+            and wanted in before.replace(find, str(args.get("replace") or "")))
+
+
+def edit_probe(model: Any) -> dict[str, float]:
+    """The share of well-formed whole-file writes and of well-formed find-and-replace edits; uses the model."""
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    tallies = {"whole": [0, 0], "edit": [0, 0]}
+    for mode, tool, check in (("whole", TOOLS[3], _well_formed_whole), ("edit", _EDIT_TOOL, _well_formed_edit)):
+        bound = model.bind_tools([tool])
+        how = "by writing the whole file again" if mode == "whole" else "by replacing exactly one passage"
+        for _ in range(EDIT_ROUNDS):
+            for path, before, change, wanted in EDIT_SAMPLES:
+                tallies[mode][1] += 1
+                try:
+                    reply = bound.invoke([
+                        SystemMessage(content=f"Make the requested change {how}, with one tool call."),
+                        HumanMessage(content=f"The file {path} holds:\n```\n{before}```\n{change}"),
+                    ])
+                    calls = list(getattr(reply, "tool_calls", None) or [])
+                except Exception:  # noqa: BLE001 - a failed call is not well formed
+                    continue
+                if calls and check(calls[0].get("args") or {}, path, before, wanted):
+                    tallies[mode][0] += 1
+    return {mode: round(ok / total, 3) if total else 0.0 for mode, (ok, total) in tallies.items()}

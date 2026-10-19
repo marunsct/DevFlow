@@ -95,6 +95,14 @@ except ImportError:  # an image from before the probe
     pass
 for ok, line in results:
     print(line)
+# What the harness knows of the build model's family, and what it measured
+# (Initiative BH). Information only: it never decides readiness.
+try:
+    from app.models.registry import describe
+
+    print("MODEL " + describe(str(_runtime_settings().model_name or "")))
+except ImportError:  # an image from before the registry
+    pass
 print("ALL READY" if all(ok for ok, _ in results) else "NOT ALL READY")
 # Non-zero when not ready, so `loop.sh ready && loop.sh bench ...` never starts
 # a run on a model other than the one the settings name. It used to exit 0 -

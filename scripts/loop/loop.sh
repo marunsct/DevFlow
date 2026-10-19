@@ -18,7 +18,8 @@
 #   scripts/loop/loop.sh deploy              rebuild + restart app and worker, verify the image
 #                                            matches the working tree, list runs orphan recovery revived
 #   scripts/loop/loop.sh suite               the full test suite, logged to data/loop/suite.log
-#   scripts/loop/loop.sh fitness             five scripted tool calls to the build model: FIT/USABLE/UNFIT
+#   scripts/loop/loop.sh fitness [--edits]   five scripted tool calls to the build model: FIT/USABLE/UNFIT;
+#                                            --edits also measures well-formed whole-file writes vs edits (BH)
 #                                            (model_fitness.py); before a run, never beside a live one
 #   scripts/loop/loop.sh bench <name>        start a run from benchmarks/<name>/brief.md (needs LOOP_USER/LOOP_PASSWORD)
 #   scripts/loop/loop.sh score [run] [name]  score a run's product against the benchmark's hidden tests
@@ -240,7 +241,7 @@ checks)
   in_worker check_precision.py "$@"
   ;;
 ready)  in_worker model_ready.py ;;
-fitness) in_worker model_fitness.py ;;
+fitness) shift; in_worker model_fitness.py "$@" ;;
 reasoning-probe) shift; in_worker reasoning_probe.py "${@:-plan}" ;;
 resumed) sh "$HERE/await_resume.sh" ;;
 stage)

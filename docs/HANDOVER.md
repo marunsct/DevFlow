@@ -331,8 +331,9 @@ test that fails on the old code:
   **Clean gate run 1 is run-01a1ab9c**, started 06:00 JST on a39807de: `tests/brief_medium.md`, `DELIVERY=fast FRONTIER=false`;
   gate run 2 follows it on the same code, then `kpi_ledger.py compare` against the baselines, then group 2.
   **Both gate runs measure one code version (a39807de):** fixes found meanwhile are pushed but deployed only after gate
-  run 2, unless a bug would spoil the measurement. Held so far: LF.56 (bd4d602c), LF.57 (the rewind record and
-  KPI filter in the worker; the `loop.sh rewind` command itself works on the deployed API).
+  run 2, unless a bug would spoil the measurement. LF.56/LF.57 were deployed into gate run 1 at 07:35 JST
+  (73aaa5ef): the pip false positive kept the product from starting; the run was rewound to its round-1 test round.
+  Gate run 2 runs on 73aaa5ef.
 - **A bug in a live run is fixed, then the run rewound - not cancelled and started again (owner, 2026-10-20):**
   `loop.sh rewind --pause-only` → `BOUNDARY_WAIT=0 loop.sh deploy` → `loop.sh rewind <stage> [run] [at-or-before]`.
   Rewind to the earliest stage whose behaviour the fix changes (a specification fix: `principal_architect`; the

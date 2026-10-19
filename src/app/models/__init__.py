@@ -189,6 +189,14 @@ def _request_timeout() -> float:
     is built and invoked directly, which is why it reached a deploy; the agent
     invokes a bound model and takes a different path. Revisit only with a
     reproduction through `langchain.agents`, not through a bare model.
+
+    Revisited 2026-10-19 (Initiative T): `scripts/loop/streaming_spike.py`
+    reproduces that path - `create_agent`, a tool call, this module's
+    `CompatibleChatOpenAI` - against a local fake server, and it passes on
+    langchain 1.4.0 / langchain-openai 1.6.0 / openai 3.8.0, in the worker
+    image too (`tests/test_streaming_through_the_agent_path_works.py`).
+    Streaming stays off until it is switched on behind a setting and measured
+    against these runs; until then the timeout above stands.
     """
     import logging
     import os

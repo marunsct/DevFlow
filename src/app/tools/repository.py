@@ -3249,6 +3249,35 @@ def replace_approved_lines(
         return _edited(target, root, relative_path, content, note, replaced)
 
 
+#: One character for one: curly quotes, dashes and box-drawing rules, and the
+#: non-breaking spaces, each as the plain character a model types. Measured
+#: across 280 "could not find that text" misses: 4 differed only in these.
+_PLAIN_TYPOGRAPHY = str.maketrans({
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'", "\u2032": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"', "\u2033": '"',
+    "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": "-", "\u2014": "-", "\u2015": "-",
+    "\u2212": "-", "\u2500": "-", "\u2501": "-",
+    "\u00a0": " ", "\u202f": " ", "\u2007": " ",
+})
+
+
+def _typography_insensitive_span(original: str, find: str) -> tuple[int, int] | None:
+    """Where `find` is in `original` once quotes, dashes and spaces are made plain - if exactly once; else None.
+
+    The mapping is one character for one, so a position in the plain text is the
+    same position in the file, and the file's own characters stay as they were
+    outside the replaced passage.
+    """
+    plain_find = find.translate(_PLAIN_TYPOGRAPHY)
+    if plain_find == find and original.translate(_PLAIN_TYPOGRAPHY) == original:
+        return None  # nothing typographic on either side: not this kind of miss
+    plain = original.translate(_PLAIN_TYPOGRAPHY)
+    if not plain_find or plain.count(plain_find) != 1:
+        return None
+    start = plain.index(plain_find)
+    return start, start + len(plain_find)
+
+
 def edit_approved_artifact(
     repo_root: str | Path, relative_path: str, find: str, replace: str
 ) -> dict[str, str]:
@@ -3342,6 +3371,16 @@ def edit_approved_artifact(
                             "you gave is in the file, in that order, but the spacing "
                             "between them differs. Copy the passage exactly from what "
                             "you read, blank lines included."
+                        )
+                if span is None:
+                    # Typographic characters the model wrote plainly, or the
+                    # other way round (Initiative G, the Unicode half).
+                    span = _typography_insensitive_span(original, candidate)
+                    if span is not None:
+                        explanation = (
+                            "Matched ignoring quotes, dashes and non-breaking spaces written "
+                            "differently from the file (curly or straight, a long dash or a "
+                            "hyphen). Copy those characters exactly from what you read."
                         )
                 if span is None:
                     continue
